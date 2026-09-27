@@ -1610,12 +1610,33 @@ const UNIT_TRAVEL={ id:"u2_5", area:"station", areaName:"Central Station",
    Dunn) — mai come lessico astratto a sé stante.
    ===================================================================== */
 const UNIT2={ id:"u2", area:"townhall", areaName:"Town Hall",
-  title:"Unit 2 — My family life", size:9, tint:"#e6ddc8",
+  title:"Unit 2 — My family life", size:9, tint:"#e6ddc8", wallH:3.2,   // v259: soffitto piu' alto, da edificio pubblico
   enterToast:"Sei entrato alla Town Hall",
   onEnter:()=>setTimeout(buildTownHallNPCs,0),   // stesso pattern anti-TTS di buildEmma
   props:[
-    /* bancone anagrafe (muro ovest) */
-    { key:"f_table", x:-7.6, z:0.0, yaw:Math.PI/2, fit:2.4 },
+    /* v259 — TOWN HALL «piu' reale» (Giacomo: «e' supervuota»): sportello
+       anagrafe con vetro, sala d'attesa con sedie ed eliminacode, bandiere,
+       plastico della citta', bacheca, orologio, boiserie, passatoia.
+       Vincoli rispettati: sportello nello STESSO ingombro del vecchio tavolo
+       (z -1.2..1.2 -> il giro di Mr. Dunn per «Can I help you?» non cambia),
+       porta sud a x0 libera (passatoia fino a z 7), muro nord libero per
+       l'albero genealogico. */
+    { prop:"registryCounter", x:-7.62, z:0.0, yaw:Math.PI/2, L:2.4 },
+    { prop:"wainscot", x:0, z:0, s:9, solid:false },
+    { prop:"runner", x:0, z:2.6, L:8.8, w:1.5, solid:false },
+    { prop:"ticketKiosk", x:-8.35, z:5.0, yaw:Math.PI/2 },
+    { prop:"chairRow", x:5.0, z:2.6, yaw:-Math.PI/2, n:5 },
+    { prop:"chairRow", x:6.6, z:2.6, yaw:-Math.PI/2, n:5, hex:"#8a3a4a" },
+    { prop:"waterCooler", x:8.5, z:-0.6, yaw:-Math.PI/2 },
+    { prop:"plant", x:8.3, z:0.35 },
+    { prop:"flagPole", x:-7.9, z:-8.2, flag:"uk" },
+    { prop:"flagPole", x: 7.9, z:-8.2, flag:"town", yaw:Math.PI },
+    { prop:"townModel", x:1.6, z:-3.4 },
+    { prop:"noticeBoard", x:8.93, z:-3.4, yaw:-Math.PI/2, w:2.2, solid:false },
+    { prop:"wallClock", x:0, z:8.95, yaw:Math.PI, py:2.75, solid:false },
+    { prop:"leafletRack", x:2.6, z:8.45, yaw:Math.PI },
+    { prop:"poster", x:-8.90, z:-2.6, yaw: Math.PI/2, w:1.3, h:0.5, py:2.2,
+      bg:"#1c2226", ink:"#f2a33a", l1:"NOW SERVING", l2:"ticket 3rd", fig:"none", solid:false },
     /* schedari ai lati del bancone (arredo ufficio, non lessicale) */
     { prop:"cabinet", x:-8.35, z:-3.6 },
     { prop:"cabinet", x:-8.35, z: 3.6 },
@@ -1626,8 +1647,8 @@ const UNIT2={ id:"u2", area:"townhall", areaName:"Town Hall",
     /* panchina sala d'attesa (sud-est: lontano dalla PORTA/EXIT a x0) */
     { key:"bench_a", x: 5.6, z: 7.4, yaw:0, fit:2.0 },
     /* ARREDO non lessicale */
-    { prop:"plant", x: 7.8, z:-7.6 },
     { prop:"plant", x:-7.8, z: 7.4 },
+    { prop:"plant", x: 7.9, z:-5.2 },
     /* SCRITTE in inglese (poster procedurali) */
     { prop:"poster", x: 0,     z:-8.90, yaw:0,     w:2.6, h:0.55, py:2.55,
       bg:"#2c3a4a", ink:"#f2e8d2", l1:"TOWN HALL", l2:"family records office", fig:"none", solid:false },
@@ -1904,8 +1925,10 @@ const UNIT8={ id:"u8", area:"clothes", areaName:"Clothes Shop",
   enterToast:"Sei entrato al Clothes Shop",
   onEnter:()=>setTimeout(buildClothesNPCs,0),   // stesso pattern anti-TTS di buildEmma
   props:[
-    { key:"f_table",    x:-2.55, z: 0.00, yaw:Math.PI/2, fit:2.4 },   // bancone (2.40 x 1.22 misurato)
-    { prop:"cashDesk",  x:-2.50, z:-1.85, yaw:Math.PI/2 },
+    /* v259 — bancone-cassa da boutique (prima Desk.glb + cashDesk): stesso
+       tratto in z (-2.3..1.1), meno profondo -> corsia di servizio piu' larga */
+    { prop:"boutiqueCounter", x:-2.55, z:-0.60, L:3.3 },
+    { prop:"boutiqueWall", x:-4.57, z:-0.60, yaw:Math.PI/2, w:3.4, solid:false },
     /* parete NORD = parete dei capi (tutti gli 8 item su 2 scaffali) */
     { prop:"shelfUnit", w:2.6, x:-1.55, z:-5.15 },
     { prop:"shelfUnit", w:2.6, x: 1.55, z:-5.15 },
@@ -14147,18 +14170,8 @@ function marketDress(){
         const cp=e.mesh.instantiateHierarchy(e.mesh.parent,{doNotInstantiate:true},(src,cl)=>{ cl.name="face_"+src.name; });
         if(cp){ cp.position.y+=dy; cp.setEnabled(true); e.__facings.push(cp); } } }
     /* cartellino: sul bordo del ripiano, davanti al prodotto */
-    const pr=MARKET.prices[e.en]; if(pr==null) return;
-    const tag=BABYLON.MeshBuilder.CreatePlane("tag_"+e.en,{width:0.30,height:0.10},scene);
-    const dt=new BABYLON.DynamicTexture("tagT_"+e.en,{width:192,height:64},scene,true), c=dt.getContext();
-    c.fillStyle="#fff6c8"; c.fillRect(0,0,192,64); c.fillStyle="#d63a2f"; c.fillRect(0,0,192,8);
-    c.fillStyle="#2b2318"; c.textAlign="center"; c.textBaseline="middle";
-    let f=20; c.font="bold "+f+"px sans-serif"; while(f>11 && c.measureText(e.en).width>180){ f--; c.font="bold "+f+"px sans-serif"; }
-    c.fillText(e.en,96,24); c.font="bold 24px sans-serif"; c.fillStyle="#d63a2f"; c.fillText(gbp(pr),96,48); dt.update();
-    const tm=new BABYLON.StandardMaterial("tagM_"+e.en,scene); tm.diffuseTexture=dt; tm.emissiveColor=new BABYLON.Color3(0.35,0.35,0.3);
-    tm.specularColor=new BABYLON.Color3(0,0,0); tag.material=tm; tag.parent=I.root; tag.isPickable=false;
     const cx=(bb.min.x+bb.max.x)/2, cz=(bb.min.z+bb.max.z)/2, ext=Math.abs(fx)*(bb.max.x-bb.min.x)/2+Math.abs(fz)*(bb.max.z-bb.min.z)/2;
-    tag.position.set(cx+fx*(ext+0.04), Math.max(0.08,bb.min.y-0.03), cz+fz*(ext+0.04));
-    tag.rotation.y=yaw+Math.PI;
+    marketPriceTag(I,e.en, cx+fx*(ext+0.04), Math.max(0.09,bb.min.y-0.05), cz+fz*(ext+0.04), yaw+Math.PI);
   });
   marketBuildGoods(I);
 }
@@ -14166,15 +14179,17 @@ function marketDress(){
    frighi (le bottiglie/vaschette di una fila), 6 al banco frutta (3
    mucchietti per cassetta). Stessa forma degli UNIT6.items per la spesa
    (en, pos, __facings), ma FUORI da UNIT6.items: la quest non li vede. */
+/* v259 — cartellini piu' GRANDI (Giacomo: «i prezzi non si leggono»):
+   0.42 x 0.15 m (prima 0.30 x 0.10), testo piu' grosso e piu' luminoso */
 function marketPriceTag(I,en,x,y,z,rotY,label){
   const pr=MARKET.prices[en]; if(pr==null) return; en=label||en;
-  const tag=BABYLON.MeshBuilder.CreatePlane("tag_"+en,{width:0.30,height:0.10},scene);
-  const dt=new BABYLON.DynamicTexture("tagT_"+en,{width:192,height:64},scene,true), c=dt.getContext();
-  c.fillStyle="#fff6c8"; c.fillRect(0,0,192,64); c.fillStyle="#d63a2f"; c.fillRect(0,0,192,8);
+  const tag=BABYLON.MeshBuilder.CreatePlane("tag_"+en,{width:0.42,height:0.15},scene);
+  const dt=new BABYLON.DynamicTexture("tagT_"+en,{width:280,height:100},scene,true), c=dt.getContext();
+  c.fillStyle="#fff6c8"; c.fillRect(0,0,280,100); c.fillStyle="#d63a2f"; c.fillRect(0,0,280,10);
   c.fillStyle="#2b2318"; c.textAlign="center"; c.textBaseline="middle";
-  let f=20; c.font="bold "+f+"px sans-serif"; while(f>11 && c.measureText(en).width>180){ f--; c.font="bold "+f+"px sans-serif"; }
-  c.fillText(en,96,24); c.font="bold 24px sans-serif"; c.fillStyle="#d63a2f"; c.fillText(gbp(pr),96,48); dt.update();
-  const tm=new BABYLON.StandardMaterial("tagM_"+en,scene); tm.diffuseTexture=dt; tm.emissiveColor=new BABYLON.Color3(0.35,0.35,0.3);
+  let f=36; c.font="bold "+f+"px sans-serif"; while(f>16 && c.measureText(en).width>268){ f--; c.font="bold "+f+"px sans-serif"; }
+  c.fillText(en,140,33); c.font="bold 46px sans-serif"; c.fillStyle="#d63a2f"; c.fillText(gbp(pr),140,76); dt.update();
+  const tm=new BABYLON.StandardMaterial("tagM_"+en,scene); tm.diffuseTexture=dt; tm.emissiveColor=new BABYLON.Color3(0.5,0.5,0.45);
   tm.specularColor=new BABYLON.Color3(0,0,0); tag.material=tm; tag.parent=I.root; tag.isPickable=false;
   tag.position.set(x,y,z); tag.rotation.y=rotY; return tag;
 }
@@ -14190,7 +14205,7 @@ function marketBuildGoods(I){
         const b=n.getHierarchyBoundingVectors(true); w=Math.abs(ax)*(b.max.x-b.min.x)+Math.abs(az)*(b.max.z-b.min.z); }
       const d=(k-1)*(w+0.06); n.position.set(C.x+g.x+ax*d, 0.81, C.z+g.z+az*d); f.push(n); }
     shelf.push({ en:g.en, key:g.key, brand:g.brand, f });
-    marketPriceTag(I,g.key, C.x+g.x+fx*0.19, 0.78, C.z+g.z+fz*0.19, g.yaw+Math.PI, mktName(g));
+    marketPriceTag(I,g.key, C.x+g.x+fx*0.19, 0.745, C.z+g.z+fz*0.19, g.yaw+Math.PI, mktName(g));
   });
   /* v258 — merce RIEMPITIVA sul ripiano centrale, nei tratti liberi fra i
      prodotti (0.5 m di rispetto per lato; le file di scatole sforano al
@@ -14220,9 +14235,9 @@ function marketBuildGoods(I){
     const along=(pos.x-pp.x)*ax+(pos.z-pp.z)*az, nm=f[0].name||"";
     let tp;
     if(/^pf/.test(nm)){ const back=((pos.x-pp.x)*fx+(pos.z-pp.z)*fz)<0;          // banco frutta: fronte a 0.45
-      tp={ x:pp.x+fx*0.46+ax*along, y:back?0.64:0.50, z:pp.z+fz*0.46+az*along }; }
+      tp={ x:pp.x+fx*0.46+ax*along, y:back?0.64:0.48, z:pp.z+fz*0.46+az*along }; }
     else { const front=0.47;                                                     // frigo: davanti al vetro
-      tp={ x:pp.x+fx*front+ax*along, y:miny-(/^dft/.test(nm)?0.07:0.16), z:pp.z+fz*front+az*along }; }
+      tp={ x:pp.x+fx*front+ax*along, y:miny-(/^dft/.test(nm)?0.10:0.16), z:pp.z+fz*front+az*along }; }
     marketPriceTag(I,en,tp.x,tp.y,tp.z,yaw+Math.PI);
   });
 }
@@ -15619,6 +15634,202 @@ const LEXPROPS={
      Stessa convenzione di poster: rotation.y=Math.PI baked -> yaw 0 = SUD (+z).
      Cornice a 4 barre COMPLANARI (mai un pannello dietro/davanti: cosi' non
      puo' coprire il testo qualunque sia il verso della faccia visibile). */
+  /* ===== v259 — CLOTHES SHOP: bancone-cassa da boutique (Giacomo: «restyling
+     del bancone/cassa»). Sostituisce Desk.glb + cashDesk. Lunghezza lungo z,
+     FRONTE CLIENTE a +x (come la cassa del Market), commessa a -x.
+     Stesso ingombro in z di prima (la corsia di servizio di Nina resta
+     libera, anzi si allarga: 0.70 m di profondita' invece di 1.22). */
+  boutiqueCounter(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene);
+    const L=o.L||3.3, D=0.70, H=0.98, acc=o.hex||"#7a3f6a", top=H+0.01;
+    lpBox(r,D-0.14,0.10,L-0.14,"#2b2318",0,0.05,0);                       // zoccolo arretrato
+    lpBox(r,D,H-0.14,L,"#f4efe8",0,0.10+(H-0.14)/2,0);                    // corpo laccato bianco
+    lpBox(r,0.02,H-0.34,L-0.34,acc,D/2+0.01,0.10+(H-0.14)/2,0);           // pannello frontale col colore del negozio
+    const sl=[], ns=Math.floor((L-0.46)/0.13);
+    for(let k=0;k<=ns;k++){ const b=BABYLON.MeshBuilder.CreateBox("bcs",{width:0.03,height:H-0.42,depth:0.05},scene);
+      b.position.set(D/2+0.035,0.10+(H-0.14)/2,-(ns*0.13)/2+k*0.13); sl.push(b); }
+    const slm=BABYLON.Mesh.MergeMeshes(sl,true,true); if(slm){ slm.material=lpMat("#c9a57a"); slm.parent=r; }   // listelli in legno
+    lpBox(r,D+0.08,0.05,L+0.08,"#ebe5da",0,H-0.015,0);                    // piano in pietra chiara
+    lpBox(r,0.012,0.014,L+0.08,"#c8a45a",D/2+0.046,H-0.03,0);             // filo ottone
+    /* POS: tablet orientabile verso la commessa + display cliente + lettore carte */
+    lpBox(r,0.20,0.015,0.20,"#2e3338",-0.10,top+0.008,0);
+    lpCyl(r,0.035,0.16,"#9aa0a6",-0.10,top+0.09,0);
+    const tb=lpBox(r,0.02,0.22,0.32,"#1c2226",-0.12,top+0.22,0); tb.rotation.z=-0.35;
+    const ts=lpBox(r,0.004,0.18,0.28,"#1c2a34",-0.135,top+0.215,0,"#5fb89a"); ts.rotation.z=-0.35;   // schermo acceso
+    lpBox(r,0.08,0.035,0.15,"#23272b",0.22,top+0.018,0.36);               // lettore carte
+    lpBox(r,0.05,0.004,0.05,"#7fd08f",0.22,top+0.037,0.33,"#2f7a3f");
+    lpBox(r,0.16,0.11,0.17,"#e6e6e2",-0.14,top+0.055,-0.38);              // stampante scontrini
+    lpBox(r,0.10,0.002,0.03,"#2b2318",-0.14,top+0.111,-0.33);
+    lpBox(r,0.07,0.08,0.002,"#ffffff",-0.14,top+0.13,-0.30);              // scontrino che esce
+    /* pila di capi piegati + carta velina */
+    ["#c0392b","#f2efe6","#2f5a9e","#d8a72e"].forEach((hx,i)=>{ const f=lpBox(r,0.30,0.05,0.24,hx,0.04,top+0.025+i*0.05,-1.05);
+      f.rotation.y=(i%2?0.06:-0.05); });
+    lpBox(r,0.32,0.004,0.26,"#f7e9ef",0.30,top+0.002,-1.05);
+    /* sacchetti del negozio (colore + fascia bianca + manici) */
+    [[0.02,1.05,0.10],[0.16,1.34,-0.18]].forEach((p,i)=>{ const g=new BABYLON.TransformNode(id+"bag"+i,scene); g.parent=r;
+      g.position.set(p[0],top,p[1]); g.rotation.y=p[2];
+      lpBox(g,0.14,0.34,0.30,i?"#f4efe8":acc,0,0.17,0);
+      lpBox(g,0.142,0.06,0.302,i?acc:"#f4efe8",0,0.24,0);
+      [-0.045,0.045].forEach(x=>{ const hd=BABYLON.MeshBuilder.CreateTorus("bch",{diameter:0.13,thickness:0.012,tessellation:14},scene);
+        hd.material=lpMat("#2b2318"); hd.rotation.z=Math.PI/2; hd.position.set(x,0.34,0); hd.parent=g; }); });
+    /* vasetto di fiori */
+    lpCyl(r,0.10,0.16,"#dfe9ec",-0.22,top+0.08,1.40);
+    [[-0.03,0.30,0],[0.03,0.27,0.03],[0,0.33,-0.03]].forEach((q,i)=>{ lpCyl(r,0.008,0.20,"#4c7a3c",-0.22+q[0],top+0.18,1.40+q[2]);
+      const s=BABYLON.MeshBuilder.CreateSphere("bcf",{diameter:0.07,segments:6},scene); s.material=lpMat(["#e86a92","#f2c81e","#ffffff"][i]);
+      s.position.set(-0.22+q[0],top+q[1],1.40+q[2]); s.parent=r; });
+    /* insegna appesa «PAY HERE», leggibile dai due lati */
+    const sg=LEXPROPS.poster(id+"sg",{w:1.3,h:0.36,py:2.35,bg:acc,ink:"#ffffff",l1:"PAY HERE",l2:"cash desk",fig:"none",twoSided:true});
+    sg.parent=r; sg.rotation.y=Math.PI/2;
+    lpBox(r,0.02,0.24,0.02,"#c8a45a",0,2.65,-0.45); lpBox(r,0.02,0.24,0.02,"#c8a45a",0,2.65,0.45);
+    return r; },
+  /* parete dietro il bancone: pannello colorato, due mensole con capi piegati
+     e scatole, specchio tondo. A muro (fronte +z), NON solido. */
+  boutiqueWall(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene), W=o.w||3.4, acc=o.hex||"#7a3f6a";
+    lpBox(r,W,2.05,0.02,acc,0,1.025,0.01);
+    lpBox(r,W,0.04,0.03,"#c8a45a",0,2.07,0.02);
+    [1.20,1.66].forEach((y,j)=>{ lpBox(r,1.5,0.035,0.26,"#c9a57a",-0.75,y,0.14);
+      for(let k=0;k<4;k++){ const x=-1.35+k*0.40;
+        if(j===0) ["#f2efe6","#2f4f8e","#8a5a3a"].forEach((hx,i)=>lpBox(r,0.30,0.055,0.20,hx,x,y+0.045+i*0.055,0.14));
+        else lpBox(r,0.32,0.16,0.20,["#2b2318","#f2efe6","#c25b8e","#3e7a3a"][k],x,y+0.10,0.14); } });
+    lpCyl(r,0.80,0.03,"#c8a45a",0.95,1.35,0.03,Math.PI/2);                 // cornice specchio
+    lpCyl(r,0.72,0.03,"#cfe3ea",0.95,1.35,0.045,Math.PI/2,0,"#6f8a94");     // specchio
+    return r; },
+  /* ===== v259 — TOWN HALL «piu' reale» (Giacomo: «e' supervuota») ======== */
+  /* boiserie in legno lungo i 4 muri + corrimano; varco per la porta (sud, x0) */
+  wainscot(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene), S=o.s||9, h=o.h||1.0, g=o.gap||0.95, hx=o.hex||"#7a5a3c";
+    const run=(len,x,z,ry)=>{ const b=lpBox(r,len,h,0.03,hx,x,h/2,z); b.rotation.y=ry;
+      const t=lpBox(r,len,0.05,0.06,"#5a3f28",x,h+0.02,z); t.rotation.y=ry; };
+    run(S*2,0,-S+0.015,0); run(S*2,S-0.015,0,Math.PI/2); run(S*2,-S+0.015,0,Math.PI/2);
+    const half=(S-g)/2; run(S-g,-(g+half),S-0.015,0); run(S-g,(g+half),S-0.015,0);
+    return r; },
+  /* sportello anagrafe: bancone con vetro di protezione, finestrella, cartello.
+     Lunghezza lungo x locale, fronte cittadino a +z. */
+  registryCounter(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene), L=o.L||2.4, D=0.72, H=1.05, top=H+0.01;
+    lpBox(r,L,H-0.08,D,"#6b4a2f",0,(H-0.08)/2,0);
+    [-1,0,1].forEach(k=>lpBox(r,L/3-0.14,H-0.36,0.02,"#8a6a48",k*L/3,(H-0.08)/2,D/2+0.01));   // specchiature
+    lpBox(r,L+0.08,0.06,D+0.08,"#d9cfbf",0,H-0.05,0);                     // piano
+    lpBox(r,L,0.03,0.30,"#d9cfbf",0,0.78,-D/2+0.12);                      // ripiano interno (lato impiegato)
+    /* vetro: montanti + lastra con finestrella in basso */
+    [-L/2+0.03,0,L/2-0.03].forEach(x=>lpBox(r,0.04,0.72,0.04,"#9aa0a6",x,top+0.36,0.02));
+    lpBox(r,L,0.04,0.05,"#9aa0a6",0,top+0.72,0.02);
+    const gl=lpBox(r,L-0.06,0.56,0.012,"#cfeefa",0,top+0.44,0.02); gl.visibility=0.28;
+    /* pratiche: moduli, timbro, campanello, portapenne */
+    lpBox(r,0.24,0.03,0.32,"#f6f1e2",-0.55,top+0.015,0.18); lpBox(r,0.24,0.02,0.32,"#e8e0cf",-0.53,top+0.04,0.17);
+    lpCyl(r,0.07,0.05,"#c9a35a",0.55,top+0.025,0.22); lpCyl(r,0.02,0.02,"#9aa0a6",0.55,top+0.06,0.22);   // campanello
+    lpCyl(r,0.06,0.10,"#2e3338",0.30,top+0.05,0.20); lpCyl(r,0.008,0.14,"#2f5a9e",0.29,top+0.12,0.20);
+    lpBox(r,0.07,0.07,0.05,"#8a3a2a",-0.25,top+0.035,-0.20); lpBox(r,0.05,0.06,0.03,"#2b2318",-0.25,top+0.10,-0.20);   // timbro
+    lpBox(r,0.36,0.24,0.02,"#2b2318",0.55,top+0.13,-0.25); lpBox(r,0.32,0.20,0.004,"#1c2a34",0.55,top+0.13,-0.262,"#4d7fa8");   // monitor
+    const sg=LEXPROPS.poster(id+"sg",{w:1.5,h:0.30,py:top+0.92,bg:"#2c3a4a",ink:"#f2e8d2",l1:"REGISTRY",l2:"window 1",fig:"none",twoSided:true});
+    sg.parent=r;
+    return r; },
+  /* fila di sedie d'attesa agganciate a una trave; fronte (seduta) a +z */
+  chairRow(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene), n=o.n||4, P=0.56, hx=o.hex||"#2f6a8a", L=n*P;
+    lpBox(r,L+0.10,0.05,0.05,"#6f767d",0,0.38,0);
+    [-L/2+0.05,L/2-0.05].forEach(x=>{ lpBox(r,0.05,0.38,0.05,"#6f767d",x,0.19,0.18); lpBox(r,0.05,0.38,0.05,"#6f767d",x,0.19,-0.18);
+      lpBox(r,0.05,0.04,0.44,"#6f767d",x,0.02,0); });
+    for(let k=0;k<n;k++){ const x=-L/2+P/2+k*P;
+      lpBox(r,0.48,0.06,0.44,hx,x,0.44,0.02);
+      const bk=lpBox(r,0.48,0.44,0.05,hx,x,0.72,-0.21); bk.rotation.x=-0.12; }
+    return r; },
+  /* eliminacode «TAKE A NUMBER»: colonnina con schermo, tasto e biglietto */
+  ticketKiosk(id){ const r=new BABYLON.TransformNode(id,scene);
+    lpBox(r,0.46,0.05,0.36,"#3a3f45",0,0.025,0);
+    lpBox(r,0.36,1.05,0.26,"#e4e7ea",0,0.55,0);
+    lpBox(r,0.40,0.34,0.30,"#2c3a4a",0,1.24,0.02);
+    lpBox(r,0.30,0.16,0.005,"#1c2a34",0,1.29,0.173,"#e8a13a");            // display
+    lpCyl(r,0.08,0.03,"#c0392b",0,1.13,0.175,Math.PI/2,0,"#7a1e18");      // tasto rosso
+    lpBox(r,0.14,0.012,0.05,"#1c2226",0,0.92,0.135);
+    lpBox(r,0.07,0.10,0.003,"#fffdf2",0,0.87,0.16);                        // biglietto
+    const sg=LEXPROPS.poster(id+"sg",{w:0.60,h:0.24,py:1.58,bg:"#5a4a3a",ink:"#f6f1e2",l1:"TAKE A NUMBER",l2:"press here",fig:"none",twoSided:true});
+    sg.parent=r;
+    return r; },
+  /* asta con bandiera (o.flag: "uk" | "town") */
+  flagPole(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene);
+    lpCyl(r,0.40,0.08,"#3a3f45",0,0.04,0); lpCyl(r,0.05,2.55,"#c9a35a",0,1.30,0);
+    const s=BABYLON.MeshBuilder.CreateSphere("fpk",{diameter:0.10,segments:8},scene); s.material=lpMat("#d8b04a"); s.position.set(0,2.62,0); s.parent=r;
+    const W=0.95, Hh=0.60, dt=new BABYLON.DynamicTexture("fpt"+(_lpN++),{width:240,height:152},scene,true), c=dt.getContext();
+    if(o.flag==="uk"){ c.fillStyle="#1f3f8a"; c.fillRect(0,0,240,152);
+      c.strokeStyle="#ffffff"; c.lineWidth=30; c.beginPath(); c.moveTo(0,0); c.lineTo(240,152); c.moveTo(240,0); c.lineTo(0,152); c.stroke();
+      c.strokeStyle="#c8102e"; c.lineWidth=10; c.beginPath(); c.moveTo(0,0); c.lineTo(240,152); c.moveTo(240,0); c.lineTo(0,152); c.stroke();
+      c.fillStyle="#ffffff"; c.fillRect(96,0,48,152); c.fillRect(0,52,240,48);
+      c.fillStyle="#c8102e"; c.fillRect(106,0,28,152); c.fillRect(0,62,240,28); }
+    else { c.fillStyle="#2f6a4a"; c.fillRect(0,0,240,152); c.fillStyle="#f2c93e"; c.fillRect(0,0,240,18); c.fillRect(0,134,240,18);
+      c.fillStyle="#f6f1e2"; c.fillRect(104,40,32,78); c.beginPath(); c.moveTo(96,42); c.lineTo(120,20); c.lineTo(144,42); c.fill();
+      c.fillStyle="#2f6a4a"; c.beginPath(); c.arc(120,62,10,0,Math.PI*2); c.fill(); }
+    dt.update();
+    const fl=BABYLON.MeshBuilder.CreatePlane("fpf"+(_lpN++),{width:W,height:Hh,sideOrientation:BABYLON.Mesh.DOUBLESIDE},scene);
+    const fm=new BABYLON.StandardMaterial("fpm"+(_lpN++),scene); fm.diffuseTexture=dt; fm.backFaceCulling=false;
+    fm.emissiveColor=new BABYLON.Color3(0.25,0.25,0.25); fm.specularColor=new BABYLON.Color3(0,0,0);
+    fl.material=fm; fl.parent=r; fl.position.set(W/2+0.03,2.22,0); fl.rotation.y=Math.PI; fl.rotation.z=0.05; fl.isPickable=false;
+    return r; },
+  /* plastico della citta' in teca di vetro, su basamento; targhetta a +z */
+  townModel(id){ const r=new BABYLON.TransformNode(id,scene), W=1.8, D=1.1;
+    lpBox(r,W,0.80,D,"#6b4a2f",0,0.40,0); lpBox(r,W+0.06,0.04,D+0.06,"#c9a35a",0,0.82,0);
+    lpBox(r,W-0.1,0.03,D-0.1,"#7da65a",0,0.855,0);
+    lpBox(r,W-0.1,0.005,0.14,"#5a8ac0",0,0.873,0.30);                        // fiume
+    lpBox(r,0.10,0.006,D-0.1,"#b8b0a0",-0.2,0.873,0); lpBox(r,W-0.1,0.006,0.08,"#b8b0a0",0,0.874,-0.12);   // strade
+    let s=11; const rnd=()=>{ s=(s*16807)%2147483647; return (s%1000)/1000; };
+    const cols=["#d8c3a0","#c96a4f","#e9e3d8","#b8563f","#d8a72e","#9aa0a6"];
+    for(let i=0;i<16;i++){ const x=-0.75+(i%8)*0.2+(rnd()-0.5)*0.04, z=(i<8?-0.34:0.08)+(rnd()-0.5)*0.05;
+      if(Math.abs(x+0.2)<0.1) continue; const h=0.06+rnd()*0.14;
+      lpBox(r,0.12,h,0.12,cols[(i*5)%cols.length],x,0.87+h/2,z); }
+    lpBox(r,0.10,0.34,0.10,"#8a6a48",0.55,1.04,-0.34); lpBox(r,0.12,0.04,0.12,"#5a3f28",0.55,1.23,-0.34);   // torre dell'orologio
+    lpCyl(r,0.06,0.005,"#f6f1e2",0.55,1.12,-0.285,Math.PI/2);
+    [[-0.6,0.30],[-0.3,0.25],[0.3,0.36],[0.7,0.28]].forEach(p=>{ const t=BABYLON.MeshBuilder.CreateSphere("tmt",{diameter:0.08,segments:6},scene);
+      t.material=lpMat("#3e6a34"); t.position.set(p[0],0.91,p[1]-0.5); t.parent=r; });
+    const gl=lpBox(r,W-0.04,0.42,D-0.04,"#cfeefa",0,1.08,0); gl.visibility=0.15;
+    [[-1,-1],[-1,1],[1,-1],[1,1]].forEach(q=>lpBox(r,0.025,0.44,0.025,"#9aa0a6",q[0]*(W/2-0.03),1.08,q[1]*(D/2-0.03)));   // spigoli della teca
+    [-1,1].forEach(q=>{ lpBox(r,W-0.04,0.025,0.025,"#9aa0a6",0,1.30,q*(D/2-0.03)); lpBox(r,0.025,0.025,D-0.04,"#9aa0a6",q*(W/2-0.03),1.30,0); });
+    const pl=LEXPROPS.poster(id+"pl",{w:0.9,h:0.22,py:0.55,bg:"#c9a35a",ink:"#2b2318",l1:"OUR TOWN",l2:"",fig:"none"});
+    pl.parent=r; pl.position.z=D/2+0.012;
+    return r; },
+  /* bacheca in sughero con avvisi appuntati (a muro, fronte +z) */
+  noticeBoard(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene), W=o.w||2.0, H=1.2, py=1.55;
+    lpBox(r,W+0.08,H+0.08,0.04,"#5a3f28",0,py,0.02); lpBox(r,W,H,0.02,"#c49a6a",0,py,0.05);
+    let s=(o.seed||5); const rnd=()=>{ s=(s*16807)%2147483647; return (s%1000)/1000; };
+    const cols=["#fffdf2","#f7e37a","#bfe3f5","#f6c6d0","#d6f0c0"];
+    for(let i=0;i<9;i++){ const w=0.26+rnd()*0.12, h=0.30+rnd()*0.12, x=-W/2+0.25+(i%5)*(W-0.5)/4+(rnd()-0.5)*0.06, y=py+(i<5?0.25:-0.28)+(rnd()-0.5)*0.06;
+      const p=lpBox(r,w,h,0.004,cols[i%cols.length],x,y,0.062); p.rotation.z=(rnd()-0.5)*0.12;
+      for(let l=0;l<3;l++) lpBox(r,w*0.7,0.012,0.002,"#8a8f96",x,y+h*0.2-l*0.06,0.065);
+      lpCyl(r,0.025,0.01,["#c0392b","#2f5a9e","#3e7a3a"][i%3],x,y+h/2-0.03,0.068,Math.PI/2); }
+    const sg=LEXPROPS.poster(id+"t",{w:1.2,h:0.26,py:py+H/2+0.22,bg:"#2c3a4a",ink:"#f2e8d2",l1:"NOTICES",l2:"",fig:"none"});
+    sg.parent=r; sg.position.z=0.03;
+    return r; },
+  /* distributore d'acqua con bicchieri */
+  waterCooler(id){ const r=new BABYLON.TransformNode(id,scene);
+    lpBox(r,0.34,0.95,0.34,"#eef1f3",0,0.475,0); lpBox(r,0.30,0.08,0.02,"#c9ced3",0,0.72,0.175);
+    lpBox(r,0.04,0.04,0.04,"#2f6fd6",-0.07,0.80,0.18); lpBox(r,0.04,0.04,0.04,"#c0392b",0.07,0.80,0.18);
+    const bt=lpCyl(r,0.28,0.42,"#8fc3e8",0,1.16,0); bt.visibility=0.6; lpCyl(r,0.10,0.06,"#6fa3c4",0,1.40,0);
+    lpCyl(r,0.07,0.30,"#f6f6f3",0.22,0.60,0.05);
+    return r; },
+  /* orologio da muro (fronte +z) */
+  wallClock(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene), d=o.d||0.56, py=o.py||2.35;
+    lpCyl(r,d+0.06,0.05,"#5a3f28",0,py,0.025,Math.PI/2);
+    /* quadrante su un PIANO (come i poster: rotation.y=PI -> guarda +z) con
+       texture a canale alfa: fuori dal cerchio e' trasparente */
+    const N=256, dt=new BABYLON.DynamicTexture("wct"+(_lpN++),{width:N,height:N},scene,true), c=dt.getContext(), m=N/2;
+    c.clearRect(0,0,N,N); c.fillStyle="#f6f1e2"; c.beginPath(); c.arc(m,m,m*0.98,0,Math.PI*2); c.fill();
+    c.strokeStyle="#2b2318"; c.lineCap="round";
+    for(let i=0;i<60;i++){ const a=i*Math.PI/30, big=i%5===0; c.lineWidth=big?7:2;
+      c.beginPath(); c.moveTo(m+Math.cos(a)*m*(big?0.74:0.84),m+Math.sin(a)*m*(big?0.74:0.84)); c.lineTo(m+Math.cos(a)*m*0.92,m+Math.sin(a)*m*0.92); c.stroke(); }
+    c.lineWidth=12; c.beginPath(); c.moveTo(m,m); c.lineTo(m+m*0.42*Math.cos(-Math.PI/2-Math.PI/3),m+m*0.42*Math.sin(-Math.PI/2-Math.PI/3)); c.stroke();   // ore: le 10
+    c.lineWidth=8;  c.beginPath(); c.moveTo(m,m); c.lineTo(m+m*0.66*Math.cos(-Math.PI/2+Math.PI/3),m+m*0.66*Math.sin(-Math.PI/2+Math.PI/3)); c.stroke();        // minuti: :10
+    c.fillStyle="#c0392b"; c.beginPath(); c.arc(m,m,10,0,Math.PI*2); c.fill();
+    dt.hasAlpha=true; dt.update();
+    const fm=new BABYLON.StandardMaterial("wcm"+(_lpN++),scene); fm.diffuseTexture=dt; fm.useAlphaFromDiffuseTexture=true;
+    fm.emissiveColor=new BABYLON.Color3(0.35,0.35,0.33); fm.specularColor=new BABYLON.Color3(0,0,0);
+    const fp=BABYLON.MeshBuilder.CreatePlane("wcp"+(_lpN++),{width:d,height:d},scene);
+    fp.material=fm; fp.parent=r; fp.position.set(0,py,0.058); fp.rotation.y=Math.PI; fp.isPickable=false;
+    return r; },
+  /* espositore di dépliant a terra (fronte +z) */
+  leafletRack(id){ const r=new BABYLON.TransformNode(id,scene);
+    lpBox(r,0.50,1.25,0.06,"#3a3f45",0,0.625,-0.10); lpBox(r,0.50,0.03,0.32,"#3a3f45",0,0.015,0);
+    [0.35,0.65,0.95].forEach((y,i)=>{ const pk=lpBox(r,0.46,0.14,0.02,"#cfeefa",0,y,0.0); pk.visibility=0.5;
+      ["#c0392b","#2f6a4a","#d8a72e"].forEach((hx,k)=>{ const lf=lpBox(r,0.13,0.20,0.01,[hx,"#2f5a9e","#f2efe6"][(k+i)%3],-0.15+k*0.15,y+0.06,-0.03); lf.rotation.x=-0.15; }); });
+    return r; },
+  /* passatoia rossa con bordo dorato (a terra, NON solida) */
+  runner(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene), L=o.L||8, W=o.w||1.5;
+    lpBox(r,W,0.012,L,"#c9a35a",0,0.028,0); lpBox(r,W-0.12,0.012,L-0.12,"#9a2a2a",0,0.032,0);   // il pavimento sta a y 0.02
+    return r; },
   priceBoard(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene);
     const w=o.w||2.3, h=o.h||1.5, py=(o.py!=null?o.py:1.32), rows=o.rows||[];
     const fh=0.06, fc=o.frame||"#5d4226";
