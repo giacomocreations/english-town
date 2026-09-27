@@ -1253,6 +1253,8 @@ const UNIT4={ id:"u4", area:"shop", areaName:"Corner Shop",
    trolley per il listening, pad di scrittura generico. Meccaniche
    nuove: marketKeeper (variante present simple dello shopKeeper) e
    talkHabits (abitudini con Oscar). ===================================== */
+/* v258 — isole del Market: z del centro di AISLE 1 / AISLE 2, centro x e lunghezza */
+const MKT_AISLES=[-5.4, 0.5], MKT_AISLE_X=1.0, MKT_AISLE_W=11.0;
 const UNIT6={ id:"u6", area:"market", areaName:"The Market",
   title:"Unit 6 — Our food", size:9, tint:"#e3d9c4",
   enterToast:"Sei entrato al Market",
@@ -1265,19 +1267,20 @@ const UNIT6={ id:"u6", area:"market", areaName:"The Market",
        il banco frutta e verdura. */
     { prop:"checkout",     x:-2.8, z: 4.7 },
     { prop:"trolleyBay",   x: 2.9, z: 7.7, onBuilt:(n)=>{ MARKET.bay=n; } },
-    { prop:"produceStand", x:-5.6, z:-0.6, yaw:Math.PI/2 },
-    /* v258 — corsie VERE (Giacomo: «AISLE 1 e AISLE 2 troppo vicini»): isole
-       lunghe 5.2 m (prima 3.4) e 4.7 m fra i centri (prima 3.3) -> corridoio
-       centrale di ~3.8 m, e un altro fra l'isola 2 e il muro est. */
-    { prop:"gondola", x:0.3, z:-4.0, yaw:Math.PI/2, w:5.2, title:"AISLE 1", sub:"tins \u00b7 snacks", seed:5 },
-    { prop:"gondola", x:5.0, z:-4.0, yaw:Math.PI/2, w:5.2, title:"AISLE 2", sub:"pasta \u00b7 rice \u00b7 oil", seed:17, bg:"#2f6fd6" },
+    { prop:"produceStand", x:-6.9, z:-0.6, yaw:Math.PI/2 },          // v258: verso il muro, lascia libera la testata di AISLE 2
+    /* v258 — corsie VERE (Giacomo: «girandomi vedo AISLE 2 in primo piano»;
+       «larghe quasi come la stanza»): isole EST-OVEST lunghe 11 m (x -4.5..6.5),
+       5.9 m fra i centri -> corsia centrale di ~5 m; ~2 m dai muri e dal
+       banco frutta. Geometria in MKT_AISLES (serve anche alla merce). */
+    { prop:"gondola", x:MKT_AISLE_X, z:MKT_AISLES[0], w:MKT_AISLE_W, title:"AISLE 1", sub:"tins \u00b7 snacks", seed:5 },
+    { prop:"gondola", x:MKT_AISLE_X, z:MKT_AISLES[1], w:MKT_AISLE_W, title:"AISLE 2", sub:"pasta \u00b7 rice \u00b7 oil", seed:17, bg:"#2f6fd6" },
     { prop:"wallBand", x:0, z:0, s:9, solid:false },
     { prop:"shelfUnit", w:3.4, x:-3.2, z:-8.55 },
     { prop:"shelfUnit", w:3.4, x: 1.2, z:-8.55 },
     { prop:"drinksFridge", x: 5.8, z:-8.48,                            // v256: frigo bianco con vetrina (prima GLB nero)
       goods:[null,{en:"milkshake",kind:"bottle",hex:"#f2a5b5"},{en:"fruit juice",kind:"bottle",hex:"#f08a24"},null] },   // v257
     { prop:"shelfUnit", w:2.6, x: 8.55, z:-1.7, yaw:-Math.PI/2 },
-    { prop:"trolley",   x: 2.7, z:-0.5, yaw:0.5, onBuilt:(n)=>{ MARKET.oscarCart=n; } },   // carrello di Oscar (listening)
+    { prop:"trolley",   x: 2.8, z:-2.2, yaw:0.5, onBuilt:(n)=>{ MARKET.oscarCart=n; } },   // carrello di Oscar (listening)
     /* ARREDO (non lessicale) — v258: via pianta e scatole davanti al 2° frigo */
     { prop:"plant",  x:-8.0, z: 6.6 },
     { prop:"crates", x: 7.9, z:-7.9, yaw:0.3 },          // v256: spostate nell'angolo, liberano la corsia 2
@@ -1304,19 +1307,6 @@ const UNIT6={ id:"u6", area:"market", areaName:"The Market",
     { prop:"stockRow", style:"boxes", w:2.7, x: 1.2, y:1.47, z:-8.52, seed:21, solid:false },
     { prop:"stockRow", style:"boxes", w:0.7, x:-1.95,y:0.15, z:-8.52, seed:15, solid:false },   // v225: prima sporgeva nel fianco dello scaffale
     { prop:"stockRow", style:"boxes", w:1.4, x: 2.1, y:0.15, z:-8.52, seed:27, solid:false },
-    /* v258 — ripiano CENTRALE delle isole: merce riempitiva nei tratti fra i
-       prodotti in vendita (MARKET_GOODS_SHELF), cosi' le corsie lunghe non
-       restano vuote a meta' altezza */
-    { prop:"stockRow", style:"cans",  w:0.40, x:0.54, y:0.81, z:-6.30, yaw: Math.PI/2, seed:81, solid:false },
-    { prop:"stockRow", style:"boxes", w:1.60, x:0.54, y:0.81, z:-4.30, yaw: Math.PI/2, seed:83, solid:false },
-    { prop:"stockRow", style:"cans",  w:0.95, x:0.54, y:0.81, z:-2.02, yaw: Math.PI/2, seed:85, solid:false },
-    { prop:"stockRow", style:"cans",  w:1.70, x:0.06, y:0.81, z:-5.65, yaw:-Math.PI/2, seed:87, solid:false },
-    { prop:"stockRow", style:"boxes", w:1.20, x:0.06, y:0.81, z:-3.20, yaw:-Math.PI/2, seed:89, solid:false },
-    { prop:"stockRow", style:"cans",  w:1.70, x:5.24, y:0.81, z:-5.65, yaw: Math.PI/2, seed:91, solid:false },
-    { prop:"stockRow", style:"boxes", w:1.20, x:5.24, y:0.81, z:-3.20, yaw: Math.PI/2, seed:93, solid:false },
-    { prop:"stockRow", style:"cans",  w:0.40, x:4.76, y:0.81, z:-6.30, yaw:-Math.PI/2, seed:95, solid:false },
-    { prop:"stockRow", style:"boxes", w:1.60, x:4.76, y:0.81, z:-4.30, yaw:-Math.PI/2, seed:97, solid:false },
-    { prop:"stockRow", style:"cans",  w:0.95, x:4.76, y:0.81, z:-2.02, yaw:-Math.PI/2, seed:99, solid:false },
     { prop:"stockRow", style:"cans",  w:1.0, x: 8.52, y:0.15, z:-1.00, yaw:-Math.PI/2, seed:6,  solid:false },
     { prop:"stockRow", style:"boxes", w:1.0, x: 8.52, y:0.81, z:-1.05, yaw:-Math.PI/2, seed:19, solid:false },
     { prop:"stockRow", style:"cans",  w:2.2, x: 8.52, y:1.47, z:-1.70, yaw:-Math.PI/2, seed:33, solid:false },
@@ -1372,7 +1362,7 @@ const UNIT6={ id:"u6", area:"market", areaName:"The Market",
     intro:"<b>Oscar</b> cucina la cena per la famiglia, ma ha le mani occupate! <b>Ascolta la sua lista</b> (🔊) e metti i cibi nel <b>carrello</b> — toccali!",
     introObjEn:"Listen and fill the basket (4 foods).", introObj:"Ascolta e riempi il carrello (4 cibi)." },
   { id:"write", strand:"writing",    type:"writeMessage",
-    pad:{x:-4.2,z:1.6,title:"🥗 Food diary",sub:"Writing — my food habits",
+    pad:{x:-5.6,z:2.7,title:"🥗 Food diary",sub:"Writing — my food habits",
       italian:"Scrivi almeno 3 frasi sulle tue abitudini a tavola: usa una negazione (don't) e un'espressione di frequenza (once a week, twice a week, every day…).",
       placeholder:"I eat pasta three times a week. I don't drink coffee. I eat pizza once a week..."},
     req:{ minSent:3,
@@ -14043,18 +14033,37 @@ const MARKET={ till:null, dispTex:null, oscarCart:null, bay:null, dressed:false,
            "salt and pepper":150, "milkshake":140, "fruit juice":130, "beef":520, "salmon":480,
            "tomatoes":110, "oranges":150, "lettuce":85, "grapes":200, "onions":70, "mushrooms":130 },
   goods:[] };
-/* v257 — merce sul ripiano CENTRALE delle due isole (lato est/ovest di ognuna).
-   v258: isole piu' lunghe e distanti (x 0.3 / 5.0, z -6.6..-1.4): i prodotti
-   sono sfalsati lungo la corsia, fra loro la merce riempitiva di UNIT6 */
+/* v257 — merce sul ripiano CENTRALE delle due isole.
+   v258: isole est-ovest (MKT_AISLES): a = isola (0/1), sd = lato (+1 guarda
+   a sud, -1 a nord), x = centro della confezione. Ogni prodotto c'e' DUE
+   volte: la marca base (prezzo in MARKET.prices[en]) e una seconda MARCA
+   (brand + p = prezzo proprio), in punti diversi della corsia. Fra un
+   prodotto e l'altro, merce riempitiva (marketBuildGoods). */
 const MARKET_GOODS_SHELF=[
-  { en:"tuna",   prop:"goodTin",  hex:"#2f6fd6", x:0.54, z:-5.6, yaw: Math.PI/2 },
-  { en:"crisps", prop:"goodBag",  hex:"#d63a2f", hex2:"#f2c81e", x:0.54, z:-3.0, yaw: Math.PI/2 },
-  { en:"biscuits", prop:"goodPack", hex:"#8a5a33", hex2:"#e0b070", h:0.16, x:0.06, z:-4.3, yaw:-Math.PI/2 },
-  { en:"peas",   prop:"goodTin",  hex:"#3f9a45", x:0.06, z:-2.1, yaw:-Math.PI/2 },
-  { en:"oil",    prop:"goodBottle", hex:"#c9b43a", x:5.24, z:-4.3, yaw: Math.PI/2 },
-  { en:"salt and pepper", prop:"goodShakers", x:5.24, z:-2.1, yaw: Math.PI/2 },
-  { en:"pasta",  prop:"goodPack", hex:"#2f6fd6", hex2:"#f2c81e", x:4.76, z:-5.6, yaw:-Math.PI/2 },
-  { en:"rice",   prop:"goodPack", hex:"#f6f1e2", hex2:"#d63a2f", h:0.2, x:4.76, z:-3.0, yaw:-Math.PI/2 } ];
+  /* AISLE 1 — tins · snacks */
+  { en:"tuna",     prop:"goodTin",  hex:"#2f6fd6", a:0, sd:-1, x:-3.4 },
+  { en:"crisps",   prop:"goodBag",  hex:"#d63a2f", hex2:"#f2c81e", a:0, sd:-1, x:-0.6 },
+  { en:"peas",     brand:"Green Valley", p:105, prop:"goodTin", hex:"#8cc63f", a:0, sd:-1, x:2.2 },
+  { en:"biscuits", brand:"Royal", p:175, prop:"goodPack", hex:"#6a3d7a", hex2:"#f2c81e", h:0.16, a:0, sd:-1, x:5.0 },
+  { en:"peas",     prop:"goodTin",  hex:"#3f9a45", a:0, sd: 1, x:-2.2 },
+  { en:"biscuits", prop:"goodPack", hex:"#8a5a33", hex2:"#e0b070", h:0.16, a:0, sd: 1, x:0.6 },
+  { en:"tuna",     brand:"Sea King", p:165, prop:"goodTin", hex:"#d63a2f", a:0, sd: 1, x:3.4 },
+  { en:"crisps",   brand:"Crunchy", p:125, prop:"goodBag", hex:"#2f6fd6", hex2:"#ffffff", a:0, sd: 1, x:5.8 },
+  /* AISLE 2 — pasta · rice · oil */
+  { en:"pasta",    prop:"goodPack", hex:"#2f6fd6", hex2:"#f2c81e", a:1, sd:-1, x:-3.4 },
+  { en:"oil",      prop:"goodBottle", hex:"#c9b43a", a:1, sd:-1, x:-0.6 },
+  { en:"rice",     brand:"Golden", p:185, prop:"goodPack", hex:"#f2c81e", hex2:"#8a5a33", h:0.2, a:1, sd:-1, x:2.2 },
+  { en:"salt and pepper", brand:"Chef", p:210, prop:"goodShakers", a:1, sd:-1, x:5.0 },
+  { en:"rice",     prop:"goodPack", hex:"#f6f1e2", hex2:"#d63a2f", h:0.2, a:1, sd: 1, x:-2.2 },
+  { en:"salt and pepper", prop:"goodShakers", a:1, sd: 1, x:0.6 },
+  { en:"pasta",    brand:"Nonna Rosa", p:160, prop:"goodPack", hex:"#3f9a45", hex2:"#d63a2f", a:1, sd: 1, x:3.4 },
+  { en:"oil",      brand:"Olivia", p:520, prop:"goodBottle", hex:"#6f8a2a", a:1, sd: 1, x:5.8 } ];
+MARKET_GOODS_SHELF.forEach(g=>{ g.z=MKT_AISLES[g.a]+g.sd*0.24; g.yaw=g.sd>0?0:Math.PI;
+  g.key=g.brand?g.en+"|"+g.brand:g.en; if(g.brand) MARKET.prices[g.key]=g.p; });
+/* chiave del prezzo e nome mostrato: «tuna» / «Sea King tuna» */
+function mktKey(e){ return e.key||e.en; }
+function mktName(e){ return e.brand?e.brand+" "+e.en:e.en; }
+function mktPrice(e){ return MARKET.prices[mktKey(e)]; }
 /* plurali: «there are no more grapes» / «there's no more milk» */
 const MARKET_PLURAL={ tomatoes:1, oranges:1, grapes:1, onions:1, mushrooms:1, peas:1, crisps:1, biscuits:1, apples:1, bananas:1, eggs:1 };
 const SHOP={ cart:null, items:[], paying:false, inters:[] };
@@ -14157,8 +14166,8 @@ function marketDress(){
    frighi (le bottiglie/vaschette di una fila), 6 al banco frutta (3
    mucchietti per cassetta). Stessa forma degli UNIT6.items per la spesa
    (en, pos, __facings), ma FUORI da UNIT6.items: la quest non li vede. */
-function marketPriceTag(I,en,x,y,z,rotY){
-  const pr=MARKET.prices[en]; if(pr==null) return;
+function marketPriceTag(I,en,x,y,z,rotY,label){
+  const pr=MARKET.prices[en]; if(pr==null) return; en=label||en;
   const tag=BABYLON.MeshBuilder.CreatePlane("tag_"+en,{width:0.30,height:0.10},scene);
   const dt=new BABYLON.DynamicTexture("tagT_"+en,{width:192,height:64},scene,true), c=dt.getContext();
   c.fillStyle="#fff6c8"; c.fillRect(0,0,192,64); c.fillStyle="#d63a2f"; c.fillRect(0,0,192,8);
@@ -14172,15 +14181,31 @@ function marketPriceTag(I,en,x,y,z,rotY){
 function marketBuildGoods(I){
   const C=I.center, byEn={};
   const add=(en,node)=>{ (byEn[en]=byEn[en]||[]).push(node); };
+  const shelf=[];
   MARKET_GOODS_SHELF.forEach(g=>{
-    const fx=Math.sin(g.yaw), fz=Math.cos(g.yaw), ax=Math.cos(g.yaw), az=-Math.sin(g.yaw);
+    const fx=Math.sin(g.yaw), fz=Math.cos(g.yaw), ax=Math.cos(g.yaw), az=-Math.sin(g.yaw), f=[];
     let w=0.2;
-    for(let k=0;k<3;k++){ const n=LEXPROPS[g.prop]("good_"+g.en+"_"+k,g); n.parent=I.root; n.rotation.y=g.yaw;
+    for(let k=0;k<3;k++){ const n=LEXPROPS[g.prop]("good_"+g.key+"_"+k,g); n.parent=I.root; n.rotation.y=g.yaw;
       if(k===0){ n.position.set(0,0,0); n.computeWorldMatrix(true); n.getChildMeshes().forEach(m=>m.computeWorldMatrix(true));
         const b=n.getHierarchyBoundingVectors(true); w=Math.abs(ax)*(b.max.x-b.min.x)+Math.abs(az)*(b.max.z-b.min.z); }
-      const d=(k-1)*(w+0.06); n.position.set(C.x+g.x+ax*d, 0.81, C.z+g.z+az*d); add(g.en,n); }
-    marketPriceTag(I,g.en, C.x+g.x+fx*0.19, 0.78, C.z+g.z+fz*0.19, g.yaw+Math.PI);
+      const d=(k-1)*(w+0.06); n.position.set(C.x+g.x+ax*d, 0.81, C.z+g.z+az*d); f.push(n); }
+    shelf.push({ en:g.en, key:g.key, brand:g.brand, f });
+    marketPriceTag(I,g.key, C.x+g.x+fx*0.19, 0.78, C.z+g.z+fz*0.19, g.yaw+Math.PI, mktName(g));
   });
+  /* v258 — merce RIEMPITIVA sul ripiano centrale, nei tratti liberi fra i
+     prodotti (0.5 m di rispetto per lato; le file di scatole sforano al
+     massimo 0.1 m verso il loro +x locale) */
+  const x0=MKT_AISLE_X-MKT_AISLE_W/2+0.2, x1=MKT_AISLE_X+MKT_AISLE_W/2-0.2;
+  MKT_AISLES.forEach((az0,a)=>{ [1,-1].forEach(sd=>{
+    const xs=MARKET_GOODS_SHELF.filter(g=>g.a===a&&g.sd===sd).map(g=>g.x).sort((p,q)=>p-q);
+    let from=x0, n=0;
+    xs.concat([x1+0.5]).forEach(xp=>{ const to=Math.min(x1,xp-0.5), len=to-from;
+      if(len>=0.35){ const r=LEXPROPS.stockRow("mfill"+a+"_"+sd+"_"+n,{style:(n+a+(sd>0?0:1))%2?"cans":"boxes",w:len,seed:81+a*17+(sd>0?0:7)+n*5});
+        r.parent=I.root; r.rotation.y=sd>0?0:Math.PI; r.position.set(C.x+(from+to)/2, 0.81, C.z+az0+sd*0.24); n++; }
+      from=xp+0.5; }); }); });
+  shelf.forEach(e=>{ const f=e.f; let sx=0,sy=0,sz=0;
+    f.forEach(n=>{ n.computeWorldMatrix(true); const p=n.getAbsolutePosition(); sx+=p.x; sy+=p.y; sz+=p.z; });
+    MARKET.goods.push({ en:e.en, key:e.key, brand:e.brand, pos:new BABYLON.Vector3(sx/f.length, Math.max(0.9,sy/f.length), sz/f.length), __facings:f, good:true }); });
   /* frighi e banco frutta: le mesh marcate __good dai prop */
   I.root.getChildMeshes().forEach(m=>{ if(m.__good && !/^cart_|^face_/.test(m.name)) add(m.__good,m); });
   Object.keys(byEn).forEach(en=>{
@@ -14188,7 +14213,6 @@ function marketBuildGoods(I){
     f.forEach(n=>{ n.computeWorldMatrix(true); const p=n.getAbsolutePosition(); sx+=p.x; sy+=p.y; sz+=p.z; miny=Math.min(miny,p.y); });
     const pos=new BABYLON.Vector3(sx/f.length, Math.max(0.9,sy/f.length), sz/f.length);
     MARKET.goods.push({ en, pos, __facings:f, good:true });
-    if(MARKET_GOODS_SHELF.some(g=>g.en===en)) return;               // cartellino gia' messo
     /* frigo / banco: cartellino sul FRONTE del mobile (non davanti al gruppo:
        le cassette della fila dietro finirebbero col cartellino dentro il banco) */
     const par=f[0].parent; par.computeWorldMatrix(true); const pp=par.getAbsolutePosition();
@@ -14212,7 +14236,7 @@ function mktHud(){
       +"box-shadow:0 3px 10px rgba(0,0,0,.18);pointer-events:none;display:none";
     document.body.appendChild(el); }
   if(!SHOP.cart || !marketActive()){ el.style.display="none"; return; }
-  const tot=SHOP.items.reduce((a,e)=>a+(MARKET.prices[e.en]||0),0);
+  const tot=SHOP.items.reduce((a,e)=>a+(mktPrice(e)||0),0);
   el.style.display="block";
   el.innerHTML="\u{1F6D2} "+SHOP.items.length+(SHOP.items.length===1?" item":" items")+" \u00b7 <b>"+gbp(tot)+"</b>"
     +(SHOP.items.length?" \u00b7 <span style='color:#3f8a4f'>go to the checkout</span>":" \u00b7 <span style='color:#6b5d4a'>take the food you want</span>");
@@ -14232,10 +14256,10 @@ function shopAdd(e){
   if(!SHOP.cart || SHOP.paying) return;
   if(SHOP.items.length>=20){ toast("\u{1F6D2} Your trolley is full! Go to the checkout."); return; }
   const f=e.__facings||[e.mesh], vis=f.filter(m=>m&&m.isEnabled());
-  if(!vis.length){ toast("\u{1F937} Sorry, there "+(MARKET_PLURAL[e.en]?"are":"'s")+" no more "+e.en+" today!"); return; }
+  if(!vis.length){ toast("\u{1F937} Sorry, there "+(MARKET_PLURAL[e.en]?"are":"'s")+" no more "+mktName(e)+" today!"); return; }
   const src=vis[vis.length-1]; cartAdd(SHOP.cart,{en:e.en,mesh:src}); src.setEnabled(false);
   SHOP.items.push(e);
-  toast("\u2713 "+e.en+" \u2014 "+gbp(MARKET.prices[e.en]||0)); mktHud(); shopTick(true);
+  toast("\u2713 "+mktName(e)+" \u2014 "+gbp(mktPrice(e)||0)); mktHud(); shopTick(true);
 }
 /* --- interazioni: registrate una volta, accese/spente da shopTick --- */
 function shopInit(){
@@ -14243,10 +14267,10 @@ function shopInit(){
   SHOP.inters.push(addInteract({ id:"shop_bay", area:UNIT6.area, radius:2.0, enabled:false,
     pos:()=>new BABYLON.Vector3(C.x+2.9,1.0,C.z+6.3), meshes:MARKET.bay?[MARKET.bay]:[],
     prompt:'Press <b>E</b> to take a <b>trolley</b>', interact:shopTakeCart }));
-  (UNIT6.items||[]).concat(MARKET.goods).forEach(e=>{ if(MARKET.prices[e.en]==null) return;
-    SHOP.inters.push(addInteract({ id:"shop_"+e.en, area:UNIT6.area, radius:2.4, enabled:false, __shopItem:true,
+  (UNIT6.items||[]).concat(MARKET.goods).forEach(e=>{ if(mktPrice(e)==null) return;
+    SHOP.inters.push(addInteract({ id:"shop_"+mktKey(e), area:UNIT6.area, radius:2.4, enabled:false, __shopItem:true,
       pos:()=>e.pos, meshes:(e.__facings||[e.mesh]).filter(Boolean),
-      prompt:'Press <b>E</b> to put the <b>'+e.en+'</b> in the trolley \u00b7 '+gbp(MARKET.prices[e.en]), interact:()=>shopAdd(e) })); });
+      prompt:'Press <b>E</b> to put the <b>'+mktName(e)+'</b> in the trolley \u00b7 '+gbp(mktPrice(e)), interact:()=>shopAdd(e) })); });
   SHOP.inters.push(addInteract({ id:"shop_till", area:UNIT6.area, radius:1.9, enabled:false,
     pos:()=>new BABYLON.Vector3(C.x-1.85,1.0,C.z+4.6), meshes:MARKET.till?[MARKET.till]:[],
     prompt:'Press <b>E</b> to <b>pay</b> at the checkout', interact:shopCheckout }));
@@ -14292,7 +14316,7 @@ function mktTyped(o){
 function shopCheckout(){
   if(!SHOP.cart || !SHOP.items.length || SHOP.paying) return;
   SHOP.paying=true; shopTick(true);
-  const npc=(typeof ANNA!=="undefined")?ANNA:null, tot=SHOP.items.reduce((a,e)=>a+(MARKET.prices[e.en]||0),0);
+  const npc=(typeof ANNA!=="undefined")?ANNA:null, tot=SHOP.items.reduce((a,e)=>a+(mktPrice(e)||0),0);
   const typed=yrEnglish();                               // anni 2-3: si scrive
   const voice=(npc&&npc.gender)?{gender:npc.gender}:{};
   let errors=0;
@@ -14345,9 +14369,9 @@ function shopCheckout(){
       text:"Thank you! Here's your receipt. Have a nice day!", italian:"Saluta Anna.",
       choices:[{label:"\u{1F44B} Thanks, bye!",act:finish},{label:"\u{1F60A} You too, bye!",act:finish}] }); }
   function finish(){
-    const lines={}; SHOP.items.forEach(e=>{ lines[e.en]=(lines[e.en]||0)+1; });
+    const lines={}, names={}; SHOP.items.forEach(e=>{ const k=mktKey(e); lines[k]=(lines[k]||0)+1; names[k]=mktName(e); });
     let rows=""; Object.keys(lines).forEach(k=>{ const q=lines[k], p=MARKET.prices[k]||0;
-      rows+="<tr><td style='text-align:left'>"+(q>1?q+" x ":"")+k+"</td><td style='text-align:right'>"+gbp(p*q)+"</td></tr>"; });
+      rows+="<tr><td style='text-align:left'>"+(q>1?q+" x ":"")+names[k]+"</td><td style='text-align:right'>"+gbp(p*q)+"</td></tr>"; });
     if(SHOP.bag) rows+="<tr><td style='text-align:left'>bag</td><td style='text-align:right'>"+gbp(0)+"</td></tr>";
     const html="<div style='font:14px/1.5 ui-monospace,monospace;background:#fffef8;border:1px dashed #b9b2a0;padding:10px 14px;max-width:320px;margin:0 auto'>"
       +"<div style='text-align:center;font-weight:700'>THE MARKET</div><div style='text-align:center;font-size:12px'>fresh every day</div><hr>"
@@ -14655,9 +14679,10 @@ const LEXPROPS={
     [0.15,1.47].forEach((y,i)=>{ [1,-1].forEach(sd=>{
       const s=LEXPROPS.stockRow(id+"s"+i+sd,{style:(i+(sd>0?0:1))%2?"cans":"boxes",w:w-0.3,seed:(o.seed||11)+i*7+(sd>0?0:3)});
       s.parent=r; s.position.set(0,y,sd*0.24); if(sd<0) s.rotation.y=Math.PI; }); });
-    if(o.title){ const p=LEXPROPS.poster(id+"t",{w:w*0.8,h:0.38,py:2.45,bg:o.bg||"#3f8a4f",ink:"#ffffff",l1:o.title,l2:o.sub||"",fig:"none",twoSided:true});
+    /* v258: cartello al massimo 3.2 m (le isole del Market ora sono lunghe 11 m) */
+    if(o.title){ const sw=Math.min(w*0.8,3.2), p=LEXPROPS.poster(id+"t",{w:sw,h:0.38,py:2.45,bg:o.bg||"#3f8a4f",ink:"#ffffff",l1:o.title,l2:o.sub||"",fig:"none",twoSided:true});
       p.parent=r; p.rotation.y=Math.PI;
-      lpBox(r,0.03,0.24,0.03,"#9aa0a6",-w*0.3,2.24,0); lpBox(r,0.03,0.24,0.03,"#9aa0a6",w*0.3,2.24,0); }
+      lpBox(r,0.03,0.24,0.03,"#9aa0a6",-sw*0.375,2.24,0); lpBox(r,0.03,0.24,0.03,"#9aa0a6",sw*0.375,2.24,0); }
     return r; },
   /* frigo bevande con vetrina illuminata (sostituisce il GLB nero) */
   drinksFridge(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene), W=0.9, H=1.95, D=0.7;
@@ -16226,8 +16251,8 @@ function buildMarketNPCs(){
   ANNA=spawnNPC({ id:"anna", name:"Anna", sub:"Shop assistant", area:UNIT6.area,       // v256: alla CASSA
     x:C.x-3.6, z:C.z+4.9, face:Math.PI/2, model:"avatarW", height:1.70, interact:talkToAnna });
   OSCAR=spawnNPC({ id:"oscar", name:"Oscar", sub:"Customer", area:UNIT6.area,
-    x:C.x+1.5, z:C.z-1.5, face:Math.PI, tint:"green", height:1.80, interact:talkToOscar });
-  guiLabel(anchorMesh(I.root, C.x+2.7, 1.45, C.z-0.5), "🛒 Trolley", null, true, UNIT6.area);
+    x:C.x+1.6, z:C.z-2.6, face:Math.PI, tint:"green", height:1.80, interact:talkToOscar });
+  guiLabel(anchorMesh(I.root, C.x+2.8, 1.45, C.z-2.2), "🛒 Trolley", null, true, UNIT6.area);
   initMarketAssist();
 }
 /* ---- Anna: saluto contestuale + dispatch ---- */
