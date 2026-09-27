@@ -1266,8 +1266,11 @@ const UNIT6={ id:"u6", area:"market", areaName:"The Market",
     { prop:"checkout",     x:-2.8, z: 4.7 },
     { prop:"trolleyBay",   x: 2.9, z: 7.7, onBuilt:(n)=>{ MARKET.bay=n; } },
     { prop:"produceStand", x:-5.6, z:-0.6, yaw:Math.PI/2 },
-    { prop:"gondola", x:1.3, z:-4.5, yaw:Math.PI/2, w:3.4, title:"AISLE 1", sub:"tins \u00b7 snacks", seed:5 },
-    { prop:"gondola", x:4.6, z:-4.5, yaw:Math.PI/2, w:3.4, title:"AISLE 2", sub:"pasta \u00b7 rice \u00b7 oil", seed:17, bg:"#2f6fd6" },
+    /* v258 — corsie VERE (Giacomo: «AISLE 1 e AISLE 2 troppo vicini»): isole
+       lunghe 5.2 m (prima 3.4) e 4.7 m fra i centri (prima 3.3) -> corridoio
+       centrale di ~3.8 m, e un altro fra l'isola 2 e il muro est. */
+    { prop:"gondola", x:0.3, z:-4.0, yaw:Math.PI/2, w:5.2, title:"AISLE 1", sub:"tins \u00b7 snacks", seed:5 },
+    { prop:"gondola", x:5.0, z:-4.0, yaw:Math.PI/2, w:5.2, title:"AISLE 2", sub:"pasta \u00b7 rice \u00b7 oil", seed:17, bg:"#2f6fd6" },
     { prop:"wallBand", x:0, z:0, s:9, solid:false },
     { prop:"shelfUnit", w:3.4, x:-3.2, z:-8.55 },
     { prop:"shelfUnit", w:3.4, x: 1.2, z:-8.55 },
@@ -1275,16 +1278,14 @@ const UNIT6={ id:"u6", area:"market", areaName:"The Market",
       goods:[null,{en:"milkshake",kind:"bottle",hex:"#f2a5b5"},{en:"fruit juice",kind:"bottle",hex:"#f08a24"},null] },   // v257
     { prop:"shelfUnit", w:2.6, x: 8.55, z:-1.7, yaw:-Math.PI/2 },
     { prop:"trolley",   x: 2.7, z:-0.5, yaw:0.5, onBuilt:(n)=>{ MARKET.oscarCart=n; } },   // carrello di Oscar (listening)
-    /* ARREDO (non lessicale) */
-    { prop:"plant",  x: 7.7, z: 7.0 },
+    /* ARREDO (non lessicale) — v258: via pianta e scatole davanti al 2° frigo */
     { prop:"plant",  x:-8.0, z: 6.6 },
     { prop:"crates", x: 7.9, z:-7.9, yaw:0.3 },          // v256: spostate nell'angolo, liberano la corsia 2
     /* RIEMPIMENTO (FASE 3h-bis): pareti piene, centro libero per le corsie */
     { prop:"drinksFridge", x: 8.45, z: 6.4, yaw:-Math.PI/2,            // v256: 2° frigo, muro est
       goods:[{en:"beef",kind:"tray",hex:"#b8433a"},{en:"salmon",kind:"tray",hex:"#f08a6a"},null,null] },   // v257: carne e pesce in basso
     { prop:"crates",    x:-7.75, z:-3.40, yaw: 0.2 },                   // retrobottega di Anna
-    { prop:"crates",    x: 7.30, z:-4.25, yaw:-0.4 },                   // scorte angolo NE
-    { prop:"crates",    x: 7.50, z: 6.10, yaw: 0.7 },                   // scorte angolo SE
+    { prop:"crates",    x: 8.05, z:-4.25, yaw:-0.4 },                   // scorte a muro est (v258: fuori dalla corsia)
     /* muro ovest (lato commessa): scaffali pieni dietro Anna; le insegne stanno SOPRA */
     { prop:"shelfUnit", w:3.6, x:-8.55, z:-0.4, yaw: Math.PI/2 },
     { prop:"shelfUnit", w:2.6, x:-8.55, z:-5.6, yaw: Math.PI/2 },
@@ -1303,6 +1304,19 @@ const UNIT6={ id:"u6", area:"market", areaName:"The Market",
     { prop:"stockRow", style:"boxes", w:2.7, x: 1.2, y:1.47, z:-8.52, seed:21, solid:false },
     { prop:"stockRow", style:"boxes", w:0.7, x:-1.95,y:0.15, z:-8.52, seed:15, solid:false },   // v225: prima sporgeva nel fianco dello scaffale
     { prop:"stockRow", style:"boxes", w:1.4, x: 2.1, y:0.15, z:-8.52, seed:27, solid:false },
+    /* v258 — ripiano CENTRALE delle isole: merce riempitiva nei tratti fra i
+       prodotti in vendita (MARKET_GOODS_SHELF), cosi' le corsie lunghe non
+       restano vuote a meta' altezza */
+    { prop:"stockRow", style:"cans",  w:0.40, x:0.54, y:0.81, z:-6.30, yaw: Math.PI/2, seed:81, solid:false },
+    { prop:"stockRow", style:"boxes", w:1.60, x:0.54, y:0.81, z:-4.30, yaw: Math.PI/2, seed:83, solid:false },
+    { prop:"stockRow", style:"cans",  w:0.95, x:0.54, y:0.81, z:-2.02, yaw: Math.PI/2, seed:85, solid:false },
+    { prop:"stockRow", style:"cans",  w:1.70, x:0.06, y:0.81, z:-5.65, yaw:-Math.PI/2, seed:87, solid:false },
+    { prop:"stockRow", style:"boxes", w:1.20, x:0.06, y:0.81, z:-3.20, yaw:-Math.PI/2, seed:89, solid:false },
+    { prop:"stockRow", style:"cans",  w:1.70, x:5.24, y:0.81, z:-5.65, yaw: Math.PI/2, seed:91, solid:false },
+    { prop:"stockRow", style:"boxes", w:1.20, x:5.24, y:0.81, z:-3.20, yaw: Math.PI/2, seed:93, solid:false },
+    { prop:"stockRow", style:"cans",  w:0.40, x:4.76, y:0.81, z:-6.30, yaw:-Math.PI/2, seed:95, solid:false },
+    { prop:"stockRow", style:"boxes", w:1.60, x:4.76, y:0.81, z:-4.30, yaw:-Math.PI/2, seed:97, solid:false },
+    { prop:"stockRow", style:"cans",  w:0.95, x:4.76, y:0.81, z:-2.02, yaw:-Math.PI/2, seed:99, solid:false },
     { prop:"stockRow", style:"cans",  w:1.0, x: 8.52, y:0.15, z:-1.00, yaw:-Math.PI/2, seed:6,  solid:false },
     { prop:"stockRow", style:"boxes", w:1.0, x: 8.52, y:0.81, z:-1.05, yaw:-Math.PI/2, seed:19, solid:false },
     { prop:"stockRow", style:"cans",  w:2.2, x: 8.52, y:1.47, z:-1.70, yaw:-Math.PI/2, seed:33, solid:false },
@@ -14029,16 +14043,18 @@ const MARKET={ till:null, dispTex:null, oscarCart:null, bay:null, dressed:false,
            "salt and pepper":150, "milkshake":140, "fruit juice":130, "beef":520, "salmon":480,
            "tomatoes":110, "oranges":150, "lettuce":85, "grapes":200, "onions":70, "mushrooms":130 },
   goods:[] };
-/* v257 — merce sul ripiano CENTRALE delle due isole (lato est/ovest di ognuna) */
+/* v257 — merce sul ripiano CENTRALE delle due isole (lato est/ovest di ognuna).
+   v258: isole piu' lunghe e distanti (x 0.3 / 5.0, z -6.6..-1.4): i prodotti
+   sono sfalsati lungo la corsia, fra loro la merce riempitiva di UNIT6 */
 const MARKET_GOODS_SHELF=[
-  { en:"tuna",   prop:"goodTin",  hex:"#2f6fd6", x:1.54, z:-5.4, yaw: Math.PI/2 },
-  { en:"peas",   prop:"goodTin",  hex:"#3f9a45", x:1.54, z:-3.6, yaw: Math.PI/2 },
-  { en:"crisps", prop:"goodBag",  hex:"#d63a2f", hex2:"#f2c81e", x:1.06, z:-5.4, yaw:-Math.PI/2 },
-  { en:"biscuits", prop:"goodPack", hex:"#8a5a33", hex2:"#e0b070", h:0.16, x:1.06, z:-3.6, yaw:-Math.PI/2 },
-  { en:"pasta",  prop:"goodPack", hex:"#2f6fd6", hex2:"#f2c81e", x:4.84, z:-5.4, yaw: Math.PI/2 },
-  { en:"rice",   prop:"goodPack", hex:"#f6f1e2", hex2:"#d63a2f", h:0.2, x:4.84, z:-3.6, yaw: Math.PI/2 },
-  { en:"oil",    prop:"goodBottle", hex:"#c9b43a", x:4.36, z:-5.4, yaw:-Math.PI/2 },
-  { en:"salt and pepper", prop:"goodShakers", x:4.36, z:-3.6, yaw:-Math.PI/2 } ];
+  { en:"tuna",   prop:"goodTin",  hex:"#2f6fd6", x:0.54, z:-5.6, yaw: Math.PI/2 },
+  { en:"crisps", prop:"goodBag",  hex:"#d63a2f", hex2:"#f2c81e", x:0.54, z:-3.0, yaw: Math.PI/2 },
+  { en:"biscuits", prop:"goodPack", hex:"#8a5a33", hex2:"#e0b070", h:0.16, x:0.06, z:-4.3, yaw:-Math.PI/2 },
+  { en:"peas",   prop:"goodTin",  hex:"#3f9a45", x:0.06, z:-2.1, yaw:-Math.PI/2 },
+  { en:"oil",    prop:"goodBottle", hex:"#c9b43a", x:5.24, z:-4.3, yaw: Math.PI/2 },
+  { en:"salt and pepper", prop:"goodShakers", x:5.24, z:-2.1, yaw: Math.PI/2 },
+  { en:"pasta",  prop:"goodPack", hex:"#2f6fd6", hex2:"#f2c81e", x:4.76, z:-5.6, yaw:-Math.PI/2 },
+  { en:"rice",   prop:"goodPack", hex:"#f6f1e2", hex2:"#d63a2f", h:0.2, x:4.76, z:-3.0, yaw:-Math.PI/2 } ];
 /* plurali: «there are no more grapes» / «there's no more milk» */
 const MARKET_PLURAL={ tomatoes:1, oranges:1, grapes:1, onions:1, mushrooms:1, peas:1, crisps:1, biscuits:1, apples:1, bananas:1, eggs:1 };
 const SHOP={ cart:null, items:[], paying:false, inters:[] };
