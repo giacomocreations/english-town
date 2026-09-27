@@ -2055,6 +2055,7 @@ const MUSIC_PHOTO={
 const UNIT_MUSIC={ id:"u2_2", area:"beatclub", areaName:"The Beat Club",
   title:"Anno 2 · Unit 2 — Music", size:7.0, sizeX:5.5, tint:"#2f2438", wallH:4.2,
   wallTex:()=>clubBrickTex(), wallEm:"#1a1216",   // v261: mattoni da club al posto del muro crema
+  ceilHex:"#141118", ceilEm:"#07060a",            // v262: soffitto nero da club (prima: cielo blu)
   enterToast:"Sei entrato al Beat Club",
   onEnter:()=>{ setTimeout(buildBeatNPCs,0); setTimeout(gigOnEnter,60); },
   props:[
@@ -3758,6 +3759,7 @@ function applyQuality(q,ricorda){ if(QLEVELS.indexOf(q)<0) q="medio"; qLevel=q;
      buttato per un effetto invisibile. isEnabled=false lo ferma davvero
      (+21% di fotogrammi nella prova in aula). */
   glowL.isEnabled=(q==="alto"); glowL.intensity=0.65;
+  try{ if(CLUB_FX.in){ CLUB_FX.glow=glowL.isEnabled; glowL.isEnabled=false; } }catch(e){}   // v262: dentro il Beat Club il glow resta spento
   const lab=document.getElementById("qlab"); if(lab) lab.textContent=q.charAt(0).toUpperCase()+q.slice(1);
   /* ⚠️ SI RICORDA SOLO LA SCELTA ESPLICITA (pulsante ⚙︎). Prima veniva salvato
      anche il verdetto automatico, e siccome un valore salvato disattiva il
@@ -26561,6 +26563,35 @@ function gigBuildLights(){
    subito dopo, e a fine concerto si torna a 1. La penombra e' anche il
    motivo per cui le sagome funzionano: meno luce = si legge la silhouette. */
 const GIG_DIM={ on:false, sun:0.30, hemi:0.34, tint:new BABYLON.Color3(0.62,0.66,0.92) };
+/* v262 — POST-EFFETTI DENTRO IL BEAT CLUB (Giacomo: «la folla sembrano
+   fantasmi, anche il gruppo e' sfumato»). Riprodotto SOLO con la qualita'
+   «Alto»: li' sono accesi il glow layer, il bloom pieno e la profondita' di
+   campo (fStop 1.6). In una sala di 11 m piena di fasci luminosi:
+     · il GLOW prendeva l'emissivo dei muri, delle lenti e dei fasci e lo
+       spalmava sopra le sagome del pubblico (che sono escluse dal glow, quindi
+       non lo coprono) -> sagome velate, «fantasmi»;
+     · la PROFONDITA' DI CAMPO metteva a fuoco il giocatore e sfocava tutto il
+       resto, band compresa;
+     · il BLOOM sbiancava i fasci.
+   Dentro il club: glow spento (e riacceso uscendo, se la qualita' lo
+   prevede), profondita' di campo praticamente nulla, bloom piu' selettivo.
+   Nessuna ricompilazione della pipeline: si cambiano solo valori. */
+const CLUB_FX={ in:false, glow:false, fStop:1.6, bThr:0.82, bW:0.32, clear:null };
+function clubPostFx(){
+  const inside=(typeof area!=="undefined" && area===UNIT_MUSIC.area);
+  /* sfondo NERO sopra i muri (niente cielo blu): a ogni frame, perche' il
+     ridipinto del cielo di updateDayNight lo riscriverebbe */
+  if(inside){ if(!CLUB_FX.clear) CLUB_FX.clear=scene.clearColor.clone(); scene.clearColor.set(0.035,0.028,0.045,1); }
+  else if(CLUB_FX.clear){ scene.clearColor.copyFrom(CLUB_FX.clear); CLUB_FX.clear=null; }
+  if(inside===CLUB_FX.in) return;
+  CLUB_FX.in=inside;
+  if(inside){ CLUB_FX.glow=glowL.isEnabled; CLUB_FX.fStop=pipe.depthOfField.fStop;
+    CLUB_FX.bThr=pipe.bloomThreshold; CLUB_FX.bW=pipe.bloomWeight;
+    glowL.isEnabled=false; pipe.depthOfField.fStop=22; pipe.bloomThreshold=0.95; pipe.bloomWeight=0.15; }
+  else { glowL.isEnabled=CLUB_FX.glow && qLevel==="alto"; pipe.depthOfField.fStop=CLUB_FX.fStop;
+    pipe.bloomThreshold=CLUB_FX.bThr; pipe.bloomWeight=CLUB_FX.bW; }
+}
+scene.onBeforeRenderObservable.add(clubPostFx);   // osservatore proprio: gira anche con login/mappa aperti
 function gigDimApply(){
   if(!GIG_DIM.on || area!==UNIT_MUSIC.area) return;
   sun.intensity*=GIG_DIM.sun; hemi.intensity*=GIG_DIM.hemi;
@@ -31876,6 +31907,13 @@ function buildInterior(u){
      attraverso la faccia posteriore. */
   const WH=u.wallH||2.7, T=0.3, wallM=mat("giw_"+u.area,u.wallHex||"#efe6d3",u.wallEm||null); wallM.backFaceCulling=true;   // v256: colore per unit (default invariato)
   if(u.wallTex){ try{ wallM.diffuseTexture=u.wallTex(); wallM.diffuseColor=new BABYLON.Color3(1,1,1); }catch(e){} }   // v261: muro con texture (Beat Club: mattoni)
+  /* v262 — SOFFITTO (solo per le unit che lo chiedono: Beat Club). Prima
+     sopra i muri si vedeva il cielo blu. Piano con la faccia verso il BASSO e
+     backFaceCulling: da dentro si vede, con la camera sopra i muri (vista
+     dall'alto) sparisce da solo, come i muri. */
+  if(u.ceilHex){ const ce=BABYLON.MeshBuilder.CreatePlane("gicl",{width:SX*2,height:S*2},scene);
+    const cm=mat("gicl_"+u.area,u.ceilHex,u.ceilEm||null); cm.backFaceCulling=true; cm.specularColor=new BABYLON.Color3(0,0,0);
+    ce.material=cm; ce.rotation.x=-Math.PI/2; ce.position.set(C.x,WH,C.z); ce.parent=I.root; ce.isPickable=false; }
   function wallIn(w,x,z,ry){ const pl=BABYLON.MeshBuilder.CreatePlane("giwp",{width:w,height:WH},scene);
     pl.material=wallM; pl.position.set(C.x+x,WH/2,C.z+z); pl.rotation.y=ry;
     pl.parent=I.root; pl.isPickable=false; }
@@ -32006,7 +32044,7 @@ function enterArea(target){
   for(const k in INTERIORS) INTERIORS[k].root.setEnabled(k===target);   // FASE 2: interni generici
   if(cinemaLight) cinemaLight.setEnabled(target==="cinema");
   subwayLights.forEach(l=>l.setEnabled(target==="subway"));
-  if(skyDome) skyDome.setEnabled(target!=="subway");   // sottoterra: niente cielo
+  if(skyDome) skyDome.setEnabled(target!=="subway" && target!=="beatclub");   // sottoterra (e nel club, v262): niente cielo
   const areaNames={town:"Town",home:"Home",cinema:"ODEON Cinema",subway:"Underground 🚇"};
   document.getElementById("area-name").textContent=areaNames[target]
     ||(INTERIORS[target]&&(INTERIORS[target].def.areaName||INTERIORS[target].def.title))||target;
