@@ -2054,11 +2054,25 @@ const MUSIC_PHOTO={
 };
 const UNIT_MUSIC={ id:"u2_2", area:"beatclub", areaName:"The Beat Club",
   title:"Anno 2 · Unit 2 — Music", size:7.0, sizeX:5.5, tint:"#2f2438", wallH:4.2,
+  wallTex:()=>clubBrickTex(), wallEm:"#1a1216",   // v261: mattoni da club al posto del muro crema
   enterToast:"Sei entrato al Beat Club",
   onEnter:()=>{ setTimeout(buildBeatNPCs,0); setTimeout(gigOnEnter,60); },
   props:[
     /* ---- PALCO (nord) + impianto: pronto per il concerto delle 20:00 ---- */
     { box:{w:8.0,h:0.45,d:2.2,hex:"#3b2b46"}, x:0.0, z:-5.2 },
+    /* v261 — RESTYLING: palco rifinito, americana con i corpi luce, tende di
+       velluto ai lati del muro LED, pista da ballo sotto il pubblico, palla
+       da discoteca, neon, retro-bancone. Tutto NON solido tranne nulla:
+       nessun ingombro nuovo a terra (i percorsi di Rita/Mick/Dev restano). */
+    { prop:"clubStageDress", x:0.0, z:-5.2, solid:false },
+    { prop:"clubTruss", x:0.0, z:-4.25, solid:false },   // z = CLUB_TRUSS.z (const definita piu' avanti)
+    { prop:"velvetDrape", x:-4.62, z:-6.93, w:1.5, h:4.2, solid:false },
+    { prop:"velvetDrape", x: 4.62, z:-6.93, w:1.5, h:4.2, solid:false },
+    { prop:"danceFloor", x:0.0, z:-2.30, w:7.2, d:3.9, solid:false },
+    { prop:"discoBall", x:0.0, z:-0.9, py:3.60, solid:false },
+    { prop:"neonSign", x:-5.44, z: 2.30, yaw: Math.PI/2, w:1.3, h:0.46, py:2.78, text:"Bar", hex:"#ff4fa8", italic:true, solid:false },
+    { prop:"neonSign", x: 0.30, z: 6.95, yaw: Math.PI, w:2.0, h:0.58, py:2.74, text:"Live Music", hex:"#4fd9ff", italic:true, solid:false },
+    { prop:"backBar", x:-5.47, z: 2.20, yaw: Math.PI/2, w:2.2, solid:false },
     { prop:"mSpeaker", x:-3.55, z:-4.10 },
     { prop:"mSpeaker", x: 3.55, z:-4.10 },
     { prop:"mAmp",     x:-3.30, z:-5.90, y:0.45 },
@@ -2115,8 +2129,7 @@ const UNIT_MUSIC={ id:"u2_2", area:"beatclub", areaName:"The Beat Club",
     /* ---- DISCHI APPESI: solo dove il muro e' libero (verifica geometrica
        nel test headless: nessun disco sopra un cartello). ---- */
     { prop:"mWallDisc", x:-5.42, z:-1.40, yaw: Math.PI/2, py:1.90, hex:"#c8452f", lab:"#d9a63a", solid:false },
-    { prop:"mWallDisc", x:-5.42, z: 1.85, yaw: Math.PI/2, py:2.12, hex:"#3d5a80", lab:"#efe6d3", solid:false },
-    { prop:"mWallDisc", x:-5.42, z: 3.00, yaw: Math.PI/2, py:1.86, hex:"#4f7a3f", lab:"#f2c93e", solid:false },
+    /* v261: via i due dischi a z 1.85 / 3.00: ora li' c'e' il retro-bancone */
     { prop:"mWallDisc", x: 5.42, z:-2.55, yaw:-Math.PI/2, py:2.02, hex:"#f2c93e", lab:"#2b2318", solid:false },
     { prop:"mWallDisc", x: 5.42, z:-1.45, yaw:-Math.PI/2, py:1.84, hex:"#8a3a4a", lab:"#efe6d3", solid:false },
     { prop:"mWallDisc", x: 5.42, z: 4.40, yaw:-Math.PI/2, py:2.00, hex:"#c8452f", lab:"#efe6d3", solid:false },
@@ -10309,6 +10322,62 @@ function buildHome(){
 /* =====================================================================
    CINEMA (interno) — Anno 2 · Unit 4 "generi cinematografici / TV programmes"
    ===================================================================== */
+/* =====================================================================
+   v261 — ODEON: RESTYLING DELLA SALA (Giacomo, 27 set). Solo arredo e luce,
+   nessun solido nuovo in sala: palco, poltrone, corsie e punti della quest
+   restano dove sono.
+     · mantovana e tende di velluto ai lati dello schermo;
+     · striscia LED calda sul bordo del palco;
+     · luci di cortesia lungo il corridoio centrale (una per fila);
+     · luce d'ambiente ambrata sul bordo dei muretti laterali;
+     · moquette a disegno nel foyer.
+   ===================================================================== */
+function cinDressHall(C,b,WT,RW,RD){
+  const R=new BABYLON.TransformNode("cinDress",scene); R.parent=cinemaRoot;
+  const glowOff=m=>{ if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(m); };
+  const zScr=b.min.z+WT;                                   // faccia interna del muro-schermo
+  /* tende: velluto a pieghe (ribbon), come al Beat Club */
+  const drape=(nm,w,h,x,y,z,hex)=>{ const n=Math.max(4,Math.round(w/0.14)), path=[[],[]];
+    for(let i=0;i<=n*4;i++){ const xx=-w/2+w*i/(n*4), zz=Math.sin(i/(n*4)*n*Math.PI*2)*0.06;
+      path[0].push(new BABYLON.Vector3(xx,0,zz)); path[1].push(new BABYLON.Vector3(xx,h,zz)); }
+    const rb=BABYLON.MeshBuilder.CreateRibbon(nm,{pathArray:path,sideOrientation:BABYLON.Mesh.DOUBLESIDE},scene);
+    const m=new BABYLON.StandardMaterial(nm+"M",scene); m.diffuseColor=BABYLON.Color3.FromHexString(hex||"#6a1222");
+    m.specularColor=new BABYLON.Color3(0.28,0.08,0.1); m.specularPower=14; m.emissiveColor=new BABYLON.Color3(0.05,0.01,0.015);
+    rb.material=m; rb.position.set(x,y,z); rb.parent=R; rb.isPickable=false; return rb; };
+  drape("cinValance",12.8,0.55,C.x,5.72,zScr+0.16,"#6a1222");                   // mantovana sopra lo schermo
+  const fr=BABYLON.MeshBuilder.CreateBox("cinValFr",{width:12.9,height:0.07,depth:0.10},scene);
+  fr.material=mat("cinGoldM","#c9a35a"); fr.position.set(C.x,5.73,zScr+0.18); fr.parent=R;
+  [-1,1].forEach(sg=>drape("cinDrape"+sg,0.30,5.72,C.x+sg*5.78,0.35,zScr+0.14,"#5e0f1d"));   // tende raccolte ai lati
+  /* striscia LED sul bordo del palco */
+  const stZ=b.min.z+1.5+1.1;
+  const led=BABYLON.MeshBuilder.CreateBox("cinStageLed",{width:12.5,height:0.03,depth:0.03},scene);
+  led.material=mat("cinStageLedM","#ffcf7a","#b07a22"); led.position.set(C.x,0.30,stZ+0.012); led.parent=R; glowOff(led);
+  /* luci di cortesia nel corridoio centrale, una per lato e per fila */
+  const stepM=mat("cinStepM","#3a2a18","#b8741e");
+  for(let r=0;r<4;r++){ const zr=C.z-2.4+r*1.85;
+    [-1,1].forEach(sg=>{ const l=BABYLON.MeshBuilder.CreateCylinder("cinStep",{diameter:0.07,height:0.02,tessellation:12},scene);
+      l.material=stepM; l.position.set(C.x+sg*1.02,0.025,zr+0.35); l.parent=R; l.isPickable=false; glowOff(l); }); }
+  /* luce d'ambiente sul bordo alto dei muretti laterali */
+  [-1,1].forEach(sg=>{ const x=sg>0?b.max.x-WT-0.02:b.min.x+WT+0.02;
+    const cap=BABYLON.MeshBuilder.CreateBox("cinCap"+sg,{width:WT+0.12,height:0.06,depth:RD-0.8},scene);
+    cap.material=mat("cinCapM","#2a0d14"); cap.position.set(x-sg*WT/2,1.08,C.z); cap.parent=R;
+    const cv=BABYLON.MeshBuilder.CreateBox("cinCove"+sg,{width:0.03,height:0.03,depth:RD-1.0},scene);
+    cv.material=mat("cinCoveM","#ffb45a","#a8641c"); cv.position.set(x+sg*0.0-sg*0.02,1.12,C.z); cv.parent=R; glowOff(cv); });
+  /* moquette a disegno nel foyer (fra l'ultima fila e il muro d'ingresso) */
+  const W=512, dt=new BABYLON.DynamicTexture("cinFoyerT",{width:W,height:W},scene,true), c=dt.getContext();
+  c.fillStyle="#4a1320"; c.fillRect(0,0,W,W);
+  c.strokeStyle="#7a2a33"; c.lineWidth=6;
+  for(let i=0;i<4;i++) for(let j=0;j<4;j++){ const cx=i*128+64, cy=j*128+64;
+    c.beginPath(); c.moveTo(cx,cy-46); c.lineTo(cx+46,cy); c.lineTo(cx,cy+46); c.lineTo(cx-46,cy); c.closePath(); c.stroke();
+    c.fillStyle="#c9a35a"; c.beginPath(); c.arc(cx,cy,7,0,Math.PI*2); c.fill(); }
+  dt.update(); dt.wrapU=dt.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE; dt.uScale=5; dt.vScale=2.2;
+  const fg=BABYLON.MeshBuilder.CreateGround("cinFoyerRug",{width:RW-2*WT-0.6,height:6.2},scene);
+  const fm=new BABYLON.StandardMaterial("cinFoyerM",scene); fm.diffuseTexture=dt; fm.specularColor=new BABYLON.Color3(0,0,0);
+  fg.material=fm; fg.position.set(C.x,0.018,b.max.z-WT-3.4); fg.parent=R;
+  const edge=BABYLON.MeshBuilder.CreateGround("cinFoyerEdge",{width:RW-2*WT-0.4,height:6.4},scene);
+  edge.material=mat("cinGoldM2","#8a6a2a"); edge.position.set(C.x,0.016,b.max.z-WT-3.4); edge.parent=R;
+  R.getChildMeshes().forEach(m=>{ m.isPickable=false; });
+}
 function buildCinema(){
   if(cinemaBuilt) return; cinemaBuilt=true;
   const C=CINEMA_C;
@@ -10358,16 +10427,35 @@ function buildCinema(){
      e' 0.35 m, ben sotto il gradino massimo di 1.1 accettato dal raycast. */
   stage.__cinFloor=true;
   // POLTRONE: 4 file x 2 blocchi da 4, corridoio centrale libero
-  const seatM=mat("cinSeatM","#7a1f2b");
-  function seat(x,z){ const s=BABYLON.MeshBuilder.CreateBox("cinSeat",{width:0.85,height:0.5,depth:0.62},scene);
-    s.material=seatM; s.position.set(x,0.25,z); s.parent=cinemaRoot;
-    const bk=BABYLON.MeshBuilder.CreateBox("cinSeatB",{width:0.85,height:0.62,depth:0.14},scene);
-    bk.material=seatM; bk.position.set(x,0.78,z+0.26); bk.parent=cinemaRoot; }
+  /* v261 — POLTRONE VERE (restyling ODEON): seduta imbottita, schienale alto
+     e inclinato con il rotolo in cima, braccioli neri con portabicchiere,
+     piede a colonna. Una poltrona-modello unita in UNA mesh multi-materiale
+     e poi ISTANZE: 32 poltrone = 1 geometria, invece di 64 box. Stesso
+     ingombro e stessi solidi di prima (la fila e' ancora x±0.43, z±0.31). */
+  const seatTpl=(function(){
+    const vel=mat("cinSeatM","#7a1f2b"), vel2=mat("cinSeatM2","#5e1520"), blk=mat("cinSeatArm","#1b1b20");
+    vel.specularColor=new BABYLON.Color3(0.12,0.04,0.05);
+    const P=[], B=(w,h,d,x,y,z,m,rx)=>{ const b=BABYLON.MeshBuilder.CreateBox("cst",{width:w,height:h,depth:d},scene);
+      b.position.set(x,y,z); if(rx) b.rotation.x=rx; b.material=m; P.push(b); return b; };
+    B(0.16,0.34,0.16,0,0.17,0.02,blk);                       // piede
+    B(0.70,0.10,0.52,0,0.38,0,blk);                          // telaio seduta
+    B(0.66,0.13,0.52,0,0.49,-0.02,vel);                      // cuscino
+    B(0.66,0.72,0.12,0,0.92,0.27,vel,0.16);                  // schienale (inclinato indietro)
+    B(0.58,0.58,0.04,0,0.93,0.21,vel2,0.16);                 // pannello cucito
+    const top=BABYLON.MeshBuilder.CreateCylinder("cst",{diameter:0.16,height:0.68,tessellation:12},scene);
+    top.rotation.z=Math.PI/2; top.position.set(0,1.29,0.33); top.material=vel; P.push(top);
+    [-0.39,0.39].forEach(x=>{ B(0.08,0.06,0.58,x,0.66,0.02,blk); B(0.06,0.30,0.08,x,0.49,0.22,blk);
+      const cup=BABYLON.MeshBuilder.CreateCylinder("cst",{diameter:0.08,height:0.05,tessellation:10},scene);
+      cup.position.set(x,0.70,-0.22); cup.material=blk; P.push(cup); });
+    const t=BABYLON.Mesh.MergeMeshes(P,true,true,undefined,false,true);
+    t.name="cinSeatTpl"; t.parent=cinemaRoot; t.isVisible=false; t.isPickable=false; return t; })();   // isVisible, NON setEnabled: con la sorgente spenta sparirebbero anche le istanze
+  function seat(x,z){ const s=seatTpl.createInstance("cinSeat"); s.parent=cinemaRoot; s.position.set(x,0,z); }
   for(let r=0;r<4;r++){ const zr=C.z-2.4+r*1.85;
     for(let k=0;k<4;k++){ seat(C.x-5.1+k*1.15, zr); seat(C.x+1.65+k*1.15, zr); }
     addSolid(C.x-5.7, C.x-1.1, zr-0.5, zr+0.5, "cinema");   // blocco ovest
     addSolid(C.x+1.1, C.x+5.7, zr-0.5, zr+0.5, "cinema");   // blocco est
   }
+  try{ cinDressHall(C,b,WALL_T,RW,RD); }catch(e){ console.warn("[odeon/dress]",e); }
   AREAS.cinema.bound=Math.max(sxw,szw)/2 + 3;
   // asse lungo = sala; schermo a un\u0027estremita\u0027, ingresso all\u0027opposta (CIN_FLIP per invertire)
   const longZ = szw>=sxw; const Lhalf=(longZ?szw:sxw)/2; const es=(CIN_FLIP>=0?1:-1);
@@ -22973,6 +23061,172 @@ LEXPROPS.mStool=function(id,o){ const r=new BABYLON.TransformNode(id,scene);
   lpCyl(r,0.07,0.68,"#8a8f96",0,0.37,0);
   lpCyl(r,0.36,0.10,(o&&o.hex)||"#7a3b2e",0,0.74,0);
   return r; };
+/* =====================================================================
+   v261 — BEAT CLUB: RESTYLING (Giacomo, 27 set: «restyling grafico degli
+   interni» + «le luci del palco a cono sono un po' finte»).
+   Tutto procedurale, 0 KB. Coordinate verificate contro l'arredo esistente:
+   pubblico z -4.05..-0.82 (teste a 1.76 m), casse a x ±3.55, cartello
+   LIVE TONIGHT sul muro est a z -5.05..-3.35, muro LED y 1.46..2.70.
+   ===================================================================== */
+/* mattoni scuri da club: una tessera 512x256 = 8 x 8 mattoni, ripetuta */
+function clubBrickTex(){
+  const W=512,H=256, dt=new BABYLON.DynamicTexture("clubBrickT",{width:W,height:H},scene,true), c=dt.getContext();
+  c.fillStyle="#1c1418"; c.fillRect(0,0,W,H);
+  let s=17; const rnd=()=>{ s=(s*16807)%2147483647; return (s%1000)/1000; };
+  const bw=W/8, bh=H/8;
+  for(let r=0;r<8;r++){ const off=(r%2)?bw/2:0;
+    for(let k=-1;k<9;k++){ const v=0.75+rnd()*0.5, R=Math.round(96*v), G=Math.round(44*v), B=Math.round(40*v);
+      c.fillStyle="rgb("+R+","+G+","+B+")"; c.fillRect(k*bw+off+2,r*bh+2,bw-4,bh-4);
+      c.fillStyle="rgba(255,255,255,0.05)"; c.fillRect(k*bw+off+2,r*bh+2,bw-4,3); } }
+  dt.update(); dt.wrapU=dt.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE; dt.uScale=5; dt.vScale=3.2;
+  return dt;
+}
+/* v261 — sfumatura per VERTICE (piu' affidabile della texture d'opacita'):
+   alfa = 1 alla lente (cima del cilindro), 0 in fondo; per il disco a terra
+   1 al centro e 0 sul bordo. */
+function lightFadeMesh(mesh,kind,len){
+  const pos=mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind), n=pos.length/3, col=new Float32Array(n*4);
+  let rmax=0; if(kind==="disc") for(let i=0;i<n;i++) rmax=Math.max(rmax,Math.hypot(pos[i*3],pos[i*3+1]));
+  for(let i=0;i<n;i++){ let a;
+    if(kind==="disc") a=1-Math.min(1,Math.hypot(pos[i*3],pos[i*3+1])/(rmax||1));
+    else a=Math.pow(Math.max(0,(pos[i*3+1]+len/2)/len),1.1);
+    col[i*4]=col[i*4+1]=col[i*4+2]=1; col[i*4+3]=a; }
+  mesh.setVerticesData(BABYLON.VertexBuffer.ColorKind,col); mesh.hasVertexAlpha=true;
+  return mesh;
+}
+/* materiale "luce nell'aria": additivo, sfuma verso il fondo (texture) e ai
+   bordi (fresnel) -> niente piu' cono pieno con lo spigolo netto */
+function lightAirMat(nm,hex,fresnel){
+  const m=new BABYLON.StandardMaterial(nm,scene);
+  m.disableLighting=true; m.diffuseColor=new BABYLON.Color3(0,0,0); m.specularColor=new BABYLON.Color3(0,0,0);
+  m.emissiveColor=BABYLON.Color3.FromHexString(hex);
+  m.alphaMode=BABYLON.Engine.ALPHA_ADD; m.alpha=0.7;
+  if(fresnel!==false){ const f=new BABYLON.FresnelParameters(); f.leftColor=new BABYLON.Color3(0,0,0);
+    f.rightColor=new BABYLON.Color3(1,1,1); f.power=0.9; f.bias=0.08; m.emissiveFresnelParameters=f; }   // ⚠️ EMISSIVE, non opacity: il fresnel d'opacita' SOMMA all'alfa (fascio pieno), quello emissivo MOLTIPLICA (bordi morbidi)
+  m.backFaceCulling=true; m.fogEnabled=false;
+  return m;
+}
+function clubLensMat(){ const m=new BABYLON.StandardMaterial("clubLens"+(_lpN++),scene);
+  m.diffuseColor=new BABYLON.Color3(0.12,0.12,0.14); m.specularColor=new BABYLON.Color3(0.6,0.6,0.6); m.emissiveColor=new BABYLON.Color3(0,0,0); return m; }
+/* palco: bordo nero con striscia LED, assi di legno sul piano, due spie */
+LEXPROPS.clubStageDress=function(id,o){ const r=new BABYLON.TransformNode(id,scene), W=8.0, D=2.2, H=0.45;
+  const dt=new BABYLON.DynamicTexture(id+"pk",{width:512,height:128},scene,true), c=dt.getContext();
+  for(let i=0;i<16;i++){ const v=0.8+((i*37)%10)/40; c.fillStyle="rgb("+Math.round(58*v)+","+Math.round(40*v)+","+Math.round(30*v)+")";
+    c.fillRect(i*32,0,32,128); c.fillStyle="#1a120c"; c.fillRect(i*32,0,2,128); }
+  dt.update();
+  const top=BABYLON.MeshBuilder.CreateGround(id+"top",{width:W-0.04,height:D-0.04},scene);
+  const tm=new BABYLON.StandardMaterial(id+"tm",scene); tm.diffuseTexture=dt; tm.specularColor=new BABYLON.Color3(0.08,0.08,0.08);
+  dt.wrapU=dt.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE; dt.uScale=2; top.material=tm; top.position.set(0,H+0.004,0); top.parent=r;
+  lpBox(r,W+0.02,H-0.06,0.03,"#121016",0,(H-0.06)/2,D/2+0.01);                     // gonna nera
+  lpBox(r,W+0.02,0.03,0.035,"#c83a8a",0,H-0.045,D/2+0.02,"#7a1f55");                  // striscia LED
+  lpBox(r,W+0.04,0.04,D+0.04,"#2a2530",0,H-0.01,0).scaling.y=0.5;
+  [-1.4,1.4].forEach(x=>{ const w=lpBox(r,0.55,0.26,0.40,"#1c1c22",x,H+0.13,D/2-0.35); w.rotation.x=-0.35;   // spie a cuneo
+    lpBox(r,0.45,0.18,0.01,"#2e3338",x,H+0.16,D/2-0.14).rotation.x=-0.35; });
+  return r; };
+/* americana (truss) quadrata sopra il bordo del palco, appesa con catene,
+   con i corpi luce: 3 sagomatori (wash sulla band) + 4 teste mobili */
+let CLUB_TRUSS_NODE=null;
+const CLUB_TRUSS={ y:3.78, z:-4.25, down:[-2.3,0.0,2.3], heads:[-3.4,-1.15,1.15,3.4] };
+LEXPROPS.clubTruss=function(id,o){ const r=new BABYLON.TransformNode(id,scene), L=9.4, s=0.30, y=CLUB_TRUSS.y;
+  const parts=[], bar=(w,h,d,x,yy,z,rz,ry)=>{ const b=BABYLON.MeshBuilder.CreateBox("tr",{width:w,height:h,depth:d},scene); b.position.set(x,yy,z);
+    if(rz) b.rotation.z=rz; if(ry) b.rotation.y=ry; parts.push(b); };
+  [[-1,-1],[-1,1],[1,-1],[1,1]].forEach(q=>bar(L,0.04,0.04,0,y+q[0]*s/2,q[1]*s/2));
+  for(let k=0;k<=24;k++){ const x=-L/2+k*L/24;
+    [-1,1].forEach(q=>{ bar(0.022,s*1.3,0.022,x+L/48,y,q*s/2,(k%2?1:-1)*0.72); bar(0.022,0.022,s,x,y+q*s/2,0); }); }
+  const tm=BABYLON.Mesh.MergeMeshes(parts,true,true); if(tm){ tm.material=lpMat("#a9b0b8"); tm.parent=r; }
+  [-L/2+0.3,L/2-0.3].forEach(x=>lpBox(r,0.03,4.3-y-s/2,0.03,"#555a60",x,(4.3+y+s/2)/2,0));   // catene verso il soffitto
+  /* corpi luce: staffa + corpo + LENTE (la lente la accendono le luci del concerto) */
+  r.__lenses=[];
+  CLUB_TRUSS.down.forEach(x=>{ lpBox(r,0.03,0.16,0.03,"#2b2b30",x,y-s/2-0.08,0);
+    const b=lpCyl(r,0.24,0.34,"#1c1c20",x,y-s/2-0.30,-0.05,0.35); 
+    const ln=lpCyl(r,0.20,0.01,"#2a2a30",x,y-s/2-0.47,-0.11,0.35); ln.material=clubLensMat(); ln.__kind="down"; r.__lenses.push(ln); });
+  CLUB_TRUSS.heads.forEach(x=>{ lpBox(r,0.26,0.06,0.20,"#1c1c20",x,y-s/2-0.05,0);
+    lpBox(r,0.05,0.26,0.05,"#1c1c20",x-0.14,y-s/2-0.20,0); lpBox(r,0.05,0.26,0.05,"#1c1c20",x+0.14,y-s/2-0.20,0);
+    const hd=BABYLON.MeshBuilder.CreateSphere("mh",{diameter:0.26,segments:8},scene); hd.material=lpMat("#1c1c20");
+    hd.position.set(x,y-s/2-0.34,0); hd.parent=r;
+    const ln=lpCyl(r,0.14,0.01,"#2a2a30",x,y-s/2-0.40,0.09,-0.9); ln.material=clubLensMat(); ln.__kind="head"; r.__lenses.push(ln); });
+  r.getChildMeshes().forEach(m=>{ m.isPickable=false; });
+  CLUB_TRUSS_NODE=r;
+  return r; };
+/* tendone di velluto a pieghe (fronte +z) */
+LEXPROPS.velvetDrape=function(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene), W=o.w||1.2, H=o.h||4.2, n=Math.max(4,Math.round(W/0.16));
+  const path=[[],[]];
+  for(let i=0;i<=n*4;i++){ const x=-W/2+W*i/(n*4), z=Math.sin(i/(n*4)*n*Math.PI*2)*0.06;
+    path[0].push(new BABYLON.Vector3(x,0,z)); path[1].push(new BABYLON.Vector3(x,H,z)); }
+  const rb=BABYLON.MeshBuilder.CreateRibbon(id+"rb",{pathArray:path,sideOrientation:BABYLON.Mesh.DOUBLESIDE},scene);
+  const m=new BABYLON.StandardMaterial(id+"m",scene); m.diffuseColor=BABYLON.Color3.FromHexString(o.hex||"#5a0f1e");
+  m.specularColor=new BABYLON.Color3(0.25,0.08,0.1); m.specularPower=12; rb.material=m; rb.parent=r;
+  lpBox(r,W+0.1,0.10,0.14,"#c9a35a",0,H-0.05,0);
+  return r; };
+/* pista da ballo a riquadri (decal a terra, NON solida) */
+LEXPROPS.danceFloor=function(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene), W=o.w||6.4, D=o.d||3.6, n=8;
+  const dt=new BABYLON.DynamicTexture(id+"t",{width:512,height:512},scene,true), c=dt.getContext();
+  for(let i=0;i<n;i++) for(let j=0;j<n;j++){ c.fillStyle=((i+j)%2)?"#141218":"#2c2436"; c.fillRect(i*64,j*64,64,64);
+    c.strokeStyle="#3a3046"; c.lineWidth=2; c.strokeRect(i*64+1,j*64+1,62,62); }
+  dt.update();
+  const g=BABYLON.MeshBuilder.CreateGround(id+"g",{width:W,height:D},scene);
+  const m=new BABYLON.StandardMaterial(id+"m",scene); m.diffuseTexture=dt; m.specularColor=new BABYLON.Color3(0.35,0.35,0.4); m.specularPower=48;
+  dt.wrapU=dt.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE; dt.uScale=W/3.2; dt.vScale=D/3.2; g.material=m; g.position.y=0.028; g.parent=r; g.isPickable=false;
+  return r; };
+/* palla da discoteca: gira sempre piano (di piu' durante il concerto) */
+LEXPROPS.discoBall=function(id,o){ const r=new BABYLON.TransformNode(id,scene), y=(o&&o.py)||3.35;
+  lpCyl(r,0.012,4.3-y-0.22,"#555a60",0,(4.3+y+0.22)/2,0);
+  const s=BABYLON.MeshBuilder.CreateSphere(id+"s",{diameter:0.46,segments:7},scene); s.convertToFlatShadedMesh();
+  const m=new BABYLON.StandardMaterial(id+"m",scene); m.diffuseColor=new BABYLON.Color3(0.55,0.57,0.62);
+  m.specularColor=new BABYLON.Color3(1,1,1); m.specularPower=90; m.emissiveColor=new BABYLON.Color3(0.12,0.12,0.14);
+  s.material=m; s.position.y=y; s.parent=r; r.__ball=s;
+  scene.onBeforeRenderObservable.add(()=>{ if(s.isEnabled()) s.rotation.y+=(GIG&&GIG.on?0.012:0.003); });
+  return r; };
+/* insegna al neon (testo che "brilla": alone disegnato + glow layer) */
+LEXPROPS.neonSign=function(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene), w=o.w||1.4, h=o.h||0.5, py=o.py||2.6;
+  const W=512, H=Math.round(512*h/w), dt=new BABYLON.DynamicTexture(id+"t",{width:W,height:H},scene,true), c=dt.getContext();
+  c.clearRect(0,0,W,H); c.textAlign="center"; c.textBaseline="middle";
+  let f=Math.round(H*0.62); c.font=(o.italic?"italic ":"")+"bold "+f+"px 'Brush Script MT','Segoe Script',cursive,sans-serif";
+  while(f>12 && c.measureText(o.text||"BAR").width>W*0.9){ f-=2; c.font=(o.italic?"italic ":"")+"bold "+f+"px 'Brush Script MT','Segoe Script',cursive,sans-serif"; }
+  c.shadowColor=o.hex||"#ff4fa8"; c.shadowBlur=22; c.lineWidth=Math.max(3,f*0.08); c.strokeStyle=o.hex||"#ff4fa8";
+  c.strokeText(o.text||"BAR",W/2,H/2); c.shadowBlur=8; c.fillStyle="#fff2fa"; c.fillText(o.text||"BAR",W/2,H/2);
+  dt.hasAlpha=true; dt.update();
+  const m=new BABYLON.StandardMaterial(id+"m",scene); m.diffuseTexture=dt; m.useAlphaFromDiffuseTexture=true;
+  m.emissiveColor=new BABYLON.Color3(0.75,0.75,0.75); m.disableLighting=true; m.specularColor=new BABYLON.Color3(0,0,0);
+  const p=BABYLON.MeshBuilder.CreatePlane(id+"p",{width:w,height:h},scene); p.material=m; p.parent=r;
+  p.position.set(0,py,0.03); p.rotation.y=Math.PI; p.isPickable=false;
+  lpBox(r,w*0.96,h*0.9,0.02,"#0e0c10",0,py,0.005).visibility=0.55;                   // pannellino scuro dietro
+  return r; };
+/* retro-bancone a muro: specchio, due mensole di bottiglie con LED sotto (fronte +z) */
+LEXPROPS.backBar=function(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene), W=o.w||2.4;
+  const mr=lpBox(r,W,0.95,0.01,"#3a4450",0,1.62,0.005,"#1a2028");
+  [1.30,1.72].forEach((y,j)=>{ lpBox(r,W,0.03,0.18,"#b8c2cc",0,y,0.09); const led=lpBox(r,W,0.012,0.02,"#ffb04f",0,y-0.022,0.17,"#c8781e");
+    let s=31+j*7; const rnd=()=>{ s=(s*16807)%2147483647; return (s%1000)/1000; };
+    const cols=["#3f7a4a","#6a3a1e","#d8c47a","#2f4f6e","#8a2a3a","#e0e6ea"];
+    for(let x=-W/2+0.10;x<W/2-0.08;x+=0.11+rnd()*0.04){ const hh=0.20+rnd()*0.08, cl=cols[(rnd()*cols.length)|0];
+      const b=lpCyl(r,0.07,hh,cl,x,y+0.015+hh/2,0.09); b.visibility=0.92; lpCyl(r,0.028,0.07,cl,x,y+0.015+hh+0.035,0.09); } });
+  return r; };
+/* v261 — botteghino dell'ODEON (fronte cliente +z) */
+LEXPROPS.cinBoxOffice=function(id,o){ const r=new BABYLON.TransformNode(id,scene), L=2.2, D=0.70, H=1.08, top=H+0.01;
+  lpBox(r,L,H-0.1,D,"#2a0d14",0,(H-0.1)/2+0.1,0); lpBox(r,L-0.1,0.1,D-0.1,"#111014",0,0.05,0);
+  lpBox(r,L-0.2,0.5,0.02,"#6a1222",0,0.62,D/2+0.01);
+  lpBox(r,L-0.16,0.03,0.03,"#ffcf7a",0,0.35,D/2+0.02,"#b07a22");                 // filo di luce
+  lpBox(r,L+0.08,0.05,D+0.08,"#c9a35a",0,H-0.02,0);                              // piano ottone
+  /* insegna TICKETS sul fronte */
+  const sg=LEXPROPS.poster(id+"sg",{w:1.0,h:0.24,py:0.62,bg:"#1a0a10",ink:"#ffcf7a",l1:"TICKETS",l2:"",fig:"none"});
+  sg.parent=r; sg.position.z=D/2+0.025;
+  /* schermo biglietti verso il cliente, cassa, rotolo biglietti */
+  lpBox(r,0.05,0.26,0.05,"#2e3338",-0.35,top+0.13,-0.1);
+  lpBox(r,0.40,0.26,0.03,"#1c2226",-0.35,top+0.34,-0.08); lpBox(r,0.36,0.22,0.005,"#1c2a34",-0.35,top+0.34,-0.062,"#3d6fa0");
+  lpBox(r,0.30,0.12,0.24,"#2e3338",0.15,top+0.06,-0.12);
+  lpCyl(r,0.10,0.10,"#e8c060",0.45,top+0.05,0.12,0,Math.PI/2);
+  /* vetrina dei popcorn a un'estremita' */
+  const px=L/2-0.32; lpBox(r,0.50,0.06,0.44,"#c0392b",px,top+0.03,0);
+  const gl=lpBox(r,0.48,0.52,0.42,"#fff2c0",px,top+0.32,0); gl.visibility=0.25;
+  [[-1,-1],[-1,1],[1,-1],[1,1]].forEach(q=>lpBox(r,0.03,0.54,0.03,"#c0392b",px+q[0]*0.235,top+0.33,q[1]*0.2));
+  lpBox(r,0.50,0.08,0.44,"#c0392b",px,top+0.62,0);
+  const pp=[]; for(let i=0;i<34;i++){ const s1=BABYLON.MeshBuilder.CreateSphere("pc",{diameter:0.06,segments:4},scene);
+    s1.position.set(px-0.19+((i*37)%19)/19*0.38, top+0.08+((i*13)%7)/7*0.14, -0.16+((i*29)%17)/17*0.32); pp.push(s1); }
+  const pm=BABYLON.Mesh.MergeMeshes(pp,true,true); if(pm){ pm.material=lpMat("#f6e39a","#6a5a20"); pm.parent=r; }
+  lpBox(r,0.44,0.02,0.02,"#ffe7a0",px,top+0.58,0.2,"#b09040");                    // lampadina della vetrina
+  /* bicchieri e secchielli pronti */
+  [[-0.72,0.05],[-0.60,0.12]].forEach(q=>{ lpCyl(r,0.12,0.18,"#c0392b",q[0],top+0.09,q[1]); lpCyl(r,0.125,0.04,"#f6f1e2",q[0],top+0.12,q[1]); });
+  return r; };
 LEXPROPS.mTable=function(id,o){ const r=new BABYLON.TransformNode(id,scene);
   lpCyl(r,0.52,0.05,"#2b2318",0,0.025,0);               // base
   lpCyl(r,0.10,0.70,"#3a3a44",0,0.37,0);                // colonna
@@ -23774,7 +24028,10 @@ const CIN_PROPS=[
     bg:"#2b1418", ink:"#e8b04b", l1:"ODEON \u00b7 SCREEN 1", l2:"", fig:"none", solid:false },
   { prop:"poster", x: 4.60, z:11.5, yaw:Math.PI, w:3.6, h:0.66, py:3.72,
     bg:"#2b1418", ink:"#e8b04b", l1:"POPCORN & DRINKS", l2:"", fig:"none", solid:false },
-  { prop:"cashDesk", x:5.40, z:8.40, yaw:-Math.PI/2 },
+  /* v261: botteghino vero (prima cashDesk): banco lungo, vetrina dei
+     popcorn, schermo dei biglietti, insegna TICKETS. Resta davanti a Mr.
+     Vance (x 6.60): il fronte arriva a x 5.05, il retro a 5.75. */
+  { prop:"cinBoxOffice", x:5.40, z:8.40, yaw:-Math.PI/2 },
   { prop:"plant", x:-2.60, z:10.60 },
   { prop:"plant", x: 2.60, z:10.60 },
 ];
@@ -26229,32 +26486,52 @@ function gigBuildCrowdFX(){
    costo e' tre mesh. Esclusi dal glow layer come ogni superficie emissiva
    del progetto, altrimenti di notte diventano tre macchie bianche. ---- */
 const GIG_LIGHTS=[];
+/* v261 — LUCI DEL CONCERTO RIFATTE (Giacomo: «i coni sono un po' finti»).
+   Prima: tre coni trasparenti pieni, colore uniforme, spigolo netto.
+   Ora i fasci escono dai CORPI LUCE veri appesi all'americana e sono fatti
+   come la luce nella polvere: additivi (si sommano dove si incrociano),
+   pieni alla lente e sfumati a zero in fondo (texture d'opacita'), morbidi
+   ai bordi (fresnel). Due famiglie:
+     · 3 SAGOMATORI puntati sulla band, con la macchia di luce sul palco;
+     · 4 TESTE MOBILI che spazzano sopra il pubblico a tempo di musica.
+   ⚠️ Regola rimasta dal vecchio bug: nessun fascio arriva sulle teste del
+   pubblico (1.76 m) con intensita' visibile — le teste mobili finiscono
+   sopra ~1.8 m e il gradiente e' gia' quasi a zero li'. I colori cambiano
+   a ogni canzone (GIG_PALETTES). */
+const GIG_PALETTES=[["#ff3d9a","#3dd9ff","#ffd24f"],["#8a5bff","#ff7a3d","#3dffb0"],
+                    ["#ffb13d","#ff3d6b","#5b8aff"],["#3dffd9","#ff4fd0","#fff0c8"]];
+let GIG_PAL_IDX=-1;
 function gigBuildLights(){
   if(GIG_LIGHTS.length) return;
   const I=INTERIORS[UNIT_MUSIC.area]; if(!I) return; const C=I.center;
-  [["#d94f9a",-2.20],["#4fd9d9",0.00],["#ffc24f",2.20]].forEach(function(L,i){
-    const cone=BABYLON.MeshBuilder.CreateCylinder("gigBeam"+i,
-      /* ⚠️ IL CONO DEVE FERMARSI SOPRA LE TESTE (base a y 2.05, la folla
-         arriva a 1.76). Prima scendeva fino a terra e attraversava il
-         pubblico: essendo un materiale trasparente disegnato SOPRA le
-         sagome, le lavava di viola e di notte sembravano fosforescenti
-         (segnalato da Giacomo con due screenshot a confronto). Un fascio
-         che si perde nel buio a mezz'aria e' anche piu' realistico: e' la
-         polvere illuminata, non un solido. */
-      {diameterTop:0.18,diameterBottom:2.60,height:2.10,tessellation:16},scene);
-    cone.position.set(C.x+L[1],3.15,C.z-5.00); cone.parent=I.root;
-    cone.rotation.x=0.16;                       // inclinati verso il pubblico
-    cone.isPickable=false;
-    const m=new BABYLON.StandardMaterial("gigBeamM"+i,scene);
-    m.emissiveColor=BABYLON.Color3.FromHexString(L[0]);
-    m.diffuseColor=new BABYLON.Color3(0,0,0); m.specularColor=new BABYLON.Color3(0,0,0);
-    /* nella penombra i fasci si vedono di piu': alpha di base piu' alta e
-       cono piu' lungo, cosi' arrivano davvero sulla folla. */
-    m.disableLighting=true; m.backFaceCulling=false; m.alpha=0.16;
-    cone.material=m;
-    if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(cone);
-    GIG_LIGHTS.push({ mesh:cone, mat:m });
+  const T=CLUB_TRUSS, ly=T.y-0.15;
+  T.down.forEach(function(x,i){
+    const pv=new BABYLON.TransformNode("gigDownPv"+i,scene); pv.parent=I.root;
+    pv.position.set(C.x+x, ly-0.47, C.z+T.z-0.11); pv.rotation.x=0.33;   // verso il fondo del palco
+    const len=2.86, m=lightAirMat("gigDownM"+i,"#ffffff");
+    const b=lightFadeMesh(BABYLON.MeshBuilder.CreateCylinder("gigDown"+i,{diameterTop:0.18,diameterBottom:1.35,height:len,tessellation:24,subdivisions:8,cap:BABYLON.Mesh.NO_CAP},scene),"beam",len);
+    b.material=m; b.parent=pv; b.position.y=-len/2; b.isPickable=false;
+    /* la macchia di luce sul palco, dove il fascio arriva */
+    const pm=lightAirMat("gigPoolM"+i,"#ffffff",false);
+    const pool=lightFadeMesh(BABYLON.MeshBuilder.CreateDisc("gigPool"+i,{radius:0.85,tessellation:28},scene),"disc");
+    pool.material=pm; pool.rotation.x=Math.PI/2; pool.parent=I.root; pool.isPickable=false;
+    pool.position.set(C.x+x, 0.462, C.z+T.z-0.11-len*Math.sin(0.33));
+    if(typeof glowL!=="undefined"&&glowL){ glowL.addExcludedMesh(b); glowL.addExcludedMesh(pool); }
+    GIG_LIGHTS.push({ mesh:pv, mat:m, kind:"down", i, pool, poolMat:pm });
+    GIG_LIGHTS.push({ mesh:pool, mat:pm, kind:"pool", i });
   });
+  T.heads.forEach(function(x,i){
+    const pv=new BABYLON.TransformNode("gigHeadPv"+i,scene); pv.parent=I.root;
+    pv.position.set(C.x+x, ly-0.40, C.z+T.z+0.09);
+    const len=3.3, m=lightAirMat("gigHeadM"+i,"#ffffff");
+    const b=lightFadeMesh(BABYLON.MeshBuilder.CreateCylinder("gigHead"+i,{diameterTop:0.10,diameterBottom:0.62,height:len,tessellation:20,subdivisions:8,cap:BABYLON.Mesh.NO_CAP},scene),"beam",len);
+    b.material=m; b.parent=pv; b.position.y=-len/2; b.isPickable=false;
+    if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(b);
+    const yaw0=(x<0?-1:1)*0.18;
+    pv.rotation.set(-1.18,yaw0,0);
+    GIG_LIGHTS.push({ mesh:pv, mat:m, kind:"head", i, yaw0, tilt0:-1.18 });
+  });
+  gigRecolor();
   /* ---- LED alle pareti laterali, a meta' lunghezza (chiesti da Giacomo).
      Non sono decorazione: danno alla sala una luce PROPRIA, cosi' le sagome
      si staccano dal fondo per contrasto invece di essere lavate dai fasci.
@@ -26289,11 +26566,30 @@ function gigDimApply(){
   sun.intensity*=GIG_DIM.sun; hemi.intensity*=GIG_DIM.hemi;
   hemi.diffuse.copyFrom(GIG_DIM.tint);
 }
+/* v261 — colori della serata: cambiano a ogni canzone; le lenti dei corpi
+   luce si accendono col colore del loro fascio */
+function gigRecolor(){
+  GIG_PAL_IDX=GIG.idx; const P=GIG_PALETTES[(GIG.idx||0)%GIG_PALETTES.length];
+  GIG_LIGHTS.forEach(l=>{
+    if(l.kind==="down"||l.kind==="pool"){ const c=BABYLON.Color3.FromHexString(l.i===1?"#fff0d8":P[l.i%3]).scale(0.85);
+      l.mat.emissiveColor=c; }
+    else if(l.kind==="head"){ l.mat.emissiveColor=BABYLON.Color3.FromHexString(P[(l.i+1)%3]); } });
+  clubLensGlow(0.5);
+}
+function clubLensGlow(k){
+  const T=CLUB_TRUSS_NODE; if(!T||!T.__lenses) return;
+  const P=GIG_PALETTES[(GIG.idx||0)%GIG_PALETTES.length], on=GIG_DIM.on;
+  let di=0, hi=0;
+  T.__lenses.forEach(ln=>{ let hex;
+    if(ln.__kind==="down"){ hex=(di===1?"#fff0d8":P[di%3]); di++; } else { hex=P[(hi+1)%3]; hi++; }
+    ln.material.emissiveColor=on?BABYLON.Color3.FromHexString(hex).scale(0.55+0.35*(k||0)):new BABYLON.Color3(0,0,0); });
+}
 function gigFXEnable(on){
   GIG_DIM.on=on;
   if(!on){ hemi.diffuse.set(0.88,0.92,1.0); }   // com'era prima del concerto
   CROWD.forEach(c=>c.node.setEnabled(on));
   GIG_LIGHTS.forEach(l=>{ l.mesh.setEnabled(on); if(l.light) l.light.setEnabled(on); });
+  clubLensGlow(0.5);
   /* i solidi seguono le sagome: spente = si passa, accese = no */
   if(!on) gigClearCrowdSolids();
   else if(!CROWD_SOLIDS.length) CROWD.forEach(c=>{
@@ -26321,11 +26617,17 @@ function gigTick(){
     o.npc.carrier.rotation.y=o.face+Math.sin(p*Math.PI*2)*o.sway;
   }
   const k=Math.max(0,1-ph*2.4), nb=Math.floor(beat);
-  const beams=GIG_LIGHTS.filter(l=>!l.wall);
-  for(let i=0;i<beams.length;i++){
-    const on=(nb%beams.length)===i;
-    beams[i].mat.alpha=0.07+(on?k*0.34:0.03);
-  }
+  if(GIG_PAL_IDX!==GIG.idx) gigRecolor();
+  /* sagomatori: luce quasi ferma che «respira» sul battito; teste mobili:
+     spazzano lente (mezza battuta = un quarto di giro) e a turno danno il
+     colpo sull'accento */
+  for(let i=0;i<GIG_LIGHTS.length;i++){ const l=GIG_LIGHTS[i];
+    if(l.kind==="down"){ l.mat.alpha=0.62+0.22*k; l.poolMat.alpha=0.55+0.25*k; }
+    else if(l.kind==="head"){ const p=beat*0.125+l.i*0.8;
+      l.mesh.rotation.y=l.yaw0+Math.sin(p*Math.PI)*0.42;
+      l.mesh.rotation.x=l.tilt0+Math.sin(p*Math.PI*1.37+l.i)*0.10;
+      l.mat.alpha=0.50+(((nb%4)===l.i)?k*0.45:0.08); } }
+  clubLensGlow(k);
   /* i LED a parete respirano piano e in controtempo: sono la luce di sala,
      non un effetto — se lampeggiassero come i fasci sarebbe una discoteca. */
   const w=GIG_LIGHTS.filter(l=>l.wall);
@@ -31573,6 +31875,7 @@ function buildInterior(u){
      senza quota) ne' la visuale dall'alto, perche' da fuori si guarda
      attraverso la faccia posteriore. */
   const WH=u.wallH||2.7, T=0.3, wallM=mat("giw_"+u.area,u.wallHex||"#efe6d3",u.wallEm||null); wallM.backFaceCulling=true;   // v256: colore per unit (default invariato)
+  if(u.wallTex){ try{ wallM.diffuseTexture=u.wallTex(); wallM.diffuseColor=new BABYLON.Color3(1,1,1); }catch(e){} }   // v261: muro con texture (Beat Club: mattoni)
   function wallIn(w,x,z,ry){ const pl=BABYLON.MeshBuilder.CreatePlane("giwp",{width:w,height:WH},scene);
     pl.material=wallM; pl.position.set(C.x+x,WH/2,C.z+z); pl.rotation.y=ry;
     pl.parent=I.root; pl.isPickable=false; }
