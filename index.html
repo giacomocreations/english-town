@@ -41135,6 +41135,7 @@ function svTagDraw(key){
 function buildSurvivalCamp(){
   if(svBuilt) return; svBuilt=true;
   const items=[];
+  const _svBefore=new Set(townRoot.getChildren());   // v266: per le ombre degli oggetti del campo (vedi fondo)
   /* --- radura: il prato del campo, un po' consumato attorno al fuoco --- */
   const clr=BABYLON.MeshBuilder.CreateDisc("svclearing",{radius:4.6,tessellation:28},scene);
   clr.material=mat("svclearingm","#6f7c52"); clr.rotation.x=Math.PI/2;
@@ -41290,7 +41291,41 @@ function buildSurvivalCamp(){
      verificata libera da ogni solido del campo (fuoco/ceppi/tende/tavolo/
      tracce) prima di scriverla, non a occhio. --- */
   setTimeout(buildSurvivalNPCs,0);   // mai spawnare NPC durante l'istanziazione GLB (bug TTS Chrome)
+  try{ svCampShadows(_svBefore); }catch(e){ console.warn("[sv/shadows]",e); }
   return items;
+}
+/* v266 — OMBRE DEGLI OGGETTI DEL CAMPO (Giacomo: «gli oggetti che c'erano
+   prima non hanno ombre: tavolini, tronchi di legno...»). Due livelli:
+     1. ombra VERA del sole: le mesh del campo entrano fra i caster
+        (__npcCast, lo stesso flag degli NPC — non tocca la collisione ne' la
+        telecamera). Si vede con la qualita' «Alto», quando le ombre sono accese;
+     2. ombra DI CONTATTO sfumata sotto ogni oggetto (hm7Shadow), a qualunque
+        qualita': e' quella che fa sembrare un ceppo APPOGGIATO invece che
+        sospeso. La quota viene dal terreno vero sotto l'oggetto (raggio verso
+        il basso sulle superfici __ground), non da un numero fisso.
+   Esclusi: il falo' (ha gia' il suo letto di cenere), cartellini e biglietti. */
+function svCampShadows(before){
+  const nodes=townRoot.getChildren().filter(n=>!before.has(n) && /^sv/.test(n.name||"")
+    && !/^sv(clearing|fire|note|tag|ash)/.test(n.name));
+  const groundY=(x,z)=>{ const ray=new BABYLON.Ray(new BABYLON.Vector3(x,6,z),new BABYLON.Vector3(0,-1,0),12);
+    const h=scene.pickWithRay(ray,m=>m.__ground===true && m.isEnabled() && m.name!=="h7sh");
+    return (h&&h.hit)?h.pickedPoint.y:0.16; };
+  nodes.forEach(n=>{
+    const meshes=(n.getChildMeshes?n.getChildMeshes():[]).concat(n.getTotalVertices?[n]:[]);
+    meshes.forEach(m=>{ if(m.getTotalVertices && m.getTotalVertices()>0) m.__npcCast=true; });
+    /* ingombro nel sistema LOCALE del nodo (rotazione tolta un istante),
+       cosi' l'ombra ruota con l'oggetto invece di essere un rettangolo storto */
+    const ry=n.rotation?n.rotation.y:0, rq=n.rotationQuaternion; if(rq) return;
+    n.rotation.y=0; n.computeWorldMatrix(true); meshes.forEach(m=>m.computeWorldMatrix(true));
+    const bb=n.getHierarchyBoundingVectors(true);
+    n.rotation.y=ry; n.computeWorldMatrix(true);
+    const w=bb.max.x-bb.min.x, d=bb.max.z-bb.min.z, h=bb.max.y-bb.min.y;
+    if(!(w>0.2||d>0.2) || h<0.08 || w>6 || d>6) return;
+    const cx=(bb.min.x+bb.max.x)/2-n.position.x, cz=(bb.min.z+bb.max.z)/2-n.position.z;
+    const P=n.getAbsolutePosition(), gy=groundY(P.x,P.z)+0.014;
+    const sh=hm7Shadow(n,w*1.18+0.25,d*1.18+0.25,cx,cz,gy-P.y+0.0,0.85);
+    sh.__npcCast=false; sh.receiveShadows=false; });
+  try{ refreshShadowCasters(); }catch(e){}
 }
 let svNpcBuilt=false, VIK=null;
 function buildSurvivalNPCs(){
