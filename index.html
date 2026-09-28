@@ -40411,22 +40411,74 @@ const SVPROPS={
     if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(pl);
     r.redraw=draw; return r; },
 
-  /* ---- FALO': cerchio di pietre, letto di cenere, ceppi a piramide,
-     fiamme (emissive: si vedono anche di sera). ---- */
-  fire(id,o){ const r=new BABYLON.TransformNode(id,scene);
-    const disc=BABYLON.MeshBuilder.CreateDisc("svash"+(_svN++),{radius:0.60,tessellation:20},scene);
-    disc.material=lpMat("#4a423a"); disc.rotation.x=Math.PI/2; disc.position.y=0.03;
-    disc.parent=r; disc.isPickable=false;
-    for(let i=0;i<9;i++){ const a=i*Math.PI*2/9, R=0.72;
-      svSph(r,0.30+(i%3)*0.05,0.22,0.26,(i%2)?"#8b8f93":"#6f7378",
-        Math.cos(a)*R,0.08,Math.sin(a)*R); }
-    for(let i=0;i<4;i++){ const a=i*Math.PI/2+0.4;          // ceppi appoggiati a piramide
-      const g=new BABYLON.TransformNode(id+"l"+i,scene); g.parent=r; g.rotation.y=a;
-      const lg=lpCyl(g,0.13,0.92,(i%2)?"#6b4a2c":"#7d5834",0.26,0.26,0,0,-1.02); lg.rotation.y=0;
-      lpCyl(g,0.135,0.02,"#d8c9a8",0.44,0.44,0,0,-1.02); }
-    svCone(r,0.44,0.60,"#ff7a1a",0,0.32,0,"#ff7a1a");       // fiamma grande
-    svCone(r,0.28,0.42,"#ffc23d",0.10,0.24,0.06,"#ffc23d");
-    svCone(r,0.20,0.30,"#fff0b0",-0.09,0.19,-0.05,"#fff0b0");
+  /* ---- FALO' SPENTO (v265, Giacomo: «i coni sembrano finti; metti i resti
+     del fuoco, e' una cosa gia' svolta: non puo' essere acceso»).
+     Il fuoco di ieri sera: cerchio di pietre annerite dal lato interno,
+     letto di cenere grigia con il centro di carbone, ceppi CROLLATI e
+     carbonizzati (neri, con le punte ancora di legno), tizzoni sparsi,
+     treppiede con il pentolino e un secchio d'acqua — quello con cui e'
+     stato spento. Nessuna fiamma, nessun emissivo, nessuna luce.
+     ⚠️ La radura sta a y 0.16: tutto quello che poggia «a terra» parte da li'
+     (prima il disco di cenere era a 0.03, cioe' SOTTO il prato). ---- */
+  fire(id,o){ const r=new BABYLON.TransformNode(id,scene), G=0.16;
+    let sd=7; const rnd=()=>{ sd=(sd*16807)%2147483647; return (sd%1000)/1000; };
+    /* letto di cenere: texture radiale (carbone al centro -> cenere -> terra bruciata) */
+    const dt=new BABYLON.DynamicTexture("svashT"+(_svN++),{width:512,height:512},scene,true), c=dt.getContext();
+    c.scale(2,2);
+    const g=c.createRadialGradient(128,128,6,128,128,128);
+    g.addColorStop(0,"#1a1714"); g.addColorStop(0.30,"#3a3632"); g.addColorStop(0.55,"#8d8880");
+    g.addColorStop(0.80,"#6b645a"); g.addColorStop(1,"rgba(74,66,52,0)");
+    c.clearRect(0,0,256,256); c.fillStyle=g; c.fillRect(0,0,256,256);
+    for(let k=0;k<420;k++){ const a=rnd()*Math.PI*2, d=Math.sqrt(rnd())*110;          // granelli di cenere e carbone
+      c.fillStyle=rnd()<0.55?"rgba(20,18,16,0.55)":"rgba(190,186,178,0.45)";
+      c.beginPath(); c.arc(128+Math.cos(a)*d,128+Math.sin(a)*d,0.6+rnd()*1.2,0,Math.PI*2); c.fill(); }
+    dt.hasAlpha=true; dt.update();
+    const am=new BABYLON.StandardMaterial("svashM"+(_svN++),scene); am.diffuseTexture=dt; am.useAlphaFromDiffuseTexture=true;
+    am.specularColor=new BABYLON.Color3(0,0,0);
+    const disc=BABYLON.MeshBuilder.CreateGround("svash"+(_svN++),{width:1.9,height:1.9},scene);
+    disc.material=am; disc.position.y=G+0.012; disc.parent=r; disc.isPickable=false;
+    /* mucchietto di cenere leggermente in rilievo */
+    const mound=svSph(r,0.95,0.07,0.85,"#77726b",0.02,G,0.0); mound.material=am;
+    /* pietre del cerchio: forme irregolari, annerite sul lato verso il fuoco */
+    const stM=["#6f6c66","#5f5d59","#7a746a","#57544f"].map(h=>{ const m=new BABYLON.StandardMaterial("svstM"+(_svN++),scene);
+      m.diffuseColor=BABYLON.Color3.FromHexString(h); m.specularColor=new BABYLON.Color3(0.05,0.05,0.05); return m; });
+    for(let i=0;i<11;i++){ const a=i*Math.PI*2/11+rnd()*0.12, R=0.76+rnd()*0.05;
+      /* sasso irregolare: sfera a pochi segmenti, vertici spostati a caso, facce piatte */
+      const st=BABYLON.MeshBuilder.CreateSphere("svst"+(_svN++),{diameter:1,segments:3,updatable:true},scene);
+      const P=st.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+      for(let k=0;k<P.length;k+=3){ const f=0.82+0.36*(((Math.sin(P[k]*12.9+P[k+1]*78.2+P[k+2]*37.7+i)*43758.5)%1+1)%1); P[k]*=f; P[k+1]*=f; P[k+2]*=f; }
+      st.updateVerticesData(BABYLON.VertexBuffer.PositionKind,P); st.convertToFlatShadedMesh();
+      st.material=stM[i%4]; st.scaling.set(0.30+rnd()*0.10,0.16+rnd()*0.06,0.24+rnd()*0.06);
+      st.position.set(Math.cos(a)*R,G+0.05,Math.sin(a)*R); st.rotation.set((rnd()-0.5)*0.3,-a+rnd()*0.6,(rnd()-0.5)*0.3); st.parent=r;
+      svSph(r,0.13,0.08,0.13,"#2a2724",Math.cos(a)*(R-0.11),G+0.04,Math.sin(a)*(R-0.11)); }     // fuliggine sul lato interno
+    /* ceppi crollati: neri, spaccati, con la punta esterna ancora di legno */
+    [[0.55,-0.10,0.05,0.62],[2.30,0.08,-0.06,0.56],[3.70,-0.02,0.10,0.66],[5.20,0.12,0.02,0.48]].forEach((L,i)=>{
+      const lg=new BABYLON.TransformNode(id+"cl"+i,scene); lg.parent=r; lg.rotation.y=L[0];
+      lg.position.set(L[1],G+0.07,L[2]);
+      const ch=lpCyl(lg,0.12,L[3],"#1c1916",L[3]*0.12,0,0,0,Math.PI/2); ch.rotation.x=(rnd()-0.5)*0.4;   // parte carbonizzata
+      lpCyl(lg,0.115,0.14,"#5a3e26",L[3]*0.12+L[3]/2+0.06,0,0,0,Math.PI/2);                  // punta non bruciata
+      lpCyl(lg,0.117,0.01,"#c8ab84",L[3]*0.12+L[3]/2+0.13,0,0,0,Math.PI/2);                   // taglio del legno
+      for(let k=0;k<3;k++) lpBox(lg,0.012,0.123,0.123,"#4a4540",L[3]*0.12-L[3]/2+0.12+k*0.16,0,0);   // crepe della carbonizzazione
+    });
+    /* tizzoni e pezzetti di carbone */
+    for(let k=0;k<16;k++){ const a=rnd()*Math.PI*2, d=rnd()*0.42;
+      const b=lpBox(r,0.05+rnd()*0.05,0.03+rnd()*0.03,0.04+rnd()*0.05,rnd()<0.7?"#161412":"#2e2a26",Math.cos(a)*d,G+0.03,Math.sin(a)*d);
+      b.rotation.set(rnd(),rnd()*3,rnd()); }
+    /* treppiede di rami con il pentolino annerito appeso */
+    const tp=new BABYLON.TransformNode(id+"tp",scene); tp.parent=r; tp.position.set(-0.05,G,0.02);
+    /* gambe: piede a terra a 0.55 dal centro, cima unita sopra il fuoco */
+    [0,2.1,4.2].forEach(a=>{ const lg=new BABYLON.TransformNode(id+"tpl"+a,scene); lg.parent=tp; lg.rotation.y=a;
+      const ft=new BABYLON.TransformNode(id+"tpf"+a,scene); ft.parent=lg; ft.position.x=0.55;
+      svGuy(ft,-0.58,0,1.22,0.045,"#6b4a2c"); });
+    lpCyl(tp,0.012,0.36,"#3a3530",0,0.99,0);                                                   // catenella
+    const pot=lpCyl(tp,0.26,0.20,"#23201d",0,0.72,0); lpCyl(tp,0.27,0.02,"#3a3632",0,0.82,0);
+    svTor(tp,0.24,0.012,"#3a3632",0,0.80,0,Math.PI/2,0);                                        // manico ad arco
+    /* secchio d'acqua (quello con cui si e' spento il fuoco) */
+    const bk=new BABYLON.TransformNode(id+"bk",scene); bk.parent=r; bk.position.set(1.05,G,0.55);
+    lpCyl(bk,0.30,0.30,"#8a939b",0,0.15,0); svTor(bk,0.30,0.02,"#a9b0b6",0,0.30,0);
+    const wt=lpCyl(bk,0.27,0.01,"#4d7a9a",0,0.24,0); 
+    svTor(bk,0.30,0.012,"#6f767d",0,0.30,0,Math.PI/2,0);                                        // manico ad arco
+    r.getChildMeshes().forEach(m=>{ m.isPickable=false; });
     return r; },
 
   /* ---- CEPPO-SEDILE: tronco coricato + due zeppe ---- */
