@@ -11444,6 +11444,12 @@ const WordTiles=(function(){
       feedback.textContent=uiEn(msg);
       feedback.className="wt-feedback "+(res.ok?"ok":"bad");
       try{ res.ok?SFX.correct():SFX.wrong(); }catch(e){}
+      /* v271 — UNA risposta giusta, UN onSuccess. Prima il bottone restava
+         attivo nei 450 ms (e oltre, se il chiamante non chiudeva la finestra):
+         un secondo clic rilanciava onSuccess sullo stato GIA' avanzato — allo
+         sportello dimissioni dell'ospedale il «should» appena accettato veniva
+         rivalutato come «shouldn't» e il paziente tornava indietro peggiorato. */
+      if(res.ok){ checkBtn.disabled=true; clearBtn.disabled=true; }
       if(res.ok && cfg.onSuccess) setTimeout(()=>cfg.onSuccess(), 450);
     };
     btnRow.appendChild(clearBtn); btnRow.appendChild(checkBtn);
@@ -11531,6 +11537,14 @@ const DialogueBox=(function(){
         x.onclick=()=>{ if(!c.keepOpen) close(); if(c.act) c.act(); }; row.appendChild(x); });
       body.appendChild(row);
     }
+    /* v271 — MAI UNA FINESTRA SENZA USCITA (Giacomo, 28 set: all'ospedale «i
+       popup non si tolgono, non si puo' andare avanti»). Una DialogueBox con
+       solo testo — «Questo paziente e' gia' stato visto», «L'archivio puo'
+       aspettare» — si chiudeva solo con Esc, che su tablet non c'e' e che
+       nessun ragazzo sa. Se il chiamante non ha messo ne' bottoni ne' scelte
+       ne' tessere ne' un corpo suo, arriva un OK. buttons:[] esplicito resta
+       senza bottoni: e' una scelta, non una dimenticanza. */
+    if(!cfg.buttons && !cfg.choices && !cfg.tiles && !cfg.html) cfg.buttons=[{label:"OK", cls:"primary"}];
     if(cfg.buttons){ const row=document.createElement("div"); row.className="qm-btns";
       cfg.buttons.forEach(bt=>{ const x=document.createElement("button"); x.type="button"; x.className="qm-btn "+(bt.cls||""); x.textContent=bt.label;
         x.onclick=()=>{ if(!bt.keepOpen) close(); if(bt.act) bt.act(); }; row.appendChild(x); });
@@ -45577,7 +45591,8 @@ function erDdTalk(A){
     tiles:{ tokens:["You",modal,A.acts[0].t], distractors:bank.filter(function(w){
               return w!==A.acts[0].t; }),
       onCheck:function(words,joined){ return erDdCheck(A,words,joined); },
-      onSuccess:function(){ erDdAfter(A); } } });
+      onSuccess:function(){ erDdAfter(A); } },
+    buttons:[{label:"Later", cls:"ghost"}] });   // v271: si esce e si torna dal paziente con E
 }
 /* Il controllo NON confronta con una risposta: valida la STRUTTURA
    (You + modale + una delle tre azioni) e nomina la regola piegata. */
@@ -45613,12 +45628,16 @@ function erDdCheck(A,words,joined){
    giro la cosa che fa male non deve stare dopo should, nel secondo deve
    stare proprio l\u00ec. */
 function erDdAfter(A){
-  const dd=Quest.state.dd, st=dd.st[A.k];
+  const dd=Quest.state&&Quest.state.dd; if(!dd) return;
+  const st=dd.st[A.k]; if(st==="done") return;
   const a=A.acts.filter(function(x){ return x.t===dd.act; })[0]; if(!a) return;
   const harmful=(st===1) ? !!a.bad : !a.bad;
   if(harmful){ setTimeout(function(){ erDdConsequence(A,a); },600); return; }
   if(st===1){ dd.st[A.k]=2; erDdHud(); setTimeout(function(){ erDdTalk(A); },700); return; }
   dd.st[A.k]="done"; dd.doneCount++;
+  /* v271: le tessere si chiudono. Prima qui c'era solo il toast e la
+     finestra del paziente appena dimesso restava aperta sullo schermo. */
+  DialogueBox.close();
   toast("\u2705 \u201cThank you \u2014 I'll do that.\u201d");
   erDdHud();
   if(dd.doneCount>=ER_ADVICE.length)
@@ -46252,7 +46271,8 @@ function erSnTalk(A){
   const sn=Quest.state&&Quest.state.sn; if(!sn||sn.phase!=="triage") return;
   if(sn.treated[A.k]){
     DialogueBox.open({ icon:"\u{1F642}", sub:"Seen",
-      text:A.ok||"Thanks \u2014 I've been seen.", italian:"Questo paziente \u00e8 gi\u00e0 stato visto." });
+      text:A.ok||"Thanks \u2014 I've been seen.", italian:"Questo paziente \u00e8 gi\u00e0 stato visto.",
+      buttons:[{label:"OK", cls:"primary"}] });
     return; }
   if(snClockCheck()) return;
   /* prima si ascolta chi \u00e8, poi si sceglie il kit: nessuna lista di nomi */
@@ -46301,15 +46321,18 @@ function snCall(){
           ? "\u21bb Le parole sono giuste, ma non nell'ordine giusto."
           : "\u21bb Non \u00e8 un consiglio per il suo problema \u2014 riascolta che cosa ha detto." }; },
       onSuccess:function(){
+        const sn=Quest.state&&Quest.state.sn; if(!sn||sn.phase!=="call") return;
+        DialogueBox.close();                                    // v271: le tessere non restano aperte
         toast("\u2705 \u201cI'll do that. Thank you for picking up.\u201d");
-        Quest.state.sn.phase="archive"; erSnHud();
+        sn.phase="archive"; erSnHud();
         setTimeout(function(){
           DialogueBox.open({ npc:ER_NPC.ross, icon:"\u{1FA7A}", sub:"Doctor",
             text:"That's the shift. Put the records back in the archive before you go \u2014 "
                 +"and don't be surprised by what's in there.",
             italian:"Turno finito. Prima di andare, rimetti a posto le cartelle nell'archivio.",
             buttons:[{label:"To the archive", cls:"primary", act:()=>{}}] });
-        },700); } } });
+        },700); } },
+    buttons:[{label:"Later", cls:"ghost"}] });   // v271: si esce e si richiama dal centralino
 }
 /* l'archivio: la vecchia cartella dell'Architetto \u2014 f12 */
 function snArchive(){
@@ -46317,7 +46340,8 @@ function snArchive(){
   if(sn&&sn.phase!=="archive"){
     DialogueBox.open({ icon:"\u{1F5C4}\uFE0F", sub:"Archive",
       text:"Patient records. Not now \u2014 there are people waiting.",
-      italian:"L'archivio pu\u00f2 aspettare: prima i pazienti." });
+      italian:"L'archivio pu\u00f2 aspettare: prima i pazienti.",
+      buttons:[{label:"OK", cls:"primary"}] });
     return; }
   const f=Frag.info("f12");
   if(f && !Frag.has("f12")){ openFragment(f); return; }
