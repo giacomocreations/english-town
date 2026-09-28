@@ -42205,18 +42205,73 @@ function cfPlane(root,w,h,py,dt,emis){ return salonPlane(root,w,h,py,dt,emis); }
    la lezione dei prop lessicali e' che a scala reale non si riconoscono,
    vanno tenuti grandi.
    ===================================================================== */
+/* v268 — VETRINA DA MUSEO attorno a ogni diorama (Giacomo: «migliora i
+   diorami, falli piu' belli»): fondale dipinto (cielo + orizzonte, diverso per
+   ogni evento), terreno con texture, teca di vetro con profili, faretto e
+   striscia di luce, plinto con zoccolo e targhetta NUMERATA (mai il nome:
+   il riconoscimento resta il compito). In piu' ogni scena si MUOVE: il tornado
+   gira, il fulmine lampeggia, la neve e la grandine cadono, le fiamme e la
+   lava pulsano, l'acqua ondeggia. Un solo osservatore, attivo solo dentro
+   la stazione. */
+const CF_SKY={ hurricane:["#3d5566","#8fa7b4","#2f4a4a"], tornado:["#4f5a4a","#a3ab8e","#5a6a3a"],
+  thunderstorm:["#2a2438","#5d5476","#2f3a2a"], hailstorm:["#55606b","#a9b4bd","#4a5a3a"],
+  blizzard:["#aeb9c4","#e9eff4","#dfe7ee"], drought:["#e8a64a","#f6dca0","#b88a4a"],
+  heatwave:["#e8602a","#f8c070","#c88a4a"], earthquake:["#6a7a8c","#c9d2da","#6f6a5a"],
+  flood:["#59636d","#a9b3bb","#4a5a4a"], volcano:["#3a1a14","#a8422a","#3a2a24"],
+  tsunami:["#4d7fa8","#bfe0f0","#2f6f9a"], landslide:["#6d7d8c","#c7d0d6","#5a6a3a"],
+  forestfire:["#5a3a2a","#e8804a","#2f3a24"], avalanche:["#8fb0d0","#eef5fa","#f2f7fb"] };
+const CF_GROUND={ hurricane:"#6f8a5a", tornado:"#7a8a4f", thunderstorm:"#4f6a3f", hailstorm:"#6a8a4f",
+  blizzard:"#f2f7fb", drought:"#c39a5e", heatwave:"#c9a060", earthquake:"#8a8474", flood:"#5a6a4a",
+  volcano:"#4a3a34", tsunami:"#d8c89a", landslide:"#6a7a4a", forestfire:"#3a3024", avalanche:"#eef4f8" };
+function cfSkyTex(k){ const P=CF_SKY[k]||CF_SKY.hurricane;
+  const dt=new BABYLON.DynamicTexture("cfsky"+(_lpN++),{width:256,height:256},scene,true), c=dt.getContext();
+  const g=c.createLinearGradient(0,0,0,256); g.addColorStop(0,P[0]); g.addColorStop(0.72,P[1]); g.addColorStop(1,P[1]);
+  c.fillStyle=g; c.fillRect(0,0,256,256);
+  c.fillStyle=P[2]; c.beginPath(); c.moveTo(0,256);                       // colline all'orizzonte
+  for(let x=0;x<=256;x+=16) c.lineTo(x,196+Math.sin(x*0.045+k.length)*14+Math.sin(x*0.13)*6);
+  c.lineTo(256,256); c.closePath(); c.fill();
+  c.globalAlpha=0.18; c.fillStyle="#ffffff";
+  for(let i=0;i<5;i++){ c.beginPath(); c.ellipse(30+i*50,40+(i%2)*30,34,10,0,0,Math.PI*2); c.fill(); }
+  dt.update(); return dt; }
+function cfGroundTex(k){ const hx=CF_GROUND[k]||"#6f8a5a";
+  const dt=new BABYLON.DynamicTexture("cfgr"+(_lpN++),{width:128,height:128},scene,true), c=dt.getContext();
+  c.fillStyle=hx; c.fillRect(0,0,128,128); let sd=k.length*17+3; const rnd=()=>{ sd=(sd*16807)%2147483647; return (sd%1000)/1000; };
+  for(let i=0;i<260;i++){ c.fillStyle=rnd()<0.5?"rgba(0,0,0,0.10)":"rgba(255,255,255,0.10)"; c.fillRect(rnd()*128,rnd()*128,2+rnd()*3,2+rnd()*3); }
+  dt.update(); return dt; }
+const CF_HAZ_ANIM=[];
+function cfHazAnimOn(){ if(cfHazAnimOn.__on) return; cfHazAnimOn.__on=true; let t=0;
+  scene.onBeforeRenderObservable.add(()=>{ if(typeof area==="undefined"||area!==UNIT_CLIMATE.area) return;
+    t+=engine.getDeltaTime()/1000;
+    for(let i=0;i<CF_HAZ_ANIM.length;i++){ try{ CF_HAZ_ANIM[i](t); }catch(e){} } }); }
 LEXPROPS.cfHaz=function(id,o){ o=o||{};
   const r=new BABYLON.TransformNode(id,scene);
   const B=0.86;                                   // quota del piano del plinto
-  lpBox(r,1.02,0.80,0.62,"#46545f",0,0.40,0);     // plinto
-  lpBox(r,1.14,0.06,0.72,"#71818d",0,0.83,0);     // piano
-  lpBox(r,1.06,0.02,0.66,"#e9e2d2",0,0.87,0);     // vassoio chiaro (fondo scena)
   const k=o.kind||"hurricane";
+  const pl=hm7Mat("#3a4650",0.25,30), wood=hm7Mat("#2c353d",0.3,30);
+  lpBox(r,1.02,0.80,0.62,"#46545f",0,0.40,0).material=pl;     // plinto
+  lpBox(r,1.10,0.08,0.70,"#2c353d",0,0.04,0).material=wood;   // zoccolo
+  lpBox(r,1.14,0.06,0.72,"#71818d",0,0.83,0).material=hm7Mat("#9aa6ae",0.5,50);   // piano
+  /* targhetta numerata in ottone (solo il numero, mai il nome) */
+  { const n=(o.fam==="d"?"D":"W")+((CF_HAZ_Z.indexOf(o.z)+1)||"");
+    const dt=new BABYLON.DynamicTexture("cfplq"+(_lpN++),{width:128,height:64},scene,true), c=dt.getContext();
+    c.fillStyle="#c9a35a"; c.fillRect(0,0,128,64); c.strokeStyle="#7a5a2a"; c.lineWidth=5; c.strokeRect(3,3,122,58);
+    c.fillStyle="#3a2a14"; c.font="bold 34px sans-serif"; c.textAlign="center"; c.textBaseline="middle"; c.fillText("No. "+n,64,34); dt.update();
+    const m=new BABYLON.StandardMaterial("cfplqM"+(_lpN++),scene); m.diffuseTexture=dt; m.specularColor=new BABYLON.Color3(0.5,0.45,0.3); m.emissiveColor=new BABYLON.Color3(0.2,0.2,0.2);
+    const q=BABYLON.MeshBuilder.CreatePlane("cfplq",{width:0.26,height:0.13},scene); q.material=m; q.parent=r; q.position.set(0,0.62,0.315); q.rotation.y=Math.PI; }
+  /* terreno della scena con texture + fondale dipinto */
+  { const gm=new BABYLON.StandardMaterial("cfgrM"+(_lpN++),scene); gm.diffuseTexture=cfGroundTex(k); gm.specularColor=new BABYLON.Color3(0.03,0.03,0.03);
+    lpBox(r,1.06,0.02,0.66,"#e9e2d2",0,0.87,0).material=gm;
+    const sm=new BABYLON.StandardMaterial("cfskyM"+(_lpN++),scene); sm.diffuseTexture=cfSkyTex(k); sm.specularColor=new BABYLON.Color3(0,0,0);
+    sm.emissiveColor=new BABYLON.Color3(0.45,0.45,0.45);
+    const bd=BABYLON.MeshBuilder.CreatePlane("cfsky",{width:1.06,height:1.18},scene); bd.material=sm; bd.parent=r;
+    bd.position.set(0,B+0.60,-0.318); bd.rotation.y=Math.PI; bd.isPickable=false;
+    if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(bd); }
+  const _nBefore=r.getChildren().length;
 
   if(k==="hurricane"){
     /* vista dall'alto, inclinata: spirale bianca con l'OCCHIO scuro. */
     const g=new BABYLON.TransformNode(id+"_g",scene); g.parent=r;
-    g.position.set(0,B+0.42,0); g.rotation.x=-0.62;
+    g.position.set(0,B+0.44,0.02); g.rotation.x=-0.62; g.scaling.set(0.82,0.82,0.82);   // v268: dentro la teca
     cfSph(g,0.86,"#e6ecf1",0,0,0,1,0.16,1);                       // disco nuvoloso
     for(let i=0;i<4;i++){ const a=i*Math.PI/2;
       const arm=cfSph(g,0.52,"#f4f8fb",Math.cos(a)*0.20,0.05,Math.sin(a)*0.20,1,0.16,2.1);
@@ -42358,6 +42413,38 @@ LEXPROPS.cfHaz=function(id,o){ o=o||{};
       cfCone(r,0.02,0.24,0.30,"#2f4a32",p[0],B+0.29,p[1]); });    // abeti che vengono sepolti
     cfSph(r,0.44,"#ffffff",0.24,B+0.14,0.04,1,0.5,1);             // fronte della valanga
   }
+  /* ---- animazione per evento (sui pezzi appena costruiti della scena) ---- */
+  const S=r.getChildren().slice(_nBefore);
+  const byY=(a,b)=>S.filter(m=>m.position&&m.position.y>=B+a&&m.position.y<=B+b);
+  if(k==="tornado"){ const tw=byY(0.0,0.9); tw.forEach(m=>{ m.__x0=m.position.x; });
+    CF_HAZ_ANIM.push(t=>tw.forEach((m,i)=>{ m.rotation.y=t*4+i; m.position.x=m.__x0+Math.sin(t*3+i*0.9)*0.03; })); }
+  else if(k==="hurricane"){ const g=S.filter(m=>/_g$/.test(m.name))[0]; if(g) CF_HAZ_ANIM.push(t=>{ g.rotation.y=-t*0.6; }); }
+  else if(k==="thunderstorm"){ const bolts=S.filter(m=>m.material&&m.material.emissiveColor&&m.material.emissiveColor.r>0.9);
+    CF_HAZ_ANIM.push(t=>{ const on=((t*1.3)%2.2)<0.18 || (((t*1.3)%2.2)>0.3&&((t*1.3)%2.2)<0.38); bolts.forEach(b=>b.setEnabled(on)); }); }
+  else if(k==="blizzard"||k==="hailstorm"){ const fl=S.filter(m=>m.position&&m.position.y>B+0.25&&m.position.y<B+0.9&&/^cfs/.test(m.name));
+    fl.forEach((m,i)=>{ m.__y0=m.position.y; m.__x0=m.position.x; });
+    CF_HAZ_ANIM.push(t=>fl.forEach((m,i)=>{ const sp=(k==="hailstorm"?0.55:0.22), top=B+0.86, bot=B+0.20;
+      let y=m.__y0-((t*sp+i*0.13)%1)*(top-bot); if(y<bot) y+=top-bot; m.position.y=y;
+      if(k==="blizzard") m.position.x=m.__x0+Math.sin(t*1.7+i)*0.05; })); }
+  else if(k==="forestfire"||k==="volcano"){ const fl=S.filter(m=>m.material&&m.material.emissiveColor&&m.material.emissiveColor.r>0.8);
+    fl.forEach(m=>{ m.__s0=m.scaling.y; });
+    CF_HAZ_ANIM.push(t=>fl.forEach((m,i)=>{ const f=1+0.12*Math.sin(t*9+i*1.7)+0.06*Math.sin(t*23+i); m.scaling.y=m.__s0*f; })); }
+  else if(k==="flood"||k==="tsunami"){ const wa=S.filter(m=>m.material&&/#?3f7fa8|2f7fae|2f6f9a/i.test(m.material.name||"")||(m.material&&m.material.diffuseColor&&m.material.diffuseColor.b>0.55&&m.material.diffuseColor.r<0.35));
+    wa.forEach(m=>{ m.__y0=m.position.y; });
+    CF_HAZ_ANIM.push(t=>wa.forEach((m,i)=>{ m.position.y=m.__y0+Math.sin(t*1.6+i)*0.012; })); }
+  else if(k==="heatwave"){ const air=S.filter(m=>m.position&&m.position.z>0.2&&m.position.y<B+0.6);
+    air.forEach(m=>{ m.__x0=m.position.x; }); CF_HAZ_ANIM.push(t=>air.forEach((m,i)=>{ m.position.x=m.__x0+Math.sin(t*3+i*1.3)*0.03; })); }
+  cfHazAnimOn();
+  /* ---- teca di vetro, profili, faretto ---- */
+  const frame=hm7Mat("#2c353d",0.5,50), W2=1.10, D2=0.70, H2=1.20, y0=B+0.01;
+  [[-1,-1],[-1,1],[1,-1],[1,1]].forEach(q=>lpBox(r,0.03,H2,0.03,"#2c353d",q[0]*W2/2,y0+H2/2,q[1]*D2/2).material=frame);
+  lpBox(r,W2+0.04,0.08,D2+0.04,"#2c353d",0,y0+H2+0.04,0).material=frame;                      // cappello
+  const lamp=lpBox(r,W2-0.12,0.015,0.04,"#fff6d8",0,y0+H2-0.01,0.20,"#d8c89a");                 // striscia di luce
+  if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(lamp);
+  const gm=new BABYLON.StandardMaterial("cfGlass"+(_lpN++),scene); gm.diffuseColor=new BABYLON.Color3(0.8,0.9,0.95);
+  gm.specularColor=new BABYLON.Color3(0.9,0.9,0.9); gm.specularPower=120; gm.alpha=0.10;
+  [[0,y0+H2/2,D2/2,W2,H2,0.01],[-W2/2,y0+H2/2,0,0.01,H2,D2],[W2/2,y0+H2/2,0,0.01,H2,D2]].forEach(q=>{
+    const g=BABYLON.MeshBuilder.CreateBox("cfgl",{width:q[3],height:q[4],depth:q[5]},scene); g.material=gm; g.position.set(q[0],q[1],q[2]); g.parent=r; g.isPickable=false; });
   return r; };
 
 /* =====================================================================
@@ -43172,20 +43259,56 @@ let CF_LATE_NPC=[];
 function cfKitHud(){
   const kr=Quest.state&&Quest.state.kr; if(!kr) return;
   if(kr.phase==="kit"){
-    const it=CF_KIT[kr.i];
+    const it=kr.carry?CF_KIT.filter(q=>q.k===kr.carry)[0]:null;
     questHudSet("funzioni", it
       ? "\u{1F9E4} Kit ("+(kr.i+1)+"/"+CF_KIT.length+"): you've got <b>the "+it.noun
-        +"</b> \u00b7 the name tape says <b>"+CF_OWNERS[it.own].plate+"</b>"
-      : "\u{1F9E4} Kit away", Quest.i, Quest.total);
+        +"</b> \u00b7 the name tape says <b>"+CF_OWNERS[it.own].plate+"</b> \u2014 take it to the right locker"
+      : (kr.i<CF_KIT.length ? "\u{1F9E4} Kit ("+kr.i+"/"+CF_KIT.length+" away): <b>pick up</b> a piece of kit from the floor (E)"
+                            : "\u{1F9E4} Kit away"), Quest.i, Quest.total);
   } else {
     questHudSet("funzioni","\u{1F6AA} At the door ("+(kr.j+1)+"/"+CF_LATE.length
       +"): listen to the excuse and answer", Quest.i, Quest.total);
   }
 }
 /* --- FASE 1: gli armadietti --- */
+/* v268 — si RACCOLGONO davvero (Giacomo): ogni pezzo per terra ha il suo
+   «Press E to pick up»; il pezzo passa in mano all'avatar (il nodo viene
+   riparentato al giocatore, davanti al busto) e resta li' finche' non va
+   nell'armadietto giusto. Uno alla volta, in qualunque ordine. */
+const CF_CARRY={ k:null, home:null };
+function cfPick(k){
+  const kr=Quest.state&&Quest.state.kr; if(!kr||kr.phase!=="kit") return;
+  if(kr.carry){ toast("\u270B Hai gia' in mano "+(CF_KIT.filter(q=>q.k===kr.carry)[0]||{}).it+": prima mettilo nell'armadietto."); return; }
+  const n=CF_PILE[k]; if(!n) return;
+  CF_CARRY.home={ parent:n.parent, pos:n.position.clone(), rot:n.rotation.clone() };
+  CF_CARRY.k=k; kr.carry=k;
+  n.setParent(null); n.parent=player; n.position.set(0,1.00,0.36);   // davanti al busto (il +z locale del giocatore e' l'avanti) n.rotation.set(0,0,0);
+  n.getChildMeshes().forEach(m=>{ if(m.name==="h7sh") m.setEnabled(false); m.__dyn=true; });
+  (kr.inters||[]).forEach(o=>{ if(o.__pick) o.enabled=!kr.carry && o.__pick!==k && CF_PILE[o.__pick].isEnabled() && CF_PILE[o.__pick].parent!==player; });
+  const it=CF_KIT.filter(q=>q.k===k)[0];
+  toast("\u{1F9E4} You've got the "+it.noun+" \u2014 name tape: "+CF_OWNERS[it.own].plate);
+  cfKitHud();
+}
+/* rimette il pezzo in mano al suo posto sul pavimento (spento o acceso) */
+function cfCarryDrop(show){
+  const k=CF_CARRY.k; if(!k) return; const n=CF_PILE[k], h=CF_CARRY.home;
+  if(n&&h){ n.parent=h.parent; n.position.copyFrom(h.pos); n.rotation.copyFrom(h.rot);
+    n.getChildMeshes().forEach(m=>{ if(m.name==="h7sh") m.setEnabled(true); }); n.setEnabled(!!show); }
+  CF_CARRY.k=null; CF_CARRY.home=null;
+  const kr=Quest.state&&Quest.state.kr; if(kr) kr.carry=null;
+}
+/* se esci dalla caserma (o la quest si chiude) con un pezzo in mano, il pezzo
+   torna per terra: non deve finire a passeggio per la citta' */
+scene.onBeforeRenderObservable.add(()=>{ if(!CF_CARRY.k) return;
+  const kr=Quest.state&&Quest.state.kr;
+  if(area!==UNIT_CLIMATE.area || Quest.unit!==UNIT_CLIMATE || !kr || kr.phase!=="kit") cfCarryDrop(true); });
 function cfKitStore(ownKey){
   const kr=Quest.state&&Quest.state.kr; if(!kr||kr.phase!=="kit") return;
-  const it=CF_KIT[kr.i]; if(!it) return;
+  const it=kr.carry?CF_KIT.filter(q=>q.k===kr.carry)[0]:null;
+  if(!it){ DialogueBox.open({ npc:CF_NPC.hale, icon:"\u{1F9E4}", sub:"Mani vuote",
+      text:"Your hands are empty. Pick something up from the floor first.",
+      italian:"Prima raccogli un pezzo dal mucchio per terra (E), poi leggi il nastro.",
+      buttons:[{label:"Ok", cls:"primary", act:()=>{}}] }); return; }
   if(ownKey!==it.own){
     const o=CF_OWNERS[it.own];
     DialogueBox.open({ npc:CF_NPC.hale, icon:"\u{1F9E4}", sub:"Armadietto sbagliato",
@@ -43231,11 +43354,12 @@ function cfKitCheck(it,o,subj,words,joined){
 }
 function cfKitGood(it){
   const kr=Quest.state.kr;
-  cfPileShow(false,it.k);                           // v267: il pezzo sparisce dal pavimento: e' nell'armadietto
-  kr.i++; cfKitHud();
+  if(CF_CARRY.k===it.k) cfCarryDrop(false); else cfPileShow(false,it.k);   // v267/268: e' nell'armadietto
+  kr.carry=null; kr.i++;
+  (kr.inters||[]).forEach(o=>{ if(o.__pick) o.enabled=CF_PILE[o.__pick].isEnabled(); });
+  cfKitHud();
   if(kr.i>=CF_KIT.length){ DialogueBox.close(); setTimeout(cfKitToDoor,700); return; }
-  const nx=CF_KIT[kr.i];
-  toast("\u2714 Away. Now you've got the "+nx.noun+" \u2014 name tape: "+CF_OWNERS[nx.own].plate);
+  toast("\u2714 Away! Pick up the next piece ("+kr.i+"/"+CF_KIT.length+").");
   setTimeout(function(){ DialogueBox.close(); },400);
 }
 /* --- FASE 2: la porta --- */
@@ -43320,8 +43444,16 @@ MECH.kitRoom=function(s){
   const I=INTERIORS[UNIT_CLIMATE.area];
   if(!I || !CF_NPC.hale){ mechStub(s); return; }
   const C=I.center;
-  const kr=Quest.state.kr={ phase:"kit", i:0, j:0, tries:0, done:[], inters:[] };
+  cfCarryDrop(true);
+  const kr=Quest.state.kr={ phase:"kit", i:0, j:0, tries:0, done:[], inters:[], carry:null };
   cfPileShow(true);                                 // v267: tutto di nuovo per terra
+  /* v268: un «pick up» per ogni pezzo sul pavimento */
+  CF_KIT.forEach(function(it){ const n=CF_PILE[it.k]; if(!n) return;
+    const o=Quest.questInteract({ id:"cf_pick_"+it.k, area:UNIT_CLIMATE.area, radius:1.25,
+      pos:()=>n.getAbsolutePosition(), meshes:n.getChildMeshes(), label:it.it,
+      prompt:'\u270B Press <b>E</b> to pick up the <b>'+it.noun+'</b>',
+      interact:function(){ cfPick(it.k); } });
+    o.__pick=it.k; kr.inters.push(o); });
   Object.keys(CF_OWNERS).forEach(function(k){
     const o=CF_OWNERS[k];
     const p=(k==="stn") ? new BABYLON.Vector3(C.x-4.40,0,C.z+3.15)
@@ -43334,11 +43466,10 @@ MECH.kitRoom=function(s){
       interact:function(){ cfKitStore(k); } }));
   });
   cfKitHud();
-  const it=CF_KIT[0];
   DialogueBox.open({ npc:CF_NPC.hale, icon:"\u{1F692}", sub:"Station chief",
-    text:"The crew dropped everything on the floor. Every piece has a name tape on it \u2014 "
-        +"read it, take it to the right locker, and tell me whose it is.",
-    italian:"Cominci con "+it.it+": sul nastro c'\u00e8 scritto "+CF_OWNERS[it.own].plate+".",
+    text:"The crew dropped everything on the floor. Pick up one piece at a time \u2014 "
+        +"every piece has a name tape on it: read it, take it to the right locker, and tell me whose it is.",
+    italian:"Raccogli un pezzo alla volta (E), leggi il nastro col nome e portalo all'armadietto giusto (la manichetta va sull'autopompa).",
     buttons:[{label:"Let's go", cls:"primary", act:()=>{}}] });
 };
 
