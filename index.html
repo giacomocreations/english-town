@@ -9468,13 +9468,7 @@ function buildPark(){
   if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(circ);
   [-1,1].forEach(sg=>{ pline(PFX+sg*12.5,PFZ,0.4,10);
     pline(PFX+sg*13.75,PFZ-5,2.5,0.4); pline(PFX+sg*13.75,PFZ+5,2.5,0.4);
-    const gx=PFX+sg*15;                                   // porta: due pali + traversa
-    [-3,3].forEach(dz=>{ const p=BABYLON.MeshBuilder.CreateCylinder("gpost",{diameter:0.22,height:2.2,tessellation:8},scene);
-      p.material=line; p.position.set(gx,1.1,PFZ+dz); p.parent=townRoot; p.isPickable=false;
-      if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(p); });
-    const bar=BABYLON.MeshBuilder.CreateCylinder("gbar",{diameter:0.22,height:6,tessellation:8},scene);
-    bar.material=line; bar.rotation.x=Math.PI/2; bar.position.set(gx,2.2,PFZ); bar.parent=townRoot; bar.isPickable=false;
-    if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(bar); });
+    sfGoal(PFX+sg*15,PFZ,sg); });                       // v267: porta vera con rete e ombra (vedi sfGoal)
   landmarkSign(PFX,5,PFZ,"⚽","Sports Field","Year 1 · Unit 7 Sport");
   buildSportsZone(PFX,PFZ);   // attrezzi (lessico), bacheca, tabellone, NPC e cartello-quest
   // FONTANA centrale
@@ -21883,23 +21877,100 @@ function u7NextAthletePos(){ const st=Quest.state, i=(st&&st.iv&&st.iv.idx)||0;
 /* ---- ATTREZZATURA: cinque props procedurali (0 KB) che fanno da item
    lessicali. Volutamente OGGETTI e non cartelli: due unit di fila con le
    stesse targhe-poster sarebbero state una ripetizione. ---- */
+/* =====================================================================
+   v267 — SPORTS FIELD: porte, canestro e attrezzi rifatti + OMBRE
+   (Giacomo, 28 set). Tutto procedurale. Ogni oggetto:
+     · proietta l'ombra vera del sole (__occluder, qualita' «Alto»);
+     · ha l'ombra di contatto sfumata sul manto (hm7Shadow), a ogni qualita'.
+   Le linee del campo stanno a y 0.26: le ombre di contatto a 0.268, sopra.
+   ===================================================================== */
+const SF_SHY=0.268;
+let _sfNetMat=null;
+function sfNetMat(){ if(_sfNetMat) return _sfNetMat;
+  const dt=new BABYLON.DynamicTexture("sfNetT",{width:128,height:128},scene,true), c=dt.getContext();
+  c.clearRect(0,0,128,128); c.strokeStyle="rgba(245,245,240,0.95)"; c.lineWidth=3;
+  for(let i=0;i<=8;i++){ c.beginPath(); c.moveTo(i*16,0); c.lineTo(i*16,128); c.stroke(); c.beginPath(); c.moveTo(0,i*16); c.lineTo(128,i*16); c.stroke(); }
+  dt.hasAlpha=true; dt.update(); dt.wrapU=dt.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE;
+  const m=new BABYLON.StandardMaterial("sfNetM",scene); m.diffuseTexture=dt; m.useAlphaFromDiffuseTexture=true;
+  m.backFaceCulling=false; m.specularColor=new BABYLON.Color3(0,0,0); m.emissiveColor=new BABYLON.Color3(0.25,0.25,0.25);
+  return (_sfNetMat=m); }
+function sfWhite(){ return hm7Mat("#f4f4f0",0.6,60); }
+/* cilindro fra due punti 3D: inclinazione (rotation.x) + direzione (rotation.y),
+   niente Cross() (vedi nota in svGuy) */
+function sfBar(r,m,a,b,d){ const dx=b[0]-a[0], dy=b[1]-a[1], dz=b[2]-a[2], L=Math.hypot(dx,dy,dz);
+  const c=BABYLON.MeshBuilder.CreateCylinder("sfb",{diameter:d,height:L,tessellation:12},scene); c.material=m; c.parent=r;
+  c.position.set((a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2);
+  c.rotation.x=Math.acos(Math.max(-1,Math.min(1,dy/L))); c.rotation.y=Math.atan2(dx,dz); return c; }
+/* quadrilatero di rete da 4 punti (in ordine), UV in metri/0.35 */
+function sfQuad(r,P){ const pos=[], uv=[], L1=Math.hypot(P[1][0]-P[0][0],P[1][1]-P[0][1],P[1][2]-P[0][2]),
+    L2=Math.hypot(P[3][0]-P[0][0],P[3][1]-P[0][1],P[3][2]-P[0][2]);
+  P.forEach(p=>pos.push(p[0],p[1],p[2])); uv.push(0,0, L1/0.35,0, L1/0.35,L2/0.35, 0,L2/0.35);
+  const idx=[0,1,2,0,2,3], nrm=[]; BABYLON.VertexData.ComputeNormals(pos,idx,nrm);
+  const vd=new BABYLON.VertexData(); vd.positions=pos; vd.indices=idx; vd.uvs=uv; vd.normals=nrm;
+  const m=new BABYLON.Mesh("sfn",scene); vd.applyToMesh(m); m.material=sfNetMat(); m.parent=r; m.isPickable=false; return m; }
+/* PORTA DA CALCIO: pali 12 cm, traversa, telaio posteriore, rete su 4 lati.
+   Nodo con il +x locale verso l'ESTERNO del campo (sg), bocca sul locale x=0. */
+function sfGoal(gx,gz,sg){
+  const r=new BABYLON.TransformNode("sfGoal"+sg,scene); r.parent=townRoot; r.position.set(gx,PITCH_Y,gz); r.rotation.y=(sg>0?0:Math.PI);
+  const W=6, H=2.2, D=1.7, Dt=0.9, wm=sfWhite(), gm=hm7Mat("#9aa0a6",0.6,40);
+  [-W/2,W/2].forEach(z=>{ sfBar(r,wm,[0,0,z],[0,H,z],0.13); sfBar(r,gm,[0,0,z],[D,0,z],0.05);          // palo + barra a terra
+    sfBar(r,gm,[Dt,H,z],[D,0,z],0.05); sfBar(r,gm,[0,H,z],[Dt,H,z],0.05); });                          // montante obliquo + tubo in alto
+  sfBar(r,wm,[0,H,-W/2-0.065],[0,H,W/2+0.065],0.13);                                                    // traversa
+  sfBar(r,gm,[D,0,-W/2],[D,0,W/2],0.05); sfBar(r,gm,[Dt,H,-W/2],[Dt,H,W/2],0.05);
+  /* rete: fondo inclinato, cielo, due fianchi */
+  sfQuad(r,[[Dt,H,-W/2],[Dt,H,W/2],[D,0,W/2],[D,0,-W/2]]);
+  sfQuad(r,[[0,H,-W/2],[0,H,W/2],[Dt,H,W/2],[Dt,H,-W/2]]);
+  [-W/2,W/2].forEach(z=>{ sfQuad(r,[[0,0,z],[D,0,z],[Dt,H,z],[0,H,z]]); });
+  hm7Shadow(r,D+0.6,W+0.6,D*0.45,0,SF_SHY-PITCH_Y,0.8);
+  r.getChildMeshes().forEach(m=>{ if(m.name!=="h7sh"&&!/^sfn/.test(m.name)) m.__occluder=true; m.isPickable=false;
+    if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(m); });
+  /* solidi: solo i pali e il fondo (la bocca resta libera: ci si entra) */
+  [-W/2,W/2].forEach(z=>{ const wz=gz+(sg>0?z:-z); addSolid(gx-0.08,gx+0.08,wz-0.08,wz+0.08,"town"); });
+  return r; }
+/* texture del tabellone del canestro: bianco, bordo e quadrato rossi */
+function sfBoardTex(){ const dt=new BABYLON.DynamicTexture("sfBbT",{width:256,height:150},scene,true), c=dt.getContext();
+  c.fillStyle="#f8f8f4"; c.fillRect(0,0,256,150); c.strokeStyle="#d23a2a"; c.lineWidth=10; c.strokeRect(5,5,246,140);
+  c.lineWidth=7; c.strokeRect(92,62,72,54); dt.update(); return dt; }
+/* PALLONE: pentagoni neri su bianco (texture sferica) */
+function sfBallTex(){ const dt=new BABYLON.DynamicTexture("sfBallT",{width:256,height:128},scene,true), c=dt.getContext();
+  c.fillStyle="#f6f4ee"; c.fillRect(0,0,256,128); c.fillStyle="#1c1c20";
+  const pent=(x,y,rr)=>{ c.beginPath(); for(let k=0;k<5;k++){ const a=-Math.PI/2+k*2*Math.PI/5; c.lineTo(x+Math.cos(a)*rr,y+Math.sin(a)*rr); } c.closePath(); c.fill(); };
+  for(let i=0;i<5;i++){ pent(26+i*51,40,15); pent(51+i*51,88,15); } pent(128,6,12); pent(128,122,12);
+  c.strokeStyle="#9a9a96"; c.lineWidth=1.5; for(let i=0;i<10;i++){ c.beginPath(); c.moveTo(i*25.6,0); c.lineTo(i*25.6+12,128); c.stroke(); }
+  dt.update(); return dt; }
+
 function u7Ball(x,z){ const r=new BABYLON.TransformNode("u7ball",scene); r.parent=townRoot; r.position.set(x,0,z);
   /* 0.52 era oltre il DOPPIO di un pallone vero (0.22): a fianco di un
      giocatore alto 1.78 sembrava un pallone da spiaggia. 0.34 resta
      leggibile a distanza (serve come item lessicale) senza il fuori scala. */
-  const b=BABYLON.MeshBuilder.CreateSphere("u7bs",{diameter:0.34,segments:12},scene);
-  b.material=mat("u7ballm","#f7f4ec","#242424"); b.position.y=0.17; b.parent=r; b.isPickable=false;
-  const band=BABYLON.MeshBuilder.CreateTorus("u7bb",{diameter:0.33,thickness:0.062,tessellation:16},scene);
-  band.material=mat("u7bandm","#22303a"); band.position.y=0.17; band.rotation.x=Math.PI/2.6; band.parent=r; band.isPickable=false;
+  const b=BABYLON.MeshBuilder.CreateSphere("u7bs",{diameter:0.34,segments:20},scene);
+  const bm=new BABYLON.StandardMaterial("u7ballm",scene); bm.diffuseTexture=sfBallTex();       // v267: pallone a pentagoni
+  bm.specularColor=new BABYLON.Color3(0.3,0.3,0.3); bm.specularPower=40;
+  b.material=bm; b.position.y=0.17; b.rotation.set(0.4,0.7,0.2); b.parent=r; b.isPickable=false;
   return r; }
+/* v267 — CANESTRO vero: base zavorrata, palo con imbottitura, braccio con
+   puntone, tabellone bianco col quadrato rosso, anello con la retina.
+   Stesso punto e stesso solido di prima (il palo), fronte verso +z. */
 function u7Hoop(x,z){ const r=new BABYLON.TransformNode("u7hoop",scene); r.parent=townRoot; r.position.set(x,0,z);
-  const M=mat("u7polem","#3d454c");
-  const pole=BABYLON.MeshBuilder.CreateCylinder("u7hp",{diameter:0.24,height:3.3,tessellation:8},scene);
-  pole.material=M; pole.position.y=1.65; pole.parent=r; pole.isPickable=false;
-  const bb=BABYLON.MeshBuilder.CreateBox("u7hb",{width:1.7,height:1.05,depth:0.09},scene);
-  bb.material=mat("u7bbm","#f2efe4","#43433e"); bb.position.set(0,3.15,0.1); bb.parent=r; bb.isPickable=false;
-  const ring=BABYLON.MeshBuilder.CreateTorus("u7hr",{diameter:0.62,thickness:0.06,tessellation:20},scene);
-  ring.material=mat("u7ringm","#d1642c","#33180a"); ring.position.set(0,2.78,0.5); ring.parent=r; ring.isPickable=false;
+  const steel=hm7Mat("#3d454c",0.5,40), blue=hm7Mat("#2f5f9e",0.2,20);
+  hm7Box(r,0.70,0.16,1.00,hm7Mat("#2b3036",0.3,20),0,0.08,-0.15);                          // base zavorrata
+  hm7Cyl(r,0.17,0.17,3.05,steel,0,1.60,0,16);                                               // palo
+  hm7Box(r,0.30,1.50,0.30,blue,0,0.95,0);                                                    // imbottitura
+  sfBar(r,steel,[0,3.00,0],[0,3.00,0.55],0.12); sfBar(r,steel,[0,2.35,0],[0,2.95,0.52],0.08);   // braccio + puntone
+  const bw=1.80, bh=1.05, bz=0.60, by=3.25;
+  hm7Box(r,bw+0.06,bh+0.06,0.05,hm7Mat("#9aa0a6",0.6,40),0,by,bz);                          // telaio
+  const bp=BABYLON.MeshBuilder.CreatePlane("u7hbf",{width:bw,height:bh,sideOrientation:BABYLON.Mesh.DOUBLESIDE,backUVs:new BABYLON.Vector4(1,0,0,1)},scene);
+  const bm=new BABYLON.StandardMaterial("u7bbm",scene); bm.diffuseTexture=sfBoardTex(); bm.specularColor=new BABYLON.Color3(0.3,0.3,0.3);
+  bm.emissiveColor=new BABYLON.Color3(0.15,0.15,0.15);
+  bp.material=bm; bp.position.set(0,by,bz+0.028); bp.rotation.y=Math.PI; bp.parent=r; bp.isPickable=false;
+  const rim=hm7Mat("#e05a1c",0.6,50);
+  hm7Box(r,0.14,0.06,0.16,rim,0,2.92,bz+0.10);                                               // staffa
+  hm7Tor(r,0.46,0.025,rim,0,2.95,bz+0.34);                                                   // anello
+  const net=BABYLON.MeshBuilder.CreateCylinder("u7hn",{diameterTop:0.45,diameterBottom:0.30,height:0.42,tessellation:18,cap:BABYLON.Mesh.NO_CAP},scene);
+  const nm=sfNetMat().clone("u7hnM"); nm.diffuseTexture=sfNetMat().diffuseTexture.clone(); nm.diffuseTexture.uScale=4; nm.diffuseTexture.vScale=1.2;
+  net.material=nm; net.position.set(0,2.74,bz+0.34); net.parent=r; net.isPickable=false;
+  hm7Shadow(r,1.1,1.5,0,-0.10,0.285,0.8);                                                   // sotto la base
+  hm7Shadow(r,2.2,1.2,0,1.2,0.285,0.35);                                                    // proiezione del tabellone
   addSolid(x-0.35,x+0.35,z-0.35,z+0.35,"town");
   return r; }
 function u7Racket(x,z){ const r=new BABYLON.TransformNode("u7rack",scene); r.parent=townRoot; r.position.set(x,0,z);
@@ -21908,6 +21979,9 @@ function u7Racket(x,z){ const r=new BABYLON.TransformNode("u7rack",scene); r.par
   h.material=mat("u7rhm","#2b3a44"); h.position.y=0.31; h.parent=g; h.isPickable=false;
   const head=BABYLON.MeshBuilder.CreateTorus("u7rt",{diameter:0.46,thickness:0.05,tessellation:22},scene);
   head.material=mat("u7rtm","#c8d24a","#22260a"); head.position.y=0.84; head.rotation.x=Math.PI/2; head.parent=g; head.isPickable=false;
+  const st=BABYLON.MeshBuilder.CreateDisc("u7rs",{radius:0.21,tessellation:24,sideOrientation:BABYLON.Mesh.DOUBLESIDE},scene);   // v267: corde
+  const sm=sfNetMat().clone("u7rsM"); sm.diffuseTexture=sfNetMat().diffuseTexture.clone(); sm.diffuseTexture.uScale=sm.diffuseTexture.vScale=1.6;
+  st.material=sm; st.position.y=0.84; st.parent=g; st.isPickable=false;
   const ball=BABYLON.MeshBuilder.CreateSphere("u7rb",{diameter:0.18,segments:8},scene);
   ball.material=mat("u7rbm","#d8e04a","#3a3f10"); ball.position.set(0.42,0.09,0.2); ball.parent=r; ball.isPickable=false;
   return r; }
@@ -21945,10 +22019,12 @@ function u7Bike(x,z,ry){ const r=new BABYLON.TransformNode("u7bike",scene); r.pa
   ped.parent=r; ped.isPickable=false;
   return r; }
 function u7Cones(x,z){ const r=new BABYLON.TransformNode("u7cones",scene); r.parent=townRoot; r.position.set(x,0,z);
-  const M=mat("u7conem","#e0662c","#221005");
-  [-1.1,-0.35,0.4,1.15].forEach((dx,i)=>{ const c=BABYLON.MeshBuilder.CreateCylinder("u7c",
-      {diameterTop:0.04,diameterBottom:0.34,height:0.42,tessellation:10},scene);
-    c.material=M; c.position.set(dx,0.21,(i%2)*0.5); c.parent=r; c.isPickable=false; });
+  const M=hm7Mat("#f06a2a",0.4,40), Wb=hm7Mat("#f4f4f0",0.4,40);
+  [-1.1,-0.35,0.4,1.15].forEach((dx,i)=>{ const z=(i%2)*0.5;
+    hm7Box(r,0.36,0.03,0.36,M,dx,0.015,z);                                                    // base quadrata
+    hm7Cyl(r,0.04,0.30,0.42,M,dx,0.24,z,20);
+    hm7Cyl(r,0.155,0.19,0.07,Wb,dx,0.22,z,20);                                                // fascia bianca
+    hm7Shadow(r,0.55,0.55,dx,z,0.048,0.8); });
   return r; }
 
 /* ---- BACHECA: le tre schede si compilano durante l'intervista e restano
@@ -22017,7 +22093,8 @@ function buildSportsZone(cx,cz){
        erano nati senza — e SENZA OMBRA DI CONTATTO una sfera appoggiata
        sull'erba si legge come sospesa a mezz'aria (segnalato a schermo).
        Il manto `pitch` ha gia' __ground=true, quindi riceve. */
-    node.getChildMeshes().forEach(m=>{ if(m.getTotalVertices&&m.getTotalVertices()>0) m.__occluder=true; });
+    node.getChildMeshes().forEach(m=>{ if(m.getTotalVertices&&m.getTotalVertices()>0 && m.name!=="h7sh") m.__occluder=true; });
+    if(e.en!=="basketball" && e.en!=="running") try{ contactShadowFor(node,SF_SHY,0.8,0.12); }catch(er){}   // v267
     return { en:e.en, it:e.it, emoji:e.emoji, room:"the Sports Field", mesh:node,
              pos:new BABYLON.Vector3(e.x,0,e.z), solid:false }; });
   if(typeof refreshShadowCasters==="function") refreshShadowCasters();
@@ -22026,6 +22103,9 @@ function buildSportsZone(cx,cz){
   const boardMesh=u7Panel("u7board", cx+1, 1.5, cz-15, 3.6, 2.1, u7BoardDT, 0);
   u7ScoreDT=new BABYLON.DynamicTexture("u7sdt",{width:512,height:256},scene,true); u7DrawScore(null);
   u7Panel("u7score", cx+7, 1.8, cz-15, 3.2, 1.7, u7ScoreDT, 0);
+  /* v267: ombre di contatto sotto bacheca e tabellone (i pali stanno sul prato, fuori dal manto) */
+  [[cx+1,3.6],[cx+7,3.2]].forEach(q=>{ const n=new BABYLON.TransformNode("u7pShadow",scene); n.parent=townRoot; n.position.set(q[0],0,cz-15);
+    hm7Shadow(n,q[1]+0.5,0.9,0,0,0.035,0.7); });
   /* il punto d'avvio e' AGGANCIATO ALLA BACHECA, un oggetto che si vede e si
      illumina all'avvicinarsi: un interact invisibile in mezzo al prato non lo
      trova nessuno (segnalato: "non trovo il cartello-quest"). In piu' la
@@ -41313,20 +41393,26 @@ function svCampShadows(before){
   nodes.forEach(n=>{
     const meshes=(n.getChildMeshes?n.getChildMeshes():[]).concat(n.getTotalVertices?[n]:[]);
     meshes.forEach(m=>{ if(m.getTotalVertices && m.getTotalVertices()>0) m.__npcCast=true; });
-    /* ingombro nel sistema LOCALE del nodo (rotazione tolta un istante),
-       cosi' l'ombra ruota con l'oggetto invece di essere un rettangolo storto */
-    const ry=n.rotation?n.rotation.y:0, rq=n.rotationQuaternion; if(rq) return;
-    n.rotation.y=0; n.computeWorldMatrix(true); meshes.forEach(m=>m.computeWorldMatrix(true));
-    const bb=n.getHierarchyBoundingVectors(true);
-    n.rotation.y=ry; n.computeWorldMatrix(true);
-    const w=bb.max.x-bb.min.x, d=bb.max.z-bb.min.z, h=bb.max.y-bb.min.y;
-    if(!(w>0.2||d>0.2) || h<0.08 || w>6 || d>6) return;
-    const cx=(bb.min.x+bb.max.x)/2-n.position.x, cz=(bb.min.z+bb.max.z)/2-n.position.z;
-    const P=n.getAbsolutePosition(), gy=groundY(P.x,P.z)+0.014;
-    const sh=hm7Shadow(n,w*1.18+0.25,d*1.18+0.25,cx,cz,gy-P.y+0.0,0.85);
-    sh.__npcCast=false; sh.receiveShadows=false; });
+    const P=n.getAbsolutePosition();
+    contactShadowFor(n, groundY(P.x,P.z)+0.014, 0.85); });
   try{ refreshShadowCasters(); }catch(e){}
 }
+/* ombra di contatto sotto un nodo qualunque: ingombro nel sistema LOCALE del
+   nodo (rotazione tolta un istante), cosi' l'ombra ruota con l'oggetto
+   invece di essere un rettangolo storto. gyWorld = quota del terreno. */
+function contactShadowFor(n,gyWorld,k,pad){
+  const meshes=(n.getChildMeshes?n.getChildMeshes():[]).concat(n.getTotalVertices?[n]:[]);
+  const ry=n.rotation?n.rotation.y:0; if(n.rotationQuaternion) return null;
+  n.rotation.y=0; n.computeWorldMatrix(true); meshes.forEach(m=>m.computeWorldMatrix(true));
+  const bb=n.getHierarchyBoundingVectors(true);
+  n.rotation.y=ry; n.computeWorldMatrix(true);
+  const w=bb.max.x-bb.min.x, d=bb.max.z-bb.min.z, h=bb.max.y-bb.min.y;
+  if(!(w>0.2||d>0.2) || h<0.08 || w>6 || d>6) return null;
+  const P=n.getAbsolutePosition(), sc=n.scaling||{x:1,z:1};
+  const cx=((bb.min.x+bb.max.x)/2-P.x)/(sc.x||1), cz=((bb.min.z+bb.max.z)/2-P.z)/(sc.z||1);
+  const pd=(pad==null?0.25:pad);
+  const sh=hm7Shadow(n,(w*1.18+pd)/(sc.x||1),(d*1.18+pd)/(sc.z||1),cx,cz,gyWorld-P.y,k==null?0.85:k);
+  sh.__npcCast=false; sh.receiveShadows=false; return sh; }
 let svNpcBuilt=false, VIK=null;
 function buildSurvivalNPCs(){
   if(svNpcBuilt) return; svNpcBuilt=true;
@@ -42335,41 +42421,107 @@ LEXPROPS.cfEngine=function(id,o){ o=o||{};
 /* ARMADIETTO col cartellino del nome (o.name). Il nome sull'armadietto e'
    l'unico posto dove sta scritto: serve a decidere di CHI e' una cosa,
    non a leggere il lessico dell'unita'. */
+/* v267: armadietto in lamiera vera (feritoie, maniglia a leva, zoccolo,
+   bordo) e il CARTELLINO GIRATO: il piano guardava dentro l'anta (backface
+   culling) e il nome non si vedeva da nessuna parte. */
 LEXPROPS.cfLocker=function(id,o){ o=o||{};
-  const r=new BABYLON.TransformNode(id,scene);
-  lpBox(r,0.64,1.84,0.44,"#3f5a6b",0,0.92,0);
-  lpBox(r,0.58,1.66,0.03,"#4d6c80",0,0.94,0.23);                  // anta
-  lpCyl(r,0.05,0.04,"#c9c3b6",0.22,0.94,0.25,Math.PI/2);          // maniglia
-  for(let i=0;i<3;i++) lpBox(r,0.30,0.02,0.02,"#2f4553",0,1.60+i*0.06,0.245);   // feritoie
+  const r=new BABYLON.TransformNode(id,scene), body=hm7Mat("#3f5a6b",0.35,40), door=hm7Mat("#4d6c80",0.45,50), dark=hm7Mat("#2b3a44",0.3,30);
+  lpBox(r,0.64,1.84,0.44,"#3f5a6b",0,0.92,0).material=body;
+  lpBox(r,0.66,0.08,0.46,"#2b3a44",0,0.04,0).material=dark;                   // zoccolo
+  lpBox(r,0.66,0.04,0.46,"#2b3a44",0,1.86,0).material=dark;                   // cappello
+  lpBox(r,0.58,1.66,0.03,"#4d6c80",0,0.96,0.23).material=door;                // anta
+  lpBox(r,0.54,0.012,0.005,"#2f4553",0,1.79,0.247);
+  for(let i=0;i<5;i++) lpBox(r,0.34,0.018,0.012,"#2b3a44",0,1.60+i*0.045,0.248);   // feritoie in alto
+  for(let i=0;i<5;i++) lpBox(r,0.34,0.018,0.012,"#2b3a44",0,0.24+i*0.045,0.248);   // e in basso
+  lpBox(r,0.04,0.16,0.035,"#c9c3b6",0.22,1.00,0.26).material=hm7Mat("#c9ced3",0.9,70);   // maniglia a leva
+  lpCyl(r,0.035,0.02,"#c9c3b6",0.22,1.09,0.255,Math.PI/2).material=hm7Mat("#c9ced3",0.9,70);   // serratura
   const SZ=256, dt=new BABYLON.DynamicTexture("cfln"+(_lpN++),{width:SZ,height:96},scene,true);
   const c=dt.getContext();
   c.fillStyle="#f2ead6"; c.fillRect(0,0,SZ,96);
-  c.strokeStyle="#3f5a6b"; c.lineWidth=7; c.strokeRect(4,4,SZ-8,96-8);
+  c.strokeStyle="#8d221d"; c.lineWidth=7; c.strokeRect(4,4,SZ-8,96-8);
   c.fillStyle="#2b3a44"; c.textAlign="center"; c.textBaseline="middle";
-  c.font="bold 40px sans-serif"; c.fillText(String(o.name||"CREW"),SZ/2,50);
+  let f=40; c.font="bold "+f+"px sans-serif"; while(f>18 && c.measureText(String(o.name||"CREW")).width>SZ-24){ f-=2; c.font="bold "+f+"px sans-serif"; }
+  c.fillText(String(o.name||"CREW"),SZ/2,50);
   dt.update();
   const mm=new BABYLON.StandardMaterial("cflnm"+(_lpN++),scene);
-  mm.diffuseTexture=dt; mm.emissiveColor=new BABYLON.Color3(0.16,0.16,0.16);
+  mm.diffuseTexture=dt; mm.emissiveColor=new BABYLON.Color3(0.35,0.35,0.35);
   mm.specularColor=new BABYLON.Color3(0,0,0);
   const pl=BABYLON.MeshBuilder.CreatePlane("cflnp"+(_lpN++),{width:0.46,height:0.17},scene);
-  pl.material=mm; pl.position.set(0,1.46,0.245); pl.parent=r;
+  pl.material=mm; pl.position.set(0,1.44,0.252); pl.rotation.y=Math.PI; pl.parent=r;          // rotation PI: guarda fuori
+  lpBox(r,0.50,0.21,0.008,"#c9ced3",0,1.44,0.246).material=hm7Mat("#c9ced3",0.8,60);      // portacartellino
+  if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(pl);
+  hm7Shadow(r,0.90,0.70,0,0.05,0.026,0.7);
   return r; };
 
 /* MUCCHIO DELL'ATTREZZATURA — quello che la squadra ha mollato per terra
-   rientrando: e' il punto di partenza dello step delle funzioni. */
+   rientrando: e' il punto di partenza dello step delle funzioni.
+   v267 (Giacomo: «gli oggetti lasciati in terra non si vedono; quando li
+   metto negli armadietti devono sparire»): cinque pezzi VERI e SEPARATI,
+   uno per voce di CF_KIT, ognuno col suo nastro col nome (come scrive la
+   storia: «every piece has a name tape»). CF_PILE[k] = il nodo del pezzo:
+   cfKitGood lo spegne quando va nell'armadietto giusto, MECH.kitRoom li
+   riaccende tutti. */
+const CF_PILE={};
+function cfTape(r,txt,w,x,y,z,rx,ry){
+  const dt=new BABYLON.DynamicTexture("cftape"+(_lpN++),{width:256,height:64},scene,true), c=dt.getContext();
+  c.fillStyle="#f6f1e2"; c.fillRect(0,0,256,64); c.fillStyle="#1c1c20"; c.textAlign="center"; c.textBaseline="middle";
+  let f=40; c.font="bold "+f+"px sans-serif"; while(f>16 && c.measureText(txt).width>240){ f-=2; c.font="bold "+f+"px sans-serif"; }
+  c.fillText(txt,128,34); dt.update();
+  const m=new BABYLON.StandardMaterial("cftapeM"+(_lpN++),scene); m.diffuseTexture=dt; m.specularColor=new BABYLON.Color3(0,0,0);
+  m.emissiveColor=new BABYLON.Color3(0.3,0.3,0.3);
+  /* DOUBLESIDE con backUVs ribaltate: il nastro si legge dritto da entrambi i lati */
+  const p=BABYLON.MeshBuilder.CreatePlane("cftp"+(_lpN++),{width:w,height:w/4,sideOrientation:BABYLON.Mesh.DOUBLESIDE,backUVs:new BABYLON.Vector4(1,0,0,1)},scene); p.material=m;
+  p.position.set(x,y,z); p.rotation.set(rx||0,ry||0,0); p.parent=r; p.isPickable=false;
+  if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(p); return p; }
 LEXPROPS.cfPile=function(id,o){ o=o||{};
   const r=new BABYLON.TransformNode(id,scene);
-  cfSph(r,0.34,"#f2c218",-0.12,0.14,0.04,1,0.62,1,"#c99a06");     // casco
-  lpBox(r,0.30,0.03,0.16,"#f2c218",-0.12,0.06,0.14);              // visiera/frontino
-  lpBox(r,0.38,0.16,0.30,"#3f4a55",0.20,0.08,-0.06);              // giacca piegata
-  lpBox(r,0.34,0.05,0.26,"#f2e9d8",0.20,0.17,-0.06);
-  lpBox(r,0.12,0.24,0.16,"#2c3238",-0.26,0.12,-0.20);             // stivali
-  lpBox(r,0.12,0.24,0.16,"#2c3238",-0.10,0.12,-0.24);
-  lpCyl(r,0.36,0.10,"#c94a3a",0.24,0.05,0.22,Math.PI/2);          // manichetta arrotolata
-  lpCyl(r,0.16,0.11,"#8d221d",0.24,0.05,0.22,Math.PI/2);
-  lpBox(r,0.09,0.18,0.06,"#2f3a44",-0.02,0.09,0.26);              // radio
-  lpCyl(r,0.02,0.14,"#7d848c",-0.02,0.24,0.26);
+  const item=(k,x,z,ry)=>{ const n=new BABYLON.TransformNode(id+"_"+k,scene); n.parent=r; n.position.set(x,0,z); n.rotation.y=ry||0; CF_PILE[k]=n; return n; };
+  const tape=k=>CF_OWNERS[(CF_KIT.filter(q=>q.k===k)[0]||{}).own].plate;
+  const yel=hm7Mat("#f2c218",0.6,60), blk=hm7Mat("#1f2326",0.4,40), refl=hm7Mat("#dfe6ea",0.9,90,"#3a4046");
+  /* CASCO da pompiere: calotta, cresta, tesa larga che scende dietro, visiera */
+  { const n=item("helmet",-0.55,-0.25,0.6);
+    hm7Shadow(n,0.62,0.62,0,0,0.026,0.7);
+    const dome=hm7Sph(n,0.32,0.26,0.36,yel,0,0.12,0,14); dome.scaling.y=0.30;
+    hm7Sph(n,0.34,0.30,0.38,yel,0,0.02,0,14).scaling.set(0.44,0.05,0.48);                       // tesa
+    hm7Box(n,0.05,0.05,0.34,yel,0,0.25,0);                                                        // cresta
+    hm7Tor(n,0.33,0.025,refl,0,0.08,0,0,0,0).scaling.set(1,1,1.12);                              // banda riflettente
+    const vz=hm7Sph(n,0.30,0.12,0.18,hm7Mat("#c89a2a",0.9,90),0,0.07,0.15,12); vz.visibility=0.7;   // visiera
+    cfTape(n,tape("helmet"),0.20,0,0.18,-0.18,-0.35,Math.PI); }
+  /* GUANTI: due guanti in pelle con il polsino giallo */
+  { const n=item("gloves",0.30,-0.50,-0.3); hm7Shadow(n,0.55,0.45,0,0,0.026,0.6);
+    [[-0.09,0.25],[0.10,-0.35]].forEach((q,i)=>{ const g=new BABYLON.TransformNode(id+"gl"+i,scene); g.parent=n; g.position.set(q[0],0,0); g.rotation.y=q[1];
+      hm7Box(g,0.13,0.05,0.16,"#7a5334",0,0.03,0); hm7Box(g,0.13,0.045,0.08,"#f2c218",0,0.03,0.11);
+      [-0.045,-0.015,0.015,0.045].forEach(fx=>hm7Box(g,0.025,0.035,0.08,"#6b4a2c",fx,0.025,-0.11));
+      hm7Box(g,0.03,0.035,0.06,"#6b4a2c",0.075,0.025,-0.03).rotation.y=-0.6; });
+    cfTape(n,tape("gloves"),0.18,0,0.062,0.02,Math.PI/2,0); }
+  /* STIVALI: gambale alto, suola, fascia riflettente; uno in piedi, uno coricato */
+  { const n=item("boots",-0.55,0.45,0.2); hm7Shadow(n,0.70,0.60,0,0,0.026,0.7);
+    const boot=(x,z,lay)=>{ const g=new BABYLON.TransformNode(id+"bt"+x,scene); g.parent=n; g.position.set(x,0,z);
+      if(lay){ g.rotation.x=Math.PI/2; g.position.y=0.07; g.rotation.y=0.9; }
+      hm7Cyl(g,0.14,0.15,0.34,blk,0,0.20,0,16); hm7Box(g,0.14,0.10,0.26,blk,0,0.05,0.05);
+      hm7Box(g,0.16,0.025,0.30,hm7Mat("#3a3f45",0.2,20),0,0.012,0.05);
+      hm7Cyl(g,0.155,0.155,0.04,refl,0,0.30,0,16); hm7Cyl(g,0.155,0.155,0.03,yel,0,0.24,0,16); return g; };
+    boot(-0.12,0,false); boot(0.18,0.05,true);
+    cfTape(n,tape("boots"),0.24,-0.12,0.36,0.085,0,Math.PI); }
+  /* RADIO portatile: corpo, antenna, manopole, display, clip */
+  { const n=item("radio",0.75,-0.05,-0.8); hm7Shadow(n,0.35,0.35,0,0,0.026,0.6);
+    const g=new BABYLON.TransformNode(id+"rd",scene); g.parent=n; g.rotation.x=-Math.PI/2+0.08; g.position.y=0.035;
+    hm7Box(g,0.08,0.20,0.045,hm7Mat("#2c3238",0.4,40),0,0.10,0);
+    hm7Cyl(g,0.016,0.016,0.14,blk,0.02,0.27,0,8); hm7Cyl(g,0.022,0.022,0.025,"#8d221d",-0.02,0.21,0,10);
+    hm7Box(g,0.06,0.04,0.005,hm7Mat("#10261a",0.2,20,"#2fbf6a"),0,0.15,0.024);
+    for(let i=0;i<3;i++) hm7Box(g,0.05,0.004,0.005,"#1c1c20",0,0.07+i*0.02,0.024);
+    cfTape(n,tape("radio"),0.14,0.0,0.052,-0.14,Math.PI/2,0); }
+  /* MANICHETTA arrotolata a doppio avvolgimento con la lancia in ottone */
+  { const n=item("hose",0.40,0.55,0.4); hm7Shadow(n,0.80,0.80,0,0,0.026,0.7);
+    const red=hm7Mat("#c0392b",0.3,30);
+    for(let k=0;k<4;k++){ const t=hm7Tor(n,0.62-k*0.12,0.07,red,0,0.04+ (k%2)*0.005,0,0,0,0); t.scaling.y=0.8; }
+    hm7Cyl(n,0.12,0.12,0.075,hm7Mat("#8d221d",0.3,30),0,0.04,0,16);
+    const nz=new BABYLON.TransformNode(id+"nz",scene); nz.parent=n; nz.position.set(0.30,0.05,0.10); nz.rotation.y=-0.5;
+    hm7Cyl(nz,0.075,0.05,0.22,hm7Mat("#c9a35a",0.9,80),0,0,0.11,14,Math.PI/2); hm7Cyl(nz,0.09,0.09,0.05,blk,0,0,0.02,14,Math.PI/2);
+    cfTape(n,tape("hose"),0.22,0,0.085,-0.20,Math.PI/2,0); }
+  r.getChildMeshes().forEach(m=>{ m.isPickable=false; });
   return r; };
+function cfPileShow(on,k){ Object.keys(CF_PILE).forEach(q=>{ if(k && q!==k) return; try{ CF_PILE[q].setEnabled(on); }catch(e){} }); }
 
 /* BANCO RADIO / DISPATCH — da qui si ascolta la chiamata e da qui parte
    il «cessato allarme» del finale. */
@@ -42495,6 +42647,9 @@ const UNIT_CLIMATE={ id:"u3_4", area:"climate", areaName:"the Climate & Fire Sta
   title:"Anno 3 \u00b7 Unit 4 \u2014 It's so hot!", size:12.0, sizeX:7.0, wallH:3.4, tint:"#b9b3a6",
   enterToast:"\u{1F525} Sei entrato alla Climate & Fire Station",
   onEnter:()=>{ setTimeout(buildClimateNPCs,0);
+    /* v267: a unit finita l'attrezzatura e' gia' negli armadietti */
+    try{ const fi=UNIT_CLIMATE.steps.findIndex(q=>q.id==="func");
+      if((Progress.get(UNIT_CLIMATE.id)||{}).done || (Quest.unit===UNIT_CLIMATE && Quest.i>fi)) cfPileShow(false); }catch(e){}
     setTimeout(()=>{ try{ cfBoardDraw(); cfLogDraw(); }catch(e){} },60); },
   steps:[
   { id:"lex",   strand:"lessico",    type:"hazardWall", count:8,
@@ -42551,7 +42706,7 @@ UNIT_CLIMATE.props=(function(){
      flood-fill diceva "OK" perche' verificava la CONNESSIONE, non la
      comodita': ora c'e' anche il controllo dei varchi stretti. Varco
      attuale: 1.95 m. */
-  P.push({ prop:"cfPile",   x:-1.00, z:8.40, yaw:0.4 });
+  P.push({ prop:"cfPile",   x:-1.00, z:8.40, yaw:0.4, solid:false });   // v267: pezzi separati e bassi, ci si passa accanto
   /* yaw 0 e non Math.PI: il monitor guarda il LOCALE +z, e la caserma sta
      a sud (+z). Con Math.PI lo schermo dava le spalle a chi arriva dalla
      porta. log:true accende il registro sul monitor, cosi' dal microfono
@@ -43076,6 +43231,7 @@ function cfKitCheck(it,o,subj,words,joined){
 }
 function cfKitGood(it){
   const kr=Quest.state.kr;
+  cfPileShow(false,it.k);                           // v267: il pezzo sparisce dal pavimento: e' nell'armadietto
   kr.i++; cfKitHud();
   if(kr.i>=CF_KIT.length){ DialogueBox.close(); setTimeout(cfKitToDoor,700); return; }
   const nx=CF_KIT[kr.i];
@@ -43165,6 +43321,7 @@ MECH.kitRoom=function(s){
   if(!I || !CF_NPC.hale){ mechStub(s); return; }
   const C=I.center;
   const kr=Quest.state.kr={ phase:"kit", i:0, j:0, tries:0, done:[], inters:[] };
+  cfPileShow(true);                                 // v267: tutto di nuovo per terra
   Object.keys(CF_OWNERS).forEach(function(k){
     const o=CF_OWNERS[k];
     const p=(k==="stn") ? new BABYLON.Vector3(C.x-4.40,0,C.z+3.15)
