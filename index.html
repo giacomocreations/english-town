@@ -30923,6 +30923,241 @@ registerAmbient("u2_6",[   // Anno 2 · Unit 6 — Waste
 ]);
 
 /* =====================================================================
+   v263 — UNIT 7 «At home»: RESTYLING DEGLI EXTRA (Giacomo, 28 set: «la casa
+   deve rimanere uguale, ma tutti gli extra di questa unit vanno migliorati
+   graficamente»). Stessi dodici bersagli, stesse posizioni, stessi solidi
+   (hm7Solid invariati): cambia solo COME sono fatti. Prima erano pile di
+   parallelepipedi; ora hanno la forma dell'oggetto vero — la maglietta ha
+   le maniche, il piumone e' stoffa che ricade dal materasso, la lavatrice
+   ha l'oblo' cromato con i panni dentro, il ferro da stiro ha la punta.
+   Tutto procedurale, 0 KB.
+   ===================================================================== */
+const _hm7M={};
+/* materiale con lucentezza: lpMat ha specular quasi zero, che su acciaio,
+   ceramica e plastica lucida appiattisce tutto */
+function hm7Mat(hex,spec,pow,em){ const k=hex+"|"+(spec||0)+"|"+(pow||0)+"|"+(em||"");
+  if(_hm7M[k]) return _hm7M[k];
+  const m=new BABYLON.StandardMaterial("hm7m"+(_lpN++),scene);
+  m.diffuseColor=BABYLON.Color3.FromHexString(hex);
+  m.specularColor=new BABYLON.Color3(spec||0.03,spec||0.03,spec||0.03); m.specularPower=pow||32;
+  if(em) m.emissiveColor=BABYLON.Color3.FromHexString(em);
+  return (_hm7M[k]=m); }
+function hm7Box(r,w,h,d,m,x,y,z,ry){ const b=BABYLON.MeshBuilder.CreateBox("h7b",{width:w,height:h,depth:d},scene);
+  b.material=(typeof m==="string")?lpMat(m):m; b.position.set(x,y,z); if(ry) b.rotation.y=ry; b.parent=r; return b; }
+function hm7Cyl(r,dt,db,h,m,x,y,z,tess,rx,rz){ const c=BABYLON.MeshBuilder.CreateCylinder("h7c",{diameterTop:dt,diameterBottom:db,height:h,tessellation:tess||24},scene);
+  c.material=(typeof m==="string")?lpMat(m):m; c.position.set(x,y,z); if(rx) c.rotation.x=rx; if(rz) c.rotation.z=rz; c.parent=r; return c; }
+function hm7Sph(r,sx,sy,sz,m,x,y,z,seg){ const s=BABYLON.MeshBuilder.CreateSphere("h7s",{diameter:1,segments:seg||10},scene);
+  s.scaling.set(sx,sy,sz); s.material=(typeof m==="string")?lpMat(m):m; s.position.set(x,y,z); s.parent=r; return s; }
+function hm7Tor(r,dia,th,m,x,y,z,rx,ry,rz,arc){ const t=BABYLON.MeshBuilder.CreateTorus("h7t",{diameter:dia,thickness:th,tessellation:28},scene);
+  t.material=(typeof m==="string")?lpMat(m):m; t.position.set(x,y,z); t.rotation.set(rx||0,ry||0,rz||0); t.parent=r; return t; }
+function hm7Tube(r,pts,rad,m){ const t=BABYLON.MeshBuilder.CreateTube("h7u",{path:pts.map(p=>new BABYLON.Vector3(p[0],p[1],p[2])),radius:rad,tessellation:10,cap:BABYLON.Mesh.CAP_ALL},scene);
+  t.material=(typeof m==="string")?lpMat(m):m; t.parent=r; return t; }
+/* sagoma PIATTA da un contorno 2D (x,z), spessa th: maglietta, jeans, calzino.
+   Triangolata a ventaglio dal baricentro (le sagome sono stellate rispetto
+   al centro, quindi basta) — niente earcut, che qui non e' caricato. */
+function hm7Flat(r,pts,th,m,x,y,z,ry){
+  let cx=0,cz=0; pts.forEach(p=>{ cx+=p[0]; cz+=p[1]; }); cx/=pts.length; cz/=pts.length;
+  const P=[],I=[],n=pts.length;
+  P.push(cx,th,cz); pts.forEach(p=>P.push(p[0],th,p[1]));          // top: 0..n
+  P.push(cx,0,cz);  pts.forEach(p=>P.push(p[0],0,p[1]));           // bottom: n+1..2n+1
+  for(let i=0;i<n;i++){ const a=1+i, b=1+(i+1)%n; I.push(0,b,a); I.push(n+1,n+1+a,n+1+b); }
+  const base=P.length/3;
+  for(let i=0;i<n;i++){ const p=pts[i], q=pts[(i+1)%n], k=base+i*4;
+    P.push(p[0],th,p[1], q[0],th,q[1], q[0],0,q[1], p[0],0,p[1]); I.push(k,k+1,k+2, k,k+2,k+3); }
+  const N=[]; BABYLON.VertexData.ComputeNormals(P,I,N);
+  const vd=new BABYLON.VertexData(); vd.positions=P; vd.indices=I; vd.normals=N;
+  const mesh=new BABYLON.Mesh("h7f",scene); vd.applyToMesh(mesh); mesh.material=(typeof m==="string")?lpMat(m):m;
+  mesh.position.set(x,y,z); mesh.rotation.y=ry||0; mesh.parent=r; return mesh; }
+/* stoffa: griglia con pieghe (rumore) che ricade oltre i bordi del piano */
+function hm7Cloth(r,W,D,m,x,y,z,o){ o=o||{};
+  const g=BABYLON.MeshBuilder.CreateGround("h7cl",{width:W,height:D,subdivisions:o.sub||22,updatable:true},scene);
+  const P=g.getVerticesData(BABYLON.VertexBuffer.PositionKind), hx=o.hx||W/2, hz=o.hz||D/2, amp=o.amp||0.02, s=o.seed||1;
+  for(let i=0;i<P.length;i+=3){ const px=P[i], pz=P[i+2];
+    let yy=amp*(Math.sin(px*5.1+s)*Math.cos(pz*4.3+s*1.7)+0.6*Math.sin(px*11.3+pz*7.9+s*3.1));
+    if(o.lump) o.lump.forEach(L=>{ const d=Math.hypot(px-L[0],pz-L[1]); if(d<L[2]) yy+=L[3]*(1+Math.cos(Math.PI*d/L[2]))/2; });
+    const ox=Math.max(0,Math.abs(px)-hx), oz=Math.max(0,(o.dropZ===-1?-pz:pz)-hz), ozn=o.dropBothZ?Math.max(0,Math.abs(pz)-hz):oz;
+    const over=Math.max(ox,ozn); if(over>0){ yy-=over*(o.drop||1.1); P[i]=px+Math.sign(px)*over*0.05*(ox>0?1:0); }
+    P[i+1]=yy; }
+  g.updateVerticesData(BABYLON.VertexBuffer.PositionKind,P);
+  const N=[]; BABYLON.VertexData.ComputeNormals(P,g.getIndices(),N); g.updateVerticesData(BABYLON.VertexBuffer.NormalKind,N);
+  const mm=(typeof m==="string")?lpMat(m):m; g.material=mm; mm.backFaceCulling=false;
+  g.position.set(x,y,z); g.parent=r; return g; }
+/* texture a righe/quadri per stoffe (piumone, asse da stiro) */
+function hm7Pattern(kind,a,b){ const k="pat_"+kind+a+b; if(_hm7M[k]) return _hm7M[k];
+  const dt=new BABYLON.DynamicTexture("h7pt"+(_lpN++),{width:128,height:128},scene,true), c=dt.getContext();
+  c.fillStyle=a; c.fillRect(0,0,128,128); c.fillStyle=b;
+  if(kind==="stripe") for(let i=0;i<8;i++) c.fillRect(i*16,0,6,128);
+  else if(kind==="check"){ c.globalAlpha=0.55; for(let i=0;i<4;i++){ c.fillRect(i*32,0,12,128); c.fillRect(0,i*32,128,12); } }
+  else if(kind==="dots") for(let i=0;i<4;i++) for(let j=0;j<4;j++){ c.beginPath(); c.arc(16+i*32+(j%2)*16,16+j*32,5,0,Math.PI*2); c.fill(); }
+  dt.update(); dt.wrapU=dt.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE; dt.uScale=dt.vScale=3;
+  const m=new BABYLON.StandardMaterial("h7pm"+(_lpN++),scene); m.diffuseTexture=dt; m.specularColor=new BABYLON.Color3(0.04,0.04,0.04);
+  return (_hm7M[k]=m); }
+/* sagome dei capi (x = larghezza, z = lunghezza; 0,0 al centro) */
+const HM7_SHIRT=[[-0.10,-0.20],[-0.20,-0.17],[-0.30,-0.08],[-0.25,0.00],[-0.16,-0.05],[-0.15,0.22],[0.15,0.22],[0.16,-0.05],[0.25,0.00],[0.30,-0.08],[0.20,-0.17],[0.10,-0.20],[0,-0.16]];
+const HM7_JEANS=[[-0.17,-0.30],[0.17,-0.30],[0.19,0.30],[0.05,0.30],[0.0,-0.05],[-0.05,0.30],[-0.19,0.30]];
+const HM7_SOCK=[[-0.04,-0.10],[0.04,-0.10],[0.04,0.03],[0.10,0.06],[0.10,0.11],[-0.03,0.11],[-0.04,0.05]];
+function hm7Shirt(r,hex,x,y,z,ry){ const s=hm7Flat(r,HM7_SHIRT,0.018,hex,x,y,z,ry);
+  hm7Tor(r,0.11,0.018,hm7Mat(hex),x+Math.sin(ry||0)*-0.16,y+0.016,z+Math.cos(ry||0)*-0.16).scaling.y=0.4; return s; }
+function hm7Jeans(r,x,y,z,ry){ const j=hm7Flat(r,HM7_JEANS,0.022,"#3f5f86",x,y,z,ry);
+  hm7Box(r,0.36,0.024,0.05,"#35517a",x+Math.sin(ry||0)*-0.28,y+0.004,z+Math.cos(ry||0)*-0.28,ry);
+  return j; }
+/* ---- i builder: stessi ingombri dei vecchi (vedi hm7Solid) ---- */
+const HM7B={
+  washer(r,full){ const W="#f2f4f5", steel=hm7Mat("#c9ced3",0.9,64), white=hm7Mat(W,0.35,40);
+    hm7Box(r,0.60,0.82,0.58,white,0,0.43,0); hm7Box(r,0.60,0.03,0.58,hm7Mat("#e3e6e8",0.2,20),0,0.855,0);
+    hm7Box(r,0.58,0.03,0.52,"#b8bec3",0,0.02,0.02);                                   // zoccolo
+    hm7Box(r,0.56,0.12,0.02,hm7Mat("#dde1e4",0.3,30),0,0.76,0.295);                    // pannello comandi
+    hm7Box(r,0.16,0.07,0.01,hm7Mat("#dfe3e6",0.3,30),-0.18,0.76,0.307);                // cassetto detersivo
+    hm7Cyl(r,0.075,0.075,0.03,steel,0.12,0.76,0.31,24,Math.PI/2);                        // manopola
+    hm7Box(r,0.10,0.04,0.005,hm7Mat("#10261a",0.2,20,full?"#2fbf6a":"#1c5a34"),0.02,0.77,0.306);   // display
+    hm7Tor(r,0.40,0.045,steel,0,0.44,0.30,Math.PI/2);                                  // oblo' cromato
+    const gl=hm7Cyl(r,0.36,0.36,0.02,hm7Mat("#7fa6bd",0.9,90),0,0.44,0.30,32,Math.PI/2); gl.visibility=0.55;
+    hm7Cyl(r,0.34,0.34,0.02,"#2c3338",0,0.44,0.27,32,Math.PI/2);                        // cestello (buio)
+    if(full){ hm7Sph(r,0.26,0.14,0.08,"#c0566a",-0.03,0.39,0.285); hm7Sph(r,0.18,0.12,0.07,"#4f7fa8",0.06,0.44,0.29); }
+    /* cesto del bucato in plastica: tronco di cono aperto, fondo, bordo, maniglie
+       (stesso ingombro del vecchio: centro +0.66 in x, ~0.42 x 0.32) */
+    const bx=0.66, bz=0.05, BH=0.32, pl=hm7Mat("#7fb8d8",0.4,40);
+    const tub=BABYLON.MeshBuilder.CreateCylinder("h7bk",{diameterTop:0.40,diameterBottom:0.32,height:BH,tessellation:28,cap:BABYLON.Mesh.NO_CAP,sideOrientation:BABYLON.Mesh.DOUBLESIDE},scene);
+    tub.material=pl; tub.position.set(bx,BH/2+0.01,bz); tub.scaling.z=0.78; tub.parent=r;
+    hm7Cyl(r,0.32,0.32,0.012,pl,bx,0.012,bz,28).scaling.z=0.78;
+    hm7Tor(r,0.40,0.022,hm7Mat("#5f98b8",0.4,40),bx,BH+0.01,bz).scaling.z=0.78;
+    [-1,1].forEach(q=>hm7Box(r,0.012,0.04,0.10,"#2e3338",bx+q*0.19,BH-0.04,bz));
+    if(full){ [["#d8d2c2",0,0.02,0.30,0.12,0.22],["#c0566a",0.06,-0.04,0.22,0.10,0.18],["#4f7fa8",-0.08,0.05,0.20,0.11,0.16],["#e8c860",0.02,0.0,0.16,0.08,0.14]]
+        .forEach((c,i)=>{ const s=hm7Sph(r,c[3],c[4],c[5],c[0],bx+c[1],BH+0.02+i*0.035,bz+c[2],8); s.rotation.y=i*0.7; });
+      hm7Flat(r,HM7_SOCK,0.012,"#f2efe6",bx+0.17,BH-0.04,bz+0.16,0).rotation.x=-1.2; }
+    else { hm7Box(r,0.34,0.05,0.24,hm7Pattern("stripe","#f2efe6","#9fc3d8"),0,0.89,0.02);        // asciugamani piegati sopra
+      hm7Box(r,0.32,0.05,0.22,hm7Pattern("stripe","#f6d9a6","#e8a86a"),0,0.94,0.02); } },
+  ironBoard(r,folded){ const cover=hm7Pattern("dots","#8fbad6","#eef6fb"), metal=hm7Mat("#a9b0b6",0.7,50);
+    hm7Box(r,1.10,0.035,0.36,cover,-0.08,0.82,0);                                        // piano
+    const nose=hm7Cyl(r,0.36,0.36,0.035,cover,0.47,0.82,0,3); nose.rotation.y=Math.PI/2; nose.scaling.set(1,1,1.0);   // punta
+    hm7Cyl(r,0.36,0.36,0.035,cover,-0.63,0.82,0,24).scaling.x=0.25;                      // coda arrotondata
+    hm7Box(r,1.08,0.012,0.34,"#6f8fa5",-0.08,0.798,0);                                   // bordo sotto
+    /* gambe a X: da (-0.40,0) a (0.20,0.80) e viceversa -> lunghe 1.0, 0.6435 rad */
+    [-1,1].forEach(q=>{ [-0.12,0.12].forEach(z=>{ const l=hm7Box(r,0.03,1.0,0.03,metal,-0.10,0.40,z); l.rotation.z=q*0.6435; }); });
+    hm7Cyl(r,0.03,0.03,0.26,metal,-0.10,0.40,0,10,Math.PI/2);                               // perno
+    hm7Box(r,0.04,0.03,0.30,"#2b2f33",-0.40,0.015,0); hm7Box(r,0.04,0.03,0.30,"#2b2f33",0.20,0.015,0);   // piedini
+    /* ferro: piastra a punta + corpo + manico + filo */
+    const ix=0.40, sole=hm7Cyl(r,0.24,0.24,0.03,hm7Mat("#dfe3e6",0.9,80),ix,0.85,0,3); sole.rotation.y=Math.PI/2; sole.scaling.z=0.62;
+    const bd=hm7Cyl(r,0.21,0.23,0.07,hm7Mat("#3f7fbf",0.5,40),ix,0.90,0,3); bd.rotation.y=Math.PI/2; bd.scaling.z=0.58;
+    hm7Tor(r,0.14,0.022,hm7Mat("#2b2f33",0.3,30),ix-0.02,0.95,0,Math.PI/2,0,0).scaling.set(1,1,0.6);
+    hm7Tube(r,[[ix-0.08,0.93,0],[ix-0.20,0.90,0.06],[ix-0.30,0.84,0.15],[ix-0.34,0.60,0.18],[ix-0.30,0.20,0.20]],0.008,"#2b2f33");
+    if(!folded){ [["#c0566a",-0.30,0.06],["#8fb8e0",-0.18,-0.05],["#f2efe6",-0.42,-0.02],["#e8c860",-0.25,0.02]].forEach((c,i)=>{
+        const s=hm7Sph(r,0.34,0.07+i*0.01,0.26,c[0],c[1],0.87+i*0.045,c[2],8); s.rotation.y=i*0.9; });
+      hm7Shirt(r,"#8fb8e0",-0.36,0.84,0.22,0.5).rotation.z=0.4; }
+    else { ["#c0566a","#8fb8e0","#f2efe6","#e8c860"].forEach((hx,i)=>{ hm7Box(r,0.32,0.035,0.24,hx,-0.30,0.855+i*0.037,0);
+        hm7Box(r,0.08,0.037,0.06,hm7Mat(hx),-0.30,0.855+i*0.037,-0.10); }); } },
+  vacuum(r,dust){ const red=hm7Mat("#d23a2a",0.6,50), dark="#2b2f33";
+    const bd=hm7Sph(r,0.44,0.28,0.36,red,0,0.17,0,16); hm7Sph(r,0.30,0.12,0.24,hm7Mat("#3a2a2a",0.8,70),0,0.28,-0.02,12);  // corpo + calotta
+    [-0.20,0.20].forEach(x=>{ hm7Cyl(r,0.16,0.16,0.05,dark,x,0.08,0.06,20,0,Math.PI/2); hm7Cyl(r,0.07,0.07,0.055,"#9aa0a6",x,0.08,0.06,12,0,Math.PI/2); });
+    hm7Cyl(r,0.06,0.06,0.05,"#e8c860",0.08,0.31,0.08);                                      // pulsante
+    /* tubo corrugato + asta + spazzola */
+    hm7Tube(r,[[0,0.20,0.17],[0,0.30,0.30],[0.02,0.52,0.36],[0.04,0.78,0.30]],0.035,"#3a3f45");
+    hm7Cyl(r,0.045,0.045,0.72,hm7Mat("#c9ced3",0.9,60),0.04,1.00,0.25,12,0.25);             // asta
+    hm7Cyl(r,0.05,0.05,0.12,dark,0.04,1.40,0.16,12,0.25);                                   // impugnatura
+    hm7Tube(r,[[0.04,0.64,0.34],[0.04,0.30,0.42],[0.02,0.05,0.44]],0.022,hm7Mat("#c9ced3",0.9,60));
+    hm7Box(r,0.34,0.05,0.12,dark,0.02,0.03,0.46); hm7Box(r,0.34,0.012,0.12,"#8a2a20",0.02,0.058,0.46);
+    if(dust) [[0.95,0.75],[1.55,-0.45],[0.45,1.45],[1.85,0.95]].forEach((o,ci)=>{
+      for(let j=0;j<10;j++){ const a=(ci*2.3+j*0.897), rad=0.06+((j*7+ci*3)%9)*0.030;
+        const px=o[0]+Math.cos(a)*rad*2.4, pz=o[1]+Math.sin(a)*rad*2.0, sz=0.042+((j*5+ci)%4)*0.020;
+        const d=lpBox(r,sz,0.010,sz*0.72,(j%3===0)?"#6f6757":"#8a8272",px,0.035,pz); d.rotation.y=a; }
+      const bunny=hm7Sph(r,0.13,0.05,0.10,"#9a948a",o[0]+0.08,0.045,o[1]-0.05,6); bunny.rotation.y=ci; }); },
+  bin(r,full){ const steel=hm7Mat("#b8bec4",0.9,70), dark=hm7Mat("#2e3338",0.4,30);
+    hm7Cyl(r,0.44,0.40,0.60,steel,0,0.32,0,32); hm7Cyl(r,0.42,0.42,0.02,dark,0,0.02,0,32);
+    hm7Tor(r,0.44,0.018,steel,0,0.62,0,0,0,0);
+    hm7Box(r,0.14,0.03,0.10,dark,0,0.03,0.25);                                              // pedale
+    const lid=hm7Cyl(r,0.46,0.46,0.04,steel,0,0.645,0,32);
+    if(full){ lid.position.set(0,0.83,-0.21); lid.rotation.x=-1.25;                          // coperchio che non chiude
+      const bag=hm7Sph(r,0.40,0.34,0.38,hm7Mat("#1f2328",0.6,40),0,0.72,0.01,12);
+      hm7Sph(r,0.10,0.10,0.08,hm7Mat("#1f2328",0.6,40),0.02,0.91,0.04,8);                    // nodo del sacco
+      hm7Cyl(r,0.07,0.07,0.12,hm7Mat("#c8452f",0.7,60),0.14,0.86,0.10,14,0.9);               // lattina
+      hm7Box(r,0.14,0.02,0.11,"#e8dcc0",-0.13,0.84,0.08,0.6);                                 // cartone
+      const peel=hm7Tube(r,[[-0.05,0.02,0.36],[0.02,0.03,0.40],[0.10,0.02,0.37]],0.02,"#e8c860");   // buccia per terra
+      hm7Box(r,0.12,0.01,0.09,"#f2efe6",-0.30,0.03,0.22,0.4); }                               // carta per terra
+    else { hm7Cyl(r,0.12,0.12,0.02,dark,0,0.67,0,20); } },
+  bowls(r,full){ const steel=hm7Mat("#c9ced3",0.9,70);
+    const mat=hm7Cyl(r,0.78,0.78,0.012,"#3f8a6a",0.17,0.026,0.01,32); mat.scaling.z=0.55;     // tappetino
+    [[0,"#c8452f"],[0.34,null]].forEach(q=>{ hm7Cyl(r,0.20,0.27,0.08,steel,q[0],0.07,0,28); hm7Tor(r,0.20,0.018,steel,q[0],0.11,0); });
+    hm7Box(r,0.08,0.03,0.06,"#f2efe6",-0.06,0.105,0.12);                                     // (nome sulla ciotola)
+    if(full){ const k=[]; for(let i=0;i<26;i++){ const a=i*2.4, d=0.02+(i%5)*0.014;
+        const s=BABYLON.MeshBuilder.CreateSphere("kb",{diameter:0.03,segments:4},scene); s.position.set(Math.cos(a)*d,0.105+(i%3)*0.012,Math.sin(a)*d); k.push(s); }
+      const km=BABYLON.Mesh.MergeMeshes(k,true,true); if(km){ km.material=lpMat("#8a5a2e"); km.parent=r; }
+      const w=hm7Cyl(r,0.19,0.19,0.01,hm7Mat("#8fc7e8",0.9,90),0.34,0.10,0,24); w.visibility=0.85; }
+    else { hm7Sph(r,0.02,0.015,0.02,"#8a5a2e",0.03,0.04,0.02,4); hm7Sph(r,0.02,0.015,0.02,"#8a5a2e",-0.02,0.04,-0.03,4); }
+    /* osso di gomma */
+    hm7Cyl(r,0.04,0.04,0.16,"#f2efe6",-0.22,0.04,0.12,10,0,Math.PI/2).rotation.y=0.5;
+    [-1,1].forEach(q=>{ hm7Sph(r,0.05,0.05,0.05,"#f2efe6",-0.22+q*0.07*Math.cos(0.5),0.04,0.12-q*0.07*Math.sin(0.5),6); }); },
+  lead(r,hanging){ const wood=hm7Mat("#8a6240",0.1,20), brass=hm7Mat("#c9a35a",0.8,60);
+    hm7Box(r,0.44,0.12,0.03,wood,0,1.46,0.015); hm7Box(r,0.44,0.012,0.032,"#6b4a2f",0,1.40,0.016);
+    [-0.14,0,0.14].forEach(x=>{ hm7Cyl(r,0.02,0.02,0.07,brass,x,1.44,0.06,10,Math.PI/2); hm7Sph(r,0.03,0.03,0.03,brass,x,1.44,0.095,8); });
+    const sg=LEXPROPS.poster("h7dog"+(_lpN++),{w:0.30,h:0.08,py:1.555,bg:"#6b4a2f",ink:"#f6f1e2",l1:"WOOF",l2:"",fig:"none"}); sg.parent=r; sg.position.z=0.035;
+    if(hanging){ hm7Tube(r,[[-0.14,1.43,0.09],[-0.18,1.25,0.10],[-0.16,1.05,0.10],[-0.10,1.00,0.10],[-0.06,1.10,0.10],[-0.12,1.30,0.10],[-0.14,1.42,0.095]],0.012,"#c0392b");
+      hm7Tor(r,0.05,0.012,brass,-0.10,1.00,0.10,0,0,0);                                      // moschettone
+      hm7Tor(r,0.14,0.03,"#2f6fd6",0.14,1.33,0.07,Math.PI/2,0,0).scaling.set(1,1,1);          // collare
+      hm7Cyl(r,0.035,0.035,0.01,brass,0.14,1.26,0.10,12,Math.PI/2); }                           // medaglietta
+    /* cuccia: cuscino tondo con bordo */
+    const bx=0.40, bz=0.10, bed=hm7Pattern("check","#6b7a86","#3f4a54");
+    hm7Cyl(r,0.62,0.66,0.10,bed,bx,0.05,bz,32); hm7Tor(r,0.56,0.12,"#56636d",bx,0.11,bz);
+    hm7Cyl(r,0.44,0.44,0.03,"#c8b89a",bx,0.105,bz,28);
+    hm7Sph(r,0.07,0.07,0.07,"#e8c860",bx+0.12,0.15,bz-0.08,10); },                          // pallina
+  clothes(r,tidy){ if(!tidy){
+      hm7Shirt(r,"#c0566a",0.0,0.022,0.0,0.55);
+      hm7Jeans(r,0.54,0.022,0.45,-0.85);
+      const hd=hm7Shirt(r,"#d8b860",-0.46,0.024,0.26,1.9); hd.scaling.set(1.25,1.6,1.25);      // felpa buttata
+      hm7Sph(r,0.20,0.07,0.16,"#c8a850",-0.46+Math.sin(1.9)*0.30,0.05,0.26+Math.cos(1.9)*0.30,8).rotation.y=1.9;   // cappuccio
+      hm7Flat(r,HM7_SOCK,0.014,"#f2efe6",0.24,0.022,-0.44,0.9); hm7Flat(r,HM7_SOCK,0.014,"#e84a5f",-0.06,0.022,-0.54,-0.35);
+      /* scarpe da ginnastica spaiate */
+      [[0.40,-0.22,0.4],[0.62,-0.02,2.3]].forEach(s=>{ const g=new BABYLON.TransformNode("h7sh",scene); g.parent=r; g.position.set(s[0],0.02,s[1]); g.rotation.y=s[2];
+        hm7Box(g,0.10,0.03,0.26,"#f2efe6",0,0.015,0); hm7Sph(g,0.10,0.08,0.22,"#2f6fd6",0,0.06,-0.01,10); hm7Box(g,0.07,0.01,0.08,"#f2efe6",0,0.10,0.05); });
+      /* zaino buttato li' */
+      const bp=new BABYLON.TransformNode("h7bp",scene); bp.parent=r; bp.position.set(-0.36,0,-0.36); bp.rotation.set(0,0.3,0);
+      hm7Box(bp,0.30,0.14,0.22,"#8a5a2e",0,0.07,0); hm7Sph(bp,0.30,0.08,0.22,"#8a5a2e",0,0.14,0,10); hm7Box(bp,0.22,0.08,0.03,"#6b4520",0,0.07,0.12);
+      hm7Tube(bp,[[-0.08,0.02,-0.12],[-0.10,0.16,-0.16],[-0.08,0.02,-0.20]],0.012,"#3a2a18");
+      hm7Box(r,0.22,0.02,0.16,"#f6f1e2",0.12,0.03,-0.20,0.2); hm7Box(r,0.22,0.02,0.16,"#e8e2d2",0.30,0.03,-0.22,-0.1);   // quaderno aperto
+    } else {
+      /* pila piegata, scarpe in coppia, zaino in piedi */
+      ["#c0566a","#3f5f86","#d8b860","#6b7a86"].forEach((hx,i)=>{ hm7Box(r,0.38,0.055,0.28,hx,0,0.03+i*0.058,0);
+        hm7Box(r,0.10,0.057,0.03,hm7Mat(hx),0,0.03+i*0.058,-0.14); });
+      [-0.08,0.08].forEach(x=>{ hm7Box(r,0.10,0.03,0.26,"#f2efe6",0.42+x,0.035,0.05); hm7Sph(r,0.10,0.08,0.22,"#2f6fd6",0.42+x,0.08,0.04,10); });
+      hm7Box(r,0.30,0.34,0.16,"#8a5a2e",-0.42,0.19,-0.10); hm7Sph(r,0.30,0.12,0.16,"#8a5a2e",-0.42,0.36,-0.10,10); hm7Box(r,0.22,0.12,0.03,"#6b4520",-0.42,0.14,-0.01);
+    } },
+  dirtyDishes(r){ const cer=hm7Mat("#f4f1ea",0.5,60);
+    [0,1,2].forEach(i=>{ hm7Cyl(r,0.26-i*0.01,0.20,0.025,cer,0.01*i,0.965+i*0.03,0.16,28); hm7Tor(r,0.25-i*0.01,0.015,cer,0.01*i,0.978+i*0.03,0.16); });
+    hm7Cyl(r,0.14,0.14,0.005,"#b86a3a",0.02,1.04,0.17,16);                                   // sugo sul piatto in cima
+    hm7Box(r,0.02,0.01,0.20,"#c9ced3",0.06,1.045,0.14,0.5);                                  // forchetta
+    hm7Cyl(r,0.09,0.08,0.10,hm7Mat("#2f6fd6",0.4,40),-0.20,1.00,0.05,18); hm7Tor(r,0.05,0.012,"#2f6fd6",-0.25,1.00,0.05,Math.PI/2);   // tazza
+    const pan=hm7Cyl(r,0.24,0.22,0.05,hm7Mat("#2e3338",0.6,40),0.26,0.97,-0.04,24); hm7Box(r,0.20,0.02,0.03,"#2e3338",0.46,0.985,-0.04);   // padella
+    hm7Cyl(r,0.18,0.18,0.004,"#c8a44a",0.26,0.998,-0.04,16); },
+  drainer(r){ const wire=hm7Mat("#c9ced3",0.9,70), cer=hm7Mat("#f4f1ea",0.5,60);
+    hm7Box(r,0.40,0.012,0.26,wire,0,0.955,0.14);
+    for(let k=0;k<6;k++){ hm7Box(r,0.008,0.10,0.26,wire,-0.17+k*0.068,1.005,0.14); }
+    [0,1,2].forEach(i=>{ const p=hm7Cyl(r,0.24,0.24,0.012,cer,-0.12+i*0.07,1.08,0.14,28,0,Math.PI/2); p.rotation.y=Math.PI/2; });
+    hm7Cyl(r,0.08,0.07,0.10,hm7Mat("#2f6fd6",0.4,40),0.12,1.01,0.08,18); hm7Cyl(r,0.08,0.07,0.10,hm7Mat("#c8452f",0.4,40),0.12,1.01,0.22,18); },
+  usedTable(r){ const cer=hm7Mat("#f4f1ea",0.5,60), gl=hm7Mat("#dff0f7",0.9,90);
+    [[-0.45,-0.20],[0.45,0.20]].forEach((p,i)=>{ hm7Cyl(r,0.30,0.24,0.02,cer,p[0],1.095,p[1],28); hm7Tor(r,0.29,0.014,cer,p[0],1.103,p[1]);
+      hm7Sph(r,0.10,0.03,0.07,i?"#c8452f":"#e8c860",p[0]+0.03,1.11,p[1]-0.02,6);             // avanzi
+      hm7Box(r,0.02,0.008,0.20,"#c9ced3",p[0]+0.19,1.09,p[1],0.1); hm7Box(r,0.02,0.008,0.20,"#c9ced3",p[0]-0.19,1.09,p[1],-0.1); });
+    [[-0.10,0.30,"#f2a33a"],[0.16,-0.28,null]].forEach(g=>{ const c=hm7Cyl(r,0.08,0.07,0.13,gl,g[0],1.15,g[1],18); c.visibility=0.5;
+      if(g[2]) hm7Cyl(r,0.07,0.065,0.05,g[2],g[0],1.11,g[1],18); });
+    hm7Sph(r,0.12,0.05,0.10,"#f6f1e2",0.05,1.11,0.02,6);                                        // tovagliolo appallottolato
+    for(let i=0;i<8;i++) hm7Box(r,0.018,0.006,0.014,"#c8a46a",-0.2+i*0.06,1.087,0.1-(i%3)*0.08); },
+  cleanPlates(r){ const cer=hm7Mat("#f4f1ea",0.5,60);
+    for(let i=0;i<5;i++){ hm7Cyl(r,0.25,0.19,0.018,cer,0,1.19+i*0.022,0.34,28); hm7Tor(r,0.245,0.012,cer,0,1.198+i*0.022,0.34); }
+    hm7Cyl(r,0.10,0.10,0.12,hm7Mat("#c9ced3",0.9,60),0.22,1.24,0.34,16);                         // portaposate
+    [-0.02,0,0.02].forEach((x,i)=>hm7Box(r,0.012,0.14,0.012,"#c9ced3",0.22+x,1.33,0.34+(i-1)*0.015)); },
+  potOn(r){ const steel=hm7Mat("#c9ced3",0.9,70);
+    hm7Cyl(r,0.30,0.28,0.20,steel,0,1.03,0,28); hm7Tor(r,0.30,0.015,steel,0,1.13,0);
+    [-1,1].forEach(q=>hm7Box(r,0.06,0.02,0.03,"#2e3338",q*0.18,1.10,0));
+    const lid=hm7Cyl(r,0.30,0.30,0.02,hm7Mat("#dfe3e6",0.9,80),0.02,1.15,0,28); lid.rotation.z=0.12;
+    hm7Sph(r,0.05,0.04,0.05,"#2e3338",0.03,1.18,0,8);
+    hm7Cyl(r,0.34,0.34,0.005,hm7Mat("#1c1c20",0.2,10,"#c83a1a"),0,0.935,0,28);                 // fornello acceso (anello rosso)
+    /* vapore che sale davvero: 5 sbuffi in loop */
+    const puffs=[]; for(let i=0;i<5;i++){ const s=hm7Sph(r,0.10,0.10,0.10,hm7Mat("#ffffff",0,1,"#dddddd"),0,1.2,0,8); s.visibility=0.35; s.__ph=i/5; puffs.push(s); }
+    let t=0; scene.onBeforeRenderObservable.add(()=>{ if(!r.isEnabled()) return; t+=engine.getDeltaTime()/1000;
+      puffs.forEach(s=>{ const p=(t*0.35+s.__ph)%1; s.position.set(Math.sin(p*6+s.__ph*9)*0.05,1.20+p*0.45,Math.cos(p*5)*0.03);
+        const k=0.08+p*0.18; s.scaling.set(k,k,k); s.visibility=0.40*(1-p); }); }); },
+};
+
+/* =====================================================================
    UNIT 7 «At home» — le dodici faccende del libro e dove si fanno.
    ---------------------------------------------------------------------
    `place` non e' decorativo: e' la risposta dello step lessico. Sapere che
@@ -31015,178 +31250,32 @@ function buildHm7Props(){
   const hx=(r,w,h,d,hex,px,py,pz,em)=>lpBox(r,w,h,d,hex,px,py,pz,em);
   const hc=(r,dia,h,hex,px,py,pz,rx,rz)=>lpCyl(r,dia,h,hex,px,py,pz,rx,rz);
 
-  /* LAVATRICE (bagno, muro nord) — todo: cesto pieno · done: cesto vuoto */
-  hm7Pair("washing",6.00,-7.85,0,(r)=>{
-    hx(r,0.62,0.85,0.60,"#eef1f3",0,0.425,0);            // corpo
-    hc(r,0.40,0.06,"#38424a",0,0.50,0.31,Math.PI/2);      // oblo'
-    hc(r,0.30,0.04,"#7fb8d8",0,0.50,0.335,Math.PI/2);
-    hx(r,0.56,0.08,0.06,"#cfd6db",0,0.83,0.27);           // cruscotto
-    hx(r,0.42,0.34,0.32,"#c08a4a",0.66,0.17,0.05);        // cesto del bucato
-    hx(r,0.34,0.10,0.26,"#d8d2c2",0.66,0.38,0.05);        // panni che escono
-    hx(r,0.24,0.08,0.20,"#b45a6a",0.62,0.45,0.05);
-  },(r)=>{
-    hx(r,0.62,0.85,0.60,"#eef1f3",0,0.425,0);
-    hc(r,0.40,0.06,"#38424a",0,0.50,0.31,Math.PI/2);
-    hc(r,0.30,0.04,"#7fb8d8",0,0.50,0.335,Math.PI/2);
-    hx(r,0.56,0.08,0.06,"#cfd6db",0,0.83,0.27);
-    hx(r,0.42,0.34,0.32,"#c08a4a",0.66,0.17,0.05);        // cesto, ora vuoto
-  });
-
-  /* ASSE DA STIRO (soggiorno) — todo: pila di panni · done: pila piegata */
-  hm7Pair("ironing",-5.60,1.20,0.35,(r)=>{
-    hx(r,1.30,0.06,0.38,"#e6e2d6",0,0.82,0);              // piano
-    hx(r,0.07,0.80,0.07,"#8f9887",-0.45,0.41,0.10);       // gambe
-    hx(r,0.07,0.80,0.07,"#8f9887", 0.45,0.41,-0.10);
-    hx(r,0.26,0.13,0.16,"#4a5560",0.44,0.92,0);           // ferro da stiro
-    hx(r,0.20,0.06,0.12,"#8a97a3",0.44,1.01,0);
-    hx(r,0.46,0.16,0.30,"#b45a6a",-0.30,0.93,0);          // panni sgualciti
-    hx(r,0.38,0.12,0.26,"#7fa8c8",-0.30,1.07,0.02);
-  },(r)=>{
-    hx(r,1.30,0.06,0.38,"#e6e2d6",0,0.82,0);
-    hx(r,0.07,0.80,0.07,"#8f9887",-0.45,0.41,0.10);
-    hx(r,0.07,0.80,0.07,"#8f9887", 0.45,0.41,-0.10);
-    hx(r,0.26,0.13,0.16,"#4a5560",0.44,0.92,0);
-    hx(r,0.20,0.06,0.12,"#8a97a3",0.44,1.01,0);
-    hx(r,0.40,0.07,0.28,"#b45a6a",-0.30,0.885,0);         // pila piegata, bassa e netta
-    hx(r,0.40,0.07,0.28,"#7fa8c8",-0.30,0.955,0);
-  });
-
-  /* ASPIRAPOLVERE + polvere sul pavimento (soggiorno) */
-  hm7Pair("vacuuming",-6.20,5.60,0,(r)=>{
-    hx(r,0.44,0.30,0.36,"#c8452f",0,0.15,0);              // corpo
-    hc(r,0.16,0.06,"#2b2f33",-0.20,0.08,0.14,0,Math.PI/2);
-    hc(r,0.16,0.06,"#2b2f33", 0.20,0.08,0.14,0,Math.PI/2);
-    hx(r,0.05,0.90,0.05,"#8f9887",0,0.62,-0.10);          // manico
-    hx(r,0.30,0.05,0.22,"#4a5560",0.02,0.03,0.42);        // spazzola
-    /* polvere = GRAPPOLI di briciole, non dischi lisci (vedi nota sopra) */
-    [[0.95,0.75],[1.55,-0.45],[0.45,1.45],[1.85,0.95]].forEach((o,ci)=>{
-      for(let j=0;j<10;j++){
-        const a=(ci*2.3+j*0.897), rad=0.06+((j*7+ci*3)%9)*0.030;
-        const px=o[0]+Math.cos(a)*rad*2.4, pz=o[1]+Math.sin(a)*rad*2.0;
-        /* briciole 4-10 cm e ben piu' scure del pavimento: piu' piccole di
-           cosi' sparivano del tutto e "do the vacuuming" restava senza un
-           "prima" visibile. */
-        const sz=0.042+((j*5+ci)%4)*0.020;
-        /* \u26a0\ufe0f y 0.035 e non 0.007: il pavimento delle stanze e' un ground a
-           y=0.02, quindi qualsiasi cosa sotto quella quota sparisce dentro
-           il pavimento. Le briciole a 0.007 erano invisibili non perche'
-           piccole, ma perche' sepolte. */
-        const d=hx(r,sz,0.010,sz*0.72,(j%3===0)?"#6f6757":"#8a8272",px,0.035,pz);
-        d.rotation.y=a;
-      }
-    });
-  },(r)=>{
-    hx(r,0.44,0.30,0.36,"#c8452f",0,0.15,0);
-    hc(r,0.16,0.06,"#2b2f33",-0.20,0.08,0.14,0,Math.PI/2);
-    hc(r,0.16,0.06,"#2b2f33", 0.20,0.08,0.14,0,Math.PI/2);
-    hx(r,0.05,0.90,0.05,"#8f9887",0,0.62,-0.10);
-    hx(r,0.30,0.05,0.22,"#4a5560",0.02,0.03,0.42);
-  });
-
-  /* BIDONE DELLA SPAZZATURA (cucina) — todo: strapieno · done: vuoto */
-  hm7Pair("rubbish",5.90,7.00,Math.PI,(r)=>{
-    hc(r,0.46,0.62,"#4a5560",0,0.31,0);
-    hc(r,0.50,0.05,"#38424a",0,0.64,0);
-    hx(r,0.34,0.26,0.30,"#3f5b6b",0,0.78,0);              // sacco che sborda
-    hx(r,0.16,0.12,0.14,"#c8b06a",0.14,0.94,0.06);        // rifiuti in cima
-    hx(r,0.13,0.10,0.12,"#a8544a",-0.12,0.92,-0.05);
-  },(r)=>{
-    hc(r,0.46,0.62,"#4a5560",0,0.31,0);
-    hc(r,0.50,0.05,"#38424a",0,0.64,0);
-    hc(r,0.30,0.02,"#2b2f33",0,0.665,0);                  // coperchio chiuso
-  });
-
-  /* CIOTOLA DEGLI ANIMALI (cucina) — todo: vuota · done: piena */
-  hm7Pair("feed",2.40,7.20,0,(r)=>{
-    hc(r,0.30,0.05,"#e4ded0",0,0.025,0);
-    hc(r,0.26,0.09,"#c8452f",0,0.07,0);
-    hc(r,0.20,0.03,"#8a7f6a",0,0.10,0);                   // fondo vuoto
-    hc(r,0.24,0.08,"#7fa8c8",0.34,0.06,0.02);             // ciotola dell'acqua
-  },(r)=>{
-    hc(r,0.30,0.05,"#e4ded0",0,0.025,0);
-    hc(r,0.26,0.09,"#c8452f",0,0.07,0);
-    hc(r,0.22,0.07,"#8a5a2e",0,0.135,0);                  // crocchette
-    hc(r,0.24,0.08,"#7fa8c8",0.34,0.06,0.02);
-    hc(r,0.20,0.04,"#9fd0e8",0.34,0.09,0.02);
-  });
-
-  /* GUINZAGLIO ALL'INGRESSO (soggiorno) — todo: appeso · done: gancio vuoto */
-  hm7Pair("walk",-0.20,7.60,Math.PI,(r)=>{
-    hx(r,0.30,0.26,0.05,"#7a5334",0,1.42,0.02);           // tavoletta a muro
-    hx(r,0.03,0.06,0.04,"#8f9887",-0.07,1.34,0.05);       // ganci
-    hx(r,0.03,0.06,0.04,"#8f9887", 0.07,1.34,0.05);
-    hc(r,0.19,0.028,"#a8544a",-0.07,1.20,0.05,Math.PI/2); // guinzaglio arrotolato
-    hc(r,0.13,0.024,"#a8544a",-0.07,1.06,0.05,Math.PI/2);
-    hc(r,0.30,0.10,"#6b7a86",0.40,0.05,0.10);             // cuccia
-  },(r)=>{
-    hx(r,0.30,0.26,0.05,"#7a5334",0,1.42,0.02);
-    hx(r,0.03,0.06,0.04,"#8f9887",-0.07,1.34,0.05);
-    hx(r,0.03,0.06,0.04,"#8f9887", 0.07,1.34,0.05);
-    hc(r,0.30,0.10,"#6b7a86",0.40,0.05,0.10);             // cuccia, cane fuori a spasso
-  });
-
-  /* VESTITI PER TERRA (camera) — todo: sparsi · done: pila ordinata */
-  hm7Pair("tidy",-3.60,-6.60,0,(r)=>{
-    /* MAGLIETTA: corpo + maniche, ruotata di sghembo */
-    const ts=hx(r,0.40,0.045,0.30,"#b45a6a", 0.00,0.023, 0.00); ts.rotation.y= 0.55;
-    const sl=hx(r,0.15,0.04, 0.13,"#b45a6a",-0.22,0.021, 0.19); sl.rotation.y= 0.55;
-    const sr=hx(r,0.15,0.04, 0.13,"#b45a6a", 0.22,0.021,-0.19); sr.rotation.y= 0.55;
-    const nk=hx(r,0.11,0.05, 0.10,"#9a4a5a", 0.13,0.026, 0.16); nk.rotation.y= 0.55;
-    /* PANTALONI: cintura + due gambe divaricate */
-    const wb=hx(r,0.30,0.05, 0.13,"#4a6a8c", 0.52,0.025, 0.34); wb.rotation.y=-0.85;
-    const l1=hx(r,0.12,0.045,0.44,"#4a6a8c", 0.40,0.023, 0.56); l1.rotation.y=-0.55;
-    const l2=hx(r,0.12,0.045,0.44,"#4a6a8c", 0.66,0.023, 0.52); l2.rotation.y=-1.15;
-    /* FELPA appallottolata: due strati sfalsati, non un rettangolo */
-    const h1=hx(r,0.32,0.07, 0.26,"#c8b06a",-0.44,0.035, 0.30); h1.rotation.y= 1.10;
-    const h2=hx(r,0.22,0.06, 0.18,"#d8c07a",-0.38,0.085, 0.24); h2.rotation.y= 0.40;
-    /* CALZINI spaiati */
-    const k1=hx(r,0.09,0.035,0.19,"#e4ded0", 0.22,0.018,-0.44); k1.rotation.y= 0.90;
-    const k2=hx(r,0.09,0.035,0.19,"#e4ded0",-0.06,0.018,-0.52); k2.rotation.y=-0.35;
-    /* ZAINO buttato li' */
-    const bp=hx(r,0.26,0.17, 0.20,"#8a5a2e",-0.34,0.085,-0.36); bp.rotation.y= 0.30;
-    hx(r,0.20,0.05,0.04,"#6b4520",-0.34,0.175,-0.29);
-  },(r)=>{
-    hx(r,0.40,0.06,0.30,"#b45a6a",0,0.03,0);              // pila unica, allineata
-    hx(r,0.40,0.06,0.30,"#7fa8c8",0,0.09,0);
-    hx(r,0.40,0.06,0.30,"#c8b06a",0,0.15,0);
-    hx(r,0.40,0.06,0.30,"#6b7a86",0,0.21,0);
-  });
-
-  /* --- gli extra dei bersagli GIA' esistenti: solo il "disordine", il
-     mobile sotto c'e' gia' e non va toccato --- */
-  hm7Pair("washingup",HM7_KSINK_X-0.30,HM7_KSINK_Z,0,(r)=>{
-    hc(r,0.26,0.05,"#e4ded0",0,0.97,0.16);                // piatti sporchi accatastati
-    hc(r,0.26,0.05,"#dcd6c6",0,1.02,0.16);
-    hc(r,0.24,0.05,"#e4ded0",0,1.07,0.16);
-    hx(r,0.14,0.10,0.12,"#c8b06a",0,1.16,0.16);
-  },null);
-  hm7Pair("clear",3.80,4.20,0,(r)=>{
-    hc(r,0.30,0.03,"#e4ded0",-0.45,1.10,-0.20);           // piatti usati sul tavolo
-    hc(r,0.30,0.03,"#e4ded0", 0.45,1.10, 0.20);
-    hc(r,0.16,0.11,"#f2efe6",-0.10,1.14, 0.30);           // bicchieri
-    hc(r,0.16,0.11,"#f2efe6", 0.16,1.14,-0.28);
-  },null);
-  hm7Pair("lay",3.00,-1.40,0,null,(r)=>{
-    hc(r,0.24,0.04,"#f2efe6",0,1.20,0.34);                // piatti puliti tirati fuori
-    hc(r,0.24,0.04,"#f2efe6",0,1.25,0.34);
-  });
+  /* v263 — stessi bersagli, posizioni e rotazioni di prima; i modelli sono
+     in HM7B (vedi il blocco «RESTYLING DEGLI EXTRA» sopra). */
+  hm7Pair("washing",6.00,-7.85,0,(r)=>HM7B.washer(r,true),(r)=>HM7B.washer(r,false));
+  hm7Pair("ironing",-5.60,1.20,0.35,(r)=>HM7B.ironBoard(r,false),(r)=>HM7B.ironBoard(r,true));
+  hm7Pair("vacuuming",-6.20,5.60,0,(r)=>HM7B.vacuum(r,true),(r)=>HM7B.vacuum(r,false));
+  hm7Pair("rubbish",5.90,7.00,Math.PI,(r)=>HM7B.bin(r,true),(r)=>HM7B.bin(r,false));
+  hm7Pair("feed",2.40,7.20,0,(r)=>HM7B.bowls(r,false),(r)=>HM7B.bowls(r,true));
+  hm7Pair("walk",-0.20,7.60,Math.PI,(r)=>HM7B.lead(r,true),(r)=>HM7B.lead(r,false));
+  hm7Pair("tidy",-3.60,-6.60,0,(r)=>HM7B.clothes(r,false),(r)=>HM7B.clothes(r,true));
+  hm7Pair("washingup",HM7_KSINK_X-0.30,HM7_KSINK_Z,0,(r)=>HM7B.dirtyDishes(r),(r)=>HM7B.drainer(r));
+  hm7Pair("clear",3.80,4.20,0,(r)=>HM7B.usedTable(r),null);
+  hm7Pair("lay",3.00,-1.40,0,null,(r)=>HM7B.cleanPlates(r));
   /* letto reale: x -8.10..-5.10 (3.00) · z -6.27..-3.73 (2.55), centro
-     (-6.60,-5.00). Il piumone copre 2.60 x 1.90 lasciando scoperti i bordi
-     del materasso e il cuscino verso la testiera (z negativo). */
+     (-6.60,-5.00), materasso a ~0.64. Il piumone e' STOFFA (hm7Cloth): una
+     griglia con pieghe che ricade oltre i bordi del materasso. */
+  const duvet=hm7Pattern("check","#b45a6a","#e8c8b0");
   hm7Pair("bed",-6.60,-5.00,0,(r)=>{
-    hx(r,1.70,0.20,1.30,"#b45a6a",-0.25,0.74, 0.20);      // piumone buttato di lato
-    hx(r,1.10,0.17,0.90,"#c46a7a", 0.55,0.79,-0.25);      // un lembo accartocciato
-    hx(r,0.66,0.14,0.42,"#e4ded0", 0.80,0.75, 0.55);      // cuscino fuori posto
+    hm7Cloth(r,1.90,1.55,duvet,-0.50,0.745,0.34,{amp:0.06,hx:1.4,hz:0.95,sub:26,seed:2,
+      lump:[[0.1,0.1,0.55,0.16],[-0.5,-0.2,0.45,0.13],[0.45,0.45,0.35,0.09]]}).rotation.y=0.15;   // buttato di lato, gonfio
+    const pw=hm7Sph(r,0.66,0.16,0.42,hm7Mat("#f2efe6",0.1,10),0.85,0.76,0.60,12); pw.rotation.set(0.25,0.7,0.2);   // cuscino fuori posto
   },(r)=>{
-    hx(r,2.50,0.10,1.55,"#b45a6a",0,0.67, 0.30);          // piumone steso, dentro il materasso
-    hx(r,2.46,0.07,0.30,"#e4ded0",0,0.72,-0.30);          // risvolto del lenzuolo
+    hm7Cloth(r,3.10,1.95,duvet,0,0.705,0.33,{amp:0.006,hx:1.46,hz:0.74,drop:1.3,dropBothZ:false,sub:30,seed:1});   // steso, ricade ai lati
+    hm7Box(r,2.94,0.05,0.34,hm7Mat("#f4f1ea",0.05,10),0,0.715,-0.55);                          // risvolto del lenzuolo
+    hm7Box(r,2.94,0.012,0.04,"#b45a6a",0,0.742,-0.40);
   });
-  hm7Pair("cook",HM7_KHOB_X-0.28,HM7_KHOB_Z,0,null,(r)=>{
-    hc(r,0.30,0.20,"#c2c8cc",0,1.02,0);                   // pentola sul fuoco
-    hc(r,0.32,0.03,"#8f979c",0,1.14,0);
-    hc(r,0.14,0.03,"#e8e8e8",0,1.22,0);                   // vapore
-    hc(r,0.10,0.03,"#e8e8e8",0.03,1.30,0.02);
-  });
+  hm7Pair("cook",HM7_KHOB_X-0.28,HM7_KHOB_Z,0,null,(r)=>HM7B.potOn(r));
 
   /* ---- COLLISIONI (vedi nota su hm7Solid) ----
      Numeri presi dai box disegnati sopra, non stimati.
@@ -31796,6 +31885,9 @@ function hm7RestoreFridge(){
     const root=new BABYLON.TransformNode("hm7fridgeNote",scene);
     root.position.set(C.x+7.10,0,C.z+6.60); root.rotation.y=-Math.PI/2; root.parent=homeRoot;
     ecoPlane(root,0.62,0.48,0,1.55,0,HM7_FRIDGE_DT,"#4a4236");
+    /* v263: calamite colorate agli angoli del foglio */
+    [[-0.27,1.75,"#c0392b"],[0.27,1.75,"#2f6fd6"],[-0.27,1.35,"#e8c860"],[0.27,1.35,"#3f9a45"]].forEach(q=>{
+      hm7Cyl(root,0.05,0.05,0.02,hm7Mat(q[2],0.6,50),q[0],q[1],0.012,16,Math.PI/2); });
     HM7_FRIDGE_NODE=root;
   }
   try{ hm7FridgeDraw(hm7FridgeGet()); }catch(e){}
