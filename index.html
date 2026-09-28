@@ -2716,6 +2716,7 @@ const UNIT_JOBS={ id:"u3_1", area:"jobcentre", areaName:"the Job Centre Tower",
    ===================================================================== */
 const UNIT_TECH={ id:"u3_2", area:"techlab", areaName:"the TechLab",
   title:"Anno 3 \u00b7 Unit 2 \u2014 Technology", size:8.0, sizeX:6.0, wallH:3.0, tint:"#a9b3bb",
+  contactShadows:true, wallHex:"#dfe4e8", ceilHex:"#e8ecef",   // v269: ombre sotto gli arredi, pareti e soffitto da laboratorio
   enterToast:"\u{1F4BB} Sei entrato al TechLab",
   onEnter:()=>{ setTimeout(buildTechNPCs,0);
     setTimeout(()=>{ try{ tlRestoreBoards(); tlScanDraw(null); tlPadDraw(); }catch(e){} },60); },
@@ -21969,8 +21970,15 @@ function u7Hoop(x,z){ const r=new BABYLON.TransformNode("u7hoop",scene); r.paren
   const net=BABYLON.MeshBuilder.CreateCylinder("u7hn",{diameterTop:0.45,diameterBottom:0.30,height:0.42,tessellation:18,cap:BABYLON.Mesh.NO_CAP},scene);
   const nm=sfNetMat().clone("u7hnM"); nm.diffuseTexture=sfNetMat().diffuseTexture.clone(); nm.diffuseTexture.uScale=4; nm.diffuseTexture.vScale=1.2;
   net.material=nm; net.position.set(0,2.74,bz+0.34); net.parent=r; net.isPickable=false;
-  hm7Shadow(r,1.1,1.5,0,-0.10,0.285,0.8);                                                   // sotto la base
-  hm7Shadow(r,2.2,1.2,0,1.2,0.285,0.35);                                                    // proiezione del tabellone
+  hm7Shadow(r,1.1,1.5,0,-0.10,0.03,0.8);                                                    // sotto la base
+  hm7Shadow(r,2.2,1.2,0,1.2,0.03,0.35);                                                     // proiezione del tabellone
+  /* v269: fuori dal campo il canestro ha il suo mezzo campetto in cemento */
+  const pad=BABYLON.MeshBuilder.CreateGround("u7hpad",{width:3.6,height:3.4},scene);
+  const pdt=new BABYLON.DynamicTexture("u7hpadT",{width:256,height:256},scene,true), pc=pdt.getContext();
+  pc.fillStyle="#9aa3aa"; pc.fillRect(0,0,256,256); pc.strokeStyle="#f4f4f0"; pc.lineWidth=5;
+  pc.strokeRect(78,4,100,120); pc.beginPath(); pc.arc(128,124,50,0,Math.PI); pc.stroke(); pdt.update();
+  const pm=new BABYLON.StandardMaterial("u7hpadM",scene); pm.diffuseTexture=pdt; pm.specularColor=new BABYLON.Color3(0.05,0.05,0.05);
+  pad.material=pm; pad.position.set(0,0.012,1.35); pad.rotation.y=Math.PI; pad.parent=r; pad.isPickable=false; pad.receiveShadows=true;
   addSolid(x-0.35,x+0.35,z-0.35,z+0.35,"town");
   return r; }
 function u7Racket(x,z){ const r=new BABYLON.TransformNode("u7rack",scene); r.parent=townRoot; r.position.set(x,0,z);
@@ -22081,20 +22089,28 @@ function buildSportsZone(cx,cz){
   if(u7Built) return; u7Built=true;
   const eq=[
     { en:"football",   it:"calcio",       emoji:"\u26bd",    x:cx+2,  z:cz-4, build:()=>u7Ball(cx+2,cz-4) },
-    { en:"basketball", it:"pallacanestro",emoji:"\u{1F3C0}", x:cx+12, z:cz-7, build:()=>u7Hoop(cx+12,cz-7) },
-    { en:"tennis",     it:"tennis",       emoji:"\u{1F3BE}", x:cx-6,  z:cz+2, build:()=>u7Racket(cx-6,cz+2) },
-    { en:"cycling",    it:"ciclismo",     emoji:"\u{1F6B4}", x:cx+10, z:cz+7, build:()=>u7Bike(cx+10,cz+7,0.6) },
-    { en:"running",    it:"corsa",        emoji:"\u{1F3C3}", x:cx+5,  z:cz+4, build:()=>u7Cones(cx+5,cz+4) },
+    /* v269 (Giacomo): sul campo da calcio resta SOLO il pallone. Gli altri
+       attrezzi stanno FUORI, davanti al campo (lato ingresso, dove ci sono
+       bacheca e tabellone) e verso la fine, oltre il vialetto est: un
+       angolo sportivo sul prato fra x cx+16 e cx+21, z cz-20 e cz-11
+       (libero da alberi e solidi: verificato sulla lista dei solids). */
+    { en:"basketball", it:"pallacanestro",emoji:"\u{1F3C0}", x:cx+19.2, z:cz-18.6, off:true, build:()=>u7Hoop(cx+19.2,cz-18.6) },
+    { en:"tennis",     it:"tennis",       emoji:"\u{1F3BE}", x:cx+19.8, z:cz-13.2, off:true, build:()=>u7Racket(cx+19.8,cz-13.2) },
+    { en:"cycling",    it:"ciclismo",     emoji:"\u{1F6B4}", x:cx+17.4, z:cz-12.4, off:true, build:()=>u7Bike(cx+17.4,cz-12.4,0.5) },
+    { en:"running",    it:"corsa",        emoji:"\u{1F3C3}", x:cx+17.6, z:cz-16.0, off:true, build:()=>u7Cones(cx+17.6,cz-16.0) },
   ];
+  /* quota del prato sotto un punto (raggio sulle superfici __ground) */
+  const gY=(x,z)=>{ const h=scene.pickWithRay(new BABYLON.Ray(new BABYLON.Vector3(x,6,z),new BABYLON.Vector3(0,-1,0),12),
+      m=>m.__ground===true && m.isEnabled() && m.name!=="h7sh"); return (h&&h.hit)?h.pickedPoint.y:0; };
   UNIT7.items = eq.map(e=>{ const node=e.build();
-    node.position.y=PITCH_Y;   // il manto sta a 0.22: senza questo gli attrezzi affondano nell'erba
+    node.position.y=e.off?gY(e.x,e.z):PITCH_Y;   // il manto sta a 0.22: senza questo gli attrezzi affondano nell'erba
     /* OMBRE: i prop di strada usano la convenzione __occluder=true (vedi
        PROPS AMBIENTALI / refreshShadowCasters), ma gli attrezzi sportivi
        erano nati senza — e SENZA OMBRA DI CONTATTO una sfera appoggiata
        sull'erba si legge come sospesa a mezz'aria (segnalato a schermo).
        Il manto `pitch` ha gia' __ground=true, quindi riceve. */
     node.getChildMeshes().forEach(m=>{ if(m.getTotalVertices&&m.getTotalVertices()>0 && m.name!=="h7sh") m.__occluder=true; });
-    if(e.en!=="basketball" && e.en!=="running") try{ contactShadowFor(node,SF_SHY,0.8,0.12); }catch(er){}   // v267
+    if(e.en!=="basketball" && e.en!=="running") try{ contactShadowFor(node,(e.off?node.position.y+0.02:SF_SHY),0.8,0.12); }catch(er){}   // v267
     return { en:e.en, it:e.it, emoji:e.emoji, room:"the Sports Field", mesh:node,
              pos:new BABYLON.Vector3(e.x,0,e.z), solid:false }; });
   if(typeof refreshShadowCasters==="function") refreshShadowCasters();
@@ -32155,6 +32171,13 @@ function buildInterior(u){
        (i bidoni dell'Eco Point, la lavagna del menu) lo prende qui invece
        di ripescarlo per nome fra le mesh. Nessuna prop esistente lo usa. */
     if(pr.onBuilt && node){ try{ pr.onBuilt(node,b); }catch(e){} }
+    /* v269: ombra di contatto sotto gli arredi (unit che la chiedono) — per
+       terra (pavimento a 0.02) o sul piano su cui l'oggetto e' appoggiato (pr.y) */
+    if(u.contactShadows && node && pr.shadow!==false && pr.prop!=="poster" && (pr.solid!==false || pr.y>0.05)){
+      try{ const s1=contactShadowFor(node,(pr.y>0.05?pr.y+0.004:0.027),1.0,(pr.y>0.05?0.12:0.45),10);
+        /* a terra un secondo alone piu' stretto e piu' scuro: sul pavimento chiaro
+           del laboratorio uno solo si leggeva appena */
+        if(s1 && !(pr.y>0.05)){ const s2=s1.clone("h7sh"); s2.parent=s1.parent; s2.scaling.set(0.72,1,0.72); s2.position.y+=0.001; } }catch(e){} }
     if(pr.solid!==false && b){ const pd=0.10;
       addSolid(b.min.x+pd,b.max.x-pd,b.min.z+pd,b.max.z-pd,u.area); }
     /* ⚠️ LA QUOTA VERA, NON ZERO (segnalato da Giacomo l'1 set sul Clothes
@@ -39136,6 +39159,76 @@ function tlProto(key){ for(let i=0;i<TL_PROTOS.length;i++) if(TL_PROTOS[i].key==
    sopra. Piano unico a 0.86 e cappello a 2.10: 1.24 m di aria. Il piano e' di
    tinta CHIARA perche' i device sono scuri: un mouse nero su un ripiano nero
    e' invisibile a tre metri (verificato a schermo). */
+/* =====================================================================
+   v269 — TECHLAB: RESTYLING + OMBRE (Giacomo, 28 set). Stessi ingombri e
+   stesse posizioni: i solidi, i device del lessico e i percorsi degli NPC
+   non cambiano. Si aggiungono dettagli e decoro SOLO su pareti, soffitto e
+   piani di lavoro (niente di nuovo a terra dove si cammina).
+   ===================================================================== */
+/* pannello forato con attrezzi appesi (fronte +z) */
+function tlPegboard(r,w,h,x,y,z){
+  const dt=new BABYLON.DynamicTexture("tlpeg"+(_lpN++),{width:256,height:128},scene,true), c=dt.getContext();
+  c.fillStyle="#c8b48a"; c.fillRect(0,0,256,128); c.fillStyle="#8a7650";
+  for(let i=0;i<16;i++) for(let j=0;j<8;j++){ c.beginPath(); c.arc(8+i*16,8+j*16,2.2,0,Math.PI*2); c.fill(); }
+  dt.update(); dt.wrapU=dt.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE; dt.uScale=Math.max(1,w/1.6); dt.vScale=Math.max(1,h/0.8);
+  const m=new BABYLON.StandardMaterial("tlpegM"+(_lpN++),scene); m.diffuseTexture=dt; m.specularColor=new BABYLON.Color3(0.03,0.03,0.03);
+  lpBox(r,w,h,0.02,"#c8b48a",x,y,z).material=m;
+  const tools=["#c0392b","#2f6fd6","#e8a33a","#3f9a45","#2b2f33"]; let sd=7; const rnd=()=>{ sd=(sd*16807)%2147483647; return (sd%1000)/1000; };
+  for(let i=0;i<Math.floor(w/0.28);i++){ const tx=x-w/2+0.18+i*0.28, ty=y+(rnd()-0.5)*h*0.4, col=tools[i%tools.length];
+    const kind=i%4;
+    if(kind===0){ lpBox(r,0.03,0.20,0.02,"#9aa0a6",tx,ty,z+0.03); lpBox(r,0.05,0.08,0.03,col,tx,ty-0.12,z+0.03); }      // cacciavite
+    else if(kind===1){ lpBox(r,0.12,0.03,0.02,"#9aa0a6",tx,ty+0.05,z+0.03); lpBox(r,0.03,0.16,0.02,col,tx,ty-0.03,z+0.03); } // martello
+    else if(kind===2){ const t=hm7Tor(r,0.10,0.018,col,tx,ty,z+0.03,Math.PI/2,0,0); }                                         // rotolo di nastro
+    else { lpBox(r,0.02,0.18,0.02,"#9aa0a6",tx-0.02,ty,z+0.03).rotation.z=0.2; lpBox(r,0.02,0.18,0.02,"#9aa0a6",tx+0.02,ty,z+0.03).rotation.z=-0.2;
+      lpBox(r,0.04,0.06,0.03,col,tx,ty-0.10,z+0.03); } }                                                                    // pinze
+}
+/* lampada da banco a braccio snodato (appoggiata a +x, +z locale) */
+function tlDeskLamp(r,x,y,z,ry){ const g=new BABYLON.TransformNode("tlLamp",scene); g.parent=r; g.position.set(x,y,z); g.rotation.y=ry||0;
+  lpCyl(g,0.14,0.03,"#2b2f33",0,0.015,0); const a=lpBox(g,0.025,0.34,0.025,"#2b2f33",0,0.18,0); a.rotation.z=0.25;
+  const b=lpBox(g,0.025,0.30,0.025,"#2b2f33",-0.14,0.40,0); b.rotation.z=1.2;
+  const sh=hm7Cyl(g,0.06,0.16,0.10,hm7Mat("#e8e8e4",0.5,40),-0.28,0.42,0,16); sh.rotation.z=0.6;
+  const bulb=hm7Sph(g,0.07,0.04,0.07,hm7Mat("#fff4d0",0,1,"#fff0c0"),-0.30,0.38,0,8);
+  if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(bulb); }
+/* monitor su piedistallo (fronte +z) */
+function tlMonitor(r,x,y,z,ry,screenHex){ const g=new BABYLON.TransformNode("tlMon",scene); g.parent=r; g.position.set(x,y,z); g.rotation.y=ry||0;
+  lpBox(g,0.20,0.015,0.14,"#2b2f33",0,0.008,0); lpBox(g,0.04,0.20,0.03,"#2b2f33",0,0.11,-0.03);
+  lpBox(g,0.50,0.30,0.03,"#1b1f24",0,0.33,0); const s=lpBox(g,0.46,0.26,0.005,screenHex||"#2f6f80",0,0.33,0.017,screenHex?null:"#2a5f6e");
+  if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(s); }
+/* plafoniera LED a soffitto */
+LEXPROPS.tlCeilLight=function(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene), y=(o.py||2.98);
+  lpBox(r,o.w||2.4,0.05,0.36,"#c9d1d8",0,y,0);
+  const l=lpBox(r,(o.w||2.4)-0.12,0.012,0.28,"#f4fbff",0,y-0.03,0,"#dfeef6");
+  if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(l);
+  return r; };
+/* canalina porta-cavi lungo il muro, con cavi colorati che scendono */
+LEXPROPS.tlCableTray=function(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene), w=o.w||6, y=o.py||2.55;
+  lpBox(r,w,0.06,0.20,"#8a939b",0,y,0.10); lpBox(r,w,0.10,0.02,"#8a939b",0,y+0.03,0.20);
+  ["#2f6fd6","#c0392b","#e8c860","#3f9a45"].forEach((c,i)=>lpBox(r,w-0.1,0.025,0.025,c,0,y+0.045,0.05+i*0.035));
+  return r; };
+/* lavagna bianca con schema di un circuito e post-it (fronte +z) */
+LEXPROPS.tlWhiteboard=function(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene), w=o.w||2.0, h=1.1, py=o.py||1.6;
+  lpBox(r,w+0.06,h+0.06,0.03,"#9aa0a6",0,py,0);
+  const dt=new BABYLON.DynamicTexture("tlwb"+(_lpN++),{width:512,height:280},scene,true), c=dt.getContext();
+  c.fillStyle="#fbfbf8"; c.fillRect(0,0,512,280); c.strokeStyle="#2f6fd6"; c.lineWidth=4;
+  c.strokeRect(60,60,180,120); c.beginPath(); c.moveTo(240,120); c.lineTo(320,120); c.lineTo(320,60); c.lineTo(420,60); c.stroke();
+  c.beginPath(); c.arc(420,120,26,0,Math.PI*2); c.stroke(); c.beginPath(); c.moveTo(320,120); c.lineTo(320,190); c.lineTo(394,190); c.stroke();
+  c.strokeStyle="#c0392b"; c.beginPath(); for(let k=0;k<6;k++){ c.lineTo(100+k*20,210+(k%2?14:-14)); } c.stroke();
+  c.fillStyle="#2b2f33"; c.font="bold 26px sans-serif"; c.fillText("v2.0 → test!",300,250);
+  [["#f7e37a",20,200],["#f6c6d0",440,190],["#bfe3f5",450,20]].forEach(q=>{ c.fillStyle=q[0]; c.fillRect(q[1],q[2],56,56); });
+  dt.update();
+  const m=new BABYLON.StandardMaterial("tlwbM"+(_lpN++),scene); m.diffuseTexture=dt; m.specularColor=new BABYLON.Color3(0.2,0.2,0.2); m.emissiveColor=new BABYLON.Color3(0.25,0.25,0.25);
+  const p=BABYLON.MeshBuilder.CreatePlane("tlwbp",{width:w,height:h},scene); p.material=m; p.parent=r; p.position.set(0,py,0.018); p.rotation.y=Math.PI;
+  lpBox(r,w*0.6,0.03,0.07,"#9aa0a6",0,py-h/2-0.04,0.04);
+  [["#2f6fd6",-0.2],["#c0392b",-0.08],["#2b2f33",0.04]].forEach(q=>lpCyl(r,0.02,0.12,q[0],q[1],py-h/2-0.02,0.05,0,Math.PI/2));
+  return r; };
+/* stampante 3D sul banco (appoggiata, fronte +z) */
+function tlPrinter3D(r,x,y,z){ const g=new BABYLON.TransformNode("tl3d",scene); g.parent=r; g.position.set(x,y,z);
+  const fr=hm7Mat("#2b2f33",0.4,40); [[-1,-1],[-1,1],[1,-1],[1,1]].forEach(q=>lpBox(g,0.03,0.46,0.03,"#2b2f33",q[0]*0.19,0.23,q[1]*0.19).material=fr);
+  lpBox(g,0.42,0.03,0.42,"#2b2f33",0,0.46,0).material=fr; lpBox(g,0.40,0.04,0.40,"#2b2f33",0,0.02,0).material=fr;
+  lpBox(g,0.30,0.012,0.30,"#8a939b",0,0.12,0); lpBox(g,0.40,0.025,0.025,"#9aa0a6",0,0.30,0);
+  lpBox(g,0.07,0.07,0.07,"#c0392b",0.05,0.27,0); hm7Cyl(g,0.10,0.10,0.08,hm7Mat("#3f9a45",0.4,40),0,0.17,0,16);      // pezzo in stampa
+  const ph=hm7Tor(g,0.14,0.04,"#e8a33a",0.26,0.30,0,0,0,Math.PI/2); }
+
 LEXPROPS.tRack=function(id,o){ o=o||{};
   const r=new BABYLON.TransformNode(id,scene);
   const w=o.w||8.0, h=2.10, d=o.d||0.52;
@@ -39146,6 +39239,13 @@ LEXPROPS.tRack=function(id,o){ o=o||{};
   lpBox(r,w-0.16,0.05,0.05,"#96a1ab",0,1.62,-d/2+0.06);          // barra portautensili
   lpBox(r,w,0.08,d,"#7d8794",0,h-0.04,0);                        // cappello
   lpBox(r,w-0.16,0.04,d-0.10,"#6fd0e8",0,h-0.10,0,"#2f6f80");    // neon sotto il cappello
+  /* v269: pannello forato con gli attrezzi, cassettiera sotto il piano,
+     contenitori colorati sul cappello */
+  tlPegboard(r,w-0.30,0.62,0,1.24,-d/2+0.065);
+  for(let i=0;i<Math.floor((w-0.3)/0.62);i++){ const x=-w/2+0.46+i*0.62;
+    for(let j=0;j<3;j++){ lpBox(r,0.56,0.20,0.02,["#4d6c80","#5a7a8e","#3f5a6b"][j],x,0.14+j*0.22,d/2-0.02);
+      lpBox(r,0.14,0.025,0.03,"#c9ced3",x,0.20+j*0.22,d/2); } }
+  for(let i=0;i<Math.floor((w-0.3)/0.9);i++) lpBox(r,0.36,0.18,0.28,["#e8a33a","#2f6fd6","#3f9a45","#c0392b"][i%4],-w/2+0.6+i*0.9,h+0.09,0);
   return r; };
 
 /* moltiplicatori per tDev — vedi commento nel builder poco sotto. */
@@ -39246,6 +39346,8 @@ LEXPROPS.tCounter=function(id,o){ o=o||{};
   lpBox(r,0.46,0.07,0.30,"#b5722e", 0.72,h+0.13,0.02);        // RIGHT NOW
   lpBox(r,0.40,0.02,0.26,"#f6f1e2",-0.72,h+0.18,0.02);
   lpBox(r,0.40,0.02,0.26,"#f6f1e2", 0.72,h+0.18,0.02);
+  tlMonitor(r,0,h+0.09,-0.18,Math.PI);                         // v269: monitor verso Dr. Ito
+  for(let i=0;i<4;i++) lpBox(r,0.12,0.07,0.18,["#e8a33a","#2f6fd6","#3f9a45","#c0392b"][i],-1.30+i*0.14,h+0.125,-0.20);   // cassettini minuteria
   return r; };
 
 /* banco da lavoro / banco maker: piano + gambe + morsa + minuteria */
@@ -39262,7 +39364,13 @@ LEXPROPS.tBench=function(id,o){ o=o||{};
   lpBox(r,0.30,0.05,0.20,"#4a5560", w/2-0.34,h+0.07, 0.12);    // vassoio pezzi
   /* i prototipi mezzi finiti sul banco maker: un banco vuoto non racconta
      niente (regola \u00abniente spazi vuoti\u00bb applicata anche ai piani). */
+  lpBox(r,w-0.30,0.006,d-0.30,"#2f7f6a",0,h+0.043,0.02);    // v269: tappetino antistatico
+  tlDeskLamp(r,-w/2+0.25,h+0.04,0.30,0.4);
+  if(!o.maker){ lpBox(r,0.22,0.08,0.16,"#2b2f33",0.30,h+0.08,-0.20); lpCyl(r,0.02,0.18,"#c9ced3",0.44,h+0.13,-0.20,0,0.9);   // saldatore
+    lpBox(r,0.20,0.012,0.14,"#2f6f3a",-0.20,h+0.05,0.05,"#1a3a20");                                     // scheda elettronica
+    for(let k=0;k<5;k++) lpBox(r,0.02,0.015,0.03,"#c9a24a",-0.28+k*0.04,h+0.062,0.05); }
   if(o.maker){
+    tlPrinter3D(r,w/2-0.34,h+0.04,-0.18);
     lpBox(r,0.26,0.30,0.22,"#b5722e",-0.10,h+0.19,-0.14);
     lpCyl(r,0.20,0.26,"#3f6b5c", 0.34,h+0.17,-0.10);
     lpBox(r,0.34,0.06,0.24,"#6fd0e8", 0.02,h+0.07, 0.22,"#2f6f80");
@@ -39294,6 +39402,15 @@ LEXPROPS.tServer=function(id,o){ o=o||{};
     lpBox(r,0.05,0.05,0.02,(i%3===0?"#7fe0a8":"#6fd0e8"),-(w/2)+0.22,0.30+i*0.22,d/2+0.05,
       (i%3===0?"#2f7f52":"#2f6f80"));
   }
+  /* v269: spie che lampeggiano davvero + anta in vetro fumé */
+  const leds=[]; for(let i=0;i<7;i++) for(let k=0;k<4;k++){ const m=new BABYLON.StandardMaterial("tlsl"+(_lpN++),scene);
+    m.diffuseColor=new BABYLON.Color3(0.1,0.1,0.1); m.emissiveColor=BABYLON.Color3.FromHexString(["#7fe0a8","#6fd0e8","#f2c93e","#7fe0a8"][k]);
+    const b=BABYLON.MeshBuilder.CreateBox("tlsled",{width:0.025,height:0.025,depth:0.01},scene); b.material=m; b.parent=r;
+    b.position.set(w/2-0.30-k*0.05,0.30+i*0.22,d/2+0.045); b.__ph=(i*7+k*3)%11; leds.push(b);
+    if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(b); }
+  let t=0; scene.onBeforeRenderObservable.add(()=>{ if(area!=="techlab") return; t+=engine.getDeltaTime()/1000;
+    leds.forEach(b=>{ b.setEnabled(Math.sin(t*(2+b.__ph*0.7)+b.__ph)>-0.2); }); });
+  const gl=lpBox(r,w-0.06,h-0.08,0.01,"#1a2a33",0,h/2,d/2+0.07); gl.visibility=0.25;
   return r; };
 
 /* piattaforma della missione: pedana calpestabile (solid:false) + palo
@@ -39330,6 +39447,12 @@ LEXPROPS.tBit=function(id,o){ o=o||{};
   lpCyl(r,0.03,0.16,"#8a939b",0,0.94,0);                      // antenna
   lpCyl(r,0.09,0.09,"#c0574f",0,1.04,0,0,0,"#5e2620");
   TL_BIT_NODE=r;
+  /* v269: Bit respira (oscilla sulla pedana) e sbatte gli occhi */
+  const kids=r.getChildMeshes().slice(1), eyes=kids.filter(m=>m.material&&m.material.emissiveColor&&m.material.emissiveColor.b>0.4&&m.position.y>0.7);
+  kids.forEach(m=>{ m.__y0=m.position.y; });
+  let t=0; scene.onBeforeRenderObservable.add(()=>{ if(area!=="techlab") return; t+=engine.getDeltaTime()/1000;
+    const dy=Math.sin(t*2.2)*0.025; kids.forEach(m=>{ m.position.y=m.__y0+dy; });
+    const blink=((t%3.6)<0.12); eyes.forEach(e=>{ e.scaling.y=blink?0.15:1; }); });
   return r; };
 
 /* ---------------------------------------------------------------------
@@ -39531,6 +39654,10 @@ UNIT_TECH.props=(function(){
   P.push({ prop:"jChair", x:-1.60, z:2.20, yaw: Math.PI/2, hex:"#2f3a44" });
   P.push({ prop:"jChair", x: 1.60, z:2.20, yaw:-Math.PI/2, hex:"#3f6b5c" });
   P.push({ prop:"crates", x: 1.70, z:7.20 });
+  /* v269 — decoro a parete e a soffitto (nessun ingombro a terra) */
+  P.push({ prop:"tlCableTray", x:-5.90, z:1.80, yaw: Math.PI/2, w:8.8, solid:false, shadow:false });
+  P.push({ prop:"tlCableTray", x: 5.90, z:1.80, yaw:-Math.PI/2, w:8.8, solid:false, shadow:false });
+  P.push({ prop:"tlWhiteboard", x:2.60, z:7.96, yaw:Math.PI, w:1.60, py:1.62, solid:false, shadow:false });
   return P;
 })();
 
@@ -41400,14 +41527,14 @@ function svCampShadows(before){
 /* ombra di contatto sotto un nodo qualunque: ingombro nel sistema LOCALE del
    nodo (rotazione tolta un istante), cosi' l'ombra ruota con l'oggetto
    invece di essere un rettangolo storto. gyWorld = quota del terreno. */
-function contactShadowFor(n,gyWorld,k,pad){
+function contactShadowFor(n,gyWorld,k,pad,maxS){
   const meshes=(n.getChildMeshes?n.getChildMeshes():[]).concat(n.getTotalVertices?[n]:[]);
   const ry=n.rotation?n.rotation.y:0; if(n.rotationQuaternion) return null;
   n.rotation.y=0; n.computeWorldMatrix(true); meshes.forEach(m=>m.computeWorldMatrix(true));
   const bb=n.getHierarchyBoundingVectors(true);
   n.rotation.y=ry; n.computeWorldMatrix(true);
   const w=bb.max.x-bb.min.x, d=bb.max.z-bb.min.z, h=bb.max.y-bb.min.y;
-  if(!(w>0.2||d>0.2) || h<0.08 || w>6 || d>6) return null;
+  if(!(w>0.2||d>0.2) || h<0.08 || w>(maxS||6) || d>(maxS||6)) return null;
   const P=n.getAbsolutePosition(), sc=n.scaling||{x:1,z:1};
   const cx=((bb.min.x+bb.max.x)/2-P.x)/(sc.x||1), cz=((bb.min.z+bb.max.z)/2-P.z)/(sc.z||1);
   const pd=(pad==null?0.25:pad);
