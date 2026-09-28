@@ -21967,9 +21967,19 @@ function u7Hoop(x,z){ const r=new BABYLON.TransformNode("u7hoop",scene); r.paren
   const rim=hm7Mat("#e05a1c",0.6,50);
   hm7Box(r,0.14,0.06,0.16,rim,0,2.92,bz+0.10);                                               // staffa
   hm7Tor(r,0.46,0.025,rim,0,2.95,bz+0.34);                                                   // anello
-  const net=BABYLON.MeshBuilder.CreateCylinder("u7hn",{diameterTop:0.45,diameterBottom:0.30,height:0.42,tessellation:18,cap:BABYLON.Mesh.NO_CAP},scene);
-  const nm=sfNetMat().clone("u7hnM"); nm.diffuseTexture=sfNetMat().diffuseTexture.clone(); nm.diffuseTexture.uScale=4; nm.diffuseTexture.vScale=1.2;
-  net.material=nm; net.position.set(0,2.74,bz+0.34); net.parent=r; net.isPickable=false;
+  /* v270 — RETINA vera (la texture clonata non si vedeva): 12 cordini a
+     losanghe dall'anello verso il basso + due anelli di nodi, tutto in UNA
+     mesh bianca. La retina si stringe verso il fondo come quelle vere. */
+  { const cx0=0, cy0=2.95, cz0=bz+0.34, N=12, rows=[[0.23,0],[0.20,-0.14],[0.17,-0.28],[0.15,-0.40]], parts=[];
+    for(let j=0;j<rows.length-1;j++){ const A=rows[j], B=rows[j+1];
+      for(let i=0;i<N;i++){ [1,-1].forEach(sg=>{ const a0=(i+(j%2?0.5:0))*2*Math.PI/N, a1=a0+sg*Math.PI/N;
+        const p0=new BABYLON.Vector3(cx0+Math.cos(a0)*A[0],cy0+A[1],cz0+Math.sin(a0)*A[0]);
+        const p1=new BABYLON.Vector3(cx0+Math.cos(a1)*B[0],cy0+B[1],cz0+Math.sin(a1)*B[0]);
+        parts.push(BABYLON.MeshBuilder.CreateTube("u7hn",{path:[p0,p1],radius:0.006,tessellation:4},scene)); }); } }
+    rows.slice(1).forEach(R=>{ const t=BABYLON.MeshBuilder.CreateTorus("u7hn",{diameter:R[0]*2,thickness:0.01,tessellation:24},scene);
+      t.position.set(cx0,cy0+R[1],cz0); parts.push(t); });
+    const net=BABYLON.Mesh.MergeMeshes(parts,true,true);
+    if(net){ net.material=hm7Mat("#f4f4f0",0.2,20,"#3a3a38"); net.parent=r; net.isPickable=false; } }
   hm7Shadow(r,1.1,1.5,0,-0.10,0.03,0.8);                                                    // sotto la base
   hm7Shadow(r,2.2,1.2,0,1.2,0.03,0.35);                                                     // proiezione del tabellone
   /* v269: fuori dal campo il canestro ha il suo mezzo campetto in cemento */
@@ -21982,14 +21992,20 @@ function u7Hoop(x,z){ const r=new BABYLON.TransformNode("u7hoop",scene); r.paren
   addSolid(x-0.35,x+0.35,z-0.35,z+0.35,"town");
   return r; }
 function u7Racket(x,z){ const r=new BABYLON.TransformNode("u7rack",scene); r.parent=townRoot; r.position.set(x,0,z);
-  const g=new BABYLON.TransformNode("u7rg",scene); g.parent=r; g.position.y=0.05; g.rotation.z=0.45;
+  /* v270 — la racchetta sta DISTESA sull'erba (prima stava in piedi da sola):
+     il gruppo e' ruotato di -90 gradi attorno a x, manico lungo +z */
+  const g=new BABYLON.TransformNode("u7rg",scene); g.parent=r; g.position.set(0,0.03,-0.45); g.rotation.set(Math.PI/2,0.5,0);
   const h=BABYLON.MeshBuilder.CreateCylinder("u7rh",{diameter:0.07,height:0.62,tessellation:8},scene);
   h.material=mat("u7rhm","#2b3a44"); h.position.y=0.31; h.parent=g; h.isPickable=false;
   const head=BABYLON.MeshBuilder.CreateTorus("u7rt",{diameter:0.46,thickness:0.05,tessellation:22},scene);
   head.material=mat("u7rtm","#c8d24a","#22260a"); head.position.y=0.84; head.rotation.x=Math.PI/2; head.parent=g; head.isPickable=false;
-  const st=BABYLON.MeshBuilder.CreateDisc("u7rs",{radius:0.21,tessellation:24,sideOrientation:BABYLON.Mesh.DOUBLESIDE},scene);   // v267: corde
-  const sm=sfNetMat().clone("u7rsM"); sm.diffuseTexture=sfNetMat().diffuseTexture.clone(); sm.diffuseTexture.uScale=sm.diffuseTexture.vScale=1.6;
-  st.material=sm; st.position.y=0.84; st.parent=g; st.isPickable=false;
+  /* corde: griglia di fili dentro l'ovale (v270: geometria, la texture clonata non si vedeva) */
+  { const parts=[], R=0.205;
+    for(let k=-4;k<=4;k++){ const o=k*0.045, L=2*Math.sqrt(Math.max(0,R*R-o*o));
+      const a=BABYLON.MeshBuilder.CreateBox("u7rs",{width:0.006,height:L,depth:0.006},scene); a.position.set(o,0.84,0); parts.push(a);
+      const b=BABYLON.MeshBuilder.CreateBox("u7rs",{width:L,height:0.006,depth:0.006},scene); b.position.set(0,0.84+o,0); parts.push(b); }
+    const st=BABYLON.Mesh.MergeMeshes(parts,true,true); if(st){ st.material=mat("u7rsm","#f4f4ea","#3a3a34"); st.parent=g; st.isPickable=false; } }
+  lpBox(g,0.08,0.10,0.03,"#2b3a44",0,0.56,0);                                                  // cuore della racchetta
   const ball=BABYLON.MeshBuilder.CreateSphere("u7rb",{diameter:0.18,segments:8},scene);
   ball.material=mat("u7rbm","#d8e04a","#3a3f10"); ball.position.set(0.42,0.09,0.2); ball.parent=r; ball.isPickable=false;
   return r; }
@@ -22094,16 +22110,20 @@ function buildSportsZone(cx,cz){
        bacheca e tabellone) e verso la fine, oltre il vialetto est: un
        angolo sportivo sul prato fra x cx+16 e cx+21, z cz-20 e cz-11
        (libero da alberi e solidi: verificato sulla lista dei solids). */
-    { en:"basketball", it:"pallacanestro",emoji:"\u{1F3C0}", x:cx+19.2, z:cz-18.6, off:true, build:()=>u7Hoop(cx+19.2,cz-18.6) },
-    { en:"tennis",     it:"tennis",       emoji:"\u{1F3BE}", x:cx+19.8, z:cz-13.2, off:true, build:()=>u7Racket(cx+19.8,cz-13.2) },
-    { en:"cycling",    it:"ciclismo",     emoji:"\u{1F6B4}", x:cx+17.4, z:cz-12.4, off:true, build:()=>u7Bike(cx+17.4,cz-12.4,0.5) },
-    { en:"running",    it:"corsa",        emoji:"\u{1F3C3}", x:cx+17.6, z:cz-16.0, off:true, build:()=>u7Cones(cx+17.6,cz-16.0) },
+    /* v270 (Giacomo): piu' SPARPAGLIATI e sul lato del campo verso le rocce
+       (bordo del parco a z ~58), cioe' oltre la linea di fondo z cz+10:
+       una fila larga fra z cz+13 e cz+16, a 7-8 m l'uno dall'altro. */
+    { en:"basketball", it:"pallacanestro",emoji:"\u{1F3C0}", x:cx-10.5, z:cz+15.5, off:true, rot:Math.PI, build:()=>u7Hoop(cx-10.5,cz+15.5) },
+    { en:"running",    it:"corsa",        emoji:"\u{1F3C3}", x:cx-2.5,  z:cz+13.8, off:true, build:()=>u7Cones(cx-2.5,cz+13.8) },
+    { en:"tennis",     it:"tennis",       emoji:"\u{1F3BE}", x:cx+5.5,  z:cz+15.2, off:true, build:()=>u7Racket(cx+5.5,cz+15.2) },
+    { en:"cycling",    it:"ciclismo",     emoji:"\u{1F6B4}", x:cx+13.0, z:cz+13.6, off:true, build:()=>u7Bike(cx+13.0,cz+13.6,0.5) },
   ];
   /* quota del prato sotto un punto (raggio sulle superfici __ground) */
   const gY=(x,z)=>{ const h=scene.pickWithRay(new BABYLON.Ray(new BABYLON.Vector3(x,6,z),new BABYLON.Vector3(0,-1,0),12),
       m=>m.__ground===true && m.isEnabled() && m.name!=="h7sh"); return (h&&h.hit)?h.pickedPoint.y:0; };
   UNIT7.items = eq.map(e=>{ const node=e.build();
     node.position.y=e.off?gY(e.x,e.z):PITCH_Y;   // il manto sta a 0.22: senza questo gli attrezzi affondano nell'erba
+    if(e.rot!=null) node.rotation.y=e.rot;        // v270: il canestro guarda il campo
     /* OMBRE: i prop di strada usano la convenzione __occluder=true (vedi
        PROPS AMBIENTALI / refreshShadowCasters), ma gli attrezzi sportivi
        erano nati senza — e SENZA OMBRA DI CONTATTO una sfera appoggiata
@@ -39244,7 +39264,7 @@ LEXPROPS.tRack=function(id,o){ o=o||{};
   tlPegboard(r,w-0.30,0.62,0,1.24,-d/2+0.065);
   for(let i=0;i<Math.floor((w-0.3)/0.62);i++){ const x=-w/2+0.46+i*0.62;
     for(let j=0;j<3;j++){ lpBox(r,0.56,0.20,0.02,["#4d6c80","#5a7a8e","#3f5a6b"][j],x,0.14+j*0.22,d/2-0.02);
-      lpBox(r,0.14,0.025,0.03,"#c9ced3",x,0.20+j*0.22,d/2); } }
+      lpBox(r,0.14,0.025,0.012,"#c9ced3",x,0.20+j*0.22,d/2-0.006); } }   // maniglie a filo: il solido della rastrelliera non deve crescere
   for(let i=0;i<Math.floor((w-0.3)/0.9);i++) lpBox(r,0.36,0.18,0.28,["#e8a33a","#2f6fd6","#3f9a45","#c0392b"][i%4],-w/2+0.6+i*0.9,h+0.09,0);
   return r; };
 
@@ -39804,7 +39824,12 @@ MECH.repairBench=function(s){
   const rb=st.rb;
   pool.forEach(entry=>{
     Quest.questInteract({ id:"tllex_"+entry.en.replace(/[^a-z0-9]/gi,"_"), area:UNIT_TECH.area,
-      radius:0.85, furn:entry, pos:()=>entry.pos, meshes:[entry.mesh], label:(entry.it||"?"),
+      /* v270: 1.10 (era 0.85). Dalla corsia il giocatore arriva al massimo a
+         ~0.80 m dal device (rastrelliera solida + raggio 0.55): con 0.85 bastava
+         essere 25 cm di lato perche' la E non comparisse piu' (Giacomo: «non
+         mi fa piu' identificare gli oggetti»). Fra due device vince il piu'
+         vicino (updateProximity), quindi i cerchi possono sovrapporsi. */
+      radius:1.10, furn:entry, pos:()=>entry.pos, meshes:[entry.mesh], label:(entry.it||"?"),
       prompt:'Press <b>E</b> to pick up this device',
       interact:()=>{
         const target=rb.list[rb.idx]; if(!target) return;
