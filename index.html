@@ -48007,7 +48007,7 @@ function _botSkirt(L,hex){
   P.forEach((p,i)=>{ if(p.y>maxY-0.10){ cx+=p.x; cz+=p.z; c++; }
     for(let k=0;k<4;k++) if(mi[4*i+k]===UL&&mw[4*i+k]>0.6){ lx+=p.x; lz+=p.z; lc++; } });
   cx/=Math.max(1,c); cz/=Math.max(1,c); lx/=Math.max(1,lc); lz/=Math.max(1,lc);
-  const la=Math.atan2(lx-cx,lz-cz), yTop=maxY-0.005, N=48, rows=10, len=0.36, flare=0.62;
+  const la=Math.atan2(lx-cx,lz-cz), yTop=maxY-0.005, N=48, rows=10, len=0.36;
   /* vita: per ogni spicchio il raggio vero del corpo; gli spicchi senza
      campioni prendono la media dei vicini, poi si liscia (niente tacche) */
   const raw=[]; for(let i=0;i<N;i++){ const a=i/N*Math.PI*2; let r=0;
@@ -48016,9 +48016,27 @@ function _botSkirt(L,hex){
   const good=raw.filter(r=>r>0).sort((a,b)=>a-b), med=good.length?good[good.length>>1]:0.12;
   for(let i=0;i<N;i++) if(raw[i]<med*0.7) raw[i]=med;
   const rT=raw.map((r,i)=>(raw[(i+N-1)%N]+2*r+raw[(i+1)%N])/4+0.004);
+  /* v280 (Giacomo: «la gonna ancora piu' stretta, per non lasciare margine
+     col sotto»): prima era un cono che si apriva del 62% dalla vita
+     all'orlo senza guardare il corpo, e fra gonna e cosce restava aria. Ora
+     a ogni quota il raggio e' quello vero delle cosce in posa di riposo (con
+     i vuoti fra le gambe chiusi prendendo il massimo sugli spicchi vicini),
+     piu' 1,4 cm, e solo un filo di svasatura verso l'orlo. */
+  const ROWS=[]; for(let j=0;j<=rows;j++){ const y=yTop-j/rows*len, rr=new Array(N).fill(0);
+    P.forEach(p=>{ if(Math.abs(p.y-y)<0.03){ const dx=p.x-cx, dz=p.z-cz, a=Math.atan2(dx,dz);
+      const i=((Math.round(a/(2*Math.PI)*N))%N+N)%N; rr[i]=Math.max(rr[i],Math.hypot(dx,dz)); } });
+    let cl=rr.map((r,i)=>{ let m=0; for(let d=-5;d<=5;d++) m=Math.max(m,rr[(i+d+N)%N]); return m; });
+    const c0=cl.slice();
+    for(let k=0;k<8;k++) cl=cl.map((r,i)=>Math.max(c0[i],(cl[(i+N-2)%N]+cl[(i+N-1)%N]+r+cl[(i+1)%N]+cl[(i+2)%N])/5));
+    /* ⚠️ mai piu' stretta della fascia sopra: seguendo fianchi e cosce quota
+       per quota veniva a bolle (visto a schermo). Cosi' scende dritta dal
+       punto piu' largo, come una gonna vera. */
+    if(ROWS.length){ const up=ROWS[ROWS.length-1]; cl=cl.map((r,i)=>Math.max(r,up[i])); }
+    ROWS.push(cl); }
   const V=[], IDX=[], MI=[], MW=[], arr=new Float32Array(16);
   for(let j=0;j<=rows;j++){ const t=j/rows; for(let i=0;i<=N;i++){ const a=(i%N)/N*Math.PI*2;
-      const r0=rT[i%N]*(1+flare*Math.pow(t,0.85))*(1+0.045*t*(i%2?1:-1));
+      const hug=Math.max(rT[i%N]*(j?0.94:1), ROWS[j][i%N]+0.014);
+      const r0=hug*(1+0.10*Math.pow(t,1.2))*(1+0.03*t*(i%2?1:-1));
       const wp=new BABYLON.Vector3(cx+Math.sin(a)*r0, yTop-t*len, cz+Math.cos(a)*r0);
       const side=Math.cos(a-la), wl=Math.max(0,Math.min(1,0.5+side*0.75)), leg=0.97*Math.pow(t,0.8);
       const ws=[1-leg, leg*wl, leg*(1-wl)], ids=[HIP,UL,UR];
@@ -48134,6 +48152,30 @@ function accColor(a,colId){ const c=ACC_COLS.find(x=>x.id===(colId||""))||ACC_CO
    animazione. Qui l'accessorio si costruisce e si pesa sull'osso: viene
    animato esattamente come la testa, senza passare da nessuno spazio mondo
    (vedi la nota su dressAcc). Si misura in metri: s = unita' grezze per metro. */
+/* v280 — DAI VERTICI DI UN'ALTRA MESH AI VERTICI DELLA TESTA.
+   ⚠️ Ogni pezzo del personaggio (testa, busto, gambe) ha il SUO scheletro e
+   il suo spazio dei vertici. Sul ragazzo i due spazi coincidono per caso;
+   sulla ragazza il busto e' ruotato (misurato: tutto il busto cadeva fra
+   y -0.05 e +0.05 nel sistema della testa). Senza questa conversione la
+   collana e i capelli lunghi della ragazza «non vedevano» il corpo, e la
+   giacca non trovava il davanti.
+   Si passa dalla posa di riposo: vertice -> mondo con le matrici del suo
+   scheletro (pesate come fa lo shader) -> spazio della testa con l'inversa
+   della matrice dell'osso Head dello scheletro della testa. Ritorna
+   f(x,y,z,indiceVertice) e f.k = quanto si allunga un metro nel passaggio. */
+function _toHeadRaw(H,m){
+  const V3=BABYLON.Vector3;
+  if(!m.skeleton || m.skeleton===H.skeleton){ const f=(x,y,z)=>new V3(x,y,z); f.k=1; return f; }
+  const skH=H.skeleton, skM=m.skeleton; _botRest(skH); _botRest(skM);
+  const TH=skH.getTransformMatrices(H), TM=skM.getTransformMatrices(m);
+  const hb=Math.max(0,skH.bones.findIndex(b=>b.name==="Head"));
+  const inv=BABYLON.Matrix.FromArray(TH,hb*16).invert();
+  const mi=m.getVerticesData(BABYLON.VertexBuffer.MatricesIndicesKind), mw=m.getVerticesData(BABYLON.VertexBuffer.MatricesWeightsKind), arr=new Float32Array(16);
+  const mat=v=>{ arr.fill(0); for(let k=0;k<4;k++){ const w=mw[4*v+k]; if(!w) continue; const b=mi[4*v+k]; for(let q=0;q<16;q++) arr[q]+=TM[b*16+q]*w; }
+    return BABYLON.Matrix.FromArray(arr).multiply(inv); };
+  const f=(x,y,z,v)=>V3.TransformCoordinates(new V3(x,y,z),mat(v||0));
+  const m0=mat(0), o=V3.TransformCoordinates(V3.Zero(),m0); f.k=V3.TransformCoordinates(new V3(1,0,0),m0).subtract(o).length()||1;
+  return f; }
 function _accMeasure(meshes){
   const head=meshes.filter(m=>/Casual_Head/.test(m.name)&&m.skeleton), body=meshes.filter(m=>/Casual_Body/.test(m.name)&&m.skeleton);
   if(!head.length||!body.length) return null;
@@ -48146,7 +48188,7 @@ function _accMeasure(meshes){
      (le sopracciglia della ragazza) resta fuori per via di «Hair». */
   head.forEach(m=>{ const nm=(m.material&&m.material.name)||"", eye=/(^|_)(Eye|Eyebrows|Brown)/.test(nm)&&!/Hair/.test(nm), sk=/(^|_)Skin/.test(nm);
     raw(m).forEach(p=>{ HP.push(p); if(eye) EP.push(p); if(sk) SP.push(p); }); });
-  body.forEach(m=>raw(m).forEach(p=>BP.push(p)));
+  body.forEach(m=>{ const cv=_toHeadRaw(head[0],m); raw(m).forEach((p,v)=>BP.push(cv(p.x,p.y,p.z,v))); });
   if(!EP.length) return null;
   const avg=a=>a.reduce((s,p)=>s.addInPlace(p),new V3(0,0,0)).scale(1/a.length);
   const Ch=avg(HP), Cb=avg(BP), E=avg(EP);
@@ -48233,6 +48275,18 @@ function _accBridge(g,mat,z,xi,y,r){
   const pts=BABYLON.Curve3.CreateQuadraticBezier(new V(-xi,y,z), new V(0,y+0.009,z+0.003), new V(xi,y,z), 8).getPoints();
   const t=BABYLON.MeshBuilder.CreateTube("acc",{path:pts,radius:r,tessellation:8,cap:BABYLON.Mesh.CAP_ALL},scene);
   t.material=mat; t.parent=g; return t; }
+/* v280 — il profilo del corpo attorno a un asse verticale (x=0, z=zc):
+   raggio massimo per spicchi di 7,5° e fasce di 2 cm, dai vertici veri del
+   corpo in posa di bind (M.BPL) piu' la giacca se indossata (M.__coatPL).
+   Lo usano la collana e i capelli lunghi per appoggiarsi SOPRA i vestiti. */
+function _bodyRad(M,zc,narrow){
+  const NB=48, YB=24, rb=new Array(NB*YB).fill(0);
+  const add=l=>{ const a=Math.atan2(l.x,l.z-zc), yi=Math.floor(-l.y/0.02); if(yi<0||yi>=YB) return;
+    const ai=((Math.floor((a+Math.PI)/(2*Math.PI)*NB))%NB+NB)%NB, r=Math.hypot(l.x,l.z-zc); if(r>rb[yi*NB+ai]) rb[yi*NB+ai]=r; };
+  (M.BPL||[]).forEach(add); (M.__coatPL||[]).forEach(add);
+  return (a,y)=>{ const yi=Math.floor(-y/0.02), ai=Math.floor((a+Math.PI)/(2*Math.PI)*NB); let r=0;
+    const d=narrow?0:1;
+    for(let dy=-d;dy<=d;dy++) for(let da=-1;da<=1;da++){ const Y=yi+dy, A=((ai+da)%NB+NB)%NB; if(Y>=0&&Y<YB) r=Math.max(r,rb[Y*NB+A]); } return r; }; }
 /* costruttori nel sistema locale: x destra, y su (0 = occhi), z avanti.
    C = { hex, metal } il colore scelto (accColor) */
 const ACC_BUILD={
@@ -48289,13 +48343,36 @@ const ACC_BUILD={
       r.material=fr; r.rotation.x=Math.PI/2; r.position.set(s*cx,0.004,z); r.parent=g;
       _accTemple(g,fr,s,cx+0.024,0.009,z-0.002,xw,M.back+0.05,0.003); });
     _accBridge(g,fr,z,cx-0.022,0.009,0.003); },
-  necklace(g,M,C){ const metal=(C.id==="silver")?"#c9ccd2":"#d6ae3c", gold=_accMat(metal,0.85,_hexMul(metal,0.2)), y0=M.neckY, r=M.nr+0.006, nz=M.nz;
-    /* un giro intero: dietro e' un anello attorno al collo, davanti scende sul petto */
-    const pts=[]; for(let i=0;i<=40;i++){ const a=i/40*Math.PI*2, c=Math.cos(a), f=Math.max(0,c);
-      pts.push(new BABYLON.Vector3(Math.sin(a)*r*(1+0.45*f), y0-0.085*f*f, nz+c*r+f*f*0.03)); }
-    const t=BABYLON.MeshBuilder.CreateTube("acc",{path:pts,radius:0.005,tessellation:6},scene); t.material=gold; t.parent=g;
+  /* v280 (Giacomo: «la necklace deve stare sopra la hoodie»): la catenina
+     non e' piu' un anello di misura fissa attorno al collo — sul ragazzo il
+     colletto della felpa e' piu' largo e la catenina ci passava DENTRO (se ne
+     vedevano solo i due archi), sulla ragazza restava sospesa sopra la
+     spalla. Ora ogni punto del giro si appoggia sulla superficie vera che sta
+     sotto (collo, felpa, spalle, e la giacca se c'e'), 7 mm fuori. */
+  necklace(g,M,C){ const metal=(C.id==="silver")?"#c9ccd2":"#d6ae3c", gold=_accMat(metal,0.85,_hexMul(metal,0.2)), y0=M.neckY+0.012, nz=M.nz;
+    const rB=_bodyRad(M,nz), N=48, R=[], Y=[];
+    /* dietro sale un poco e poggia sul collo, SOPRA il bordo del cappuccio,
+       come una collana vera (prima ci girava attorno e restava sospesa come
+       una sbarra, o ci entrava lasciando fuori due «cornini»). Il profilo si
+       legge solo alla sua quota (fascia stretta), se no il cappuccio sotto
+       lo spingerebbe fuori. */
+    const rN=_bodyRad(M,nz,true);
+    for(let i=0;i<N;i++){ const a=i/N*Math.PI*2, c=Math.cos(a), f=Math.max(0,c), y=y0-0.095*f*f+0.035*Math.pow(Math.max(0,-c),0.7);
+      /* dietro, verso la nuca, stringe sul collo (sopra il cappuccio) */
+      const r0=(c<0?rN(a,y):rB(a,y))+0.007, t=Math.min(1,Math.max(0,-c-0.2)/0.5), k=t*t*(3-2*t);
+      Y.push(y); R.push(Math.max(M.nr+0.006, r0*(1-k)+(M.nr+0.006)*k)); }
+    /* lisciata riempiendo le valli (mai dentro il corpo): il colletto della
+       felpa e' a spigoli e la catenina faceva zig-zag */
+    const R0=R.slice();
+    /* ⚠️ le valli si riempiono solo davanti e ai lati: dietro la «valle» e'
+       voluta (la catenina stringe sul collo), riempita tornava un cerchio */
+    for(let k=0;k<14;k++){ const R2=R.map((r,i)=>Math.cos(i/N*Math.PI*2)<-0.2?R0[i]:Math.max(R0[i],(R[(i+N-2)%N]+R[(i+N-1)%N]+r+R[(i+1)%N]+R[(i+2)%N])/5)); for(let i=0;i<N;i++) R[i]=R2[i]; }
+    /* e due passate morbide per togliere gli spigoli dove scavalca il colletto */
+    for(let k=0;k<2;k++){ const R2=R.map((r,i)=>(R[(i+N-2)%N]+R[(i+N-1)%N]+r+R[(i+1)%N]+R[(i+2)%N])/5+0.0015); for(let i=0;i<N;i++) R[i]=R2[i]; }
+    const pts=[]; for(let i=0;i<=N;i++){ const a=(i%N)/N*Math.PI*2; pts.push(new BABYLON.Vector3(Math.sin(a)*R[i%N], Y[i%N], nz+Math.cos(a)*R[i%N])); }
+    const t=BABYLON.MeshBuilder.CreateTube("acc",{path:pts,radius:0.0045,tessellation:6},scene); t.material=gold; t.parent=g;
     const p=BABYLON.MeshBuilder.CreateSphere("acc",{diameter:0.03,segments:8},scene);
-    p.material=C.metal?_accC(C,0.8):_accMat(C.hex,0.8,_hexMul(C.hex,0.25)); p.position.set(0,y0-0.098,nz+r+0.04); p.parent=g; },
+    p.material=C.metal?_accC(C,0.8):_accMat(C.hex,0.8,_hexMul(C.hex,0.25)); p.position.set(0,Y[0]-0.013,nz+R[0]+0.011); p.parent=g; },
   scarf(g,M,C){ const c=_accC(C,0.05), c2=_accMat(_hexLum(C.hex)>0.7?"#3a3f47":"#e9d8b8",0.05), y0=M.neckY+0.005, r=M.nr+0.028, nz=M.nz, fz=nz+r;
     const ring=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:r*2,thickness:0.055,tessellation:28},scene);
     ring.material=c; ring.scaling.y=0.95; ring.position.set(0,y0,nz); ring.parent=g;
@@ -48357,11 +48434,11 @@ function dressAcc(meshes,acc,holder){
   if(!meshes||!meshes.length) return;
   const H=meshes.find(m=>/Casual_Head/.test(m.name)&&m.skeleton); if(!H) return;
   H.__acc=H.__acc||{};
-  const env=(H.__cut&&H.__cut.env)||null, cutK=(H.__cut&&H.__cut.id)||"";
+  const env=(H.__cut&&H.__cut.env)||null, cutK=(H.__cut&&H.__cut.id)||"", coatK=(H.__coat&&H.__coat.key)||"";
   ACC_SLOTS.forEach(S=>{
     const want=(acc&&acc[S.id])||"", cur=H.__acc[S.id], a=lookAcc(want);
     const C=a?accColor(a,acc&&acc[S.id+"c"]):null;
-    const key=want+"|"+(C?C.hex+(C.metal?"m":""):"")+"|"+(S.id==="head"?cutK:"");
+    const key=want+"|"+(C?C.hex+(C.metal?"m":""):"")+"|"+(S.id==="head"?cutK:(S.id==="neck"?coatK:""));
     if(cur && cur.key===key) return;
     if(cur){ cur.meshes.forEach(m=>{ try{ m.dispose(false,false); }catch(e){}
       if(holder){ const k=holder.indexOf(m); if(k>=0) holder.splice(k,1); } }); H.__acc[S.id]=null; }
@@ -48385,6 +48462,146 @@ function dressAcc(meshes,acc,holder){
    guardiano ricostruisce al fotogramma dopo, una volta sola anche se nello
    stesso giro cambiano piu' cose. */
 function _octDirty(){ try{ if(typeof _octN!=="undefined" && _octN>=0) _octN=0; }catch(e){} }
+
+/* =====================================================================
+   v280 — GIACCHE E GIUBBOTTI, SOPRA IL VESTITO (Giacomo, 29 set: «si
+   possono avere giacche, giubbotti, qualcosa che si puo' mettere sopra
+   l'originale?»).
+
+   COME E' FATTA: non e' un modello nuovo, e' il busto del personaggio
+   stesso (maglia + braccia) copiato e gonfiato di 1-3 cm lungo le normali,
+   con GLI STESSI PESI DELLE OSSA. Per questo si piega con le braccia e col
+   busto esattamente come la felpa che sta sotto, anche correndo, e calza
+   su tutti e due i corpi senza misure scritte a mano.
+   · si prendono solo i triangoli di busto e braccia (osso dominante fra
+     Hips..Chest, spalle, braccia): niente collo, niente mani;
+   · le normali si SALDANO per posizione fra maglia e pelle, se no alle
+     cuciture delle maniche (sulla ragazza la manica e' pelle) il guscio si
+     apriva;
+   · «open»: si toglie una striscia davanti a V (piu' larga in alto) e si
+     vede la felpa sotto; il guscio e' a due facce, cosi' dall'apertura si
+     vede l'interno invece del vuoto;
+   · il piumino ha lo spessore che ondeggia con la quota: sono le trapuntature.
+   Il colore si sceglie come per gli accessori (ACC_COLS), «Original» =
+   il colore del capo.
+   ===================================================================== */
+const LOOK_COATS=[
+  { id:"denim",    en:"Denim jacket",   col:"#4a6a92", open:true,  th:0.011, req:{ gems:20 } },
+  { id:"leather",  en:"Leather jacket", col:"#221e1d", open:true,  th:0.011, spec:0.45, zip:true, req:{ stars:600 } },
+  { id:"blazer",   en:"Blazer",         col:"#27314f", open:true,  th:0.009, buttons:1, req:{ quest:"u8", stars:800 } },
+  { id:"raincoat", en:"Raincoat",       col:"#e0b62a", open:false, th:0.013, spec:0.35, buttons:4, req:{ quest:"u2_3", stars:500 } },
+  { id:"bomber",   en:"Bomber jacket",  col:"#4b5a3b", open:false, th:0.016, zip:true, req:{ stars:1000 } },
+  { id:"puffer",   en:"Puffer jacket",  col:"#c4432e", open:false, th:0.02, quilt:true, zip:true, req:{ quest:"u2_3", stars:700 } },
+];
+function lookCoat(id){ return LOOK_COATS.find(c=>c.id===id)||null; }
+const _coatM={};
+function _coatMat(C,spec){ const k=C.hex+"|"+(C.metal?1:0)+"|"+(spec||0); if(_coatM[k]) return _coatM[k];
+  const m=new BABYLON.StandardMaterial("coatM"+(_lpN++),scene); m.diffuseColor=BABYLON.Color3.FromHexString(C.hex);
+  const s=C.metal?0.8:(spec||0.06); m.specularColor=new BABYLON.Color3(s,s,s); m.specularPower=s>0.3?64:20;
+  if(C.metal) m.emissiveColor=BABYLON.Color3.FromHexString(_hexMul(C.hex,0.18));
+  m.backFaceCulling=false; m.twoSidedLighting=true; return (_coatM[k]=m); }
+/* veste la giacca. Ritorna true se le mesh sono cambiate. */
+function dressCoat(meshes,coatId,colId,holder){
+  if(!meshes||!meshes.length) return false;
+  const H=meshes.find(m=>/Casual_Head/.test(m.name)&&m.skeleton); if(!H) return false;
+  const it=lookCoat(coatId), C=it?accColor(it,colId):null;
+  const key=it?it.id+"|"+C.hex+(C.metal?"m":""):"", cur=H.__coat;
+  if((cur?cur.key:"")===key) return false;
+  const M=H.__accM||(H.__accM=_accMeasure(meshes));
+  if(cur){ cur.meshes.forEach(m=>{ try{ m.dispose(false,false); }catch(e){}
+    if(holder){ const k=holder.indexOf(m); if(k>=0) holder.splice(k,1); } }); H.__coat=null; }
+  if(M) M.__coatPL=null;
+  if(!it||!M){ _octDirty(); return !!cur; }
+  const body=meshes.filter(m=>/Casual_Body/.test(m.name)&&m.skeleton&&m.getTotalVertices()>0);
+  if(!body.length) return false;
+  const B0=body[0], sk=B0.skeleton, V3=BABYLON.Vector3, VB=BABYLON.VertexBuffer;
+  const OK=/^(Hips|Abdomen|Torso|Chest|Shoulder\.[LR]|UpperArm\.[LR]|LowerArm\.[LR])$/, okB=sk.bones.map(b=>OK.test(b.name));
+  const loc=(x,y,z)=>{ const d=new V3(x,y,z).subtract(M.E); return new V3(V3.Dot(d,M.R)/M.s, V3.Dot(d,M.U)/M.s, V3.Dot(d,M.F)/M.s); };
+  const q=M.s*0.0005/(_toHeadRaw(H,B0).k||1), kf=(x,y,z)=>Math.round(x/q)+","+Math.round(y/q)+","+Math.round(z/q);
+  const src=body.map(m=>({ cv:_toHeadRaw(H,m), p:m.getVerticesData(VB.PositionKind), n:m.getVerticesData(VB.NormalKind), i:m.getIndices(),
+                           mi:m.getVerticesData(VB.MatricesIndicesKind), mw:m.getVerticesData(VB.MatricesWeightsKind) }))
+                 .filter(S=>S.p&&S.n&&S.i&&S.mi&&S.mw);
+  /* normali saldate per posizione */
+  const NS=new Map();
+  src.forEach(S=>{ for(let v=0;v<S.p.length/3;v++){ const k=kf(S.p[3*v],S.p[3*v+1],S.p[3*v+2]);
+    const a=NS.get(k)||[0,0,0]; a[0]+=S.n[3*v]; a[1]+=S.n[3*v+1]; a[2]+=S.n[3*v+2]; NS.set(k,a); } });
+  const dom=(S,v)=>{ let b=-1,w=-1; for(let k=0;k<4;k++) if(S.mw[4*v+k]>w){ w=S.mw[4*v+k]; b=S.mi[4*v+k]; } return b; };
+  const gap=y=>0.024+Math.max(0,y+0.33)*0.42;                  // apertura a V, larga in alto
+  const P=[], MI=[], MW=[], LP=[];
+  const emit=r=>{ P.push(r.p[0],r.p[1],r.p[2]); for(let k=0;k<4;k++){ MI.push(r.mi[k]); MW.push(r.mw[k]); } LP.push(r.l); };
+  src.forEach(S=>{
+    const L=[], D=[], cv=S.cv, sB=M.s/cv.k, lh=(x,y,z,v)=>{ const h=cv(x,y,z,v); return loc(h.x,h.y,h.z); };
+    for(let v=0;v<S.p.length/3;v++){ L.push(lh(S.p[3*v],S.p[3*v+1],S.p[3*v+2],v)); D.push(okB[dom(S,v)]===true); }
+    const rec=v=>{ const k=kf(S.p[3*v],S.p[3*v+1],S.p[3*v+2]), a=NS.get(k), l=Math.hypot(a[0],a[1],a[2])||1;
+      const th=it.th*(it.quilt?(1+0.3*Math.cos(L[v].y*2*Math.PI/0.07)):1)*sB;
+      const p=[S.p[3*v]+a[0]/l*th, S.p[3*v+1]+a[1]/l*th, S.p[3*v+2]+a[2]/l*th];
+      return { p, l:lh(p[0],p[1],p[2],v), mi:[S.mi[4*v],S.mi[4*v+1],S.mi[4*v+2],S.mi[4*v+3]], mw:[S.mw[4*v],S.mw[4*v+1],S.mw[4*v+2],S.mw[4*v+3]] }; };
+    for(let t=0;t<S.i.length;t+=3){ const a=S.i[t],b=S.i[t+1],c=S.i[t+2];
+      if(!D[a]||!D[b]||!D[c]) continue;
+      const R3=[rec(a),rec(b),rec(c)];
+      const cy=(L[a].y+L[b].y+L[c].y)/3, cxx=(L[a].x+L[b].x+L[c].x)/3, cz=(L[a].z+L[b].z+L[c].z)/3;
+      if(!it.open || !(cz>M.nz+0.01 && cy<-0.10)){ R3.forEach(emit); continue; }
+      /* aperta: si RITAGLIA il triangolo lungo il bordo della V (|x| = gap(y)).
+         Togliendo triangoli interi il bordo veniva a denti di sega, perche' i
+         triangoli del busto sono grandi quanto il bottone di una giacca. */
+      const sg=cxx<0?-1:1, f=R3.map(r=>sg*r.l.x-gap(r.l.y));
+      if(f.every(x=>x>=0)){ R3.forEach(emit); continue; }
+      if(f.every(x=>x<0)) continue;
+      const poly=[];
+      for(let k=0;k<3;k++){ const A=R3[k], B=R3[(k+1)%3], fa=f[k], fb=f[(k+1)%3];
+        if(fa>=0) poly.push(A);
+        if((fa>=0)!==(fb>=0)){ const u=fa/(fa-fb), near=u<0.5?A:B;
+          poly.push({ p:[A.p[0]+(B.p[0]-A.p[0])*u, A.p[1]+(B.p[1]-A.p[1])*u, A.p[2]+(B.p[2]-A.p[2])*u],
+                      l:BABYLON.Vector3.Lerp(A.l,B.l,u), mi:near.mi, mw:near.mw }); } }
+      for(let k=1;k+1<poly.length;k++){ emit(poly[0]); emit(poly[k]); emit(poly[k+1]); } }
+  });
+  if(!P.length) return false;
+  const I=[]; for(let i=0;i<P.length/3;i++) I.push(i);
+  const N=[]; BABYLON.VertexData.ComputeNormals(P,I,N);
+  const vd=new BABYLON.VertexData(); vd.positions=P; vd.indices=I; vd.normals=N;
+  const m=new BABYLON.Mesh("coat",scene); vd.applyToMesh(m,false);
+  m.setVerticesData(VB.MatricesIndicesKind,MI,false,4); m.setVerticesData(VB.MatricesWeightsKind,MW,false,4);
+  m.parent=B0.parent; m.position.copyFrom(B0.position); m.rotation.copyFrom(B0.rotation);
+  if(B0.rotationQuaternion) m.rotationQuaternion=B0.rotationQuaternion.clone(); m.scaling.copyFrom(B0.scaling);
+  m.skeleton=sk; m.numBoneInfluencers=4; m.material=_coatMat(C,it.spec);
+  m.isPickable=false; m.alwaysSelectAsActiveMesh=true; m.__noTint=true;
+  const out=[m];
+  /* cerniera o bottoni sulla linea davanti, che e' misurata sul guscio.
+     ⚠️ SI COSTRUISCONO NELLO SPAZIO DEL BUSTO, sul suo scheletro, coi pesi del
+     vertice di giacca piu' vicino. Pesati sullo scheletro della testa si
+     staccavano dal busto di qualche centimetro (visto di profilo): quello
+     scheletro ha le ossa del busto in un'altra posa di bind. */
+  if(it.zip||it.buttons){
+    const sB=M.s/(_toHeadRaw(H,B0).k||1), nv=LP.length;
+    /* vertice di giacca sul davanti: il piu' avanti vicino a (x0,y) */
+    const pick=(y,x0,w)=>{ let b=-1; for(let i=0;i<nv;i++){ const l=LP[i]; if(Math.abs(l.x-x0)<w && Math.abs(l.y-y)<w && (b<0||l.z>LP[b].z)) b=i; } return b; };
+    const at=(i,out)=>{ const n=new V3(N[3*i],N[3*i+1],N[3*i+2]).normalize(); return new V3(P[3*i],P[3*i+1],P[3*i+2]).add(n.scale(out*sB)); };
+    let yTop=-9, yBot=9; LP.forEach(l=>{ if(Math.abs(l.x)<(it.open?0.2:0.03) && l.z>M.nz && l.y<-0.12){ yTop=Math.max(yTop,l.y); yBot=Math.min(yBot,l.y); } });
+    const bits=[], met=_accMat(it.zip?"#b9bcc2":"#2a2622",0.6);
+    if(it.zip && !it.open){ const pts=[];
+      /* sui «dossi»: sul piumino le trapuntature la spezzavano a tratti */
+      for(let y=yTop-0.02;y>=yBot+0.01;y-=0.02){ let b=-1; for(let d=-0.035;d<=0.035;d+=0.0175){ const q=pick(y+d,0,0.02); if(q>=0&&(b<0||LP[q].z>LP[b].z)) b=q; }
+        if(b>=0){ const p=at(b,0.002); const l=LP[b]; pts.push({ p, y:l.y }); } }
+      pts.sort((a,b)=>b.y-a.y);
+      if(pts.length>1) bits.push(BABYLON.MeshBuilder.CreateTube("coatZip",{path:pts.map(q=>q.p),radius:0.0035*sB,tessellation:6},scene)); }
+    const nb=it.buttons||0, ox=it.open?-(gap(-0.30)+0.012):0;     // aperta: i bottoni sul lembo sinistro
+    for(let k=0;k<nb;k++){ const y=(nb===1)?(yTop+yBot)/2:yTop-0.05-k*(yTop-yBot-0.09)/Math.max(1,nb-1), b=pick(y,ox,ox?0.04:0.02);
+      if(b<0) continue; const s=BABYLON.MeshBuilder.CreateSphere("coatBtn",{diameter:0.017*sB,segments:6},scene);
+      s.position.copyFrom(at(b,0.003)); s.bakeCurrentTransformIntoVertices(); bits.push(s); }
+    bits.forEach(x=>{ const pos=x.getVerticesData(VB.PositionKind), n=pos.length/3, mi=[], mw=[];
+      for(let v=0;v<n;v++){ let best=0, bd=1e18; for(let i=0;i<nv;i+=2){ const dx=P[3*i]-pos[3*v], dy=P[3*i+1]-pos[3*v+1], dz=P[3*i+2]-pos[3*v+2], d=dx*dx+dy*dy+dz*dz; if(d<bd){ bd=d; best=i; } }
+        for(let k=0;k<4;k++){ mi.push(MI[best*4+k]); mw.push(MW[best*4+k]); } }
+      x.setVerticesData(VB.MatricesIndicesKind,mi,false,4); x.setVerticesData(VB.MatricesWeightsKind,mw,false,4);
+      x.parent=B0.parent; x.position.copyFrom(B0.position); x.rotation.copyFrom(B0.rotation);
+      if(B0.rotationQuaternion) x.rotationQuaternion=B0.rotationQuaternion.clone(); x.scaling.copyFrom(B0.scaling);
+      x.skeleton=sk; x.numBoneInfluencers=4; x.material=met; x.isPickable=false; x.alwaysSelectAsActiveMesh=true; x.__noTint=true; out.push(x); });
+  }
+  M.__coatPL=LP.filter((l,i)=>i%3===0 && Math.abs(l.x)<0.16 && l.y<0);
+  if(holder) out.forEach(x=>holder.push(x));
+  H.__coat={ key, meshes:out };
+  _octDirty();
+  return true;
+}
 
 /* =====================================================================
    v279 — I TAGLI DI CAPELLI (Giacomo, 29 set: «haircuts: short, buzz cut,
@@ -48550,11 +48767,7 @@ const HAIR_BUILD={
   long(g,M,S,Mt){ const V=BABYLON.Vector3;
     const m=_hairShell(S,{ th:0.011, noise:0.003 }); m.material=Mt.hair; m.parent=g;
     /* il corpo in coordinate cilindriche attorno all'asse della testa */
-    const NB=48, YB=24, rb=new Array(NB*YB).fill(0);
-    (M.BPL||[]).forEach(l=>{ const a=Math.atan2(l.x,l.z-S.zc), yi=Math.floor(-l.y/0.02); if(yi<0||yi>=YB) return;
-      const ai=((Math.floor((a+Math.PI)/(2*Math.PI)*NB))%NB+NB)%NB, r=Math.hypot(l.x,l.z-S.zc); if(r>rb[yi*NB+ai]) rb[yi*NB+ai]=r; });
-    const rBody=(a,y)=>{ const yi=Math.floor(-y/0.02), ai=Math.floor((a+Math.PI)/(2*Math.PI)*NB); let r=0;
-      for(let dy=-1;dy<=1;dy++) for(let da=-1;da<=1;da++){ const Y=yi+dy, A=((ai+da)%NB+NB)%NB; if(Y>=0&&Y<YB) r=Math.max(r,rb[Y*NB+A]); } return r; };
+    const rBody=_bodyRad(M,S.zc);
     const a0=0.40*Math.PI, NU=30, NV=11, P=[], T=[], grid=[];
     for(let i=0;i<=NU;i++){ const u=i/NU, a=a0+u*(2*Math.PI-2*a0), aa=(a>Math.PI?a-2*Math.PI:a), t=Math.abs(aa)/Math.PI;
       const top=S.pt(aa,S.elAt(aa,_hairLine(aa)),0.011), rTop=Math.hypot(top.x,top.z-S.zc);
@@ -48652,7 +48865,8 @@ const Look=(function(){
              bottom:s.bottom||"", bcol:s.bcol||"auto",                   // v277: il sotto
              hat:s.hat||"", face:s.face||"", neck:s.neck||"",             // v278: accessori
              hatc:s.hatc||"", facec:s.facec||"", neckc:s.neckc||"",       // v279: il loro colore
-             cut:s.cut||"" }; }                                           // v279: il taglio ("" = quello del modello)
+             cut:s.cut||"",                                               // v279: il taglio ("" = quello del modello)
+             coat:s.coat||"", coatc:s.coatc||"" }; }                     // v280: giacca e suo colore
   function save(s){ Sync.set(K,s); return s; }
   function rig(){ return state().rig; }
   function skin(){ return state().skin; }
@@ -48669,11 +48883,13 @@ const Look=(function(){
   function setAcc(slot,id){ const s=state(), k=(slot==="head"?"hat":slot); s[k]=id||""; save(s); return id; }
   function setAccCol(slot,id){ const s=state(), k=(slot==="head"?"hat":slot)+"c"; s[k]=id||""; save(s); return id; }
   function setCut(id){ const s=state(); s.cut=id||""; save(s); return id; }
+  function setCoat(id){ const s=state(); s.coat=id||""; save(s); return id; }
+  function setCoatCol(id){ const s=state(); s.coatc=id||""; save(s); return id; }
   function hairOpen(h){ return lookProf() || h.cost<=0 || Gems.count()>=h.cost; }
   function reset(){ save({rig:"m",skin:"s3",hair:"h1",shoes:"k1",fit:"purple",bottom:"",bcol:"auto",hat:"",face:"",neck:"",
-                          hatc:"",facec:"",neckc:"",cut:""}); }
+                          hatc:"",facec:"",neckc:"",cut:"",coat:"",coatc:""}); }
   return { state, rig, skin, hair, shoes, fit, setRig, setSkin, setHair,
-           setShoes, setFit, setBottom, setBcol, setAcc, setAccCol, setCut, hairOpen, reset };
+           setShoes, setFit, setBottom, setBcol, setAcc, setAccCol, setCut, setCoat, setCoatCol, hairOpen, reset };
 })();
 
 const GEM_KINDS={
@@ -49464,6 +49680,9 @@ function applyPlayerFit(id){
      avatarMeshes, cosi' fanno ombra come il resto del corpo. */
   /* v279: prima il taglio (i cappelli si misurano su quello), poi gli accessori */
   let _ombre=false;
+  /* v280: la giacca prima di tutto: la collana ci si appoggia sopra */
+  try{ if(dressCoat(avatarMeshes, _L.coat, _L.coatc, avatarMeshes)) _ombre=true; }
+  catch(e){ console.warn("dressCoat:",e); }
   try{ if(dressHair(avatarMeshes, (_L.rig==="f"?"f":"m"), _L.cut, _hr, avatarMeshes)) _ombre=true; }
   catch(e){ console.warn("dressHair:",e); }
   try{ const n0=avatarMeshes.length;
@@ -49513,6 +49732,15 @@ function setPlayerAccCol(slot,id){
   const k=ACC_COLS.find(x=>x.id===(id||"")); if(!k) return null;
   const r=lookReq(k.req); if(!r.open){ toast("\u{1F512} "+r.label); return null; }
   Look.setAccCol(slot,k.id); applyLook(); toast("\u{1F3A8} "+k.en); return k.id||"orig"; }
+function setPlayerCoat(id){
+  if(id){ const c=lookCoat(id); if(!c) return null;
+    const r=lookReq(c.req); if(!r.open){ toast("\u{1F512} "+r.label); return null; }
+    Look.setCoat(id); applyLook(); toast("\u{1F9E5} "+c.en); return id; }
+  Look.setCoat(""); applyLook(); return "none"; }
+function setPlayerCoatCol(id){
+  const k=ACC_COLS.find(x=>x.id===(id||"")); if(!k) return null;
+  const r=lookReq(k.req); if(!r.open){ toast("\u{1F512} "+r.label); return null; }
+  Look.setCoatCol(k.id); applyLook(); toast("\u{1F3A8} "+k.en); return k.id||"orig"; }
 function setPlayerCut(id){
   const rig=Look.rig(), c=lookCutsFor(rig).find(x=>x.id===id); if(!c) return null;
   const r=lookReq(c.req); if(!r.open){ toast("\u{1F512} "+r.label); return null; }
@@ -49606,8 +49834,21 @@ function buildTeca(){
     GEM_FITS.forEach(function(f){ const open=Gems.fitOpen(f), on=(st.fit===f.id);
       h+=_tcCard('data-fit="'+f.id+'"',on,!open,'<span class="gem-sw" style="background:'+f.hood+';border-color:'+f.legs+'"></span>',f.en,
         on?"you're wearing it":(open?"tap to wear it":"\u{1F48E} "+f.cost)); });
+    /* v280: giacche e giubbotti, sopra il capo; sotto quella che porti, il colore */
+    const _co=lookCoat(_L.coat);
+    h+='</div><div class="dy-sec">Jackets and coats \u00b7 <span style="font-weight:400">on top</span></div><div class="gem-fits">';
+    h+=_tcCard('data-coat=""',!_co,false,_tcSw("#eef1f3","#b9c2c8","\u2715"),"None",_co?"tap to take it off":"nothing on");
+    LOOK_COATS.forEach(function(c){ const r=lookReq(c.req), on=(_co&&_co.id===c.id);
+      h+=_tcCard('data-coat="'+c.id+'"',on,!r.open,_tcSw(c.col,c.col,"\u{1F9E5}"),c.en,
+        on?"you're wearing it":(r.open?"tap to wear it":r.label)); });
+    h+='</div>';
+    if(_co){ const cid=_L.coatc||"";
+      h+='<div class="tc-sub">Colour of your '+_escHtml(_co.en.toLowerCase())+'</div><div class="tc-cols">';
+      ACC_COLS.forEach(function(k){ const r=lookReq(k.req);
+        h+=_tcCol('data-coatc="'+k.id+'"',cid===k.id,!r.open,k.hex||_co.col,k.en,r.label); });
+      h+='</div>'; }
     const _bcur=lookBottom(_rig,_L.bottom);
-    h+='</div><div class="dy-sec">Trousers, shorts and skirts</div><div class="gem-fits">';
+    h+='<div class="dy-sec">Trousers, shorts and skirts</div><div class="gem-fits">';
     lookBottomsFor(_rig).forEach(function(b){ const r=lookReq(b.req), on=(_bcur.id===b.id);
       h+=_tcCard('data-bottom="'+b.id+'"',on,!r.open,_tcSw("#cdd6dc","#8b97a1",(b.skirt?"\u{1F457}":(b.cut>0?"\u{1FA73}":"\u{1F456}"))),b.en,
         on?"you're wearing it":(r.open?"tap to wear it":r.label)); });
@@ -49682,6 +49923,8 @@ function buildTeca(){
   wire("data-bcol",   v=>setPlayerBcol(v));
   wire("data-acc",    v=>{ const p=v.split(":"); return setPlayerAcc(p[0],p[1]); });
   wire("data-acol",   v=>{ const p=v.split(":"); return setPlayerAccCol(p[0],p[1]); });
+  wire("data-coat",   v=>setPlayerCoat(v));
+  wire("data-coatc",  v=>setPlayerCoatCol(v));
 }
 /* un campione di colore: pallino + nome; chiuso = opaco col lucchetto e come si apre */
 function _tcCol(attr,on,off,hex,name,lock){
@@ -49982,7 +50225,8 @@ const Presenza=(function(){
          primi cinque campi e ignorano il resto: nessuno si rompe. */
       return L.rig+"|"+L.skin+"|"+L.hair+"|"+L.shoes+"|"+(L.fit||"purple")+"|"+(L.bottom||"")+"|"+(L.bcol||"auto")
             +"|"+(L.hat||"")+"|"+(L.face||"")+"|"+(L.neck||"")                           // v278: accessori
-            +"|"+(L.cut||"")+"|"+(L.hatc||"")+"|"+(L.facec||"")+"|"+(L.neckc||""); }      // v279: taglio e colori
+            +"|"+(L.cut||"")+"|"+(L.hatc||"")+"|"+(L.facec||"")+"|"+(L.neckc||"")        // v279: taglio e colori
+            +"|"+(L.coat||"")+"|"+(L.coatc||""); }                                         // v280: giacca
     catch(e){ return "m|s3|h1|k1|purple"; }
   }
   function _leggiLook(k){
@@ -49990,7 +50234,8 @@ const Presenza=(function(){
     return { rig:(p[0]==="f"?"f":"m"), skin:p[1]||"s3", hair:p[2]||"h1",
              shoes:((p[3]&&p[3]!=="k0")?p[3]:"k1"), fit:p[4]||"purple",
              bottom:p[5]||"", bcol:p[6]||"auto", hat:p[7]||"", face:p[8]||"", neck:p[9]||"",
-             cut:p[10]||"", hatc:p[11]||"", facec:p[12]||"", neckc:p[13]||"" };
+             cut:p[10]||"", hatc:p[11]||"", facec:p[12]||"", neckc:p[13]||"",
+             coat:p[14]||"", coatc:p[15]||"" };
   }
   /* ---- posizione: x, z con un decimale (10 cm), y e imbardata ----------- */
   function _pos(){
@@ -50252,6 +50497,7 @@ const Presenza=(function(){
       if(mt.albedoColor) mt.albedoColor=c; else if(mt.diffuseColor) mt.diffuseColor=c;
     });
     try{ dressBottom(b.meshes, L.rig, lookBottom(L.rig,L.bottom), T.legs, T.skin); }catch(e){}   // v277
+    try{ dressCoat(b.meshes, L.coat, L.coatc); }catch(e){}                                       // v280
     try{ dressHair(b.meshes, L.rig, L.cut, T.hair); }catch(e){}                                  // v279
     try{ dressAcc(b.meshes, { head:L.hat, face:L.face, neck:L.neck,
                               headc:L.hatc, facec:L.facec, neckc:L.neckc }); }catch(e){}       // v278
