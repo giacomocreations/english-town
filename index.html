@@ -47941,7 +47941,15 @@ function _botSetCol(mt,hex){ if(!mt||!hex) return; const c=BABYLON.Color3.FromHe
 /* posa di riposo per le misure: si rimette a posto lo scheletro e si
    ricalcolano le matrici; l'animazione la riprende al fotogramma dopo */
 function _botRest(sk){ try{ sk.returnToRest(); }catch(e){}
-  try{ sk.bones.forEach(b=>{ const tn=b.getTransformNode&&b.getTransformNode(); if(tn) tn.computeWorldMatrix(true); }); }catch(e){}
+  /* ⚠️ DALL'ALTO IN BASSO: computeWorldMatrix di un osso usa la matrice del
+     padre COSI' COM'E'. In ordine sparso un figlio si ricalcolava sul padre
+     ancora in posa animata, e un accessorio appeso a quell'osso finiva
+     spostato (gli occhiali sull'orecchio, trovato a schermo). */
+  try{ const tns=sk.bones.map(b=>b.getTransformNode&&b.getTransformNode()).filter(Boolean);
+    const depth=t=>{ let d=0; for(let q=t.parent;q;q=q.parent) d++; return d; };
+    tns.sort((a,b)=>depth(a)-depth(b));
+    if(tns.length){ const chain=[]; for(let q=tns[0].parent;q;q=q.parent) chain.unshift(q); chain.forEach(q=>q.computeWorldMatrix(true)); }
+    tns.forEach(t=>t.computeWorldMatrix(true)); }catch(e){}
   try{ sk.prepare(true); }catch(e){} }
 function _botBoneY(sk,name){ const b=sk.bones.find(x=>x.name===name); const tn=b&&b.getTransformNode&&b.getTransformNode();
   if(!tn) return null; tn.computeWorldMatrix(true); return tn.getAbsolutePosition().y; }
@@ -48032,6 +48040,220 @@ function dressBottom(meshes,rig,b,legsHex,skinHex){
   if(b.skirt) _botSkirt(L,legsHex); else if(L.__skirt) L.__skirt.setEnabled(false);
 }
 
+/* =====================================================================
+   v278 — ACCESSORI: testa, occhi, collo (Giacomo, 29 set: «un capellino,
+   berretto, cose del genere, una collana... sia per boy che per girl»).
+   Tre slot, un accessorio per slot, combinabili. Si sbloccano come il
+   resto della Teca (lookReq): cristalli, stelle, o la unit del tema — il
+   cappellino al Clothes Shop, berretto e sciarpa alla Weather Station, la
+   fascia al campo sportivo, le cuffie al Beat Club, gli occhiali da sole
+   all'aeroporto, il cappello da escursionista al campo dei camminatori —
+   sempre con l'alternativa a stelle.
+
+   ⚠️ LE MISURE SI PRENDONO DALLA TESTA VERA, non si scrivono a mano: i due
+   corpi hanno teste e capigliature diverse (la ragazza ha i capelli piu'
+   voluminosi). In posa di riposo si leggono i vertici animati di testa e
+   capelli, si ricava il verso della faccia dagli occhi, e ogni accessorio
+   si costruisce in un sistema locale (x destra, y su dagli occhi, z avanti)
+   poi si appende all'osso Head (o Neck/Chest per il collo): segue la testa
+   quando guarda, cammina, corre.
+   ===================================================================== */
+const LOOK_ACC=[
+  /* slot testa */
+  { id:"cap",       slot:"head", en:"Baseball cap",   ic:"\u{1F9E2}", req:{ quest:"u8",   stars:400 } },
+  { id:"beanie",    slot:"head", en:"Woolly hat",     ic:"\u{1F9E3}", req:{ quest:"u2_3", stars:600 } },
+  { id:"headband",  slot:"head", en:"Headband",       ic:"\u{1F3BD}", req:{ quest:"u7",   stars:400 } },
+  { id:"headphones",slot:"head", en:"Headphones",     ic:"\u{1F3A7}", req:{ quest:"u2_2", stars:800 } },
+  { id:"bucket",    slot:"head", en:"Hiking hat",     ic:"\u{1F452}", req:{ quest:"u3_3", stars:1200 } },
+  /* slot occhi */
+  { id:"shades",    slot:"face", en:"Sunglasses",     ic:"\u{1F576}️", req:{ quest:"u1", stars:300 } },
+  { id:"glasses",   slot:"face", en:"Round glasses",  ic:"\u{1F453}", req:{ gems:25 } },
+  /* slot collo */
+  { id:"necklace",  slot:"neck", en:"Necklace",       ic:"\u{1F4FF}", req:{ stars:700 } },
+  { id:"scarf",     slot:"neck", en:"Scarf",          ic:"\u{1F9E3}", req:{ quest:"u2_3", stars:600 } },
+];
+const ACC_SLOTS=[ { id:"head", en:"Hats and headphones" }, { id:"face", en:"Glasses" }, { id:"neck", en:"Neck" } ];
+function lookAcc(id){ return LOOK_ACC.find(a=>a.id===id)||null; }
+
+/* misure della testa e del collo NELLO SPAZIO GREZZO DEI VERTICI (bind
+   space): quello in cui stanno testa, capelli e corpo prima di qualunque
+   animazione. Qui l'accessorio si costruisce e si pesa sull'osso: viene
+   animato esattamente come la testa, senza passare da nessuno spazio mondo
+   (vedi la nota su dressAcc). Si misura in metri: s = unita' grezze per metro. */
+function _accMeasure(meshes){
+  const head=meshes.filter(m=>/Casual_Head/.test(m.name)&&m.skeleton), body=meshes.filter(m=>/Casual_Body/.test(m.name)&&m.skeleton);
+  if(!head.length||!body.length) return null;
+  const V3=BABYLON.Vector3, raw=m=>{ const p=m.getVerticesData(BABYLON.VertexBuffer.PositionKind)||[], o=[];
+    for(let i=0;i<p.length;i+=3) o.push(new V3(p[i],p[i+1],p[i+2])); return o; };
+  const HP=[], EP=[], BP=[], SP=[];
+  head.forEach(m=>{ const nm=(m.material&&m.material.name)||"", eye=/^(Eye|Eyebrows|Brown)/.test(nm)&&!/Hair/.test(nm), sk=/^Skin/.test(nm);
+    raw(m).forEach(p=>{ HP.push(p); if(eye) EP.push(p); if(sk) SP.push(p); }); });
+  body.forEach(m=>raw(m).forEach(p=>BP.push(p)));
+  if(!EP.length) return null;
+  const avg=a=>a.reduce((s,p)=>s.addInPlace(p),new V3(0,0,0)).scale(1/a.length);
+  const Ch=avg(HP), Cb=avg(BP), E=avg(EP);
+  /* «su»: dall'osso del collo a quello della testa, nella posa di bind.
+     Dai baricentri no: i capelli lunghi della ragazza lo storcevano. */
+  let U=Ch.subtract(Cb).normalize();
+  try{ const sk=head[0].skeleton, bp=n=>{ const b=sk.bones.find(x=>x.name===n); return b&&b.getAbsoluteInverseBindMatrix?b.getAbsoluteInverseBindMatrix().clone().invert().getTranslation():null; };
+    const ph=bp("Head"), pn=bp("Neck")||bp("Chest"); if(ph&&pn&&ph.subtract(pn).length()>1e-6) U=ph.subtract(pn).normalize(); }catch(e){}
+  let F=E.subtract(Ch); F=F.subtract(U.scale(V3.Dot(F,U))).normalize();
+  let R=V3.Cross(U,F).normalize();
+  /* il destro/sinistro dagli occhi (la retta fra i due), non dal baricentro
+     della testa: il ciuffo laterale lo sposterebbe */
+  const A=[],B=[]; EP.forEach(p=>{ (V3.Dot(p.subtract(E),R)>0?A:B).push(p); });
+  if(A.length&&B.length){ let Rr=avg(A).subtract(avg(B)); Rr=Rr.subtract(U.scale(V3.Dot(Rr,U)));
+    if(Rr.length()>1e-6){ const Fn=V3.Cross(Rr.normalize(),U).normalize(); F=(V3.Dot(Fn,F)<0)?Fn.scale(-1):Fn; R=V3.Cross(U,F).normalize(); } }
+  /* scala: altezza della testa nel mondo (bounding animato) / nello spazio grezzo */
+  let y0=1e9,y1=-1e9; head.forEach(m=>{ m.refreshBoundingInfo(true); const b=m.getBoundingInfo().boundingBox; y0=Math.min(y0,b.minimumWorld.y); y1=Math.max(y1,b.maximumWorld.y); });
+  let u0=1e9,u1=-1e9; HP.forEach(p=>{ const u=V3.Dot(p.subtract(Ch),U); u0=Math.min(u0,u); u1=Math.max(u1,u); });
+  const s=(u1-u0)/Math.max(0.05,y1-y0);
+  const loc=p=>{ const d=p.subtract(E); return { x:V3.Dot(d,R)/s, y:V3.Dot(d,U)/s, z:V3.Dot(d,F)/s }; };
+  let top=-9, back=9, front=-9, halfW=0, hwBrow=0, bot=9, faceZ=0;
+  HP.forEach(p=>{ const l=loc(p); if(l.y>top) top=l.y; if(l.y<bot) bot=l.y;
+    if(l.y>-0.02){ if(l.z<back) back=l.z; if(l.z>front) front=l.z; halfW=Math.max(halfW,Math.abs(l.x)); }
+    if(Math.abs(l.y)<0.02 && Math.abs(l.x)<0.02) faceZ=Math.max(faceZ,l.z);
+    if(Math.abs(l.y-0.05)<0.03) hwBrow=Math.max(hwBrow,Math.abs(l.x)); });
+  /* collo: la PELLE sotto il mento (non l'anello piu' basso della testa:
+     sul ragazzo scende dentro il cappuccio ed e' largo come le spalle, e la
+     collana finiva sulla spalla). Centro e raggio veri del collo. */
+  let faceHW=0; SP.forEach(p=>{ const l=loc(p); if(Math.abs(l.y)<0.03) faceHW=Math.max(faceHW,Math.abs(l.x)); });
+  if(faceHW<0.03) faceHW=0.07;
+  const NP=SP.map(loc).filter(l=>l.y<-0.10 && l.y>-0.22);
+  let nz=-0.06, nr=faceHW*0.72;
+  if(NP.length>8){ nz=NP.reduce((a,l)=>a+l.z,0)/NP.length;
+    const rr=NP.map(l=>Math.hypot(l.x,l.z-nz)).sort((a,b)=>a-b); nr=rr[Math.floor(rr.length*0.7)]; }
+  nr=Math.max(0.04,Math.min(0.075,nr));
+  const neckY=-0.155, chestF=nz+nr+0.035, nFront=nz+nr;
+  return { E, R, U, F, s, top, back, front, faceZ, halfW, hwBrow:hwBrow||halfW, bot, neckY, nz, nr, nFront, chestF };
+}
+const _accM={};
+function _accMat(hex,spec,em){ const k=hex+"|"+(spec||0)+"|"+(em||""); if(_accM[k]) return _accM[k];
+  const m=new BABYLON.StandardMaterial("accM"+(_lpN++),scene); m.diffuseColor=BABYLON.Color3.FromHexString(hex);
+  const s=spec||0.08; m.specularColor=new BABYLON.Color3(s,s,s); m.specularPower=spec>0.4?80:24;
+  if(em) m.emissiveColor=BABYLON.Color3.FromHexString(em); return (_accM[k]=m); }
+/* costruttori nel sistema locale: x destra, y su (0 = occhi), z avanti */
+const ACC_BUILD={
+  cap(g,M){ const zc=(M.front+M.back)/2, rx=M.halfW*1.10, rz=(M.front-M.back)/2*1.08, base=Math.max(0.04,M.top-0.13);
+    const c=_accMat("#b8352e",0.12), w=_accMat("#f1efe8",0.1);
+    const d=BABYLON.MeshBuilder.CreateSphere("acc",{diameter:1,segments:14,slice:0.5},scene);
+    d.material=c; d.scaling.set(rx*2,(M.top-base+0.035)*2,rz*2); d.position.set(0,base,zc); d.parent=g;
+    const brim=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:1,height:0.018,tessellation:24},scene);
+    brim.material=c; brim.scaling.set(rx*1.45,1,0.15); brim.position.set(0,base+0.006,Math.max(M.front,M.faceZ)+0.035); brim.rotation.x=0.12; brim.parent=g;   // visiera che sporge davvero sulla fronte
+    const ring=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:1,thickness:0.018,tessellation:28},scene);
+    ring.material=c; ring.scaling.set(rx*2,1,rz*2); ring.position.set(0,base+0.004,zc); ring.parent=g;
+    const b=BABYLON.MeshBuilder.CreateSphere("acc",{diameter:0.026,segments:6},scene); b.material=w; b.position.set(0,M.top+0.018,zc); b.parent=g; },
+  beanie(g,M){ const zc=(M.front+M.back)/2-0.005, rx=M.halfW*1.11, rz=(M.front-M.back)/2*1.09, base=Math.max(0.03,M.top-0.15);
+    const c=_accMat("#2f5f8a",0.05), c2=_accMat("#e8e4da",0.05);
+    const d=BABYLON.MeshBuilder.CreateSphere("acc",{diameter:1,segments:14,slice:0.5},scene);
+    d.material=c; d.scaling.set(rx*2,(M.top-base+0.035)*2,rz*2); d.position.set(0,base,zc); d.parent=g;
+    const band=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:1,height:0.045,tessellation:28},scene);
+    band.material=c2; band.scaling.set(rx*2.04,1,rz*2.04); band.position.set(0,base+0.012,zc); band.parent=g;
+    const pom=BABYLON.MeshBuilder.CreateSphere("acc",{diameter:0.07,segments:8},scene); pom.material=c2; pom.position.set(0,M.top+0.05,zc); pom.parent=g; },
+  headband(g,M){ const zc=(M.front+M.back)/2, rx=M.halfW*1.03, rz=(M.front-M.back)/2*1.01;
+    const t=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:1,thickness:0.03,tessellation:32},scene);
+    t.material=_accMat("#e0492f",0.15); t.scaling.set(rx*2,1.2,rz*2); t.position.set(0,M.top-0.10,zc); t.rotation.x=-0.12; t.parent=g; },
+  headphones(g,M){ const zc=(M.front+M.back)/2-0.01, rx=M.halfW*1.08, k=_accMat("#23262b",0.35), acc=_accMat("#3fa7c9",0.3);
+    const pts=[]; for(let i=0;i<=16;i++){ const a=Math.PI*i/16; pts.push(new BABYLON.Vector3(-Math.cos(a)*rx, 0.0+Math.sin(a)*(M.top+0.02), zc)); }
+    const band=BABYLON.MeshBuilder.CreateTube("acc",{path:pts,radius:0.013,tessellation:8},scene); band.material=k; band.parent=g;
+    [-1,1].forEach(s=>{ const cup=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.085,height:0.04,tessellation:18},scene);
+      cup.material=k; cup.rotation.z=Math.PI/2; cup.position.set(s*(rx+0.005),-0.01,zc); cup.parent=g;
+      const cap=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.06,height:0.006,tessellation:18},scene);
+      cap.material=acc; cap.rotation.z=Math.PI/2; cap.position.set(s*(rx+0.027),-0.01,zc); cap.parent=g; }); },
+  bucket(g,M){ const zc=(M.front+M.back)/2, rx=M.halfW*1.08, rz=(M.front-M.back)/2*1.06, base=Math.max(0.045,M.top-0.12);
+    const c=_accMat("#8a7a52",0.05), band=_accMat("#4a3d26",0.05);
+    const cr=BABYLON.MeshBuilder.CreateCylinder("acc",{diameterTop:0.8,diameterBottom:1,height:1,tessellation:24},scene);
+    cr.material=c; cr.scaling.set(rx*2,M.top-base+0.03,rz*2); cr.position.set(0,base+(M.top-base+0.03)/2,zc); cr.parent=g;
+    const b1=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:1,height:0.03,tessellation:24},scene);
+    b1.material=band; b1.scaling.set(rx*2.02,1,rz*2.02); b1.position.set(0,base+0.025,zc); b1.parent=g;
+    const br=BABYLON.MeshBuilder.CreateCylinder("acc",{diameterTop:1,diameterBottom:1.15,height:0.02,tessellation:28},scene);
+    br.material=c; br.scaling.set(rx*2.7,1,rz*2.7); br.position.set(0,base-0.005,zc); br.parent=g; },
+  shades(g,M){ const z=Math.max(M.faceZ,0.015)+0.018, k=_accMat("#15171a",0.8), fr=_accMat("#2b2e33",0.3), w=M.hwBrow;
+    [-1,1].forEach(s=>{ const l=BABYLON.MeshBuilder.CreateBox("acc",{width:0.055,height:0.035,depth:0.006},scene);
+      l.material=k; l.position.set(s*0.036,0.004,z); l.parent=g;
+      const arm=BABYLON.MeshBuilder.CreateBox("acc",{width:0.006,height:0.008,depth:Math.max(0.05,z-M.back-0.05)},scene);
+      arm.material=fr; arm.position.set(s*(w+0.004),0.012,z-arm.getBoundingInfo().boundingBox.extendSize.z); arm.parent=g; });
+    const br=BABYLON.MeshBuilder.CreateBox("acc",{width:0.02,height:0.008,depth:0.006},scene); br.material=fr; br.position.set(0,0.012,z); br.parent=g;
+    const tb=BABYLON.MeshBuilder.CreateBox("acc",{width:w*2+0.01,height:0.008,depth:0.008},scene); tb.material=fr; tb.position.set(0,0.022,z-0.003); tb.parent=g; },
+  glasses(g,M){ const z=Math.max(M.faceZ,0.015)+0.018, fr=_accMat("#6b3f24",0.3), w=M.hwBrow;
+    [-1,1].forEach(s=>{ const r=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:0.046,thickness:0.006,tessellation:20},scene);
+      r.material=fr; r.rotation.x=Math.PI/2; r.position.set(s*0.034,0.004,z); r.parent=g;
+      const arm=BABYLON.MeshBuilder.CreateBox("acc",{width:0.005,height:0.006,depth:Math.max(0.05,z-M.back-0.05)},scene);
+      arm.material=fr; arm.position.set(s*(w+0.004),0.008,z-arm.getBoundingInfo().boundingBox.extendSize.z); arm.parent=g;
+      const hinge=BABYLON.MeshBuilder.CreateBox("acc",{width:Math.max(0.01,w-0.055),height:0.006,depth:0.005},scene);
+      hinge.material=fr; hinge.position.set(s*(0.057+Math.max(0.01,w-0.055)/2),0.008,z); hinge.parent=g; });
+    const br=BABYLON.MeshBuilder.CreateBox("acc",{width:0.022,height:0.006,depth:0.005},scene); br.material=fr; br.position.set(0,0.01,z); br.parent=g; },
+  necklace(g,M){ const gold=_accMat("#d6ae3c",0.85,"#2a1f06"), y0=M.neckY, r=M.nr+0.006, nz=M.nz;
+    /* un giro intero: dietro e' un anello attorno al collo, davanti scende sul petto */
+    const pts=[]; for(let i=0;i<=40;i++){ const a=i/40*Math.PI*2, c=Math.cos(a), f=Math.max(0,c);
+      pts.push(new BABYLON.Vector3(Math.sin(a)*r*(1+0.45*f), y0-0.085*f*f, nz+c*r+f*f*0.03)); }
+    const t=BABYLON.MeshBuilder.CreateTube("acc",{path:pts,radius:0.005,tessellation:6},scene); t.material=gold; t.parent=g;
+    const p=BABYLON.MeshBuilder.CreateSphere("acc",{diameter:0.03,segments:8},scene);
+    p.material=_accMat("#3f9fd0",0.8,"#0e2a38"); p.position.set(0,y0-0.098,nz+r+0.04); p.parent=g; },
+  scarf(g,M){ const c=_accMat("#b3352e",0.05), c2=_accMat("#e9d8b8",0.05), y0=M.neckY+0.005, r=M.nr+0.028, nz=M.nz, fz=nz+r;
+    const ring=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:r*2,thickness:0.055,tessellation:28},scene);
+    ring.material=c; ring.scaling.y=0.95; ring.position.set(0,y0,nz); ring.parent=g;
+    const t1=BABYLON.MeshBuilder.CreateBox("acc",{width:0.07,height:0.22,depth:0.025},scene);
+    t1.material=c; t1.position.set(-0.035,y0-0.13,fz+0.01); t1.rotation.z=0.10; t1.rotation.x=-0.12; t1.parent=g;
+    const t2=BABYLON.MeshBuilder.CreateBox("acc",{width:0.065,height:0.17,depth:0.025},scene);
+    t2.material=c; t2.position.set(0.03,y0-0.105,fz+0.022); t2.rotation.z=-0.08; t2.rotation.x=-0.12; t2.parent=g;
+    [-0.225,-0.19].forEach(dy=>{ const st=BABYLON.MeshBuilder.CreateBox("acc",{width:0.072,height:0.014,depth:0.027},scene);
+      st.material=c2; st.position.set(-0.035+Math.sin(0.10)*(dy+0.13),y0+dy+0.02,fz+0.012-0.12*(dy+0.13)); st.rotation.z=0.10; st.rotation.x=-0.12; st.parent=g; }); },
+};
+/* ⚠️ GLI ACCESSORI SONO SKINNED E NASCONO NELLO SPAZIO GREZZO. Due strade
+   provate e scartate, tenute a memoria:
+   · appesi all'osso Head (setParent) con misure prese in «mondo» dalle
+     posizioni animate: occhiali sull'orecchio, sciarpa sulla spalla;
+   · skinned ma con le misure in «mondo»: stesso errore. Per questi glTF le
+     posizioni animate calcolate a CPU e la matrice mandata allo shader non
+     passano dalla stessa correzione di posa, quindi il giro andata/ritorno
+     non torna (la gonna si salva perche' li' andata e ritorno usano gli
+     stessi numeri, e l'errore si annulla).
+   Qui invece si misura e si costruisce nello spazio dei vertici del modello
+   e si pesa sull'osso: lo stesso identico conto che anima la testa. */
+function _accSkin(m,H,M,boneIdx){
+  m.computeWorldMatrix(true);
+  const Wm=m.getWorldMatrix(), pos=m.getVerticesData(BABYLON.VertexBuffer.PositionKind), ind=m.getIndices();
+  const P=[]; for(let i=0;i<pos.length;i+=3){ const w=BABYLON.Vector3.TransformCoordinates(new BABYLON.Vector3(pos[i],pos[i+1],pos[i+2]),Wm);
+    const r=M.E.add(M.R.scale(w.x*M.s)).addInPlace(M.U.scale(w.y*M.s)).addInPlace(M.F.scale(w.z*M.s)); P.push(r.x,r.y,r.z); }
+  /* se la terna R,U,F e' sinistrorsa le facce si girano: si ribaltano gli indici */
+  const det=BABYLON.Vector3.Dot(BABYLON.Vector3.Cross(M.R,M.U),M.F);
+  let I=Array.from(ind); if(det<0){ I=[]; for(let t=0;t<ind.length;t+=3) I.push(ind[t],ind[t+2],ind[t+1]); }
+  const N=[]; BABYLON.VertexData.ComputeNormals(P,I,N);
+  const vd=new BABYLON.VertexData(); vd.positions=P; vd.indices=I; vd.normals=N;
+  const out=new BABYLON.Mesh("acc",scene); vd.applyToMesh(out,false);
+  const n=P.length/3, MI=new Array(n*4).fill(0), MW=new Array(n*4).fill(0);
+  for(let i=0;i<n;i++){ MI[i*4]=boneIdx; MW[i*4]=1; }
+  out.setVerticesData(BABYLON.VertexBuffer.MatricesIndicesKind,MI,false,4);
+  out.setVerticesData(BABYLON.VertexBuffer.MatricesWeightsKind,MW,false,4);
+  out.parent=H.parent; out.position.copyFrom(H.position); out.rotation.copyFrom(H.rotation);
+  if(H.rotationQuaternion) out.rotationQuaternion=H.rotationQuaternion.clone(); out.scaling.copyFrom(H.scaling);
+  out.skeleton=H.skeleton; out.numBoneInfluencers=1; out.material=m.material;
+  out.isPickable=false; out.alwaysSelectAsActiveMesh=true;
+  return out; }
+/* veste gli accessori di un corpo: acc = { head:id, face:id, neck:id }.
+   holder (facoltativo) = elenco a cui aggiungere le mesh nuove (ombre). */
+function dressAcc(meshes,acc,holder){
+  if(!meshes||!meshes.length) return;
+  const H=meshes.find(m=>/Casual_Head/.test(m.name)&&m.skeleton); if(!H) return;
+  H.__acc=H.__acc||{};
+  ACC_SLOTS.forEach(S=>{
+    const want=(acc&&acc[S.id])||"", cur=H.__acc[S.id];
+    if(cur && cur.id===want) return;
+    if(cur){ cur.meshes.forEach(m=>{ try{ m.dispose(false,false); }catch(e){}
+      if(holder){ const k=holder.indexOf(m); if(k>=0) holder.splice(k,1); } }); H.__acc[S.id]=null; }
+    if(!want || !ACC_BUILD[want]) return;
+    const M=H.__accM || (H.__accM=_accMeasure(meshes)); if(!M) return;
+    const sk=H.skeleton, bn=(S.id==="neck")?["Neck","Chest","Torso"]:["Head"];
+    let bi=-1; for(const n of bn){ bi=sk.bones.findIndex(b=>b.name===n); if(bi>=0) break; } if(bi<0) return;
+    const g=new BABYLON.TransformNode("acc_"+want,scene);
+    try{ ACC_BUILD[want](g,M); }catch(e){ console.warn("acc",want,e); }
+    const out=[]; g.getChildMeshes().forEach(m=>{ try{ out.push(_accSkin(m,H,M,bi)); }catch(e){ console.warn("accSkin",e); } });
+    g.dispose(false,false);
+    if(holder) out.forEach(m=>holder.push(m));
+    H.__acc[S.id]={ id:want, meshes:out }; });
+}
+
 const Look=(function(){
   const K="et_look";
   /* ⚠️ Ricostruito campo per campo, come il ledger di Stars e lo stato di
@@ -48051,7 +48273,8 @@ const Look=(function(){
                 mostrerebbe nessuna riga selezionata finche' non ne scelgono
                 una. Si legge la vecchia chiave e si risponde con la nuova. */
              shoes:((s.shoes&&s.shoes!=="k0")?s.shoes:"k1"), fit:s.fit||"",
-             bottom:s.bottom||"", bcol:s.bcol||"auto" }; }            // v277: il sotto
+             bottom:s.bottom||"", bcol:s.bcol||"auto",                   // v277: il sotto
+             hat:s.hat||"", face:s.face||"", neck:s.neck||"" }; }        // v278: accessori
   function save(s){ Sync.set(K,s); return s; }
   function rig(){ return state().rig; }
   function skin(){ return state().skin; }
@@ -48065,10 +48288,11 @@ const Look=(function(){
   function setFit(id){ const s=state(); s.fit=id; save(s); return id; }
   function setBottom(id){ const s=state(); s.bottom=id; save(s); return id; }
   function setBcol(id){ const s=state(); s.bcol=id; save(s); return id; }
+  function setAcc(slot,id){ const s=state(), k=(slot==="head"?"hat":slot); s[k]=id||""; save(s); return id; }
   function hairOpen(h){ return h.cost<=0 || Gems.count()>=h.cost; }
-  function reset(){ save({rig:"m",skin:"s3",hair:"h1",shoes:"k1",fit:"purple",bottom:"",bcol:"auto"}); }
+  function reset(){ save({rig:"m",skin:"s3",hair:"h1",shoes:"k1",fit:"purple",bottom:"",bcol:"auto",hat:"",face:"",neck:""}); }
   return { state, rig, skin, hair, shoes, fit, setRig, setSkin, setHair,
-           setShoes, setFit, setBottom, setBcol, hairOpen, reset };
+           setShoes, setFit, setBottom, setBcol, setAcc, hairOpen, reset };
 })();
 
 const GEM_KINDS={
@@ -48851,6 +49075,12 @@ function applyPlayerFit(id){
     const L=(avatarMeshes||[]).find(m=>m.__skirt), sk=L&&L.__skirt;
     if(sk && avatarMeshes.indexOf(sk)<0){ avatarMeshes.push(sk); try{ refreshShadowCasters(); }catch(e){} } }
   catch(e){ console.warn("dressBottom:",e); }
+  /* v278: accessori (testa, occhi, collo). Le mesh nuove finiscono in
+     avatarMeshes, cosi' fanno ombra come il resto del corpo. */
+  try{ const n0=avatarMeshes.length;
+    dressAcc(avatarMeshes, { head:_L.hat, face:_L.face, neck:_L.neck }, avatarMeshes);
+    if(avatarMeshes.length!==n0) try{ refreshShadowCasters(); }catch(e){} }
+  catch(e){ console.warn("dressAcc:",e); }
   return f.id;
 }
 function setPlayerBody(id){
@@ -48883,6 +49113,11 @@ function setPlayerBottom(id){
   const rig=Look.rig(), b=lookBottomsFor(rig).find(x=>x.id===id); if(!b) return null;
   const r=lookReq(b.req); if(!r.open){ toast("\u{1F512} "+r.label); return null; }
   Look.setBottom(id); applyLook(); toast("\u{1F456} "+b.en); return id; }
+function setPlayerAcc(slot,id){
+  if(id){ const a=lookAcc(id); if(!a||a.slot!==slot) return null;
+    const r=lookReq(a.req); if(!r.open){ toast("\u{1F512} "+r.label); return null; }
+    Look.setAcc(slot,id); applyLook(); toast(a.ic+" "+a.en); return id; }
+  Look.setAcc(slot,""); applyLook(); return "none"; }
 function setPlayerBcol(id){
   const k=LOOK_BCOL.find(x=>x.id===id); if(!k) return null;
   const r=lookReq(k.req); if(!r.open){ toast("\u{1F512} "+r.label); return null; }
@@ -49000,6 +49235,23 @@ function buildTeca(){
   });
   h+='</div>';
 
+  /* v278: accessori, uno per slot. «None» sempre libero e sempre per primo. */
+  ACC_SLOTS.forEach(function(S){
+    const cur=(S.id==="head"?_L.hat:_L[S.id])||"";
+    h+='<div class="dy-sec">'+_escHtml(S.en)+'</div><div class="gem-fits">';
+    h+='<div class="gem-fit'+(cur?"":" on")+'" data-acc="'+S.id+':">'
+      +'<span class="gem-sw" style="background:#eef1f3;border-color:#b9c2c8">\u2715</span>'
+      +'<b>None</b><i>'+(cur?"tap to take it off":"nothing on")+'</i></div>';
+    LOOK_ACC.filter(function(a){ return a.slot===S.id; }).forEach(function(a){
+      const r=lookReq(a.req), on=(cur===a.id);
+      h+='<div class="gem-fit'+(r.open?"":" off")+(on?" on":"")+'"'+(r.open?' data-acc="'+S.id+':'+a.id+'"':'')+'>'
+        +'<span class="gem-sw" style="background:#cdd6dc;border-color:#8b97a1">'+a.ic+'</span>'
+        +'<b>'+_escHtml(a.en)+'</b>'
+        +'<i>'+(on?"you're wearing it":(r.open?"tap to wear it":r.label))+'</i></div>';
+    });
+    h+='</div>';
+  });
+
   h+='<div class="dy-sec">Verbi irregolari \u00b7 base \u2014 past \u2014 participle</div>';
   h+='<div class="gem-tab">';
   GEM_VERBS.forEach(function(v){
@@ -49047,6 +49299,9 @@ function buildTeca(){
   const rbt=el.querySelectorAll("[data-bottom]");
   for(let i=0;i<rbt.length;i++) rbt[i].onclick=(function(id){
     return ()=>{ if(setPlayerBottom(id)) buildTeca(); }; })(rbt[i].getAttribute("data-bottom"));
+  const rac=el.querySelectorAll("[data-acc]");
+  for(let i=0;i<rac.length;i++) rac[i].onclick=(function(v){ const p=v.split(":");
+    return ()=>{ if(setPlayerAcc(p[0],p[1])) buildTeca(); }; })(rac[i].getAttribute("data-acc"));
   const rbc=el.querySelectorAll("[data-bcol]");
   for(let i=0;i<rbc.length;i++) rbc[i].onclick=(function(id){
     return ()=>{ if(setPlayerBcol(id)) buildTeca(); }; })(rbc[i].getAttribute("data-bcol"));
@@ -49343,14 +49598,15 @@ const Presenza=(function(){
     try{ const L=Look.state();
       /* v277: in coda il sotto e il suo colore. I client vecchi leggono solo i
          primi cinque campi e ignorano il resto: nessuno si rompe. */
-      return L.rig+"|"+L.skin+"|"+L.hair+"|"+L.shoes+"|"+(L.fit||"purple")+"|"+(L.bottom||"")+"|"+(L.bcol||"auto"); }
+      return L.rig+"|"+L.skin+"|"+L.hair+"|"+L.shoes+"|"+(L.fit||"purple")+"|"+(L.bottom||"")+"|"+(L.bcol||"auto")
+            +"|"+(L.hat||"")+"|"+(L.face||"")+"|"+(L.neck||""); }                         // v278: accessori
     catch(e){ return "m|s3|h1|k1|purple"; }
   }
   function _leggiLook(k){
     const p=String(k||"").split("|");
     return { rig:(p[0]==="f"?"f":"m"), skin:p[1]||"s3", hair:p[2]||"h1",
              shoes:((p[3]&&p[3]!=="k0")?p[3]:"k1"), fit:p[4]||"purple",
-             bottom:p[5]||"", bcol:p[6]||"auto" };
+             bottom:p[5]||"", bcol:p[6]||"auto", hat:p[7]||"", face:p[8]||"", neck:p[9]||"" };
   }
   /* ---- posizione: x, z con un decimale (10 cm), y e imbardata ----------- */
   function _pos(){
@@ -49612,6 +49868,7 @@ const Presenza=(function(){
       if(mt.albedoColor) mt.albedoColor=c; else if(mt.diffuseColor) mt.diffuseColor=c;
     });
     try{ dressBottom(b.meshes, L.rig, lookBottom(L.rig,L.bottom), T.legs, T.skin); }catch(e){}   // v277
+    try{ dressAcc(b.meshes, { head:L.hat, face:L.face, neck:L.neck }); }catch(e){}               // v278
     b.look=look;
   }
   function _distruggi(b){
