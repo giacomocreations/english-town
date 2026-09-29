@@ -772,7 +772,15 @@ const RAIN_MESI=[0.55,0.50,0.42,0.38,0.22,0.08,0.04,0.10,0.28,0.52,0.62,0.60];
 const RAIN_SCALA=0.32;
 const RAIN_MIN=70, RAIN_VAR=180;      // durata di un rovescio, in secondi
 const RAIN_INERZIA=6.5;               // l'acqua arriva e se ne va piano, non a scatti
-const RAIN={ forza:0, target:0, orologio:0, prossima:0, override:null, dur:0, avviata:false };
+const RAIN={ forza:0, target:0, orologio:0, prossima:0, override:null, dur:0, avviata:false,
+             storm:false, stormOverride:false };   // v274: temporale (fulmini + tuoni)
+/* v274 — TEMPORALE (Giacomo, 29 set: «aggiungere i fulmini fra le modalita'
+   della pioggia, che scriva It's thundering / It's lightning con il tuono
+   ogni tanto»). Non e' un'altra stagione: e' una VARIANTE del rovescio
+   forte. Quando parte un acquazzone con forza >= STORM_FORZA, una volta su
+   STORM_P diventa temporale e resta tale fino alla fine di quel rovescio. */
+const STORM_FORZA=0.70, STORM_P=0.45;
+function stormRoll(){ return RAIN.target>=STORM_FORZA && Math.random()<STORM_P; }
 /* \u26a0\ufe0f IL PRIMO ISTANTE DELLA PARTITA (bug trovato da Giacomo il 10 set:
    \"ogni volta che apro il gioco sta sempre piovendo\").
 
@@ -803,10 +811,10 @@ function rainInit(){
     /* si entra sotto l'acqua: forza gia' a regime, altrimenti il rovescio
        \"si accenderebbe\" davanti agli occhi appena aperto il gioco. */
     RAIN.target=0.30+0.70*Math.pow(Math.random(),1.5);
-    RAIN.forza=RAIN.target;
+    RAIN.forza=RAIN.target; RAIN.storm=stormRoll();
     RAIN.prossima=RAIN.orologio+Math.random()*RAIN.dur;
   } else {
-    RAIN.target=0; RAIN.forza=0;
+    RAIN.target=0; RAIN.forza=0; RAIN.storm=false;
     RAIN.prossima=RAIN.orologio+Math.random()*RAIN.dur*(1-f)/f;
   }
   RAIN.avviata=true;
@@ -819,7 +827,7 @@ function rainSeason(){
   return Math.max(0,Math.min(0.95,(RAIN_MESI[m]||0.2)*RAIN_SCALA));
 }
 function rainGust(dt){
-  if(RAIN.override!==null){ RAIN.target=RAIN.override; RAIN.avviata=true; }
+  if(RAIN.override!==null){ RAIN.target=RAIN.override; RAIN.avviata=true; RAIN.storm=!!RAIN.stormOverride; }
   else {
     /* L'estrazione avviene al primo giro utile, non al caricamento del file:
        rainSeason() legge la data, e alla dichiarazione delle costanti non
@@ -831,13 +839,14 @@ function rainGust(dt){
         /* finito il rovescio: l'asciutto dura quanto serve perche' il
            rapporto dia la frazione stagionale. */
         const f=Math.max(0.005,rainSeason());
-        RAIN.target=0;
+        RAIN.target=0; RAIN.storm=false;
         RAIN.prossima=RAIN.orologio+RAIN.dur*(1-f)/f;
       } else {
         RAIN.dur=RAIN_MIN+Math.random()*RAIN_VAR;
         /* Intensita': i rovesci deboli sono piu' comuni dei diluvi, come
            il vento (stessa curva a potenza, stesso motivo). */
         RAIN.target=0.30+0.70*Math.pow(Math.random(),1.5);
+        RAIN.storm=stormRoll();
         RAIN.prossima=RAIN.orologio+RAIN.dur;
       }
     }
@@ -889,7 +898,8 @@ function rainStateEn(){
   if(f<0.75) return "It's raining.";
   return "It's pouring!";
 }
-const Rain={ raining:rainOn, force:rainHere, stateEn:rainStateEn, season:rainSeason };
+const Rain={ raining:rainOn, force:rainHere, stateEn:rainStateEn, season:rainSeason,
+             storm:()=>RAIN.storm && RAIN.forza>0.3 };
 
 function windGust(dt){
   if(!(dt>0)) return;
@@ -7966,8 +7976,11 @@ function buildProps(){
   // ---- CESTINI sui marciapiedi (spostati a z=±7.0 come gli idranti: liberi dal muro)
   [[-9.5,7.0],[10,7.0],[-9.6,-7.0],[25,-7.0],[43,7.0]].forEach(p=>bin(p[0],p[1]));
 
-  // ---- PALETTI a delimitare gli attraversamenti centrali
-  [-6.5,-3,3,6.5].forEach(x=>{ bollard(x,5.6); bollard(x,-5.6); });
+  // ---- (v274: TOLTI i paletti a z ±5.6 che delimitavano l'attraversamento
+  //      della Park Ave. L'attraversamento non c'e' piu' (v273), e fra la fila
+  //      a z -5.6 e il muro sud del cinema (z -7) restavano 1,4 m: col raggio
+  //      del giocatore non ci si passava — il «punto dove non ci si muove,
+  //      vicino al muro, all'ombra» segnalato da Giacomo il 29 set.)
 
   // (Pass NYC: rimossi i cespugli GLB — fitAndPlace li lasciava sospesi da
   //  terra e il look "da parco" stonava. bush() resta disponibile.)
@@ -26252,6 +26265,37 @@ const SFX=(function(){
     catch(e){ try{ rVol.gain.value=v; }catch(e2){} }
   }
 
+  /* TUONO (v274). Rumore bianco rallentato e chiuso in un passa-basso: il
+     brontolio. Vicino (dist piccola) c'e' anche lo SCHIOCCO iniziale, piu'
+     acuto e corto; lontano solo il rombo, piu' basso e piu' lungo. Qualche
+     «rimbalzo» di volume durante la coda: un tuono vero non cala liscio.
+     muffle<1 = sentito da dentro un edificio. */
+  function thunder(dist,muffle){
+    const c=ready(); if(!c) return;
+    const g0=lvl()*(muffle==null?1:muffle); if(g0<=0) return;
+    const t=c.currentTime, near=Math.max(0,1-dist), dur=3.2+2.4*dist;
+    const src=c.createBufferSource(); src.buffer=noise; src.loop=true;
+    src.playbackRate.value=0.22+0.12*near;
+    const lp=c.createBiquadFilter(); lp.type="lowpass"; lp.frequency.value=150+230*near; lp.Q.value=0.7;
+    const g=c.createGain(); const peak=(0.30+0.28*near)*g0;
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(peak,t+0.08+0.25*dist);
+    let tt=t+0.35+0.2*dist;
+    for(let k=0;k<3;k++){ const v=peak*(0.45+0.45*Math.random())*(1-k*0.22);
+      g.gain.exponentialRampToValueAtTime(Math.max(0.0002,v*0.45),tt); tt+=0.25+Math.random()*0.5;
+      g.gain.exponentialRampToValueAtTime(Math.max(0.0002,v),tt); tt+=0.15+Math.random()*0.3; }
+    const tEnd=Math.max(t+dur,tt+1.2);                 // la coda viene sempre DOPO l'ultimo rimbalzo
+    g.gain.exponentialRampToValueAtTime(0.0001,tEnd);
+    src.connect(lp); lp.connect(g); g.connect(master);
+    src.start(t, Math.random()*0.8); src.stop(tEnd+0.1);
+    if(near>0.35){ const cr=c.createBufferSource(); cr.buffer=noise;
+      const hp=c.createBiquadFilter(); hp.type="bandpass"; hp.frequency.value=1400; hp.Q.value=0.6;
+      const cg=c.createGain(); cg.gain.setValueAtTime(0.0001,t);
+      cg.gain.exponentialRampToValueAtTime(0.22*near*g0,t+0.01);
+      cg.gain.exponentialRampToValueAtTime(0.0001,t+0.35);
+      cr.connect(hp); hp.connect(cg); cg.connect(master); cr.start(t,Math.random()*0.5); cr.stop(t+0.4); }
+  }
+
   function tick(){
     if(dead) return null;
     const c=boot(); if(!c || c.state!=="running") return null;
@@ -26261,7 +26305,7 @@ const SFX=(function(){
 
   return { wake, step, walked, carHorn, carPass, setCarPass, correct, wrong, panOf,
            shout, voiceState,
-           gemChime, gemFit,
+           gemChime, gemFit, thunder,
            bell, bellHear, shutter, tick, waterLevel, fountLevel, clubLevel, cricketLevel, windLevel,
            rainLevel:rainAudioLevel,
            alive(){ boot(); return !dead; },
@@ -26289,18 +26333,21 @@ function sfxTick(){
 /* Il ciclo del tasto P. Stessa forma di gigForceCycle/showForceCycle: si
    gira fra gli stati e l'ultimo passo restituisce il comando all'orologio
    (qui: al calendario). */
+let _rainCycleI=-1;
 function rainForceCycle(){
-  const seq=[0.95,0.35,0,null];
-  let i=seq.indexOf(RAIN.override);
-  RAIN.override=seq[(i+1)%seq.length];
+  /* v274: prima voce = TEMPORALE (diluvio + fulmini), poi come prima */
+  const seq=[0.95,0.95,0.35,0,null], storm=[true,false,false,false,false];
+  _rainCycleI=(_rainCycleI+1)%seq.length;
+  RAIN.override=seq[_rainCycleI]; RAIN.stormOverride=storm[_rainCycleI]; RAIN.storm=RAIN.stormOverride;
   /* Tornando alla stagione reale si RIESTRAE lo stato invece di riprendere
      da dove il calendario era rimasto: se no, dopo aver forzato il diluvio,
      l'orologio interno riparte da un rovescio in corso e il docente vede
      piovere anche in agosto. */
   if(RAIN.override===null){ RAIN.avviata=false; RAIN.orologio=0; RAIN.prossima=0; }
-  const m=["It's pouring!","It's drizzling.","Asciutto",
+  const m=["Temporale: it's thundering and lightning!","It's pouring!","It's drizzling.","Asciutto",
            "Stagione reale ("+Math.round(rainSeason()*100)+"% del tempo)"];
-  toast("\u{1F327}\uFE0F "+m[seq.indexOf(RAIN.override)]);
+  toast((_rainCycleI===0?"\u26C8\uFE0F ":"\u{1F327}\uFE0F ")+m[_rainCycleI]);
+  if(_rainCycleI===0) STORM.next=1.2;          // il primo lampo subito, per chi collauda
   /* L'annuncio automatico non deve scattare per un cambio a comando: chi
      collauda sta gia' guardando, e due messaggi di fila sono rumore. */
   rainWasOn=(RAIN.override!==null && RAIN.override>0.06);
@@ -33067,8 +33114,8 @@ window.addEventListener("keydown",e=>{ if(__typingNow(e)) return;   // non rubar
      e' una preferenza del giocatore. */
   if(k==="n"||k==="g"||k==="c"||k==="b"||k==="f"||k==="p"){
     if(!Student.teacher) return;
-    /* P = PIOGGIA a comando (diluvio \u2192 pioggerella \u2192 asciutto \u2192 stagione
-       reale). Senza, per collaudare un acquazzone di novembre bisognerebbe
+    /* P = PIOGGIA a comando (temporale \u2192 diluvio \u2192 pioggerella \u2192 asciutto \u2192
+       stagione reale). Senza, per collaudare un acquazzone di novembre bisognerebbe
        aspettare novembre: la stagione e' proprio il punto della funzione, e
        proprio per questo non si puo' collaudare stando fermi. Docente come
        N/G/C: in mano a un alunno sarebbe un interruttore del meteo. */
@@ -34787,6 +34834,7 @@ function rainSlant(){
   return 5.5*f;
 }
 function rainTick(){
+  stormTick();                     // v274: PRIMA dei return qui sotto — il tuono si sente anche al coperto
   const f=rainHere();
   /* Niente pioggia = niente sistema. Come il vento: sotto soglia non esiste
      proprio, non e' "acceso a volume zero". */
@@ -34807,6 +34855,61 @@ function rainTick(){
     }
   }
   rainAnnounce(f);
+}
+/* v274 — FULMINI. Un lampo ogni 9-24 s quando c'e' temporale: flash dello
+   schermo (doppio, come i lampi veri), una saetta nel cielo per un attimo
+   e il tuono che arriva DOPO, tanto piu' tardi quanto piu' e' lontano (il
+   ritardo lampo-tuono e' la cosa che rende credibile tutto il resto).
+   Al coperto (case, negozi, terminal) niente lampo e niente scritta: il
+   tuono si sente, attutito. In inglese, ogni tanto, «It's lightning!» sul
+   lampo e «It's thundering!» sul tuono, alternati. */
+const STORM={ next:4, last:0, n:0, saidAt:0, bolts:null, flashEl:null };
+const STORM_SAY_GAP=25000;
+function stormFlash(){
+  let el=STORM.flashEl;
+  if(!el){ el=document.createElement("div");
+    el.style.cssText="position:fixed;inset:0;pointer-events:none;z-index:20;background:#eef4ff;opacity:0;transition:opacity .25s ease-out;";
+    document.body.appendChild(el); STORM.flashEl=el; }
+  const pulse=(o,at)=>setTimeout(()=>{ el.style.transition="none"; el.style.opacity=String(o);
+    requestAnimationFrame(()=>{ el.style.transition="opacity .28s ease-out"; el.style.opacity="0"; }); },at);
+  const day=Math.max(0,Math.min(1,(typeof sunHeightNow==="function"?sunHeightNow():0)+0.1));
+  pulse(0.55-0.25*day,0); pulse(0.38-0.18*day,140+Math.random()*120);
+}
+function stormBolt(){
+  if(!STORM.bolts){ STORM.bolts=[];
+    const m=new BABYLON.StandardMaterial("stormBoltM",scene); m.disableLighting=true;
+    m.emissiveColor=new BABYLON.Color3(0.92,0.95,1); m.diffuseColor=new BABYLON.Color3(0,0,0); m.alpha=0.95;
+    for(let k=0;k<3;k++){ const pts=[]; let x=0,z=0;
+      for(let i=0;i<=11;i++){ pts.push(new BABYLON.Vector3(x,78-i*7.2,z)); x+=(Math.random()-0.5)*9; z+=(Math.random()-0.5)*4; }
+      const b=BABYLON.MeshBuilder.CreateTube("stormBolt",{path:pts,radius:0.9,tessellation:5},scene);
+      b.material=m; b.isPickable=false; b.alwaysSelectAsActiveMesh=true; b.__dyn=true; b.setEnabled(false);
+      STORM.bolts.push(b); } }
+  const b=STORM.bolts[(Math.random()*STORM.bolts.length)|0];
+  /* davanti alla camera, lontano: in un arco di +-60 gradi, 110-170 m */
+  let dir=0; try{ dir=Math.atan2(camera.target.x-camera.position.x, camera.target.z-camera.position.z); }catch(e){}
+  const a=dir+(Math.random()-0.5)*2.1, d=110+Math.random()*60;
+  b.position.set(player.position.x+Math.sin(a)*d, 0, player.position.z+Math.cos(a)*d);
+  b.rotation.y=Math.random()*Math.PI*2;
+  b.setEnabled(true); setTimeout(()=>b.setEnabled(false),170);
+}
+function stormTick(){
+  if(typeof started==="undefined" || !started) return;
+  const dt=Math.min(0.25,(engine.getDeltaTime()||16)/1000);
+  if(!(RAIN.storm && RAIN.forza>0.3)){ STORM.n=0; STORM.next=Math.min(STORM.next,6); return; }
+  STORM.next-=dt; if(STORM.next>0) return;
+  STORM.next=9+Math.random()*15;
+  const outside=(rainHere()>0.3);
+  let inTown=true; try{ inTown=(area==="town"); }catch(e){}
+  const dist=Math.random();                                   // 0 = vicinissimo, 1 = lontano
+  const say=outside && (Date.now()-STORM.saidAt>STORM_SAY_GAP || STORM.n===0);
+  const which=STORM.n%2;                                      // 0: lightning, 1: thundering
+  if(outside){ try{ stormFlash(); }catch(e){} try{ stormBolt(); }catch(e){}
+    if(say && which===0){ STORM.saidAt=Date.now();
+      toast(STORM.n===0 ? "\u26C8\uFE0F There's a storm! It's lightning!" : "\u26A1 It's lightning!"); } }
+  setTimeout(()=>{ try{ SFX.thunder(dist, outside?1:(inTown?0.5:0.35)); }catch(e){}
+    if(say && which===1){ STORM.saidAt=Date.now(); try{ toast("\u26C8\uFE0F It's thundering!"); }catch(e){} } },
+    350+dist*2600);
+  STORM.n++;
 }
 /* \u26a0\ufe0f L'ANNUNCIO E' IN INGLESE, e ha il precedente della campana: quando
    suona, la citta' ti dice l'ora in inglese perche' "telling the time" e'
