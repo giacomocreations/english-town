@@ -48104,8 +48104,8 @@ function _botTube(meshes,style,hex){
   _botRest(sk); L.computeWorldMatrix(true);
   const W=L.getWorldMatrix(), TM=sk.getTransformMatrices(L);
   /* campioni: posizione di riposo nel mondo, pesi (tradotti sulle ossa di L), lato */
-  const S=[];
-  Ls.forEach(m=>{ const skm=m.skeleton; if(skm!==sk) _botRest(skm); m.computeWorldMatrix(true);
+  const S=[], SB=[];
+  Ls.forEach(m=>{ SB.push(S.length); const skm=m.skeleton; if(skm!==sk) _botRest(skm); m.computeWorldMatrix(true);
     const Wm=m.getWorldMatrix(), lp=m.getPositionData(true,false), mi=m.getVerticesData(VB.MatricesIndicesKind), mw=m.getVerticesData(VB.MatricesWeightsKind);
     const map=skm.bones.map(b=>sk.bones.findIndex(x=>x.name===b.name));
     for(let v=0;v<lp.length/3;v++){ let d=0,w=-1; for(let k=0;k<4;k++) if(mw[4*v+k]>w){ w=mw[4*v+k]; d=mi[4*v+k]; }
@@ -48129,6 +48129,15 @@ function _botTube(meshes,style,hex){
   /* il cavallo: la quota piu' alta in cui non c'e' piu' niente sul piano di mezzo */
   const mid=cen(S), onMid=y=>S.some(s=>Math.abs(s.p.y-y)<0.012 && Math.abs(V3.Dot(hz(s.p.subtract(mid)),D))<0.014);
   let yCr=yTop-0.1; for(let y=yTop-0.03;y>yBot;y-=0.01){ if(!onMid(y)){ yCr=y; break; } }
+  /* ⚠️ piu' affidabile: il cavallo e' il punto PIU' BASSO in cui la superficie
+     attraversa il piano fra le due gambe. Il controllo sopra, a maglie larghe,
+     scattava gia' in vita (nessun vertice esattamente sul piano) e il bacino
+     restava una fascetta. */
+  { let yc=1e9; Ls.forEach((m,mIdx)=>{ const I=m.getIndices(), b0=SB[mIdx]; if(!I) return;
+      for(let t=0;t<I.length;t+=3) for(let e=0;e<3;e++){ const A=S[b0+I[t+e]], B=S[b0+I[t+(e+1)%3]]; if(!A||!B) continue;
+        const fa=V3.Dot(hz(A.p.subtract(mid)),D), fb=V3.Dot(hz(B.p.subtract(mid)),D); if((fa>0)===(fb>0)) continue;
+        const u=fa/(fa-fb), y=A.p.y+(B.p.y-A.p.y)*u; if(y<yc) yc=y; } });
+    if(yc<yTop-0.05 && yc>yBot+0.2) yCr=yc; }
   const NA=24, step=0.028, margin=0.011;
   /* un anello: centro e raggio per spicchio, dai campioni in fascia */
   const ring=(list,y,c0)=>{ const band=list.filter(s=>Math.abs(s.p.y-y)<0.03); if(!band.length) return null;
@@ -48138,63 +48147,77 @@ function _botTube(meshes,style,hex){
     let cl=rr.map((r,i)=>{ let m=0; for(let k=-3;k<=3;k++) m=Math.max(m,rr[(i+k+NA)%NA]); return m; });
     for(let k=0;k<2;k++) cl=cl.map((r,i)=>(cl[(i+NA-1)%NA]+2*r+cl[(i+1)%NA])/4);
     return { c:new V3(c.x,y,c.z), r:cl.map(r=>r+margin) }; };
-  /* il BACINO si misura (li' la forma vera c'e': fianchi e sedere), lisciato
-     in verticale solo verso l'ESTERNO — ⚠️ la prima versione mediava anche
-     verso l'interno e il sedere spariva (Giacomo: «il sedere quasi scompare») */
-  const pelvis=[]; for(let y=yTop-0.004;y>yCr-0.05;y-=step){ const g=ring(S,y); if(g) pelvis.push(g); }
-  for(let k=0;k<3;k++){ const Rr=pelvis.map(g=>g.r.slice());
-    for(let j=1;j<pelvis.length-1;j++) pelvis[j].r=Rr[j].map((r,i)=>Math.max(r,(Rr[j-1][i]+2*r+Rr[j+1][i])/4)); }
-  /* in vita stringe sul corpo: sulla ragazza (maglia corta) il bordo alto si
-     vedeva sporgere come un anello */
-  pelvis.forEach(g=>{ const k=Math.max(0,Math.min(1,(g.c.y-(yTop-0.06))/0.05)); if(k>0) g.r=g.r.map(r=>r-0.008*k); });
-  /* le GAMBE invece NON copiano la gamba: sul ragazzo sopra il ginocchio c'e'
-     il pantaloncino (largo) e sotto il polpaccio nudo (stretto), e copiandoli
-     il pantalone veniva gonfio sopra e aderente sotto. Seguono le OSSA
-     (anca -> ginocchio -> caviglia) e la larghezza viene da un profilo per
-     stile, in multipli del raggio vero appena sotto il ginocchio.
-       t = 0 cavallo, 1 ginocchio, 2 caviglia */
-  const PROF={ plain:[1.8,1.34,1.26], smart:[1.66,1.22,1.12], joggers:[1.92,1.4,1.28], cargo:[2.08,1.6,1.5] }[style]||[1.8,1.34,1.26];
+  /* anelli della vita: servono solo per cintura ed elastico */
+  const pelvis=[]; for(let y=yTop-0.004;y>yTop-0.09;y-=step){ const g=ring(S,y); if(g){ g.r=g.r.map(r=>r-0.007); pelvis.push(g); } }
+  /* ---- IL BACINO E' IL GUSCIO DELLA FORMA VERA (v283) ------------------
+     Giacomo: «non stai seguendo la forma del sedere e del davanti, che e'
+     come tagliato». Gli anelli per fasce non ci riescono: il sedere e il
+     cavallo non sono cerchi. Qui si prende la superficie vera delle gambe
+     del modello (pantaloncino del ragazzo, pantalone della ragazza), la si
+     gonfia di ~1 cm lungo le normali saldate e la si RITAGLIA a meta'
+     coscia (yCut): fianchi, sedere e davanti sono quelli del corpo. Ogni
+     vertice tiene i SUOI pesi. Sotto il taglio proseguono le gambe. */
+  const yCut=yCr-0.07, TH=(style==="smart"?0.007:(style==="cargo"?0.012:0.0095));
+  const shell=[];
+  { const q=0.0006, key=p=>Math.round(p.x/q)+","+Math.round(p.y/q)+","+Math.round(p.z/q), NS=new Map(), tris=[];
+    Ls.forEach((m,mIdx)=>{ const I=m.getIndices(), b0=SB[mIdx]; if(!I) return;
+      for(let t=0;t<I.length;t+=3){ const T=[S[b0+I[t]],S[b0+I[t+1]],S[b0+I[t+2]]]; if(T[0]&&T[1]&&T[2]) tris.push(T); } });
+    tris.forEach(T=>{ const n=V3.Cross(T[1].p.subtract(T[0].p),T[2].p.subtract(T[0].p));
+      T.forEach(s=>{ const k=key(s.p), a=NS.get(k); if(a) a.addInPlace(n); else NS.set(k,n.clone()); }); });
+    /* verso: le normali devono puntare fuori (dal centro del bacino) */
+    let acc=0; tris.forEach(T=>T.forEach(s=>{ acc+=V3.Dot(NS.get(key(s.p)),hz(s.p.subtract(mid))); })); const sg=acc>=0?1:-1;
+    const off=s=>{ const n=NS.get(key(s.p)).clone(); n.normalize(); return { p:s.p.add(n.scale(sg*TH)), mi:s.mi, mw:s.mw, side:s.side }; };
+    tris.forEach(T=>{ if(T.every(s=>s.p.y<yCut)) return;
+      const R3=T.map(off), f=R3.map(r=>r.p.y-yCut);
+      if(f.every(x=>x>=0)){ shell.push(R3); return; }
+      const poly=[];
+      for(let k=0;k<3;k++){ const A=R3[k], B=R3[(k+1)%3], fa=f[k], fb=f[(k+1)%3];
+        if(fa>=0) poly.push(A);
+        if((fa>=0)!==(fb>=0)){ const u=fa/(fa-fb), nr=u<0.5?A:B; poly.push({ p:V3.Lerp(A.p,B.p,u), mi:nr.mi, mw:nr.mw, side:nr.side }); } }
+      for(let k=1;k+1<poly.length;k++) shell.push([poly[0],poly[k],poly[k+1]]); }); }
+  /* ---- LE GAMBE, sotto il taglio -----------------------------------------
+     ⚠️ i centri sono i baricentri VERI delle gambe (lisciati), non le ossa:
+     sulla ragazza le ossa non combaciano con la gamba e una gamba veniva
+     sottile e l'altra grossa (Giacomo). E la misura al ginocchio e' la MEDIA
+     delle due: le gambe escono sempre uguali.
+     In alto la gamba parte ESATTAMENTE dalla sezione del guscio al taglio e
+     sfuma verso il profilo dello stile (in multipli del raggio al ginocchio).
+       t = 0 taglio, 1 ginocchio, 2 caviglia */
+  const PROF={ plain:[0,1.34,1.26], smart:[0,1.2,1.1], joggers:[0,1.4,1.28], cargo:[0,1.6,1.5] }[style]||[0,1.34,1.26];
   const dirAt0=a=>Fw.scale(Math.cos(a)).add(D.scale(Math.sin(a)));
   const bw=n=>{ const b=sk.bones.find(x=>x.name===n), tn=b&&b.getTransformNode&&b.getTransformNode(); if(!tn) return null; tn.computeWorldMatrix(true); return tn.getAbsolutePosition().clone(); };
-  const legs=[1,-1].map(sd=>{ const s=(sd>0?".L":".R"), list=S.filter(x=>x.side===sd);
-    const Hj=bw("UpperLeg"+s)||cen(list.filter(x=>x.p.y>yCr-0.1)), Kj=bw("LowerLeg"+s), Aj=bw("Foot"+s);
-    const lc=cen(list), K=Kj||new V3(lc.x,(yCr+yBot)/2,lc.z), A=Aj||new V3(lc.x,yBot,lc.z);
-    /* l'asse della gamba alla quota y, spezzato al ginocchio */
-    const axis=y=>{ const P=(y>=K.y)?V3.Lerp(K,Hj,Math.min(1,(y-K.y)/Math.max(1e-3,Hj.y-K.y))):V3.Lerp(K,A,Math.min(1,(K.y-y)/Math.max(1e-3,K.y-A.y))); return new V3(P.x,y,P.z); };
-    const meanR=y=>{ const c=axis(y), b=list.filter(x=>Math.abs(x.p.y-y)<0.02); if(!b.length) return 0; let s2=0; b.forEach(x=>s2+=hz(x.p.subtract(c)).length()); return s2/b.length; };
-    const rK=Math.max(0.035,Math.min(0.07,meanR(K.y-0.08)||0.05)), rA=Math.max(0.025,Math.min(0.06,meanR(yBot+0.03)||0.04));
-    const R=[], yS=yCr+0.03, yE=yBot+0.004;
-    for(let y=yS;;y-=step){ if(y<yE) y=yE;
-      const t=(y>=K.y)?Math.max(0,(yS-y)/Math.max(0.05,yS-K.y)):1+Math.min(1,(K.y-y)/Math.max(0.05,K.y-yE));
-      let r0=(t<=1)?PROF[0]+(PROF[1]-PROF[0])*t:PROF[1]+(PROF[2]-PROF[1])*(t-1); r0*=rK;
-      if(style==="joggers"){ const dz=y-yE; if(dz<0.06) r0=rA*1.3; else if(dz<0.1) r0*=1.06; }       // polsino e arricciatura sopra
-      const rr=[]; for(let i=0;i<NA;i++){ const a=i/NA*2*Math.PI, c=Math.cos(a);
-        let r=r0*(1+0.05*c*c);                                                    // un filo piu' profondo che largo
-        if(t<0.5 && c<0) r*=1+0.24*(1-t/0.5)*(-c);                                // il sedere continua nella coscia
-        if(t<0.25 && c>0) r*=1+0.06*(1-t/0.25)*c;                                 // e il davanti del cavallo
-        rr.push(r); }
-      R.push({ c:axis(y), r:rr, t });
-      if(y<=yE) break; }
-    return { sd, list, rings:R, rA }; });
-  /* ⚠️ il fondo del bacino si RACCORDA alle gambe: misurato sul pantaloncino
-     (o sui fianchi della ragazza) era piu' largo delle cosce e faceva uno
-     scalino, come un pannolone (visto a schermo). Sotto la quota di raccordo
-     il raggio in ogni direzione non supera l'ingombro delle due gambe. */
-  const yJ=yCr+0.07;
-  /* e le cosce, in alto, si allargano fino ai fianchi (dal lato esterno):
-     sulla ragazza i fianchi sono larghi e il bacino sporgeva come una balza */
-  const pRef=pelvis.filter(g=>g.c.y>yJ).pop();
-  if(pRef) legs.forEach(l=>{ const outS=(l.sd>0?D:D.scale(-1));
-    l.rings.forEach(g=>{ if(g.t>=0.55) return; const f=1-g.t/0.55, ff=f*f*(3-2*f);
-      g.r=g.r.map((r,i)=>{ const a=i/NA*2*Math.PI, d=dirAt0(a), side=V3.Dot(d,outS); if(side<=0) return r;
-        const pa=Math.atan2(V3.Dot(d,D),V3.Dot(d,Fw)), j=((Math.round(pa/(2*Math.PI)*NA))%NA+NA)%NA;
-        const need=V3.Dot(hz(pRef.c.subtract(g.c)),d)+pRef.r[j]-0.004;
-        return Math.max(r, r+(need-r)*ff*Math.min(1,side*1.4)); }); }); });
-  pelvis.forEach(g=>{ if(g.c.y>yJ) return; const k=Math.min(1,(yJ-g.c.y)/0.1);
-    g.r=g.r.map((r,i)=>{ const a=i/NA*2*Math.PI, d=dirAt0(a); let h=0;
-      legs.forEach(l=>{ const lg=l.rings[0]; if(!lg) return; const off=V3.Dot(hz(lg.c.subtract(g.c)),d), j=((Math.round(Math.atan2(V3.Dot(d,D),V3.Dot(d,Fw))/(2*Math.PI)*NA))%NA+NA)%NA;
-        h=Math.max(h,off+lg.r[j]); });
-      const cap=h+0.012; return r*(1-k)+Math.min(r,cap)*k; }); });
+  const yS=yCut+0.004, yE=yBot+0.004;
+  const kL=bw("LowerLeg.L"), kR=bw("LowerLeg.R");
+  let kneeY=(kL&&kR)?(kL.y+kR.y)/2:(yCut+yBot)/2; if(!(kneeY<yCut-0.1 && kneeY>yE+0.1)) kneeY=yE+(yCut-yE)*0.52;
+  const ys=[]; for(let y=yS;;y-=step){ if(y<yE) y=yE; ys.push(y); if(y<=yE) break; }
+  const legs=[1,-1].map(sd=>{ const list=S.filter(x=>x.side===sd), sp=[];
+    shell.forEach(T=>T.forEach(r=>{ if(r.side===sd) sp.push(r); }));
+    let C=ys.map(y=>{ const b=list.filter(x=>Math.abs(x.p.y-y)<0.03), c=b.length?cen(b):cen(list); return new V3(c.x,y,c.z); });
+    for(let k=0;k<4;k++){ const C0=C.map(c=>c.clone()); for(let j=1;j<C.length-1;j++){ C[j].x=(C0[j-1].x+2*C0[j].x+C0[j+1].x)/4; C[j].z=(C0[j-1].z+2*C0[j].z+C0[j+1].z)/4; } }
+    /* ⚠️ la sezione del guscio AL TAGLIO, fascia stretta e senza chiusura
+       larga: con l'anello «largo» la gamba partiva piu' grossa del bacino e
+       al taglio si vedeva uno scalino (visto di giorno) */
+    const band=sp.filter(r=>r.p.y<yCut+0.012), cT=band.length?cen(band):C[0];
+    C[0]=new V3(cT.x,C[0].y,cT.z);
+    for(let j=1;j<C.length;j++){ const k=Math.max(0,1-j/4); C[j].x=C[j].x*(1-k)+cT.x*k; C[j].z=C[j].z*(1-k)+cT.z*k; }
+    let top=null; if(band.length){ const rr=new Array(NA).fill(0);
+      band.forEach(r=>{ const d=hz(r.p.subtract(cT)), a=Math.atan2(V3.Dot(d,D),V3.Dot(d,Fw)), i=((Math.round(a/(2*Math.PI)*NA))%NA+NA)%NA; rr[i]=Math.max(rr[i],d.length()); });
+      let cl=rr.map((r,i)=>r>0?r:Math.max(rr[(i+NA-1)%NA],rr[(i+1)%NA],rr[(i+NA-2)%NA],rr[(i+2)%NA]));
+      for(let k=0;k<2;k++) cl=cl.map((r,i)=>(cl[(i+NA-1)%NA]+2*r+cl[(i+1)%NA])/4);
+      top={ r:cl.map(r=>r+margin) }; }
+    const cAt=y=>{ let best=C[0], bd=9; C.forEach(c=>{ const d=Math.abs(c.y-y); if(d<bd){ bd=d; best=c; } }); return best; };
+    const meanR=y=>{ const c=cAt(y), b=list.filter(x=>Math.abs(x.p.y-y)<0.02); if(!b.length) return 0; let s2=0; b.forEach(x=>s2+=hz(x.p.subtract(c)).length()); return s2/b.length; };
+    return { sd, list, C, top, rK:meanR(kneeY-0.08), rA:meanR(yE+0.03) }; });
+  const rK=Math.max(0.035,Math.min(0.07,(legs[0].rK+legs[1].rK)/2||0.05)), rA=Math.max(0.025,Math.min(0.06,(legs[0].rA+legs[1].rA)/2||0.04));
+  legs.forEach(l=>{ l.rA=rA;
+    l.rings=ys.map((y,j)=>{ const t=(y>=kneeY)?Math.max(0,Math.min(1,(yS-y)/Math.max(0.05,yS-kneeY))):1+Math.min(1,(kneeY-y)/Math.max(0.05,kneeY-yE));
+      let rP=(t<=1?PROF[1]:PROF[1]+(PROF[2]-PROF[1])*(t-1))*rK;
+      if(style==="joggers"){ const dz=y-yE; if(dz<0.06) rP=rA*1.3; else if(dz<0.1) rP*=1.06; }       // polsino e arricciatura sopra
+      const s=(t<1)?t*t*(3-2*t):1, rr=[];
+      for(let i=0;i<NA;i++){ const a=i/NA*2*Math.PI, c=Math.cos(a), shape=rP*(1+0.05*c*c);
+        const rt=l.top?Math.max(rP*0.8,l.top.r[i]-margin-0.002):shape;
+        rr.push(rt*(1-s)+shape*s); }
+      return { c:l.C[j], r:rr, t }; }); });
   /* dal mondo allo spazio della mesh, coi pesi del campione piu' vicino */
   const arr=new Float32Array(16);
   const skin=(pts,pool)=>{ const V=[], MI=[], MW=[];
@@ -48220,8 +48243,41 @@ function _botTube(meshes,style,hex){
     for(let j=0;j<rings.length-1;j++) for(let i=0;i<NA;i++){ const a=j*NA+i, b=j*NA+(i+1)%NA, c=a+NA, d=b+NA; T.push([a,b,d],[a,d,c]); }
     return { P, T }; };
   const main=_coatMat({ hex, metal:false },style==="smart"?0.12:0.05);
-  const pv=tube(pelvis); build(pv.P,pv.T,S,main);
-  legs.forEach(l=>{ const t=tube(l.rings); build(t.P,t.T,l.list,main); });
+  const SHB=[];
+  /* il guscio del bacino: ogni vertice coi SUOI pesi, saldati per posizione (normali morbide) */
+  { const V=[], MI=[], MW=[], I=[], idx=new Map(), q=0.0004;
+    shell.forEach(T=>T.forEach(r=>{ const k=Math.round(r.p.x/q)+","+Math.round(r.p.y/q)+","+Math.round(r.p.z/q);
+      let n=idx.get(k);
+      if(n===undefined){ n=V.length/3; idx.set(k,n);
+        arr.fill(0); for(let kk=0;kk<4;kk++){ const w=r.mw[kk]; if(!w) continue; for(let qq=0;qq<16;qq++) arr[qq]+=TM[r.mi[kk]*16+qq]*w; }
+        const l=V3.TransformCoordinates(r.p,BABYLON.Matrix.FromArray(arr).multiply(W).invert());
+        V.push(l.x,l.y,l.z); MI.push(r.mi[0],r.mi[1],r.mi[2],r.mi[3]); MW.push(r.mw[0],r.mw[1],r.mw[2],r.mw[3]); }
+      I.push(n); }));
+    if(I.length){ const N=[]; BABYLON.VertexData.ComputeNormals(V,I,N);
+      /* il bordo del taglio (spazio della mesh): le gambe ci si cuciono sopra */
+      idx.forEach((n,k)=>{ const y=Number(k.split(",")[1])*q; if(Math.abs(y-yCut)<0.003) SHB.push({ x:V[3*n], y:V[3*n+1], z:V[3*n+2], nx:N[3*n], ny:N[3*n+1], nz:N[3*n+2] }); });
+      const vd=new BABYLON.VertexData(); vd.positions=V; vd.indices=I; vd.normals=N;
+      const m=new BABYLON.Mesh("botTube",scene); vd.applyToMesh(m,false);
+      m.setVerticesData(VB.MatricesIndicesKind,MI,false,4); m.setVerticesData(VB.MatricesWeightsKind,MW,false,4);
+      m.parent=L.parent; m.position.copyFrom(L.position); m.rotation.copyFrom(L.rotation);
+      if(L.rotationQuaternion) m.rotationQuaternion=L.rotationQuaternion.clone(); m.scaling.copyFrom(L.scaling);
+      m.skeleton=sk; m.numBoneInfluencers=4; m.material=main; m.alwaysSelectAsActiveMesh=true; m.isPickable=false;
+      m.__npcCast=!!L.__npcCast; m.__noTint=true; out.push(m); } }
+  /* ⚠️ la CUCITURA: il primo anello di ogni gamba prende la NORMALE del bordo
+     del guscio li' vicino, cosi' l'ombreggiatura continua. Senza, a meta'
+     coscia si vedeva una riga (visto di giorno). ⚠️ Le POSIZIONI no: agganciate
+     al bordo aprivano una fessura chiara (provato). */
+  legs.forEach(l=>{ const t=tube(l.rings), m=build(t.P,t.T,l.list,main);
+    if(!SHB.length) return;
+    const P=m.getVerticesData(VB.PositionKind), N=m.getVerticesData(VB.NormalKind);
+    for(let i=0;i<NA;i++){ let b=null, bd=1e30; SHB.forEach(h=>{ const d=(h.x-P[3*i])**2+(h.y-P[3*i+1])**2+(h.z-P[3*i+2])**2; if(d<bd){ bd=d; b=h; } });
+      if(!b) continue;
+      /* ⚠️ col VERSO della gamba: le due mesh hanno le facce girate in modo
+         diverso (il materiale e' a due facce e compensa), e copiando la normale
+         cosi' com'e' l'anello veniva illuminato al contrario — una riga chiara */
+      const sgn=(N[3*i]*b.nx+N[3*i+1]*b.ny+N[3*i+2]*b.nz)<0?-1:1;
+      N[3*i]=sgn*b.nx; N[3*i+1]=sgn*b.ny; N[3*i+2]=sgn*b.nz; }
+    m.setVerticesData(VB.NormalKind,N,false); });
   /* un filo lungo una generatrice (a = angolo, 0 davanti) */
   const line=(rings,a,dr,rad,pool,mat)=>{ const pts=rings.map(g=>{ const i=Math.round(a/(2*Math.PI)*NA); return at(g,((i%NA)+NA)%NA,dr); });
     if(pts.length<2) return; const NS=5, P=[], T=[];
@@ -48264,7 +48320,7 @@ function _botTube(meshes,style,hex){
   if(style==="cargo"){
     const pk=lighter(1.2), fl=_coatMat({ hex:_hexMul(hex,0.7), metal:false },0.05);
     legs.forEach(l=>{ const out1=(l.sd>0?D:D.scale(-1)), a=(l.sd>0?1:-1)*(Math.PI/2-0.55);  // tasca davanti-lato, si vede da davanti
-      const g=ringAt(l,0.5), i=((Math.round(a/(2*Math.PI)*NA))%NA+NA)%NA, o=at(g,i,0.014), n=dirAt(a*1), sdv=V3.Cross(new V3(0,1,0),n).normalize();
+      const g=ringAt(l,0.3), i=((Math.round(a/(2*Math.PI)*NA))%NA+NA)%NA, o=at(g,i,0.014), n=dirAt(a*1), sdv=V3.Cross(new V3(0,1,0),n).normalize();
       box(o,sdv,new V3(0,1,0),n,0.05,0.062,0.013,l.list,pk);
       box(o.add(new V3(0,0.05,0)).add(n.scale(0.015)),sdv,new V3(0,1,0),n,0.054,0.016,0.004,l.list,fl);           // patta
       const gk=ringAt(l,1.0), ok=at(gk,0,0.006);                                                              // toppa sul ginocchio
