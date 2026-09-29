@@ -7548,15 +7548,48 @@ function pauseAtNightBench(){
 function buildMayor(){
   if(MAYOR) return;
   const sp=mayorSpot();
+  /* v276 (Giacomo, 29 set: «il mayor e' in felpa e pantaloncini, si puo'
+     cambiare con un vestito piu' elegante?»). Era il rig del giocatore
+     (Hoodie_Character) tinto: felpa col cappuccio e pantaloncini chiari.
+     Man_in_Suit NO: e' riservato all'Architetto (decisione del 22 ago, la
+     rivelazione finale regge solo se e' l'unica giacca in citta'). Quindi
+     Man_B — maniche lunghe e pantaloni lunghi — tinto blu notte e
+     antracite, piu' colletto bianco, cravatta bordeaux e la CATENA D'ORO da
+     sindaco (quella dei mayor inglesi): si riconosce da lontano ed e' sua. */
   MAYOR=spawnNPC({ id:"mayor", name:"Mr. Bianchi", sub:"The Mayor", area:"town",
-    model:"avatar", height:1.80, snap:false, radius:3.0,
-    tint:{ Purple:"#2b3a5c", LightBlue:"#e9e2d2", Hair:"#6a6a6a" },   // completo scuro, camicia chiara
+    model:"npcMan2", height:1.80, snap:false, radius:3.0,
+    tint:{ Shirt:"#23324f", Pants:"#262a33", Hair:"#7a7a7a" },
     x:sp.x, z:sp.z, face:sp.face,
     prompt:()=>Card.has()?'Press <b>E</b> to talk to the <b>Mayor</b>'
                          :'Press <b>E</b>: the <b>Mayor</b> has something for you',
     interact:()=>talkToMayor(MAYOR) }); regTownPop(MAYOR);
   if(!MAYOR) return;
   MAYOR.carrier.position.y=_pedGroundY(sp.x,sp.z);
+  try{ mayorDress(MAYOR); }catch(e){ console.warn("mayorDress:",e); }
+}
+/* colletto, cravatta e catena d'oro: costruiti davanti al petto (fronte +z
+   del rig, 5,5 cm dalla superficie) e poi appesi all'osso Torso, cosi'
+   seguono il respiro dell'Idle e il giro verso il giocatore. */
+function mayorDress(n){
+  const FZ=0.055, g=new BABYLON.TransformNode("mayorAcc",scene); g.parent=n.carrier;
+  const gold=hm7Mat("#d4a93a",0.85,90,"#3a2a08"), white=hm7Mat("#f2f1ec",0.1,20), tie=hm7Mat("#7a1f2b",0.35,40);
+  const b=(w,h,d,m,x,y,z)=>{ const q=BABYLON.MeshBuilder.CreateBox("mAcc",{width:w,height:h,depth:d},scene);
+    q.material=m; q.position.set(x,y,z); q.parent=g; return q; };
+  b(0.06,0.12,0.012,white,-0.03,1.41,FZ).rotation.z=0.45;              // colletto a V
+  b(0.06,0.12,0.012,white, 0.03,1.41,FZ).rotation.z=-0.45;
+  b(0.045,0.04,0.02,tie,0,1.42,FZ+0.006);                              // nodo
+  b(0.05,0.26,0.014,tie,0,1.27,FZ+0.004).rotation.x=-0.05;             // cravatta
+  const pts=[]; for(let i=0;i<=16;i++){ const a=Math.PI*(i/16);
+    pts.push(new BABYLON.Vector3(-Math.cos(a)*0.105, 1.45-Math.sin(a)*0.13, FZ*(0.1+0.95*Math.sin(a))+0.008)); }
+  const ch=BABYLON.MeshBuilder.CreateTube("mChain",{path:pts,radius:0.009,tessellation:6},scene); ch.material=gold; ch.parent=g;
+  const md=BABYLON.MeshBuilder.CreateCylinder("mMed",{diameter:0.07,height:0.012,tessellation:18},scene);
+  md.material=gold; md.rotation.x=Math.PI/2; md.position.set(0,1.305,FZ+0.018); md.parent=g;
+  etMergeByMat(g);
+  g.getChildMeshes().forEach(m=>{ m.isPickable=false; m.alwaysSelectAsActiveMesh=true; });
+  const sk=(n.meshes.find(m=>m.skeleton)||{}).skeleton;
+  const bone=sk&&sk.bones.find(x=>x.name==="Torso"), tn=bone&&bone.getTransformNode&&bone.getTransformNode();
+  if(tn){ n.carrier.computeWorldMatrix(true); tn.computeWorldMatrix(true); g.computeWorldMatrix(true); g.setParent(tn); }
+  return g;
 }
 function talkToMayor(npc){
   npc=npc||MAYOR; if(!npc) return;
