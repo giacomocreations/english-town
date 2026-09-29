@@ -44927,14 +44927,26 @@ const UNIT_ER={ id:"u3_5", area:"hospital", areaName:"the City Hospital",
   onEnter:()=>{ setTimeout(buildHospitalNPCs,0); setTimeout(buildERPatients,0); },
   steps:[
   { id:"lex",   strand:"lessico",    type:"medicineRound",
+    /* v272 (Giacomo, 29 set: «non capisco cosa intendi per al carrello»): il
+       rimedio non si PRENDE al carrello, te lo mette in mano il gioco e la
+       voce ne dice il nome; il carrello serve solo a riascoltarlo. */
     intro:"\u00c8 il <b>turno di notte</b>, la sera della tempesta. In sala d'attesa ci sono otto "
-         +"persone. Al carrello senti quale <b>rimedio</b> hai in mano \ud83d\udd0a; poi <b>parla con i "
-         +"pazienti</b>: ognuno ti dice in inglese che cosa gli \u00e8 successo. Dai il rimedio a chi ne ha bisogno.",
+         +"pazienti. Hai in mano <b>un rimedio alla volta</b>: una voce ti dice quale \ud83d\udd0a "
+         +"(per riascoltarlo premi \ud83d\udd0a in alto, oppure <b>E</b> al carrello SUPPLIES). "
+         +"<b>Parla con i pazienti</b>: ognuno ti dice in inglese che cosa gli \u00e8 successo. "
+         +"Dai il rimedio <b>solo a chi ne ha bisogno</b>: se sbagli persona te lo dice lui. "
+         +"Poi ti arriva il rimedio successivo.",
     introObjEn:"Take the right remedy to each patient.", introObj:"Porta a ogni paziente il rimedio giusto." },
   { id:"gram",  strand:"grammatica", type:"dischargeDesk",
-    intro:"I pazienti curati escono e ti chiedono che cosa fare a casa. Componi a tessere "
-         +"<b>un consiglio</b> e <b>un divieto</b> per ciascuno. Attento: un consiglio sbagliato "
-         +"non prende una \u2717 \u2014 quel paziente <b>torna in corridoio</b> pi\u00f9 tardi, peggiorato.",
+    /* v272 (Giacomo, 29 set: «a chiunque parli puoi dare il consiglio»): i tre
+       da dimettere stavano in mezzo agli altri cinque, senza nessun segno,
+       e l'E prendeva il piu' vicino dei tre. Ora aspettano DAVANTI
+       ALL'ACCETTAZIONE col cartello GOING HOME, e gli altri dicono di no. */
+    intro:"Tre pazienti sono guariti e vanno a casa: ti aspettano <b>davanti all'accettazione</b>, "
+         +"col cartello <b>\u{1F3E0} GOING HOME</b>. Parla con ognuno e componi a tessere "
+         +"<b>un consiglio</b> (should) e <b>un divieto</b> (shouldn't). Attento a che cosa consigli: "
+         +"se il consiglio gli fa male non prendi una \u2717, ma il paziente <b>torna subito peggiorato</b> "
+         +"e devi rifarlo.",
     introObjEn:"Give each patient a should and a shouldn't.", introObj:"Dai a ogni paziente un should e uno shouldn't." },
   { id:"func",  strand:"funzioni",   type:"nightLine",
     intro:"Cuffie al <b>centralino notturno</b>: chiamate non urgenti, gente che non riesce a "
@@ -45090,6 +45102,28 @@ function buildHospitalNPCs(){
   guiLabel(anchorMesh(I.root, C.x-6.60, 2.62, C.z-2.60), "\u260E\uFE0F NIGHT LINE",  null, true, UNIT_ER.area);
   guiLabel(anchorMesh(I.root, C.x-5.40, 2.62, C.z+1.60), "\u{1F48A} SUPPLIES",       null, true, UNIT_ER.area);
   guiLabel(anchorMesh(I.root, C.x+6.30, 2.62, C.z-10.20), "\u{1F5C4}\uFE0F ARCHIVE",  null, true, UNIT_ER.area);
+  /* v272 (Giacomo, 29 set: «per alcuni kit e' difficile capire di che si
+     tratta, forse ci vuole un'etichetta»): ogni kit ha il suo cartello. Il
+     listening resta: dalla radio si deve capire CHE COSA e' successo e
+     abbinarlo alla categoria scritta. Le categorie coprono anche il final
+     (petto -> FIRST AID, tosse -> EYES & THROAT). */
+  AR_KITS.forEach(function(K){ const T=ER_KIT_LABEL[K.kind]; if(!T) return;
+    guiLabel(anchorMesh(I.root, C.x+K.x, 1.95, C.z+K.z), T[0], T[1], true, UNIT_ER.area); });
+}
+const ER_KIT_LABEL={
+  bleed:["\u2795 FIRST AID","cuts \u00b7 bleeding \u00b7 emergencies"],
+  burn: ["\u2744\uFE0F BURNS","cold packs"],
+  leg:  ["\u{1F9B5} LEGS & ANKLES","crutches \u00b7 splints"],
+  eye:  ["\u{1F441}\uFE0F EYES & THROAT","drops \u00b7 syrup"] };
+/* il kit giusto «risponde»: un saltello verde, oltre al suono e al toast */
+function erKitCheer(kind){
+  const node=ER_KIT_NODE[kind]; if(!node) return;
+  try{ SFX.correct(); }catch(e){}
+  const s0=node.scaling.clone(); let t=0;
+  const ob=scene.onBeforeRenderObservable.add(function(){
+    t+=engine.getDeltaTime()/1000; const k=1+0.14*Math.sin(Math.min(1,t/0.6)*Math.PI);
+    node.scaling.set(s0.x*k,s0.y*k,s0.z*k);
+    if(t>=0.6){ node.scaling.copyFrom(s0); scene.onBeforeRenderObservable.remove(ob); } });
 }
 
 function erStepLine(){
@@ -45425,7 +45459,7 @@ function erAsk(P,npc){
     text:open[(P.k.length+mr.idx)%open.length]+P.en,
     italian:P.it,
     choices:[
-      { label:"\u{1F48A} Give "+(mr.revealed?T.say:"the remedy"), act:()=>erGive(P) },
+      { label:"\u{1F48A} Give "+(mr.revealed?T.say:"what I'm carrying"), act:()=>erGive(P) },
       { label:"\u{1F50A} What have I got?", act:erSayRemedy },
       { label:"\u{1F44B} Sorry, it's not for you", act:()=>{} } ] });
 }
@@ -45438,6 +45472,7 @@ function erGive(P){
   const T=mr.list[mr.idx]; if(!T) return;
   if(T.k===P.k){
     mr.served[P.k]=true; mr.wrong=0; mr.idx++;
+    try{ SFX.correct(); }catch(e){}
     toast("\u2705 \u201c"+P.ok+"\u201d");
     /* \u26a0\ufe0f BUG SEGNALATO IN AULA: prima si avanzava con
        setTimeout(erNextRemedy,900) a orologio fisso. Le frasi di
@@ -45466,6 +45501,7 @@ MECH.medicineRound=function(s){
   if(!I || !ER_PAT_NODE[ER_PATIENTS[0].k]){ mechStub(s); return; }
   const C=I.center;
   const st=Quest.state;
+  erDischargeLayout(false);
   st.mr=st.mr||{ list:pick(ER_PATIENTS, Math.min(s.count||6, ER_PATIENTS.length)),
                  idx:0, wrong:0, served:{}, plays:0, revealed:false };
   /* Un'interazione per paziente, sulla posizione VERA dell'NPC: niente
@@ -45635,6 +45671,7 @@ function erDdAfter(A){
   if(harmful){ setTimeout(function(){ erDdConsequence(A,a); },600); return; }
   if(st===1){ dd.st[A.k]=2; erDdHud(); setTimeout(function(){ erDdTalk(A); },700); return; }
   dd.st[A.k]="done"; dd.doneCount++;
+  try{ const L=ER_PAT_NODE[A.k]&&ER_PAT_NODE[A.k].__ddLabel; if(L&&L.t1) L.t1.text="\u2705 DISCHARGED"; }catch(e){}
   /* v271: le tessere si chiudono. Prima qui c'era solo il toast e la
      finestra del paziente appena dimesso restava aperta sullo schermo. */
   DialogueBox.close();
@@ -45660,9 +45697,43 @@ function erDdConsequence(A,a){
     italian:A.worseIt+" Il consiglio si pu\u00f2 rifare: parlagli di nuovo.",
     buttons:[{label:"Let me try again", cls:"primary", act:function(){ setTimeout(function(){ erDdTalk(A); },300); } }] });
 }
+/* v272 — i tre da dimettere si spostano davanti all'accettazione, girati
+   verso la sala, con un cartello sopra; negli altri strand tornano al loro
+   posto in sala d'attesa (anche rigiocando la unit). */
+const ER_DD_SPOT={ ankle:{x:4.90,z:4.10}, throat:{x:4.70,z:5.60}, eyes:{x:4.90,z:7.10} };
+function erDischargeLayout(on){
+  const I=INTERIORS[UNIT_ER.area]; if(!I) return; const C=I.center;
+  ER_ADVICE.forEach(function(A){
+    const npc=ER_PAT_NODE[A.k], P=ER_PATIENTS.filter(function(p){ return p.k===A.k; })[0];
+    if(!npc||!P) return;
+    const sp=on?ER_DD_SPOT[A.k]:P;
+    npc.carrier.position.x=C.x+sp.x; npc.carrier.position.z=C.z+sp.z;
+    npc.carrier.rotation.y=on?-Math.PI/2:P.face; npc.baseYaw=npc.carrier.rotation.y;
+    if(on && !npc.__ddLabel)
+      npc.__ddLabel=guiLabel(anchorMesh(npc.carrier,0,(P.h||1.70)+0.25,0),"\u{1F3E0} GOING HOME",null,true,UNIT_ER.area)||null;
+    const L=npc.__ddLabel; if(!L) return;
+    L.hidden=!on; if(!on && L.ctrl) L.ctrl.isVisible=false;
+    if(on && L.t1) L.t1.text="\u{1F3E0} GOING HOME"; });
+}
 MECH.dischargeDesk=function(s){
   buildHospitalNPCs(); buildERPatients();
   if(!ER_ADVICE.every(function(A){ return !!ER_PAT_NODE[A.k]; })){ mechStub(s); return; }
+  erDischargeLayout(true);
+  /* gli altri cinque sono ancora in cura: se ci parli te lo dicono, e ti
+     dicono dove sono quelli da dimettere */
+  ER_PATIENTS.forEach(function(P){
+    if(ER_ADVICE.some(function(A){ return A.k===P.k; })) return;
+    const npc=ER_PAT_NODE[P.k]; if(!npc) return;
+    Quest.questInteract({ id:"erddno_"+P.k, area:UNIT_ER.area, radius:1.2,
+      pos:()=>npc.pos(), meshes:npc.meshes, label:"this person",
+      prompt:'Press <b>E</b> to talk to the patient',
+      interact:function(){
+        DialogueBox.open({ npc:npc, icon:"\u{1F915}", sub:"Patient",
+          text:"I'm not going home yet \u2014 I'm still waiting for the doctor.",
+          italian:"Questo paziente \u00e8 ancora in cura.",
+          buttons:[{label:"OK", cls:"primary"}] });
+        toast("\u{1F3E0} Quelli da dimettere hanno il cartello GOING HOME, davanti all'accettazione."); } });
+  });
   Quest.state.dd={ st:{}, doneCount:0, tries:0, act:null, returned:{} };
   ER_ADVICE.forEach(function(A){
     Quest.state.dd.st[A.k]=1;
@@ -45676,8 +45747,8 @@ MECH.dischargeDesk=function(s){
   DialogueBox.open({ npc:ER_NPC.ross, icon:"\u{1FA7A}", sub:"Doctor",
     text:"These three are going home. Go and talk to each of them \u2014 one thing to do, one thing not to do. "
         +"Look at them before you answer: I'm not going to tell you twice.",
-    italian:"Vai da uno dei tre pazienti pronti per essere dimessi e premi E \u2014 li riconosci dal segno che "
-           +"hanno addosso. Per ognuno: un consiglio con should e un divieto con shouldn't. "
+    italian:"I tre da dimettere aspettano davanti all'accettazione, col cartello \u{1F3E0} GOING HOME: "
+           +"vai da uno di loro e premi E. Per ognuno: un consiglio con should e un divieto con shouldn't. "
            +"Attento a che cosa consigli: quello che dici, loro lo fanno.",
     buttons:[{label:"Go", cls:"primary", act:()=>{}}] });
 };
@@ -45822,7 +45893,7 @@ function erNlAskRossAfter(){
   try{ TTS.say(NL_HARD.rossReply); }catch(e){}
 }
 MECH.nightLine=function(s){
-  buildHospitalNPCs();
+  buildHospitalNPCs(); try{ buildERPatients(); erDischargeLayout(false); }catch(e){}
   if(!ER_NPC.noor||!ER_NPC.ross){ mechStub(s); return; }
   const I=INTERIORS[UNIT_ER.area]; if(!I){ mechStub(s); return; }
   const C=I.center;
@@ -46017,7 +46088,8 @@ function erArPick(kind){
   const C=AR_CASES[ar.idx]; if(!C) return;
   if(kind===C.kit){
     ar.idx++;
-    toast("\u{1F691} \u201c"+C.arrive+"\u201d");
+    erKitCheer(kind);
+    toast("\u2705 Right kit! \u2014 \u201c"+C.arrive+"\u201d");
     const said=(function(){ try{ return TTS.say(C.arrive); }catch(e){ return Promise.resolve(); } })();
     said.then(function(){ setTimeout(erArNext,300); });
   } else {
@@ -46031,7 +46103,7 @@ function erArPick(kind){
   }
 }
 MECH.ambulanceRadio=function(s){
-  buildHospitalNPCs(); buildERPatients();
+  buildHospitalNPCs(); buildERPatients(); erDischargeLayout(false);
   const I=INTERIORS[UNIT_ER.area];
   if(!I || !ER_KIT_NODE[AR_KITS[0].kind]){ mechStub(s); return; }
   const C=I.center;
@@ -46054,8 +46126,8 @@ MECH.ambulanceRadio=function(s){
   DialogueBox.open({ npc:ER_NPC.noor, icon:"\u{1F469}\u200D\u2695\uFE0F", sub:"Night nurse",
     text:"Control will call ahead with whoever's coming in. Four kits over there \u2014 listen, then have the right one "
         +"ready before the doors open. Play it as many times as you like.",
-    italian:"Ascolta la radio \ud83d\udd0a e vai al kit giusto: si riconoscono solo da quello che hanno sopra. "
-           +"Puoi farla ripetere quante volte vuoi.",
+    italian:"Ascolta la radio \ud83d\udd0a, capisci che cosa \u00e8 successo e vai al kit giusto: ognuno ha il suo "
+           +"cartello. Puoi far ripetere la radio quante volte vuoi.",
     buttons:[{label:"Ready", cls:"primary", act:()=>{}}] });
 };
 
@@ -46143,7 +46215,7 @@ function erOpenCardPad(s){
       {label:"Close", cls:"ghost", act:()=>{}} ] });
 }
 MECH.getWellCard=function(s){
-  buildHospitalNPCs(); buildERPatients();
+  buildHospitalNPCs(); buildERPatients(); erDischargeLayout(false);
   buildWritePad(UNIT_ER,s);
   questHudSet("writing", HOBJ((s.pad&&s.pad.hintEn)||"Go to the <b>writing desk</b> and write (3+ sentences).",(s.pad&&s.pad.hint)||"Go to the <b>writing desk</b> and write (3+ sentences)."),
     Quest.i, Quest.total);
@@ -46291,7 +46363,8 @@ function erSnKit(kind){
     try{ TTS.say("That's not what I need."); }catch(e){} return; }
   sn.treated[A.k]=true; sn.done++; sn.waiting=null;
   if(!sn.treated.chest) sn.late++;
-  toast("\u2705 \u201c"+A.ok+"\u201d");
+  erKitCheer(kind);
+  toast("\u2705 Right kit! \u2014 \u201c"+A.ok+"\u201d");
   const said=(function(){ try{ return TTS.say(A.ok); }catch(e){ return Promise.resolve(); } })();
   said.then(function(){
     erSnHud();
@@ -46352,7 +46425,7 @@ function snFinish(){
   Quest.complete("\u{1F32A}\uFE0F Unit 5 completata! Night shift \u2713");
 }
 MECH.stormNight=function(s){
-  buildHospitalNPCs(); buildERPatients(); buildStormArrivals();
+  buildHospitalNPCs(); buildERPatients(); buildStormArrivals(); erDischargeLayout(false);
   const I=INTERIORS[UNIT_ER.area];
   if(!I || !SN_NPC[SN_ARRIVALS[0].k]){ mechStub(s); return; }
   const C=I.center;
