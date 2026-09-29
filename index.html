@@ -48129,7 +48129,7 @@ function _botTube(meshes,style,hex){
   /* il cavallo: la quota piu' alta in cui non c'e' piu' niente sul piano di mezzo */
   const mid=cen(S), onMid=y=>S.some(s=>Math.abs(s.p.y-y)<0.012 && Math.abs(V3.Dot(hz(s.p.subtract(mid)),D))<0.014);
   let yCr=yTop-0.1; for(let y=yTop-0.03;y>yBot;y-=0.01){ if(!onMid(y)){ yCr=y; break; } }
-  const NA=22, step=0.028, margin=(style==="smart"?0.008:0.011);
+  const NA=24, step=0.028, margin=0.011;
   /* un anello: centro e raggio per spicchio, dai campioni in fascia */
   const ring=(list,y,c0)=>{ const band=list.filter(s=>Math.abs(s.p.y-y)<0.03); if(!band.length) return null;
     const c=c0||cen(band), rr=new Array(NA).fill(0);
@@ -48138,25 +48138,63 @@ function _botTube(meshes,style,hex){
     let cl=rr.map((r,i)=>{ let m=0; for(let k=-3;k<=3;k++) m=Math.max(m,rr[(i+k+NA)%NA]); return m; });
     for(let k=0;k<2;k++) cl=cl.map((r,i)=>(cl[(i+NA-1)%NA]+2*r+cl[(i+1)%NA])/4);
     return { c:new V3(c.x,y,c.z), r:cl.map(r=>r+margin) }; };
-  /* ⚠️ lisciato ANCHE in verticale: anello per anello i campioni cambiano
-     (ginocchio, orlo del pantaloncino) e il tubo veniva a fisarmonica —
-     visto a schermo. Centri e raggi si mediano coi vicini, poi il raggio
-     non scende piu' in fretta del 15% per metro. */
-  const taper=rings=>{ const n=rings.length;
-    for(let k=0;k<4;k++){ const C=rings.map(g=>g.c.clone()), Rr=rings.map(g=>g.r.slice());
-      for(let j=1;j<n-1;j++){ const y=rings[j].c.y; rings[j].c=C[j-1].add(C[j].scale(2)).add(C[j+1]).scale(0.25); rings[j].c.y=y;
-        rings[j].r=Rr[j].map((r,i)=>Math.max(r*0.92,(Rr[j-1][i]+2*r+Rr[j+1][i])/4)); } }
-    for(let j=1;j<n;j++){ const dy=rings[j-1].c.y-rings[j].c.y; rings[j].r=rings[j].r.map((r,i)=>Math.max(r,rings[j-1].r[i]-0.15*dy)); }
-    return rings; };
-  /* il bacino scende 5 cm sotto il cavallo: copre l'attacco delle gambe (li'
-     restava una fessura e si vedeva il pantaloncino) */
+  /* il BACINO si misura (li' la forma vera c'e': fianchi e sedere), lisciato
+     in verticale solo verso l'ESTERNO — ⚠️ la prima versione mediava anche
+     verso l'interno e il sedere spariva (Giacomo: «il sedere quasi scompare») */
   const pelvis=[]; for(let y=yTop-0.004;y>yCr-0.05;y-=step){ const g=ring(S,y); if(g) pelvis.push(g); }
-  taper(pelvis);
-  const legs=[1,-1].map(sd=>{ const list=S.filter(s=>s.side===sd), R=[];
-    for(let y=yCr+0.02;y>yBot+0.004;y-=step){ const g=ring(list,y); if(g) R.push(g); }
-    const g=ring(list,yBot+0.012); if(g){ g.c.y=yBot+0.004; R.push(g); }
-    return { sd, list, rings:taper(R) }; });
-  if(style==="joggers") legs.forEach(l=>{ const n=l.rings.length; for(let j=Math.max(0,n-2);j<n;j++) l.rings[j].r=l.rings[j].r.map(r=>r*0.84); });
+  for(let k=0;k<3;k++){ const Rr=pelvis.map(g=>g.r.slice());
+    for(let j=1;j<pelvis.length-1;j++) pelvis[j].r=Rr[j].map((r,i)=>Math.max(r,(Rr[j-1][i]+2*r+Rr[j+1][i])/4)); }
+  /* in vita stringe sul corpo: sulla ragazza (maglia corta) il bordo alto si
+     vedeva sporgere come un anello */
+  pelvis.forEach(g=>{ const k=Math.max(0,Math.min(1,(g.c.y-(yTop-0.06))/0.05)); if(k>0) g.r=g.r.map(r=>r-0.008*k); });
+  /* le GAMBE invece NON copiano la gamba: sul ragazzo sopra il ginocchio c'e'
+     il pantaloncino (largo) e sotto il polpaccio nudo (stretto), e copiandoli
+     il pantalone veniva gonfio sopra e aderente sotto. Seguono le OSSA
+     (anca -> ginocchio -> caviglia) e la larghezza viene da un profilo per
+     stile, in multipli del raggio vero appena sotto il ginocchio.
+       t = 0 cavallo, 1 ginocchio, 2 caviglia */
+  const PROF={ plain:[1.8,1.34,1.26], smart:[1.66,1.22,1.12], joggers:[1.92,1.4,1.28], cargo:[2.08,1.6,1.5] }[style]||[1.8,1.34,1.26];
+  const dirAt0=a=>Fw.scale(Math.cos(a)).add(D.scale(Math.sin(a)));
+  const bw=n=>{ const b=sk.bones.find(x=>x.name===n), tn=b&&b.getTransformNode&&b.getTransformNode(); if(!tn) return null; tn.computeWorldMatrix(true); return tn.getAbsolutePosition().clone(); };
+  const legs=[1,-1].map(sd=>{ const s=(sd>0?".L":".R"), list=S.filter(x=>x.side===sd);
+    const Hj=bw("UpperLeg"+s)||cen(list.filter(x=>x.p.y>yCr-0.1)), Kj=bw("LowerLeg"+s), Aj=bw("Foot"+s);
+    const lc=cen(list), K=Kj||new V3(lc.x,(yCr+yBot)/2,lc.z), A=Aj||new V3(lc.x,yBot,lc.z);
+    /* l'asse della gamba alla quota y, spezzato al ginocchio */
+    const axis=y=>{ const P=(y>=K.y)?V3.Lerp(K,Hj,Math.min(1,(y-K.y)/Math.max(1e-3,Hj.y-K.y))):V3.Lerp(K,A,Math.min(1,(K.y-y)/Math.max(1e-3,K.y-A.y))); return new V3(P.x,y,P.z); };
+    const meanR=y=>{ const c=axis(y), b=list.filter(x=>Math.abs(x.p.y-y)<0.02); if(!b.length) return 0; let s2=0; b.forEach(x=>s2+=hz(x.p.subtract(c)).length()); return s2/b.length; };
+    const rK=Math.max(0.035,Math.min(0.07,meanR(K.y-0.08)||0.05)), rA=Math.max(0.025,Math.min(0.06,meanR(yBot+0.03)||0.04));
+    const R=[], yS=yCr+0.03, yE=yBot+0.004;
+    for(let y=yS;;y-=step){ if(y<yE) y=yE;
+      const t=(y>=K.y)?Math.max(0,(yS-y)/Math.max(0.05,yS-K.y)):1+Math.min(1,(K.y-y)/Math.max(0.05,K.y-yE));
+      let r0=(t<=1)?PROF[0]+(PROF[1]-PROF[0])*t:PROF[1]+(PROF[2]-PROF[1])*(t-1); r0*=rK;
+      if(style==="joggers"){ const dz=y-yE; if(dz<0.06) r0=rA*1.3; else if(dz<0.1) r0*=1.06; }       // polsino e arricciatura sopra
+      const rr=[]; for(let i=0;i<NA;i++){ const a=i/NA*2*Math.PI, c=Math.cos(a);
+        let r=r0*(1+0.05*c*c);                                                    // un filo piu' profondo che largo
+        if(t<0.5 && c<0) r*=1+0.24*(1-t/0.5)*(-c);                                // il sedere continua nella coscia
+        if(t<0.25 && c>0) r*=1+0.06*(1-t/0.25)*c;                                 // e il davanti del cavallo
+        rr.push(r); }
+      R.push({ c:axis(y), r:rr, t });
+      if(y<=yE) break; }
+    return { sd, list, rings:R, rA }; });
+  /* ⚠️ il fondo del bacino si RACCORDA alle gambe: misurato sul pantaloncino
+     (o sui fianchi della ragazza) era piu' largo delle cosce e faceva uno
+     scalino, come un pannolone (visto a schermo). Sotto la quota di raccordo
+     il raggio in ogni direzione non supera l'ingombro delle due gambe. */
+  const yJ=yCr+0.07;
+  /* e le cosce, in alto, si allargano fino ai fianchi (dal lato esterno):
+     sulla ragazza i fianchi sono larghi e il bacino sporgeva come una balza */
+  const pRef=pelvis.filter(g=>g.c.y>yJ).pop();
+  if(pRef) legs.forEach(l=>{ const outS=(l.sd>0?D:D.scale(-1));
+    l.rings.forEach(g=>{ if(g.t>=0.55) return; const f=1-g.t/0.55, ff=f*f*(3-2*f);
+      g.r=g.r.map((r,i)=>{ const a=i/NA*2*Math.PI, d=dirAt0(a), side=V3.Dot(d,outS); if(side<=0) return r;
+        const pa=Math.atan2(V3.Dot(d,D),V3.Dot(d,Fw)), j=((Math.round(pa/(2*Math.PI)*NA))%NA+NA)%NA;
+        const need=V3.Dot(hz(pRef.c.subtract(g.c)),d)+pRef.r[j]-0.004;
+        return Math.max(r, r+(need-r)*ff*Math.min(1,side*1.4)); }); }); });
+  pelvis.forEach(g=>{ if(g.c.y>yJ) return; const k=Math.min(1,(yJ-g.c.y)/0.1);
+    g.r=g.r.map((r,i)=>{ const a=i/NA*2*Math.PI, d=dirAt0(a); let h=0;
+      legs.forEach(l=>{ const lg=l.rings[0]; if(!lg) return; const off=V3.Dot(hz(lg.c.subtract(g.c)),d), j=((Math.round(Math.atan2(V3.Dot(d,D),V3.Dot(d,Fw))/(2*Math.PI)*NA))%NA+NA)%NA;
+        h=Math.max(h,off+lg.r[j]); });
+      const cap=h+0.012; return r*(1-k)+Math.min(r,cap)*k; }); });
   /* dal mondo allo spazio della mesh, coi pesi del campione piu' vicino */
   const arr=new Float32Array(16);
   const skin=(pts,pool)=>{ const V=[], MI=[], MW=[];
@@ -48192,36 +48230,45 @@ function _botTube(meshes,style,hex){
     build(P,T,pool,mat); };
   /* una fascia fra due quote del bacino (cintura, elastico) */
   const band=(g0,g1,dr,mat)=>{ const t=tube([g0,g1],dr); build(t.P,t.T,S,mat); };
+  /* ---- i dettagli: devono vedersi da lontano (Giacomo: «non vedo
+     differenze tra i diversi pantaloni»). Taglio diverso (PROF) + dettagli
+     chiari e grossi quanto basta per la camera del gioco. ---- */
+  const lighter=k=>_coatMat({ hex:(function(){ const c=BABYLON.Color3.FromHexString(hex); return new BABYLON.Color3(Math.min(1,c.r*k+0.08),Math.min(1,c.g*k+0.08),Math.min(1,c.b*k+0.08)).toHexString(); })(), metal:false },0.05);
+  const box=(o,ax,ay,az,hx,hy,hzz,pool,mat)=>{ const P=[], T=[];
+    [-1,1].forEach(sx=>[-1,1].forEach(sy=>[-1,1].forEach(sz=>P.push(o.add(ax.scale(sx*hx)).add(ay.scale(sy*hy)).add(az.scale(sz*hzz))))));
+    [[0,1,3,2],[4,6,7,5],[0,4,5,1],[2,3,7,6],[0,2,6,4],[1,5,7,3]].forEach(f=>T.push([f[0],f[1],f[2]],[f[0],f[2],f[3]]));
+    build(P,T,pool,mat); };
+  const ringAt=(l,t)=>{ let best=l.rings[0], bd=9; l.rings.forEach(g=>{ const d=Math.abs(g.t-t); if(d<bd){ bd=d; best=g; } }); return best; };
+  const dirAt=a=>Fw.scale(Math.cos(a)).add(D.scale(Math.sin(a)));
+  const hemBand=(l,h,dr,mat)=>{ const n=l.rings.length, last=l.rings[n-1], g0={ c:last.c.add(new V3(0,h,0)), r:last.r };
+    const t=tube([g0,last],dr); build(t.P,t.T,l.list,mat); };
+  if(style==="plain"){
+    const dk=_coatMat({ hex:_hexMul(hex,0.82), metal:false },0.05);
+    legs.forEach(l=>hemBand(l,0.035,0.004,dk));                                      // risvolto all'orlo
+    if(pelvis.length>1){ const g0=pelvis[0], g1={ c:g0.c.add(new V3(0,-0.03,0)), r:g0.r }; band(g0,g1,0.003,dk); } }
   if(style==="smart"){
-    const dark=_coatMat({ hex:_hexMul(hex,0.62), metal:false },0.1);
-    legs.forEach(l=>line(l.rings,0,0.001,0.0022,l.list,dark));                       // la piega davanti
-    if(pelvis.length>1){ const g0=pelvis[0], g1={ c:g0.c.add(new V3(0,-0.03,0)), r:g0.r };
-      band(g0,g1,0.004,_coatMat({ hex:"#1b1a1d", metal:false },0.3));
-      const bk=at({ c:g0.c.add(new V3(0,-0.015,0)), r:g0.r },0,0.009);                 // fibbia
-      const bx=BABYLON.MeshBuilder.CreateBox("b",{ width:0.03, height:0.022, depth:0.006 },scene);
-      bx.position.copyFrom(bk); bx.rotation.y=Math.atan2(Fw.x,Fw.z); bx.computeWorldMatrix(true);
-      const p=bx.getVerticesData(VB.PositionKind), I=bx.getIndices(), Wb=bx.getWorldMatrix(), P=[], T=[];
-      for(let i=0;i<p.length;i+=3) P.push(V3.TransformCoordinates(new V3(p[i],p[i+1],p[i+2]),Wb));
-      for(let i=0;i<I.length;i+=3) T.push([I[i],I[i+1],I[i+2]]); bx.dispose();
-      build(P,T,S,_coatMat({ hex:"#c9b27a", metal:true },0.8)); } }
+    const cr=lighter(1.45);
+    legs.forEach(l=>line(l.rings,0,0.002,0.0032,l.list,cr));                         // la piega davanti, chiara
+    if(pelvis.length>1){ const g0=pelvis[0], g1={ c:g0.c.add(new V3(0,-0.032,0)), r:g0.r };
+      band(g0,g1,0.003,_coatMat({ hex:"#1b1a1d", metal:false },0.3));
+      const bk=at({ c:g0.c.add(new V3(0,-0.016,0)), r:g0.r },0,0.011);                 // fibbia
+      box(bk,D,new V3(0,1,0),Fw,0.019,0.014,0.004,S,_coatMat({ hex:"#d8c07a", metal:true },0.8)); } }
   if(style==="joggers"){
-    const white=_coatMat({ hex:"#f2f1ec", metal:false },0.05), dark=_coatMat({ hex:_hexMul(hex,0.7), metal:false },0.05);
-    legs.forEach(l=>{ line(l.rings,l.sd>0?Math.PI/2:-Math.PI/2,0.001,0.004,l.list,white);         // riga laterale
-      const n=l.rings.length; if(n>2){ const t=tube(l.rings.slice(n-2),0.002); build(t.P,t.T,l.list,dark); } });  // polsino
-    if(pelvis.length>1){ const g0=pelvis[0], g1={ c:g0.c.add(new V3(0,-0.035,0)), r:g0.r }; band(g0,g1,0.003,dark); } }
+    const white=_coatMat({ hex:"#f2f1ec", metal:false },0.05), dark=_coatMat({ hex:_hexMul(hex,0.72), metal:false },0.05);
+    legs.forEach(l=>{ line(l.rings,l.sd>0?Math.PI/2:-Math.PI/2,0.002,0.0065,l.list,white);        // riga laterale larga
+      hemBand(l,0.06,0.004,dark); });                                                               // polsino alto
+    if(pelvis.length>1){ const g0=pelvis[0], g1={ c:g0.c.add(new V3(0,-0.045,0)), r:g0.r }; band(g0,g1,0.004,dark);
+      /* il cordino: due fili bianchi che pendono davanti */
+      [-1,1].forEach(sx=>{ const top=at({ c:g0.c.add(new V3(0,-0.03,0)), r:g0.r },0,0.008).add(D.scale(sx*0.018));
+        box(top.add(new V3(0,-0.04,0)),D,new V3(0,1,0),Fw,0.003,0.04,0.003,S,white); }); } }
   if(style==="cargo"){
-    const pk=_coatMat({ hex:_hexMul(hex,0.94), metal:false },0.05);
-    legs.forEach(l=>{ const j=Math.min(l.rings.length-1,Math.max(0,Math.round(0.16/step))), g=l.rings[j]; if(!g) return;
-      const a=l.sd>0?Math.PI/2:-Math.PI/2, i=((Math.round(a/(2*Math.PI)*NA))%NA+NA)%NA, o=at(g,i,0.012);
-      const out1=l.sd>0?D:D.scale(-1), hx=0.04, hy=0.05, hz=0.011, P=[], T=[];
-      [-1,1].forEach(sx=>[-1,1].forEach(sy=>[-1,1].forEach(sz=>P.push(o.add(Fw.scale(sx*hx)).add(new V3(0,sy*hy,0)).add(out1.scale(sz*hz)))))) ;
-      [[0,1,3,2],[4,6,7,5],[0,4,5,1],[2,3,7,6],[0,2,6,4],[1,5,7,3]].forEach(f=>T.push([f[0],f[1],f[2]],[f[0],f[2],f[3]]));
-      build(P,T,l.list,pk);
-      /* la patta, un filo piu' scura, sopra la tasca */
-      const f0=o.add(new V3(0,hy*0.62,0)).add(out1.scale(hz+0.002)), P2=[], T2=[];
-      [-1,1].forEach(sx=>[-1,1].forEach(sy=>[-1,1].forEach(sz=>P2.push(f0.add(Fw.scale(sx*(hx+0.003))).add(new V3(0,sy*0.016,0)).add(out1.scale(sz*0.004)))))) ;
-      [[0,1,3,2],[4,6,7,5],[0,4,5,1],[2,3,7,6],[0,2,6,4],[1,5,7,3]].forEach(f=>T2.push([f[0],f[1],f[2]],[f[0],f[2],f[3]]));
-      build(P2,T2,l.list,_coatMat({ hex:_hexMul(hex,0.78), metal:false },0.05)); }); }
+    const pk=lighter(1.2), fl=_coatMat({ hex:_hexMul(hex,0.7), metal:false },0.05);
+    legs.forEach(l=>{ const out1=(l.sd>0?D:D.scale(-1)), a=(l.sd>0?1:-1)*(Math.PI/2-0.55);  // tasca davanti-lato, si vede da davanti
+      const g=ringAt(l,0.5), i=((Math.round(a/(2*Math.PI)*NA))%NA+NA)%NA, o=at(g,i,0.014), n=dirAt(a*1), sdv=V3.Cross(new V3(0,1,0),n).normalize();
+      box(o,sdv,new V3(0,1,0),n,0.05,0.062,0.013,l.list,pk);
+      box(o.add(new V3(0,0.05,0)).add(n.scale(0.015)),sdv,new V3(0,1,0),n,0.054,0.016,0.004,l.list,fl);           // patta
+      const gk=ringAt(l,1.0), ok=at(gk,0,0.006);                                                              // toppa sul ginocchio
+      box(ok,D,new V3(0,1,0),Fw,0.035,0.035,0.005,l.list,fl); }); }
   L.__tube={ key, meshes:out };
   try{ _octDirty(); }catch(e){}
   return L.__tube;
