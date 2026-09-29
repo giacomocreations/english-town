@@ -47860,6 +47860,178 @@ const LOOK_SHOES=[
   { id:"k5", en:"Green boots",   it:"verdi",         hex:"#3d7a4a", cost:58 },
   { id:"k6", en:"Gold trainers", it:"dorate",        hex:"#c9a03c", cost:88 },
 ];
+/* =====================================================================
+   v277 — IL SOTTO: pantaloni, pantaloncini, pinocchietto, gonna
+   (Giacomo, 29 set: «non possiamo disegnare dei pantaloni sopra? una gonna
+   per le girls?» · «i pantaloni possono essere di piu' colori come le
+   gonne?»).
+
+   TRE MODI DI SBLOCCARE, nessuno si spende (come i cristalli di sempre:
+   il prezzo e' una SOGLIA, non un pagamento):
+     💎 gems  — cristalli raccolti (i colori: e' lessico dell'Anno 1)
+     ⭐ stars — stelle totali. NON si scalano: sono anche il resoconto che
+                vede il docente, e spenderle vorrebbe dire punire chi si
+                compra qualcosa
+     🏅 quest — una unit finita. SEMPRE con un'alternativa a stelle: chi e'
+                arrivato al gioco in seconda o in terza puo' non avere mai
+                fatto quella unit, e non deve restare fuori per sempre.
+
+   COME SI VESTE (verificato a schermo prima di scriverlo qui):
+   · la GAMBA si ridipinge sul modello animato, quindi si piega con la
+     camminata: sul ragazzo la gamba sotto il pantaloncino e' gia' una mesh
+     a se' (pelle) -> «pantaloni lunghi» = colorarla come il pantalone; sulla
+     ragazza la gamba e' tutta pantalone -> si ordinano i triangoli per
+     altezza (una volta, in posa di riposo) e si divide in due submesh:
+     sotto la quota di taglio pelle, sopra pantalone. Il taglio e' un
+     numero: pantaloncino, pinocchietto, gonna sono la stessa operazione.
+   · la GONNA e' una mesh SKINNED sullo scheletro del personaggio: il bordo
+     alto pesa sul bacino, l'orlo sulle cosce (meta' sinistra sulla coscia
+     sinistra). Non e' appoggiata: la vita e' misurata sui fianchi veri, e
+     ogni vertice e' calcolato all'indietro dalla matrice di skinning, cosi'
+     in posa torna esattamente dove e' stato disegnato.
+     Limite noto e accettato: non ondeggia (niente fisica della stoffa), e
+     la mano che oscilla puo' sfiorarne l'orlo.
+   ===================================================================== */
+/* quota di taglio: frazione dell'altezza piedi -> bacino, in posa di riposo */
+const LOOK_BOTTOMS=[
+  { id:"shorts",   rig:"m", en:"Shorts",           cut:0,    req:null,                         def:true },
+  { id:"trousers", rig:"m", en:"Trousers",         cut:0,    req:{ quest:"u8", stars:500 } },
+  { id:"trousers", rig:"f", en:"Trousers",         cut:0,    req:null,                         def:true },
+  { id:"shorts",   rig:"f", en:"Shorts",           cut:0.66, req:{ gems:8 } },
+  { id:"capri",    rig:"f", en:"Cropped trousers", cut:0.30, req:{ stars:300 } },
+  { id:"skirt",    rig:"f", en:"Skirt",            cut:0.99, req:{ quest:"u8", stars:500 }, skirt:true },
+  { id:"tights",   rig:"f", en:"Skirt and tights", cut:0.99, req:{ stars:900 }, skirt:true, tights:"#2c2632" },
+];
+/* il colore del sotto, a parte dalla felpa. "auto" = quello abbinato alla
+   felpa, cioe' esattamente com'era prima: nessuno si ritrova cambiato. */
+const LOOK_BCOL=[
+  { id:"auto",  en:"Match my hoodie", hex:null,      req:null },
+  { id:"denim", en:"Denim blue",      hex:"#3f5f86", req:null },
+  { id:"black", en:"Black",           hex:"#1f2228", req:{ gems:6 } },
+  { id:"grey",  en:"Grey",            hex:"#6b7078", req:{ gems:12 } },
+  { id:"beige", en:"Beige",           hex:"#b09a74", req:{ gems:20 } },
+  { id:"navy",  en:"Navy blue",       hex:"#1f2c4a", req:{ gems:30 } },
+  { id:"red",   en:"Red",             hex:"#9c2f2f", req:{ gems:45 } },
+  { id:"green", en:"Green",           hex:"#3d6b3e", req:{ gems:60 } },
+  { id:"purple",en:"Purple",          hex:"#5b4a86", req:{ gems:75 } },
+  { id:"pink",  en:"Pink",            hex:"#c07090", req:{ gems:90 } },
+  { id:"white", en:"White",           hex:"#dcdcd6", req:{ gems:120 } },
+];
+function lookBottomsFor(rig){ return LOOK_BOTTOMS.filter(b=>b.rig===(rig==="f"?"f":"m")); }
+function lookBottom(rig,id){ const L=lookBottomsFor(rig); return L.find(b=>b.id===id)||L.find(b=>b.def)||L[0]; }
+function _unitTitle(qid){ try{ const u=SYLLABUS.find(x=>x.id===qid); if(u) return u.t; }catch(e){} return qid; }
+/* { open, label } — label e' quello che si scrive sul riquadro bloccato */
+function lookReq(req){
+  if(!req) return { open:true, label:"" };
+  let gems=0, stars=0, done=false;
+  try{ gems=Gems.count(); }catch(e){}
+  try{ stars=Stars.total(); }catch(e){}
+  if(req.quest){ try{ done=!!Progress.get(req.quest).done; }catch(e){} }
+  if(req.gems!=null && !req.quest && !req.stars) return { open:gems>=req.gems, label:"\u{1F48E} "+req.gems };
+  if(req.quest){ const open=done || (req.stars!=null && stars>=req.stars);
+    return { open, label:"\u{1F3C5} "+_unitTitle(req.quest)+(req.stars!=null?" · ⭐ "+req.stars:"") }; }
+  if(req.stars!=null) return { open:stars>=req.stars, label:"⭐ "+req.stars };
+  return { open:true, label:"" };
+}
+
+/* ---- motore: veste un corpo (avatar o compagno) ----------------------- */
+const _BOT_BONE=/^(Hips|UpperLeg\.[LR]|LowerLeg\.[LR]|Foot\.[LR])$/;
+function _botSetCol(mt,hex){ if(!mt||!hex) return; const c=BABYLON.Color3.FromHexString(hex);
+  if(mt.albedoColor) mt.albedoColor=c; else if(mt.diffuseColor) mt.diffuseColor=c; }
+/* posa di riposo per le misure: si rimette a posto lo scheletro e si
+   ricalcolano le matrici; l'animazione la riprende al fotogramma dopo */
+function _botRest(sk){ try{ sk.returnToRest(); }catch(e){}
+  try{ sk.bones.forEach(b=>{ const tn=b.getTransformNode&&b.getTransformNode(); if(tn) tn.computeWorldMatrix(true); }); }catch(e){}
+  try{ sk.prepare(true); }catch(e){} }
+function _botBoneY(sk,name){ const b=sk.bones.find(x=>x.name===name); const tn=b&&b.getTransformNode&&b.getTransformNode();
+  if(!tn) return null; tn.computeWorldMatrix(true); return tn.getAbsolutePosition().y; }
+/* ragazza: una volta sola, triangoli ordinati per altezza in posa di riposo */
+function _botPrepLegs(L){
+  if(L.__botPrep) return L.__botPrep;
+  const sk=L.skeleton; _botRest(sk); L.computeWorldMatrix(true);
+  try{ L.makeGeometryUnique(); }catch(e){}
+  const W=L.getWorldMatrix(), lp=L.getPositionData(true,false), ind=L.getIndices();
+  const ys=[]; for(let i=0;i<lp.length/3;i++) ys.push(BABYLON.Vector3.TransformCoordinates(new BABYLON.Vector3(lp[3*i],lp[3*i+1],lp[3*i+2]),W).y);
+  let y0=1e9; ys.forEach(y=>{ if(y<y0) y0=y; });
+  const yH=_botBoneY(sk,"Hips")||Math.max.apply(null,ys);
+  const T=[]; for(let t=0;t<ind.length;t+=3) T.push({ a:ind[t],b:ind[t+1],c:ind[t+2], y:(ys[ind[t]]+ys[ind[t+1]]+ys[ind[t+2]])/3 });
+  T.sort((p,q)=>p.y-q.y);
+  const out=[], fr=[]; T.forEach(t=>{ out.push(t.a,t.b,t.c); fr.push((t.y-y0)/Math.max(0.1,yH-y0)); });
+  L.setIndices(out);
+  return (L.__botPrep={ fr, n:T.length, nv:L.getTotalVertices() }); }
+/* la gonna, skinned. Misura la vita sui fianchi veri (in posa di riposo). */
+function _botSkirt(L,hex){
+  if(L.__skirt){ _botSetCol(L.__skirt.material,hex); L.__skirt.setEnabled(true); return L.__skirt; }
+  const sk=L.skeleton; _botRest(sk); L.computeWorldMatrix(true);
+  const W=L.getWorldMatrix(), TM=sk.getTransformMatrices(L);
+  const lp=L.getPositionData(true,false);
+  const mi=L.getVerticesData(BABYLON.VertexBuffer.MatricesIndicesKind), mw=L.getVerticesData(BABYLON.VertexBuffer.MatricesWeightsKind);
+  const bi=n=>sk.bones.findIndex(b=>b.name===n); const HIP=bi("Hips"), UL=bi("UpperLeg.L"), UR=bi("UpperLeg.R");
+  if(HIP<0||UL<0||UR<0) return null;
+  const P=[]; let maxY=-1e9;
+  for(let i=0;i<lp.length/3;i++){ const w=BABYLON.Vector3.TransformCoordinates(new BABYLON.Vector3(lp[3*i],lp[3*i+1],lp[3*i+2]),W); P.push(w); if(w.y>maxY) maxY=w.y; }
+  let cx=0,cz=0,c=0,lx=0,lz=0,lc=0;
+  P.forEach((p,i)=>{ if(p.y>maxY-0.10){ cx+=p.x; cz+=p.z; c++; }
+    for(let k=0;k<4;k++) if(mi[4*i+k]===UL&&mw[4*i+k]>0.6){ lx+=p.x; lz+=p.z; lc++; } });
+  cx/=Math.max(1,c); cz/=Math.max(1,c); lx/=Math.max(1,lc); lz/=Math.max(1,lc);
+  const la=Math.atan2(lx-cx,lz-cz), yTop=maxY-0.005, N=48, rows=10, len=0.36, flare=0.62;
+  /* vita: per ogni spicchio il raggio vero del corpo; gli spicchi senza
+     campioni prendono la media dei vicini, poi si liscia (niente tacche) */
+  const raw=[]; for(let i=0;i<N;i++){ const a=i/N*Math.PI*2; let r=0;
+    P.forEach(p=>{ if(Math.abs(p.y-yTop)<0.045){ const dx=p.x-cx, dz=p.z-cz; let d=Math.abs(Math.atan2(dx,dz)-a); d=Math.min(d,2*Math.PI-d);
+      if(d<Math.PI/N*1.8) r=Math.max(r,Math.hypot(dx,dz)); } }); raw.push(r); }
+  const good=raw.filter(r=>r>0).sort((a,b)=>a-b), med=good.length?good[good.length>>1]:0.12;
+  for(let i=0;i<N;i++) if(raw[i]<med*0.7) raw[i]=med;
+  const rT=raw.map((r,i)=>(raw[(i+N-1)%N]+2*r+raw[(i+1)%N])/4+0.004);
+  const V=[], IDX=[], MI=[], MW=[], arr=new Float32Array(16);
+  for(let j=0;j<=rows;j++){ const t=j/rows; for(let i=0;i<=N;i++){ const a=(i%N)/N*Math.PI*2;
+      const r0=rT[i%N]*(1+flare*Math.pow(t,0.85))*(1+0.045*t*(i%2?1:-1));
+      const wp=new BABYLON.Vector3(cx+Math.sin(a)*r0, yTop-t*len, cz+Math.cos(a)*r0);
+      const side=Math.cos(a-la), wl=Math.max(0,Math.min(1,0.5+side*0.75)), leg=0.97*Math.pow(t,0.8);
+      const ws=[1-leg, leg*wl, leg*(1-wl)], ids=[HIP,UL,UR];
+      arr.fill(0); ids.forEach((b,k)=>{ for(let q=0;q<16;q++) arr[q]+=TM[b*16+q]*ws[k]; });
+      const inv=BABYLON.Matrix.FromArray(arr).multiply(W).invert();
+      const lv=BABYLON.Vector3.TransformCoordinates(wp,inv); V.push(lv.x,lv.y,lv.z);
+      MI.push(ids[0],ids[1],ids[2],0); MW.push(ws[0],ws[1],ws[2],0); } }
+  for(let j=0;j<rows;j++) for(let i=0;i<N;i++){ const a=j*(N+1)+i, b=a+N+1; IDX.push(a,b,a+1, a+1,b,b+1); }
+  const vd=new BABYLON.VertexData(); vd.positions=V; vd.indices=IDX;
+  const nr=[]; BABYLON.VertexData.ComputeNormals(V,IDX,nr); vd.normals=nr;
+  const m=new BABYLON.Mesh("botSkirt",scene); vd.applyToMesh(m,true);
+  m.setVerticesData(BABYLON.VertexBuffer.MatricesIndicesKind,MI,false,4);
+  m.setVerticesData(BABYLON.VertexBuffer.MatricesWeightsKind,MW,false,4);
+  m.parent=L.parent; m.position.copyFrom(L.position); m.rotation.copyFrom(L.rotation);
+  if(L.rotationQuaternion) m.rotationQuaternion=L.rotationQuaternion.clone(); m.scaling.copyFrom(L.scaling);
+  m.skeleton=sk; m.numBoneInfluencers=4; m.alwaysSelectAsActiveMesh=true; m.isPickable=false;
+  const mt=new BABYLON.StandardMaterial("botSkirtM",scene); mt.backFaceCulling=false;
+  mt.specularColor=new BABYLON.Color3(0.06,0.06,0.06); m.material=mt; _botSetCol(mt,hex);
+  m.__npcCast=!!L.__npcCast; L.__skirt=m;
+  return m; }
+/* veste il sotto di un corpo. meshes = mesh del corpo, rig "m"/"f",
+   b = voce di LOOK_BOTTOMS, legs/skin = colori. Si puo' richiamare quante
+   volte si vuole: rifa' solo i colori e i tagli. */
+function dressBottom(meshes,rig,b,legsHex,skinHex){
+  if(!meshes||!b) return;
+  if(rig!=="f"){
+    /* ragazzo: la gamba sotto il pantaloncino e' la mesh "pelle" delle gambe */
+    meshes.forEach(m=>{ if(!/Casual_Legs/.test(m.name)||!m.material) return;
+      if(!/^Skin/.test(m.material.name||"")) return;
+      _botSetCol(m.material, b.id==="trousers" ? legsHex : skinHex); });
+    return; }
+  const L=meshes.find(m=>/Casual_Legs/.test(m.name)&&m.skeleton); if(!L) return;
+  if(!L.__botMats){ const pants=L.material, skin=pants.clone((pants.name||"legs")+"_botSkin");
+    L.__botMats={ pants, skin }; }
+  const M=L.__botMats; _botSetCol(M.pants,legsHex); _botSetCol(M.skin, b.tights||skinHex);
+  const prep=_botPrepLegs(L);
+  let k=0; if(b.cut>0){ while(k<prep.n && prep.fr[k]<b.cut) k++; }
+  if(k<=0){ L.subMeshes=[]; new BABYLON.SubMesh(0,0,prep.nv,0,prep.n*3,L); L.material=M.pants; }
+  else {
+    if(!L.__botMM){ L.__botMM=new BABYLON.MultiMaterial("botMM_"+L.name,scene); L.__botMM.subMaterials.push(M.skin,M.pants); }
+    L.subMeshes=[]; new BABYLON.SubMesh(0,0,prep.nv,0,k*3,L);
+    if(k<prep.n) new BABYLON.SubMesh(1,0,prep.nv,k*3,(prep.n-k)*3,L);
+    L.material=L.__botMM; }
+  if(b.skirt) _botSkirt(L,legsHex); else if(L.__skirt) L.__skirt.setEnabled(false);
+}
+
 const Look=(function(){
   const K="et_look";
   /* ⚠️ Ricostruito campo per campo, come il ledger di Stars e lo stato di
@@ -47878,7 +48050,8 @@ const Look=(function(){
                 e senza questa riga find() non lo troverebbe: la teca non
                 mostrerebbe nessuna riga selezionata finche' non ne scelgono
                 una. Si legge la vecchia chiave e si risponde con la nuova. */
-             shoes:((s.shoes&&s.shoes!=="k0")?s.shoes:"k1"), fit:s.fit||"" }; }
+             shoes:((s.shoes&&s.shoes!=="k0")?s.shoes:"k1"), fit:s.fit||"",
+             bottom:s.bottom||"", bcol:s.bcol||"auto" }; }            // v277: il sotto
   function save(s){ Sync.set(K,s); return s; }
   function rig(){ return state().rig; }
   function skin(){ return state().skin; }
@@ -47890,10 +48063,12 @@ const Look=(function(){
   function setShoes(id){ const s=state(); s.shoes=id; save(s); return id; }
   function fit(){ return state().fit; }
   function setFit(id){ const s=state(); s.fit=id; save(s); return id; }
+  function setBottom(id){ const s=state(); s.bottom=id; save(s); return id; }
+  function setBcol(id){ const s=state(); s.bcol=id; save(s); return id; }
   function hairOpen(h){ return h.cost<=0 || Gems.count()>=h.cost; }
-  function reset(){ save({rig:"m",skin:"s3",hair:"h1",shoes:"k1",fit:"purple"}); }
+  function reset(){ save({rig:"m",skin:"s3",hair:"h1",shoes:"k1",fit:"purple",bottom:"",bcol:"auto"}); }
   return { state, rig, skin, hair, shoes, fit, setRig, setSkin, setHair,
-           setShoes, setFit, hairOpen, reset };
+           setShoes, setFit, setBottom, setBcol, hairOpen, reset };
 })();
 
 const GEM_KINDS={
@@ -48639,7 +48814,8 @@ function applyPlayerFit(id){
   const _sk=(LOOK_SKIN.find(x=>x.id===_L.skin)||LOOK_SKIN[2]).hex;
   const _hr=(LOOK_HAIR.find(x=>x.id===_L.hair)||LOOK_HAIR[0]).hex;
   const _sh=(LOOK_SHOES.find(x=>x.id===_L.shoes)||LOOK_SHOES[0]).hex;
-  const TINTA={ hood:f.hood, legs:f.legs, skin:_sk, hair:_hr, shoes:_sh };
+  const _bc=(LOOK_BCOL.find(x=>x.id===_L.bcol)||LOOK_BCOL[0]).hex;      // v277: colore del sotto, null = come la felpa
+  const TINTA={ hood:f.hood, legs:_bc||f.legs, skin:_sk, hair:_hr, shoes:_sh };
   (typeof avatarMeshes==="undefined"?[]:avatarMeshes||[]).forEach(m=>{
     const cur=m.material; if(!cur||!cur.name) return;
     const slot=_lookSlot(cur.name);
@@ -48669,6 +48845,12 @@ function applyPlayerFit(id){
     if(mt.albedoColor) mt.albedoColor=c;
     else if(mt.diffuseColor) mt.diffuseColor=c;
   });
+  /* v277: il sotto (pantaloni lunghi / corti / pinocchietto / gonna) */
+  try{ const rig=(_L.rig==="f"?"f":"m");
+    dressBottom(avatarMeshes, rig, lookBottom(rig,_L.bottom), TINTA.legs, _sk);
+    const L=(avatarMeshes||[]).find(m=>m.__skirt), sk=L&&L.__skirt;
+    if(sk && avatarMeshes.indexOf(sk)<0){ avatarMeshes.push(sk); try{ refreshShadowCasters(); }catch(e){} } }
+  catch(e){ console.warn("dressBottom:",e); }
   return f.id;
 }
 function setPlayerBody(id){
@@ -48697,6 +48879,14 @@ function setPlayerHair(id){
   toast("\u{1F487} "+h.en);
   return id;
 }
+function setPlayerBottom(id){
+  const rig=Look.rig(), b=lookBottomsFor(rig).find(x=>x.id===id); if(!b) return null;
+  const r=lookReq(b.req); if(!r.open){ toast("\u{1F512} "+r.label); return null; }
+  Look.setBottom(id); applyLook(); toast("\u{1F456} "+b.en); return id; }
+function setPlayerBcol(id){
+  const k=LOOK_BCOL.find(x=>x.id===id); if(!k) return null;
+  const r=lookReq(k.req); if(!r.open){ toast("\u{1F512} "+r.label); return null; }
+  Look.setBcol(id); applyLook(); toast("\u{1F3A8} "+k.en); return id; }
 function setPlayerFit(id){
   const f=GEM_FITS.find(x=>x.id===id); if(!f) return null;
   if(!Gems.fitOpen(f)){ toast("\u{1F512} Servono \u{1F48E} "+f.cost); return null; }
@@ -48787,6 +48977,29 @@ function buildTeca(){
   });
   h+='</div>';
 
+  /* v277: il sotto e il suo colore. Sbloccati da cristalli, stelle o quest:
+     il riquadro chiuso dice COME si apre, non solo che e' chiuso. */
+  const _rig=(_L.rig==="f"?"f":"m"), _bcur=lookBottom(_rig,_L.bottom);
+  h+='<div class="dy-sec">Trousers, shorts and skirts</div><div class="gem-fits">';
+  lookBottomsFor(_rig).forEach(function(b){
+    const r=lookReq(b.req), on=(_bcur.id===b.id);
+    h+='<div class="gem-fit'+(r.open?"":" off")+(on?" on":"")+'"'+(r.open?' data-bottom="'+b.id+'"':'')+'>'
+      +'<span class="gem-sw" style="background:#cdd6dc;border-color:#8b97a1">'+(b.skirt?"\u{1F457}":(b.cut>0?"\u{1FA73}":"\u{1F456}"))+'</span>'
+      +'<b>'+_escHtml(b.en)+'</b>'
+      +'<i>'+(on?"you're wearing it":(r.open?"tap to wear it":r.label))+'</i></div>';
+  });
+  h+='</div>';
+  h+='<div class="dy-sec">'+(_bcur.skirt?"Skirt colour":"Trousers colour")+'</div><div class="gem-fits">';
+  const _hood=(GEM_FITS.find(function(x){return x.id===st.fit;})||GEM_FITS[0]);
+  LOOK_BCOL.forEach(function(k){
+    const r=lookReq(k.req), on=((_L.bcol||"auto")===k.id), hx=k.hex||_hood.legs;
+    h+='<div class="gem-fit'+(r.open?"":" off")+(on?" on":"")+'"'+(r.open?' data-bcol="'+k.id+'"':'')+'>'
+      +'<span class="gem-sw" style="background:'+hx+';border-color:'+hx+'"></span>'
+      +'<b>'+_escHtml(k.en)+'</b>'
+      +'<i>'+(on?"chosen":(r.open?"tap to choose":r.label))+'</i></div>';
+  });
+  h+='</div>';
+
   h+='<div class="dy-sec">Verbi irregolari \u00b7 base \u2014 past \u2014 participle</div>';
   h+='<div class="gem-tab">';
   GEM_VERBS.forEach(function(v){
@@ -48831,6 +49044,12 @@ function buildTeca(){
   const rk=el.querySelectorAll("[data-shoes]");
   for(let i=0;i<rk.length;i++) rk[i].onclick=(function(id){
     return ()=>{ if(setPlayerShoes(id)) buildTeca(); }; })(rk[i].getAttribute("data-shoes"));
+  const rbt=el.querySelectorAll("[data-bottom]");
+  for(let i=0;i<rbt.length;i++) rbt[i].onclick=(function(id){
+    return ()=>{ if(setPlayerBottom(id)) buildTeca(); }; })(rbt[i].getAttribute("data-bottom"));
+  const rbc=el.querySelectorAll("[data-bcol]");
+  for(let i=0;i<rbc.length;i++) rbc[i].onclick=(function(id){
+    return ()=>{ if(setPlayerBcol(id)) buildTeca(); }; })(rbc[i].getAttribute("data-bcol"));
 }
 
 /* Console insegnante — come ET.strand: prova e diagnosi, mai punti veri. */
@@ -49122,13 +49341,16 @@ const Presenza=(function(){
   /* ---- aspetto: cinque campi in una stringa ---------------------------- */
   function _look(){
     try{ const L=Look.state();
-      return L.rig+"|"+L.skin+"|"+L.hair+"|"+L.shoes+"|"+(L.fit||"purple"); }
+      /* v277: in coda il sotto e il suo colore. I client vecchi leggono solo i
+         primi cinque campi e ignorano il resto: nessuno si rompe. */
+      return L.rig+"|"+L.skin+"|"+L.hair+"|"+L.shoes+"|"+(L.fit||"purple")+"|"+(L.bottom||"")+"|"+(L.bcol||"auto"); }
     catch(e){ return "m|s3|h1|k1|purple"; }
   }
   function _leggiLook(k){
     const p=String(k||"").split("|");
     return { rig:(p[0]==="f"?"f":"m"), skin:p[1]||"s3", hair:p[2]||"h1",
-             shoes:((p[3]&&p[3]!=="k0")?p[3]:"k1"), fit:p[4]||"purple" };
+             shoes:((p[3]&&p[3]!=="k0")?p[3]:"k1"), fit:p[4]||"purple",
+             bottom:p[5]||"", bcol:p[6]||"auto" };
   }
   /* ---- posizione: x, z con un decimale (10 cm), y e imbardata ----------- */
   function _pos(){
@@ -49369,7 +49591,8 @@ const Presenza=(function(){
     const hr=(LOOK_HAIR.find(function(x){return x.id===L.hair;})||LOOK_HAIR[0]).hex;
     const kf=(LOOK_SHOES.find(function(x){return x.id===L.shoes;})||LOOK_SHOES[0]).hex;
     const ft=GEM_FITS.find(function(x){return x.id===L.fit;})||GEM_FITS[0];
-    const T={ hood:ft.hood, legs:ft.legs, skin:sk, hair:hr, shoes:kf };
+    const bc=(LOOK_BCOL.find(function(x){return x.id===L.bcol;})||LOOK_BCOL[0]).hex;
+    const T={ hood:ft.hood, legs:bc||ft.legs, skin:sk, hair:hr, shoes:kf };
     b.meshes.forEach(function(m){
       const mt=m.material; if(!mt||!mt.name) return;
       const slot=_slot(m.name, mt.name); if(!slot) return;
@@ -49388,6 +49611,7 @@ const Presenza=(function(){
                              Math.min(1,c.b*1.5+0.28));
       if(mt.albedoColor) mt.albedoColor=c; else if(mt.diffuseColor) mt.diffuseColor=c;
     });
+    try{ dressBottom(b.meshes, L.rig, lookBottom(L.rig,L.bottom), T.legs, T.skin); }catch(e){}   // v277
     b.look=look;
   }
   function _distruggi(b){
