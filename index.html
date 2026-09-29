@@ -47921,8 +47921,16 @@ const LOOK_SHOES=[
 /* quota di taglio: frazione dell'altezza piedi -> bacino, in posa di riposo */
 const LOOK_BOTTOMS=[
   { id:"shorts",   rig:"m", en:"Shorts",           cut:0,    req:null,                         def:true },
-  { id:"trousers", rig:"m", en:"Trousers",         cut:0,    req:{ quest:"u8", stars:500 } },
+  /* v282: tube = pantalone vero costruito attorno alle gambe (_botTube).
+     Sul ragazzo anche i Trousers semplici: niente piu' scalino all'orlo. */
+  { id:"trousers", rig:"m", en:"Trousers",         cut:0,    req:{ quest:"u8", stars:500 }, tube:"plain" },
+  { id:"smart",    rig:"m", en:"Smart trousers",   cut:0,    req:{ stars:700 },             tube:"smart" },
+  { id:"joggers",  rig:"m", en:"Joggers",          cut:0,    req:{ quest:"u7", stars:400 }, tube:"joggers" },
+  { id:"cargo",    rig:"m", en:"Cargo trousers",   cut:0,    req:{ quest:"u3_3", stars:900 }, tube:"cargo" },
   { id:"trousers", rig:"f", en:"Trousers",         cut:0,    req:null,                         def:true },
+  { id:"smart",    rig:"f", en:"Smart trousers",   cut:0,    req:{ stars:700 },             tube:"smart" },
+  { id:"joggers",  rig:"f", en:"Joggers",          cut:0,    req:{ quest:"u7", stars:400 }, tube:"joggers" },
+  { id:"cargo",    rig:"f", en:"Cargo trousers",   cut:0,    req:{ quest:"u3_3", stars:900 }, tube:"cargo" },
   { id:"shorts",   rig:"f", en:"Shorts",           cut:0.66, req:{ gems:8 } },
   { id:"capri",    rig:"f", en:"Cropped trousers", cut:0.30, req:{ stars:300 } },
   { id:"skirt",    rig:"f", en:"Skirt",            cut:0.99, req:{ quest:"u8", stars:500 }, skirt:true },
@@ -48065,11 +48073,167 @@ function _botSkirt(L,hex){
   mt.specularColor=new BABYLON.Color3(0.06,0.06,0.06); m.material=mt; _botSetCol(mt,hex);
   m.__npcCast=!!L.__npcCast; L.__skirt=m;
   return m; }
+/* =====================================================================
+   v282 — PANTALONI VERI (Giacomo, 29 set: «i pantaloni non si possono
+   rendere uniformi? si vede lo stacco coi pantaloncini che sono
+   preesistenti. Sarebbe bello un tipo di pantalone diverso, trousers,
+   pantaloni piu' eleganti…»).
+
+   Il ragazzo NON ha gambe da pantalone: ha i pantaloncini (una mesh) e la
+   gamba nuda sotto (un'altra). Colorare la gamba come il pantaloncino
+   lasciava lo scalino dell'orlo al ginocchio. Qui si costruisce un
+   pantalone vero attorno alle gambe, con lo stesso metodo della gonna:
+   · si misurano le gambe in posa di riposo, fascia per fascia: il bacino
+     (dalla vita al cavallo) come un tubo solo, poi un tubo per gamba;
+   · il raggio non scende mai piu' in fretta di 15 cm per metro: sotto
+     l'orlo del pantaloncino il tubo non rientra di colpo, scende dritto e
+     si stringe piano fino alla caviglia — lo scalino sparisce;
+   · ogni vertice prende i pesi del vertice di gamba piu' vicino, e si
+     riporta nello spazio della mesh invertendo la matrice di skinning
+     (come la gonna): si piega al ginocchio camminando.
+   Stili: plain (Trousers), smart (piega davanti + cintura con fibbia),
+   joggers (riga laterale bianca + polsino stretto alla caviglia), cargo
+   (tasche sulle cosce). Il colore e' quello del sotto (LOOK_BCOL).
+   ===================================================================== */
+function _botTube(meshes,style,hex){
+  const Ls=meshes.filter(m=>/Casual_Legs/.test(m.name)&&m.skeleton&&m.getTotalVertices()>0); if(!Ls.length) return null;
+  const L=Ls[0], key=style+"|"+hex;
+  if(L.__tube && L.__tube.key===key){ L.__tube.meshes.forEach(m=>m.setEnabled(true)); return L.__tube; }
+  if(L.__tube){ L.__tube.meshes.forEach(m=>{ try{ m.dispose(false,false); }catch(e){} }); L.__tube=null; }
+  const V3=BABYLON.Vector3, VB=BABYLON.VertexBuffer, sk=L.skeleton, up=new V3(0,1,0);
+  _botRest(sk); L.computeWorldMatrix(true);
+  const W=L.getWorldMatrix(), TM=sk.getTransformMatrices(L);
+  /* campioni: posizione di riposo nel mondo, pesi (tradotti sulle ossa di L), lato */
+  const S=[];
+  Ls.forEach(m=>{ const skm=m.skeleton; if(skm!==sk) _botRest(skm); m.computeWorldMatrix(true);
+    const Wm=m.getWorldMatrix(), lp=m.getPositionData(true,false), mi=m.getVerticesData(VB.MatricesIndicesKind), mw=m.getVerticesData(VB.MatricesWeightsKind);
+    const map=skm.bones.map(b=>sk.bones.findIndex(x=>x.name===b.name));
+    for(let v=0;v<lp.length/3;v++){ let d=0,w=-1; for(let k=0;k<4;k++) if(mw[4*v+k]>w){ w=mw[4*v+k]; d=mi[4*v+k]; }
+      const nm=skm.bones[d]?skm.bones[d].name:"", side=/\.L$/.test(nm)?1:(/\.R$/.test(nm)?-1:0);
+      S.push({ p:V3.TransformCoordinates(new V3(lp[3*v],lp[3*v+1],lp[3*v+2]),Wm),
+               mi:[0,1,2,3].map(k=>Math.max(0,map[mi[4*v+k]])), mw:[0,1,2,3].map(k=>mw[4*v+k]), side }); } });
+  if(S.length<20) return null;
+  const hz=q=>new V3(q.x,0,q.z);
+  const cen=list=>{ const c=new V3(0,0,0); list.forEach(s=>c.addInPlace(s.p)); return c.scale(1/Math.max(1,list.length)); };
+  const SL=S.filter(s=>s.side===1), SR=S.filter(s=>s.side===-1);
+  if(!SL.length||!SR.length) return null;
+  const D=hz(cen(SL).subtract(cen(SR))).normalize();               // verso la gamba sinistra
+  /* il davanti: dalle caviglie verso le punte dei piedi */
+  let Fw=V3.Cross(D,up).normalize();
+  try{ const feet=meshes.filter(m=>/Casual_Feet/.test(m.name)&&m.getTotalVertices()>0); if(feet.length){
+      let fc=new V3(0,0,0), n=0; feet.forEach(m=>{ if(m.skeleton) _botRest(m.skeleton); m.computeWorldMatrix(true); const lp=m.getPositionData(true,false), Wm=m.getWorldMatrix();
+        for(let i=0;i<lp.length;i+=3){ fc.addInPlace(V3.TransformCoordinates(new V3(lp[i],lp[i+1],lp[i+2]),Wm)); n++; } });
+      fc.scaleInPlace(1/n); let yb=1e9; S.forEach(s=>{ if(s.p.y<yb) yb=s.p.y; });
+      const ank=cen(S.filter(s=>s.p.y<yb+0.05)); if(V3.Dot(hz(fc.subtract(ank)),Fw)<0) Fw=Fw.scale(-1); } }catch(e){}
+  let yTop=-1e9, yBot=1e9; S.forEach(s=>{ if(s.p.y>yTop) yTop=s.p.y; if(s.p.y<yBot) yBot=s.p.y; });
+  /* il cavallo: la quota piu' alta in cui non c'e' piu' niente sul piano di mezzo */
+  const mid=cen(S), onMid=y=>S.some(s=>Math.abs(s.p.y-y)<0.012 && Math.abs(V3.Dot(hz(s.p.subtract(mid)),D))<0.014);
+  let yCr=yTop-0.1; for(let y=yTop-0.03;y>yBot;y-=0.01){ if(!onMid(y)){ yCr=y; break; } }
+  const NA=22, step=0.028, margin=(style==="smart"?0.008:0.011);
+  /* un anello: centro e raggio per spicchio, dai campioni in fascia */
+  const ring=(list,y,c0)=>{ const band=list.filter(s=>Math.abs(s.p.y-y)<0.03); if(!band.length) return null;
+    const c=c0||cen(band), rr=new Array(NA).fill(0);
+    band.forEach(s=>{ const d=hz(s.p.subtract(c)), a=Math.atan2(V3.Dot(d,D),V3.Dot(d,Fw)), i=((Math.round(a/(2*Math.PI)*NA))%NA+NA)%NA;
+      rr[i]=Math.max(rr[i],d.length()); });
+    let cl=rr.map((r,i)=>{ let m=0; for(let k=-3;k<=3;k++) m=Math.max(m,rr[(i+k+NA)%NA]); return m; });
+    for(let k=0;k<2;k++) cl=cl.map((r,i)=>(cl[(i+NA-1)%NA]+2*r+cl[(i+1)%NA])/4);
+    return { c:new V3(c.x,y,c.z), r:cl.map(r=>r+margin) }; };
+  /* ⚠️ lisciato ANCHE in verticale: anello per anello i campioni cambiano
+     (ginocchio, orlo del pantaloncino) e il tubo veniva a fisarmonica —
+     visto a schermo. Centri e raggi si mediano coi vicini, poi il raggio
+     non scende piu' in fretta del 15% per metro. */
+  const taper=rings=>{ const n=rings.length;
+    for(let k=0;k<4;k++){ const C=rings.map(g=>g.c.clone()), Rr=rings.map(g=>g.r.slice());
+      for(let j=1;j<n-1;j++){ const y=rings[j].c.y; rings[j].c=C[j-1].add(C[j].scale(2)).add(C[j+1]).scale(0.25); rings[j].c.y=y;
+        rings[j].r=Rr[j].map((r,i)=>Math.max(r*0.92,(Rr[j-1][i]+2*r+Rr[j+1][i])/4)); } }
+    for(let j=1;j<n;j++){ const dy=rings[j-1].c.y-rings[j].c.y; rings[j].r=rings[j].r.map((r,i)=>Math.max(r,rings[j-1].r[i]-0.15*dy)); }
+    return rings; };
+  /* il bacino scende 5 cm sotto il cavallo: copre l'attacco delle gambe (li'
+     restava una fessura e si vedeva il pantaloncino) */
+  const pelvis=[]; for(let y=yTop-0.004;y>yCr-0.05;y-=step){ const g=ring(S,y); if(g) pelvis.push(g); }
+  taper(pelvis);
+  const legs=[1,-1].map(sd=>{ const list=S.filter(s=>s.side===sd), R=[];
+    for(let y=yCr+0.02;y>yBot+0.004;y-=step){ const g=ring(list,y); if(g) R.push(g); }
+    const g=ring(list,yBot+0.012); if(g){ g.c.y=yBot+0.004; R.push(g); }
+    return { sd, list, rings:taper(R) }; });
+  if(style==="joggers") legs.forEach(l=>{ const n=l.rings.length; for(let j=Math.max(0,n-2);j<n;j++) l.rings[j].r=l.rings[j].r.map(r=>r*0.84); });
+  /* dal mondo allo spazio della mesh, coi pesi del campione piu' vicino */
+  const arr=new Float32Array(16);
+  const skin=(pts,pool)=>{ const V=[], MI=[], MW=[];
+    pts.forEach(p=>{ let b=null, bd=1e9; for(let i=0;i<pool.length;i+=2){ const d=V3.DistanceSquared(p,pool[i].p); if(d<bd){ bd=d; b=pool[i]; } }
+      arr.fill(0); for(let k=0;k<4;k++){ const w=b.mw[k]; if(!w) continue; for(let q=0;q<16;q++) arr[q]+=TM[b.mi[k]*16+q]*w; }
+      const inv=BABYLON.Matrix.FromArray(arr).multiply(W).invert(), l=V3.TransformCoordinates(p,inv);
+      V.push(l.x,l.y,l.z); MI.push(b.mi[0],b.mi[1],b.mi[2],b.mi[3]); MW.push(b.mw[0],b.mw[1],b.mw[2],b.mw[3]); });
+    return { V, MI, MW }; };
+  const out=[];
+  const build=(pts,tris,pool,mat)=>{ const flatP=[]; tris.forEach(t=>t.forEach(i=>flatP.push(pts[i])));
+    const s=skin(flatP,pool), I=[]; for(let i=0;i<flatP.length;i++) I.push(i);
+    const N=[]; BABYLON.VertexData.ComputeNormals(s.V,I,N);
+    const vd=new BABYLON.VertexData(); vd.positions=s.V; vd.indices=I; vd.normals=N;
+    const m=new BABYLON.Mesh("botTube",scene); vd.applyToMesh(m,false);
+    m.setVerticesData(VB.MatricesIndicesKind,s.MI,false,4); m.setVerticesData(VB.MatricesWeightsKind,s.MW,false,4);
+    m.parent=L.parent; m.position.copyFrom(L.position); m.rotation.copyFrom(L.rotation);
+    if(L.rotationQuaternion) m.rotationQuaternion=L.rotationQuaternion.clone(); m.scaling.copyFrom(L.scaling);
+    m.skeleton=sk; m.numBoneInfluencers=4; m.material=mat; m.alwaysSelectAsActiveMesh=true; m.isPickable=false;
+    m.__npcCast=!!L.__npcCast; m.__noTint=true; out.push(m); return m; };
+  const at=(g,i,dr)=>{ const a=i/NA*2*Math.PI; return g.c.add(Fw.scale(Math.cos(a)*(g.r[i%NA]+dr))).add(D.scale(Math.sin(a)*(g.r[i%NA]+dr))); };
+  const tube=(rings,dr)=>{ const P=[], T=[]; rings.forEach(g=>{ for(let i=0;i<NA;i++) P.push(at(g,i,dr||0)); });
+    for(let j=0;j<rings.length-1;j++) for(let i=0;i<NA;i++){ const a=j*NA+i, b=j*NA+(i+1)%NA, c=a+NA, d=b+NA; T.push([a,b,d],[a,d,c]); }
+    return { P, T }; };
+  const main=_coatMat({ hex, metal:false },style==="smart"?0.12:0.05);
+  const pv=tube(pelvis); build(pv.P,pv.T,S,main);
+  legs.forEach(l=>{ const t=tube(l.rings); build(t.P,t.T,l.list,main); });
+  /* un filo lungo una generatrice (a = angolo, 0 davanti) */
+  const line=(rings,a,dr,rad,pool,mat)=>{ const pts=rings.map(g=>{ const i=Math.round(a/(2*Math.PI)*NA); return at(g,((i%NA)+NA)%NA,dr); });
+    if(pts.length<2) return; const NS=5, P=[], T=[];
+    pts.forEach(p=>{ for(let k=0;k<NS;k++){ const t=k/NS*2*Math.PI; P.push(p.add(Fw.scale(Math.cos(t)*rad)).add(D.scale(Math.sin(t)*rad))); } });
+    for(let j=0;j<pts.length-1;j++) for(let k=0;k<NS;k++){ const a1=j*NS+k, b1=j*NS+(k+1)%NS; T.push([a1,b1,b1+NS],[a1,b1+NS,a1+NS]); }
+    build(P,T,pool,mat); };
+  /* una fascia fra due quote del bacino (cintura, elastico) */
+  const band=(g0,g1,dr,mat)=>{ const t=tube([g0,g1],dr); build(t.P,t.T,S,mat); };
+  if(style==="smart"){
+    const dark=_coatMat({ hex:_hexMul(hex,0.62), metal:false },0.1);
+    legs.forEach(l=>line(l.rings,0,0.001,0.0022,l.list,dark));                       // la piega davanti
+    if(pelvis.length>1){ const g0=pelvis[0], g1={ c:g0.c.add(new V3(0,-0.03,0)), r:g0.r };
+      band(g0,g1,0.004,_coatMat({ hex:"#1b1a1d", metal:false },0.3));
+      const bk=at({ c:g0.c.add(new V3(0,-0.015,0)), r:g0.r },0,0.009);                 // fibbia
+      const bx=BABYLON.MeshBuilder.CreateBox("b",{ width:0.03, height:0.022, depth:0.006 },scene);
+      bx.position.copyFrom(bk); bx.rotation.y=Math.atan2(Fw.x,Fw.z); bx.computeWorldMatrix(true);
+      const p=bx.getVerticesData(VB.PositionKind), I=bx.getIndices(), Wb=bx.getWorldMatrix(), P=[], T=[];
+      for(let i=0;i<p.length;i+=3) P.push(V3.TransformCoordinates(new V3(p[i],p[i+1],p[i+2]),Wb));
+      for(let i=0;i<I.length;i+=3) T.push([I[i],I[i+1],I[i+2]]); bx.dispose();
+      build(P,T,S,_coatMat({ hex:"#c9b27a", metal:true },0.8)); } }
+  if(style==="joggers"){
+    const white=_coatMat({ hex:"#f2f1ec", metal:false },0.05), dark=_coatMat({ hex:_hexMul(hex,0.7), metal:false },0.05);
+    legs.forEach(l=>{ line(l.rings,l.sd>0?Math.PI/2:-Math.PI/2,0.001,0.004,l.list,white);         // riga laterale
+      const n=l.rings.length; if(n>2){ const t=tube(l.rings.slice(n-2),0.002); build(t.P,t.T,l.list,dark); } });  // polsino
+    if(pelvis.length>1){ const g0=pelvis[0], g1={ c:g0.c.add(new V3(0,-0.035,0)), r:g0.r }; band(g0,g1,0.003,dark); } }
+  if(style==="cargo"){
+    const pk=_coatMat({ hex:_hexMul(hex,0.8), metal:false },0.05);
+    legs.forEach(l=>{ const j=Math.min(l.rings.length-1,Math.max(0,Math.round(0.16/step))), g=l.rings[j]; if(!g) return;
+      const a=l.sd>0?Math.PI/2:-Math.PI/2, i=((Math.round(a/(2*Math.PI)*NA))%NA+NA)%NA, o=at(g,i,0.012);
+      const out1=l.sd>0?D:D.scale(-1), hx=0.04, hy=0.05, hz=0.011, P=[], T=[];
+      [-1,1].forEach(sx=>[-1,1].forEach(sy=>[-1,1].forEach(sz=>P.push(o.add(Fw.scale(sx*hx)).add(new V3(0,sy*hy,0)).add(out1.scale(sz*hz)))))) ;
+      [[0,1,3,2],[4,6,7,5],[0,4,5,1],[2,3,7,6],[0,2,6,4],[1,5,7,3]].forEach(f=>T.push([f[0],f[1],f[2]],[f[0],f[2],f[3]]));
+      build(P,T,l.list,pk);
+      /* la patta, un filo piu' scura, sopra la tasca */
+      const f0=o.add(new V3(0,hy*0.62,0)).add(out1.scale(hz+0.002)), P2=[], T2=[];
+      [-1,1].forEach(sx=>[-1,1].forEach(sy=>[-1,1].forEach(sz=>P2.push(f0.add(Fw.scale(sx*(hx+0.003))).add(new V3(0,sy*0.016,0)).add(out1.scale(sz*0.004)))))) ;
+      [[0,1,3,2],[4,6,7,5],[0,4,5,1],[2,3,7,6],[0,2,6,4],[1,5,7,3]].forEach(f=>T2.push([f[0],f[1],f[2]],[f[0],f[2],f[3]]));
+      build(P2,T2,l.list,_coatMat({ hex:_hexMul(hex,0.6), metal:false },0.05)); }); }
+  L.__tube={ key, meshes:out };
+  try{ _octDirty(); }catch(e){}
+  return L.__tube;
+}
 /* veste il sotto di un corpo. meshes = mesh del corpo, rig "m"/"f",
    b = voce di LOOK_BOTTOMS, legs/skin = colori. Si puo' richiamare quante
    volte si vuole: rifa' solo i colori e i tagli. */
 function dressBottom(meshes,rig,b,legsHex,skinHex){
   if(!meshes||!b) return;
+  /* v282: il pantalone vero sopra le gambe, o via se non serve */
+  try{ if(b.tube) _botTube(meshes,b.tube,legsHex);
+       else { const L0=meshes.find(m=>/Casual_Legs/.test(m.name)&&m.__tube); if(L0) L0.__tube.meshes.forEach(m=>m.setEnabled(false)); } }
+  catch(e){ console.warn("botTube",e); }
   if(rig!=="f"){
     /* ragazzo: la gamba sotto il pantaloncino e' la mesh "pelle" delle gambe */
     meshes.forEach(m=>{ if(!/Casual_Legs/.test(m.name)||!m.material) return;
@@ -49760,7 +49924,11 @@ function applyPlayerFit(id){
   try{ const rig=(_L.rig==="f"?"f":"m");
     dressBottom(avatarMeshes, rig, lookBottom(rig,_L.bottom), TINTA.legs, _sk);
     const L=(avatarMeshes||[]).find(m=>m.__skirt), sk=L&&L.__skirt;
-    if(sk && avatarMeshes.indexOf(sk)<0){ avatarMeshes.push(sk); try{ refreshShadowCasters(); }catch(e){} } }
+    if(sk && avatarMeshes.indexOf(sk)<0){ avatarMeshes.push(sk); try{ refreshShadowCasters(); }catch(e){} }
+    /* v282: i pantaloni veri fanno ombra come il resto; quelli vecchi via dall'elenco */
+    const LT=(avatarMeshes||[]).find(m=>m.__tube);
+    for(let i=avatarMeshes.length-1;i>=0;i--){ const m=avatarMeshes[i]; if(m.name==="botTube" && (!LT || LT.__tube.meshes.indexOf(m)<0)) avatarMeshes.splice(i,1); }
+    if(LT){ let n=0; LT.__tube.meshes.forEach(m=>{ if(avatarMeshes.indexOf(m)<0){ avatarMeshes.push(m); n++; } }); if(n) try{ refreshShadowCasters(); }catch(e){} } }
   catch(e){ console.warn("dressBottom:",e); }
   /* v278: accessori (testa, occhi, collo). Le mesh nuove finiscono in
      avatarMeshes, cosi' fanno ombra come il resto del corpo. */
@@ -49936,7 +50104,7 @@ function buildTeca(){
     const _bcur=lookBottom(_rig,_L.bottom);
     h+='<div class="dy-sec">Trousers, shorts and skirts</div><div class="gem-fits">';
     lookBottomsFor(_rig).forEach(function(b){ const r=lookReq(b.req), on=(_bcur.id===b.id);
-      h+=_tcCard('data-bottom="'+b.id+'"',on,!r.open,_tcSw("#cdd6dc","#8b97a1",(b.skirt?"\u{1F457}":(b.cut>0?"\u{1FA73}":"\u{1F456}"))),b.en,
+      h+=_tcCard('data-bottom="'+b.id+'"',on,!r.open,_tcSw("#cdd6dc","#8b97a1",(b.skirt?"\u{1F457}":(b.tube==="joggers"?"\u{1F3C3}":(b.tube==="smart"?"\u{1F454}":(b.cut>0?"\u{1FA73}":"\u{1F456}"))))),b.en,
         on?"you're wearing it":(r.open?"tap to wear it":r.label)); });
     h+='</div><div class="tc-sub">'+(_bcur.skirt?"Skirt colour":"Colour of your "+_escHtml(_bcur.en.toLowerCase()))+'</div><div class="tc-cols">';
     const _hood=(GEM_FITS.find(function(x){return x.id===st.fit;})||GEM_FITS[0]);
