@@ -5043,6 +5043,9 @@ function _dressBuilding(root,o){
   F.__dressFor=root; return F;
 }
 
+/* v273: dove ricomincia la Park Ave (verso sud). Fino a qui e' marciapiede:
+   Home (pad z 7..23) + un lotto libero da 16 m per il ristorante (23..41). */
+const PARK_AVE_Z0=42;
 function buildTown(){
   const asph=BABYLON.MeshBuilder.CreateGround("asph",{width:320,height:300},scene);
   /* ⚠️ Il nome "asphm" NON va cambiato: la griglia dei confini (buildBounds,
@@ -5085,10 +5088,25 @@ function buildTown(){
   roadH(-36,180,true); // MODERN BOULEVARD (Anno 3) — sul piazzale nbApron: niente strisce dedicate
   // cross centrale: si ferma all'altezza del Modern Boulevard (z=-36) per non
   // passare sotto le basi del New District (Job Centre Tower resta sul piazzale)
-  { const r=BABYLON.MeshBuilder.CreateGround("rv",{width:11,height:186},scene);
-    r.material=mat("roadm2","#3c4248"); r.position.set(0,0.08,57); r.parent=townRoot;
+  /* v273 (Giacomo, 29 set: «Home e Cinema sono nella strada, non hanno
+     marciapiede sotto»): la Park Ave passava SOTTO i due edifici, dal
+     Modern Boulevard (z -30.5) fino a z 150, e la carreggiata (0.08) copriva
+     il loro pad (0.04). Nessuna auto la percorre (il traffico vero e' solo
+     High Street e Boulevard). Ora:
+       · fra il Boulevard e la High Street (cinema) e' marciapiede;
+       · a sud della High Street e' marciapiede fino a z PARK_AVE_Z0, cioe'
+         la casa PIU' un secondo lotto da 16 m libero per il ristorante che
+         verra'; la strada riparte da li' verso sud, chiusa da paletti.
+     Il riempimento e' lo STESSO marciapiede (sidewalkMat, lastre allineate
+     alla griglia mondo da alignPavingUV): stesso colore, stesso motivo. */
+  { const Z0=PARK_AVE_Z0, Z1=150;
+    const r=BABYLON.MeshBuilder.CreateGround("rv",{width:11,height:Z1-Z0},scene);
+    r.material=mat("roadm2","#3c4248"); r.position.set(0,0.08,(Z0+Z1)/2); r.parent=townRoot;
     [-8.25,8.25].forEach(dx=>{ const s=BABYLON.MeshBuilder.CreateGround("swv",{width:5.5,height:186},scene);
-      s.material=sidewalkMat("swm",5.5,186); s.position.set(dx,0.043,57); s.parent=townRoot; s.__ground=true; }); }
+      s.material=sidewalkMat("swm",5.5,186); s.position.set(dx,0.043,57); s.parent=townRoot; s.__ground=true; });
+    [[-30.5,-5.5],[5.5,Z0]].forEach(q=>{ const h=q[1]-q[0];
+      const s=BABYLON.MeshBuilder.CreateGround("swp",{width:11,height:h},scene);
+      s.material=sidewalkMat("swm",11,h); s.position.set(0,0.043,(q[0]+q[1])/2); s.parent=townRoot; s.__ground=true; }); }
   roadV(-72);      // verso la stazione (ovest)
   // (rimossa la strada verticale x=72 che attraversava il parco: ci pensano i vialetti del parco)
   TOWN.forEach(p=>{ if(p.z<-40) return;   // New District: il piazzale nbApron fa gia' da pavimentazione (no z-fighting)
@@ -7874,7 +7892,9 @@ function subwayGrate(x,z,ry){ if(insideSolid(x,z,0.4)) return;
 function buildNYC(){
   // ---- ATTRAVERSAMENTI pedonali agli incroci
   crosswalk( 8.6,  0,true);  crosswalk(-8.6,  0,true);   // High Street
-  crosswalk( 0,  8.6,false); crosswalk( 0, -8.6,false);  // Park Ave (centrale)
+  // (zebre sulla Park Ave RIMOSSE, v273: davanti a Home e Cinema ora e' marciapiede)
+  // paletti dove la Park Ave riparte verso sud, oltre il lotto del ristorante
+  [-4.4,-2.2,0,2.2,4.4].forEach(x=>bollard(x,PARK_AVE_Z0+0.6));
   crosswalk( 8.6,-36,true);  crosswalk(-8.6,-36,true);   // Modern Boulevard
   // (zebra 'verso la stazione' RIMOSSA: finiva sopra la rotatoria ovest x=-64)
   crosswalk(-72, 8.6,false); crosswalk(-72,-8.6,false);
@@ -33464,7 +33484,7 @@ function buildMapPins(){
     e.style.left=Math.min(a.l,b.l)+"%"; e.style.top=Math.min(a.t,b.t)+"%";
     e.style.width=Math.max(0.9,Math.abs(b.l-a.l))+"%";
     e.style.height=Math.max(1.2,Math.abs(b.t-a.t))+"%"; cv.appendChild(e); }
-  road(-90,0,78,0); road(-86,-31,72,-31); road(0,-52,0,18); road(-72,-30,-72,26);
+  road(-90,0,78,0); road(-86,-31,72,-31); road(0,PARK_AVE_Z0,0,48); road(-72,-30,-72,26);   // v273: la Park Ave parte a sud di Home
   road(-66,-60,78,-60); road(14,-46,14,-72); road(78,-60,78,0);
   /* est: i due vialetti veri del parco (x=104 nord-sud, z=0 est-ovest, vedi
      buildPark) e il tratto di strada che porta al terminal. Senza, i nuovi
