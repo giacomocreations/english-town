@@ -5601,21 +5601,87 @@ function planter(x,z,col){ if(insideSolid(x,z,1.2)) return; const M=_pm();
 /* CESPUGLIO (GLB) — cespuglio fiorito tondo; attraversabile (no collisione) */
 function bush(x,z,s){ /* cespugli fioriti disattivati su richiesta: nessuno spawn */ return; }
 
-/* SIEPE procedurale — corre da (x0,z0) a (x1,z1): siepe squadrata "potata",
-   corpo verde scuro + coronamento piu' chiaro e stretto, zoccolo di terra.
-   Niente GLB: sempre a terra per costruzione, collisione via _solidify. */
+/* SIEPE procedurale — corre da (x0,z0) a (x1,z1). Niente GLB: sempre a
+   terra per costruzione, collisione via _solidify.
+   v275 (Giacomo, 29 set: «le siepi a bordo strada, puoi farle piu'
+   realistiche?»): prima erano tre parallelepipedi verde pieno. Ora e' una
+   siepe potata vera: fogliame disegnato (migliaia di foglioline in sei
+   verdi, con buchi scuri e riflessi), sagoma irregolare (ciuffi che
+   sporgono sui bordi del colmo e sui fianchi, estremita' arrotondate),
+   aiuola di pacciame con cordolo di pietra e ombra di contatto.
+   INGOMBRO INVARIATO: il cordolo arriva a +-0.53 come il vecchio zoccolo,
+   niente sporge oltre, quindi _solidify da' lo stesso solido. Tutto fuso
+   per materiale: 4-5 mesh per siepe. */
+let _hdgTex=null; const _hdgMats={};
+function hedgeLeafTex(){ if(_hdgTex) return _hdgTex;
+  const W=256,H=256, dt=new BABYLON.DynamicTexture("hdgLeafT",{width:W,height:H},scene,true), c=dt.getContext();
+  c.fillStyle="#264b20"; c.fillRect(0,0,W,H);
+  let sd=11; const rnd=()=>{ sd=(sd*16807)%2147483647; return (sd%10000)/10000; };
+  /* disegno «a tessera»: ogni foglia vicina al bordo si ripete dall'altra
+     parte, cosi' la texture si ripete senza cuciture lungo tutta la siepe */
+  const dot=(x,y,rx,ry,a)=>{ for(const ox of [0,-W,W]) for(const oy of [0,-H,H]){
+      const X=x+ox, Y=y+oy; if(X<-10||X>W+10||Y<-10||Y>H+10) continue;
+      c.beginPath(); c.ellipse(X,Y,rx,ry,a,0,Math.PI*2); c.fill(); } };
+  const cols=["#34682b","#3e7632","#4a843a","#579243","#649e4c","#315d28"];
+  for(let i=0;i<2800;i++){ c.fillStyle=cols[(rnd()*cols.length)|0];
+    const r=2.0+rnd()*3.0; dot(rnd()*W,rnd()*H,r,r*0.55,rnd()*Math.PI); }
+  c.fillStyle="rgba(8,22,6,0.55)";                                      // buchi fra le foglie
+  for(let i=0;i<420;i++){ const r=1.2+rnd()*2.2; dot(rnd()*W,rnd()*H,r,r*0.8,0); }
+  c.fillStyle="rgba(150,196,105,0.55)";                                // foglie al sole
+  for(let i=0;i<520;i++){ const r=1.2+rnd()*1.8; dot(rnd()*W,rnd()*H,r,r*0.5,rnd()*Math.PI); }
+  dt.update(); dt.wrapU=dt.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE;
+  return (_hdgTex=dt); }
+function hedgeMat(uS,vS){ const k=uS.toFixed(1)+"_"+vS.toFixed(1); if(_hdgMats[k]) return _hdgMats[k];
+  /* ⚠️ NON .clone(): una DynamicTexture clonata e' una tela nuova mai
+     aggiornata, resta «non pronta» e Babylon NON disegna la mesh (la siepe
+     spariva, restava solo l'aiuola). Come sidewalkMat: un Texture che
+     condivide la stessa texture interna, con la sua scala. */
+  const t=new BABYLON.Texture(null,scene,{internalTexture:hedgeLeafTex().getInternalTexture()});
+  t.wrapU=t.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE; t.uScale=uS; t.vScale=vS;
+  const m=new BABYLON.StandardMaterial("hdgM"+k,scene); m.diffuseTexture=t;
+  m.specularColor=new BABYLON.Color3(0.05,0.07,0.04); m.specularPower=12;
+  return (_hdgMats[k]=m); }
 function hedge(x0,z0,x1,z1,h){ h=h||1.1;
   const cx=(x0+x1)/2, cz=(z0+z1)/2, len=Math.hypot(x1-x0,z1-z0);
-  if(insideSolid(cx,cz,0.6)) return; const M=_pm();
+  if(insideSolid(cx,cz,0.6)) return;
   const g=new BABYLON.TransformNode("hdg",scene); g.parent=townRoot;
   g.position.set(cx,0,cz); g.rotation.y=Math.atan2(-(z1-z0),(x1-x0)); // X locale lungo la corsa
-  const base=BABYLON.MeshBuilder.CreateBox("hdg0",{width:len,height:0.14,depth:1.06},scene);
-  base.material=M.soil; base.position.y=0.07; base.parent=g;
-  const body=BABYLON.MeshBuilder.CreateBox("hdg1",{width:len,height:h*0.72,depth:0.96},scene);
-  body.material=M.leaf; body.position.y=0.12+h*0.36; body.parent=g; body.__occluder=true;
-  const top=BABYLON.MeshBuilder.CreateBox("hdg2",{width:len-0.18,height:h*0.26,depth:0.80},scene);
-  top.material=M.leaf2; top.position.y=0.12+h*0.72+h*0.13; top.parent=g; top.__occluder=true;
-  _solidify(g,0.1); }
+  let sd=Math.abs(Math.round(cx*13+cz*7))+3; const rnd=()=>{ sd=(sd*16807)%2147483647; return (sd%10000)/10000; };
+  const L=[], B=[], K=[], S=[];
+  const box=(arr,w,hh,d,x,y,z)=>{ const b=BABYLON.MeshBuilder.CreateBox("hdgp",{width:w,height:hh,depth:d},scene); b.position.set(x,y,z); arr.push(b); return b; };
+  /* aiuola: pacciame scuro fra due cordoli di pietra */
+  box(S,len,0.10,0.90,0,0.05,0);
+  [-0.49,0.49].forEach(z=>box(K,len,0.16,0.08,0,0.08,z));
+  [-len/2+0.04,len/2-0.04].forEach(x=>box(K,0.08,0.16,0.90,x,0.08,0));
+  /* corpo potato (un blocco solo: un secondo blocco piu' largo alla base
+     lasciava un gradino che il sole disegnava come una riga chiara) */
+  const y0=0.14, bh=h-0.26;
+  box(L,len-0.30,bh,0.82,0,y0+bh/2,0);
+  /* ciuffi: bordi del colmo, colmo, fianchi, estremita' arrotondate */
+  const ball=(x,y,z,sx,sy,sz)=>{ const b=BABYLON.MeshBuilder.CreateSphere("hdgb",{diameter:1,segments:4},scene);
+    b.scaling.set(sx,sy,sz); b.position.set(x,y,z); B.push(b); };
+  /* colmo: tre file FITTE di ciuffi sovrapposti (passo 0.26), cosi' il
+     tetto piatto del corpo non si vede piu' e la chioma e' una superficie
+     mossa e continua, non una fila di palline */
+  const n=Math.max(6,Math.round((len-0.5)/0.26));
+  for(let i=0;i<=n;i++){ const x=-len/2+0.28+(len-0.56)*i/n;
+    [-0.25,0,0.25].forEach(zr=>{ const w=0.34+rnd()*0.16;
+      ball(x+(rnd()-0.5)*0.12, y0+bh-0.04+rnd()*0.06-(zr?0.03:0), zr+(rnd()-0.5)*0.06, w, 0.18+rnd()*0.10, w*(zr?0.85:1)); }); }
+  /* fianchi: ciuffi sparsi, qualche rametto che sporge */
+  const m2=Math.max(4,Math.round(len/0.45));
+  for(let i=0;i<=m2;i++){ const x=-len/2+0.30+(len-0.60)*i/m2;
+    [-1,1].forEach(sg=>{ if(rnd()<0.7){ const r=0.13+rnd()*0.09;
+      ball(x+(rnd()-0.5)*0.3, y0+0.15+rnd()*(bh-0.30), sg*(0.36+rnd()*0.05), r*1.5, r*1.3, r*0.9); } }); }
+  [-1,1].forEach(sg=>{ const ex=sg*(len/2-0.22);
+    ball(ex, y0+bh*0.52, 0, 0.44, bh*1.02, 0.84); ball(ex+sg*0.04, y0+bh-0.02, 0, 0.40, 0.30, 0.66); });
+  const fuse=(arr,mt,occ)=>{ if(!arr.length) return; const m=arr.length===1?arr[0]:BABYLON.Mesh.MergeMeshes(arr,true,true,undefined,false,false);
+    if(!m) return; m.material=mt; m.parent=g; if(occ) m.__occluder=true; };
+  fuse(L,hedgeMat(Math.max(1,Math.round(len/1.1)),1),true);
+  fuse(B,hedgeMat(1,1),true);
+  fuse(K,hm7Mat("#b7b2a6",0.08,16));
+  fuse(S,lpMat("#3b2a1e"));
+  _solidify(g,0.1);                          // PRIMA dell'ombra: il solido si misura sulla siepe, non sull'alone
+  hm7Shadow(g,len+0.7,1.7,0,0,0.058,0.55); }
 
 /* STACCIONATA — pali + due correnti tra due punti (no collisione pesante) */
 function fenceRun(x0,z0,x1,z1){ const M=_pm();
