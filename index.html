@@ -491,6 +491,24 @@
     font-weight:700;margin-left:26px;}
   .gem-sw{width:18px;height:18px;border-radius:6px;border:3px solid #333;flex:0 0 auto;}
   .gem-tab{margin-top:6px;}
+  /* v279: la Teca a schede */
+  .tc-tabs{display:flex;gap:6px;margin:4px 0 2px;overflow-x:auto;scrollbar-width:none;}
+  .tc-tab{flex:1 0 auto;display:flex;flex-direction:column;align-items:center;gap:2px;border:none;border-radius:12px;
+    padding:8px 8px 7px;cursor:pointer;font:800 12px/1.1 system-ui,sans-serif;color:#6b7780;background:#efe8d6;}
+  .tc-tab span{font-size:19px;line-height:1;}
+  .tc-tab.on{background:var(--ink);color:#fff;}
+  .tc-how,.tc-prof{margin:8px auto 0;max-width:420px;font-size:12px;color:#6b7780;line-height:1.45;}
+  .tc-prof{color:var(--plum);font-weight:800;}
+  .tc-sub{margin-top:12px;font-size:12px;font-weight:800;color:#5d6b72;}
+  .tc-cols{display:flex;flex-wrap:wrap;gap:6px 4px;margin-top:6px;}
+  .tc-col{width:62px;display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 2px 4px;
+    border-radius:10px;cursor:pointer;text-align:center;}
+  .tc-col span{width:30px;height:30px;border-radius:50%;border:2px solid rgba(0,0,0,.22);display:flex;
+    align-items:center;justify-content:center;font-size:12px;}
+  .tc-col b{font-size:10.5px;color:var(--ink);font-weight:700;line-height:1.1;}
+  .tc-col i{font-style:normal;font-size:9.5px;color:var(--plum);font-weight:700;line-height:1.1;}
+  .tc-col.on{background:#f3eddd;box-shadow:inset 0 0 0 2px var(--sun);}
+  .tc-col.off{opacity:.5;cursor:default;}
   .gem-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:6px 4px;
     border-bottom:1px solid #f0ebdd;font-size:13px;align-items:baseline;}
   .gem-row.off{opacity:.42;}
@@ -47920,9 +47938,16 @@ const LOOK_BCOL=[
 function lookBottomsFor(rig){ return LOOK_BOTTOMS.filter(b=>b.rig===(rig==="f"?"f":"m")); }
 function lookBottom(rig,id){ const L=lookBottomsFor(rig); return L.find(b=>b.id===id)||L.find(b=>b.def)||L[0]; }
 function _unitTitle(qid){ try{ const u=SYLLABUS.find(x=>x.id===qid); if(u) return u.t; }catch(e){} return qid; }
+/* v279 — IL DOCENTE VEDE E PROVA TUTTO SUBITO (Giacomo: «rendi possibile per
+   account prof-cossu vedere subito gli accessori anche senza stelle»).
+   Vale per tutto il guardaroba: capi, colori, scarpe, capelli, tagli,
+   accessori. Serve a mostrare in classe che cosa c'e' da guadagnare e a
+   collaudare senza giocarsi ogni volta le stelle. ⚠️ Non tocca le stelle ne'
+   i cristalli: apre le soglie, non regala niente a nessuno studente. */
+function lookProf(){ try{ return !!Student.teacher; }catch(e){ return false; } }
 /* { open, label } — label e' quello che si scrive sul riquadro bloccato */
 function lookReq(req){
-  if(!req) return { open:true, label:"" };
+  if(!req || lookProf()) return { open:true, label:"" };
   let gems=0, stars=0, done=false;
   try{ gems=Gems.count(); }catch(e){}
   try{ stars=Stars.total(); }catch(e){}
@@ -48059,21 +48084,50 @@ function dressBottom(meshes,rig,b,legsHex,skinHex){
    quando guarda, cammina, corre.
    ===================================================================== */
 const LOOK_ACC=[
-  /* slot testa */
-  { id:"cap",       slot:"head", en:"Baseball cap",   ic:"\u{1F9E2}", req:{ quest:"u8",   stars:400 } },
-  { id:"beanie",    slot:"head", en:"Woolly hat",     ic:"\u{1F9E3}", req:{ quest:"u2_3", stars:600 } },
-  { id:"headband",  slot:"head", en:"Headband",       ic:"\u{1F3BD}", req:{ quest:"u7",   stars:400 } },
-  { id:"headphones",slot:"head", en:"Headphones",     ic:"\u{1F3A7}", req:{ quest:"u2_2", stars:800 } },
-  { id:"bucket",    slot:"head", en:"Hiking hat",     ic:"\u{1F452}", req:{ quest:"u3_3", stars:1200 } },
+  /* slot testa · col = il colore «Original» dell'accessorio */
+  { id:"cap",       slot:"head", en:"Baseball cap",   ic:"\u{1F9E2}", col:"#b8352e", req:{ quest:"u8",   stars:400 } },
+  { id:"beanie",    slot:"head", en:"Woolly hat",     ic:"\u{1F9E3}", col:"#2f5f8a", req:{ quest:"u2_3", stars:600 } },
+  { id:"headband",  slot:"head", en:"Headband",       ic:"\u{1F3BD}", col:"#e0492f", req:{ quest:"u7",   stars:400 } },
+  { id:"headphones",slot:"head", en:"Headphones",     ic:"\u{1F3A7}", col:"#23262b", req:{ quest:"u2_2", stars:800 } },
+  { id:"bucket",    slot:"head", en:"Hiking hat",     ic:"\u{1F452}", col:"#8a7a52", req:{ quest:"u3_3", stars:1200 } },
   /* slot occhi */
-  { id:"shades",    slot:"face", en:"Sunglasses",     ic:"\u{1F576}️", req:{ quest:"u1", stars:300 } },
-  { id:"glasses",   slot:"face", en:"Round glasses",  ic:"\u{1F453}", req:{ gems:25 } },
+  { id:"shades",    slot:"face", en:"Sunglasses",     ic:"\u{1F576}️", col:"#1c1e22", req:{ quest:"u1", stars:300 } },
+  { id:"glasses",   slot:"face", en:"Round glasses",  ic:"\u{1F453}", col:"#6b3f24", req:{ gems:25 } },
   /* slot collo */
-  { id:"necklace",  slot:"neck", en:"Necklace",       ic:"\u{1F4FF}", req:{ stars:700 } },
-  { id:"scarf",     slot:"neck", en:"Scarf",          ic:"\u{1F9E3}", req:{ quest:"u2_3", stars:600 } },
+  { id:"necklace",  slot:"neck", en:"Necklace",       ic:"\u{1F4FF}", col:"#3f9fd0", req:{ stars:700 } },
+  { id:"scarf",     slot:"neck", en:"Scarf",          ic:"\u{1F9E3}", col:"#b3352e", req:{ quest:"u2_3", stars:600 } },
 ];
-const ACC_SLOTS=[ { id:"head", en:"Hats and headphones" }, { id:"face", en:"Glasses" }, { id:"neck", en:"Neck" } ];
+/* k = campo di Look con l'accessorio, kc = campo con il suo colore */
+const ACC_SLOTS=[ { id:"head", k:"hat",  kc:"hatc",  en:"Hats and headphones" },
+                  { id:"face", k:"face", kc:"facec", en:"Glasses" },
+                  { id:"neck", k:"neck", kc:"neckc", en:"Necklaces and scarves" } ];
 function lookAcc(id){ return LOOK_ACC.find(a=>a.id===id)||null; }
+/* v279 — IL COLORE DEGLI ACCESSORI (Giacomo, 29 set: «devi poter scegliere il
+   colore degli accessori»). Uno per slot, non per accessorio: si cambia
+   cappello e il colore resta, come succede col colore dei pantaloni.
+   «Original» = il colore con cui l'accessorio e' nato (LOOK_ACC.col).
+   Si sbloccano coi cristalli come i colori dei pantaloni: sono lessico
+   dell'Anno 1, e il guardaroba li ripassa a ogni apertura.
+   Su occhiali il colore va sulla MONTATURA (le lenti restano scure), sulla
+   collana sul CIONDOLO (Gold e Silver cambiano anche la catenina). */
+const ACC_COLS=[
+  { id:"",       en:"Original", hex:null,      req:null },
+  { id:"black",  en:"Black",    hex:"#1d1f24", req:null },
+  { id:"white",  en:"White",    hex:"#ecebe6", req:null },
+  { id:"red",    en:"Red",      hex:"#b8352e", req:null },
+  { id:"blue",   en:"Blue",     hex:"#2f64b0", req:{ gems:6 } },
+  { id:"green",  en:"Green",    hex:"#3d8a4e", req:{ gems:12 } },
+  { id:"yellow", en:"Yellow",   hex:"#e2b72e", req:{ gems:20 } },
+  { id:"orange", en:"Orange",   hex:"#e07b2a", req:{ gems:30 } },
+  { id:"pink",   en:"Pink",     hex:"#d8739f", req:{ gems:40 } },
+  { id:"purple", en:"Purple",   hex:"#6c4fa3", req:{ gems:50 } },
+  { id:"brown",  en:"Brown",    hex:"#6b4a2e", req:{ gems:60 } },
+  { id:"grey",   en:"Grey",     hex:"#83888f", req:{ gems:70 } },
+  { id:"gold",   en:"Gold",     hex:"#d6ae3c", req:{ gems:90 },  metal:true },
+  { id:"silver", en:"Silver",   hex:"#c9ccd2", req:{ gems:90 },  metal:true },
+];
+function accColor(a,colId){ const c=ACC_COLS.find(x=>x.id===(colId||""))||ACC_COLS[0];
+  return { id:c.id, hex:c.hex||a.col, metal:!!c.metal }; }
 
 /* misure della testa e del collo NELLO SPAZIO GREZZO DEI VERTICI (bind
    space): quello in cui stanno testa, capelli e corpo prima di qualunque
@@ -48086,7 +48140,11 @@ function _accMeasure(meshes){
   const V3=BABYLON.Vector3, raw=m=>{ const p=m.getVerticesData(BABYLON.VertexBuffer.PositionKind)||[], o=[];
     for(let i=0;i<p.length;i+=3) o.push(new V3(p[i],p[i+1],p[i+2])); return o; };
   const HP=[], EP=[], BP=[], SP=[];
-  head.forEach(m=>{ const nm=(m.material&&m.material.name)||"", eye=/^(Eye|Eyebrows|Brown)/.test(nm)&&!/Hair/.test(nm), sk=/^Skin/.test(nm);
+  /* ⚠️ nomi NON ancorati all'inizio: sui compagni i materiali clonati si
+     chiamano «<id>_Skin», «<id>_Eye»... e con ^ non si trovavano gli occhi,
+     quindi niente misure e niente accessori sui compagni. «Hair_Brown»
+     (le sopracciglia della ragazza) resta fuori per via di «Hair». */
+  head.forEach(m=>{ const nm=(m.material&&m.material.name)||"", eye=/(^|_)(Eye|Eyebrows|Brown)/.test(nm)&&!/Hair/.test(nm), sk=/(^|_)Skin/.test(nm);
     raw(m).forEach(p=>{ HP.push(p); if(eye) EP.push(p); if(sk) SP.push(p); }); });
   body.forEach(m=>raw(m).forEach(p=>BP.push(p)));
   if(!EP.length) return null;
@@ -48117,25 +48175,69 @@ function _accMeasure(meshes){
   /* collo: la PELLE sotto il mento (non l'anello piu' basso della testa:
      sul ragazzo scende dentro il cappuccio ed e' largo come le spalle, e la
      collana finiva sulla spalla). Centro e raggio veri del collo. */
-  let faceHW=0; SP.forEach(p=>{ const l=loc(p); if(Math.abs(l.y)<0.03) faceHW=Math.max(faceHW,Math.abs(l.x)); });
+  const SPL=SP.map(loc);
+  let faceHW=0; SPL.forEach(l=>{ if(Math.abs(l.y)<0.03) faceHW=Math.max(faceHW,Math.abs(l.x)); });
   if(faceHW<0.03) faceHW=0.07;
-  const NP=SP.map(loc).filter(l=>l.y<-0.10 && l.y>-0.22);
+  const NP=SPL.filter(l=>l.y<-0.10 && l.y>-0.22);
   let nz=-0.06, nr=faceHW*0.72;
   if(NP.length>8){ nz=NP.reduce((a,l)=>a+l.z,0)/NP.length;
     const rr=NP.map(l=>Math.hypot(l.x,l.z-nz)).sort((a,b)=>a-b); nr=rr[Math.floor(rr.length*0.7)]; }
   nr=Math.max(0.04,Math.min(0.075,nr));
   const neckY=-0.155, chestF=nz+nr+0.035, nFront=nz+nr;
-  return { E, R, U, F, s, top, back, front, faceZ, halfW, hwBrow:hwBrow||halfW, bot, neckY, nz, nr, nFront, chestF };
+  /* v279: larghezza della PELLE all'altezza degli occhi, dove poggiano le
+     stanghette. Prima si usava la larghezza dei capelli: col buzz cut gli
+     occhiali sarebbero rimasti sospesi a due dita dalle tempie. 95° centile,
+     cosi' un vertice sporgente (l'orecchio del ragazzo) non la gonfia. */
+  const xs=SPL.filter(l=>l.y>-0.01&&l.y<0.04).map(l=>Math.abs(l.x)).sort((a,b)=>a-b);
+  const skHW=xs.length?xs[Math.floor(xs.length*0.95)]:faceHW;
+  /* v279: il corpo nello stesso sistema, per i capelli lunghi che ci cadono sopra */
+  const BPL=[]; BP.forEach(p=>{ const l=loc(p); if(l.y>-0.45 && l.y<0 && Math.abs(l.x)<0.16) BPL.push(l); });
+  SPL.forEach(l=>{ if(l.y<-0.08) BPL.push(l); });
+  return { E, R, U, F, s, top, back, front, faceZ, halfW, hwBrow:hwBrow||halfW, bot, neckY, nz, nr, nFront, chestF, skHW, SPL, BPL };
 }
 const _accM={};
 function _accMat(hex,spec,em){ const k=hex+"|"+(spec||0)+"|"+(em||""); if(_accM[k]) return _accM[k];
   const m=new BABYLON.StandardMaterial("accM"+(_lpN++),scene); m.diffuseColor=BABYLON.Color3.FromHexString(hex);
   const s=spec||0.08; m.specularColor=new BABYLON.Color3(s,s,s); m.specularPower=spec>0.4?80:24;
   if(em) m.emissiveColor=BABYLON.Color3.FromHexString(em); return (_accM[k]=m); }
-/* costruttori nel sistema locale: x destra, y su (0 = occhi), z avanti */
+function _hexMul(hex,k){ const c=BABYLON.Color3.FromHexString(hex);
+  return new BABYLON.Color3(Math.min(1,c.r*k),Math.min(1,c.g*k),Math.min(1,c.b*k)).toHexString(); }
+function _hexLum(hex){ const c=BABYLON.Color3.FromHexString(hex); return 0.3*c.r+0.59*c.g+0.11*c.b; }
+/* il materiale del colore scelto: Gold e Silver luccicano */
+function _accC(C,spec){ return C.metal ? _accMat(C.hex,0.85,_hexMul(C.hex,0.2)) : _accMat(C.hex,spec); }
+/* v279 — lente/montatura: un cilindro basso riplasmato a superellisse (n>2 =
+   angoli piu' pieni, taper = quanto si stringe in basso, come le lenti vere).
+   Ruotato di 90° sull'asse x: la z locale del cilindro diventa il «giu'». */
+function _accLens(w,h,d,n,taper){
+  const m=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:1,height:d,tessellation:36},scene);
+  const p=m.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+  for(let i=0;i<p.length;i+=3){ const x=p[i], z=p[i+2], r=Math.hypot(x,z); if(r<1e-6) continue;
+    const c=x/r, s=z/r, k=Math.pow(Math.pow(Math.abs(c),n)+Math.pow(Math.abs(s),n),-1/n);
+    p[i]=c*k*0.5*w*(1-taper*Math.max(0,s)); p[i+2]=s*k*0.5*h; }
+  m.setVerticesData(BABYLON.VertexBuffer.PositionKind,p);
+  m.rotation.x=Math.PI/2; return m; }
+/* v279 — stanghetta TONDA (Giacomo: «le stanghette sono troppo squadrate…
+   fai leggermente piu' rotonde le stanghette vicino alle lenti»): un tubo che
+   parte dal bordo esterno della lente, curva morbido all'indietro fino alla
+   tempia e poi corre dritto verso l'orecchio. Prima era un parallelepipedo
+   ad angolo retto piu' una barra dritta sopra le lenti. */
+function _accTemple(g,mat,s,x0,y0,z0,xw,zEnd,r){
+  const V=BABYLON.Vector3;
+  const pts=BABYLON.Curve3.CreateQuadraticBezier(new V(s*x0,y0,z0), new V(s*(xw+0.003),y0,z0-0.001),
+                                                 new V(s*xw,y0-0.002,z0-0.032), 10).getPoints();
+  pts.push(new V(s*xw,y0-0.007,zEnd));
+  const t=BABYLON.MeshBuilder.CreateTube("acc",{path:pts,radius:r,tessellation:10,cap:BABYLON.Mesh.CAP_ALL},scene);
+  t.material=mat; t.parent=g; return t; }
+function _accBridge(g,mat,z,xi,y,r){
+  const V=BABYLON.Vector3;
+  const pts=BABYLON.Curve3.CreateQuadraticBezier(new V(-xi,y,z), new V(0,y+0.009,z+0.003), new V(xi,y,z), 8).getPoints();
+  const t=BABYLON.MeshBuilder.CreateTube("acc",{path:pts,radius:r,tessellation:8,cap:BABYLON.Mesh.CAP_ALL},scene);
+  t.material=mat; t.parent=g; return t; }
+/* costruttori nel sistema locale: x destra, y su (0 = occhi), z avanti.
+   C = { hex, metal } il colore scelto (accColor) */
 const ACC_BUILD={
-  cap(g,M){ const zc=(M.front+M.back)/2, rx=M.halfW*1.10, rz=(M.front-M.back)/2*1.08, base=Math.max(0.04,M.top-0.13);
-    const c=_accMat("#b8352e",0.12), w=_accMat("#f1efe8",0.1);
+  cap(g,M,C){ const zc=(M.front+M.back)/2, rx=M.halfW*1.10, rz=(M.front-M.back)/2*1.08, base=Math.max(0.04,M.top-0.13);
+    const c=_accC(C,0.12), w=_accMat(_hexLum(C.hex)>0.8?"#2a2d33":"#f1efe8",0.1);
     const d=BABYLON.MeshBuilder.CreateSphere("acc",{diameter:1,segments:14,slice:0.5},scene);
     d.material=c; d.scaling.set(rx*2,(M.top-base+0.035)*2,rz*2); d.position.set(0,base,zc); d.parent=g;
     const brim=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:1,height:0.018,tessellation:24},scene);
@@ -48143,54 +48245,58 @@ const ACC_BUILD={
     const ring=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:1,thickness:0.018,tessellation:28},scene);
     ring.material=c; ring.scaling.set(rx*2,1,rz*2); ring.position.set(0,base+0.004,zc); ring.parent=g;
     const b=BABYLON.MeshBuilder.CreateSphere("acc",{diameter:0.026,segments:6},scene); b.material=w; b.position.set(0,M.top+0.018,zc); b.parent=g; },
-  beanie(g,M){ const zc=(M.front+M.back)/2-0.005, rx=M.halfW*1.11, rz=(M.front-M.back)/2*1.09, base=Math.max(0.03,M.top-0.15);
-    const c=_accMat("#2f5f8a",0.05), c2=_accMat("#e8e4da",0.05);
+  beanie(g,M,C){ const zc=(M.front+M.back)/2-0.005, rx=M.halfW*1.11, rz=(M.front-M.back)/2*1.09, base=Math.max(0.03,M.top-0.15);
+    const c=_accC(C,0.05), c2=_accMat(_hexLum(C.hex)>0.75?"#2f5f8a":"#e8e4da",0.05);
     const d=BABYLON.MeshBuilder.CreateSphere("acc",{diameter:1,segments:14,slice:0.5},scene);
     d.material=c; d.scaling.set(rx*2,(M.top-base+0.035)*2,rz*2); d.position.set(0,base,zc); d.parent=g;
     const band=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:1,height:0.045,tessellation:28},scene);
     band.material=c2; band.scaling.set(rx*2.04,1,rz*2.04); band.position.set(0,base+0.012,zc); band.parent=g;
     const pom=BABYLON.MeshBuilder.CreateSphere("acc",{diameter:0.07,segments:8},scene); pom.material=c2; pom.position.set(0,M.top+0.05,zc); pom.parent=g; },
-  headband(g,M){ const zc=(M.front+M.back)/2, rx=M.halfW*1.03, rz=(M.front-M.back)/2*1.01;
+  headband(g,M,C){ const zc=(M.front+M.back)/2, rx=M.halfW*1.03, rz=(M.front-M.back)/2*1.01;
     const t=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:1,thickness:0.03,tessellation:32},scene);
-    t.material=_accMat("#e0492f",0.15); t.scaling.set(rx*2,1.2,rz*2); t.position.set(0,M.top-0.10,zc); t.rotation.x=-0.12; t.parent=g; },
-  headphones(g,M){ const zc=(M.front+M.back)/2-0.01, rx=M.halfW*1.08, k=_accMat("#23262b",0.35), acc=_accMat("#3fa7c9",0.3);
+    t.material=_accC(C,0.15); t.scaling.set(rx*2,1.2,rz*2); t.position.set(0,M.top-0.10,zc); t.rotation.x=-0.12; t.parent=g; },
+  /* archetto e gusci del colore scelto, cuscinetti sempre scuri */
+  headphones(g,M,C){ const zc=(M.front+M.back)/2-0.01, rx=M.halfW*1.08, k=_accC(C,0.35), pad=_accMat("#1a1c20",0.1),
+      plate=_accMat(_hexLum(C.hex)<0.2?"#3fa7c9":_hexMul(C.hex,0.7),0.3);
     const pts=[]; for(let i=0;i<=16;i++){ const a=Math.PI*i/16; pts.push(new BABYLON.Vector3(-Math.cos(a)*rx, 0.0+Math.sin(a)*(M.top+0.02), zc)); }
     const band=BABYLON.MeshBuilder.CreateTube("acc",{path:pts,radius:0.013,tessellation:8},scene); band.material=k; band.parent=g;
-    [-1,1].forEach(s=>{ const cup=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.085,height:0.04,tessellation:18},scene);
-      cup.material=k; cup.rotation.z=Math.PI/2; cup.position.set(s*(rx+0.005),-0.01,zc); cup.parent=g;
-      const cap=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.06,height:0.006,tessellation:18},scene);
-      cap.material=acc; cap.rotation.z=Math.PI/2; cap.position.set(s*(rx+0.027),-0.01,zc); cap.parent=g; }); },
-  bucket(g,M){ const zc=(M.front+M.back)/2, rx=M.halfW*1.08, rz=(M.front-M.back)/2*1.06, base=Math.max(0.045,M.top-0.12);
-    const c=_accMat("#8a7a52",0.05), band=_accMat("#4a3d26",0.05);
+    [-1,1].forEach(s=>{ const cush=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.08,height:0.016,tessellation:18},scene);
+      cush.material=pad; cush.rotation.z=Math.PI/2; cush.position.set(s*(rx-0.006),-0.01,zc); cush.parent=g;
+      const cup=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.088,height:0.034,tessellation:18},scene);
+      cup.material=k; cup.rotation.z=Math.PI/2; cup.position.set(s*(rx+0.014),-0.01,zc); cup.parent=g;
+      const cap=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.058,height:0.006,tessellation:18},scene);
+      cap.material=plate; cap.rotation.z=Math.PI/2; cap.position.set(s*(rx+0.032),-0.01,zc); cap.parent=g; }); },
+  bucket(g,M,C){ const zc=(M.front+M.back)/2, rx=M.halfW*1.08, rz=(M.front-M.back)/2*1.06, base=Math.max(0.045,M.top-0.12);
+    const c=_accC(C,0.05), band=_accMat(_hexMul(C.hex,0.55),0.05);
     const cr=BABYLON.MeshBuilder.CreateCylinder("acc",{diameterTop:0.8,diameterBottom:1,height:1,tessellation:24},scene);
     cr.material=c; cr.scaling.set(rx*2,M.top-base+0.03,rz*2); cr.position.set(0,base+(M.top-base+0.03)/2,zc); cr.parent=g;
     const b1=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:1,height:0.03,tessellation:24},scene);
     b1.material=band; b1.scaling.set(rx*2.02,1,rz*2.02); b1.position.set(0,base+0.025,zc); b1.parent=g;
     const br=BABYLON.MeshBuilder.CreateCylinder("acc",{diameterTop:1,diameterBottom:1.15,height:0.02,tessellation:28},scene);
     br.material=c; br.scaling.set(rx*2.7,1,rz*2.7); br.position.set(0,base-0.005,zc); br.parent=g; },
-  shades(g,M){ const z=Math.max(M.faceZ,0.015)+0.018, k=_accMat("#15171a",0.8), fr=_accMat("#2b2e33",0.3), w=M.hwBrow;
-    [-1,1].forEach(s=>{ const l=BABYLON.MeshBuilder.CreateBox("acc",{width:0.055,height:0.035,depth:0.006},scene);
-      l.material=k; l.position.set(s*0.036,0.004,z); l.parent=g;
-      const arm=BABYLON.MeshBuilder.CreateBox("acc",{width:0.006,height:0.008,depth:Math.max(0.05,z-M.back-0.05)},scene);
-      arm.material=fr; arm.position.set(s*(w+0.004),0.012,z-arm.getBoundingInfo().boundingBox.extendSize.z); arm.parent=g; });
-    const br=BABYLON.MeshBuilder.CreateBox("acc",{width:0.02,height:0.008,depth:0.006},scene); br.material=fr; br.position.set(0,0.012,z); br.parent=g;
-    const tb=BABYLON.MeshBuilder.CreateBox("acc",{width:w*2+0.01,height:0.008,depth:0.008},scene); tb.material=fr; tb.position.set(0,0.022,z-0.003); tb.parent=g; },
-  glasses(g,M){ const z=Math.max(M.faceZ,0.015)+0.018, fr=_accMat("#6b3f24",0.3), w=M.hwBrow;
-    [-1,1].forEach(s=>{ const r=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:0.046,thickness:0.006,tessellation:20},scene);
-      r.material=fr; r.rotation.x=Math.PI/2; r.position.set(s*0.034,0.004,z); r.parent=g;
-      const arm=BABYLON.MeshBuilder.CreateBox("acc",{width:0.005,height:0.006,depth:Math.max(0.05,z-M.back-0.05)},scene);
-      arm.material=fr; arm.position.set(s*(w+0.004),0.008,z-arm.getBoundingInfo().boundingBox.extendSize.z); arm.parent=g;
-      const hinge=BABYLON.MeshBuilder.CreateBox("acc",{width:Math.max(0.01,w-0.055),height:0.006,depth:0.005},scene);
-      hinge.material=fr; hinge.position.set(s*(0.057+Math.max(0.01,w-0.055)/2),0.008,z); hinge.parent=g; });
-    const br=BABYLON.MeshBuilder.CreateBox("acc",{width:0.022,height:0.006,depth:0.005},scene); br.material=fr; br.position.set(0,0.01,z); br.parent=g; },
-  necklace(g,M){ const gold=_accMat("#d6ae3c",0.85,"#2a1f06"), y0=M.neckY, r=M.nr+0.006, nz=M.nz;
+  /* v279 (Giacomo: «le lenti un po' piu' lunghe»): lenti larghe 6,6 cm
+     invece di 5,5 e un filo piu' alte, a superellisse che si stringe in basso;
+     montatura del colore scelto tutt'attorno, ponte ad arco, stanghette tonde. */
+  shades(g,M,C){ const z=Math.max(M.faceZ,0.015)+0.02, fr=_accC(C,0.35), k=_accMat("#121417",0.8),
+      lw=0.066, lh=0.040, cx=0.010+lw/2, y=0.003, xw=Math.max(cx+lw/2+0.012,M.skHW+0.007);
+    [-1,1].forEach(s=>{
+      const f=_accLens(lw+0.010,lh+0.009,0.006,3.2,0.16); f.material=fr; f.position.set(s*cx,y,z-0.001); f.parent=g;
+      const l=_accLens(lw,lh,0.006,3.2,0.16); l.material=k; l.position.set(s*cx,y,z+0.0016); l.parent=g;
+      _accTemple(g,fr,s,cx+lw/2+0.002,y+lh*0.26,z-0.002,xw,M.back+0.05,0.0042); });
+    _accBridge(g,fr,z,cx-lw/2+0.002,y+0.008,0.0036); },
+  glasses(g,M,C){ const z=Math.max(M.faceZ,0.015)+0.02, fr=_accC(C,0.3), cx=0.035, xw=Math.max(cx+0.034,M.skHW+0.006);
+    [-1,1].forEach(s=>{ const r=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:0.048,thickness:0.0065,tessellation:24},scene);
+      r.material=fr; r.rotation.x=Math.PI/2; r.position.set(s*cx,0.004,z); r.parent=g;
+      _accTemple(g,fr,s,cx+0.024,0.009,z-0.002,xw,M.back+0.05,0.003); });
+    _accBridge(g,fr,z,cx-0.022,0.009,0.003); },
+  necklace(g,M,C){ const metal=(C.id==="silver")?"#c9ccd2":"#d6ae3c", gold=_accMat(metal,0.85,_hexMul(metal,0.2)), y0=M.neckY, r=M.nr+0.006, nz=M.nz;
     /* un giro intero: dietro e' un anello attorno al collo, davanti scende sul petto */
     const pts=[]; for(let i=0;i<=40;i++){ const a=i/40*Math.PI*2, c=Math.cos(a), f=Math.max(0,c);
       pts.push(new BABYLON.Vector3(Math.sin(a)*r*(1+0.45*f), y0-0.085*f*f, nz+c*r+f*f*0.03)); }
     const t=BABYLON.MeshBuilder.CreateTube("acc",{path:pts,radius:0.005,tessellation:6},scene); t.material=gold; t.parent=g;
     const p=BABYLON.MeshBuilder.CreateSphere("acc",{diameter:0.03,segments:8},scene);
-    p.material=_accMat("#3f9fd0",0.8,"#0e2a38"); p.position.set(0,y0-0.098,nz+r+0.04); p.parent=g; },
-  scarf(g,M){ const c=_accMat("#b3352e",0.05), c2=_accMat("#e9d8b8",0.05), y0=M.neckY+0.005, r=M.nr+0.028, nz=M.nz, fz=nz+r;
+    p.material=C.metal?_accC(C,0.8):_accMat(C.hex,0.8,_hexMul(C.hex,0.25)); p.position.set(0,y0-0.098,nz+r+0.04); p.parent=g; },
+  scarf(g,M,C){ const c=_accC(C,0.05), c2=_accMat(_hexLum(C.hex)>0.7?"#3a3f47":"#e9d8b8",0.05), y0=M.neckY+0.005, r=M.nr+0.028, nz=M.nz, fz=nz+r;
     const ring=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:r*2,thickness:0.055,tessellation:28},scene);
     ring.material=c; ring.scaling.y=0.95; ring.position.set(0,y0,nz); ring.parent=g;
     const t1=BABYLON.MeshBuilder.CreateBox("acc",{width:0.07,height:0.22,depth:0.025},scene);
@@ -48210,48 +48316,318 @@ const ACC_BUILD={
      non torna (la gonna si salva perche' li' andata e ritorno usano gli
      stessi numeri, e l'errore si annulla).
    Qui invece si misura e si costruisce nello spazio dei vertici del modello
-   e si pesa sull'osso: lo stesso identico conto che anima la testa. */
-function _accSkin(m,H,M,boneIdx){
+   e si pesa sull'osso: lo stesso identico conto che anima la testa.
+   v279 · opt.flat = facce piatte (low-poly, come i capelli del modello);
+          opt.wfn(p) = pesi per vertice [[osso,peso],...] dal punto locale:
+          i capelli lunghi e la coda passano dalla testa al collo e al petto,
+          se no girando la testa la punta entrerebbe nella schiena. */
+function _accSkin(m,H,M,boneIdx,opt){
+  opt=opt||{};
   m.computeWorldMatrix(true);
   const Wm=m.getWorldMatrix(), pos=m.getVerticesData(BABYLON.VertexBuffer.PositionKind), ind=m.getIndices();
-  const P=[]; for(let i=0;i<pos.length;i+=3){ const w=BABYLON.Vector3.TransformCoordinates(new BABYLON.Vector3(pos[i],pos[i+1],pos[i+2]),Wm);
-    const r=M.E.add(M.R.scale(w.x*M.s)).addInPlace(M.U.scale(w.y*M.s)).addInPlace(M.F.scale(w.z*M.s)); P.push(r.x,r.y,r.z); }
+  const LP=[], P=[]; for(let i=0;i<pos.length;i+=3){ const w=BABYLON.Vector3.TransformCoordinates(new BABYLON.Vector3(pos[i],pos[i+1],pos[i+2]),Wm);
+    LP.push(w); const r=M.E.add(M.R.scale(w.x*M.s)).addInPlace(M.U.scale(w.y*M.s)).addInPlace(M.F.scale(w.z*M.s)); P.push(r.x,r.y,r.z); }
   /* se la terna R,U,F e' sinistrorsa le facce si girano: si ribaltano gli indici */
   const det=BABYLON.Vector3.Dot(BABYLON.Vector3.Cross(M.R,M.U),M.F);
   let I=Array.from(ind); if(det<0){ I=[]; for(let t=0;t<ind.length;t+=3) I.push(ind[t],ind[t+2],ind[t+1]); }
-  const N=[]; BABYLON.VertexData.ComputeNormals(P,I,N);
-  const vd=new BABYLON.VertexData(); vd.positions=P; vd.indices=I; vd.normals=N;
+  let Pv=P, Lv=LP;
+  if(opt.flat){ const P2=[], L2=[]; I.forEach(v=>{ P2.push(P[v*3],P[v*3+1],P[v*3+2]); L2.push(LP[v]); });
+    Pv=P2; Lv=L2; I=I.map((v,j)=>j); }
+  const N=[]; BABYLON.VertexData.ComputeNormals(Pv,I,N);
+  const vd=new BABYLON.VertexData(); vd.positions=Pv; vd.indices=I; vd.normals=N;
   const out=new BABYLON.Mesh("acc",scene); vd.applyToMesh(out,false);
-  const n=P.length/3, MI=new Array(n*4).fill(0), MW=new Array(n*4).fill(0);
-  for(let i=0;i<n;i++){ MI[i*4]=boneIdx; MW[i*4]=1; }
+  const n=Pv.length/3, MI=new Array(n*4).fill(0), MW=new Array(n*4).fill(0);
+  for(let i=0;i<n;i++){ const ws=opt.wfn?opt.wfn(Lv[i]):null;
+    if(ws){ ws.forEach((bw,k)=>{ MI[i*4+k]=bw[0]; MW[i*4+k]=bw[1]; }); } else { MI[i*4]=boneIdx; MW[i*4]=1; } }
   out.setVerticesData(BABYLON.VertexBuffer.MatricesIndicesKind,MI,false,4);
   out.setVerticesData(BABYLON.VertexBuffer.MatricesWeightsKind,MW,false,4);
   out.parent=H.parent; out.position.copyFrom(H.position); out.rotation.copyFrom(H.rotation);
   if(H.rotationQuaternion) out.rotationQuaternion=H.rotationQuaternion.clone(); out.scaling.copyFrom(H.scaling);
-  out.skeleton=H.skeleton; out.numBoneInfluencers=1; out.material=m.material;
+  out.skeleton=H.skeleton; out.numBoneInfluencers=opt.wfn?4:1; out.material=m.material;
   out.isPickable=false; out.alwaysSelectAsActiveMesh=true;
   return out; }
-/* veste gli accessori di un corpo: acc = { head:id, face:id, neck:id }.
-   holder (facoltativo) = elenco a cui aggiungere le mesh nuove (ombre). */
+/* veste gli accessori di un corpo: acc = { head:id, face:id, neck:id,
+   headc:colore, facec:colore, neckc:colore }.
+   holder (facoltativo) = elenco a cui aggiungere le mesh nuove (ombre).
+   ⚠️ cappelli e cuffie si misurano sul TAGLIO in testa (H.__cut.env), non sui
+   capelli del modello: col buzz cut un cappello misurato sul ciuffo
+   originale fluttuerebbe due dita sopra la testa. Per questo cambiando
+   taglio si ricostruiscono. */
 function dressAcc(meshes,acc,holder){
   if(!meshes||!meshes.length) return;
   const H=meshes.find(m=>/Casual_Head/.test(m.name)&&m.skeleton); if(!H) return;
   H.__acc=H.__acc||{};
+  const env=(H.__cut&&H.__cut.env)||null, cutK=(H.__cut&&H.__cut.id)||"";
   ACC_SLOTS.forEach(S=>{
-    const want=(acc&&acc[S.id])||"", cur=H.__acc[S.id];
-    if(cur && cur.id===want) return;
+    const want=(acc&&acc[S.id])||"", cur=H.__acc[S.id], a=lookAcc(want);
+    const C=a?accColor(a,acc&&acc[S.id+"c"]):null;
+    const key=want+"|"+(C?C.hex+(C.metal?"m":""):"")+"|"+(S.id==="head"?cutK:"");
+    if(cur && cur.key===key) return;
     if(cur){ cur.meshes.forEach(m=>{ try{ m.dispose(false,false); }catch(e){}
       if(holder){ const k=holder.indexOf(m); if(k>=0) holder.splice(k,1); } }); H.__acc[S.id]=null; }
     if(!want || !ACC_BUILD[want]) return;
-    const M=H.__accM || (H.__accM=_accMeasure(meshes)); if(!M) return;
+    const M0=H.__accM || (H.__accM=_accMeasure(meshes)); if(!M0) return;
+    const M=(env && S.id==="head")?Object.assign({},M0,env):M0;
     const sk=H.skeleton, bn=(S.id==="neck")?["Neck","Chest","Torso"]:["Head"];
     let bi=-1; for(const n of bn){ bi=sk.bones.findIndex(b=>b.name===n); if(bi>=0) break; } if(bi<0) return;
     const g=new BABYLON.TransformNode("acc_"+want,scene);
-    try{ ACC_BUILD[want](g,M); }catch(e){ console.warn("acc",want,e); }
+    try{ ACC_BUILD[want](g,M,C); }catch(e){ console.warn("acc",want,e); }
     const out=[]; g.getChildMeshes().forEach(m=>{ try{ out.push(_accSkin(m,H,M,bi)); }catch(e){ console.warn("accSkin",e); } });
     g.dispose(false,false);
     if(holder) out.forEach(m=>holder.push(m));
-    H.__acc[S.id]={ id:want, meshes:out }; });
+    H.__acc[S.id]={ id:want, key, meshes:out }; _octDirty(); });
+}
+/* ⚠️ MESH NUOVE = OCTREE DA RIFARE. Babylon disegna solo quello che l'octree
+   restituisce, e il guardiano in rebuildOctree scatta solo se cambia il
+   NUMERO di mesh in scena: coda -> chignon sono 3 mesh tolte e 3 messe, e il
+   chignon restava invisibile (trovato a schermo: testa pelata). Stessa cosa
+   cambiando solo il colore di un accessorio. Si azzera il contatore: il
+   guardiano ricostruisce al fotogramma dopo, una volta sola anche se nello
+   stesso giro cambiano piu' cose. */
+function _octDirty(){ try{ if(typeof _octN!=="undefined" && _octN>=0) _octN=0; }catch(e){} }
+
+/* =====================================================================
+   v279 — I TAGLI DI CAPELLI (Giacomo, 29 set: «haircuts: short, buzz cut,
+   ponytail, bun, curly, long, for boy and girl»).
+   Il colore resta LOOK_HAIR e vale per qualunque taglio.
+
+   kind "orig" = i capelli del modello cosi' come sono (il ragazzo corto, la
+   ragazza a caschetto): nessuna mesh in piu', ed e' il default di ciascuno.
+   Tutti gli altri SPENGONO i capelli del modello e ne costruiscono di nuovi,
+   con lo stesso metodo degli accessori (spazio grezzo, pesati sulle ossa).
+
+   ⚠️ LA RAGAZZA SOTTO I CAPELLI NON HA LA TESTA. Il suo modello e' una
+   maschera: faccia, fronte, collo — dietro e sopra e' vuoto (verificato a
+   schermo spegnendo i capelli: si vedeva l'interno della faccia). Il ragazzo
+   invece il cranio ce l'ha. Quindi ogni taglio nasce da un CRANIO
+   RICOSTRUITO (_hairScalp): un ellissoide misurato sulla faccia vera,
+   gonfiato fin sopra la pelle vera in ogni direzione in cui la pelle c'e'.
+   Sul ragazzo combacia col suo cranio; sulla ragazza chiude il buco.
+
+   ⚠️ Capelli lunghi e coda di cavallo scendono sulla schiena: i vertici
+   bassi passano dall'osso Head a Neck e Chest (pesi sfumati), e il telo dei
+   capelli lunghi si allarga dove sotto c'e' il corpo (misurato dal corpo
+   vero), cosi' ci cade sopra invece di attraversarlo.
+   ===================================================================== */
+const LOOK_CUTS=[
+  { id:"short",    rig:"m", en:"Short hair",         ic:"\u{1F466}", kind:"orig",  def:true },
+  { id:"medium",   rig:"f", en:"Medium-length hair", ic:"\u{1F467}", kind:"orig",  def:true },
+  { id:"short",    rig:"f", en:"Short hair",         ic:"✂️", kind:"pixie", req:{ stars:200 } },
+  { id:"buzz",     rig:"*", en:"Buzz cut",           ic:"\u{1FA92}", kind:"buzz",  req:{ gems:15 } },
+  { id:"ponytail", rig:"*", en:"Ponytail",           ic:"\u{1F380}", kind:"ponytail", req:{ stars:300 } },
+  { id:"bun",      rig:"*", en:"Bun",                ic:"\u{1F9C5}", kind:"bun",   req:{ quest:"u2_1", stars:500 } },
+  { id:"curly",    rig:"*", en:"Curly hair",         ic:"\u{1F300}", kind:"curly", req:{ quest:"u2_1", stars:700 } },
+  { id:"long",     rig:"*", en:"Long hair",          ic:"\u{1F481}", kind:"long",  req:{ quest:"u2_1", stars:600 } },
+];
+function lookCutsFor(rig){ const r=(rig==="f"?"f":"m"); return LOOK_CUTS.filter(c=>c.rig===r||c.rig==="*"); }
+function lookCut(rig,id){ const L=lookCutsFor(rig); return L.find(c=>c.id===id)||L.find(c=>c.def)||L[0]; }
+
+/* rumore deterministico: stessi capelli a ogni apertura e per tutti i compagni */
+function _hn(k){ const x=Math.sin(k*12.9898+4.1414)*43758.5453; return x-Math.floor(x)-0.5; }
+/* attaccatura: quota y (0 = occhi) in funzione dell'azimut a (0 davanti, ±PI dietro) */
+const HAIRLINE=[[0,0.075],[0.28,0.066],[0.42,0.032],[0.52,0.002],[0.68,-0.045],[1,-0.092]];
+function _hairLine(a,K){ K=K||HAIRLINE; const t=Math.min(1,Math.abs(a)/Math.PI);
+  for(let i=1;i<K.length;i++) if(t<=K[i][0]){ const u=(t-K[i-1][0])/(K[i][0]-K[i-1][0]), s=u*u*(3-2*u);
+    return K[i-1][1]+(K[i][1]-K[i-1][1])*s; }
+  return K[K.length-1][1]; }
+/* il cranio: vedi la nota in testa alla sezione */
+function _hairScalp(M){
+  if(M.__scalp) return M.__scalp;
+  const V3=BABYLON.Vector3, SL=M.SPL||[];
+  const xs=SL.filter(l=>l.y>0.01&&l.y<0.06).map(l=>Math.abs(l.x)).sort((a,b)=>a-b);
+  const rx=Math.max(0.075,xs.length?xs[Math.floor(xs.length*0.95)]:0.092);
+  const front=Math.max(0,M.faceZ);
+  let backSk=9, topSk=-9; SL.forEach(l=>{ if(l.y>0.03) backSk=Math.min(backSk,l.z); topSk=Math.max(topSk,l.y); });
+  const skull=backSk<front-2*rx;                       // il ragazzo: il cranio c'e'
+  const back=skull?backSk:front-2.45*rx;
+  const ryU=skull?topSk:Math.max(topSk,1.42*rx), ryD=0.13;
+  const zc=(front+back)/2, rz=(front-back)/2, C=new V3(0,0,zc);
+  const SV=SL.map(l=>new V3(l.x,l.y,l.z-zc));
+  function base(a,el){ const ce=Math.pow(Math.max(0,Math.cos(el)),0.8), se=Math.sin(el);
+    return new V3(rx*ce*Math.sin(a), (se>0?ryU:ryD)*se, rz*ce*Math.cos(a)); }
+  /* punto sul cranio nella direzione (a,el), piu' th di spessore dei capelli */
+  function pt(a,el,th){ const b=base(a,el); let r=b.length(); const d=b.scale(1/Math.max(1e-6,r));
+    for(let i=0;i<SV.length;i++){ const v=SV[i], t=V3.Dot(v,d); if(t>r && t>0.965*v.length()) r=t; }
+    return C.add(d.scale(r+th)); }
+  function elAt(a,y){ const q=y/(y>0?ryU:ryD); return Math.asin(Math.max(-1,Math.min(1,q))); }
+  return (M.__scalp={ rx, rz, ryU, ryD, zc, C, pt, elAt, skull });
+}
+/* il verso delle facce che Babylon considera «davanti», misurato una volta su
+   una sfera sua: cosi' le mesh fatte a mano non escono rovesciate */
+let _windSign=0;
+function _accWind(){ if(_windSign) return _windSign;
+  const s=BABYLON.MeshBuilder.CreateSphere("w",{diameter:1,segments:4},scene), p=s.getVerticesData(BABYLON.VertexBuffer.PositionKind), I=s.getIndices();
+  let sum=0; for(let t=0;t<I.length;t+=3){ const a=I[t]*3,b=I[t+1]*3,c=I[t+2]*3;
+    const ux=p[b]-p[a],uy=p[b+1]-p[a+1],uz=p[b+2]-p[a+2], vx=p[c]-p[a],vy=p[c+1]-p[a+1],vz=p[c+2]-p[a+2];
+    const nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx; sum+=nx*(p[a]+p[b]+p[c])+ny*(p[a+1]+p[b+1]+p[c+1])+nz*(p[a+2]+p[b+2]+p[c+2]); }
+  s.dispose(); return (_windSign=sum>0?1:-1); }
+/* mesh da punti + triangoli, ogni triangolo girato verso l'esterno (out(c) = verso fuori dal centro c) */
+function _hairMesh(P,T,out){
+  const w=_accWind(), I=[];
+  T.forEach(t=>{ const a=P[t[0]],b=P[t[1]],c=P[t[2]];
+    const n=BABYLON.Vector3.Cross(b.subtract(a),c.subtract(a)), cen=a.add(b).add(c).scale(1/3);
+    if(BABYLON.Vector3.Dot(n,out(cen))*w>=0) I.push(t[0],t[1],t[2]); else I.push(t[0],t[2],t[1]); });
+  const pos=[]; P.forEach(p=>pos.push(p.x,p.y,p.z));
+  const vd=new BABYLON.VertexData(); vd.positions=pos; vd.indices=I; const N=[]; BABYLON.VertexData.ComputeNormals(pos,I,N); vd.normals=N;
+  const m=new BABYLON.Mesh("hcut",scene); vd.applyToMesh(m,false); return m; }
+/* la calotta: righe dall'attaccatura al polo. o = { th, line(a), jag(a,i), noise, NA, NR } */
+function _hairShell(S,o){
+  const NA=o.NA||32, NR=o.NR||9, P=[], T=[], rows=[];
+  const line=o.line||(a=>_hairLine(a));
+  /* riga -1: il bordo interno, sul cranio, perche' da sotto la ciocca abbia spessore */
+  for(let j=-1;j<NR;j++){ const row=[];
+    for(let i=0;i<NA;i++){ const a=-Math.PI+i/NA*2*Math.PI, y0=line(a)+(o.jag?o.jag(a,i):0), e0=S.elAt(a,y0);
+      const el=e0+(Math.PI/2-e0)*Math.max(0,j)/NR;
+      const th=(j<0)?Math.min(0.0015,o.th-0.002):o.th+(j>0&&o.noise?o.noise*_hn(i*7.1+j*13.7):0);
+      row.push(P.length); P.push(S.pt(a,el,th)); }
+    rows.push(row); }
+  const ip=P.length; P.push(S.pt(0,Math.PI/2,o.th));
+  for(let j=0;j<rows.length-1;j++) for(let i=0;i<NA;i++){ const i2=(i+1)%NA, A=rows[j][i],B=rows[j][i2],C=rows[j+1][i],D=rows[j+1][i2];
+    T.push([A,B,D],[A,D,C]); }
+  const L=rows[rows.length-1]; for(let i=0;i<NA;i++) T.push([L[i],L[(i+1)%NA],ip]);
+  const m=_hairMesh(P,T,c=>c.subtract(S.C)); m.__env=true; return m; }
+/* il pezzo di cranio che manca alla ragazza: SOLO ai lati e dietro (dal bordo
+   della maschera in poi), dalla nuca fin sotto i capelli. ⚠️ Non davanti:
+   una prima versione chiudeva tutta la testa e affiorava dalla faccia fra un
+   vertice e l'altro (occhi coperti da schegge di pelle, visto a schermo). */
+function _hairBand(S){
+  const a0=0.38*Math.PI, NU=26, NV=7, P=[], T=[], grid=[];
+  for(let i=0;i<=NU;i++){ const u=i/NU, a1=a0+u*(2*Math.PI-2*a0), a=(a1>Math.PI?a1-2*Math.PI:a1);
+    const e0=S.elAt(a,-0.105), e1=S.elAt(a,_hairLine(a))+0.14, col=[];
+    for(let j=0;j<=NV;j++){ col.push(P.length); P.push(S.pt(a,e0+(e1-e0)*j/NV,-0.005)); }
+    grid.push(col); }
+  for(let i=0;i<NU;i++) for(let j=0;j<NV;j++){ const A=grid[i][j],B=grid[i+1][j],C=grid[i][j+1],D=grid[i+1][j+1]; T.push([A,B,D],[A,D,C]); }
+  return _hairMesh(P,T,c=>c.subtract(S.C)); }
+/* ricci: icosfere piatte, fuse in una mesh sola */
+function _hairCurls(S,list){
+  const parts=list.map((c,k)=>{ const s=BABYLON.MeshBuilder.CreateIcoSphere("hc",{radius:c.r,subdivisions:1,flat:true},scene);
+    s.position.copyFrom(c.p); s.rotation.set(_hn(k*3.3)*3,_hn(k*5.7)*3,0); return s; });
+  const m=BABYLON.Mesh.MergeMeshes(parts,true,true); if(m){ m.name="hcut"; m.__env=true; } return m; }
+/* dove sta la schiena: il punto piu' indietro del corpo a quella quota, vicino al centro */
+function _hairBackZ(M,y){ let z=9; (M.BPL||[]).forEach(l=>{ if(Math.abs(l.y-y)<0.03 && Math.abs(l.x)<0.06 && l.z<z) z=l.z; }); return z<9?z:null; }
+/* coda e chignon: un tubo che si assottiglia lungo un percorso morbido */
+function _hairTail(pts,R){
+  const path=BABYLON.Curve3.CreateCatmullRomSpline(pts,6).getPoints(), n=path.length;
+  return BABYLON.MeshBuilder.CreateTube("hcut",{path,tessellation:10,cap:BABYLON.Mesh.CAP_ALL,
+    radiusFunction:(i)=>{ const t=i/(n-1)*(R.length-1), k=Math.min(R.length-2,Math.floor(t)), u=t-k; return R[k]+(R[k+1]-R[k])*u; }},scene); }
+const HAIR_BUILD={
+  buzz(g,M,S,Mt){ const m=_hairShell(S,{ th:0.0045, noise:0.0012, line:a=>_hairLine(a)-0.004 }); m.material=Mt.hair; m.parent=g; },
+  /* corto della ragazza: frangetta sfrangiata sulla fronte, nuca corta */
+  pixie(g,M,S,Mt){ const K=[[0,0.03],[0.18,0.04],[0.34,0.045],[0.5,0.0],[0.68,-0.05],[1,-0.10]];
+    const m=_hairShell(S,{ th:0.016, noise:0.007, line:a=>_hairLine(a,K),
+      jag:(a,i)=>(Math.abs(a)<0.42*Math.PI?(i%2?0.012:-0.004):(i%2?0.006:0)) });
+    m.material=Mt.hair; m.parent=g; },
+  ponytail(g,M,S,Mt,rig){ const m=_hairShell(S,{ th:0.008, noise:0.002 }); m.material=Mt.hair; m.parent=g;
+    const V=BABYLON.Vector3, y=(rig==="f"?0.0:-0.01), P0=S.pt(Math.PI,S.elAt(Math.PI,y),0.006);
+    const tie=BABYLON.MeshBuilder.CreateTorus("hcut",{diameter:0.036,thickness:0.013,tessellation:16},scene);
+    tie.material=Mt.tie; tie.rotation.x=Math.PI/2-0.35; tie.position.copyFrom(P0.add(new V(0,-0.002,-0.012))); tie.parent=g;
+    const L=(rig==="f"?1:0.8), pts=[P0.add(new V(0,0.004,0.012)), P0.add(new V(0,-0.004,-0.026)), P0.add(new V(0,-0.05*L,-0.052)),
+      P0.add(new V(0,-0.12*L,-0.05)), P0.add(new V(0,-0.19*L,-0.036)), P0.add(new V(0,-0.235*L,-0.026))];
+    pts.forEach(p=>{ const bz=_hairBackZ(M,p.y); if(bz!=null) p.z=Math.min(p.z,bz-0.03); });
+    const t=_hairTail(pts,[0.02,0.026,0.031,0.027,0.018,0.005]); t.material=Mt.hair; t.parent=g; t.__w=true; },
+  bun(g,M,S,Mt){ const m=_hairShell(S,{ th:0.008, noise:0.002 }); m.material=Mt.hair; m.parent=g;
+    const el=1.0, P=S.pt(Math.PI,el,0.008), d=P.subtract(S.C).normalize();
+    const b=BABYLON.MeshBuilder.CreateIcoSphere("hcut",{radius:0.046,subdivisions:2,flat:true},scene);
+    b.scaling.set(1,0.82,1); b.position.copyFrom(P.add(d.scale(0.034))); b.rotation.x=-0.6; b.material=Mt.hair; b.parent=g;
+    const tie=BABYLON.MeshBuilder.CreateTorus("hcut",{diameter:0.05,thickness:0.012,tessellation:18},scene);
+    tie.material=Mt.tie; tie.position.copyFrom(P.add(d.scale(0.004)));
+    tie.rotation.x=Math.atan2(d.z,d.y); tie.parent=g; },
+  /* ricci: una calotta piu' una corona di ricci; sulla ragazza scendono fino
+     al collo, a caschetto */
+  curly(g,M,S,Mt,rig){ const low=(rig==="f");
+    const m=_hairShell(S,{ th:0.012, noise:0.004, line:a=>_hairLine(a)-0.004 }); m.material=Mt.hair; m.parent=g;
+    const L=[]; let k=0;
+    for(let j=0;j<7;j++){ const el=0.02+j*0.23, n=Math.max(1,Math.round(30*Math.cos(el)));
+      for(let i=0;i<n;i++){ const a=-Math.PI+(i+0.5*(j%2))/n*2*Math.PI, e0=S.elAt(a,_hairLine(a)+0.004);
+        if(el<e0+0.06) continue; k++;
+        L.push({ p:S.pt(a+_hn(k)*0.06,el+_hn(k*1.7)*0.05,0.016), r:0.022+0.006*(_hn(k*2.3)+0.5) }); } }
+    if(low){ for(const y of [-0.035,-0.075,-0.115]) for(let i=0;i<22;i++){ const a=-Math.PI+(i+0.5)/22*2*Math.PI;
+        if(Math.abs(a)<0.45*Math.PI) continue; k++;
+        const p=S.pt(a,S.elAt(a,0.0),0.02); p.y=y+_hn(k)*0.01; L.push({ p, r:0.024+0.006*(_hn(k*2.3)+0.5) }); } }
+    const c=_hairCurls(S,L); if(c){ c.material=Mt.hair; c.parent=g; if(low) c.__w=true; } },
+  /* lunghi: calotta con la riga in mezzo + un telo che scende sulle spalle
+     e sulla schiena, aperto davanti alla faccia, con l'orlo sfrangiato */
+  long(g,M,S,Mt){ const V=BABYLON.Vector3;
+    const m=_hairShell(S,{ th:0.011, noise:0.003 }); m.material=Mt.hair; m.parent=g;
+    /* il corpo in coordinate cilindriche attorno all'asse della testa */
+    const NB=48, YB=24, rb=new Array(NB*YB).fill(0);
+    (M.BPL||[]).forEach(l=>{ const a=Math.atan2(l.x,l.z-S.zc), yi=Math.floor(-l.y/0.02); if(yi<0||yi>=YB) return;
+      const ai=((Math.floor((a+Math.PI)/(2*Math.PI)*NB))%NB+NB)%NB, r=Math.hypot(l.x,l.z-S.zc); if(r>rb[yi*NB+ai]) rb[yi*NB+ai]=r; });
+    const rBody=(a,y)=>{ const yi=Math.floor(-y/0.02), ai=Math.floor((a+Math.PI)/(2*Math.PI)*NB); let r=0;
+      for(let dy=-1;dy<=1;dy++) for(let da=-1;da<=1;da++){ const Y=yi+dy, A=((ai+da)%NB+NB)%NB; if(Y>=0&&Y<YB) r=Math.max(r,rb[Y*NB+A]); } return r; };
+    const a0=0.40*Math.PI, NU=30, NV=11, P=[], T=[], grid=[];
+    for(let i=0;i<=NU;i++){ const u=i/NU, a=a0+u*(2*Math.PI-2*a0), aa=(a>Math.PI?a-2*Math.PI:a), t=Math.abs(aa)/Math.PI;
+      const top=S.pt(aa,S.elAt(aa,_hairLine(aa)),0.011), rTop=Math.hypot(top.x,top.z-S.zc);
+      const f=Math.max(0,Math.min(1,(t-0.4)/0.6)), yEnd=-0.20-0.13*f*f*(3-2*f)+((i%2)?0.02:0)+_hn(i*3.1)*0.01;
+      const col=[];
+      for(let j=0;j<=NV;j++){ const v=j/NV, y=top.y+(yEnd-top.y)*v;
+        let r=Math.max(rTop+0.006*v, rBody(aa,y)+0.016);
+        const p=(j===0)?top:new V(Math.sin(aa)*r, y, S.zc+Math.cos(aa)*r);
+        col.push(P.length); P.push(p); }
+      grid.push(col); }
+    for(let i=0;i<NU;i++) for(let j=0;j<NV;j++){ const A=grid[i][j],B=grid[i+1][j],C=grid[i][j+1],D=grid[i+1][j+1]; T.push([A,B,D],[A,D,C]); }
+    const cur=_hairMesh(P,T,c=>new V(c.x,0,c.z-S.zc)); cur.material=Mt.hair2; cur.__two=true; cur.__w=true; cur.parent=g; },
+};
+/* pesi: testa fino al mento, poi collo, poi petto */
+function _hairWeights(sk){ const idx=n=>sk.bones.findIndex(b=>b.name===n), hi=idx("Head"), ni=idx("Neck"), ci=idx("Chest");
+  return l=>{ if(l.y>-0.07||ni<0) return [[hi,1]];
+    const t=Math.min(1,(-0.07-l.y)/0.14);
+    if(ci<0) return [[hi,1-t],[ni,t]];
+    return t<0.5?[[hi,1-2*t],[ni,2*t]]:[[ni,2-2*t],[ci,2*t-1]]; }; }
+/* materiali dei tagli: un clone del materiale dei capelli del modello per
+   colore (stessa luce, stessa lucentezza). ⚠️ Il nome NON contiene «Hair»:
+   _lookSlot e il _slot dei compagni li ritingerebbero per conto loro. */
+const _cutM={};
+function _cutMat(tpl,hex,two){ const k=((tpl&&tpl.getClassName&&tpl.getClassName())||"S")+"|"+hex+"|"+(two?1:0);
+  if(_cutM[k]) return _cutM[k];
+  let m; try{ m=tpl?tpl.clone("hcutM"+(_lpN++)):null; }catch(e){ m=null; }
+  if(!m){ m=new BABYLON.StandardMaterial("hcutM"+(_lpN++),scene); m.specularColor=new BABYLON.Color3(0.08,0.08,0.08); }
+  const c=BABYLON.Color3.FromHexString(hex); if(m.albedoColor) m.albedoColor=c; else m.diffuseColor=c;
+  if(two){ m.backFaceCulling=false; if("twoSidedLighting" in m) m.twoSidedLighting=true; }
+  return (_cutM[k]=m); }
+/* veste il taglio. Ritorna true se le mesh sono cambiate (ombre, accessori). */
+function dressHair(meshes,rig,cutId,hex,holder){
+  if(!meshes||!meshes.length) return false;
+  const H=meshes.find(m=>/Casual_Head/.test(m.name)&&m.skeleton); if(!H) return false;
+  const cut=lookCut(rig,cutId), cur=H.__cut;
+  const orig=H.__hairOrig||(H.__hairOrig=meshes.filter(m=>/Casual_Head/.test(m.name)&&m.material&&/Hair/.test(m.material.name)&&m.getTotalVertices()>300));
+  const tpl=orig[0]&&orig[0].material;
+  if(cur && cur.id===cut.id){
+    if(cur.hex!==hex){ cur.meshes.forEach(m=>{ if(m.__hair) m.material=_cutMat(tpl,hex,!!m.__two); }); cur.hex=hex; }
+    return false; }
+  if(cur){ cur.meshes.forEach(m=>{ try{ m.dispose(false,false); }catch(e){}
+    if(holder){ const k=holder.indexOf(m); if(k>=0) holder.splice(k,1); } }); H.__cut=null; }
+  orig.forEach(m=>m.setEnabled(cut.kind==="orig"));
+  if(cut.kind==="orig" || !HAIR_BUILD[cut.kind]){ H.__cut={ id:cut.id, hex, meshes:[], env:null }; return true; }
+  const M=H.__accM||(H.__accM=_accMeasure(meshes));
+  if(!M){ orig.forEach(m=>m.setEnabled(true)); H.__cut={ id:cut.id, hex, meshes:[], env:null }; return true; }
+  const S=_hairScalp(M), sk=H.skeleton, hi=sk.bones.findIndex(b=>b.name==="Head"), wfn=_hairWeights(sk);
+  const Mt={ hair:_cutMat(tpl,hex,false), hair2:_cutMat(tpl,hex,true), tie:_accMat(rig==="f"?"#c84a64":"#2a2d33",0.2) };
+  const g=new BABYLON.TransformNode("cut_"+cut.id,scene);
+  try{ HAIR_BUILD[cut.kind](g,M,S,Mt,rig); }catch(e){ console.warn("hair",cut.id,e); }
+  /* la testa che manca (la ragazza, vedi sopra): un cranio color pelle appena
+     sotto la pelle vera, che chiude il buco dietro e raccorda il bordo della
+     maschera ai lati (senza, di profilo spuntava come un'aletta). Usa lo
+     STESSO materiale della pelle della faccia: cambia tono con lei. */
+  if(!S.skull){ const sm=meshes.find(m=>/Casual_Head/.test(m.name)&&m.material&&/Skin/.test(m.material.name));
+    if(sm){ try{ const f=_hairBand(S); f.material=sm.material; f.__skin=true; f.parent=g; }
+      catch(e){ console.warn("skull",e); } } }
+  /* l'ingombro per i cappelli: solo calotta e ricci, non coda ne' chignon */
+  let env=null;
+  const out=[];
+  g.getChildMeshes().forEach(m=>{
+    if(m.__env){ m.computeWorldMatrix(true); const p=m.getVerticesData(BABYLON.VertexBuffer.PositionKind), W=m.getWorldMatrix();
+      env=env||{ top:-9, back:9, front:-9, halfW:0 };
+      for(let i=0;i<p.length;i+=3){ const v=BABYLON.Vector3.TransformCoordinates(new BABYLON.Vector3(p[i],p[i+1],p[i+2]),W);
+        if(v.y>env.top) env.top=v.y; if(v.y>-0.02){ if(v.z<env.back) env.back=v.z; if(v.z>env.front) env.front=v.z; env.halfW=Math.max(env.halfW,Math.abs(v.x)); } } }
+    try{ const o=_accSkin(m,H,M,hi,{ flat:true, wfn:m.__w?wfn:null }); o.__hair=(m.material===Mt.hair||m.material===Mt.hair2); o.__two=!!m.__two;
+      o.__noTint=true; out.push(o); }
+    catch(e){ console.warn("hairSkin",e); } });
+  g.dispose(false,false);
+  if(holder) out.forEach(m=>holder.push(m));
+  H.__cut={ id:cut.id, hex, meshes:out, env };
+  _octDirty();
+  return true;
 }
 
 const Look=(function(){
@@ -48274,7 +48650,9 @@ const Look=(function(){
                 una. Si legge la vecchia chiave e si risponde con la nuova. */
              shoes:((s.shoes&&s.shoes!=="k0")?s.shoes:"k1"), fit:s.fit||"",
              bottom:s.bottom||"", bcol:s.bcol||"auto",                   // v277: il sotto
-             hat:s.hat||"", face:s.face||"", neck:s.neck||"" }; }        // v278: accessori
+             hat:s.hat||"", face:s.face||"", neck:s.neck||"",             // v278: accessori
+             hatc:s.hatc||"", facec:s.facec||"", neckc:s.neckc||"",       // v279: il loro colore
+             cut:s.cut||"" }; }                                           // v279: il taglio ("" = quello del modello)
   function save(s){ Sync.set(K,s); return s; }
   function rig(){ return state().rig; }
   function skin(){ return state().skin; }
@@ -48289,10 +48667,13 @@ const Look=(function(){
   function setBottom(id){ const s=state(); s.bottom=id; save(s); return id; }
   function setBcol(id){ const s=state(); s.bcol=id; save(s); return id; }
   function setAcc(slot,id){ const s=state(), k=(slot==="head"?"hat":slot); s[k]=id||""; save(s); return id; }
-  function hairOpen(h){ return h.cost<=0 || Gems.count()>=h.cost; }
-  function reset(){ save({rig:"m",skin:"s3",hair:"h1",shoes:"k1",fit:"purple",bottom:"",bcol:"auto",hat:"",face:"",neck:""}); }
+  function setAccCol(slot,id){ const s=state(), k=(slot==="head"?"hat":slot)+"c"; s[k]=id||""; save(s); return id; }
+  function setCut(id){ const s=state(); s.cut=id||""; save(s); return id; }
+  function hairOpen(h){ return lookProf() || h.cost<=0 || Gems.count()>=h.cost; }
+  function reset(){ save({rig:"m",skin:"s3",hair:"h1",shoes:"k1",fit:"purple",bottom:"",bcol:"auto",hat:"",face:"",neck:"",
+                          hatc:"",facec:"",neckc:"",cut:""}); }
   return { state, rig, skin, hair, shoes, fit, setRig, setSkin, setHair,
-           setShoes, setFit, setBottom, setBcol, setAcc, hairOpen, reset };
+           setShoes, setFit, setBottom, setBcol, setAcc, setAccCol, setCut, hairOpen, reset };
 })();
 
 const GEM_KINDS={
@@ -48348,7 +48729,7 @@ const Gems=(function(){
      cosi' i quindici punti che chiamano Gems.fit()/setFit() non cambiano. */
   function fit(){ try{ const f=Look.fit(); if(f) return f; }catch(e){} return state().fit; }
   function setFit(id){ try{ Look.setFit(id); }catch(e){} const s=state(); s.fit=id; save(s); return id; }
-  function fitOpen(f){ return count()>=f.cost; }
+  function fitOpen(f){ return lookProf() || count()>=f.cost; }
   /* ⚠️ Il reset azzera i CRISTALLI, non l'identità: corpo e pelle restano.
      Se un ripristino rimettesse tutti dentro il corpo predefinito, sarebbe
      esattamente il messaggio che abbiamo deciso di non dare. I capelli oltre
@@ -49041,6 +49422,10 @@ function applyPlayerFit(id){
   const _bc=(LOOK_BCOL.find(x=>x.id===_L.bcol)||LOOK_BCOL[0]).hex;      // v277: colore del sotto, null = come la felpa
   const TINTA={ hood:f.hood, legs:_bc||f.legs, skin:_sk, hair:_hr, shoes:_sh };
   (typeof avatarMeshes==="undefined"?[]:avatarMeshes||[]).forEach(m=>{
+    /* v279: le mesh dei tagli non si tingono qui. Il cranio della ragazza usa
+       il materiale della pelle della faccia: clonarlo col suo nome di mesh
+       («acc», uguale per tutte) lo staccherebbe dalla faccia. */
+    if(m.__noTint) return;
     const cur=m.material; if(!cur||!cur.name) return;
     const slot=_lookSlot(cur.name);
     if(!slot) return;
@@ -49077,10 +49462,16 @@ function applyPlayerFit(id){
   catch(e){ console.warn("dressBottom:",e); }
   /* v278: accessori (testa, occhi, collo). Le mesh nuove finiscono in
      avatarMeshes, cosi' fanno ombra come il resto del corpo. */
+  /* v279: prima il taglio (i cappelli si misurano su quello), poi gli accessori */
+  let _ombre=false;
+  try{ if(dressHair(avatarMeshes, (_L.rig==="f"?"f":"m"), _L.cut, _hr, avatarMeshes)) _ombre=true; }
+  catch(e){ console.warn("dressHair:",e); }
   try{ const n0=avatarMeshes.length;
-    dressAcc(avatarMeshes, { head:_L.hat, face:_L.face, neck:_L.neck }, avatarMeshes);
-    if(avatarMeshes.length!==n0) try{ refreshShadowCasters(); }catch(e){} }
+    dressAcc(avatarMeshes, { head:_L.hat, face:_L.face, neck:_L.neck,
+                             headc:_L.hatc, facec:_L.facec, neckc:_L.neckc }, avatarMeshes);
+    if(avatarMeshes.length!==n0) _ombre=true; }
   catch(e){ console.warn("dressAcc:",e); }
+  if(_ombre) try{ refreshShadowCasters(); }catch(e){}
   return f.id;
 }
 function setPlayerBody(id){
@@ -49097,7 +49488,7 @@ function setPlayerSkin(id){
 }
 function setPlayerShoes(id){
   const k=LOOK_SHOES.find(x=>x.id===id); if(!k) return null;
-  if(k.cost>0 && Gems.count()<k.cost){ toast("\u{1F512} Servono \u{1F48E} "+k.cost); return null; }
+  if(k.cost>0 && Gems.count()<k.cost && !lookProf()){ toast("\u{1F512} Servono \u{1F48E} "+k.cost); return null; }
   Look.setShoes(id); applyLook();
   toast("\u{1F45F} "+k.en);
   return id;
@@ -49118,6 +49509,14 @@ function setPlayerAcc(slot,id){
     const r=lookReq(a.req); if(!r.open){ toast("\u{1F512} "+r.label); return null; }
     Look.setAcc(slot,id); applyLook(); toast(a.ic+" "+a.en); return id; }
   Look.setAcc(slot,""); applyLook(); return "none"; }
+function setPlayerAccCol(slot,id){
+  const k=ACC_COLS.find(x=>x.id===(id||"")); if(!k) return null;
+  const r=lookReq(k.req); if(!r.open){ toast("\u{1F512} "+r.label); return null; }
+  Look.setAccCol(slot,k.id); applyLook(); toast("\u{1F3A8} "+k.en); return k.id||"orig"; }
+function setPlayerCut(id){
+  const rig=Look.rig(), c=lookCutsFor(rig).find(x=>x.id===id); if(!c) return null;
+  const r=lookReq(c.req); if(!r.open){ toast("\u{1F512} "+r.label); return null; }
+  Look.setCut(c.def?"":id); applyLook(); toast("\u{1F487} "+c.en); return id; }
 function setPlayerBcol(id){
   const k=LOOK_BCOL.find(x=>x.id===id); if(!k) return null;
   const r=lookReq(k.req); if(!r.open){ toast("\u{1F512} "+r.label); return null; }
@@ -49139,173 +49538,156 @@ function setPlayerFit(id){
    ⚠️ Le righe non prese NON mostrano la risposta: se il foglio e' gia'
    completo dal primo giorno, andarsi a prendere i cristalli non serve piu'
    a niente. */
+/* v279 — LA TECA A SCHEDE (Giacomo: «la teca va riordinata e riorganizzata
+   per renderla piu' comprensibile»). Era un'unica colonna di dieci sezioni —
+   corpo, capelli, scarpe, capi, pantaloni, colore, tre di accessori, verbi,
+   aggettivi — e per trovare gli occhiali si scorreva mezzo guardaroba.
+   Ora cinque schede, ognuna con una domanda sola:
+     🧍 Me          chi sei (corpo, pelle) — gratis
+     💇 Hair        taglio, poi colore
+     👕 Clothes     sopra, sotto e il suo colore, scarpe
+     🧢 Accessories uno per slot, e sotto quello che porti il suo colore
+     📖 Words       le tabelle di verbi e aggettivi (quelle in italiano)
+   In ogni sezione prima si sceglie la COSA e subito sotto il suo COLORE: e'
+   l'ordine in cui si ragiona davanti a uno specchio.
+   ⚠️ Resta la regola v248: nel guardaroba solo inglese (e' lessico);
+   intestazione e tabelle di studio in italiano.
+   La scheda aperta si ricorda finche' la pagina e' aperta: si cambia un
+   colore e si resta li', non si torna in cima. */
+let _tecaTab="me";
+const TECA_TABS=[ ["me","\u{1F9CD}","Me"], ["hair","\u{1F487}","Hair"], ["clothes","\u{1F455}","Clothes"],
+                  ["acc","\u{1F9E2}","Accessories"], ["words","\u{1F4D6}","Words"] ];
+function _tcCard(attr,on,off,sw,name,state,sub){
+  return '<div class="gem-fit'+(off?" off":"")+(on?" on":"")+'"'+(off?'':' '+attr)+'>'+sw
+    +'<b>'+_escHtml(name)+'</b>'+(sub?'<small>'+sub+'</small>':'')+'<i>'+state+'</i></div>'; }
+function _tcSw(bg,bd,inner){ return '<span class="gem-sw" style="background:'+bg+';border-color:'+(bd||bg)+'">'+(inner||"")+'</span>'; }
 function buildTeca(){
   const el=document.getElementById("diary-body"); if(!el) return;
-  const st=Gems.state(), got=st.got, tot=st.tot;
+  const st=Gems.state(), got=st.got, tot=st.tot, prof=lookProf();
   const nV=GEM_VERBS.filter(v=>got["v1:"+v[0]]||got["v2:"+v[0]]).length;
   const nA=GEM_ADJ.filter(a=>got["c:"+a[0]]||got["s:"+a[0]]).length;
+  let stars=0; try{ stars=Stars.total(); }catch(e){}
   let h='<div class="dy-hero"><div class="dy-tot">\u{1F48E} '+tot+'</div>'
-    +'<div class="dy-title">La Teca <span>\u00b7 quello che hai raccolto in citt\u00e0</span></div>'
-    +'<div class="dy-next">Verbi: <b>'+nV+'/'+GEM_VERBS.length+'</b> \u00b7 '
-    +'Aggettivi: <b>'+nA+'/'+GEM_ADJ.length+'</b></div></div>';
+    +'<div class="dy-title">La Teca <span>· quello che hai raccolto in città</span></div>'
+    +'<div class="dy-next">⭐ <b>'+stars+'</b> stelle · Verbi: <b>'+nV+'/'+GEM_VERBS.length+'</b> · '
+    +'Aggettivi: <b>'+nA+'/'+GEM_ADJ.length+'</b></div>'
+    +(prof?'<div class="tc-prof">\u{1F469}‍\u{1F3EB} Docente: tutto il guardaroba è aperto</div>'
+          :'<div class="tc-how">\u{1F513} Si sblocca con \u{1F48E} cristalli · ⭐ stelle · \u{1F3C5} una unit finita. <b>Non si spende niente</b>: basta arrivarci.</div>')
+    +'</div>';
+  h+='<div class="tc-tabs">'+TECA_TABS.map(function(t){
+      return '<button type="button" class="tc-tab'+(_tecaTab===t[0]?" on":"")+'" data-ttab="'+t[0]+'"><span>'+t[1]+'</span>'+t[2]+'</button>'; }).join("")+'</div>';
 
-  /* ⚠️ CORPO e PELLE PRIMA del guardaroba, e senza prezzo. Chi apre questa
-     scheda la prima volta deve trovare per prima cosa la riga che lo
-     riguarda, non un listino. */
-  const _L=Look.state();
-  /* v248 (Giacomo: «scarpe, capelli... sono in italiano, non va bene»):
-     le quattro sezioni del guardaroba sono LESSICO (colori, capi, capelli),
-     quindi solo inglese: titoli, nomi, stati. Tolte le traduzioni sotto i
-     nomi. Restano in italiano l'intestazione della Teca e le tabelle di
-     verbi e aggettivi, che sono gia' la tabella di studio con il
-     significato. */
-  h+='<div class="dy-sec">Your character \u00b7 <span style="font-weight:400">free</span></div><div class="gem-fits">';
-  LOOK_BODY.forEach(function(b){
-    const on=(_L.rig===b.id);
-    h+='<div class="gem-fit'+(on?" on":"")+'" data-body="'+b.id+'">'
-      +'<span class="gem-sw" style="background:#cdd6dc;border-color:#8b97a1">'
-      +(b.id==="f"?"\u{1F9CD}\u200D\u2640\uFE0F":"\u{1F9CD}\u200D\u2642\uFE0F")+'</span>'
-      +'<b>'+_escHtml(b.en)+'</b>'
-      +'<i>'+(on?"that's you":"tap to choose")+'</i></div>';
-  });
-  LOOK_SKIN.forEach(function(k,i){
-    const on=(_L.skin===k.id);
-    h+='<div class="gem-fit'+(on?" on":"")+'" data-skin="'+k.id+'">'
-      +'<span class="gem-sw" style="background:'+k.hex+';border-color:'+k.hex+'"></span>'
-      +'<b>Skin '+(i+1)+'</b><small>skin tone</small>'
-      +'<i>'+(on?"chosen":"tap to choose")+'</i></div>';
-  });
-  h+='</div>';
-
-  h+='<div class="dy-sec">Hair</div><div class="gem-fits">';
-  LOOK_HAIR.forEach(function(hr){
-    const open=Look.hairOpen(hr), on=(_L.hair===hr.id);
-    h+='<div class="gem-fit'+(open?"":" off")+(on?" on":"")+'"'
-      +(open?' data-hair="'+hr.id+'"':'')+'>'
-      +'<span class="gem-sw" style="background:'+hr.hex+';border-color:'+hr.hex+'"></span>'
-      +'<b>'+_escHtml(hr.en)+'</b>'
-      +'<i>'+(on?"you've got it":(open?"tap to try it":"\u{1F48E} "+hr.cost))+'</i></div>';
-  });
-  h+='</div>';
-
-  h+='<div class="dy-sec">Shoes</div><div class="gem-fits">';
-  LOOK_SHOES.forEach(function(k){
-    const open=(k.cost<=0||tot>=k.cost), on=(_L.shoes===k.id);
-    h+='<div class="gem-fit'+(open?"":" off")+(on?" on":"")+'"'
-      +(open?' data-shoes="'+k.id+'"':'')+'>'
-      +'<span class="gem-sw" style="background:'+(k.hex||"#cdd6dc")+';border-color:'+(k.hex||"#8b97a1")+'">'
-      +(k.hex?"":"\u{1F45F}")+'</span>'
-      +'<b>'+_escHtml(k.en)+'</b>'
-      +'<i>'+(on?"you're wearing them":(open?"tap to wear them":"\u{1F48E} "+k.cost))+'</i></div>';
-  });
-  h+='</div>';
-
-  /* Guardaroba: e' la ragione per cui si torna a cercarli. */
-  h+='<div class="dy-sec">Clothes</div><div class="gem-fits">';
-  GEM_FITS.forEach(function(f){
-    const open=tot>=f.cost, on=(st.fit===f.id);
-    h+='<div class="gem-fit'+(open?"":" off")+(on?" on":"")+'"'
-      +(open?' data-fit="'+f.id+'"':'')+'>'
-      +'<span class="gem-sw" style="background:'+f.hood+';border-color:'+f.legs+'"></span>'
-      +'<b>'+_escHtml(f.en)+'</b>'
-      +'<i>'+(on?"you're wearing it":(open?"tap to wear it":"\u{1F48E} "+f.cost))+'</i></div>';
-  });
-  h+='</div>';
-
-  /* v277: il sotto e il suo colore. Sbloccati da cristalli, stelle o quest:
-     il riquadro chiuso dice COME si apre, non solo che e' chiuso. */
-  const _rig=(_L.rig==="f"?"f":"m"), _bcur=lookBottom(_rig,_L.bottom);
-  h+='<div class="dy-sec">Trousers, shorts and skirts</div><div class="gem-fits">';
-  lookBottomsFor(_rig).forEach(function(b){
-    const r=lookReq(b.req), on=(_bcur.id===b.id);
-    h+='<div class="gem-fit'+(r.open?"":" off")+(on?" on":"")+'"'+(r.open?' data-bottom="'+b.id+'"':'')+'>'
-      +'<span class="gem-sw" style="background:#cdd6dc;border-color:#8b97a1">'+(b.skirt?"\u{1F457}":(b.cut>0?"\u{1FA73}":"\u{1F456}"))+'</span>'
-      +'<b>'+_escHtml(b.en)+'</b>'
-      +'<i>'+(on?"you're wearing it":(r.open?"tap to wear it":r.label))+'</i></div>';
-  });
-  h+='</div>';
-  h+='<div class="dy-sec">'+(_bcur.skirt?"Skirt colour":"Trousers colour")+'</div><div class="gem-fits">';
-  const _hood=(GEM_FITS.find(function(x){return x.id===st.fit;})||GEM_FITS[0]);
-  LOOK_BCOL.forEach(function(k){
-    const r=lookReq(k.req), on=((_L.bcol||"auto")===k.id), hx=k.hex||_hood.legs;
-    h+='<div class="gem-fit'+(r.open?"":" off")+(on?" on":"")+'"'+(r.open?' data-bcol="'+k.id+'"':'')+'>'
-      +'<span class="gem-sw" style="background:'+hx+';border-color:'+hx+'"></span>'
-      +'<b>'+_escHtml(k.en)+'</b>'
-      +'<i>'+(on?"chosen":(r.open?"tap to choose":r.label))+'</i></div>';
-  });
-  h+='</div>';
-
-  /* v278: accessori, uno per slot. «None» sempre libero e sempre per primo. */
-  ACC_SLOTS.forEach(function(S){
-    const cur=(S.id==="head"?_L.hat:_L[S.id])||"";
-    h+='<div class="dy-sec">'+_escHtml(S.en)+'</div><div class="gem-fits">';
-    h+='<div class="gem-fit'+(cur?"":" on")+'" data-acc="'+S.id+':">'
-      +'<span class="gem-sw" style="background:#eef1f3;border-color:#b9c2c8">\u2715</span>'
-      +'<b>None</b><i>'+(cur?"tap to take it off":"nothing on")+'</i></div>';
-    LOOK_ACC.filter(function(a){ return a.slot===S.id; }).forEach(function(a){
-      const r=lookReq(a.req), on=(cur===a.id);
-      h+='<div class="gem-fit'+(r.open?"":" off")+(on?" on":"")+'"'+(r.open?' data-acc="'+S.id+':'+a.id+'"':'')+'>'
-        +'<span class="gem-sw" style="background:#cdd6dc;border-color:#8b97a1">'+a.ic+'</span>'
-        +'<b>'+_escHtml(a.en)+'</b>'
-        +'<i>'+(on?"you're wearing it":(r.open?"tap to wear it":r.label))+'</i></div>';
+  const _L=Look.state(), _rig=(_L.rig==="f"?"f":"m");
+  if(_tecaTab==="me"){
+    /* ⚠️ CORPO e PELLE senza prezzo: assomigliare a se stessi non si guadagna. */
+    h+='<div class="dy-sec">Your body · <span style="font-weight:400">free</span></div><div class="gem-fits">';
+    LOOK_BODY.forEach(function(b){ const on=(_L.rig===b.id);
+      h+=_tcCard('data-body="'+b.id+'"',on,false,_tcSw("#cdd6dc","#8b97a1",(b.id==="f"?"\u{1F9CD}‍♀️":"\u{1F9CD}‍♂️")),
+        b.en,on?"that's you":"tap to choose"); });
+    h+='</div><div class="dy-sec">Your skin · <span style="font-weight:400">free</span></div><div class="gem-fits">';
+    LOOK_SKIN.forEach(function(k,i){ const on=(_L.skin===k.id);
+      h+=_tcCard('data-skin="'+k.id+'"',on,false,_tcSw(k.hex),"Skin "+(i+1),on?"chosen":"tap to choose"); });
+    h+='</div>';
+  }
+  else if(_tecaTab==="hair"){
+    const cc=lookCut(_rig,_L.cut);
+    h+='<div class="dy-sec">1 · Haircut</div><div class="gem-fits">';
+    lookCutsFor(_rig).forEach(function(c){ const r=lookReq(c.req), on=(cc.id===c.id);
+      h+=_tcCard('data-cut="'+c.id+'"',on,!r.open,_tcSw("#cdd6dc","#8b97a1",c.ic),c.en,
+        on?"you've got it":(r.open?"tap to try it":r.label)); });
+    h+='</div><div class="dy-sec">2 · Hair colour</div><div class="gem-fits">';
+    LOOK_HAIR.forEach(function(hr){ const open=Look.hairOpen(hr), on=(_L.hair===hr.id);
+      h+=_tcCard('data-hair="'+hr.id+'"',on,!open,_tcSw(hr.hex),hr.en,
+        on?"you've got it":(open?"tap to try it":"\u{1F48E} "+hr.cost)); });
+    h+='</div>';
+  }
+  else if(_tecaTab==="clothes"){
+    h+='<div class="dy-sec">Top</div><div class="gem-fits">';
+    GEM_FITS.forEach(function(f){ const open=Gems.fitOpen(f), on=(st.fit===f.id);
+      h+=_tcCard('data-fit="'+f.id+'"',on,!open,'<span class="gem-sw" style="background:'+f.hood+';border-color:'+f.legs+'"></span>',f.en,
+        on?"you're wearing it":(open?"tap to wear it":"\u{1F48E} "+f.cost)); });
+    const _bcur=lookBottom(_rig,_L.bottom);
+    h+='</div><div class="dy-sec">Trousers, shorts and skirts</div><div class="gem-fits">';
+    lookBottomsFor(_rig).forEach(function(b){ const r=lookReq(b.req), on=(_bcur.id===b.id);
+      h+=_tcCard('data-bottom="'+b.id+'"',on,!r.open,_tcSw("#cdd6dc","#8b97a1",(b.skirt?"\u{1F457}":(b.cut>0?"\u{1FA73}":"\u{1F456}"))),b.en,
+        on?"you're wearing it":(r.open?"tap to wear it":r.label)); });
+    h+='</div><div class="tc-sub">'+(_bcur.skirt?"Skirt colour":"Colour of your "+_escHtml(_bcur.en.toLowerCase()))+'</div><div class="tc-cols">';
+    const _hood=(GEM_FITS.find(function(x){return x.id===st.fit;})||GEM_FITS[0]);
+    LOOK_BCOL.forEach(function(k){ const r=lookReq(k.req), on=((_L.bcol||"auto")===k.id);
+      h+=_tcCol('data-bcol="'+k.id+'"',on,!r.open,k.hex||_hood.legs,k.en,r.label); });
+    h+='</div><div class="dy-sec">Shoes</div><div class="gem-fits">';
+    LOOK_SHOES.forEach(function(k){ const open=(prof||k.cost<=0||tot>=k.cost), on=(_L.shoes===k.id);
+      h+=_tcCard('data-shoes="'+k.id+'"',on,!open,_tcSw(k.hex||"#cdd6dc",k.hex||"#8b97a1",(k.hex?"":"\u{1F45F}")),k.en,
+        on?"you're wearing them":(open?"tap to wear them":"\u{1F48E} "+k.cost)); });
+    h+='</div>';
+  }
+  else if(_tecaTab==="acc"){
+    /* uno per slot, «None» sempre libero e per primo; sotto l'accessorio che
+       porti, la riga dei suoi colori */
+    const SIC={ head:"\u{1F9E2}", face:"\u{1F576}️", neck:"\u{1F9E3}" };
+    ACC_SLOTS.forEach(function(S){
+      const cur=_L[S.k]||"", a=lookAcc(cur);
+      h+='<div class="dy-sec">'+SIC[S.id]+' '+_escHtml(S.en)+'</div><div class="gem-fits">';
+      h+=_tcCard('data-acc="'+S.id+':"',!cur,false,_tcSw("#eef1f3","#b9c2c8","✕"),"None",cur?"tap to take it off":"nothing on");
+      LOOK_ACC.filter(function(x){ return x.slot===S.id; }).forEach(function(x){ const r=lookReq(x.req), on=(cur===x.id);
+        h+=_tcCard('data-acc="'+S.id+':'+x.id+'"',on,!r.open,_tcSw("#cdd6dc","#8b97a1",x.ic),x.en,
+          on?"you're wearing it":(r.open?"tap to wear it":r.label)); });
+      h+='</div>';
+      if(a){ const cid=_L[S.kc]||"";
+        h+='<div class="tc-sub">Colour of your '+_escHtml(a.en.toLowerCase())+'</div><div class="tc-cols">';
+        ACC_COLS.forEach(function(k){ const r=lookReq(k.req);
+          h+=_tcCol('data-acol="'+S.id+':'+k.id+'"',cid===k.id,!r.open,k.hex||a.col,k.en,r.label); });
+        h+='</div>'; }
+    });
+  }
+  else {
+    h+='<div class="dy-sec">Verbi irregolari · base — past — participle</div>';
+    h+='<div class="gem-tab">';
+    GEM_VERBS.forEach(function(v){
+      const g1=!!got["v1:"+v[0]], g2=!!got["v2:"+v[0]];
+      h+='<div class="gem-row'+((g1||g2)?"":" off")+'">'
+        +'<span class="gb">'+_escHtml(v[0])+'</span>'
+        +'<span class="'+(g1?"gp":"gp off")+'">'+(g1?_escHtml(v[1]):"—")+'</span>'
+        +'<span class="'+(g2?"gp":"gp off")+'">'+(g2?_escHtml(v[2]):"—")+'</span>'
+        +'<small>'+_escHtml(v[3])+'</small></div>';
     });
     h+='</div>';
-  });
-
-  h+='<div class="dy-sec">Verbi irregolari \u00b7 base \u2014 past \u2014 participle</div>';
-  h+='<div class="gem-tab">';
-  GEM_VERBS.forEach(function(v){
-    const g1=!!got["v1:"+v[0]], g2=!!got["v2:"+v[0]];
-    h+='<div class="gem-row'+((g1||g2)?"":" off")+'">'
-      +'<span class="gb">'+_escHtml(v[0])+'</span>'
-      +'<span class="'+(g1?"gp":"gp off")+'">'+(g1?_escHtml(v[1]):"\u2014")+'</span>'
-      +'<span class="'+(g2?"gp":"gp off")+'">'+(g2?_escHtml(v[2]):"\u2014")+'</span>'
-      +'<small>'+_escHtml(v[3])+'</small></div>';
-  });
-  h+='</div>';
-
-  h+='<div class="dy-sec">Aggettivi \u00b7 base \u2014 comparativo \u2014 superlativo</div>';
-  h+='<div class="gem-tab">';
-  GEM_ADJ.forEach(function(a){
-    const f=gemForms(a), g1=!!got["c:"+a[0]], g2=!!got["s:"+a[0]];
-    h+='<div class="gem-row'+((g1||g2)?"":" off")+'">'
-      +'<span class="gb">'+_escHtml(a[0])+'</span>'
-      +'<span class="'+(g1?"gc":"gc off")+'">'+(g1?_escHtml(f.comp):"\u2014")+'</span>'
-      +'<span class="'+(g2?"gs":"gs off")+'">'+(g2?_escHtml(f.sup):"\u2014")+'</span>'
-      +'<small>'+_escHtml(a[2])+'</small></div>';
-  });
-  h+='</div>';
-
-  h+='<div class="dy-note">I cristalli compaiono <b>dietro i palazzi</b>, dove non ci sono '
-    +'ingressi, e cambiano posto ogni volta. \u{1F49C} verbi \u00b7 \u{1F49A} comparativo \u00b7 '
-    +'\u{1F49B} superlativo. La prima volta il cristallo ti <b>mostra</b> la risposta: '
-    +'guardala bene, la volta dopo te la chiede.</div>';
+    h+='<div class="dy-sec">Aggettivi · base — comparativo — superlativo</div>';
+    h+='<div class="gem-tab">';
+    GEM_ADJ.forEach(function(a){
+      const f=gemForms(a), g1=!!got["c:"+a[0]], g2=!!got["s:"+a[0]];
+      h+='<div class="gem-row'+((g1||g2)?"":" off")+'">'
+        +'<span class="gb">'+_escHtml(a[0])+'</span>'
+        +'<span class="'+(g1?"gc":"gc off")+'">'+(g1?_escHtml(f.comp):"—")+'</span>'
+        +'<span class="'+(g2?"gs":"gs off")+'">'+(g2?_escHtml(f.sup):"—")+'</span>'
+        +'<small>'+_escHtml(a[2])+'</small></div>';
+    });
+    h+='</div>';
+    h+='<div class="dy-note">I cristalli compaiono <b>dietro i palazzi</b>, dove non ci sono '
+      +'ingressi, e cambiano posto ogni volta. \u{1F49C} verbi · \u{1F49A} comparativo · '
+      +'\u{1F49B} superlativo. La prima volta il cristallo ti <b>mostra</b> la risposta: '
+      +'guardala bene, la volta dopo te la chiede.</div>';
+  }
   el.innerHTML=h;
-  const rows=el.querySelectorAll("[data-fit]");
-  for(let i=0;i<rows.length;i++) rows[i].onclick=(function(id){
-    return ()=>{ if(setPlayerFit(id)) buildTeca(); }; })(rows[i].getAttribute("data-fit"));
-  const rb=el.querySelectorAll("[data-body]");
-  for(let i=0;i<rb.length;i++) rb[i].onclick=(function(id){
-    return ()=>{ if(setPlayerBody(id)) buildTeca(); }; })(rb[i].getAttribute("data-body"));
-  const rs=el.querySelectorAll("[data-skin]");
-  for(let i=0;i<rs.length;i++) rs[i].onclick=(function(id){
-    return ()=>{ if(setPlayerSkin(id)) buildTeca(); }; })(rs[i].getAttribute("data-skin"));
-  const rh=el.querySelectorAll("[data-hair]");
-  for(let i=0;i<rh.length;i++) rh[i].onclick=(function(id){
-    return ()=>{ if(setPlayerHair(id)) buildTeca(); }; })(rh[i].getAttribute("data-hair"));
-  const rk=el.querySelectorAll("[data-shoes]");
-  for(let i=0;i<rk.length;i++) rk[i].onclick=(function(id){
-    return ()=>{ if(setPlayerShoes(id)) buildTeca(); }; })(rk[i].getAttribute("data-shoes"));
-  const rbt=el.querySelectorAll("[data-bottom]");
-  for(let i=0;i<rbt.length;i++) rbt[i].onclick=(function(id){
-    return ()=>{ if(setPlayerBottom(id)) buildTeca(); }; })(rbt[i].getAttribute("data-bottom"));
-  const rac=el.querySelectorAll("[data-acc]");
-  for(let i=0;i<rac.length;i++) rac[i].onclick=(function(v){ const p=v.split(":");
-    return ()=>{ if(setPlayerAcc(p[0],p[1])) buildTeca(); }; })(rac[i].getAttribute("data-acc"));
-  const rbc=el.querySelectorAll("[data-bcol]");
-  for(let i=0;i<rbc.length;i++) rbc[i].onclick=(function(id){
-    return ()=>{ if(setPlayerBcol(id)) buildTeca(); }; })(rbc[i].getAttribute("data-bcol"));
+  function wire(attr,fn){ const rs=el.querySelectorAll("["+attr+"]");
+    for(let i=0;i<rs.length;i++) rs[i].onclick=(function(v){ return ()=>{ if(fn(v)) buildTeca(); }; })(rs[i].getAttribute(attr)); }
+  wire("data-ttab",   v=>{ _tecaTab=v; el.scrollTop=0; return true; });
+  wire("data-fit",    v=>setPlayerFit(v));
+  wire("data-body",   v=>setPlayerBody(v));
+  wire("data-skin",   v=>setPlayerSkin(v));
+  wire("data-hair",   v=>setPlayerHair(v));
+  wire("data-cut",    v=>setPlayerCut(v));
+  wire("data-shoes",  v=>setPlayerShoes(v));
+  wire("data-bottom", v=>setPlayerBottom(v));
+  wire("data-bcol",   v=>setPlayerBcol(v));
+  wire("data-acc",    v=>{ const p=v.split(":"); return setPlayerAcc(p[0],p[1]); });
+  wire("data-acol",   v=>{ const p=v.split(":"); return setPlayerAccCol(p[0],p[1]); });
 }
+/* un campione di colore: pallino + nome; chiuso = opaco col lucchetto e come si apre */
+function _tcCol(attr,on,off,hex,name,lock){
+  return '<div class="tc-col'+(on?" on":"")+(off?" off":"")+'"'+(off?' title="'+_escHtml(lock||"")+'"':' '+attr)+'>'
+    +'<span style="background:'+hex+'">'+(off?"\u{1F512}":"")+'</span><b>'+_escHtml(name)+'</b>'
+    +(off?'<i>'+_escHtml(lock||"")+'</i>':'')+'</div>'; }
 
 /* Console insegnante — come ET.strand: prova e diagnosi, mai punti veri. */
 ET.cristalli=function(){
@@ -49599,14 +49981,16 @@ const Presenza=(function(){
       /* v277: in coda il sotto e il suo colore. I client vecchi leggono solo i
          primi cinque campi e ignorano il resto: nessuno si rompe. */
       return L.rig+"|"+L.skin+"|"+L.hair+"|"+L.shoes+"|"+(L.fit||"purple")+"|"+(L.bottom||"")+"|"+(L.bcol||"auto")
-            +"|"+(L.hat||"")+"|"+(L.face||"")+"|"+(L.neck||""); }                         // v278: accessori
+            +"|"+(L.hat||"")+"|"+(L.face||"")+"|"+(L.neck||"")                           // v278: accessori
+            +"|"+(L.cut||"")+"|"+(L.hatc||"")+"|"+(L.facec||"")+"|"+(L.neckc||""); }      // v279: taglio e colori
     catch(e){ return "m|s3|h1|k1|purple"; }
   }
   function _leggiLook(k){
     const p=String(k||"").split("|");
     return { rig:(p[0]==="f"?"f":"m"), skin:p[1]||"s3", hair:p[2]||"h1",
              shoes:((p[3]&&p[3]!=="k0")?p[3]:"k1"), fit:p[4]||"purple",
-             bottom:p[5]||"", bcol:p[6]||"auto", hat:p[7]||"", face:p[8]||"", neck:p[9]||"" };
+             bottom:p[5]||"", bcol:p[6]||"auto", hat:p[7]||"", face:p[8]||"", neck:p[9]||"",
+             cut:p[10]||"", hatc:p[11]||"", facec:p[12]||"", neckc:p[13]||"" };
   }
   /* ---- posizione: x, z con un decimale (10 cm), y e imbardata ----------- */
   function _pos(){
@@ -49868,7 +50252,9 @@ const Presenza=(function(){
       if(mt.albedoColor) mt.albedoColor=c; else if(mt.diffuseColor) mt.diffuseColor=c;
     });
     try{ dressBottom(b.meshes, L.rig, lookBottom(L.rig,L.bottom), T.legs, T.skin); }catch(e){}   // v277
-    try{ dressAcc(b.meshes, { head:L.hat, face:L.face, neck:L.neck }); }catch(e){}               // v278
+    try{ dressHair(b.meshes, L.rig, L.cut, T.hair); }catch(e){}                                  // v279
+    try{ dressAcc(b.meshes, { head:L.hat, face:L.face, neck:L.neck,
+                              headc:L.hatc, facec:L.facec, neckc:L.neckc }); }catch(e){}       // v278
     b.look=look;
   }
   function _distruggi(b){
