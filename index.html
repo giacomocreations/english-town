@@ -47929,7 +47929,7 @@ function lookReq(req){
   if(req.quest){ try{ done=!!Progress.get(req.quest).done; }catch(e){} }
   if(req.gems!=null && !req.quest && !req.stars) return { open:gems>=req.gems, label:"\u{1F48E} "+req.gems };
   if(req.quest){ const open=done || (req.stars!=null && stars>=req.stars);
-    return { open, label:"\u{1F3C5} "+_unitTitle(req.quest)+(req.stars!=null?" · ⭐ "+req.stars:"") }; }
+    return { open, label:"\u{1F3C5} Finish "+_unitTitle(req.quest)+(req.stars!=null?" or ⭐ "+req.stars:"") }; }
   if(req.stars!=null) return { open:stars>=req.stars, label:"⭐ "+req.stars };
   return { open:true, label:"" };
 }
