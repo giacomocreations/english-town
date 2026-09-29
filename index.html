@@ -48516,9 +48516,15 @@ function dressCoat(meshes,coatId,colId,holder){
   if(!body.length) return false;
   const B0=body[0], sk=B0.skeleton, V3=BABYLON.Vector3, VB=BABYLON.VertexBuffer;
   const OK=/^(Hips|Abdomen|Torso|Chest|Shoulder\.[LR]|UpperArm\.[LR]|LowerArm\.[LR])$/, okB=sk.bones.map(b=>OK.test(b.name));
+  /* ⚠️ sulla MAGLIA si prende tutto tranne cappuccio/collo, polsi e mani:
+     l'orlo della felpa del ragazzo e' pesato su Body e sulle cosce, e
+     lasciandolo fuori spuntava sotto la giacca una fascia viola larga che
+     sembrava una gonna (segnalato da Giacomo). Sulla pelle invece solo busto
+     e braccia, se no la giacca vestirebbe anche mani e collo. */
+  const NO=/^(Neck|Head|Wrist\.[LR]|(Index|Middle|Ring|Pinky|Thumb)\d\.[LR])$/, okTop=sk.bones.map(b=>!NO.test(b.name));
   const loc=(x,y,z)=>{ const d=new V3(x,y,z).subtract(M.E); return new V3(V3.Dot(d,M.R)/M.s, V3.Dot(d,M.U)/M.s, V3.Dot(d,M.F)/M.s); };
   const q=M.s*0.0005/(_toHeadRaw(H,B0).k||1), kf=(x,y,z)=>Math.round(x/q)+","+Math.round(y/q)+","+Math.round(z/q);
-  const src=body.map(m=>({ cv:_toHeadRaw(H,m), p:m.getVerticesData(VB.PositionKind), n:m.getVerticesData(VB.NormalKind), i:m.getIndices(),
+  const src=body.map(m=>({ top:!/Skin/.test((m.material&&m.material.name)||""), cv:_toHeadRaw(H,m), p:m.getVerticesData(VB.PositionKind), n:m.getVerticesData(VB.NormalKind), i:m.getIndices(),
                            mi:m.getVerticesData(VB.MatricesIndicesKind), mw:m.getVerticesData(VB.MatricesWeightsKind) }))
                  .filter(S=>S.p&&S.n&&S.i&&S.mi&&S.mw);
   /* normali saldate per posizione */
@@ -48531,7 +48537,7 @@ function dressCoat(meshes,coatId,colId,holder){
   const emit=r=>{ P.push(r.p[0],r.p[1],r.p[2]); for(let k=0;k<4;k++){ MI.push(r.mi[k]); MW.push(r.mw[k]); } LP.push(r.l); };
   src.forEach(S=>{
     const L=[], D=[], cv=S.cv, sB=M.s/cv.k, lh=(x,y,z,v)=>{ const h=cv(x,y,z,v); return loc(h.x,h.y,h.z); };
-    for(let v=0;v<S.p.length/3;v++){ L.push(lh(S.p[3*v],S.p[3*v+1],S.p[3*v+2],v)); D.push(okB[dom(S,v)]===true); }
+    for(let v=0;v<S.p.length/3;v++){ L.push(lh(S.p[3*v],S.p[3*v+1],S.p[3*v+2],v)); D.push((S.top?okTop:okB)[dom(S,v)]===true); }
     const rec=v=>{ const k=kf(S.p[3*v],S.p[3*v+1],S.p[3*v+2]), a=NS.get(k), l=Math.hypot(a[0],a[1],a[2])||1;
       const th=it.th*(it.quilt?(1+0.3*Math.cos(L[v].y*2*Math.PI/0.07)):1)*sB;
       const p=[S.p[3*v]+a[0]/l*th, S.p[3*v+1]+a[1]/l*th, S.p[3*v+2]+a[2]/l*th];
