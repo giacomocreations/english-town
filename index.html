@@ -3451,13 +3451,77 @@ function _sitRefresh(root){ root.computeWorldMatrix(true);
   all.sort((a,b)=>depth(a)-depth(b)).forEach(d=>d.computeWorldMatrix(true)); }
 /* pins = [{tn,p,q,s}] della bind-pose; fwd = davanti nel mondo; seatY = quota
    della seduta; groundY = pavimento. Ritorna { pins (copie, gambe piegate), drop } */
+/* v289 — pin di RIPOSO per ossa scelte per nome (busto, braccia): la posa
+   di bind del modello, letta dalle ossa (getRestPose), non dall'animazione
+   che sta girando. */
+function _restPinsFor(root,re,skip){
+  const out=[], seen=new Set(skip||[]);
+  const sks=new Set(); root.getChildMeshes(false).forEach(m=>{ if(m.skeleton) sks.add(m.skeleton); });
+  sks.forEach(sk=>sk.bones.forEach(b=>{
+    const tn=b.getTransformNode&&b.getTransformNode(); if(!tn||seen.has(tn)||!re.test(b.name)) return;
+    seen.add(tn);
+    const rp=b.getRestPose&&b.getRestPose(); if(!rp) return;
+    const sc=new BABYLON.Vector3(), q=new BABYLON.Quaternion(), t=new BABYLON.Vector3(); rp.decompose(sc,q,t);
+    out.push({ tn, p:t, q, s:sc });
+  }));
+  return out;
+}
+/* piega le braccia: la parte alta verso upDir, l'avambraccio verso foreDir
+   (vettori nel mondo, funzioni del lato: out = verso l'esterno) */
+function _armPose(root,tns,f,upDir,foreDir){
+  const V=BABYLON.Vector3, end=(t,n)=>new RegExp("(^|_)"+n.replace(".","\\.")+"$").test(t.name);
+  const out=new Map(), up=new V(0,1,0);
+  let chest=null; tns.forEach(t=>{ if(end(t,"Chest")||(!chest&&end(t,"Torso"))) chest=t; });
+  ["L","R"].forEach(sd=>{
+    tns.filter(t=>end(t,"UpperArm."+sd)).forEach(U=>{
+      const L=U.getDescendants(false).find(d=>end(d,"LowerArm."+sd)); if(!L) return;
+      const H=L.getDescendants(false).find(d=>new RegExp("(^|_)(Wrist|Palm|Hand)\\."+sd+"$").test(d.name)); if(!H) return;
+      const pU=U.getAbsolutePosition().clone(), pL=L.getAbsolutePosition().clone(), pH=H.getAbsolutePosition().clone();
+      const c=chest?chest.getAbsolutePosition():pU;
+      let o=pU.subtract(c); o.y=0; o=o.subtract(f.scale(V.Dot(o,f))); if(o.length()<1e-4) o=V.Cross(up,f).scale(sd==="L"?1:-1); o.normalize();
+      const foreLoc=V.TransformNormal(pH.subtract(pL),L.getWorldMatrix().clone().invert());
+      _sitWorldRot(U,pU,pL.subtract(pU),upDir(o));
+      _sitRefresh(root);
+      const pL2=L.getAbsolutePosition().clone();
+      _sitWorldRot(L,pL2,V.TransformNormal(foreLoc,L.getWorldMatrix()),foreDir(o));
+      _sitRefresh(root);
+      out.set(U,U.rotationQuaternion.clone()); out.set(L,L.rotationQuaternion.clone());
+    });
+  });
+  return out;
+}
+const _SIT_BODY_RE=/^(Hips|Abdomen|Torso|Chest|Shoulder\.[LR]|UpperArm\.[LR]|LowerArm\.[LR])$/;
+const _ARM_RE=/^(Shoulder\.[LR]|UpperArm\.[LR]|LowerArm\.[LR])$/;
+/* un NPC con le braccia avanti (il vassoio). Ritorna { pins, hand } */
+function carryPoseFor(root,fwd){
+  const V=BABYLON.Vector3, f=new V(fwd.x,0,fwd.z).normalize(), dn=new V(0,-1,0);
+  const pins=_restPinsFor(root,_ARM_RE); if(!pins.length) return null;
+  const saved=pins.map(k=>({tn:k.tn, q:k.tn.rotationQuaternion?k.tn.rotationQuaternion.clone():null, p:k.tn.position.clone()}));
+  _applyPins(pins); _sitRefresh(root);
+  const out=_armPose(root,pins.map(k=>k.tn),f,
+    o=>dn.scale(0.97).add(f.scale(0.22)).add(o.scale(0.04)),
+    o=>f.scale(0.9).subtract(dn.scale(0.06)).add(o.scale(0.4)));   // avambracci avanti e verso il centro: le mani SOTTO il vassoio
+  /* le mani: il punto in mezzo, dove appoggia il vassoio */
+  let hand=new V(0,0,0), n=0;
+  root.getDescendants(false).forEach(d=>{ if(/(^|_)(Wrist|Palm|Hand)\.[LR]$/.test(d.name)){ hand.addInPlace(d.getAbsolutePosition()); n++; } });
+  hand=n?hand.scale(1/n):null;
+  const res=pins.map(k=>({ tn:k.tn, p:k.p.clone(), s:k.s.clone(), q:(out.get(k.tn)||k.q).clone() }));
+  saved.forEach(k=>{ if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); k.tn.position.copyFrom(k.p); });
+  return { pins:res, hand };
+}
 function sitPoseFor(root,pins,fwd,seatY,groundY){
   if(!pins||!pins.length||!root) return null;
   const V=BABYLON.Vector3, up=new V(0,1,0), f=new V(fwd.x,0,fwd.z).normalize();
-  const saved=pins.map(k=>({tn:k.tn, q:k.tn.rotationQuaternion?k.tn.rotationQuaternion.clone():null, p:k.tn.position.clone()}));
-  pins.forEach(k=>{ k.tn.position.copyFrom(k.p); if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion(); k.tn.rotationQuaternion.copyFrom(k.q); });
+  /* v289 (Giacomo: «seduto ha il busto storto con un braccio dietro la
+     sedia»): l'Idle continuava a far oscillare il busto e le braccia
+     restavano lungo i fianchi, dove c'e' lo schienale. Da seduti il busto
+     sta DRITTO (riposo) e le braccia vanno avanti, le mani sulle gambe. */
+  const extra=_restPinsFor(root,_SIT_BODY_RE,pins.map(k=>k.tn));
+  const all=pins.concat(extra);
+  const saved=all.map(k=>({tn:k.tn, q:k.tn.rotationQuaternion?k.tn.rotationQuaternion.clone():null, p:k.tn.position.clone()}));
+  all.forEach(k=>{ k.tn.position.copyFrom(k.p); if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion(); k.tn.rotationQuaternion.copyFrom(k.q); });
   _sitRefresh(root);
-  let hipY=null, drop=0; const out=new Map();
+  let hipY=null, drop=0; const out=new Map(); let hip=null, hn=0;
   /* ⚠️ OGNI PEZZO DEL PERSONAGGIO HA IL SUO SCHELETRO (testa, busto, gambe,
      piedi: vedi _toHeadRaw), quindi «la coscia sinistra» sono PIU' nodi, uno
      per catena. Piegarne uno solo lasciava i piedi fermi in piedi e la
@@ -3481,6 +3545,7 @@ function sitPoseFor(root,pins,fwd,seatY,groundY){
       if(!F) return;
       const footChild=F.isDescendantOf(K);
       const pH=U.getAbsolutePosition().clone(), pK=pK0, pA=F.getAbsolutePosition().clone();
+      hip=hip?hip.add(pH):pH.clone(); hn++;
       const lT=V.Distance(pH,pK), lS=V.Distance(pK,pA), ankle=Math.max(0.03,pA.y-groundY);
       /* la direzione dello stinco nello spazio dell'osso-ginocchio: dopo aver
          piegato la coscia lo stinco e' girato con lei, e va ripresa da qui */
@@ -3503,23 +3568,31 @@ function sitPoseFor(root,pins,fwd,seatY,groundY){
       }
     });
   });
-  const res=pins.map(k=>({ tn:k.tn, p:(outP.get(k.tn)||k.p).clone(), s:k.s.clone(), q:(out.get(k.tn)||k.q).clone() }));
-  /* le ossa non pinnate (se ce ne fossero) tornano com'erano */
+  /* le braccia: gomito un po' avanti, mani sulle cosce */
+  const dn=new V(0,-1,0);
+  _armPose(root,all.map(k=>k.tn),f,
+    o=>dn.scale(0.9).add(f.scale(0.36)).add(o.scale(0.1)),
+    o=>f.scale(0.85).add(dn.scale(0.5)).subtract(o.scale(0.12))).forEach((q,tn)=>out.set(tn,q));
+  const res=all.map(k=>({ tn:k.tn, p:(outP.get(k.tn)||k.p).clone(), s:k.s.clone(), q:(out.get(k.tn)||k.q).clone() }));
+  /* le ossa tornano com'erano (le pin le rimettono al fotogramma dopo) */
   saved.forEach(k=>{ if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); k.tn.position.copyFrom(k.p); });
-  return { pins:res, drop:Math.max(0,drop) };
+  return { pins:res, drop:Math.max(0,drop), hip:hn?hip.scale(1/hn):null };
 }
 function _applyPins(pins){ for(const k of pins){ k.tn.position.copyFrom(k.p);
   if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion();
   k.tn.rotationQuaternion.copyFrom(k.q); k.tn.scaling.copyFrom(k.s); } }
 /* il giocatore: SIT.on vince sulle pin in piedi */
 const SIT={ on:false, pins:null, drop:0, baseY:null };
+/* ritorna lo scarto orizzontale fra l'anca e il giocatore (chi chiama mette
+   l'anca sulla seduta, non il centro del corpo: se no il busto dei corpi piu'
+   robusti finiva dentro lo schienale) */
 function playerSit(fwd,seatY,groundY){
-  if(!avatarRoot || !_legPins) return false;
-  const r=sitPoseFor(avatarRoot,_legPins,fwd,seatY,groundY); if(!r) return false;
+  if(!avatarRoot || !_legPins) return null;
+  const r=sitPoseFor(avatarRoot,_legPins,fwd,seatY,groundY); if(!r) return null;
   if(SIT.baseY===null) SIT.baseY=avatarRoot.position.y;
   SIT.pins=r.pins; SIT.drop=r.drop; SIT.on=true;
   avatarRoot.position.y=SIT.baseY-r.drop;
-  return true;
+  return r.hip?new BABYLON.Vector3(r.hip.x-player.position.x,0,r.hip.z-player.position.z):new BABYLON.Vector3(0,0,0);
 }
 function playerStand(){
   if(!SIT.on) return; SIT.on=false; SIT.pins=null;
@@ -7560,6 +7633,7 @@ function buildDiner(){
 /* ------------------------------------------------------------------ */
 /* ⚠️ davanti agli sgabelli, non fra gli sgabelli: a z 35,4 il solido gonfiato
    degli sgabelli copriva la strada e Ray impiegava un minuto a tornare */
+const DINER_HIP_BACK=0.05;   // l'anca dietro il centro della seduta (m)
 const DINER_WAITER_HOME={ x:-2.6, z:34.75 };
 function buildDinerNPCs(){
   const gy=DINER.gy;
@@ -7582,10 +7656,12 @@ function buildDinerNPCs(){
 function npcSit(n,s){
   const f=new BABYLON.Vector3(Math.sin(s.face),0,Math.cos(s.face));
   n.carrier.rotation.y=s.face; n.baseYaw=s.face;
-  n.carrier.computeWorldMatrix(true);
+  n.carrier.computeWorldMatrix(true); _sitRefresh(n.carrier);
   const r=sitPoseFor(n.holder,n.pins,f,s.seatY,DINER.gy); if(!r) return;
-  r.pins.forEach((k,i)=>{ n.pins[i].q.copyFrom(k.q); n.pins[i].p.copyFrom(k.p); });
+  n.pins=r.pins;                                  // gambe piegate + busto dritto + braccia avanti
   n.holder.position.y-=r.drop; n.__seated=true;
+  if(r.hip){ const c=n.carrier.position;
+    c.x+=(s.x-f.x*DINER_HIP_BACK)-r.hip.x; c.z+=(s.z-f.z*DINER_HIP_BACK)-r.hip.z; }
 }
 function talkToDinerGuest(n){
   if(typeof ambientReady==="function" && ambientReady(n,null)){ openAmbient(n,null,"\u{1F354}","Customer"); return; }
@@ -7625,9 +7701,13 @@ function dinerSit(s){
   moveTarget=null; pendingInteract=null; try{ tapMark.setEnabled(false); }catch(e){}
   /* il corpo sulla seduta: il bacino sta un po' dietro al centro della sedia */
   const f=new BABYLON.Vector3(Math.sin(s.face),0,Math.cos(s.face));
-  player.position.set(s.x-f.x*0.06, DINER.gy, s.z-f.z*0.06); player.rotation.y=s.face;
+  player.position.set(s.x, DINER.gy, s.z); player.rotation.y=s.face;
+  player.computeWorldMatrix(true);
   playAvatarAnim(IDLE_ANIM);
-  playerSit(f,s.seatY,DINER.gy);
+  const off=playerSit(f,s.seatY,DINER.gy);
+  /* l'anca 4 cm dietro il centro della seduta: le cosce sulla seduta, la
+     schiena contro lo schienale */
+  if(off){ player.position.x=s.x-f.x*DINER_HIP_BACK-off.x; player.position.z=s.z-f.z*DINER_HIP_BACK-off.z; }
   DINER.seats.forEach(q=>{ if(q.inter) q.inter.enabled=false; });
   DINER.meInter.enabled=true;
   toast("\u{1FA91} You sit down. The waiter is coming…");
@@ -7635,24 +7715,27 @@ function dinerSit(s){
 }
 /* rifatto dopo una ricostruzione dell'avatar (cambio di corpo dalla Teca) */
 function dinerResit(){ const s=DINER.seat; if(!s) return;
-  playerSit(new BABYLON.Vector3(Math.sin(s.face),0,Math.cos(s.face)),s.seatY,DINER.gy); }
+  const f=new BABYLON.Vector3(Math.sin(s.face),0,Math.cos(s.face));
+  player.position.set(s.x,DINER.gy,s.z); player.computeWorldMatrix(true);
+  const off=playerSit(f,s.seatY,DINER.gy);
+  if(off){ player.position.x=s.x-f.x*DINER_HIP_BACK-off.x; player.position.z=s.z-f.z*DINER_HIP_BACK-off.z; } }
 function dinerStand(silent){
   const s=DINER.seat; if(!s) return;
   clearTimeout(DINER.timer); DINER.timer=null;
   playerStand();
   player.position.set(s.standX,DINER.gy,s.standZ);
-  DINER.seat=null; DINER.st="idle"; DINER.o=null; _dinerClearFood();
+  DINER.seat=null; DINER.st="idle"; DINER.o=null; _dinerClearFood(); dinerDrop();
   DINER.seats.forEach(q=>{ if(q.inter) q.inter.enabled=true; });
   DINER.meInter.enabled=false;
   try{ DialogueBox.close(); }catch(e){}
-  if(DINER.waiter && !DINER.busy) dinerWaiterHome();
+  if(DINER.waiter) dinerWaiterHome();
   if(!silent) toast("\u{1F44B} You stand up.");
 }
 function dinerLater(ms,fn){ clearTimeout(DINER.timer); DINER.timer=setTimeout(()=>{ DINER.timer=null; if(DINER.seat) fn(); },ms); }
 /* il giocatore e' stato portato via (taxi, metro, ricarica di un'area) */
 function dinerTick(){
   const s=DINER.seat; if(!s) return;
-  if(area!=="town" || Math.hypot(player.position.x-s.x,player.position.z-s.z)>1.2){ dinerStand(true); return; }
+  if(area!=="town" || Math.hypot(player.position.x-s.x,player.position.z-s.z)>1.6){ dinerStand(true); return; }
   player.rotation.y=s.face;
 }
 
@@ -7663,22 +7746,36 @@ function dinerTick(){
    cammina (blocked): a 0,95 m dal centro finiva sul bordo del solido e Ray
    restava a camminare sul posto a un metro dal tavolo (visto nel collaudo). */
 function _dnSpot(t){ return new BABYLON.Vector3(t.x, 0, t.z-1.12); }
+/* ⚠️ UNA CAMMINATA ALLA VOLTA. npcWalkSeq non si ferma da fuori: chiamarne
+   una seconda mentre la prima gira (il conto chiesto mentre Ray tornava al
+   bancone) lasciava due osservatori a spingere lo stesso corpo e DUE arrivi,
+   e il conto veniva chiesto due volte (visto nel collaudo). Ora la nuova
+   aspetta: la vecchia viene annullata (i suoi bersagli diventano «dove sei
+   gia'», quindi finisce in un fotogramma) e al suo arrivo parte la nuova. */
+function _dnWalk(targets,arrive,done){
+  const job={ targets, arrive, done, cancel:false };
+  if(DINER.walking){ DINER.pending=job; DINER.walking.cancel=true; return; }
+  _dnWalkStart(job);
+}
+function _dnWalkStart(job){
+  const w=DINER.waiter; DINER.busy=true; DINER.walking=job;
+  const T=job.targets.map(fn=>()=>job.cancel?w.pos():fn());
+  const fin=ok=>{ if(DINER.walking===job) DINER.walking=null; DINER.busy=false;
+    if(DINER.pending){ const nx=DINER.pending; DINER.pending=null; _dnWalkStart(nx); return; }
+    if(ok && !job.cancel) job.done(); };
+  npcWalkSeq(w,T,job.arrive,()=>fin(true),"town",()=>fin(false),{ detour:true, speed:2.3 });   // un cameriere ha fretta
+}
 function dinerWaiterTo(t,then){
   const w=DINER.waiter; if(!w){ then(); return; }
-  DINER.busy=true;
-  const aisle=()=>new BABYLON.Vector3(DINER.x, 0, t.z-1.12);
-  npcWalkSeq(w,[aisle,()=>_dnSpot(t)],0.35,()=>{ DINER.busy=false;
-      const p=w.pos(); w.carrier.rotation.y=Math.atan2(player.position.x-p.x,player.position.z-p.z)+NPC_FACE_OFFSET;
-      w.watch=true; if(DINER.seat) then(); else dinerWaiterHome(); },
-    "town",()=>{ DINER.busy=false; },{ detour:true, speed:2.3 });   // un cameriere ha fretta
+  _dnWalk([()=>new BABYLON.Vector3(DINER.x,0,t.z-1.12),()=>_dnSpot(t)],0.35,()=>{
+    const p=w.pos(); w.carrier.rotation.y=Math.atan2(player.position.x-p.x,player.position.z-p.z)+NPC_FACE_OFFSET;
+    w.watch=true; if(DINER.seat) then(); else { dinerDrop(); dinerWaiterHome(); } });
 }
 function dinerWaiterHome(then){
   const w=DINER.waiter; if(!w){ if(then) then(); return; }
-  DINER.busy=true;
   const p=w.pos(), T=new BABYLON.Vector3(DINER.x+DINER_WAITER_HOME.x,0,DINER_WAITER_HOME.z);
-  npcWalkSeq(w,[()=>new BABYLON.Vector3(DINER.x,0,p.z),()=>new BABYLON.Vector3(DINER.x,0,DINER_WAITER_HOME.z),()=>T],0.3,()=>{
-      DINER.busy=false; w.carrier.rotation.y=Math.PI; w.baseYaw=Math.PI; w.watch=true; if(then) then(); },
-    "town",()=>{ DINER.busy=false; },{ detour:true, speed:2.3 });   // un cameriere ha fretta
+  _dnWalk([()=>new BABYLON.Vector3(DINER.x,0,p.z),()=>new BABYLON.Vector3(DINER.x,0,DINER_WAITER_HOME.z),()=>T],0.3,()=>{
+    w.carrier.rotation.y=Math.PI; w.baseYaw=Math.PI; w.watch=true; if(then) then(); });
 }
 
 /* ------------------------------------------------------------------ */
@@ -7768,10 +7865,10 @@ function dinerKitchen(){
   DialogueBox.open({ npc:w, icon:"\u{1F354}", sub:DINER.name, text:"Perfect! I'll be right back with your order.",
     italian:"Perfetto! Torno subito con la tua ordinazione.", html:dinerSlipHtml(DINER.o,false),
     buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] });
-  dinerWaiterHome(()=>dinerLater(2200,()=>dinerWaiterTo(s.t,_dinerServeMain)));
+  dinerWaiterHome(()=>dinerLater(2200,()=>{ dinerCarry(["drink","main","side"]); dinerWaiterTo(s.t,_dinerServeMain); }));
 }
 function _dinerServeMain(){
-  const w=DINER.waiter; if(!DINER.seat) return;
+  const w=DINER.waiter; dinerDrop(); if(!DINER.seat) return;
   _dinerServe(["drink","main","side"]); DINER.st="eating";
   DialogueBox.open({ npc:w, icon:"\u{1F354}", sub:DINER.name, text:"Here you are. Enjoy your meal!",
     italian:"Ecco a te. Buon appetito!", buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] });
@@ -7788,7 +7885,7 @@ function _dinerDessert(v){
     DINER.st="dessert";
     DialogueBox.open({ npc:w, icon:"\u{1F354}", sub:DINER.name, text:"Coming right up!", italian:"Arriva subito!",
       buttons:[{ label:"Thanks!", cls:"primary", act:()=>{} }] });
-    dinerWaiterHome(()=>dinerLater(1800,()=>dinerWaiterTo(s.t,_dinerServeDessert)));
+    dinerWaiterHome(()=>dinerLater(1800,()=>{ dinerCarry(["dessert"]); dinerWaiterTo(s.t,_dinerServeDessert); }));
   } else {
     DINER.st="eating2";
     DialogueBox.open({ npc:w, icon:"\u{1F354}", sub:DINER.name, text:"No problem! Just call me when you want the bill.",
@@ -7797,7 +7894,7 @@ function _dinerDessert(v){
   }
 }
 function _dinerServeDessert(){
-  if(!DINER.seat) return;
+  dinerDrop(); if(!DINER.seat) return;
   _dinerServe(["dessert"]); DINER.st="eating2";
   DialogueBox.open({ npc:DINER.waiter, icon:"\u{1F354}", sub:DINER.name, text:"There you go. Just call me when you want the bill!",
     italian:"Ecco qua. Chiamami quando vuoi il conto (premi E).", buttons:[{ label:"OK!", cls:"primary", act:()=>{} }] });
@@ -7810,7 +7907,7 @@ function dinerBill(){
   dinerAsk("bill",()=>{
     DialogueBox.open({ npc:w, icon:"\u{1F354}", sub:DINER.name, text:"Sure! I'll bring it right away.", italian:"Certo! Te lo porto subito.",
       buttons:[{ label:"Thanks!", cls:"primary", act:()=>{} }] });
-    const go=()=>dinerWaiterTo(s.t,()=>{
+    const go=()=>{ dinerCarry("bill"); dinerWaiterTo(s.t,()=>{ dinerDrop();
       const tot=dinerTotal(o).toFixed(2);
       dinerAsk("pay",v=>{
         const cash=v && /cash/i.test(v.en);
@@ -7825,8 +7922,10 @@ function dinerBill(){
                    { label:"Stay a bit", cls:"ghost", act:()=>{} }] });
         dinerWaiterHome();
       },"Here's your bill. That's £"+tot+", please. How would you like to pay?");
-    });
-    if(DINER.busy) dinerLater(1500,go); else go();
+    }); };
+    /* il conto si va a PRENDERE: prima al bancone, poi al tavolo col vassoio */
+    const fetch=()=>dinerWaiterHome(()=>dinerLater(900,go));
+    fetch();
   });
 }
 /* la E su di te mentre sei seduto */
@@ -7839,7 +7938,7 @@ function dinerMePrompt(){
 function dinerMeAction(){
   const st=DINER.st;
   const ch=[];
-  if(st==="eating"||st==="eating2") ch.push({ label:"\u{1F9FE} Ask for the bill", act:()=>{ if(DINER.busy){ dinerLater(1500,dinerBillCall); } else dinerBillCall(); } });
+  if(st==="eating"||st==="eating2") ch.push({ label:"\u{1F9FE} Ask for the bill", act:()=>dinerBillCall() });
   if(/^ask:/.test(st)){ const k=st.slice(4); ch.push({ label:"\u{1F354} Back to the waiter", act:()=>{
       if(k==="drink") dinerAsk("drink",()=>dinerAsk("main",()=>dinerAsk("side",dinerKitchen)));
       else if(k==="main") dinerAsk("main",()=>dinerAsk("side",dinerKitchen));
@@ -7860,11 +7959,13 @@ function dinerBillCall(){ const s=DINER.seat; if(!s) return;
 /* IL CIBO SUL TAVOLO                                                   */
 /* ------------------------------------------------------------------ */
 function _dinerClearFood(){ DINER.food.forEach(m=>{ try{ m.dispose(false,false); }catch(e){} }); DINER.food=[]; }
-function _dinerServe(keys){
-  const s=DINER.seat, o=DINER.o; if(!s||!o) return;
-  const M=_dinerMats(), t=s.t, y=t.top, dx=s.sd*0.2;    // dalla parte di chi e' seduto
-  const cx=t.x+dx, cz=t.z;
-  const add=(m,k)=>{ m.material=(typeof k==="string")?M[k]:k; m.parent=townRoot; m.isPickable=false; DINER.food.push(m); return m; };
+/* il cibo si costruisce in un GRUPPO con l'origine sul piano d'appoggio:
+   lo stesso gruppo sta sul vassoio di Ray (v289) e poi sul tavolo */
+function _dinerFoodSet(keys,parent,ox,oy,oz){
+  const o=DINER.o; if(!o) return null;
+  const M=_dinerMats(), set=new BABYLON.TransformNode("dnFood",scene); set.parent=parent; set.position.set(ox,oy,oz);
+  const y=0, cx=0, cz=0;
+  const add=(m,k)=>{ m.material=(typeof k==="string")?M[k]:k; m.parent=set; m.isPickable=false; return m; };
   const colM=(hex)=>{ const k="dn_c_"+hex; return scene.getMaterialByName(k)||mat(k,hex); };
   const C=(o2,px,py,pz,k)=>{ o2.tessellation=o2.tessellation||16; const m=BABYLON.MeshBuilder.CreateCylinder("dnf",o2,scene); m.position.set(px,py,pz); return add(m,k); };
   const S=(d,px,py,pz,k)=>{ const m=BABYLON.MeshBuilder.CreateSphere("dnf",{diameter:d,segments:8},scene); m.position.set(px,py,pz); return add(m,k); };
@@ -7897,6 +7998,50 @@ function _dinerServe(keys){
       else { const p=C({diameter:0.12,height:0.035,tessellation:3},ex,y+0.03,ez,colM(v.c)); p.rotation.y=0.3; } }
   });
   try{ _octDirty(); }catch(e){}
+  return set;
+}
+function _dinerServe(keys){
+  const s=DINER.seat; if(!s||!DINER.o) return;
+  const t=s.t, set=_dinerFoodSet(keys,townRoot,t.x+s.sd*0.2,t.top,t.z);   // dalla parte di chi e' seduto
+  if(set) DINER.food.push(set);
+}
+/* =====================================================================
+   v289 — IL VASSOIO (Giacomo: «quando arriva il cameriere con la roba, deve
+   avere un tray con il cibo e il drink»). Ray tiene le braccia avanti (le
+   stesse pin della posa seduta, solo sulle braccia: carryPoseFor) e il
+   vassoio gli sta fra le mani, con sopra gli STESSI piatti che poi finiscono
+   sul tavolo. Per il conto porta la cartellina nera sul vassoio.
+   ===================================================================== */
+function dinerCarry(keys){
+  dinerDrop();
+  const w=DINER.waiter; if(!w||!w.carrier) return;
+  const ry=w.carrier.rotation.y, f=new BABYLON.Vector3(Math.sin(ry),0,Math.cos(ry));
+  w.carrier.computeWorldMatrix(true); _sitRefresh(w.carrier);
+  const cp=carryPoseFor(w.holder,f); if(!cp) return;
+  const M=_dinerMats(), tray=new BABYLON.TransformNode("dnTray",scene); tray.parent=w.carrier;
+  const inv=w.carrier.getWorldMatrix().clone().invert();
+  const hl=cp.hand?BABYLON.Vector3.TransformCoordinates(cp.hand,inv):new BABYLON.Vector3(0,1.0,0.35);
+  tray.position.set(0, hl.y+0.02, Math.max(0.28,hl.z+0.06));
+  const disk=BABYLON.MeshBuilder.CreateCylinder("dnTrayD",{diameter:0.5,height:0.018,tessellation:28},scene);
+  disk.material=M.steel; disk.parent=tray; disk.isPickable=false;
+  const rim=BABYLON.MeshBuilder.CreateTorus("dnTrayR",{diameter:0.5,thickness:0.018,tessellation:28},scene);
+  rim.material=M.chrome; rim.parent=tray; rim.position.y=0.01; rim.isPickable=false;
+  if(keys==="bill"){
+    const fo=BABYLON.MeshBuilder.CreateBox("dnFolder",{width:0.14,height:0.02,depth:0.22},scene);
+    fo.material=M.black; fo.parent=tray; fo.position.set(0,0.02,0); fo.rotation.y=0.3; fo.isPickable=false;
+    const pa=BABYLON.MeshBuilder.CreateBox("dnPaper",{width:0.1,height:0.004,depth:0.16},scene);
+    pa.material=M.white; pa.parent=tray; pa.position.set(0.02,0.032,0); pa.rotation.y=0.3; pa.isPickable=false;
+  } else {
+    /* sul vassoio un po' piu' stretti che sul tavolo */
+    const set=_dinerFoodSet(keys,tray,0,0.01,0); if(set) set.scaling.set(0.82,0.82,0.82);
+  }
+  DINER.tray=tray; DINER.carryPins=cp.pins;
+  DINER.carryObs=scene.onBeforeRenderObservable.add(()=>{ if(DINER.carryPins) _applyPins(DINER.carryPins); });
+}
+function dinerDrop(){
+  if(DINER.carryObs){ scene.onBeforeRenderObservable.remove(DINER.carryObs); DINER.carryObs=null; }
+  DINER.carryPins=null;
+  if(DINER.tray){ try{ DINER.tray.dispose(false,false); }catch(e){} DINER.tray=null; }
 }
 
 function buildTownCafe(){
