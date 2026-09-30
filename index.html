@@ -2111,7 +2111,7 @@ const MUSIC_PHOTO={
   guitars:2, violins:0, trumpets:1,
 };
 const UNIT_MUSIC={ id:"u2_2", area:"beatclub", areaName:"The Beat Club",
-  title:"Anno 2 · Unit 2 — Music", size:7.0, sizeX:5.5, tint:"#2f2438", wallH:4.2,
+  title:"Anno 2 · Unit 2 — Music", size:7.0, sizeX:7.5, tint:"#2f2438", wallH:4.2,   // v297: 2 m piu' largo per lato (era 5.5)
   wallTex:()=>clubBrickTex(), wallEm:"#1a1216",   // v261: mattoni da club al posto del muro crema
   ceilHex:"#141118", ceilEm:"#07060a",            // v262: soffitto nero da club (prima: cielo blu)
   enterToast:"Sei entrato al Beat Club",
@@ -3520,10 +3520,10 @@ function _armPose(root,tns,f,upDir,foreDir){
       const c=chest?chest.getAbsolutePosition():pU;
       let o=pU.subtract(c); o.y=0; o=o.subtract(f.scale(V.Dot(o,f))); if(o.length()<1e-4) o=V.Cross(up,f).scale(sd==="L"?1:-1); o.normalize();
       const foreLoc=V.TransformNormal(pH.subtract(pL),L.getWorldMatrix().clone().invert());
-      _sitWorldRot(U,pU,pL.subtract(pU),upDir(o));
+      _sitWorldRot(U,pU,pL.subtract(pU),upDir(o,sd));
       _sitRefresh(root);
       const pL2=L.getAbsolutePosition().clone();
-      _sitWorldRot(L,pL2,V.TransformNormal(foreLoc,L.getWorldMatrix()),foreDir(o));
+      _sitWorldRot(L,pL2,V.TransformNormal(foreLoc,L.getWorldMatrix()),foreDir(o,sd));
       _sitRefresh(root);
       out.set(U,U.rotationQuaternion.clone()); out.set(L,L.rotationQuaternion.clone());
     });
@@ -3615,8 +3615,8 @@ function sitPoseFor(root,pins,fwd,seatY,groundY,arms){
        leggermente piegate, non cosi' avanti»): braccio quasi verticale,
        avambraccio appena piegato in avanti, la mano accanto alla coscia.
        v291: arms = { up, fore } per un'altra posa (il giornale aperto) */
-    arms?(o=>arms.up(o,f,dn)):(o=>dn.scale(0.97).add(f.scale(0.2))),
-    arms?(o=>arms.fore(o,f,dn)):(o=>dn.scale(0.72).add(f.scale(0.62)))).forEach((q,tn)=>out.set(tn,q));
+    arms?((o,sd)=>arms.up(o,f,dn,sd)):(o=>dn.scale(0.97).add(f.scale(0.2))),
+    arms?((o,sd)=>arms.fore(o,f,dn,sd)):(o=>dn.scale(0.72).add(f.scale(0.62)))).forEach((q,tn)=>out.set(tn,q));
   const res=all.map(k=>({ tn:k.tn, p:(outP.get(k.tn)||k.p).clone(), s:k.s.clone(), q:(out.get(k.tn)||k.q).clone() }));
   /* le ossa tornano com'erano (le pin le rimettono al fotogramma dopo) */
   saved.forEach(k=>{ if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); k.tn.position.copyFrom(k.p); });
@@ -3643,6 +3643,75 @@ function playerStand(){
   if(avatarRoot && SIT.baseY!==null) avatarRoot.position.y=SIT.baseY;
   SIT.baseY=null;
 }
+/* =====================================================================
+   v297 — MANGIARE E BERE DA SEDUTI (Giacomo: «quando prendi il caffe' manca
+   il braccio che si piega»; «il sistema di mangiare mettilo anche al Sunny
+   Side»). Un solo impianto per lo sgabello del caffe' e per il tavolo del
+   diner:
+   · due pose sedute calcolate insieme: quella a riposo (mani sulle cosce) e
+     quella «alla bocca», col braccio DESTRO piegato — gomito avanti, mano
+     alle labbra. Il gesto e' una fusione fra le due (slerp delle ossa);
+   · la tazza, il bicchiere o il boccone NON vanno piu' da soli verso la
+     bocca: stanno nella MANO (posizione vera dell'osso), quindi salgono e
+     scendono col braccio;
+   · a ogni sorso il livello scende, a ogni morso il cibo si rimpicciolisce.
+   ===================================================================== */
+const EAT_ARMS={
+  up:(o,f,dn,sd)=>(sd==="R") ? f.scale(0.75).add(dn.scale(0.55)).add(o.scale(0.30)) : dn.scale(0.97).add(f.scale(0.2)),
+  fore:(o,f,dn,sd)=>(sd==="R") ? dn.scale(-0.78).add(f.scale(-0.05)).add(o.scale(-0.62)) : dn.scale(0.72).add(f.scale(0.62)) };
+const EAT={ rest:null, sip:null, mix:null, hand:null, obs:null, busy:false };
+/* da chiamare PRIMA di playerSit (stesso f, stessa seduta): prepara la posa «alla bocca» */
+function eatPrepare(f,seatY,groundY){
+  EAT.sip=null; EAT.rest=null; EAT.mix=null; EAT.hand=null;
+  if(typeof avatarRoot==="undefined" || !avatarRoot || !_legPins) return;
+  try{ const r=sitPoseFor(avatarRoot,_legPins,f,seatY,groundY,EAT_ARMS); if(r) EAT.sip=r.pins; }catch(e){}
+  const ds=avatarRoot.getDescendants(false);
+  EAT.hand=ds.find(d=>/(^|_)Hand\.R$/.test(d.name))||ds.find(d=>/(^|_)(Wrist|Palm)\.R$/.test(d.name))||null; }
+/* dopo playerSit: la posa a riposo e' SIT.pins */
+function eatAfterSit(){ EAT.rest=SIT.pins;
+  if(EAT.sip && EAT.rest && EAT.sip.length===EAT.rest.length) EAT.mix=EAT.rest.map(k=>({ tn:k.tn, p:k.p.clone(), s:k.s.clone(), q:k.q.clone() }));
+  else EAT.mix=null; }
+function eatArm(t){ if(!EAT.mix||!SIT.on) return;
+  if(t<=0.001){ SIT.pins=EAT.rest; return; }
+  const R=EAT.rest, S=EAT.sip, M=EAT.mix;
+  for(let i=0;i<M.length;i++){ BABYLON.Quaternion.SlerpToRef(R[i].q,S[i].q,t,M[i].q); BABYLON.Vector3.LerpToRef(R[i].p,S[i].p,t,M[i].p); }
+  SIT.pins=M; _applyPins(M); }
+/* la mano destra nel mondo, adesso (catena ricalcolata dalla radice) */
+function eatHandPos(){ const h=EAT.hand; if(!h) return null;
+  const chain=[]; for(let q=h;q;q=q.parent) chain.unshift(q);
+  chain.forEach(n=>{ if(n.computeWorldMatrix) n.computeWorldMatrix(true); });
+  return h.getAbsolutePosition().clone(); }
+function eatStop(){ if(EAT.obs){ scene.onBeforeRenderObservable.remove(EAT.obs); EAT.obs=null; }
+  const Q=EAT.q; if(Q && Q.cur){ const g=Q.cur.g; if(g&&g.__home){ g.position.copyFrom(g.__home); g.rotation.z=0; g.rotation.x=0; } Q.cur=null; }
+  EAT.busy=false; try{ eatArm(0); }catch(e){} }
+/* steps: [{ g:TransformNode, what:"sip"|"bite", apply:()=>{} }] — ognuno
+   sale alla mano, resta un attimo, torna al suo posto. fwd: verso dove si
+   guarda (per l'offset della tazza davanti alla mano). */
+function eatRun(steps,fwd,onDone){
+  eatStop(); if(!steps.length){ if(onDone) onDone(); return; }
+  EAT.busy=true; EAT.q={ steps, k:0, cur:null };
+  steps.forEach(s=>{ if(s.g && !s.g.__home) s.g.__home=s.g.position.clone(); });
+  const V=BABYLON.Vector3, f=new V(fwd.x,0,fwd.z).normalize();
+  let t0=performance.now(), phase="wait";
+  const handLocal=(g,what)=>{ const hp=eatHandPos(); if(!hp||!g.parent) return g.__home.clone();
+    const w=hp.add(f.scale(what==="sip"?0.05:0.07)).add(new V(0,what==="sip"?0.0:0.02,0));
+    g.parent.computeWorldMatrix(true);
+    return V.TransformCoordinates(w,BABYLON.Matrix.Invert(g.parent.getWorldMatrix())); };
+  EAT.obs=scene.onBeforeRenderObservable.add(()=>{
+    const Q=EAT.q, now=performance.now();
+    if(phase==="wait"){ if(now-t0<(Q.k?450:800)) return;
+      if(Q.k>=Q.steps.length){ eatStop(); EAT.q=null; if(onDone) onDone(); return; }
+      Q.cur=Q.steps[Q.k]; phase="up"; t0=now; return; }
+    const c=Q.cur, g=c.g, tilt=(c.what==="sip")?0.6:0;
+    if(phase==="up"){ let u=(now-t0)/650; if(u>1) u=1; const e=u*u*(3-2*u);
+      eatArm(e); V.LerpToRef(g.__home,handLocal(g,c.what),e,g.position); g.rotation.z=tilt*e*e;
+      if(u>=1){ phase="hold"; t0=now; Q.k++; try{ c.apply&&c.apply(); }catch(e2){} } return; }
+    if(phase==="hold"){ eatArm(1); g.position.copyFrom(handLocal(g,c.what)); g.rotation.z=tilt;
+      if(now-t0>650){ phase="down"; t0=now; } return; }
+    if(phase==="down"){ let u=(now-t0)/600; if(u>1) u=1; const e=u*u*(3-2*u);
+      eatArm(1-e); V.LerpToRef(handLocal(g,c.what),g.__home,e,g.position); g.rotation.z=tilt*(1-e);
+      if(u>=1){ g.position.copyFrom(g.__home); g.rotation.z=0; eatArm(0); Q.cur=null; phase="wait"; t0=now; } return; }
+  }); }
 function playAvatarAnim(name){
   const g=avatarAnims[name]; if(!g || _avAnimCur===g) return;
   for(const k in avatarAnims) avatarAnims[k].stop();
@@ -7762,16 +7831,25 @@ function buildDiner(){
     c.font="28px Segoe UI"; c.fillStyle="#f3ead6"; c.textAlign="left";
     ["Cheeseburger ........ £8.50","Hot dog ............. £6.00","Pancakes ............ £6.50","Fried chicken ....... £9.00","Milkshakes .......... £4.00","Apple pie ........... £3.50"].forEach((l,i)=>c.fillText(l,34,112+i*44)); });
   const mm=new BABYLON.StandardMaterial("dn_menuM",scene); mm.diffuseTexture=mdt; mm.emissiveColor=new BABYLON.Color3(0.35,0.35,0.35); mm.specularColor=new BABYLON.Color3(0,0,0);
-  mb.material=mm; mb.position.set(3.4,1.95,KZ0-0.07); mb.rotation.y=Math.PI; mb.scaling.x=-1; mb.parent=root; mb.isPickable=false;
+  /* v296: stesso difetto del cartello d'ingresso — girata e specchiata, la
+     lavagna mostrava la faccia verso il muro e dalla veranda non si vedeva */
+  mb.material=mm; mb.position.set(3.4,1.95,KZ0-0.07); mb.parent=root; mb.isPickable=false;
   /* cartello all'ingresso */
   const ps=BABYLON.MeshBuilder.CreatePlane("dnSeatSign",{width:0.9,height:0.6},scene);
   const pdt=_dnTex("dn_seatT",256,170,(c,W,H)=>{ c.fillStyle="#f7f5ef"; c.fillRect(0,0,W,H); c.fillStyle="#c8323a"; c.fillRect(0,0,W,40);
     c.fillStyle="#f7f5ef"; c.font="bold 26px Segoe UI"; c.textAlign="center"; c.fillText("WELCOME!",W/2,29);
     c.fillStyle="#23262b"; c.font="bold 30px Segoe UI"; c.fillText("Please",W/2,84); c.fillText("seat yourself",W/2,124); });
   const pmm=new BABYLON.StandardMaterial("dn_seatM",scene); pmm.diffuseTexture=pdt; pmm.emissiveColor=new BABYLON.Color3(0.3,0.3,0.3); pmm.specularColor=new BABYLON.Color3(0,0,0);
-  ps.material=pmm; ps.position.set(-1.9,1.25,23.55); ps.rotation.y=Math.PI; ps.scaling.x=-1; ps.parent=root; ps.isPickable=false;
+  /* v296 (Giacomo: «al Sunny Side c'e' un cartello che si vede, al
+     contrario, solo uscendo; entrando scompare»): girato di PI e specchiato
+     in x, il piano mostrava la faccia al LATO SBAGLIATO (verso la veranda) e
+     rovesciata. Ora due piani schiena contro schiena, ognuno diritto: chi
+     entra (da nord, guarda +z) legge «WELCOME», e anche chi esce. */
+  ps.material=pmm; ps.position.set(-1.9,1.25,23.55); ps.parent=root; ps.isPickable=false;
+  const psB=ps.clone("dnSeatSignB"); psB.rotation.y=Math.PI; psB.position.z+=0.01; psB.isPickable=false;
+  const psF=BABYLON.MeshBuilder.CreateBox("dnSeatSignF",{width:0.96,height:0.66,depth:0.008},scene); psF.material=M.chrome; psF.position.set(-1.9,1.25,23.555); psF.parent=root;
   const pp=BABYLON.MeshBuilder.CreateCylinder("dnSeatPole",{diameter:0.05,height:0.95,tessellation:8},scene); pp.material=M.chrome; pp.position.set(-1.9,0.47,23.58); pp.parent=root;
-  if(typeof glowL!=="undefined"&&glowL){ [mb,ps].forEach(m=>glowL.addExcludedMesh(m)); }
+  if(typeof glowL!=="undefined"&&glowL){ [mb,ps,psB].forEach(m=>glowL.addExcludedMesh(m)); }
   /* ombre: cucina, tettoia e arredi fanno ombra come il resto della citta' */
   root.getChildMeshes().forEach(m=>{ if(m!==fl && m!==sign) m.__occluder=m.__occluder||(m===roof); });
   /* cartellino col nome, come gli edifici */
@@ -7863,7 +7941,9 @@ function dinerSit(s){
   player.position.set(s.x, DINER.gy, s.z); player.rotation.y=s.face;
   player.computeWorldMatrix(true);
   playAvatarAnim(IDLE_ANIM);
+  eatPrepare(f,s.seatY,DINER.gy);                 // v297: il braccio che porta alla bocca
   const off=playerSit(f,s.seatY,DINER.gy);
+  eatAfterSit();
   /* l'anca 4 cm dietro il centro della seduta: le cosce sulla seduta, la
      schiena contro lo schienale */
   if(off){ player.position.x=s.x-f.x*DINER_HIP_BACK-off.x; player.position.z=s.z-f.z*DINER_HIP_BACK-off.z; }
@@ -7880,7 +7960,8 @@ function dinerSit(s){
 function dinerResit(){ const s=DINER.seat; if(!s) return;
   const f=new BABYLON.Vector3(Math.sin(s.face),0,Math.cos(s.face));
   player.position.set(s.x,DINER.gy,s.z); player.computeWorldMatrix(true);
-  const off=playerSit(f,s.seatY,DINER.gy);
+  eatPrepare(f,s.seatY,DINER.gy);
+  const off=playerSit(f,s.seatY,DINER.gy); eatAfterSit();
   if(off){ player.position.x=s.x-f.x*DINER_HIP_BACK-off.x; player.position.z=s.z-f.z*DINER_HIP_BACK-off.z; } }
 /* v291 (Giacomo, 30 set: «se ti alzi prima di pagare, non paghi piu'!! Se
    ti alzi e non hai pagato e non ti avvicini, il cameriere viene e ti
@@ -7892,6 +7973,7 @@ function dinerResit(){ const s=DINER.seat; if(!s) return;
 function dinerStand(silent){
   const s=DINER.seat; if(!s) return;
   clearTimeout(DINER.timer); DINER.timer=null;
+  eatStop(); DINER.eating=false;
   playerStand();
   player.position.set(s.standX,DINER.gy,s.standZ);
   const o=DINER.o, owes=!!(o && o.served && DINER.st!=="paid");
@@ -8107,6 +8189,7 @@ function _dinerServeMain(){
 /* dopo un po' ripassa al tavolo: com'era? il dolce? */
 function _dinerCheckBack(){
   const s=DINER.seat; if(!s || DINER.st!=="eating") return;
+  if(DINER.eating){ dinerLater(2500,_dinerCheckBack); return; }   // v297: finisci di mangiare, poi ripassa
   dinerWaiterTo(s.t,()=>{ if(DINER.st!=="eating") return; dinerAsk("dessert",_dinerDessert); });
 }
 function _dinerDessert(v){
@@ -8217,6 +8300,7 @@ function _dinerFoodSet(keys,parent,ox,oy,oz){
   const S=(d,px,py,pz,k)=>{ const m=BABYLON.MeshBuilder.CreateSphere("dnf",{diameter:d,segments:8},scene); m.position.set(px,py,pz); return add(m,k); };
   const B=(w,h,d,px,py,pz,k)=>{ const m=BABYLON.MeshBuilder.CreateBox("dnf",{width:w,height:h,depth:d},scene); m.position.set(px,py,pz); return add(m,k); };
   keys.forEach(key=>{ const v=o.slip[key]; if(!v || v.en==="—") return;
+    const k0=set.getChildMeshes(true).length;
     if(key==="drink"){ const gx=cx+0.05, gz=cz+0.22;
       if(v.ic==="shake"){ C({diameterTop:0.1,diameterBottom:0.07,height:0.2},gx,y+0.1,gz,"glass"); C({diameterTop:0.1,diameterBottom:0.08,height:0.14},gx,y+0.08,gz,colM(v.c));
         S(0.1,gx,y+0.21,gz,"white").scaling.y=0.6; S(0.03,gx,y+0.25,gz,"red"); const st=C({diameter:0.01,height:0.2},gx+0.02,y+0.28,gz,"red"); st.rotation.z=0.25; }
@@ -8242,6 +8326,7 @@ function _dinerFoodSet(keys,parent,ox,oy,oz){
       if(v.ic==="sundae"){ C({diameterTop:0.1,diameterBottom:0.04,height:0.1},ex,y+0.06,ez,"glass"); S(0.08,ex,y+0.12,ez,colM(v.c)); S(0.025,ex,y+0.17,ez,"red"); }
       else if(v.ic==="brownie"){ B(0.08,0.04,0.06,ex,y+0.032,ez,colM(v.c)); }
       else { const p=C({diameter:0.12,height:0.035,tessellation:3},ex,y+0.03,ez,colM(v.c)); p.rotation.y=0.3; } }
+    set.getChildMeshes(true).slice(k0).forEach(m=>{ m.__key=key; });      // v297: di quale portata e' (per mangiarla)
   });
   try{ _octDirty(); }catch(e){}
   return set;
@@ -8249,7 +8334,36 @@ function _dinerFoodSet(keys,parent,ox,oy,oz){
 function _dinerServe(keys){
   const s=DINER.seat; if(!s||!DINER.o) return;
   const t=s.t, set=_dinerFoodSet(keys,townRoot,t.x+s.sd*0.2,t.top,t.z);   // dalla parte di chi e' seduto
-  if(set) DINER.food.push(set);
+  if(set){ DINER.food.push(set); _dinerEat(set,keys); }
+}
+/* v297 — SI MANGIA DAVVERO (Giacomo: «il sistema di mangiare mettilo anche
+   seduto al Sunny Side»): come al caffe', col braccio (eatRun). Il
+   bicchiere va alla bocca e il livello scende; di ogni piatto va alla bocca
+   il CIBO (le mesh color cibo, dn_c_*), il piatto resta in tavola e il cibo
+   si rimpicciolisce a ogni morso. Sorsi e morsi alternati. */
+function _dinerEat(set,keys){
+  const s=DINER.seat; if(!s) return;
+  const groups={};
+  keys.forEach(key=>{
+    const ms=set.getChildMeshes(true).filter(m=>m.__key===key); if(!ms.length) return;
+    const food=(key==="drink")?ms:ms.filter(m=>m.material && /^dn_c_/.test(m.material.name)); if(!food.length) return;
+    const c=new BABYLON.Vector3(0,0,0); food.forEach(m=>c.addInPlace(m.position)); c.scaleInPlace(1/food.length);
+    const g=new BABYLON.TransformNode("dnEat_"+key,scene); g.parent=set; g.position.copyFrom(c);
+    set.computeWorldMatrix(true); g.computeWorldMatrix(true);
+    food.forEach(m=>m.setParent(g));
+    const liq=(key==="drink")?food.filter(m=>m.material && /^dn_c_/.test(m.material.name)):[];
+    groups[key]={ g, liq, n:(key==="drink"?4:3), done:0 }; });
+  const order=[]; const ks=Object.keys(groups);
+  for(let r=0;r<4;r++) ks.forEach(k=>{ if(r<groups[k].n) order.push(k); });
+  const steps=order.map(k=>{ const G=groups[k]; return { g:G.g, what:(k==="drink"?"sip":"bite"), apply:()=>{ G.done++;
+      const f=Math.max(0.05,1-G.done/G.n);
+      if(k==="drink") G.liq.forEach(m=>{ if(m.__h0==null){ m.__h0=m.scaling.y; m.__y0=m.position.y; }
+          const bb=m.getBoundingInfo().boundingBox, h=(bb.maximum.y-bb.minimum.y)*m.__h0;
+          m.scaling.y=m.__h0*f; m.position.y=m.__y0-h*(1-f)/2; });
+      else { G.g.scaling.setAll(Math.max(0.001,f)); if(G.done>=G.n) G.g.setEnabled(false); } } }; });
+  DINER.eating=true;
+  const f=new BABYLON.Vector3(Math.sin(s.face),0,Math.cos(s.face));
+  eatRun(steps,f,()=>{ DINER.eating=false; toast("\u{1F60B} Delicious! \u00b7 Buonissimo!"); });
 }
 /* =====================================================================
    v289 — IL VASSOIO (Giacomo: «quando arriva il cameriere con la roba, deve
@@ -23202,10 +23316,6 @@ function _cafeOffer(prompt){ const P=CAFE_PICK;
   P.inter=addInteract({ id:"cafePickup", area:"town", radius:3.2,
     pos:()=>P.node?P.node.getAbsolutePosition():new BABYLON.Vector3(0,-99,0),
     prompt:prompt, interact:cafeTake }); }
-/* la bocca di chi e' seduto: sopra l'anca, gli occhi scesi quanto il corpo */
-function _cafeMouth(){ const P=CAFE_PICK, ry=(P.face!=null)?P.face:player.rotation.y;
-  const drop=(typeof SIT!=="undefined" && SIT.on)?SIT.drop:0;
-  return new BABYLON.Vector3(player.position.x+Math.sin(ry)*0.13, player.position.y+AVATAR_HEIGHT*0.86-drop, player.position.z+Math.cos(ry)*0.13); }
 /* seduti sullo sgabello, girati verso il bancone (+x) */
 function _cafeSit(){ const P=CAFE_PICK; if(!P.spot) return false;
   if((typeof DINER!=="undefined" && DINER.seat) || (typeof BSIT!=="undefined" && BSIT.b)) return false;
@@ -23214,7 +23324,9 @@ function _cafeSit(){ const P=CAFE_PICK; if(!P.spot) return false;
   moveTarget=null; pendingInteract=null; try{ tapMark.setEnabled(false); }catch(e){}
   player.position.set(S.x,gy,S.z); player.rotation.y=P.face; player.computeWorldMatrix(true);
   playAvatarAnim(IDLE_ANIM);
+  eatPrepare(f,P.spot.y+CAFE_SEAT_Y,P.spot.y+CAFE_FOOT_Y);          // v297: la posa col braccio alla bocca
   const off=playerSit(f,P.spot.y+CAFE_SEAT_Y,P.spot.y+CAFE_FOOT_Y);
+  eatAfterSit();
   if(off){ player.position.x=S.x-f.x*0.03-off.x; player.position.z=S.z-off.z; }
   P.seated=true;
   try{ if(typeof POV!=="undefined" && POV.on){ camera.alpha=-P.face-Math.PI/2; camera.inertialAlphaOffset=0; camera.beta=Math.PI/2+0.12; } }catch(e){}
@@ -23222,7 +23334,7 @@ function _cafeSit(){ const P=CAFE_PICK; if(!P.spot) return false;
 function cafeResit(){ const P=CAFE_PICK; if(P.seated){ P.seated=false; _cafeSit(); } }
 /* in piedi accanto allo sgabello, dalla parte dei clienti (fuori dal suo solido) */
 function _cafeStand(){ const P=CAFE_PICK; if(!P.seated) return;
-  playerStand(); P.seated=false;
+  eatStop(); playerStand(); P.seated=false;
   const S=_cafeStoolW(P);
   player.position.set(S.x-0.9, (P.gy!=null)?P.gy:player.position.y, S.z); player.rotation.y=P.face!=null?P.face:player.rotation.y; }
 function cafeTake(){
@@ -23237,9 +23349,7 @@ function cafeLeaveSeat(){ const P=CAFE_PICK;
   if(P.st==="eating") cafePause();
   else if(P.seated) _cafeStand(); }
 function cafePause(){ const P=CAFE_PICK; if(P.st!=="eating") return;
-  if(P.obs){ scene.onBeforeRenderObservable.remove(P.obs); P.obs=null; }
-  const R=P.parts;
-  [R&&R.drink, R&&R.food].forEach(g=>{ if(g&&g.__home){ g.position.copyFrom(g.__home); g.rotation.z=0; } });
+  eatStop();
   _cafeStand();
   P.st="paused";
   _cafeOffer('☕ Press <b>E</b> to <b>sit down</b> and <b>finish your order</b>');
@@ -23248,39 +23358,14 @@ function cafePause(){ const P=CAFE_PICK; if(P.st!=="eating") return;
 function _cafeRun(){
   const P=CAFE_PICK, n=P.node, R=P.parts, Q=P.seq; if(!n||!R||!Q) return;
   P.st="eating";
-  [R.drink,R.food].forEach(g=>{ if(g && !g.__home) g.__home=g.position.clone(); });
-  let t0=performance.now(), phase="wait", cur=null, target=null;
-  P.obs=scene.onBeforeRenderObservable.add(()=>{
-    const now=performance.now();
-    if(area!=="town"){ cafePause(); return; }
-    /* il corpo resta girato verso il bancone. In prima persona ci pensa
-       _povBody (seduti: gira la testa, non il corpo); da fuori lo si tiene qui. */
-    if(P.face!=null && !(typeof POV!=="undefined" && POV.on)) player.rotation.y=P.face;
-    if(phase==="wait"){ if(now-t0>(Q.k?500:900)){ if(Q.k>=Q.steps.length){ phase="done"; _cafeDone(); return; }
-        const what=Q.steps[Q.k]; cur=(what==="sip")?R.drink:R.food; if(!cur){ Q.k++; t0=now; return; }
-        cur.__what=what; phase="up"; t0=now;
-        /* il bersaglio si fissa UNA volta per gesto: corpo fermo, bocca ferma */
-        const inv=BABYLON.Matrix.Invert(n.getWorldMatrix()), mL=BABYLON.Vector3.TransformCoordinates(_cafeMouth(),inv);
-        target=mL.add(new BABYLON.Vector3(0,(what==="sip")?-0.05:-0.09,0)); } return; }
-    if(!cur) return;
-    const home=cur.__home;
-    /* la tazza si inclina verso chi beve (che sta a -x) */
-    const tilt=(cur.__what==="sip")?0.55:0;
-    if(phase==="up"){ let u=(now-t0)/600; if(u>1) u=1; const e=u*u*(3-2*u);
-      BABYLON.Vector3.LerpToRef(home,target,e,cur.position);
-      cur.rotation.z=tilt*e;
-      if(u>=1){ phase="hold"; t0=now; Q.k++;
-        const c=Q.cnt; c[cur.__what]++;
-        if(cur.__what==="sip" && R.level){ const f=Math.max(0.04,1-c.sip/Q.nS), L=R.level;
-          L.scaling.y=f; L.position.y=L.__y0+L.__h*f/2; R.bits.forEach(b=>{ if(b.material!==_cafePickMats().cream||c.sip>1) b.setEnabled(false); }); }
-        if(cur.__what==="bite" && R.bite){ const f=Math.max(0,1-c.bite/Q.nB); R.bite.scaling.setAll(Math.max(0.001,f)); if(f<=0) R.bite.setEnabled(false); } } return; }
-    if(phase==="hold"){ if(now-t0>650){ phase="down"; t0=now; } return; }
-    if(phase==="down"){ let u=(now-t0)/550; if(u>1) u=1; const e=u*u*(3-2*u);
-      BABYLON.Vector3.LerpToRef(target,home,e,cur.position); cur.rotation.z=tilt*(1-e);
-      if(u>=1){ cur.position.copyFrom(home); cur.rotation.z=0; cur=null; phase="wait"; t0=now; } return; }
-  }); }
+  /* v297: i gesti che mancano, col braccio vero (eatRun) */
+  const steps=Q.steps.slice(Q.k).map(what=>({ g:(what==="sip")?R.drink:R.food, what,
+    apply:()=>{ Q.k++; const c=Q.cnt; c[what]++;
+      if(what==="sip" && R.level){ const f=Math.max(0.04,1-c.sip/Q.nS), L=R.level;
+        L.scaling.y=f; L.position.y=L.__y0+L.__h*f/2; R.bits.forEach(b=>{ if(b.material!==_cafePickMats().cream||c.sip>1) b.setEnabled(false); }); }
+      if(what==="bite" && R.bite){ const f=Math.max(0,1-c.bite/Q.nB); R.bite.scaling.setAll(Math.max(0.001,f)); if(f<=0) R.bite.setEnabled(false); } } })).filter(x=>x.g);
+  eatRun(steps,new BABYLON.Vector3(Math.sin(P.face),0,Math.cos(P.face)),()=>{ if(P.st==="eating") _cafeDone(); }); }
 function _cafeDone(){ const P=CAFE_PICK;
-  if(P.obs){ scene.onBeforeRenderObservable.remove(P.obs); P.obs=null; }
   P.st="done";
   const npc=P.npc;
   const bye=()=>{ _cafeStand(); if(P.timer) clearTimeout(P.timer); P.timer=setTimeout(cafeClear,1500); };
@@ -25676,12 +25761,25 @@ LEXPROPS.gigWindow=function(id,o){ const r=new BABYLON.TransformNode(id,scene);
    NPC del club: Rita (proprietaria, guida), Mick (roadie), Dev (fonico).
    ===================================================================== */
 let beatNpcBuilt=false, RITA=null, MICK=null, DEV=null;
+/* v297 (Giacomo: «rendi un po' piu' largo il Beat Club, il palco sta in
+   mezzo, aumenta il numero di persone che ballano»). La sala passa da 11 a
+   15 m di larghezza (sizeX 7.5). Palco, casse, strumenti, tavolini e pista
+   restano dove sono — al centro. Tutto cio' che stava contro i muri est e
+   ovest (bancone e sgabelli, scaffale, jukebox, banco regia, flight case,
+   cartelli, dischi, foto, vetrina) si sposta di BEAT_DX verso il suo muro:
+   si fa qui, una volta, sui dati, cosi' le coordinate scritte sopra restano
+   leggibili e confrontabili con le note che le giustificano. Le tende di
+   velluto (muro nord, ai lati del LED) restano accanto al palco. */
+const BEAT_DX=2.0;
+(function(){ UNIT_MUSIC.props.forEach(pr=>{ if(Math.abs(pr.x||0)>=3.7 && !((pr.z||0)<-6.5)) pr.x+=Math.sign(pr.x)*BEAT_DX; });
+  const w=UNIT_MUSIC.steps.find(st=>st.id==="write"); if(w&&w.pad) w.pad.x-=BEAT_DX;       // il logbook sta sul bancone
+  const df=UNIT_MUSIC.props.find(pr=>pr.prop==="danceFloor"); if(df) df.w+=2*BEAT_DX*0.8; })();
 function buildBeatNPCs(){
   if(beatNpcBuilt) return; beatNpcBuilt=true;
   const I=INTERIORS[UNIT_MUSIC.area]; if(!I) return; const C=I.center;
   RITA=spawnNPC({ id:"rita", name:"Rita", sub:"Club owner", area:UNIT_MUSIC.area,
     /* dietro il bancone (fra bancone e muro), non davanti: e' la barista */
-    x:C.x-5.05, z:C.z+2.20, face:1.57, model:"avatarW", height:1.68, interact:talkToRita, radius:3.4 });
+    x:C.x-5.05-BEAT_DX, z:C.z+2.20, face:1.57, model:"avatarW", height:1.68, interact:talkToRita, radius:3.4 });
   MICK=spawnNPC({ id:"mick", name:"Mick", sub:"Roadie", area:UNIT_MUSIC.area,
     /* posizione trovata col test AABB, non a occhio: a 2.70/4.60 il busto
        entrava nel flight case, a 2.10/4.30 nel piano di un tavolino.
@@ -25692,9 +25790,9 @@ function buildBeatNPCs(){
     /* ⚠️ DIETRO la console, fra mixer (x 4.55) e muro est (5.5), non davanti:
        a x 3.70 finiva dentro la calca e spariva fra due sagome. Il banco
        regia e' il suo posto naturale e da li' domina la sala. */
-    x:C.x+5.02, z:C.z-0.12, face:-1.42, height:1.74, interact:talkToDev,
+    x:C.x+5.02+BEAT_DX, z:C.z-0.12, face:-1.42, height:1.74, interact:talkToDev,
     tint:{ Purple:"#7a3b5e", LightBlue:"#2b2b33", Hair:"#1f1a16" } });
-  guiLabel(anchorMesh(I.root, C.x-5.20, 2.45, C.z-3.40), "\u{1F4F7} Last night", null, true, UNIT_MUSIC.area);
+  guiLabel(anchorMesh(I.root, C.x-5.20-BEAT_DX, 2.45, C.z-3.40), "\u{1F4F7} Last night", null, true, UNIT_MUSIC.area);
 }
 /* ⚠️ Le battute-guida valgono SOLO dentro la loro unit: senza questo
    controllo Rita darebbe indicazioni sul concerto mentre sei al mercato
@@ -26045,7 +26143,7 @@ MECH.concertPhoto=function(s){
   beatGramHud();
   const I=INTERIORS[UNIT_MUSIC.area]; if(I){ const C=I.center;
     Quest.questInteract({ id:"beat_photo", area:UNIT_MUSIC.area, radius:2.8,
-      pos:()=>new BABYLON.Vector3(C.x-5.10, 0, C.z-3.40),
+      pos:()=>new BABYLON.Vector3(C.x-5.10-BEAT_DX, 0, C.z-3.40),
       prompt:'\u{1F4F7} Press <b>E</b> to look at the <b>photo</b>',
       interact:()=>runConcertPhoto(RITA) }); }
 };
@@ -26054,7 +26152,7 @@ MECH.moodBooth=function(s){
   questHudSet("funzioni", HOBJ("\u{1F3B6} Go to <b>Dev</b> in the listening booth","\u{1F3B6} Vai da <b>Dev</b> nella cabina d'ascolto"), Quest.i, Quest.total);
   const I=INTERIORS[UNIT_MUSIC.area]; if(I){ const C=I.center;
     Quest.questInteract({ id:"beat_juke", area:UNIT_MUSIC.area, radius:2.6,
-      pos:()=>new BABYLON.Vector3(C.x-4.30, 0, C.z-1.60),
+      pos:()=>new BABYLON.Vector3(C.x-4.30-BEAT_DX, 0, C.z-1.60),
       prompt:'\u{1F3B6} Press <b>E</b>: <b>jukebox</b>',
       interact:()=>runMoodBooth(DEV) }); }
 };
@@ -26067,7 +26165,7 @@ MECH.gigPoster=function(s){
   questHudSet("final", HOBJ("\u{1FAA7} Go to <b>Rita</b>: tonight\'s poster","\u{1FAA7} Vai da <b>Rita</b>: manifesto della serata"), Quest.i, Quest.total);
   const I=INTERIORS[UNIT_MUSIC.area]; if(I){ const C=I.center;
     Quest.questInteract({ id:"beat_window", area:UNIT_MUSIC.area, radius:2.8,
-      pos:()=>new BABYLON.Vector3(C.x+5.05, 0, C.z+2.60),
+      pos:()=>new BABYLON.Vector3(C.x+5.05+BEAT_DX, 0, C.z+2.60),
       prompt:'\u{1FAA7} Press <b>E</b>: club <b>display case</b>',
       interact:()=>runGigPoster(RITA) }); }
 };
@@ -28609,6 +28707,16 @@ function gigBuildBand(){
    corridoio centrale non serve piu' per passare — i parlanti sono in fondo —
    quindi resta solo un varco stretto per non incastrare il giocatore che
    volesse arrivare sotto il palco. */
+/* v297: la sala e' piu' larga (BEAT_DX): ogni fila del pubblico si
+   allunga ai lati, oltre le casse, nello spazio dove prima c'era il muro. Il centro e il resto del concerto non cambiano. Le file
+   piu' vicine al palco saltano la zona delle casse (|x| 3.2..3.9). */
+function _beatWideRow(R,ri){
+  /* fino a |x| 5.5: resta un corridoio di ~2 m lungo i muri (bancone,
+     jukebox, banco regia, foto e vetrina restano raggiungibili) */
+  const edge=(typeof BEAT_DX!=="undefined" && BEAT_DX>0)?5.5:0, xs=R.xs.slice(), step=0.72;
+  const far=Math.max.apply(null,R.xs.map(Math.abs));
+  for(let x=Math.max(far+step,4.2); x<=edge+0.01; x+=step){ xs.push(x); xs.push(-x); }
+  return { z:R.z, xs:xs }; }
 const CROWD_ROWS=[
   /* niente piu' `shirt`: dalla terza versione il pubblico ha un materiale
      unico scurissimo (una sola draw call per posa, e la silhouette e' l'unica
@@ -28820,6 +28928,7 @@ function gigBuildCrowdFX(){
   }
   if(!CROWD_TPL.length){ console.warn("[crowd] nessun template: pubblico assente"); return; }
   CROWD_ROWS.forEach(function(R,ri){
+    R=_beatWideRow(R,ri);
     const node=new BABYLON.TransformNode("crowdRow"+ri,scene); node.parent=I.root;
     const spots=[];
     R.xs.forEach(function(x,i){
@@ -34785,6 +34894,7 @@ function unitPool(){ const u=Quest.unit;
 
 /* ---- AREE / TELEPORT ---- */
 function enterArea(target){
+  if(typeof area!=="undefined" && area!==target){ try{ standUpAll(); }catch(e){} }   // v296: cambiando luogo si e' sempre in piedi
   if(typeof area!=="undefined" && area==="market" && target!=="market"){ try{ marketOnLeave(); }catch(e){} }   // v256
   area=target;
   townRoot.setEnabled(target==="town"); homeRoot.setEnabled(target==="home");
@@ -35380,7 +35490,7 @@ function _povHead(mode){
    fino a un certo punto. */
 const POV_SEAT_TURN=1.5;       // quanto si gira la testa da seduti (rad, per lato)
 function _povSeated(){ return (typeof DINER!=="undefined" && DINER.seat) || (typeof BSIT!=="undefined" && BSIT.b) || (typeof SIT!=="undefined" && SIT.on)
-  || (typeof CAFE_PICK!=="undefined" && CAFE_PICK.seated); }   // v295: seduti sullo sgabello del caffe' 
+  || (typeof CAFE_PICK!=="undefined" && CAFE_PICK.seated) || (typeof SUBSIT!=="undefined" && SUBSIT.on); }   // v295: seduti sullo sgabello del caffe' 
 function _povBody(){
   if(_povSeated()){
     const a0=-player.rotation.y-Math.PI/2;
@@ -35595,7 +35705,8 @@ function clampArea(){ const c=area==="home"?HOME_C:(area==="cinema"?CINEMA_C:(ar
 function move(nx,nz,spd){
   if(typeof DINER!=="undefined" && DINER.seat) return false;   // v288: seduti al diner non si cammina (E per alzarsi)
   if(typeof BSIT!=="undefined" && BSIT.b) benchStand(true);     // v291: dalla panchina il primo passo ti rimette in piedi
-  if(typeof CAFE_PICK!=="undefined" && CAFE_PICK.seated) cafeLeaveSeat();   // v295: al caffe' il primo passo ti alza dallo sgabello (tazza e cibo sul vassoio)
+  if(typeof CAFE_PICK!=="undefined" && CAFE_PICK.seated) cafeLeaveSeat();
+  if(typeof SUBSIT!=="undefined" && SUBSIT.on) subBenchStand(true);   // v297: panchina della metro   // v295: al caffe' il primo passo ti alza dallo sgabello (tazza e cibo sul vassoio)
   spd=spd||PLAYER_SPEED;
   const ox=player.position.x, oz=player.position.z;
   const px=ox+nx*spd, pz=oz+nz*spd;
@@ -36189,7 +36300,18 @@ function _taxiSpot(x,z){
   }
   return { x:x, z:z };
 }
+/* v296 (Giacomo: «se sono seduto e con la mappa cambio posto senza alzarmi,
+   devo passare in piedi»): prima di ogni teletrasporto ci si alza da
+   qualunque seduta (diner, panchina, sgabello del caffe', panchina della
+   metro). Silenzioso: il toast giusto e' quello della destinazione. */
+function standUpAll(){
+  try{ if(typeof CAFE_PICK!=="undefined" && CAFE_PICK.seated) cafeLeaveSeat(); }catch(e){}
+  try{ if(typeof DINER!=="undefined" && DINER.seat) dinerStand(true); }catch(e){}
+  try{ if(typeof BSIT!=="undefined" && BSIT.b) benchStand(true); }catch(e){}
+  try{ if(typeof SUBSIT!=="undefined" && SUBSIT.on) subBenchStand(true); }catch(e){}
+  try{ if(typeof SIT!=="undefined" && SIT.on) playerStand(); }catch(e){} }
 function taxiTo(d){ closeMap(); _fade(true);
+  standUpAll();
   setTimeout(()=>{
     const sp=_taxiSpot(d.x,d.z); const tx=sp.x, tz=sp.z;
     player.position.set(tx,0,tz);
@@ -36555,6 +36677,69 @@ function subAdArt(c,W,H,t){
 }
 
 /* ---- Piattaforma sotterranea (costruita on-demand alla prima entrata) ---- */
+/* =====================================================================
+   v297 (Giacomo: «fai sedere anche in metro, se ti siedi appare una gem a
+   caso»). Le quattro panchine della banchina si usano come quelle del
+   parco: E per sedersi (la posa seduta di sempre), il primo passo o E per
+   alzarsi. Sedendosi, mentre si aspetta il treno, davanti alla panchina
+   compare un CRISTALLO a caso (stesso motore dei cristalli in citta':
+   stessa domanda, stesse stelle), al massimo uno ogni 45 secondi.
+   ===================================================================== */
+const SUB_BENCHES=[];
+const SUBSIT={ on:false, b:null, S:null, f:null };
+let SUBGEM=null, _subGemAt=0;
+function subBenchSit(B){
+  if(SUBSIT.on || area!=="subway") return;
+  const V=BABYLON.Vector3, f=new V(B.fx,0,0), z=Math.max(B.z-1.0,Math.min(B.z+1.0,player.position.z));
+  const S=new V(B.x,0,z);
+  moveTarget=null; pendingInteract=null; try{ tapMark.setEnabled(false); }catch(e){}
+  Object.assign(SUBSIT,{ on:true, b:B, S, f });
+  player.position.set(S.x,0,S.z); player.rotation.y=Math.atan2(f.x,f.z); player.computeWorldMatrix(true);
+  playAvatarAnim(IDLE_ANIM);
+  const off=playerSit(f,B.seatY,0);
+  if(off){ player.position.x=S.x-f.x*0.02-off.x; player.position.z=S.z-off.z; }
+  try{ if(typeof POV!=="undefined" && POV.on){ camera.alpha=-player.rotation.y-Math.PI/2; camera.inertialAlphaOffset=0; } }catch(e){}
+  toast("\u{1FA91} You sit down and wait for the train\u2026");
+  subGemMaybe(); }
+function subBenchStand(silent){
+  if(!SUBSIT.on) return;
+  playerStand();
+  const S=SUBSIT.S, f=SUBSIT.f;
+  player.position.set(S.x+f.x*0.85,0,S.z);
+  SUBSIT.on=false; SUBSIT.b=null;
+  if(!silent) toast("\u{1F44B} You stand up."); }
+/* il cristallo della banchina: un solo oggetto, riusato */
+function subGemMaybe(){
+  const now=performance.now();
+  if(typeof GEMS==="undefined" || typeof gemPickKey!=="function") return;
+  if(SUBGEM && SUBGEM.mesh.isEnabled()) return;
+  if(now-_subGemAt<45000 && _subGemAt) return;
+  const busy=GEMS.filter(x=>x.key).map(x=>x.key);
+  const k=gemPickKey(busy), it=k?gemItem(k):null; if(!it) return;
+  _subGemAt=now;
+  if(!SUBGEM){
+    const m=BABYLON.MeshBuilder.CreatePolyhedron("subGem",{type:1,size:0.30},scene);
+    const mt=new BABYLON.PBRMaterial("subGemM",scene); mt.metallic=0.1; mt.roughness=0.18; mt.alpha=0.92; m.material=mt; m.parent=subwayRoot;
+    const d=BABYLON.MeshBuilder.CreateDisc("subGemD",{radius:0.55,tessellation:24},scene); d.rotation.x=Math.PI/2; d.isPickable=false; d.parent=subwayRoot;
+    const dm=new BABYLON.StandardMaterial("subGemDM",scene); dm.disableLighting=true; dm.diffuseColor=new BABYLON.Color3(0,0,0); dm.specularColor=new BABYLON.Color3(0,0,0);
+    dm.alphaMode=BABYLON.Engine.ALPHA_ADD; dm.alpha=0.5; dm.backFaceCulling=false; dm.zOffset=-2; d.material=dm;
+    if(typeof glowL!=="undefined"&&glowL&&glowL.addExcludedMesh) glowL.addExcludedMesh(d);
+    const g={ i:-1, mesh:m, disc:d, mat:mt, dmat:dm, key:null, item:null, spot:null, phase:0, baseY:0, __sub:true };
+    g.inter=addInteract({ id:"subGem", area:"subway", radius:2.4, meshes:[m], pos:()=>m.position,
+      prompt:()=>{ const kk=g.item?GEM_KINDS[g.item.kind]:null; return (kk?kk.ic:"\u{1F48E}")+" <b>"+(kk?kk.nome.toUpperCase():"CRISTALLO")+"</b> \u00b7 press <b>E</b>"; },
+      interact:()=>{ if(SUBSIT.on) subBenchStand(true); gemOpen(g); } });
+    scene.onBeforeRenderObservable.add(()=>{ if(area!=="subway"||!g.mesh.isEnabled()) return;
+      const t=performance.now()/1000; g.mesh.rotation.y=t*0.9; g.mesh.position.y=0.55+Math.sin(t*1.7)*0.09; g.dmat.alpha=0.30+Math.sin(t*1.7)*0.12; });
+    SUBGEM=g; }
+  const g=SUBGEM, B=SUBSIT.b||SUB_BENCHES[0], z=SUBSIT.S?SUBSIT.S.z:B.z;
+  g.key=k; g.item=it;
+  const col=BABYLON.Color3.FromHexString(GEM_KINDS[it.kind].col);
+  g.mat.albedoColor=col.scale(0.55); g.mat.emissiveColor=col.scale(0.52); g.dmat.emissiveColor=col.scale(0.60);
+  /* davanti alla panchina, a 1.4 m: si vede da seduti, si prende alzandosi */
+  const x=B.x+B.fx*1.4; g.mesh.position.set(x,0.55,z); g.disc.position.set(x,0.05,z);
+  g.mesh.setEnabled(true); g.disc.setEnabled(true); g.inter.enabled=true;
+  try{ _octDirty(); }catch(e){}
+  setTimeout(()=>{ try{ toast("\u{1F48E} Look! A crystal on the platform!"); }catch(e){} },900); }
 /* v293 — MATERIALI DELLA METRO, disegnati una volta (0 KB di asset). */
 let _subT=null;
 function _subTex(){ if(_subT) return _subT;
@@ -36961,7 +37146,14 @@ function buildSubwayPlatform(){
          Il rettangolo copre seduta (0.72 di larghezza) PIU' lo schienale,
          che sporge di 0.3 verso il muro: senza, si entrerebbe di spalla. */
       const sx0=C.x+dx+(dx<0?-0.42:-0.36), sx1=C.x+dx+(dx<0?0.36:0.42);
-      addSolid(sx0,sx1,C.z+dz-1.4,C.z+dz+1.4,"subway"); }); });
+      addSolid(sx0,sx1,C.z+dz-1.4,C.z+dz+1.4,"subway");
+      /* v297: ci si siede (la seduta guarda il centro della banchina) */
+      const B={ x:C.x+dx, z:C.z+dz, fx:(dx<0?1:-1), seatY:0.55 };
+      SUB_BENCHES.push(B);
+      B.inter=addInteract({ id:"subBench"+SUB_BENCHES.length, area:"subway", radius:1.9,
+        pos:()=>new BABYLON.Vector3(B.x+B.fx*0.7,0,Math.max(B.z-1.0,Math.min(B.z+1.0,player.position.z))),
+        prompt:()=>SUBSIT.on?'Press <b>E</b> to <b>stand up</b>':'\u{1FA91} Press <b>E</b> to <b>sit down</b>',
+        interact:()=>{ if(SUBSIT.on) subBenchStand(); else subBenchSit(B); } }); }); });
   // ===== uscita (a sud) =====
   //   Il disco/interazione stanno DAVANTI alla scaletta, su pavimento piatto, cosi' l'avatar
   //   preme E dalla base senza doversi incastrare nei gradini.
@@ -52437,6 +52629,7 @@ function gemRespawn(g,first,keep){
 }
 function gemHide(g,ms,keep){
   g.mesh.setEnabled(false); g.disc.setEnabled(false); g.inter.enabled=false;
+  if(g.__sub){ g.key=null; return; }        // v297: il cristallo della metro non ricompare in citta' 
   g.awaitingRespawn=true;
   setTimeout(()=>{ gemRespawn(g,false,keep); }, ms||GEM_RESPAWN);
 }
