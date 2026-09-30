@@ -3556,6 +3556,15 @@ const camera=new BABYLON.ArcRotateCamera("cam",-Math.PI/2,VIEW.beta,VIEW.radius,
    inclinazione dal basso da' piu' fastidio di quanto serva. Non riaprire. */
 camera.lowerBetaLimit=0.35; camera.upperBetaLimit=1.45; camera.lowerRadiusLimit=4; camera.upperRadiusLimit=40;
 camera.wheelDeltaPercentage=0.01; camera.panningSensibility=0; camera.attachControl(canvas,true);
+/* ⚠️ LE FRECCE MUOVONO, NON RUOTANO (Giacomo, 30 set: «con le frecce vorrei
+   muovermi come con WASD, senza cambiare prospettiva»). L'ArcRotateCamera
+   di Babylon aggancia di serie anche la TASTIERA: ←/→ giravano la visuale e
+   ↑/↓ la inclinavano, NELLO STESSO momento in cui il gioco usava le stesse
+   frecce per camminare. Risultato: premendo ← l'avatar andava a sinistra e
+   la camera gli girava attorno. Il movimento con le frecce e' gia' quello di
+   WASD (vedi il loop di gioco): basta togliere alla camera il suo ingresso
+   da tastiera. La visuale si gira col mouse/dito, come prima. */
+try{ camera.inputs.removeByType("ArcRotateCameraKeyboardMoveInput"); }catch(e){}
 // --- INPUT CAMERA ---
 // desktop = orbita col tasto DESTRO (sinistro libero per tap-to-move)
 // touch/tablet = un dito trascina per RUOTARE, due dita (pinch) per AVVICINARSI/ALLONTANARSI
