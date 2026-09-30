@@ -584,10 +584,10 @@
   <div class="qc-arrow" id="qc-arrow">&#x2B06;&#xFE0F;</div>
   <div class="qc-dist" id="qc-dist">&#x2013;</div>
 </div>
-<button id="qbtn" title="Qualità grafica (tocca per cambiare)">⚙︎ <span id="qlab">Medio</span></button>
-<button id="au-btn" title="Volume della musica (tocca per cambiare)">🔊</button>
-<button id="nb-btn" title="My notebook — il mio quaderno">📓</button>
-<button id="fs-btn" title="Schermo intero">⛶</button>
+<button id="qbtn" title="Graphics quality (tap to change)">⚙︎ <span id="qlab">Medium</span></button>
+<button id="au-btn" title="Music volume (tap to change)">🔊</button>
+<button id="nb-btn" title="My notebook">📓</button>
+<button id="fs-btn" title="Full screen">⛶</button>
 <div id="prompt" class="hud"></div>
 <div id="toast" class="hud"></div>
 <div id="boot">
@@ -609,38 +609,38 @@
   <div id="metro-card">
     <div id="metro-head">
       <div><span class="mey">🚇 M1 · Metropolitan Line</span><b>Underground map</b></div>
-      <button id="metro-close" title="Chiudi">✕</button>
+      <button id="metro-close" title="Close">✕</button>
     </div>
     <div id="metro-line-wrap"></div>
-    <div id="metro-hint2">Tocca una fermata · viaggio istantaneo</div>
+    <div id="metro-hint2">Tap a stop · instant trip</div>
   </div>
 </div>
 <div id="stick"><div id="knob"></div></div>
 <button id="actBtn">E</button>
 <button id="runBtn">🏃</button>
-<button id="povBtn" aria-pressed="false" title="Prima persona">👁️</button>
-<button id="map-btn" title="Mappa città (M)">🗺️</button>
+<button id="povBtn" aria-pressed="false" title="First person">👁️</button>
+<button id="map-btn" title="Town map (M)">🗺️</button>
 <div id="kbhelp">
-  <span><b>WASD</b> / <b>&#8593;&#8595;&#8592;&#8594;</b> muoviti</span>
-  <span><b>Shift</b> corri</span>
-  <span><b>E</b> interagisci</span>
-  <span><b>Q</b> cambia oggetto</span>
-  <span><b>M</b> mappa</span>
-  <span><b>V</b> visuale</span>
-  <span><b>O</b> occhi (1ª persona)</span>
-  <span><b>H</b> nascondi</span>
+  <span><b>WASD</b> / <b>&#8593;&#8595;&#8592;&#8594;</b> move</span>
+  <span><b>Shift</b> run</span>
+  <span><b>E</b> interact</span>
+  <span><b>Q</b> next object</span>
+  <span><b>M</b> map</span>
+  <span><b>V</b> view</span>
+  <span><b>O</b> first person</span>
+  <span><b>H</b> hide</span>
 </div>
-<button id="star-btn" title="Diario dell'Esploratore"><span>⭐</span><span id="star-n">0</span></button>
+<button id="star-btn" title="Explorer's Diary"><span>⭐</span><span id="star-n">0</span></button>
 <div id="fade"></div>
 <div id="diary-ov">
   <div id="diary-card">
     <div id="diary-head">
-      <div><span class="ey">QuestTown</span><b>📔 Diario dell'Esploratore</b></div>
-      <button id="diary-close" title="Chiudi">✕</button>
+      <div><span class="ey">QuestTown</span><b>📔 Explorer's Diary</b></div>
+      <button id="diary-close" title="Close">✕</button>
     </div>
     <div id="diary-tabs">
-      <button class="dy-tab on" id="tab-card">🪪 Tessera</button>
-      <button class="dy-tab" id="tab-diary">📔 Diario</button>
+      <button class="dy-tab on" id="tab-card">🪪 Card</button>
+      <button class="dy-tab" id="tab-diary">📔 Diary</button>
       <button class="dy-tab" id="tab-album">📷 Album</button>
       <button class="dy-tab" id="tab-gems">💎 Teca</button>
     </div>
@@ -650,11 +650,11 @@
 <div id="map-ov">
   <div id="map-card">
     <div id="map-head">
-      <div><span class="ey">QuestTown</span><b>🗺️ Mappa della città</b></div>
-      <button id="map-close" title="Chiudi">✕</button>
+      <div><span class="ey">QuestTown</span><b>🗺️ Town map</b></div>
+      <button id="map-close" title="Close">✕</button>
     </div>
     <div id="map-canvas"></div>
-    <div id="map-hint">Tocca una destinazione · il taxi 🚕 ti porta lì in un attimo</div>
+    <div id="map-hint">Tap a place · the taxi 🚕 takes you there</div>
   </div>
 </div>
 
@@ -3555,7 +3555,7 @@ try{ const _v=JSON.parse(localStorage.getItem("et_view")||"null");
 function applyView(){ camera.beta=VIEW.beta; camera.radius=VIEW.radius; camWish=VIEW.radius; }
 function saveView(){ VIEW.beta=camera.beta; VIEW.radius=camera.radius;
   try{ localStorage.setItem("et_view", JSON.stringify(VIEW)); }catch(e){}
-  toast("🎥 Visuale base salvata ("+VIEW.radius.toFixed(1)+" m)"); }
+  toast("🎥 Default view saved ("+VIEW.radius.toFixed(1)+" m)"); }
 /* alpha iniziale = -PI/2, cioe' DIETRO il giocatore (che allo spawn guarda
    verso casa): e' anche l'angolo verso cui converge la ricentratura
    automatica quando si cammina in avanti (ta = -player.rotation.y - PI/2).
@@ -3794,6 +3794,8 @@ scene.onBeforeRenderObservable.add(()=>{ if(_octN>=0 && scene.meshes.length!==_o
 
 // selettore qualità (Basso/Medio/Alto) + auto-rilevamento via FPS
 const QLEVELS=["basso","medio","alto"]; let qLevel="medio";
+/* v288: i nomi interni restano italiani (sono chiavi salvate); a schermo inglese */
+function qLabelEn(q){ return ({ basso:"Low", medio:"Medium", alto:"High" })[q]||q; }
 /* ⚠️ MISURATO SU UN ACER CON INTEL UHD (30 ago): 2,5 fps su «Alto», e passando
    a «Basso» i fotogrammi CROLLAVANO a 0,4 prima di risalire. Non era Basso a
    pesare: spegnere le ombre cambia i define degli shader e obbliga Babylon a
@@ -3819,7 +3821,7 @@ function applyQuality(q,ricorda){ if(QLEVELS.indexOf(q)<0) q="medio"; qLevel=q;
      (+21% di fotogrammi nella prova in aula). */
   glowL.isEnabled=(q==="alto"); glowL.intensity=0.65;
   try{ if(CLUB_FX.in){ CLUB_FX.glow=glowL.isEnabled; glowL.isEnabled=false; } }catch(e){}   // v262: dentro il Beat Club il glow resta spento
-  const lab=document.getElementById("qlab"); if(lab) lab.textContent=q.charAt(0).toUpperCase()+q.slice(1);
+  const lab=document.getElementById("qlab"); if(lab) lab.textContent=qLabelEn(q);
   /* ⚠️ SI RICORDA SOLO LA SCELTA ESPLICITA (pulsante ⚙︎). Prima veniva salvato
      anche il verdetto automatico, e siccome un valore salvato disattiva il
      rilevamento, il primo errore diventava definitivo: su ogni Chromebook il
@@ -3827,7 +3829,7 @@ function applyQuality(q,ricorda){ if(QLEVELS.indexOf(q)<0) q="medio"; qLevel=q;
      L'automatismo si rivaluta a ogni avvio: costa nulla e non resta incastrato. */
   if(ricorda===true){ try{ localStorage.setItem("et_quality",q); }catch(e){} } }
 function cycleQuality(){ const i=(QLEVELS.indexOf(qLevel)+1)%QLEVELS.length;
-  applyQuality(QLEVELS[i],true); decidiOmbre(QLEVELS[i]); toast("Qualità: "+QLEVELS[i]); }
+  applyQuality(QLEVELS[i],true); decidiOmbre(QLEVELS[i]); toast("Quality: "+qLabelEn(QLEVELS[i])); }
 
 /* ============================================================================
    RILEVAMENTO AUTOMATICO DELLA QUALITA'
@@ -3868,7 +3870,7 @@ function scheduleAutoQuality(){ let stored=null; try{ stored=localStorage.getIte
   misuraFps(90,4,fps=>{
     const lvl=fps>=QSOGLIE.alto?"alto":(fps>=QSOGLIE.medio?"medio":"basso");
     applyQuality(lvl,false); decidiOmbre(lvl);
-    toast("Qualità: "+lvl+" (auto, "+Math.round(fps)+" fps)");
+    toast("Quality: "+qLabelEn(lvl)+" (auto, "+Math.round(fps)+" fps)");
     /* seconda occhiata dopo un minuto: la prima misura cade mentre gli NPC
        nascono e le quest si registrano, e puo' essere pessimista. Le ombre
        restano come decise: riaccenderle qui ricompilerebbe tutto a meta'
@@ -3877,7 +3879,7 @@ function scheduleAutoQuality(){ let stored=null; try{ stored=localStorage.getIte
       misuraFps(30,3,f2=>{
         const l2=f2>=QSOGLIE.alto?"alto":(f2>=QSOGLIE.medio?"medio":"basso");
         if(l2!==qLevel && !_qUtente){ applyQuality(l2,false);
-          toast("Qualità: "+l2+" (riassestata, "+Math.round(f2)+" fps)"); }
+          toast("Quality: "+qLabelEn(l2)+" (adjusted, "+Math.round(f2)+" fps)"); }
       });
     },60000);
   });
@@ -3907,7 +3909,7 @@ let _qUtente=false;   // vero appena lo studente tocca il pulsante ⚙︎: da li
   const allinea=function(){
     const on=acceso();
     b.textContent = on ? "\u2715" : "\u26f6";
-    b.title = on ? "Esci da schermo intero" : "Schermo intero";
+    b.title = on ? "Exit full screen" : "Full screen";
     try{ engine.resize(); }catch(e){}
     setTimeout(function(){ try{ engine.resize(); }catch(e){} },220);
   };
@@ -5272,7 +5274,7 @@ function buildTown(){
       homeDoorPos=new BABYLON.Vector3(_dm?_dm.c.x:p.x,0,faceZ+dir*2.4);   // davanti all'anta vera
       addInteract({id:"home",area:"town",radius:3.6,pos:()=>homeDoorPos,meshes:hMeshes,
         prompt:()=>Gate.unlocked("u3")?'Press <b>E</b> to go <b>home</b>'
-                                      :'\u{1F512} <b>Home</b> \u00b7 non ancora aperta',
+                                      :'\u{1F512} <b>Home</b> \u00b7 not open yet',
         interact:enterHome});
     } else if(p.role==="cinema"){
       // ---- CINEMA: l'ingresso vero (colonne + insegna) e' sul lato EST
@@ -5331,7 +5333,7 @@ function buildTown(){
       addInteract({id:"unit_"+p.qid,area:"town",radius:3.6,pos:()=>q.doorPos,meshes:qMeshes,
         prompt:()=>p.openDoor?(beatDoorPrompt(p))
                  :Gate.unlocked(q.id)?'Press <b>E</b> to enter: <b>'+p.t+'</b>'
-                                      :'\u{1F512} <b>'+p.t+'</b> \u00b7 non ancora aperta',
+                                      :'\u{1F512} <b>'+p.t+'</b> \u00b7 not open yet',
         interact:()=>p.openDoor?enterOpenUnit(q):tryEnterUnit(q)});
     } else if(p.openQuest && QUESTS[p.openQuest]){
       /* ---- edificio di una unit OPEN-WORLD: nessuna porta, nessun interno,
@@ -5348,7 +5350,7 @@ function buildTown(){
             ? (p.ic||"")+" <b>"+p.t+"</b> · press <b>E</b>"
             : (Gate.unlocked(qo.id)
                 ? (p.ic||"")+" <b>"+p.t+"</b> · press <b>E</b> to start"
-                : "\u{1F512} <b>"+p.t+"</b> \u00b7 non ancora aperta"),
+                : "\u{1F512} <b>"+p.t+"</b> \u00b7 not open yet"),
         interact:()=>{ if(Progress.get(qo.id).done){
             toast((p.ic||"")+" "+p.t+" — Unit completata!");
           } else if(Quest.unit===qo){
@@ -6869,7 +6871,7 @@ function photoSave(m, img, cap){
     html:'<div style="text-align:center"><img alt="" style="max-width:100%;border-radius:10px;'
         +'border:3px solid #fbf7ec;box-shadow:0 3px 10px rgba(0,0,0,.45)" src="'+img+'"></div>',
     buttons:[].concat(
-      fragOk?[{ label:"\u{1F504} Gira la foto", cls:"primary", act:()=>openFragment(fr) }]:[],
+      fragOk?[{ label:"\u{1F504} Turn the photo over", cls:"primary", act:()=>openFragment(fr) }]:[],
       [{ label:"\u{1F4F7} Album", cls:fragOk?"ghost":"primary", act:()=>openDiary("album") },
        { label:"Close", cls:"ghost" }]) });
 }
@@ -7117,7 +7119,7 @@ function openFragment(f){
     name:"A Friend", icon:"\u{1F4DC}", sub:f.where,
     text:f.text, italian:f.it, autoSpeak:false,
     buttons:[{ label:"\u2192 Answer the question", cls:"primary", act:()=>askFragment(f) },
-             { label:"Non ora", cls:"ghost", act:()=>fragLater(f) }] });
+             { label:"Not now", cls:"ghost", act:()=>fragLater(f) }] });
 }
 function askFragment(f){
   DialogueBox.open({
@@ -7130,7 +7132,7 @@ function askFragment(f){
         return { ok, msg: ok ? "\u2713 Yes! You read it well."
           : "Rileggi la lettera: la risposta \u00e8 l\u00ec." }; },
       onSuccess:()=>{ Frag.collect(f.id); despawnFragment(f.id); fragFound(f); } },
-    buttons:[{ label:"\u{1F4C4} Rileggi la lettera", cls:"ghost", keepOpen:true, act:()=>openFragment(f) },
+    buttons:[{ label:"\u{1F4C4} Read the letter again", cls:"ghost", keepOpen:true, act:()=>openFragment(f) },
              { label:"Maybe later", cls:"ghost", act:()=>fragLater(f) }] });
 }
 /* ⚠️ Nessun vicolo cieco: se non ci riesce, esce e riprova quando vuole. Il
@@ -7150,7 +7152,7 @@ function fragFound(f){
     italian:"Una parola resta con te: \u00ab"+f.word+"\u00bb. Tienila a mente \u2014 e la lettera "
       +"la ritrovi sempre nel tuo Diario.",
     autoSpeak:false,
-    buttons:[{ label:"\u{1F4D4} Apri il Diario", cls:"primary", act:()=>openDiary("diary") },
+    buttons:[{ label:"\u{1F4D4} Open the Diary", cls:"primary", act:()=>openDiary("diary") },
              { label:"Continue", cls:"ghost", act:()=>{} }] });
   refreshStarHud(true);
 }
@@ -7418,7 +7420,7 @@ function readGazette(npc){
   if(f){
     const ready=(!Frag.has(f.id) && Frag.unitsDone(f.yr)>=f.thr);
     if(ready) bt.push({ label:"\u{1F4DC} Read the letters column", cls:"primary", act:()=>openFragment(f) });
-    else bt.push({ label:"\u{1F4DC} Rileggi quella lettera", cls:"primary", act:()=>readFragment(f) });
+    else bt.push({ label:"\u{1F4DC} Read that letter again", cls:"primary", act:()=>readFragment(f) });
   }
   bt.push({ label:"Thank you!", cls:"ghost", act:()=>{} });
   const front=gazetteFrontFor(f);
@@ -7891,7 +7893,7 @@ function updateRanger(){
 const NPC_COLL_R=0.6;
 function npcBlocked(x,z){
   for(let i=0;i<NPCS.length;i++){ const n=NPCS[i];
-    if(n.area!==area) continue;
+    if(n.area!==area || n.__follow) continue;     // v288: chi ti segue (Milo) non ti sbarra la strada
     const p=n.carrier.position, dx=x-p.x, dz=z-p.z;
     if(dx*dx+dz*dz < NPC_COLL_R*NPC_COLL_R){
       /* ANTI-TRAPPOLA (solo pedoni in movimento, stesso principio di
@@ -8252,7 +8254,7 @@ function buildStation(){
   QUESTS.u2_5.doorPos=new BABYLON.Vector3(stDX,0,doorZ+dir*2.4);
   addInteract({id:"station",area:"town",radius:3.8,pos:()=>new BABYLON.Vector3(stDX,0,doorZ),meshes:stMeshes,
     prompt:()=>Gate.unlocked("u2_5")?S.ic+" <b>"+S.t+"</b> \u00b7 press <b>E</b> to go in"
-                                     :"\u{1F512} <b>"+S.t+"</b> \u00b7 non ancora aperta",
+                                     :"\u{1F512} <b>"+S.t+"</b> \u00b7 not open yet",
     interact:()=>tryEnterUnit(QUESTS.u2_5)});
   lamp(S.x-12,S.z+12); lamp(S.x-12,S.z-12); tree(S.x-13,S.z); 
 }
@@ -13390,8 +13392,12 @@ const STRAND_META={
 const STRAND_EN={ lessico:"Vocabulary", grammatica:"Grammar", funzioni:"Functions",
   listening:"Listening", writing:"Writing", final:"Final task" };
 function yrEnglish(){ let y=1; try{ y=studentYear(); }catch(e){} return y>=2; }
+/* v288 (Giacomo: «le parti facili per tutti, tipo Vai, i menu, in inglese»):
+   il NOME della parte (Vocabulary, Grammar...) e' un'etichetta, non una
+   spiegazione: in inglese per tutti, anche in prima. La consegna vera resta
+   bilingue (HOBJ) e l'intro di prima resta in italiano. */
 function strandLabel(strand){ const m=STRAND_META[strand], it=(m&&m.label)||strand;
-  return yrEnglish() ? (STRAND_EN[strand]||it) : it; }
+  return STRAND_EN[strand]||it; }
 /* frammenti fissi dell'interfaccia delle tessere */
 const _UI_EN=[
   [/\u2713 Giusto!/g,"\u2713 Right!"], [/\bGiusto!/g,"Right!"], [/Riprova!/g,"Try again!"],
@@ -13555,7 +13561,7 @@ const Quest={
     if(prog.done){ this.i=unit.steps.length; this.step=null; questHudShow(true); this.finish(); return; }
     const resumeAt=Math.min(prog.step||0, unit.steps.length);
     this.i=resumeAt-1; questHudShow(true);
-    if(resumeAt>0 && resumeAt<unit.steps.length) toast("👋 Bentornato! Riprendi da dove avevi lasciato.");
+    if(resumeAt>0 && resumeAt<unit.steps.length) toast("👋 Welcome back! You can carry on where you stopped.");
     this.advance(); },
   stop(){ this.dispose(); this.unit=null; this.step=null; questHudShow(false); QModal.close(); },
   advance(){ this.dispose(); this.i++;
@@ -13576,8 +13582,8 @@ const Quest={
         buttons:[{ label: mech?"Let's go!":"OK", cls:"primary", act:()=>{ (mech||mechStub)(s); } }] });
       return;
     }
-    QModal.open({ title:m.ic+" "+m.label, sub:s.intro||"",
-      buttons:[{ label: mech?"Via!":"Ho capito", cls:"primary", act:()=>{ (mech||mechStub)(s); } }] });
+    QModal.open({ title:m.ic+" "+strandLabel(s.strand), sub:s.intro||"",
+      buttons:[{ label: mech?"Let's go!":"OK", cls:"primary", act:()=>{ (mech||mechStub)(s); } }] });
   },
   complete(msg,score){ if(this.unit && this.step){ Progress.completeStep(this.unit.id, this.step.id, score!=null?score:100, this.i);
       Stars.awardStep(this.unit.id, this.step.id, this.step.strand==="final");
@@ -19579,7 +19585,7 @@ function openAskMenu(npc,icon,who,back){
      compone, chi sa scrivere scrive. */
   ch.push({ label:"✍︎ Write your own question", act:()=>askFree(npc,icon,who,back) });
   ch.push({ label:"🧩 Build it with tiles", act:()=>askTiles(npc,icon,who,back) });
-  if(pool.length>4) ch.push({ label:"🎲 Altre domande", act:()=>openAskMenu(npc,icon,who,back) });
+  if(pool.length>4) ch.push({ label:"🎲 More questions", act:()=>openAskMenu(npc,icon,who,back) });
   ch.push({ label:"↩︎ Back", act:()=>{ if(back) back(); } });
   DialogueBox.open({ npc, icon, sub:who+" — your turn to ask!", autoSpeak:false,
     text:"Ask me anything you like!",
@@ -19713,7 +19719,7 @@ function submitAskReply(){
   _npcTTS(c.npc,(rec&&rec.recast)?("Sorry? "+rec.recast+" "+r.en):r.en);
   ta2.readOnly=true; ta2.style.opacity=".65"; ta2.__done=true;
   const bt=[...document.querySelectorAll("button")].find(x=>/Rispondi/.test(x.textContent||""));
-  if(bt) bt.textContent="\u2753 Un'altra domanda";
+  if(bt) bt.textContent="\u2753 Another question";
 }
 /* ⚠️ `via` distingue le DUE strade che finiscono qui, che finora erano
    trattate uguali:
@@ -19753,7 +19759,7 @@ function askAnswer(npc,icon,who,q,back,via){
     buttons:b
       ?[ {label:"✔ Reply", cls:"primary", keepOpen:true, act:()=>submitAskReply()},
          {label:"↩︎ Back", cls:"ghost", act:()=>{ if(back) back(); }} ]
-      :[ {label:"❓ Un'altra domanda", cls:"primary", act:()=>openAskMenu(npc,icon,who,back)},
+      :[ {label:"❓ Another question", cls:"primary", act:()=>openAskMenu(npc,icon,who,back)},
          {label:"↩︎ Back", cls:"ghost", act:()=>{ if(back) back(); }} ] });
 }
 
@@ -22719,7 +22725,7 @@ function askAthlete(a){
         DialogueBox.open({ npc:U7_NPC[a.id], icon:"\u{1F3C5}", sub:a.name+" risponde",
           text:a.reply, italian:"Ora REGISTRA la risposta sul TEAM SHEET.",
           html:u7SheetHTML(),
-          buttons:[{label:"\u{1F4DD} Registra", cls:"primary", act:()=>recordAthlete(a)}] });
+          buttons:[{label:"\u{1F4DD} Record", cls:"primary", act:()=>recordAthlete(a)}] });
       } },
     buttons:[{label:"Leave", cls:"ghost", act:()=>{}}] });
 }
@@ -24708,7 +24714,7 @@ function talkToVance(npc){
     DialogueBox.open({ npc, icon:"\u{1F39F}", sub:"Box office",
       text:"Our best critic! Your film is still on the big screen.",
       italian:"Hai gi\u00e0 finito questa unit\u00e0 \u2014 la tua scheda resta proiettata sullo schermo.",
-      buttons:[{label:"\u{1F39F} Rifacciamola", cls:"primary", act:()=>tryStartQuest(UNIT_SCREENS)},
+      buttons:[{label:"\u{1F39F} Play it again", cls:"primary", act:()=>tryStartQuest(UNIT_SCREENS)},
                {label:"Leave", cls:"ghost", act:()=>{}}] });
     return;
   }
@@ -24728,7 +24734,7 @@ function talkToIris(npc){
     if(_all && !_mem){ runClubCard(npc); return; }
     if(_mem){ DialogueBox.open({ npc, icon:"\u{1F3A5}", sub:"Film director", autoSpeak:true,
         text:"Our best club member! Which one will you watch again?", italian:"",
-        buttons:[{label:"\u{1F39F} La mia tessera", cls:"primary", act:()=>showClubCard(npc)},
+        buttons:[{label:"\u{1F39F} My card", cls:"primary", act:()=>showClubCard(npc)},
                  {label:"Bye!", cls:"ghost", act:()=>{}}] }); return; } }
   if(ambientReady(npc,UNIT_SCREENS)){ openAmbient(npc,UNIT_SCREENS.id,"\u{1F3A5}","Film director"); return; }
   DialogueBox.open({ npc, icon:"\u{1F3A5}", sub:"Film director",
@@ -25228,7 +25234,7 @@ function runPremiereNight(npc){
       +'placeholder="I made this film last summer with my friends. The music was great, but we didn\'t finish the last scene!"></textarea>'
       +'<div id="cinPremFb" style="margin-top:10px;"></div>',
     buttons:[
-      { label:"\u2714 Presenta", cls:"primary", keepOpen:true, act:()=>{
+      { label:"\u2714 Present it", cls:"primary", keepOpen:true, act:()=>{
           const ta=document.getElementById("cinPremTA");
           if(ta && ta.__passed) cinSaveCard(pn, ta.value);
           submitProduzione({ taId:"cinPremTA", fbId:"cinPremFb", req:CIN_PREM_REQ,
@@ -28910,7 +28916,7 @@ function talkToYara(npc){
     DialogueBox.open({ npc, icon:"\u{1F487}", sub:"Hairstylist",
       text:"My favourite assistant! Your new look is still in the window.",
       italian:"Hai gi\u00e0 finito questa unit\u00e0 \u2014 la tua creazione resta appesa in salone.",
-      buttons:[{label:"\u{1F487} Rifacciamola", cls:"primary", act:()=>tryStartQuest(UNIT_STYLE)},
+      buttons:[{label:"\u{1F487} Play it again", cls:"primary", act:()=>tryStartQuest(UNIT_STYLE)},
                {label:"Leave", cls:"ghost", act:()=>{}}] });
     return;
   }
@@ -29216,7 +29222,7 @@ function runDescribeToFind(npc){
       DialogueBox.open({ npc:npc||OMAR, icon:"\u{1F4F7}", sub:"Photographer",
         text:"Nobody on that wall looks like that! Have another look at "+target.it+".",
         italian:"Nessuna foto corrisponde: torna a guardare "+target.it+" sul muro.",
-        buttons:[{label:"Riprova", cls:"primary", act:()=>draw()}] });
+        buttons:[{label:"Try again", cls:"primary", act:()=>draw()}] });
       return; }
     if(m.length>1){
       df.tries++;
@@ -29224,7 +29230,7 @@ function runDescribeToFind(npc){
       DialogueBox.open({ npc:npc||OMAR, icon:"\u{1F4F7}", sub:"Photographer",
         text:"Is it this one? "+wrong.it+"? Oh\u2026 there are "+m.length+" people like that! Tell me something more.",
         italian:"La tua descrizione va bene per "+m.length+" persone: aggiungi un dettaglio.",
-        buttons:[{label:"Aggiungo un dettaglio", cls:"primary", act:()=>draw()}] });
+        buttons:[{label:"Add a detail", cls:"primary", act:()=>draw()}] });
       return; }
     if(m[0].key!==target.key){
       df.tries++;
@@ -29987,7 +29993,7 @@ function talkToNora(npc){
     DialogueBox.open({ npc, icon:"\u{1F326}\uFE0F", sub:"Weather officer",
       text:"My favourite assistant! Your postcard is still on the board.",
       italian:"Hai gi\u00e0 finito questa unit\u00e0 \u2014 la tua cartolina resta sul tabellone.",
-      buttons:[{label:"\u{1F326}\uFE0F Rifacciamola", cls:"primary", act:()=>tryStartQuest(UNIT_WEATHER)},
+      buttons:[{label:"\u{1F326}\uFE0F Play it again", cls:"primary", act:()=>tryStartQuest(UNIT_WEATHER)},
                {label:"Leave", cls:"ghost", act:()=>{}}] });
     return;
   }
@@ -30451,7 +30457,7 @@ function runPostcardEditor(npc){
       text:"Send us a postcard for the board! Choose your photo first.",
       italian:"Scegli la foto, poi scrivi la cartolina: dove eri, com'era il tempo e che cosa \u00e8 successo.",
       html:h,
-      buttons:[ {label:"\u2714 Questa foto", cls:"primary", keepOpen:true, act:()=>openPostcardWriting(npc,pc)},
+      buttons:[ {label:"\u2714 This photo", cls:"primary", keepOpen:true, act:()=>openPostcardWriting(npc,pc)},
                 {label:"Leave", cls:"ghost", act:()=>{}} ] });
     const bs=document.querySelectorAll(".wx-pc");
     for(let i=0;i<bs.length;i++) bs[i].onclick=function(){ pc.place=this.getAttribute("data-k"); draw(); };
@@ -30993,7 +30999,7 @@ function talkToFern(npc){
     DialogueBox.open({ npc, icon:"\u267b\uFE0F", sub:"Eco Point Manager",
       text:"My best volunteer! Your dish is still on the board.",
       italian:"Hai gi\u00e0 finito questa unit\u00e0 \u2014 il tuo piatto resta sulla lavagna.",
-      buttons:[{label:"\u267b\uFE0F Rifacciamola", cls:"primary", act:()=>tryStartQuest(UNIT_ECO)},
+      buttons:[{label:"\u267b\uFE0F Play it again", cls:"primary", act:()=>tryStartQuest(UNIT_ECO)},
                {label:"Leave", cls:"ghost", act:()=>{}}] });
     return;
   }
@@ -32017,7 +32023,7 @@ function talkToMaya(npc){
     DialogueBox.open({ npc, icon:"\u{1F3E0}", sub:"Mum",
       text:"The house has never been so tidy! Your rules are still on the fridge.",
       italian:"Hai gi\u00e0 finito questa unit\u00e0 \u2014 il tuo regolamento resta sul frigo.",
-      buttons:[{label:"\u{1F9F9} Rifacciamola", cls:"primary", act:()=>tryStartQuest(UNIT_HOME7)},
+      buttons:[{label:"\u{1F9F9} Play it again", cls:"primary", act:()=>tryStartQuest(UNIT_HOME7)},
                {label:"Leave", cls:"ghost", act:()=>{}}] });
     return;
   }
@@ -32849,13 +32855,13 @@ function confirmLeaveQuest(q, target, act){
   const sy=(typeof Gate!=="undefined" && Gate.info) ? (Gate.info(q.id)||{}) : {};
   const stepName=(Quest.step&&Quest.step.strand)||"";
   QModal.open({
-    title:"\u26A0\uFE0F Stai facendo una quest",
+    title:"\u26A0\uFE0F You're in the middle of a quest",
     sub:(sy.ic||"\u{1F4CB}")+" "+(q.title||q.id),
     html:"<div style='line-height:1.55'>Sei nel passo <b>"+(stepName||"in corso")+"</b>. "
         +"Se entri qui, <b>quel passo ricomincia da capo</b> \u2014 i passi che hai gi\u00e0 "
         +"finito restano salvati e la quest riprende da l\u00ec quando torni.</div>",
     buttons:[{label:"I'll stay outside", cls:"primary"},
-             {label:"Entro lo stesso", cls:"ghost", act:act}] });
+             {label:"Go in anyway", cls:"ghost", act:act}] });
 }
 function enterUnit(u, noQuest, _ok){
   if(!_ok){ const q=questInProgress(u);
@@ -33027,10 +33033,10 @@ function gateDenied(id){
 function exitUnit(u){ Quest.stop(); try{ gigStop(); }catch(e){} enterArea("town");
   const p=(u&&u.doorPos)||homeDoorPos||new BABYLON.Vector3(0,0,10);
   player.position.copyFrom(p); player.position.z += (p.z>0?1:-1)*1.5;
-  camera.target.copyFrom(player.position); toast("Sei tornato in citt\u00e0"); }
+  camera.target.copyFrom(player.position); toast("\u{1F3D9}\uFE0F Back in town"); }
 function exitHome(){ Quest.stop(); enterArea("town");
   player.position.copyFrom(homeDoorPos); player.position.z += (homeDoorPos.z>0?1:-1)*1.5;
-  camera.target.copyFrom(player.position); toast("Sei tornato in città"); }
+  camera.target.copyFrom(player.position); toast("\u{1F3D9}\uFE0F Back in town"); }
 function enterCinema(_ok){
   /* Chiusura notturna: il cinema NON passa da tryEnterUnit (ha un ingresso
      suo, vedi nota sotto), quindi va ripetuta qui — stessa regola, stesso
@@ -33045,7 +33051,7 @@ function enterCinema(_ok){
   buildCinema(); enterArea("cinema");
   player.position.copyFrom(AREAS.cinema.spawn); player.rotation.y=AREAS.cinema.faceY||0;
   camera.target.copyFrom(player.position); camera.target.y+=2.0; camera.alpha=(AREAS.cinema.camAlpha!=null?AREAS.cinema.camAlpha:Math.PI/2);
-  toast("\u{1F3AC} Sei entrato al cinema");
+  toast("\u{1F3AC} Welcome to the cinema");
   /* la serata: tabellone, spettatore, avviso d'orario. Fuori orario non fa
      nulla — il foyer e la questline restano identici a prima. */
   try{ showOnEnter(); }catch(e){ console.warn("[odeon/show]",e); }
@@ -33062,7 +33068,7 @@ function exitCinema(){
   try{ showLeave(); }catch(e){}
   enterArea("town");
   player.position.copyFrom(cinemaDoorPos); player.position.z += (cinemaDoorPos.z>0?1:-1)*1.6;
-  camera.target.copyFrom(player.position); toast("Sei tornato in citta\u0027"); }
+  camera.target.copyFrom(player.position); toast("\u{1F3D9}\uFE0F Back in town"); }
 
 /* ---- PROSSIMITÀ / INPUT / MOVIMENTO ---- */
 const promptEl=document.getElementById("prompt"); let nearInter=null;
@@ -33429,7 +33435,7 @@ window.addEventListener("keydown",e=>{ if(__typingNow(e)) return;   // non rubar
      ⚠️ In prima persona si esce PRIMA: salvare come «base» un raggio di 5 cm
      vorrebbe dire ritrovarsi dentro la testa a ogni V. */
   if(k==="v"){ if(POV.on) povSet(false,true);
-    if(e.shiftKey) saveView(); else { applyView(); toast("🎥 Visuale base"); } }
+    if(e.shiftKey) saveView(); else { applyView(); toast("🎥 Default view"); } }
   });
 window.addEventListener("keyup",e=>{ if(__typingNow(e)) return; keys[e.key.toLowerCase()]=false; });
 document.addEventListener("focusin",e=>{ if(__typingNow(e)) for(const k in keys) keys[k]=false; });
@@ -35720,7 +35726,7 @@ function aggiornaGate(prima){
 function confermaIdentita(){
   if(!Student.nome) return;
   QModal.open({
-    title:"\u{1F464} Sei tu?",
+    title:"\u{1F464} Is it you?",
     sub:"<b>"+esc(Student.nome)+"</b>"+(Student.cls?(" \u00b7 "+esc(Student.cls)):"")
        +"<br><span style=\"opacity:.75;font-size:13px\">Se non sei tu, i punti finirebbero sul quaderno di un compagno.</span>",
     buttons:[
@@ -35729,13 +35735,13 @@ function confermaIdentita(){
 }
 function codiceSconosciuto(codice){
   QModal.open({
-    title:"\u{1F914} Codice non riconosciuto",
+    title:"\u{1F914} Code not found",
     sub:"Il codice <b>"+esc(codice||"")+"</b> non risulta fra gli studenti.<br>"
        +"<span style=\"opacity:.75;font-size:13px\">Controlla su StudentApp, oppure gioca come ospite: "
        +"potrai esplorare, ma i progressi non verranno salvati.</span>",
     buttons:[
-      { label:"Scrivo il codice giusto", cls:"primary", act:()=>{ switchStudent(); } },
-      { label:"Gioca come ospite", act:()=>{ entraComeOspite(); } } ] });
+      { label:"Type the right code", cls:"primary", act:()=>{ switchStudent(); } },
+      { label:"Play as a guest", act:()=>{ entraComeOspite(); } } ] });
 }
 function entraComeOspite(){
   Student.entraOspite();
@@ -35744,16 +35750,16 @@ function entraComeOspite(){
 }
 function askCode(){
   QModal.open({
-    title:"\u{1F464} Benvenuto a QuestTown",
+    title:"\u{1F464} Welcome to QuestTown",
     sub:"Entra con il tuo <b>codice personale</b>, lo stesso che usi su StudentApp.",
-    html:'<input id="lg-code" type="text" name="et-code-'+Date.now()+'" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" placeholder="il tuo codice" '
+    html:'<input id="lg-code" type="text" name="et-code-'+Date.now()+'" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" placeholder="your code" '
        +'style="width:100%;box-sizing:border-box;font-size:19px;letter-spacing:2px;text-transform:uppercase;'
        +'padding:10px 12px;border-radius:10px;border:1px solid #7a6a4a;background:#1b1610;color:#ffe9b8">'
        +'<div id="lg-err" style="color:#ff9a9a;min-height:18px;margin-top:6px;font-size:13px"></div>'
        +'<div id="lg-install" style="display:none;margin-top:6px;padding-top:10px;border-top:1px solid rgba(255,233,184,.18)"></div>',
     buttons:[
-      {label:"Entra", cls:"primary", keepOpen:true, act:()=>{ loginEntra(); }},
-      {label:"Non ho il codice", keepOpen:true, act:()=>{ QModal.close(); entraComeOspite(); }}
+      {label:"Enter", cls:"primary", keepOpen:true, act:()=>{ loginEntra(); }},
+      {label:"Play as a guest", keepOpen:true, act:()=>{ QModal.close(); entraComeOspite(); }}
     ] });
   /* la riga «Installa» (o il promemoria per iPad/iPhone) sotto il campo */
   setTimeout(()=>{ try{ if(window.ET_PWA) ET_PWA.aggiornaInstalla(); }catch(e){} },0);
@@ -35774,7 +35780,7 @@ function loginEntra(){
      se no diventerebbe ospite a casa sua. */
   if(DOCENTI.indexOf(v)>=0){ Student.setCode(v); QModal.close(); welcomeStudent(); return; }
   const btn=document.querySelector("#qm-card .qm-btn.primary");
-  if(btn){ btn.disabled=true; btn.textContent="controllo\u2026"; }
+  if(btn){ btn.disabled=true; btn.textContent="checking\u2026"; }
   if(err) err.textContent="";
   let chiuso=false;
   /* ⚠️ Chi entra per scadenza del tetto NON deve restare sconosciuto per
@@ -35790,7 +35796,7 @@ function loginEntra(){
     if(chiuso) return;
     if(r.risposto && !r.val){                       // ha risposto: quel codice non esiste
       chiuso=true;
-      if(btn){ btn.disabled=false; btn.textContent="Entra"; }
+      if(btn){ btn.disabled=false; btn.textContent="Enter"; }
       if(err) err.innerHTML="Codice non riconosciuto. Controlla su StudentApp, "
         +"oppure entra come ospite (senza salvare i progressi).";
       return;
@@ -35824,7 +35830,7 @@ function welcomeStudent(){
      istante si mangiano a vicenda. */
   setTimeout(function(){ try{ bentornato(); }catch(e){} }, 3200);
   toast("\u{1F44B} "+(Student.nome||Student.code||"")+(Student.cls?(" \u00b7 "+Student.cls):"")
-        +" \u2014 aperto fino a "+Gate.label());
+        +" \u2014 open up to "+Gate.label());
   /* ⚠️ DOPO il toast, non prima: la lettura non deve mai stare davanti a
      cio' che il ragazzo vede. Entra con la copia locale (o con COORTI) e il
      cursore vero, se e' cambiato, arriva dietro con un suo avviso. Il
@@ -35888,7 +35894,7 @@ function guestBadge(){
     b.onclick=switchStudent;
     document.body.appendChild(b);
   }
-  b.innerHTML="\u{1F440} OSPITE<br><span style=\"font-weight:400;font-size:11px\">i progressi non vengono salvati</span>";
+  b.innerHTML="\u{1F440} GUEST<br><span style=\"font-weight:400;font-size:11px\">i progressi non vengono salvati</span>";
 }
 /* marchietto in alto al centro: ricorda SEMPRE che questa non e' una sessione
    di prova. Cliccandolo si simula la coorte di un anno, per collaudare il gate
@@ -36491,7 +36497,7 @@ function bentornato(){
     const tit=(U&&U.title)||l.u;
     let anno=1; try{ anno=studentYear(); }catch(e){}
     const msg=(anno<=1)
-      ? ("\u{1F44B} Bentornato! "+(gg===1?"Ieri":gg+" giorni fa")+" stavi facendo: "+tit)
+      ? ("\u{1F44B} Welcome back! "+(gg===1?"Yesterday":gg+" days ago")+" you were working on: "+tit)
       : ("\u{1F44B} Welcome back! "+(gg===1?"Yesterday":gg+" days ago")+" you were working on: "+tit);
     toast(msg);
   }catch(e){}
@@ -37850,7 +37856,7 @@ function cy8SamGo(right){
       DialogueBox.open({ npc:sam, icon:"\u{1F6A7}", sub:"Lost visitor",
         text:"Sorry, I can't get through here!",
         italian:"Sam si \u00e8 trovato la strada bloccata e non \u00e8 arrivato. Ridagli l'indicazione.",
-        buttons:[{label:"Ci riprovo", cls:"primary", act:()=>runGiveDirections()}] });
+        buttons:[{label:"Try again", cls:"primary", act:()=>runGiveDirections()}] });
     } };
   try{ speechSynthesis.resume(); TTS.say(dr.said); }catch(e){}
   /* ⚠️ IL PUNTO DI PARTENZA E' SEMPRE DOVE SAM E' ADESSO, mai un waypoint
@@ -38089,28 +38095,102 @@ function cy8Suitcase(x,z,gy){
   addSolid(x-0.3,x+0.3,z-0.3,z+0.3,"town");
   return r;
 }
+/* =====================================================================
+   v288 — MILO TI SEGUE (Giacomo, 30 set: «Milo ti deve seguire quando
+   scegli i posti»). Prima restava alla stazione: si girava la citta' da
+   soli, si premeva E davanti a un palazzo vuoto, e poi si tornava fino al
+   binario. Un giro turistico si fa INSIEME: detto «Sure, let's go!», Milo
+   ti viene dietro a un paio di metri, cammina quando cammini e corre
+   quando corri, e ai 3 posti e' gia' li' per l'opuscolo.
+   · si muove a PASSO DI FOTOGRAMMA come il giocatore (PLAYER_SPEED e' per
+     fotogramma, non per secondo): con un passo al secondo resterebbe
+     indietro su un computer veloce e ti raggiungerebbe di colpo su uno lento;
+   · gli stessi solidi del giocatore (blocked) con lo scivolamento sugli
+     assi; se resta incastrato o ti perde (taxi, metro, un interno, un
+     palazzo in mezzo) ricompare alle tue spalle, su un punto libero;
+   · non ti sbarra la strada (npcBlocked lo salta) e non ti ruba la E: finche'
+     mancano posti la sua E passa DOPO i posti (prio 1); ai 3 posti passa
+     PRIMA di tutto (prio -1), perche' adesso e' lui che devi chiamare;
+   · a quest chiusa (o lasciata) smette, e torna alla stazione appena sei
+     lontano — non davanti ai tuoi occhi.
+   ===================================================================== */
+const CY8_FOLLOW={ on:false, obs:null, gf:0, stuck:0, gy:0, home:null, moving:false };
+function cy8FollowStart(){
+  const n=CY8_NPC.milo; if(!n||!n.carrier||CY8_FOLLOW.on) return;
+  if(!CY8_FOLLOW.home){ const q=n.carrier.position; CY8_FOLLOW.home={ x:q.x, y:q.y, z:q.z, ry:n.carrier.rotation.y }; }
+  CY8_FOLLOW.on=true; n.__follow=true; CY8_FOLLOW.gy=n.carrier.position.y;
+  if(CY8_FOLLOW.obs) scene.onBeforeRenderObservable.remove(CY8_FOLLOW.obs);
+  CY8_FOLLOW.obs=scene.onBeforeRenderObservable.add(cy8FollowTick);
+  try{ Quest.reg(cy8FollowStop); }catch(e){}
+}
+function cy8FollowStop(){
+  const n=CY8_NPC.milo; if(!CY8_FOLLOW.on) return;
+  CY8_FOLLOW.on=false; CY8_FOLLOW.moving=false;
+  if(CY8_FOLLOW.obs){ scene.onBeforeRenderObservable.remove(CY8_FOLLOW.obs); CY8_FOLLOW.obs=null; }
+  if(!n||!n.carrier) return;
+  n.__follow=false; n.__noPin=false; n.watch=true; try{ n.play("Idle"); }catch(e){}
+  if(n.inter) n.inter.prio=0;
+  /* a casa (la stazione) solo quando non lo vedi: da lontano o da un interno */
+  const H=CY8_FOLLOW.home; if(!H) return;
+  const o=scene.onBeforeRenderObservable.add(()=>{
+    if(CY8_FOLLOW.on){ scene.onBeforeRenderObservable.remove(o); return; }
+    const p=n.carrier.position;
+    if(area==="town" && Math.hypot(player.position.x-p.x,player.position.z-p.z)<25) return;
+    p.set(H.x,H.y,H.z); n.carrier.rotation.y=H.ry; n.baseYaw=H.ry;
+    scene.onBeforeRenderObservable.remove(o); });
+}
+/* un punto libero alle spalle del giocatore */
+function cy8FollowSnap(n){
+  const ry=player.rotation.y, px=player.position.x, pz=player.position.z;
+  const q=cy8SnapClear(px-Math.sin(ry)*2.2, pz-Math.cos(ry)*2.2), p=n.carrier.position;
+  p.x=q[0]; p.z=q[1]; p.y=player.position.y; CY8_FOLLOW.gy=p.y; CY8_FOLLOW.stuck=0;
+}
+function cy8FollowTick(){
+  const n=CY8_NPC.milo; if(!n||!n.carrier||n.carrier.isDisposed()){ cy8FollowStop(); return; }
+  if(n.inter) n.inter.prio=(CY8_MILO_BROCHURE.length>=3)?-1:1;
+  if(area!=="town") return;
+  const p=n.carrier.position, px=player.position.x, pz=player.position.z;
+  let dx=px-p.x, dz=pz-p.z, d=Math.hypot(dx,dz);
+  if(d>14 || CY8_FOLLOW.stuck>40){ cy8FollowSnap(n); dx=px-p.x; dz=pz-p.z; d=Math.hypot(dx,dz); }
+  const NEAR=2.0;
+  if(d<=NEAR){
+    if(CY8_FOLLOW.moving){ CY8_FOLLOW.moving=false; n.__noPin=false; n.watch=true; n.play("Idle"); }
+    CY8_FOLLOW.stuck=0; return; }
+  /* passo: quello del giocatore, un filo piu' lungo se e' rimasto indietro */
+  const run=d>5, spd=Math.min(d-NEAR, PLAYER_SPEED*(run?RUN_MULT:1.0)*(d>3.5?1.15:1.0));
+  const ux=dx/d, uz=dz/d, nx=p.x+ux*spd, nz=p.z+uz*spd, ox=p.x, oz=p.z;
+  if(!blocked(nx,nz)){ p.x=nx; p.z=nz; }
+  else if(!blocked(nx,p.z)){ p.x=nx; }
+  else if(!blocked(p.x,nz)){ p.z=nz; }
+  CY8_FOLLOW.stuck=(Math.hypot(p.x-ox,p.z-oz)<spd*0.2)?CY8_FOLLOW.stuck+1:0;
+  n.watch=false; n.__noPin=true; CY8_FOLLOW.moving=true;
+  n.play(run&&n.anims["Run"]?"Run":"Walk");
+  n.carrier.rotation.y=Math.atan2(dx,dz)+NPC_FACE_OFFSET;
+  if((++CY8_FOLLOW.gf%3)===0) CY8_FOLLOW.gy=cy8GroundY(p.x,p.z);
+  p.y+=(CY8_FOLLOW.gy-p.y)*0.25;
+}
 function cy8TourHud(){
   const n=CY8_MILO_BROCHURE.length;
-  questHudSet("final", HOBJ(n<3 ? ("Recommend Milo at least <b>3 places</b> in town: go there and press <b>E</b> ("+n+"/3)") : "Great! Now go back to <b>Milo</b>, the tourist at Central Station, and write the tourist leaflet.",n<3 ? ("Consiglia a Milo almeno <b>3 posti</b> della citt\u00e0: vai l\u00ec e premi <b>E</b> ("+n+"/3)")
-        : "Ottimo! Ora torna da <b>Milo</b>, il turista davanti alla Central Station, e scrivi l'opuscolo turistico."),
+  questHudSet("final", HOBJ(n<3 ? ("Show Milo at least <b>3 places</b> in town: he follows you. Go there and press <b>E</b> ("+n+"/3)") : "Great! Now talk to <b>Milo</b> (press <b>E</b>) and write the tourist leaflet.",n<3 ? ("Mostra a Milo almeno <b>3 posti</b> della citt\u00e0: lui ti segue. Vai l\u00ec e premi <b>E</b> ("+n+"/3)")
+        : "Ottimo! Ora parla con <b>Milo</b> (premi <b>E</b>) e scrivi l'opuscolo turistico."),
     Quest.i, Quest.total);
 }
 function runCityTour(){
   if(CY8_MILO_BROCHURE.length<3){
     DialogueBox.open({ npc:CY8_NPC.milo, icon:"\ud83c\udff7\ufe0f", sub:"Tourist",
       text:"Hi! I'm visiting for a few days. What should I see in this town?",
-      italian:"Cammina in citt\u00e0 e premi E in almeno 3 posti diversi per consigliarli a Milo: poi torna qui a scrivere l'opuscolo.",
-      buttons:[{label:"Sure, let's go!", cls:"primary", act:()=>{}}] });
+      italian:"Milo ti segue: cammina in citt\u00e0 e premi E in almeno 3 posti diversi per consigliarglieli, poi parla con lui per scrivere l'opuscolo.",
+      buttons:[{label:"Sure, let's go!", cls:"primary", act:()=>{ cy8FollowStart(); cy8TourHud(); }}] });
   } else {
     cy8OpenBrochure();
   }
 }
 function cy8CollectPlace(p){
-  if(CY8_MILO_BROCHURE.includes(p.en)){ toast("\u2713 "+p.en+" \u00e8 gi\u00e0 nel tuo opuscolo."); return; }
+  if(CY8_MILO_BROCHURE.includes(p.en)){ toast("\u2713 The "+p.en+" is already in your leaflet."); return; }
   CY8_MILO_BROCHURE.push(p.en);
-  toast("\ud83d\udcdd Aggiunto all'opuscolo: "+p.en);
+  toast("\ud83d\udcdd Added to the leaflet: "+p.en);
   cy8TourHud();
-  if(CY8_MILO_BROCHURE.length>=3) toast("\u2728 Torna da Milo (Central Station) e scrivi l'opuscolo!");
+  if(CY8_MILO_BROCHURE.length>=3) toast("\u2728 Now talk to Milo and write the leaflet!");
 }
 const CY8_TOUR_REQ={ minSent:3,
   patterns:[{re:/\b(you can|there is|there are|visit)\b/i, label:"Usa un registro da guida turistica (you can, there is/are, visit...)"}],
@@ -38138,8 +38218,8 @@ MECH.cityTour=function(s){
     Quest.questInteract({ id:"cy8brochure_"+p.en.replace(/[^a-z]+/gi,"_"), area:"town", radius:3.0,
       pos:()=>cy8PlaceVec(p),
       prompt:()=>CY8_MILO_BROCHURE.includes(p.en)
-        ? ("\u2713 "+p.en+" \u00e8 gi\u00e0 nell'opuscolo")
-        : ("Press <b>E</b>: recommend \u201c"+p.en+"\u201d a Milo"),
+        ? ("\u2713 The "+p.en+" is already in your leaflet")
+        : ("Press <b>E</b>: recommend the <b>"+p.en+"</b> to Milo"),
       interact:()=>cy8CollectPlace(p) });
   });
   cy8TourHud();
@@ -46278,7 +46358,7 @@ function erNlHardCall(){
 function erNlHardBad(){
   DialogueBox.open({ icon:"\u{1F625}", sub:"Caller \u00b7 5/5",
     text:NL_HARD.badReply, italian:NL_HARD.badIt,
-    buttons:[{label:"Chiama Doctor Ross", cls:"primary", act:function(){ setTimeout(erNlHardCall,300); } }] });
+    buttons:[{label:"Call Doctor Ross", cls:"primary", act:function(){ setTimeout(erNlHardCall,300); } }] });
   try{ TTS.say(NL_HARD.badReply); }catch(e){}
 }
 function erNlHardEscalate(){
@@ -49862,7 +49942,7 @@ function gemMiss(g,it,chosen){
         +'<div class="gem-why">'+it.why+'</div>'
         +'<div class="gem-note">Il cristallo \u00e8 tornato in citt\u00e0, da un\u2019altra parte. '
         +'Quando lo ritrovi, sai gi\u00e0 la risposta.</div>',
-    buttons:[{ label:"Ho capito", cls:"primary", act:()=>{} }]
+    buttons:[{ label:"Got it", cls:"primary", act:()=>{} }]
   });
 }
 
@@ -50076,7 +50156,7 @@ function gemLexWrite(g,it,kd,m,near){
                +'\u00bb \u2014 controlla le lettere.</div>':"")
         +'<input id="gem-write" class="gem-input" type="text" autocomplete="off" '
         +'autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="\u2026">',
-    buttons:[{ label:"Controlla", cls:"primary", keepOpen:true, act:function(){
+    buttons:[{ label:"Check", cls:"primary", keepOpen:true, act:function(){
       const el=document.getElementById("gem-write");
       gemLexJudge(g,it,kd,m,el?el.value:""); } }]
   });
