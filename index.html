@@ -33291,7 +33291,37 @@ function tryInteract(){ if(loginPending) return;
    altro: seduti al cinema, discesa in metro, finale. V riporta alla
    visuale base e quindi esce anche dalla prima persona.
    ===================================================================== */
-const POV={ on:false, r:0.05, eye:AVATAR_HEIGHT*0.90, save:null };   // gli occhi: ~9/10 dell'altezza
+const POV={ on:false, r:0.05, eye:AVATAR_HEIGHT*0.90, save:null,   // gli occhi: ~9/10 dell'altezza
+             lean:0, leanWish:0, LEAN_MAX:1.2, LEAN_STEP:0.2 };
+/* v287 — «PORTA IL COLLO INDIETRO» (Giacomo, 30 set: «in prima persona, se
+   porto la rotellina del mouse verso il basso, la prospettiva va un po'
+   indietro per vedere meglio»). La rotellina giu' arretra lo sguardo fino a
+   LEAN_MAX (1,2 m) alle spalle degli occhi, su riporta agli occhi. Il corpo
+   resta spento: e' ancora la prima persona, solo con piu' campo. Se dietro
+   c'e' uno scaffale o un muro ci si ferma prima (un raggio all'indietro a
+   ogni fotogramma), cosi' fra gli scaffali stretti non si entra nel legno.
+   ⚠️ La rotellina di Babylon qui non serve: sposta il raggio in PERCENTUALE
+   (wheelDeltaPercentage), e a 5 cm una tacca vale mezzo millimetro. I limiti
+   del raggio restano bloccati sul valore scelto qui, e Babylon non lo tocca. */
+canvas.addEventListener("wheel",e=>{
+  if(!POV.on) return;
+  POV.leanWish=Math.round(Math.max(0,Math.min(POV.LEAN_MAX,POV.leanWish+(e.deltaY>0?1:-1)*POV.LEAN_STEP))*100)/100;
+},{passive:true});
+const _povBack=new BABYLON.Vector3();
+function _povLean(){
+  /* quanto spazio c'e' alle spalle: raggio dagli occhi verso la camera */
+  let cap=POV.leanWish;
+  if(cap>0.01){
+    _povBack.set(Math.cos(camera.alpha)*Math.sin(camera.beta), Math.cos(camera.beta), Math.sin(camera.alpha)*Math.sin(camera.beta));
+    const hit=scene.pickWithRay(new BABYLON.Ray(camera.target,_povBack,cap+0.3),
+      m=>m.isPickable && m.isVisible && !m.__ground && !m.__npcCast && m!==skyDome && m.isEnabled() && m.getTotalVertices()>0);
+    if(hit && hit.hit) cap=Math.max(0,Math.min(cap,hit.distance-0.25));
+  }
+  POV.lean+= (cap-POV.lean)*(cap<POV.lean?0.5:0.15);     // indietro morbido, contro un ostacolo subito
+  const r=POV.r+POV.lean;
+  camera.inertialRadiusOffset=0;
+  camera.lowerRadiusLimit=r; camera.upperRadiusLimit=r; camera.radius=r;
+}
 function povSet(on,silent){
   on=!!on; if(POV.on===on) return POV.on;
   if(on){
@@ -33300,6 +33330,7 @@ function povSet(on,silent){
                radius:camWish, beta:camera.beta, fov:camera.fov, minZ:camera.minZ };
     POV.on=true;
     camera.lowerRadiusLimit=POV.r; camera.upperRadiusLimit=POV.r; camera.radius=POV.r;
+    POV.lean=0; POV.leanWish=0;
     camera.lowerBetaLimit=0.40; camera.upperBetaLimit=2.45;
     camera.alpha=-player.rotation.y-Math.PI/2;      // si guarda dove guarda l'avatar
     camera.beta=Math.PI/2-0.10;                      // sguardo appena verso il basso: ripiani e pavimento
@@ -33326,7 +33357,7 @@ function povSet(on,silent){
   }
   const bt=document.getElementById("povBtn");
   if(bt){ bt.classList.toggle("on",POV.on); bt.setAttribute("aria-pressed",POV.on?"true":"false"); }
-  if(!silent) toast(POV.on ? "\u{1F441}️ First person · "+(IS_TOUCH?"tocca \u{1F441}️":"premi O")+" per uscire"
+  if(!silent) toast(POV.on ? "\u{1F441}️ First person · "+(IS_TOUCH?"tocca \u{1F441}️ per uscire":"rotellina gi\u00f9 per arretrare \u00b7 O per uscire")
                            : "\u{1F3A5} Third person");
   return POV.on;
 }
@@ -33343,6 +33374,7 @@ function povTick(){
   if(avatarRoot && avatarRoot.isEnabled(false)) avatarRoot.setEnabled(false);
   if(pipe && pipe.depthOfFieldEnabled) pipe.depthOfFieldEnabled=false;
   _povPlace();
+  _povLean();
 }
 
 const keys={};
@@ -48810,18 +48842,30 @@ const ACC_BUILD={
      vedevano solo i due archi), sulla ragazza restava sospesa sopra la
      spalla. Ora ogni punto del giro si appoggia sulla superficie vera che sta
      sotto (collo, felpa, spalle, e la giacca se c'e'), 7 mm fuori. */
-  necklace(g,M,C){ const metal=(C.id==="silver")?"#c9ccd2":"#d6ae3c", gold=_accMat(metal,0.85,_hexMul(metal,0.2)), y0=M.neckY+0.012, nz=M.nz;
-    const rB=_bodyRad(M,nz), N=48, R=[], Y=[];
+  /* v287 (Giacomo, 30 set: «la collana e' un po' grande, stringila intorno
+     al collo»): scendeva di 9,5 cm sul petto e ai lati si appoggiava sulle
+     spalle — da davanti era un collare largo quanto le spalle. Ora sta PIU'
+     IN ALTO sul collo (NECK_UP), davanti scende solo di NECK_DROP, e il giro
+     non si allarga oltre il collo piu' NECK_CAP (davanti un filo di piu',
+     dove appoggia sul colletto). Sopra una giacca invece segue la giacca. */
+  necklace(g,M,C){ const metal=(C.id==="silver")?"#c9ccd2":"#d6ae3c", gold=_accMat(metal,0.85,_hexMul(metal,0.2)), nz=M.nz;
+    const NECK_UP=0.022, NECK_DROP=0.045, NECK_CAP=0.022, y0=M.neckY+NECK_UP;
+    const rB=_bodyRad(M,nz,true), N=48, R=[], Y=[];
+    /* la giacca invece si rispetta sempre: col tetto la collana finiva
+       DENTRO il colletto del piumino (visto a schermo) */
+    const rC=(M.__coatPL&&M.__coatPL.length)?_bodyRad({ BPL:[], __coatPL:M.__coatPL },nz,true):null;
     /* dietro sale un poco e poggia sul collo, SOPRA il bordo del cappuccio,
        come una collana vera (prima ci girava attorno e restava sospesa come
        una sbarra, o ci entrava lasciando fuori due «cornini»). Il profilo si
        legge solo alla sua quota (fascia stretta), se no il cappuccio sotto
        lo spingerebbe fuori. */
     const rN=_bodyRad(M,nz,true);
-    for(let i=0;i<N;i++){ const a=i/N*Math.PI*2, c=Math.cos(a), f=Math.max(0,c), y=y0-0.095*f*f+0.035*Math.pow(Math.max(0,-c),0.7);
+    for(let i=0;i<N;i++){ const a=i/N*Math.PI*2, c=Math.cos(a), f=Math.max(0,c), y=y0-NECK_DROP*f*f+0.02*Math.pow(Math.max(0,-c),0.7);
       /* dietro, verso la nuca, stringe sul collo (sopra il cappuccio) */
-      const r0=(c<0?rN(a,y):rB(a,y))+0.007, t=Math.min(1,Math.max(0,-c-0.2)/0.5), k=t*t*(3-2*t);
-      Y.push(y); R.push(Math.max(M.nr+0.006, r0*(1-k)+(M.nr+0.006)*k)); }
+      const r0=(c<0?rN(a,y):rB(a,y))+0.006, t=Math.min(1,Math.max(0,-c-0.2)/0.5), k=t*t*(3-2*t);
+      const cap=M.nr+NECK_CAP+0.018*f*f;
+      const rc=rC?rC(a,y)+0.006:0;
+      Y.push(y); R.push(Math.max(M.nr+0.006, rc, Math.min(r0,cap)*(1-k)+(M.nr+0.006)*k)); }
     /* lisciata riempiendo le valli (mai dentro il corpo): il colletto della
        felpa e' a spigoli e la catenina faceva zig-zag */
     const R0=R.slice();
