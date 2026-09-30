@@ -12753,6 +12753,7 @@ function updateNPCs(){
    comportamenti restano simmetrici anche lì. */
 function updatePlayerFacing(stopped){
   if(!stopped) return;
+  if(typeof POV!=="undefined" && POV.on) return;          // v292: in prima persona il corpo guarda dove guardi tu
   if(typeof DINER!=="undefined" && DINER.seat) return;   // seduti si guarda il tavolo, non il cameriere
   if(typeof BSIT!=="undefined" && BSIT.b) return;         // v291: e sulla panchina si guarda davanti
   let best=null, bestD=1e9;
@@ -34559,7 +34560,8 @@ function tryInteract(){ if(loginPending) return;
      solo la TESTA (viso, capelli, taglio, cappello, occhiali), che se no
      starebbe davanti all'obiettivo: non si spegne, si toglie dalla camera con
      il layerMask (POV_HEAD_BIT), cosi' fa ancora ombra e nessun altro codice
-     che accende e spegne capelli o cappelli se ne accorge;
+     che accende e spegne capelli o cappelli se ne accorge. v292: il corpo
+     gira con lo sguardo (_povBody) e arretrando lo sguardo sparisce tutto;
    · beta si apre anche verso l'alto (1.45 bastava per guardare DALL'ALTO
      il giocatore, dagli occhi serve alzare lo sguardo sugli scaffali alti);
    · W va dove GUARDI: la direzione si legge da alpha, non dalla posizione
@@ -34614,9 +34616,35 @@ function _povHeadList(){
     if(H.__acc) ["head","face"].forEach(k=>{ const a=H.__acc[k]; if(a&&a.meshes) a.meshes.forEach(m=>L.push(m)); }); }
   return L;
 }
-/* hide=true: la testa la vedono tutti tranne la camera in prima persona */
-function _povHead(hide){ const mk=hide?POV_HEAD_BIT:0x0FFFFFFF;
-  _povHeadList().forEach(m=>{ if(m.layerMask!==mk) m.layerMask=mk; }); }
+/* mode: 0 = tutto visibile, 1 = senza testa (occhi), 2 = niente corpo
+   (sguardo arretrato con la rotellina: e' come fare un passo indietro col
+   corpo, non uscire dal corpo — v292, Giacomo: «quando vai indietro non si
+   deve vedere l'avatar»). Quello che si toglie lo vedono tutti tranne la
+   camera in prima persona (ombre comprese). */
+function _povHead(mode){
+  if(mode===true) mode=1; else if(mode===false) mode=0;
+  if(!avatarRoot) return;
+  const head=mode===1?new Set(_povHeadList()):null;
+  const L=avatarRoot.getChildMeshes(false);
+  if(typeof NEWS!=="undefined") [NEWS.fold,NEWS.open].forEach(n=>{ if(n) n.getChildMeshes(false).forEach(m=>L.push(m)); });
+  L.forEach(m=>{ const hide=(mode===2)||(mode===1 && head.has(m)), mk=hide?POV_HEAD_BIT:0x0FFFFFFF;
+    if(m.layerMask!==mk) m.layerMask=mk; }); }
+/* v292 (Giacomo: «come ti giri le parti del corpo che una persona riesce a
+   vedere di se stessa ruotano con te»): in prima persona il corpo guarda
+   dove guardi tu, sempre — anche camminando indietro o di lato, quindi
+   abbassando lo sguardo si vede il petto, mai la schiena col vuoto della
+   testa. Seduti (diner, panchina) il corpo non si gira: si gira la testa,
+   fino a un certo punto. */
+const POV_SEAT_TURN=1.5;       // quanto si gira la testa da seduti (rad, per lato)
+function _povSeated(){ return (typeof DINER!=="undefined" && DINER.seat) || (typeof BSIT!=="undefined" && BSIT.b) || (typeof SIT!=="undefined" && SIT.on); }
+function _povBody(){
+  if(_povSeated()){
+    const a0=-player.rotation.y-Math.PI/2;
+    let d=((camera.alpha-a0+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI;
+    if(Math.abs(d)>POV_SEAT_TURN){ camera.alpha=a0+Math.sign(d)*POV_SEAT_TURN; camera.inertialAlphaOffset=0; }
+    return; }
+  player.rotation.y=Math.atan2(-Math.cos(camera.alpha),-Math.sin(camera.alpha));
+}
 function povSet(on,silent){
   on=!!on; if(POV.on===on) return POV.on;
   if(on){
@@ -34668,13 +34696,14 @@ function _povPlace(){
 /* ogni fotogramma in prima persona: tiene fuori dalla camera la testa (anche
    quella nuova, se il corpo si ricostruisce cambiando vestito o cappello) e
    spenta la profondita' di campo riaccesa dal pulsante qualita'.
-   Arretrando lo sguardo con la rotellina la testa torna: da dietro si
-   vedrebbe un corpo senza testa. */
+   v292: arretrando lo sguardo con la rotellina sparisce TUTTO il corpo
+   (e' come fare un passo indietro, non guardarsi da fuori). */
 function povTick(){
   if(pipe && pipe.depthOfFieldEnabled) pipe.depthOfFieldEnabled=false;
+  _povBody();
   _povPlace();
   _povLean();
-  _povHead(POV.lean<0.22);
+  _povHead(POV.lean>0.03?2:1);
 }
 
 const keys={};
@@ -50155,7 +50184,7 @@ function _bodyRad(M,zc,narrow){
 const NECKLACES={
   necklace: { drop:0.045, chain:"plain", pend:1, r:0.010 },
   medallion:{ drop:0.056, chain:"ball",  pend:2, r:0.015 },
-  royal:    { drop:0.066, chain:"link",  pend:3, r:0.021 },
+  royal:    { drop:0.076, chain:"link",  pend:3, r:0.029 },   // v292: piu' grande (5,8 cm)
 };
 function _accNecklace(g,M,C,id){
   const K=NECKLACES[id], V=BABYLON.Vector3, nz=M.nz, a0=lookAcc(id);
@@ -50189,6 +50218,38 @@ function _accNecklace(g,M,C,id){
   /* e due passate morbide per togliere gli spigoli dove scavalca il colletto */
   for(let k=0;k<2;k++){ const R2=R.map((r,i)=>(R[(i+N-2)%N]+R[(i+N-1)%N]+r+R[(i+1)%N]+R[(i+2)%N])/5+0.0015); for(let i=0;i<N;i++) R[i]=R2[i]; }
   const pts=[]; for(let i=0;i<=N;i++){ const a=(i%N)/N*Math.PI*2; pts.push(new V(Math.sin(a)*R[i%N], Y[i%N], nz+Math.cos(a)*R[i%N])); }
+  /* ---- il medaglione: APPESO alla catena e APPOGGIATO sul petto ----
+     v292 (Giacomo: «con alcuni vestiti mancano pezzi o il medaglione e' un
+     po' staccato dalla catena»): prima il centro si spingeva in avanti fino
+     al punto piu' sporgente del petto (o della giacca) e restava sospeso a
+     qualche centimetro dalla catena, e le cerniere e i bottoni delle giacche
+     chiuse lo attraversavano. Ora la campanella sta SEMPRE sul punto piu'
+     basso della catena (il cardine) e il medaglione ci ruota attorno come
+     un pendolo: scende dritto finche' non tocca il petto, e allora si
+     inclina quanto basta per starci sopra — sopra la giacca, cerniera e
+     bottoni compresi, con qualche millimetro in piu' di margine. */
+  const top=pts[0].clone(), rp=K.r, TH=0.004+0.0015*K.pend, BAIL=0.004+0.001*K.pend;
+  const coat=!!rC, MARG=coat?0.013:0.005;
+  /* il davanti del corpo alla quota y, sulla larghezza del medaglione */
+  const front=y=>{ let z=-1; for(let k=-2;k<=2;k++){ const x=k/2*rp*0.85;
+      [rB,rC].forEach(f=>{ if(!f) return; const r0=f(0,y); if(r0<=Math.abs(x)) return; const a=Math.asin(x/r0), r=f(a,y);
+        if(r>Math.abs(x)) z=Math.max(z, nz+Math.sqrt(r*r-x*x)); }); }
+    return z; };
+  /* quanto manca, con il cardine in h e l'inclinazione th, per stare fuori dal petto */
+  const TMAX=0.45;                 // oltre, di fronte il medaglione si vedrebbe schiacciato (sul seno della ragazza arrivava a 60°)
+  const lack=(h,th)=>{ const c=Math.cos(th), sn=Math.sin(th); let m=0;
+    for(let d=BAIL+0.003; d<=BAIL+2*rp+1e-6; d+=rp/6){ const y=h.y-d*c, z=h.z+d*sn;   // il retro sta sul piano del cardine (pc e' avanti di TH/2)
+      m=Math.max(m, front(y)+MARG-z); }
+    return m; };
+  let tilt=0; while(tilt<TMAX-1e-6 && lack(top,tilt)>0) tilt+=0.05;
+  /* se non basta, il cardine viene avanti e il davanti del giro lo segue,
+     sfumando verso i lati: la catena scende sul petto fino alla campanella
+     (niente medaglione staccato, niente asticella fra catena e medaglione) */
+  const hinge=top.clone(), more=lack(top,tilt);
+  if(more>0){ hinge.z+=more+0.001; hinge.y-=more*0.35;
+    const dl=hinge.subtract(top);
+    for(let i=0;i<pts.length;i++){ const c=Math.cos((i%N)/N*Math.PI*2), u=Math.max(0,Math.min(1,(c-0.45)/0.55)), w=u*u*(3-2*u);
+      if(w>0) pts[i]=pts[i].add(dl.scale(w)); } }
   /* ---- la catena ---- */
   /* i punti a passo costante lungo il giro: pallini e maglie non si ammucchiano */
   const along=step=>{ const out=[]; let carry=0;          // carry = strada fatta dall'ultimo punto posato
@@ -50212,18 +50273,14 @@ function _accNecklace(g,M,C,id){
       l.scaling.x=1.35; l.rotationQuaternion=BABYLON.Quaternion.RotationQuaternionFromAxis(tn,y,z);
       l.position.copyFrom(q.p); l.material=gold; l.parent=g; });
   }
-  /* ---- il medaglione: appeso al punto piu' basso, appoggiato sul petto ---- */
-  const top=pts[0], rp=K.r, TH=0.004+0.0015*K.pend;
-  const yc=top.y-0.006-rp;
-  let zc=top.z;
-  for(let dy=-rp;dy<=rp;dy+=rp/2){ zc=Math.max(zc, nz+rB(0,yc+dy)+0.006+TH/2); if(rC) zc=Math.max(zc, nz+rC(0,yc+dy)+0.006+TH/2); }
-  const pg=new BABYLON.TransformNode("accPend",scene); pg.parent=g; pg.position.set(0,yc,zc); pg.rotation.x=-0.22;
-  const put=(m,mt,x,y,z)=>{ m.material=mt; m.parent=pg; m.position.set(x||0,y||0,z||0); return m; };
+  const pg=new BABYLON.TransformNode("accPend",scene); pg.parent=g; pg.position.copyFrom(hinge); pg.rotation.x=-tilt;
+  const pc=new BABYLON.TransformNode("accPendC",scene); pc.parent=pg; pc.position.set(0,-(BAIL+rp),TH/2);
+  const put=(m,mt,x,y,z)=>{ m.material=mt; m.parent=pc; m.position.set(x||0,y||0,z||0); return m; };
   const disc=(d,h,mt,z)=>{ const m=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:d,height:h,tessellation:28},scene); m.rotation.x=Math.PI/2; return put(m,mt,0,0,z); };
   const ring=(d,th,mt,z)=>{ const m=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:d,thickness:th,tessellation:32},scene); m.rotation.x=Math.PI/2; return put(m,mt,0,0,z); };
   /* la campanella: l'anellino che lo tiene alla catena */
   const bail=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:0.0075+0.001*K.pend,thickness:0.0018+0.0004*K.pend,tessellation:12},scene);
-  bail.rotation.z=Math.PI/2; put(bail,gold,0,rp+0.003,0);
+  bail.rotation.z=Math.PI/2; put(bail,gold,0,rp+BAIL*0.55,0);
   if(K.pend===1){
     disc(rp*2,TH,gold,0); ring(rp*2,0.0022,gold,0);
     const s=BABYLON.MeshBuilder.CreateSphere("acc",{diameter:0.008,segments:8},scene); s.scaling.z=0.6; put(s,stone,0,0,TH/2);
@@ -50253,7 +50310,7 @@ function _accNecklace(g,M,C,id){
     /* quattro pietrine piccole sulla cornice e una sulla campanella */
     [0,1,2,3].forEach(k=>{ const a=k/4*Math.PI*2+Math.PI/4, s=BABYLON.MeshBuilder.CreateIcoSphere("acc",{radius:0.0022,subdivisions:1,flat:true},scene);
       put(s,stone,Math.sin(a)*rp*1.0,Math.cos(a)*rp*1.0,0.0035); });
-    const bs=BABYLON.MeshBuilder.CreateIcoSphere("acc",{radius:0.0026,subdivisions:1,flat:true},scene); put(bs,stone,0,rp+0.0005,0.003);
+    const bs=BABYLON.MeshBuilder.CreateIcoSphere("acc",{radius:0.0026,subdivisions:1,flat:true},scene); put(bs,stone,0,rp+0.0005,TH/2+0.001);
   }
 }
 /* v291 — i pezzi dello stesso materiale diventano UNA mesh prima della pelle:
