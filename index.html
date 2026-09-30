@@ -10630,9 +10630,13 @@ function _cafeMats(){ if(_cafeM) return _cafeM;
   mm.emissiveColor=new BABYLON.Color3(0.35,0.35,0.35); mm.specularColor=new BABYLON.Color3(0,0,0); K.menu=mm;
   _cafeM=K; return K;
 }
+/* v293: dove sta ogni caffe' (origine del bancone), per posarci sopra
+   l'ordinazione pronta: vedi cafeServe */
+const CAFE_SPOTS=[];
 function cafe(x,z,opt){
   opt=opt||{};
   const y0=opt.y||0, out=!!opt.outdoor;
+  CAFE_SPOTS.push({ x:x, z:z, y:y0 });
   const c=new BABYLON.TransformNode("cafe",scene); c.parent=townRoot; c.position.set(x,y0,z);
   const fl=BABYLON.MeshBuilder.CreateGround("cffl",{width:9,height:12},scene);
   fl.material=floorMat("cfflm",{style:"tile",hex:"#c98a64",tile:1.6},9,12);   // cotto
@@ -22946,9 +22950,9 @@ function runCafeOrder(){
     DialogueBox.open({ npc, icon:"\u2615", sub:o.luogo.nome+" \u2014 order complete"
         +(got>0?"  \u2b50 +"+got:""),
       text:chiusura,
-      italian:"Ordine completo! Fanno "+tot+" sterline.",
+      italian:"Ordine completo! Fanno "+tot+" sterline. Te lo prepara e lo posa sul bancone: vai a prenderlo (E).",
       html: cafeSlipHtml(o),
-      buttons:[{ label:"Thank you!", cls:"primary", act:function(){ _CAFE=null; } }] });
+      buttons:[{ label:"Thank you!", cls:"primary", act:function(){ _CAFE=null; cafeServe(npc,o); } }] });
     return;
   }
   const t=CAFE_TURNS[o.idx];
@@ -23053,6 +23057,177 @@ function submitCafe(){
     +(nota?('<div style="opacity:.78;font-size:.93em;margin-top:4px;">\u{1F4A1} '+nota+'</div>'):"");
   cafePassa(ta.value, !!male);
 }
+/* =====================================================================
+   v293 — L'ORDINAZIONE ARRIVA SUL BANCONE (Giacomo, 30 set: «dopo che
+   ordini sul bancone dei due cafe' appare cosa hai ordinato e lo puoi
+   prendere, quindi consumi al bancone e te ne vai»).
+   1. finito l'ordine, dopo un attimo (il barista lo prepara) compare sul
+      bancone, davanti alla cassa, un vassoio con QUELLO CHE HAI ORDINATO:
+      la bevanda giusta (tazza, tazzone con la panna, bicchiere di succo;
+      piu' grande se «Large») e, se l'hai preso, il piatto giusto;
+   2. E sul vassoio: lo prendi. Scivola sul bordo del bancone dalla tua
+      parte e ti giri verso di lui;
+   3. si consuma AL BANCONE: tazza e cibo salgono alla bocca e tornano giu'
+      un sorso / un morso alla volta, il livello scende, il cibo si
+      rimpicciolisce. Se ti allontani prima di finire, lasci li' tutto;
+   4. finito, il barista ti saluta e ritira il vassoio: te ne vai.
+   Vale per ENTRAMBI i caffe' (Rosa in citta', Theo al terminal): la
+   geometria di cafe() e' la stessa, e l'origine di ogni bancone e' in
+   CAFE_SPOTS. Tutto procedurale, materiali condivisi, 0 KB.
+   ===================================================================== */
+const CAFE_PICK={ node:null, inter:null, st:"", npc:null, o:null, parts:null, timer:null, obs:null, spot:null };
+let _cpM=null;
+function _cafePickMats(){ if(_cpM) return _cpM;
+  const K={};
+  K.cup=mat("cp_cup","#f6f3ec"); K.cup.specularColor=new BABYLON.Color3(0.3,0.3,0.3);
+  K.tray=mat("cp_tray","#3b2618"); K.plate=K.cup;
+  K.coffee=mat("cp_coffee","#4a2c17"); K.crema=mat("cp_crema","#b07a45");
+  K.tea=mat("cp_tea","#9a5422"); K.choc=mat("cp_choc","#5a3320"); K.cream=mat("cp_cream","#fbf6ea");
+  K.juice=mat("cp_juice","#f39a1e","#3a2000");
+  K.glass=new BABYLON.StandardMaterial("cp_glass",scene); K.glass.diffuseColor=new BABYLON.Color3(0.85,0.93,0.97);
+  K.glass.alpha=0.32; K.glass.specularColor=new BABYLON.Color3(0.8,0.8,0.8); K.glass.backFaceCulling=false;
+  K.pastry=mat("cp_pastry","#d99a45"); K.bread=mat("cp_bread","#e9c98e"); K.cheese=mat("cp_cheese","#f2c230");
+  K.muffinC=mat("cp_muffinC","#c9a37a"); K.muffinT=mat("cp_muffinT","#4a2a17"); K.apple=mat("cp_apple","#e8d2a0");
+  K.napkin=mat("cp_napkin","#ffffff");
+  return (_cpM=K); }
+function _cafeSpotOf(npc){ const p=npc&&npc.carrier&&npc.carrier.position; if(!p||!CAFE_SPOTS.length) return null;
+  let best=null, bd=1e9; CAFE_SPOTS.forEach(c=>{ const d=Math.hypot(c.x+2.9-p.x, c.z-p.z); if(d<bd){ bd=d; best=c; } });
+  return (bd<6)?best:null; }
+function cafeClear(){ const P=CAFE_PICK;
+  if(P.timer){ clearTimeout(P.timer); P.timer=null; }
+  if(P.obs){ scene.onBeforeRenderObservable.remove(P.obs); P.obs=null; }
+  if(P.inter){ try{ removeInteract(P.inter); }catch(e){} P.inter=null; }
+  if(P.node){ try{ P.node.dispose(false,false); }catch(e){} P.node=null; }
+  P.st=""; P.parts=null; P.o=null; P.npc=null; P.spot=null; }
+/* il vassoio con l'ordine; origine sul piano del vassoio */
+function _cafeBuildOrder(o,parent){
+  const K=_cafePickMats(), R={ drink:null, level:null, food:null, bits:[] };
+  const add=(m,k,par)=>{ m.material=K[k]; m.parent=par; m.isPickable=false; return m; };
+  const cyl=(o2,px,py,pz,k,par)=>{ o2.tessellation=o2.tessellation||18; const m=BABYLON.MeshBuilder.CreateCylinder("cpo",o2,scene); m.position.set(px,py,pz); return add(m,k,par); };
+  const sph=(d,px,py,pz,k,par)=>{ const m=BABYLON.MeshBuilder.CreateSphere("cpo",{diameter:d,segments:8},scene); m.position.set(px,py,pz); return add(m,k,par); };
+  const box=(w,h,d,px,py,pz,k,par)=>{ const m=BABYLON.MeshBuilder.CreateBox("cpo",{width:w,height:h,depth:d},scene); m.position.set(px,py,pz); return add(m,k,par); };
+  box(0.30,0.018,0.44,0,0.009,0,"tray",parent);
+  box(0.11,0.004,0.11,-0.08,0.02,-0.15,"napkin",parent).rotation.y=0.3;
+  const dk=(o.slip.drink&&o.slip.drink.en)||"Coffee", big=(o.slip.size&&o.slip.size.en==="Large");
+  const S=big?1.22:1;
+  /* la bevanda e' un gruppo a parte: e' lei che sale alla bocca */
+  const D=new BABYLON.TransformNode("cpDrink",scene); D.parent=parent; D.position.set(0.02,0.018,0.1); R.drink=D;
+  if(/juice/i.test(dk)){
+    const H=0.13*S; cyl({diameterTop:0.075*S,diameterBottom:0.062*S,height:H},0,H/2,0,"glass",D);
+    const L=cyl({diameterTop:0.068*S,diameterBottom:0.058*S,height:H*0.82},0,H*0.41+0.004,0,"juice",D); L.__h=H*0.82; L.__y0=0.004; R.level=L;
+    const st=cyl({diameter:0.007,height:0.18*S,tessellation:6},0.012,H*0.75,0,"cream",D); st.rotation.z=0.22;   // cannuccia: resta
+  } else {
+    const mug=/chocolate/i.test(dk), H=(mug?0.10:0.07)*S, dT=(mug?0.085:0.09)*S, dB=(mug?0.08:0.065)*S;
+    if(!mug) cyl({diameter:0.15*S,height:0.01,tessellation:24},0,0.005,0,"plate",D);                 // piattino
+    const base=mug?0:0.01;
+    cyl({diameterTop:dT,diameterBottom:dB,height:H},0,base+H/2,0,"cup",D);
+    const hd=BABYLON.MeshBuilder.CreateTorus("cpo",{diameter:0.045*S,thickness:0.011*S,tessellation:12},scene);
+    hd.rotation.x=Math.PI/2; hd.position.set(dT/2+0.012*S,base+H*0.55,0); add(hd,"cup",D);
+    const lk=mug?"choc":(/tea/i.test(dk)?"tea":"coffee");
+    const Lh=H*0.86, L=cyl({diameter:dT*0.9,height:Lh},0,base+0.003+Lh/2,0,lk,D); L.__h=Lh; L.__y0=base+0.003; R.level=L;
+    if(mug){ const c=sph(dT*0.72,0,base+H+0.004,0,"cream",D); c.scaling.y=0.45; R.bits.push(c); }
+    else if(lk==="coffee"){ const c=cyl({diameter:dT*0.55,height:0.002},0,base+Lh+0.004,0,"crema",D); R.bits.push(c); }
+  }
+  /* il cibo, se c'e' */
+  const fd=o.slip.food && o.slip.food.en!=="—" ? o.slip.food.en : "";
+  if(fd){
+    const F=new BABYLON.TransformNode("cpFood",scene); F.parent=parent; F.position.set(0.0,0.018,-0.1); R.food=F;
+    cyl({diameter:0.19,height:0.012,tessellation:24},0,0.006,0,"plate",F);
+    const G=new BABYLON.TransformNode("cpBite",scene); G.parent=F; G.position.y=0.012; R.bite=G;
+    if(/croissant/i.test(fd)){ const c=sph(0.15,0,0.03,0,"pastry",G); c.scaling.set(1,0.42,0.55); c.rotation.y=0.5;
+      [-1,1].forEach(sg=>{ const t=sph(0.06,sg*0.06,0.02,sg*0.02,"pastry",G); t.scaling.set(1,0.6,0.7); }); }
+    else if(/sandwich/i.test(fd)){ [0,1].forEach(i=>{ const q=new BABYLON.TransformNode("cpSw",scene); q.parent=G;
+        q.position.set(i?0.035:-0.03,0,i?-0.02:0.02); q.rotation.y=i?2.6:0.4;
+        cyl({diameter:0.12,height:0.012,tessellation:3},0,0.008,0,"bread",q); cyl({diameter:0.118,height:0.008,tessellation:3},0,0.018,0,"cheese",q);
+        cyl({diameter:0.12,height:0.012,tessellation:3},0,0.028,0,"bread",q); }); }
+    else if(/muffin/i.test(fd)){ cyl({diameterTop:0.085,diameterBottom:0.065,height:0.055},0,0.028,0,"muffinC",G);
+      const t=sph(0.095,0,0.06,0,"muffinT",G); t.scaling.y=0.6; }
+    else { const w=cyl({diameter:0.15,height:0.04,tessellation:3},0,0.02,0,"pastry",G); w.rotation.y=0.3;
+      const f=cyl({diameter:0.13,height:0.006,tessellation:3},0,0.041,0,"apple",G); f.rotation.y=0.3; }
+  }
+  try{ _octDirty(); }catch(e){}
+  return R; }
+function cafeServe(npc,o){
+  cafeClear();
+  const spot=_cafeSpotOf(npc); if(!spot||!o) return;
+  const P=CAFE_PICK; P.npc=npc; P.o=o; P.spot=spot; P.st="making";
+  P.timer=setTimeout(()=>{ P.timer=null;
+    const n=new BABYLON.TransformNode("cafeOrder",scene); n.parent=townRoot;
+    n.position.set(spot.x+0.95, spot.y+1.18, spot.z-0.22); P.node=n;
+    P.parts=_cafeBuildOrder(o,n); P.st="ready";
+    try{ toast("☕ "+(npc.name||"The barista")+": “Here you are! It's on the counter.”"); }catch(e){}
+    P.inter=addInteract({ id:"cafePickup", area:"town", radius:3.2,
+      pos:()=>P.node?P.node.getAbsolutePosition():new BABYLON.Vector3(0,-99,0),
+      prompt:'☕ Press <b>E</b> to <b>take your order</b>',
+      interact:cafeTake });
+    /* se non lo prendi, dopo un paio di minuti il barista lo ritira */
+    P.timer=setTimeout(()=>{ if(P.st==="ready") cafeClear(); },150000);
+  },1400); }
+function _cafeMouth(){ const ry=player.rotation.y, sit=0;
+  return new BABYLON.Vector3(player.position.x+Math.sin(ry)*0.24, player.position.y+AVATAR_HEIGHT*0.86-sit, player.position.z+Math.cos(ry)*0.24); }
+function cafeTake(){
+  const P=CAFE_PICK; if(P.st!=="ready"||!P.node) return;
+  if(P.inter){ removeInteract(P.inter); P.inter=null; }
+  if(P.timer){ clearTimeout(P.timer); P.timer=null; }
+  P.st="eating";
+  const sp=P.spot, n=P.node, R=P.parts;
+  /* il vassoio viene verso di te, sul bordo del bancone; ti giri verso di lui */
+  /* la fascia libera del bancone dal lato cliente: fra la vetrina dei dolci
+     (fino a z -0.48) e i barattoli dei biscotti (da z 1.99), saltando il
+     portatovaglioli (z 0.05..0.25) */
+  let lz=Math.max(-0.24,Math.min(1.76,player.position.z-sp.z));
+  if(lz>-0.18 && lz<0.48) lz=(lz<0.15)?-0.24:0.48;
+  const from=n.position.clone(), to=new BABYLON.Vector3(sp.x+0.65, n.position.y, sp.z+lz);
+  const face=Math.atan2(to.x-player.position.x, to.z-player.position.z);
+  player.rotation.y=face;
+  try{ if(typeof POV!=="undefined" && POV.on){ camera.alpha=-face-Math.PI/2; camera.beta=Math.PI/2+0.05; } }catch(e){}
+  /* la sequenza: sorsi e morsi alternati, poi i saluti */
+  const steps=[]; const nS=4, nB=R.food?3:0;
+  for(let i=0;i<Math.max(nS,nB);i++){ if(i<nS) steps.push("sip"); if(i<nB) steps.push("bite"); }
+  let k=0, t0=performance.now(), phase="slide", cur=null, curHome=null, cnt={sip:0,bite:0};
+  try{ toast("☕ Enjoy! · Buon appetito!"); }catch(e){}
+  P.obs=scene.onBeforeRenderObservable.add(()=>{
+    const now=performance.now();
+    /* se ti allontani, lasci tutto sul bancone: lo ritirera' il barista */
+    if(area!=="town" || Math.hypot(player.position.x-n.position.x, player.position.z-n.position.z)>3.6){
+      scene.onBeforeRenderObservable.remove(P.obs); P.obs=null; P.st="left";
+      if(cur&&curHome) cur.position.copyFrom(curHome);
+      P.timer=setTimeout(cafeClear,8000); return; }
+    if(phase==="slide"){ let u=(now-t0)/450; if(u>1) u=1; const e=u*u*(3-2*u);
+      BABYLON.Vector3.LerpToRef(from,to,e,n.position);
+      if(u>=1){ phase="wait"; t0=now; } return; }
+    if(phase==="wait"){ if(now-t0>500){ if(k>=steps.length){ phase="done"; _cafeDone(); return; }
+        const what=steps[k++]; cur=(what==="sip")?R.drink:R.food; if(!cur){ t0=now; return; }
+        curHome=cur.position.clone(); cur.__what=what; phase="up"; t0=now; } return; }
+    if(!cur) return;
+    /* su alla bocca (in coordinate del vassoio), una pausa, giu' */
+    const mouth=_cafeMouth(), inv=BABYLON.Matrix.Invert(n.getWorldMatrix());
+    const mL=BABYLON.Vector3.TransformCoordinates(mouth,inv);
+    const target=(cur.__what==="sip")?mL.add(new BABYLON.Vector3(0,-0.06,0)):mL.add(new BABYLON.Vector3(0,-0.1,0));
+    if(phase==="up"){ let u=(now-t0)/650; if(u>1) u=1; const e=u*u*(3-2*u);
+      BABYLON.Vector3.LerpToRef(curHome,target,e,cur.position);
+      cur.rotation.z=(cur.__what==="sip")?0.55*e:0;
+      if(u>=1){ phase="hold"; t0=now;
+        cnt[cur.__what]++;
+        if(cur.__what==="sip" && R.level){ const f=Math.max(0.04,1-cnt.sip/nS), L=R.level;
+          L.scaling.y=f; L.position.y=L.__y0+L.__h*f/2; R.bits.forEach(b=>{ if(b.material!==_cafePickMats().cream||cnt.sip>1) b.setEnabled(false); }); }
+        if(cur.__what==="bite" && R.bite){ const f=Math.max(0,1-cnt.bite/nB); R.bite.scaling.setAll(Math.max(0.001,f)); if(f<=0) R.bite.setEnabled(false); }
+        try{ SFX&&SFX.sip&&SFX.sip(); }catch(e){} } return; }
+    if(phase==="hold"){ cur.position.copyFrom(target); if(now-t0>600){ phase="down"; t0=now; } return; }
+    if(phase==="down"){ let u=(now-t0)/550; if(u>1) u=1; const e=u*u*(3-2*u);
+      BABYLON.Vector3.LerpToRef(target,curHome,e,cur.position); cur.rotation.z=(cur.__what==="sip")?0.55*(1-e):0;
+      if(u>=1){ cur.position.copyFrom(curHome); cur.rotation.z=0; cur=null; phase="wait"; t0=now; } return; }
+  }); }
+function _cafeDone(){ const P=CAFE_PICK;
+  if(P.obs){ scene.onBeforeRenderObservable.remove(P.obs); P.obs=null; }
+  P.st="done";
+  const npc=P.npc;
+  DialogueBox.open({ npc, icon:"☕", sub:(P.o&&P.o.luogo&&P.o.luogo.nome)||"Café",
+    text:"All done? I hope you enjoyed it! Have a nice day!",
+    italian:"Finito? Spero ti sia piaciuto! Buona giornata!",
+    buttons:[{ label:"\u{1F44B} It was lovely, thanks! Bye!", cls:"primary", act:()=>{} }] });
+  /* il barista ritira il vassoio: il bancone torna vuoto, e tu te ne vai */
+  P.timer=setTimeout(cafeClear,2500); }
 /* I due clienti non vendono niente: sono li' per essere parlati. Stessa
    porta degli altri NPC di citta' — ambient, domande, e basta. */
 function talkToCafeGuest(npc,icon,who){
@@ -51092,10 +51267,12 @@ function _accSkin(m,H,M,boneIdx,opt){
   const det=BABYLON.Vector3.Dot(BABYLON.Vector3.Cross(M.R,M.U),M.F);
   let I=Array.from(ind); if(det<0){ I=[]; for(let t=0;t<ind.length;t+=3) I.push(ind[t],ind[t+2],ind[t+1]); }
   let Pv=P, Lv=LP;
-  if(opt.flat){ const P2=[], L2=[]; I.forEach(v=>{ P2.push(P[v*3],P[v*3+1],P[v*3+2]); L2.push(LP[v]); });
-    Pv=P2; Lv=L2; I=I.map((v,j)=>j); }
+  const col=m.getVerticesData(BABYLON.VertexBuffer.ColorKind); let Cv=col;   // v293: colori/alpha per vertice
+  if(opt.flat){ const P2=[], L2=[], C2=[]; I.forEach(v=>{ P2.push(P[v*3],P[v*3+1],P[v*3+2]); L2.push(LP[v]);
+      if(col) C2.push(col[v*4],col[v*4+1],col[v*4+2],col[v*4+3]); });
+    Pv=P2; Lv=L2; if(col) Cv=C2; I=I.map((v,j)=>j); }
   const N=[]; BABYLON.VertexData.ComputeNormals(Pv,I,N);
-  const vd=new BABYLON.VertexData(); vd.positions=Pv; vd.indices=I; vd.normals=N;
+  const vd=new BABYLON.VertexData(); vd.positions=Pv; vd.indices=I; vd.normals=N; if(Cv) vd.colors=Cv;
   const out=new BABYLON.Mesh("acc",scene); vd.applyToMesh(out,false);
   const n=Pv.length/3, MI=new Array(n*4).fill(0), MW=new Array(n*4).fill(0);
   for(let i=0;i<n;i++){ const ws=opt.wfn?opt.wfn(Lv[i]):null;
@@ -51104,7 +51281,7 @@ function _accSkin(m,H,M,boneIdx,opt){
   out.setVerticesData(BABYLON.VertexBuffer.MatricesWeightsKind,MW,false,4);
   out.parent=H.parent; out.position.copyFrom(H.position); out.rotation.copyFrom(H.rotation);
   if(H.rotationQuaternion) out.rotationQuaternion=H.rotationQuaternion.clone(); out.scaling.copyFrom(H.scaling);
-  out.skeleton=H.skeleton; out.numBoneInfluencers=opt.wfn?4:1; out.material=m.material;
+  out.skeleton=H.skeleton; out.numBoneInfluencers=opt.wfn?4:1; out.material=m.material; if(Cv) out.hasVertexAlpha=!!m.hasVertexAlpha;
   out.isPickable=false; out.alwaysSelectAsActiveMesh=true;
   return out; }
 /* veste gli accessori di un corpo: acc = { head:id, face:id, neck:id,
@@ -51334,6 +51511,10 @@ const LOOK_CUTS=[
   { id:"bun",      rig:"*", en:"Bun",                ic:"\u{1F9C5}", kind:"bun",   req:{ quest:"u2_1", stars:500 } },
   { id:"curly",    rig:"*", en:"Curly hair",         ic:"\u{1F300}", kind:"curly", req:{ quest:"u2_1", stars:700 } },
   { id:"long",     rig:"*", en:"Long hair",          ic:"\u{1F481}", kind:"long",  req:{ quest:"u2_1", stars:600 } },
+  /* v293 (Giacomo: «aggiungi caschetto per donne, corti con sfumatura alta
+     per uomini») */
+  { id:"bob",      rig:"f", en:"Bob",                ic:"\u{1F487}\u200D\u2640\uFE0F", kind:"bob",  req:{ stars:150 } },
+  { id:"fade",     rig:"m", en:"Short, high fade",   ic:"\u{1F488}", kind:"fade", req:{ stars:150 } },
 ];
 function lookCutsFor(rig){ const r=(rig==="f"?"f":"m"); return LOOK_CUTS.filter(c=>c.rig===r||c.rig==="*"); }
 function lookCut(rig,id){ const L=lookCutsFor(rig); return L.find(c=>c.id===id)||L.find(c=>c.def)||L[0]; }
@@ -51378,14 +51559,15 @@ function _accWind(){ if(_windSign) return _windSign;
     const nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx; sum+=nx*(p[a]+p[b]+p[c])+ny*(p[a+1]+p[b+1]+p[c+1])+nz*(p[a+2]+p[b+2]+p[c+2]); }
   s.dispose(); return (_windSign=sum>0?1:-1); }
 /* mesh da punti + triangoli, ogni triangolo girato verso l'esterno (out(c) = verso fuori dal centro c) */
-function _hairMesh(P,T,out){
+function _hairMesh(P,T,out,cols){
   const w=_accWind(), I=[];
   T.forEach(t=>{ const a=P[t[0]],b=P[t[1]],c=P[t[2]];
     const n=BABYLON.Vector3.Cross(b.subtract(a),c.subtract(a)), cen=a.add(b).add(c).scale(1/3);
     if(BABYLON.Vector3.Dot(n,out(cen))*w>=0) I.push(t[0],t[1],t[2]); else I.push(t[0],t[2],t[1]); });
   const pos=[]; P.forEach(p=>pos.push(p.x,p.y,p.z));
   const vd=new BABYLON.VertexData(); vd.positions=pos; vd.indices=I; const N=[]; BABYLON.VertexData.ComputeNormals(pos,I,N); vd.normals=N;
-  const m=new BABYLON.Mesh("hcut",scene); vd.applyToMesh(m,false); return m; }
+  if(cols){ vd.colors=cols; }                                        // v293: la sfumatura (alpha per vertice)
+  const m=new BABYLON.Mesh("hcut",scene); vd.applyToMesh(m,false); if(cols) m.hasVertexAlpha=true; return m; }
 /* la calotta: righe dall'attaccatura al polo. o = { th, line(a), jag(a,i), noise, NA, NR } */
 function _hairShell(S,o){
   const NA=o.NA||32, NR=o.NR||9, P=[], T=[], rows=[];
@@ -51401,7 +51583,11 @@ function _hairShell(S,o){
   for(let j=0;j<rows.length-1;j++) for(let i=0;i<NA;i++){ const i2=(i+1)%NA, A=rows[j][i],B=rows[j][i2],C=rows[j+1][i],D=rows[j+1][i2];
     T.push([A,B,D],[A,D,C]); }
   const L=rows[rows.length-1]; for(let i=0;i<NA;i++) T.push([L[i],L[(i+1)%NA],ip]);
-  const m=_hairMesh(P,T,c=>c.subtract(S.C)); m.__env=true; return m; }
+  /* v293: o.alpha(a,y) = trasparenza per vertice (la sfumatura del fade) */
+  let cols=null;
+  if(o.alpha){ cols=[]; P.forEach((p,k)=>{ const i=(k<ip)?(k%NA):0, a=-Math.PI+i/NA*2*Math.PI;
+      cols.push(1,1,1,(k<ip)?o.alpha(a,p.y):1); }); }
+  const m=_hairMesh(P,T,c=>c.subtract(S.C),cols); m.__env=true; return m; }
 /* il pezzo di cranio che manca alla ragazza: SOLO ai lati e dietro (dal bordo
    della maschera in poi), dalla nuca fin sotto i capelli. ⚠️ Non davanti:
    una prima versione chiudeva tutta la testa e affiorava dalla faccia fra un
@@ -51427,6 +51613,49 @@ function _hairTail(pts,R){
   return BABYLON.MeshBuilder.CreateTube("hcut",{path,tessellation:10,cap:BABYLON.Mesh.CAP_ALL,
     radiusFunction:(i)=>{ const t=i/(n-1)*(R.length-1), k=Math.min(R.length-2,Math.floor(t)), u=t-k; return R[k]+(R[k+1]-R[k])*u; }},scene); }
 const HAIR_BUILD={
+  /* v293 — SFUMATURA ALTA: sopra un corto vero (calotta spessa, un filo
+     spettinata) che parte ALTO sulle tempie e dietro; sotto, fino
+     all'attaccatura normale, un velo rasato che sfuma nella pelle. La
+     sfumatura e' alpha per vertice: si vede la pelle VERA del ragazzo
+     sotto (qualunque carnagione abbia scelto), non un colore indovinato. */
+  fade(g,M,S,Mt){
+    const KT=[[0,0.084],[0.2,0.080],[0.34,0.072],[0.5,0.064],[0.7,0.060],[1,0.056]];
+    const top=_hairShell(S,{ th:0.019, noise:0.006, line:a=>_hairLine(a,KT),
+      jag:(a,i)=>(Math.abs(a)<0.3*Math.PI?(i%2?0.006:0.0):(i%2?0.003:0)) });
+    top.material=Mt.hair; top.parent=g;
+    const lo=a=>_hairLine(a)-0.004, hi=a=>_hairLine(a,KT);
+    const band=_hairShell(S,{ th:0.0032, noise:0.0006, line:lo, NR:12,
+      alpha:(a,y)=>{ const y0=lo(a)+0.004, y1=hi(a)-0.006; let t=(y-y0)/Math.max(0.01,y1-y0);
+        t=Math.max(0,Math.min(1,t)); t=t*t*(3-2*t); return 0.08+0.92*t; } });
+    band.material=Mt.fade; band.parent=g; },
+  /* v293 — CASCHETTO: frangia dritta sopra le sopracciglia, riga netta
+     all'altezza del mento (un filo piu' lunga davanti, come il caschetto
+     «a-line»), punte appena rientrate. La calotta e' quella di sempre, il
+     telo scende dritto dai lati e da dietro, mai dentro la faccia o il collo. */
+  bob(g,M,S,Mt){ const V=BABYLON.Vector3;
+    const KF=[[0,0.034],[0.14,0.035],[0.26,0.030],[0.36,0.012],[0.5,-0.004],[0.68,-0.02],[1,-0.028]];
+    const cap=_hairShell(S,{ th:0.013, noise:0.0015, line:a=>_hairLine(a,KF) }); cap.material=Mt.hair; cap.parent=g;
+    const rBody=_bodyRad(M,S.zc);
+    const a0=0.33*Math.PI, NU=34, NV=9, P=[], T=[], grid=[];
+    for(let i=0;i<=NU;i++){ const u=i/NU, a=a0+u*(2*Math.PI-2*a0), aa=(a>Math.PI?a-2*Math.PI:a), t=Math.abs(aa)/Math.PI;
+      const top=S.pt(aa,S.elAt(aa,_hairLine(aa,KF)),0.013), rTop=Math.hypot(top.x,top.z-S.zc);
+      const yEnd=-0.115+0.022*t*t;                             // mento davanti, nuca un po' piu' su
+      const col=[];
+      /* il raggio che serve per non entrare nella testa o nel collo, preso
+         sul punto peggiore della colonna: il telo ci arriva SFUMANDO dalla
+         calotta, altrimenti dietro si vedeva uno scalino */
+      let need=rTop;
+      for(let j=1;j<=NV;j++){ const y=top.y+(yEnd-top.y)*j/NV;
+        const skin=S.pt(aa,S.elAt(aa,Math.max(-0.12,y)),0.012);
+        need=Math.max(need, Math.hypot(skin.x,skin.z-S.zc), rBody(aa,y)+0.014); }
+      for(let j=0;j<=NV;j++){ const v=j/NV, y=top.y+(yEnd-top.y)*v, w=Math.min(1,v*2.2), sm=w*w*(3-2*w);
+        let r=rTop+(need-rTop)*sm+0.004+0.008*v;
+        if(j===NV) r-=0.006;                                    // le punte rientrano
+        const p=(j===0)?top:new V(Math.sin(aa)*r, y, S.zc+Math.cos(aa)*r);
+        col.push(P.length); P.push(p); }
+      grid.push(col); }
+    for(let i=0;i<NU;i++) for(let j=0;j<NV;j++){ const A=grid[i][j],B=grid[i+1][j],C=grid[i][j+1],D=grid[i+1][j+1]; T.push([A,B,D],[A,D,C]); }
+    const cur=_hairMesh(P,T,c=>new V(c.x,0,c.z-S.zc)); cur.material=Mt.hair2; cur.__two=true; cur.__w=true; cur.parent=g; },
   buzz(g,M,S,Mt){ const m=_hairShell(S,{ th:0.0045, noise:0.0012, line:a=>_hairLine(a)-0.004 }); m.material=Mt.hair; m.parent=g; },
   /* corto della ragazza: frangetta sfrangiata sulla fronte, nuca corta */
   pixie(g,M,S,Mt){ const K=[[0,0.03],[0.18,0.04],[0.34,0.045],[0.5,0.0],[0.68,-0.05],[1,-0.10]];
@@ -51490,12 +51719,17 @@ function _hairWeights(sk){ const idx=n=>sk.bones.findIndex(b=>b.name===n), hi=id
    colore (stessa luce, stessa lucentezza). ⚠️ Il nome NON contiene «Hair»:
    _lookSlot e il _slot dei compagni li ritingerebbero per conto loro. */
 const _cutM={};
-function _cutMat(tpl,hex,two){ const k=((tpl&&tpl.getClassName&&tpl.getClassName())||"S")+"|"+hex+"|"+(two?1:0);
+function _cutMat(tpl,hex,two,fade){ const k=((tpl&&tpl.getClassName&&tpl.getClassName())||"S")+"|"+hex+"|"+(two?1:0)+(fade?"f":"");
   if(_cutM[k]) return _cutM[k];
   let m; try{ m=tpl?tpl.clone("hcutM"+(_lpN++)):null; }catch(e){ m=null; }
   if(!m){ m=new BABYLON.StandardMaterial("hcutM"+(_lpN++),scene); m.specularColor=new BABYLON.Color3(0.08,0.08,0.08); }
   const c=BABYLON.Color3.FromHexString(hex); if(m.albedoColor) m.albedoColor=c; else m.diffuseColor=c;
   if(two){ m.backFaceCulling=false; if("twoSidedLighting" in m) m.twoSidedLighting=true; }
+  /* v293: la sfumatura vive nell'alpha dei vertici. Il materiale del glTF
+     dichiara OPAQUE e l'alpha dei vertici verrebbe ignorata: qui si
+     passa alla fusione. Niente scrittura di profondita' (la pelle sotto e'
+     gia' disegnata), cosi' non taglia la calotta che le sta sopra. */
+  if(fade){ m.transparencyMode=2; if("useVertexAlpha" in m) m.useVertexAlpha=true; m.alpha=1; m.disableDepthWrite=true; m.needDepthPrePass=false; }
   return (_cutM[k]=m); }
 /* veste il taglio. Ritorna true se le mesh sono cambiate (ombre, accessori). */
 function dressHair(meshes,rig,cutId,hex,holder){
@@ -51505,7 +51739,7 @@ function dressHair(meshes,rig,cutId,hex,holder){
   const orig=H.__hairOrig||(H.__hairOrig=meshes.filter(m=>/Casual_Head/.test(m.name)&&m.material&&/Hair/.test(m.material.name)&&m.getTotalVertices()>300));
   const tpl=orig[0]&&orig[0].material;
   if(cur && cur.id===cut.id){
-    if(cur.hex!==hex){ cur.meshes.forEach(m=>{ if(m.__hair) m.material=_cutMat(tpl,hex,!!m.__two); }); cur.hex=hex; }
+    if(cur.hex!==hex){ cur.meshes.forEach(m=>{ if(m.__hair) m.material=_cutMat(tpl,hex,!!m.__two,!!m.__fade); }); cur.hex=hex; }
     return false; }
   if(cur){ cur.meshes.forEach(m=>{ try{ m.dispose(false,false); }catch(e){}
     if(holder){ const k=holder.indexOf(m); if(k>=0) holder.splice(k,1); } }); H.__cut=null; }
@@ -51514,7 +51748,7 @@ function dressHair(meshes,rig,cutId,hex,holder){
   const M=H.__accM||(H.__accM=_accMeasure(meshes));
   if(!M){ orig.forEach(m=>m.setEnabled(true)); H.__cut={ id:cut.id, hex, meshes:[], env:null }; return true; }
   const S=_hairScalp(M), sk=H.skeleton, hi=sk.bones.findIndex(b=>b.name==="Head"), wfn=_hairWeights(sk);
-  const Mt={ hair:_cutMat(tpl,hex,false), hair2:_cutMat(tpl,hex,true), tie:_accMat(rig==="f"?"#c84a64":"#2a2d33",0.2) };
+  const Mt={ hair:_cutMat(tpl,hex,false), hair2:_cutMat(tpl,hex,true), fade:_cutMat(tpl,hex,false,true), tie:_accMat(rig==="f"?"#c84a64":"#2a2d33",0.2) };
   const g=new BABYLON.TransformNode("cut_"+cut.id,scene);
   try{ HAIR_BUILD[cut.kind](g,M,S,Mt,rig); }catch(e){ console.warn("hair",cut.id,e); }
   /* la testa che manca (la ragazza, vedi sopra): un cranio color pelle appena
@@ -51532,7 +51766,7 @@ function dressHair(meshes,rig,cutId,hex,holder){
       env=env||{ top:-9, back:9, front:-9, halfW:0 };
       for(let i=0;i<p.length;i+=3){ const v=BABYLON.Vector3.TransformCoordinates(new BABYLON.Vector3(p[i],p[i+1],p[i+2]),W);
         if(v.y>env.top) env.top=v.y; if(v.y>-0.02){ if(v.z<env.back) env.back=v.z; if(v.z>env.front) env.front=v.z; env.halfW=Math.max(env.halfW,Math.abs(v.x)); } } }
-    try{ const o=_accSkin(m,H,M,hi,{ flat:true, wfn:m.__w?wfn:null }); o.__hair=(m.material===Mt.hair||m.material===Mt.hair2); o.__two=!!m.__two;
+    try{ const o=_accSkin(m,H,M,hi,{ flat:true, wfn:m.__w?wfn:null }); o.__hair=(m.material===Mt.hair||m.material===Mt.hair2||m.material===Mt.fade); o.__two=!!m.__two; o.__fade=(m.material===Mt.fade);
       o.__noTint=true; out.push(o); }
     catch(e){ console.warn("hairSkin",e); } });
   g.dispose(false,false);
