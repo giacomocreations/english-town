@@ -2313,6 +2313,7 @@ const UNIT_SCREENS={ id:"u2_4", area:"cinema", areaName:"the ODEON Cinema", open
    ===================================================================== */
 const UNIT_STYLE={ id:"u2_1", area:"salon", areaName:"Style Salon",
   title:"Anno 2 \u00b7 Unit 1 \u2014 Body image", size:6.5, sizeX:5.0, tint:"#e7dcd4", wallH:3.0,
+  wallHex:"#f1e3dc", wallEm:"#2a2220", ceilHex:"#f6efe9", ceilEm:"#b0a8a2",   // v296: rosa cipria, soffitto
   enterToast:"\u{1F487} Sei entrato allo Style Salon",
   onEnter:()=>{ setTimeout(buildSalonNPCs,0); setTimeout(()=>{ try{ salonRestoreBoard(); }catch(e){} },60); },
   steps:[
@@ -2450,6 +2451,7 @@ const UNIT_WEATHER={ id:"u2_3", area:"town", openWorld:true,
    ===================================================================== */
 const UNIT_ECO={ id:"u2_6", area:"ecopoint", areaName:"the Eco Point",
   title:"Anno 2 \u00b7 Unit 6 \u2014 Waste", size:6.9, sizeX:5.4, tint:"#d7dccb",
+  wallHex:"#e3ead9", wallEm:"#1e241c", ceilHex:"#eef1e8", ceilEm:"#a9ada4",    // v296: pareti salvia chiaro e soffitto (restyling)
   enterToast:"\u267b\ufe0f Sei entrato all'Eco Point",
   onEnter:()=>{ setTimeout(buildEcoNPCs,0); setTimeout(()=>{ try{ ecoRestoreBoard(); }catch(e){} },60); },
   steps:[
@@ -3277,7 +3279,7 @@ const FLOOR_STYLE={
   clothes:   {style:"wood",     hex:"#dcc6a4", tile:2.4},
   beatclub:  {style:"tile",     hex:"#2e2636", tile:3.2, spec:0.25},
   salon:     {style:"check",    hex:"#ece8e1", hex2:"#2b2b30", tile:2.4},
-  ecopoint:  {style:"terrazzo", hex:"#cfd6c2", hex2:"#6f9a62", tile:2.4},
+  ecopoint:  {style:"tile",     hex:"#cbc5b8", tile:3.2, spec:0.16},   // v296: lastre di cemento chiaro (era graniglia verde)
   jobcentre: {style:"carpet",   hex:"#8b97a6", tile:2.0},
   techlab:   {style:"raised",   hex:"#b7c0c8", tile:2.4},
   climate:   {style:"stone",    hex:"#bfb8aa", tile:3.2},
@@ -12915,6 +12917,9 @@ function spawnNPC(cfg){
   Object.defineProperty(npc,"metPlayer",{
     get(){ return !!_npcMet[npc.name]; },
     set(v){ _npcMet[npc.name]=!!v; if(v) npcTouch(npc); } });
+  /* v296: al chiuso il sole non arriva: sotto ogni NPC un'ombra morbida,
+     figlia del carrier (lo segue quando cammina) */
+  if(npc.area!=="town" && !cfg.noBlob){ try{ hm7Shadow(carrier,0.80,0.66,0,0,0.03,0.55).__npcCast=false; }catch(e){} }
   NPCS.push(npc);
   if(typeof refreshShadowCasters==="function") refreshShadowCasters();
   /* v285: i gemelli del protagonista si vestono col guardaroba (in coda) */
@@ -30402,34 +30407,52 @@ LEXPROPS.sMirror=function(id,o){ o=o||{};
     lpCyl(r,0.10,0.06,"#fff3cf", w*0.62,yy,-0.01,Math.PI/2,0,"#8a7a4a"); }
   return r; };
 /* mobile della postazione: piano + cassettiera + phon e spazzola appoggiati */
+/* v296: marmo bianco venato (piani della postazione e della reception) */
+function _salMarble(w){ return _ecoTexMat("marble",256,256,(c,W,H)=>{ c.fillStyle="#f1ede6"; c.fillRect(0,0,W,H);
+      c.strokeStyle="rgba(150,140,130,0.35)"; c.lineWidth=1.4;
+      for(let i=0;i<9;i++){ c.beginPath(); let x=(i*53)%W, y=0; c.moveTo(x,y); for(let k=0;k<8;k++){ x+=(((i+k)*37)%21)-10; y+=H/8; c.lineTo(x,y); } c.stroke(); } },
+    {u:Math.max(1,Math.round(w/0.8)),v:1,sp:0.55,pow:90,dc:1}); }
 LEXPROPS.sVanity=function(id,o){ o=o||{};
+  /* v296: piano in marmo bianco lucido, mobile laccato con cassetti e
+     maniglie d'ottone, asciugamani piegati, phon, spazzola e flaconi */
   const r=new BABYLON.TransformNode(id,scene);
-  const w=o.w||1.70, d=0.50;
-  lpBox(r,w,0.06,d,o.hex||"#e9e2d6",0,0.92,0);
-  lpBox(r,w*0.52,0.86,d*0.86,"#7a6a58",-w*0.20,0.45,-0.02);
-  lpBox(r,w*0.50,0.03,d*0.80,"#5d5044",-w*0.20,0.62,-0.02);
-  lpCyl(r,0.07,0.86,"#6b6257", w*0.40,0.45,-0.14);
+  const w=o.w||1.70, d=0.50, lacq=hm7Mat("#5d4a3c",0.25,50), brass=hm7Mat("#c9a24a",0.8,80);
+  const marble=_salMarble(w);
+  hm7Box(r,w,0.06,d,marble,0,0.92,0);
+  hm7Box(r,w*0.52,0.86,d*0.86,lacq,-w*0.20,0.45,-0.02);
+  for(let j=0;j<3;j++){ hm7Box(r,w*0.50,0.24,0.01,hm7Mat("#6b5646",0.3,50),-w*0.20,0.17+j*0.27,d*0.43-0.01);
+    hm7Box(r,0.14,0.02,0.03,brass,-w*0.20,0.24+j*0.27,d*0.43+0.01); }
+  hm7Cyl(r,0.06,0.06,0.86,brass, w*0.40,0.45,-0.14,12);
   /* phon */
-  lpBox(r,0.09,0.09,0.26,"#3a3f47", w*0.24,1.00,0.02);
-  lpBox(r,0.07,0.16,0.07,"#3a3f47", w*0.24,0.99,-0.10);
-  /* spazzola + flaconi */
-  lpBox(r,0.24,0.04,0.07,"#8a5a2e",-w*0.02,0.97,0.08);
-  lpCyl(r,0.09,0.20,"#d2679a",-w*0.36,1.05,0.02);
-  lpCyl(r,0.09,0.17,"#5f9fbf",-w*0.28,1.03,0.06);
-  return r; };
+  hm7Box(r,0.09,0.09,0.26,hm7Mat("#3a3f47",0.4,50), w*0.24,1.00,0.02);
+  hm7Box(r,0.07,0.16,0.07,hm7Mat("#3a3f47",0.4,50), w*0.24,0.99,-0.10);
+  /* asciugamani piegati, spazzola, flaconi */
+  [0,1,2].forEach(k=>hm7Box(r,0.30,0.06,0.20,["#f4efe6","#c9d8d2","#f4efe6"][k],w*0.02,0.98+k*0.06,-0.10));
+  hm7Box(r,0.24,0.04,0.07,"#8a5a2e",-w*0.02,0.97,0.12);
+  hm7Cyl(r,0.08,0.09,0.20,hm7Mat("#d2679a",0.5,60),-w*0.36,1.05,0.02,14);
+  hm7Cyl(r,0.07,0.08,0.17,hm7Mat("#5f9fbf",0.5,60),-w*0.28,1.03,0.08,14);
+  hm7Cyl(r,0.06,0.06,0.13,hm7Mat("#e8c860",0.5,60),-w*0.43,1.01,0.10,14);
+  return etMergeByMat(r); };
 /* poltrona da barbiere: base a disco, pistone, seduta, schienale, poggiatesta */
 LEXPROPS.sChair=function(id,o){ o=o||{};
+  /* v296: poltrona da parrucchiere in similpelle lucida con base cromata,
+     cuciture (fasce piu' scure), braccioli con puntale e poggiapiedi */
   const r=new BABYLON.TransformNode(id,scene);
-  const hex=(o&&o.hex)||"#2f3a44";
-  lpCyl(r,0.62,0.08,"#9aa2a8",0,0.04,0);
-  lpCyl(r,0.16,0.36,"#b6bcc0",0,0.24,0);
-  lpBox(r,0.62,0.16,0.60,hex,0,0.50,0);
-  lpBox(r,0.60,0.62,0.14,hex,0,0.89,-0.24);
-  lpBox(r,0.34,0.18,0.10,hex,0,1.28,-0.22);
-  lpBox(r,0.09,0.09,0.46,"#5b6570",-0.30,0.64,0.02);
-  lpBox(r,0.09,0.09,0.46,"#5b6570", 0.30,0.64,0.02);
-  lpBox(r,0.44,0.05,0.22,"#5b6570",0,0.24,0.30);
-  return r; };
+  const hex=(o&&o.hex)||"#2f3a44", lea=hm7Mat(hex,0.35,60), lea2=hm7Mat(salonTint(hex,-0.25),0.3,50), chrome=hm7Mat("#d7dde2",0.9,110);
+  hm7Cyl(r,0.62,0.66,0.06,chrome,0,0.03,0,28);
+  hm7Cyl(r,0.14,0.18,0.34,chrome,0,0.23,0,18);
+  hm7Cyl(r,0.30,0.20,0.06,chrome,0,0.41,0,18);
+  hm7Box(r,0.62,0.16,0.60,lea,0,0.50,0);
+  hm7Box(r,0.52,0.04,0.50,lea2,0,0.585,0.02);
+  hm7Box(r,0.60,0.62,0.14,lea,0,0.89,-0.24);
+  [0.74,0.92,1.10].forEach(y=>hm7Box(r,0.56,0.02,0.02,lea2,0,y,-0.165));
+  hm7Box(r,0.34,0.18,0.10,lea,0,1.28,-0.22);
+  hm7Cyl(r,0.03,0.03,0.12,chrome,0,1.15,-0.22,8);
+  [-0.30,0.30].forEach(x=>{ hm7Box(r,0.09,0.09,0.46,lea2,x,0.64,0.02); hm7Box(r,0.09,0.02,0.10,chrome,x,0.69,0.25);
+    hm7Box(r,0.03,0.12,0.03,chrome,x,0.56,0.18); });
+  hm7Box(r,0.44,0.03,0.22,chrome,0,0.24,0.30);
+  hm7Box(r,0.04,0.24,0.04,chrome,0,0.36,0.22).rotation.x=-0.6;
+  return etMergeByMat(r); };
 /* lavatesta: colonna, vasca, rubinetto */
 LEXPROPS.sBasin=function(id,o){ o=o||{};
   const r=new BABYLON.TransformNode(id,scene);
@@ -30442,26 +30465,48 @@ LEXPROPS.sBasin=function(id,o){ o=o||{};
   return r; };
 /* divanetto d'attesa */
 LEXPROPS.sSofa=function(id,o){ o=o||{};
+  /* v296: divanetto in velluto con cuscini separati, bottoni sullo
+     schienale, cuscino decorativo e piedini d'ottone */
   const r=new BABYLON.TransformNode(id,scene);
-  const w=o.w||1.90, hex=o.hex||"#8a5f7c";
-  lpBox(r,w,0.36,0.72,hex,0,0.24,0);
-  lpBox(r,w,0.56,0.16,hex,0,0.70,-0.28);
-  lpBox(r,0.16,0.46,0.72,hex,-w/2+0.08,0.55,0);
-  lpBox(r,0.16,0.46,0.72,hex, w/2-0.08,0.55,0);
-  lpBox(r,0.10,0.10,0.10,"#4a3a2e",-w/2+0.14,0.03,0.28);
-  lpBox(r,0.10,0.10,0.10,"#4a3a2e", w/2-0.14,0.03,0.28);
-  return r; };
+  const w=o.w||1.90, hex=o.hex||"#8a5f7c", vel=hm7Mat(hex,0.08,12), velD=hm7Mat(salonTint(hex,-0.18),0.06,12), brass=hm7Mat("#c9a24a",0.8,80);
+  hm7Box(r,w,0.22,0.72,velD,0,0.20,0);
+  const n=2; for(let i=0;i<n;i++){ const cw=(w-0.36)/n; hm7Box(r,cw-0.02,0.14,0.60,vel,-w/2+0.18+cw/2+i*cw,0.38,0.04); }
+  hm7Box(r,w,0.56,0.16,vel,0,0.70,-0.28);
+  for(let i=0;i<5;i++) hm7Sph(r,0.03,0.03,0.02,velD,-w/2+0.35+i*(w-0.7)/4,0.74,-0.195,6);
+  hm7Box(r,0.16,0.46,0.72,vel,-w/2+0.08,0.55,0); hm7Box(r,0.16,0.46,0.72,vel, w/2-0.08,0.55,0);
+  hm7Box(r,0.34,0.30,0.12,hm7Mat("#e8c860",0.1,20),-w/2+0.42,0.58,-0.14).rotation.z=0.15;
+  [[-1,-1],[-1,1],[1,-1],[1,1]].forEach(q=>hm7Cyl(r,0.05,0.035,0.09,brass,q[0]*(w/2-0.12),0.045,q[1]*0.28,10));
+  return etMergeByMat(r); };
 /* banco della reception + registro degli appuntamenti aperto */
 LEXPROPS.sDesk=function(id,o){ o=o||{};
+  /* v296: banco reception in legno con fronte a doghe verticali, piano in
+     marmo, logo dorato, schermo, registro aperto, vaso di fiori */
   const r=new BABYLON.TransformNode(id,scene);
-  const w=o.w||2.60;
-  lpBox(r,w,1.02,0.62,o.hex||"#6b4a34",0,0.51,0);
-  lpBox(r,w+0.14,0.08,0.74,"#e9e2d6",0,1.06,0);
-  lpBox(r,0.46,0.04,0.34,"#f6f1e2",-w*0.22,1.12,0.02);
-  lpBox(r,0.44,0.03,0.32,"#d8c9a8",-w*0.22,1.15,0.02);
-  lpCyl(r,0.10,0.22,"#4f7fae", w*0.30,1.21,0.00);
-  lpCyl(r,0.20,0.05,"#b9c2c6", w*0.10,1.12,0.06);
-  return r; };
+  const w=o.w||2.60, wood=hm7Mat(o.hex||"#6b4a34",0.18,40), woodD=hm7Mat("#553a28",0.15,40), brass=hm7Mat("#c9a24a",0.8,80);
+  hm7Box(r,w,1.02,0.62,wood,0,0.51,0);
+  for(let i=0;i<Math.floor(w/0.16);i++) hm7Box(r,0.10,0.94,0.02,woodD,-w/2+0.10+i*0.16,0.51,0.315);
+  hm7Box(r,w,0.06,0.03,brass,0,0.08,0.32);
+  const marble=_salMarble(w);
+  hm7Box(r,w+0.14,0.08,0.74,marble,0,1.06,0);
+  hm7Box(r,0.46,0.04,0.34,"#f6f1e2",-w*0.22,1.12,0.02);
+  hm7Box(r,0.44,0.03,0.32,"#d8c9a8",-w*0.22,1.15,0.02);
+  hm7Cyl(r,0.10,0.10,0.22,hm7Mat("#4f7fae",0.4,50), w*0.30,1.21,0.00,14);
+  hm7Cyl(r,0.20,0.20,0.05,"#b9c2c6", w*0.10,1.12,0.06,16);
+  /* schermo del computer, girato verso Tess (dietro il banco) */
+  hm7Box(r,0.42,0.28,0.03,hm7Mat("#1b1f24",0.4,50),w*0.08,1.33,-0.14);
+  hm7Box(r,0.05,0.14,0.05,hm7Mat("#1b1f24",0.4,50),w*0.08,1.17,-0.14);
+  /* fiori */
+  hm7Cyl(r,0.12,0.09,0.18,hm7Mat("#f4efe6",0.4,60),w*0.40,1.19,0.12,14);
+  [["#d2679a",0],["#f0c040",1.9],["#e87a8a",3.8],["#ffffff",5.2]].forEach((q,i)=>hm7Sph(r,0.08,0.08,0.08,q[0],w*0.40+Math.cos(q[1])*0.05,1.33+(i%2)*0.04,0.12+Math.sin(q[1])*0.05,6));
+  /* logo sul fronte */
+  const lt=new BABYLON.DynamicTexture("salLogo"+(_lpN++),{width:512,height:128},scene,true), lc=lt.getContext();
+  lc.clearRect(0,0,512,128); lc.fillStyle="#e8c860"; lc.font="italic bold 70px Georgia,serif"; lc.textAlign="center"; lc.textBaseline="middle";
+  lc.fillText("Style Salon",256,66); lt.hasAlpha=true; lt.update();
+  const lm=new BABYLON.StandardMaterial("salLogoM"+(_lpN++),scene); lm.diffuseTexture=lt; lm.useAlphaFromDiffuseTexture=true;
+  lm.emissiveColor=new BABYLON.Color3(0.35,0.3,0.15); lm.specularColor=new BABYLON.Color3(0.4,0.35,0.2);
+  const lp=BABYLON.MeshBuilder.CreatePlane("salLogoP",{width:1.3,height:0.32},scene); lp.material=lm; lp.parent=r;
+  lp.position.set(0,0.62,0.335); lp.rotation.y=Math.PI; lp.__keep=true;
+  return etMergeByMat(r); };
 /* carrello dei ferri del mestiere */
 LEXPROPS.sTrolley=function(id,o){ o=o||{};
   const r=new BABYLON.TransformNode(id,scene);
@@ -30557,7 +30602,60 @@ function salonRestoreBoard(){ try{ salonBoardDraw(salonCardGet()); }catch(e){} }
    raggiungibilita' di ogni foto sono verificate col flood-fill e col test
    AABB (PLAYER_R 0.55), come per Beat Club e ODEON.
    ===================================================================== */
+/* v296 — DECORO DELLO STYLE SALON (Giacomo: «lo possiamo migliorare
+   graficamente»). Tutto su pareti, soffitto e pavimento, senza ingombri
+   (solid:false): boiserie verde salvia con cornice d'oro, insegna al neon
+   rosa, mensole con i prodotti, lampade a cupola dorate sopra le
+   poltrone, tappeto nell'angolo d'attesa, stampe incorniciate.
+   Coordinate della stanza: muri a x ±5.0 e z ±6.5, porta a sud al centro. */
+LEXPROPS.sDecor=function(id,o){ o=o||{};
+  const r=new BABYLON.TransformNode(id,scene);
+  const SX=5.0, S=6.5, WH=3.0;
+  const sage=hm7Mat("#86a393",0.15,30), gold=hm7Mat("#c9a24a",0.8,80), cream=hm7Mat("#efe6d8",0.1,20);
+  /* boiserie: pannelli a riquadri alti 1.0 m con cornice d'oro */
+  const wain=(w,x,z,ry)=>{ hm7Box(r,w,1.0,0.03,sage,x,0.52,z,ry); hm7Box(r,w,0.04,0.06,gold,x,1.04,z,ry);
+    const n=Math.max(1,Math.round(w/0.9)); for(let i=0;i<n;i++){ const off=-w/2+(i+0.5)*w/n;
+      const dx=Math.cos(ry||0)*off, dz=-Math.sin(ry||0)*off;
+      hm7Box(r,w/n-0.18,0.62,0.012,hm7Mat("#94b0a0",0.2,30),x+dx,0.52,z+dz,ry); } };
+  wain(SX*2-0.1,0,-S+0.03,0);
+  wain(S*2-0.1,-SX+0.03,0,Math.PI/2);
+  wain(SX-1.1,-(SX+1.1)/2,S-0.03,0); wain(SX-1.1,(SX+1.1)/2,S-0.03,0);
+  /* il muro est porta le foto: li' la boiserie e' piu' bassa (sotto le cornici) */
+  hm7Box(r,0.03,0.7,S*2-0.1,sage,SX-0.03,0.37,0); hm7Box(r,0.06,0.04,S*2-0.1,gold,SX-0.03,0.74,0);
+  /* insegna al neon sul muro nord, fra i lavatesta e la mensola */
+  const nt=new BABYLON.DynamicTexture("salNeon"+(_lpN++),{width:512,height:160},scene,true), nc=nt.getContext();
+  nc.clearRect(0,0,512,160); nc.shadowColor="#ff7ab8"; nc.shadowBlur=18; nc.fillStyle="#ffd1e6";
+  nc.font="italic bold 92px Georgia,serif"; nc.textAlign="center"; nc.textBaseline="middle"; nc.fillText("Style",256,70);
+  nc.shadowBlur=10; nc.font="bold 30px sans-serif"; nc.fillText("• HAIR & BEAUTY •",256,136); nt.hasAlpha=true; nt.update();
+  const nm=new BABYLON.StandardMaterial("salNeonM"+(_lpN++),scene); nm.diffuseTexture=nt; nm.emissiveTexture=nt; nm.useAlphaFromDiffuseTexture=true;
+  nm.emissiveColor=new BABYLON.Color3(1,1,1); nm.disableLighting=true;
+  const np=BABYLON.MeshBuilder.CreatePlane("salNeonP",{width:1.6,height:0.5},scene); np.material=nm; np.parent=r;
+  np.position.set(0.75,2.25,-S+0.04); np.rotation.y=Math.PI; np.__keep=true;
+  /* due mensole con i prodotti sotto l'insegna */
+  const bot=["#d2679a","#5f9fbf","#e8c860","#f4efe6","#8a5f7c","#3f6b5c"];
+  [1.35,1.70].forEach((y,j)=>{ hm7Box(r,1.5,0.04,0.22,gold,0.75,y,-S+0.13);
+    for(let i=0;i<7;i++){ const x=0.15+i*0.2, h=0.12+((i+j)%3)*0.05;
+      hm7Cyl(r,0.07,0.08,h,hm7Mat(bot[(i+j*2)%6],0.5,60),x,y+0.02+h/2,-S+0.13,12);
+      hm7Cyl(r,0.03,0.03,0.04,gold,x,y+0.04+h,-S+0.13,8); } });
+  /* lampade a cupola dorate sopra le tre poltrone e sopra la reception */
+  const cord=hm7Mat("#1e2226",0,1), bulb=hm7Mat("#fff3cf",0,1,"#ffe8a8");
+  [[-3.45,-3.4],[-3.45,0],[-3.45,3.4],[-2.6,5.0],[3.0,4.6]].forEach(q=>{
+    hm7Cyl(r,0.012,0.012,0.7,cord,q[0],WH-0.35,q[1],6);
+    const dm=hm7Sph(r,0.42,0.26,0.42,gold,q[0],WH-0.78,q[1],14);
+    const bb=hm7Sph(r,0.14,0.10,0.14,bulb,q[0],WH-0.86,q[1],8); bb.__keep=true;
+    if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(bb); });
+  /* tappeto tondo nell'angolo d'attesa */
+  hm7Cyl(r,2.3,2.3,0.006,hm7Mat("#a9748c",0.02,8),3.0,0.024,4.9,40);
+  hm7Tor(r,2.2,0.05,hm7Mat("#e8c860",0.02,8),3.0,0.027,4.9);
+  /* stampe incorniciate: muro nord a sinistra dei lavatesta e muro sud */
+  const print=(x,z,ry,hex)=>{ hm7Box(r,0.62,0.82,0.03,gold,x,1.85,z,ry);
+    hm7Box(r,0.52,0.72,0.01,hm7Mat(hex,0.1,20),x+Math.sin(ry||0)*0.02,1.85,z+Math.cos(ry||0)*0.02,ry);
+    hm7Sph(r,0.24,0.34,0.02,hm7Mat("#2b2318",0.1,20),x+Math.sin(ry||0)*0.03,1.9,z+Math.cos(ry||0)*0.03,10); };
+  print(-3.9,-S+0.05,0,"#e8d8c8"); print(-3.6,S-0.05,Math.PI,"#d8e4dc");
+  return etMergeByMat(r); };
 UNIT_STYLE.props=[
+  /* v296: il decoro, senza ingombri */
+  { prop:"sDecor", x:0, z:0, solid:false, shadow:false },
   /* ---- OVEST: le tre postazioni ---- */
   { prop:"sVanity", w:1.70, x:-4.72, z:-3.40, yaw: Math.PI/2 },
   { prop:"sVanity", w:1.70, x:-4.72, z: 0.00, yaw: Math.PI/2 },
@@ -32308,63 +32406,159 @@ function ecoPlane(root,w,h,px,py,pz,dt,emis){
    indovinare nello step lessico e' il CONTENITORE (a jar, a carton), non il
    materiale: sapere che un barattolo e' di vetro e' esattamente la
    conoscenza che il secondo passo vuole allenare. ---- */
+/* v296 (Giacomo: «rifai la grafica dell'Eco Point, con un po' di ombre»).
+   Stessi ingombri di prima (bidone 0.70 x 0.58, banconi 0.70 di
+   profondita', cucina 0.62): solidi, raggi d'interazione e percorsi degli
+   NPC non cambiano. Cambia tutto il resto: bidoni carrellati veri (ruote,
+   maniglione, coperchio a sbalzo, simbolo del riciclo), banconi in legno
+   a doghe su telaio d'acciaio, cucina in inox con forno e piastrelle. */
+function _ecoTex(key,W,H,draw,rep){ const k="ecoTx_"+key; let t=scene.getTextureByName&&scene.getTextureByName(k);
+  if(!t){ t=new BABYLON.DynamicTexture(k,{width:W,height:H},scene,true); draw(t.getContext(),W,H); t.update(); }
+  return t; }
+function _ecoTexMat(key,W,H,draw,o){ o=o||{}; const k="ecoTM_"+key+"|"+(o.u||1)+"|"+(o.v||1);
+  let m=scene.getMaterialByName(k); if(m) return m;
+  const dt=_ecoTex(key,W,H,draw), t=new BABYLON.Texture(null,scene,{internalTexture:dt.getInternalTexture()});
+  t.wrapU=t.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE; t.uScale=o.u||1; t.vScale=o.v||1;
+  m=new BABYLON.StandardMaterial(k,scene); m.diffuseTexture=t; m.diffuseColor=new BABYLON.Color3(o.dc||0.95,o.dc||0.95,o.dc||0.95);
+  const sp=o.sp||0.06; m.specularColor=new BABYLON.Color3(sp,sp,sp); m.specularPower=o.pow||32; return m; }
+/* legno a doghe (piano dei banconi, pannelli a parete) */
+function _ecoWood(u,v){ return _ecoTexMat("wood",256,256,(c,W,H)=>{ c.fillStyle="#b88a5a"; c.fillRect(0,0,W,H);
+    for(let i=0;i<8;i++){ const y=i*32, k=0.86+((i*37)%7)/30; c.fillStyle="rgb("+Math.round(184*k)+","+Math.round(138*k)+","+Math.round(90*k)+")"; c.fillRect(0,y+1,W,30);
+      c.strokeStyle="rgba(90,60,30,0.18)"; c.lineWidth=1; for(let g=0;g<5;g++){ c.beginPath(); c.moveTo(0,y+6+g*5); c.bezierCurveTo(W*0.3,y+3+g*5,W*0.6,y+10+g*5,W,y+5+g*5); c.stroke(); }
+      c.fillStyle="rgba(60,40,20,0.55)"; c.fillRect(0,y,W,1.5); } },{u:u||1,v:v||1,sp:0.12,pow:24}); }
 LEXPROPS.eBin=function(id,o){ o=o||{};
   const r=new BABYLON.TransformNode(id,scene);
-  const hex=o.hex||"#3f6b5c";
-  lpBox(r,0.70,1.00,0.58,hex,0,0.50,0);                    // corpo
-  lpBox(r,0.76,0.10,0.64,"#2f3a44",0,1.05,0);              // coperchio
-  lpBox(r,0.34,0.05,0.12,"#12171b",0,1.11,0.02);           // fessura
-  lpBox(r,0.72,0.05,0.06,"#2f3a44",0,0.86,0.30);           // maniglia
-  const W=256,H=96;
+  const hex=o.hex||"#3f6b5c", body=hm7Mat(hex,0.22,40), dark=hm7Mat("#1f2429",0.25,30), rub=hm7Mat("#15181b",0.05,8);
+  /* corpo appena svasato verso l'alto (come un carrellato vero) e fronte in rilievo */
+  hm7Box(r,0.64,0.50,0.54,body,0,0.37,0);                                         // corpo: sotto piu' stretto,
+  hm7Box(r,0.69,0.44,0.57,body,0,0.78,0);                                          // sopra piu' largo (svasato)
+  hm7Box(r,0.56,0.62,0.02,hm7Mat(hex,0.1,20),0,0.55,0.265);                       // pannello frontale
+  hm7Box(r,0.74,0.07,0.64,body,0,1.02,0.01);                                       // bordo
+  const lid=hm7Box(r,0.78,0.06,0.66,hm7Mat(hex,0.35,50),0,1.075,0.03); lid.rotation.x=-0.03;   // coperchio a sbalzo
+  hm7Box(r,0.34,0.035,0.12,dark,0,1.12,0.05);                                      // fessura
+  hm7Cyl(r,0.035,0.035,0.72,hm7Mat("#9aa2a8",0.6,60),0,1.03,-0.30,12,0,Math.PI/2); // cerniera
+  hm7Box(r,0.66,0.05,0.06,dark,0,0.98,-0.33);                                      // maniglione
+  [-0.27,0.27].forEach(x=>{ hm7Cyl(r,0.17,0.17,0.06,rub,x,0.085,-0.24,16,0,Math.PI/2);
+    hm7Cyl(r,0.07,0.07,0.065,hm7Mat("#6b7278",0.4,40),x,0.085,-0.24,12,0,Math.PI/2); });
+  hm7Cyl(r,0.03,0.03,0.66,dark,0,0.085,-0.24,8,0,Math.PI/2);                       // asse
+  const W=256,H=150;
   const dt=new BABYLON.DynamicTexture("ecobt"+(_lpN++),{width:W,height:H},scene,true);
   const c=dt.getContext();
   c.fillStyle="#f6f1e2"; c.fillRect(0,0,W,H);
-  c.strokeStyle=hex; c.lineWidth=10; c.strokeRect(5,5,W-10,H-10);
+  c.fillStyle=hex; c.fillRect(0,0,W,16); c.fillRect(0,H-12,W,12);
+  /* il simbolo del riciclo: tre frecce che si inseguono */
+  c.save(); c.translate(W/2,58); c.strokeStyle=hex; c.fillStyle=hex; c.lineWidth=8;
+  for(let i=0;i<3;i++){ c.rotate(Math.PI*2/3); c.beginPath(); c.arc(0,0,28,-0.2,1.3); c.stroke();
+    const ax=28*Math.cos(1.45), ay=28*Math.sin(1.45); c.beginPath(); c.moveTo(ax-10,ay-8); c.lineTo(ax+8,ay+2); c.lineTo(ax-8,ay+12); c.fill(); }
+  c.restore();
   c.fillStyle="#2b2318"; c.textAlign="center"; c.textBaseline="middle";
-  let f=44; c.font="bold "+f+"px sans-serif";
-  while(f>12 && c.measureText(o.label||"").width>W*0.84){ f-=2; c.font="bold "+f+"px sans-serif"; }
-  c.fillText(o.label||"", W/2, H/2+2);
+  let f=40; c.font="bold "+f+"px sans-serif";
+  while(f>12 && c.measureText(o.label||"").width>W*0.86){ f-=2; c.font="bold "+f+"px sans-serif"; }
+  c.fillText(o.label||"", W/2, 116);
   c.textBaseline="alphabetic"; dt.update();
-  ecoPlane(r,0.60,0.225,0,0.62,0.30,dt,"#3a352c");
+  ecoPlane(r,0.52,0.305,0,0.62,0.277,dt,"#3a352c");
   return r; };
 
-/* ---- BANCONE DI SMISTAMENTO: piano lungo + gambe. Gli oggetti lessicali
-   ci stanno SOPRA a 0.80 m: sotto l'altezza degli occhi (1.55), quindi si
-   guardano dall'alto — e' la condizione che la regola degli item bassi
-   chiede (silhouette >35 cm OPPURE ripiano guardato dall'alto). ---- */
+/* ---- BANCONE DI SMISTAMENTO: piano in legno a doghe su telaio d'acciaio,
+   ripiano sotto con cesti e sacchi di tela. Gli oggetti lessicali ci
+   stanno SOPRA a 0.81 (faccia del piano), come prima. ---- */
 LEXPROPS.eBench=function(id,o){ o=o||{};
   const r=new BABYLON.TransformNode(id,scene);
-  const L=o.w||9.4, d=0.70;
-  lpBox(r,L,0.07,d,o.hex||"#b7bfae",0,0.775,0);
-  lpBox(r,L-0.10,0.55,d-0.14,"#8f9887",0,0.48,0);
-  for(let i=0;i<=4;i++) lpBox(r,0.09,0.20,d,"#6f7768",-L/2+0.10+i*(L-0.20)/4,0.10,0);
-  return r; };
+  const L=o.w||9.4, d=0.70, steel=hm7Mat("#5c646b",0.45,48), wood=_ecoWood(L/1.2,1);
+  hm7Box(r,L,0.07,d,wood,0,0.775,0);
+  hm7Box(r,L,0.03,d-0.04,hm7Mat("#8a6440",0.05,10),0,0.73,0);                     // bordo sotto il piano
+  const nl=Math.max(2,Math.round(L/1.1));
+  for(let i=0;i<=nl;i++){ const x=-L/2+0.06+i*(L-0.12)/nl;
+    [-1,1].forEach(sd=>hm7Box(r,0.05,0.72,0.05,steel,x,0.37,sd*(d/2-0.05))); }
+  [-1,1].forEach(sd=>hm7Box(r,L-0.08,0.04,0.04,steel,0,0.14,sd*(d/2-0.05)));
+  hm7Box(r,L-0.10,0.025,d-0.12,hm7Mat("#7d858b",0.3,30),0,0.17,0);               // ripiano basso
+  /* sotto: cesti di vimini e sacchi di tela, uno ogni metro circa */
+  const wick=hm7Mat("#a67c45",0.04,10), jute=hm7Mat("#cdbb92",0.02,8);
+  for(let i=0;i<Math.floor(L/0.9);i++){ const x=-L/2+0.45+i*0.9;
+    if(i%2){ hm7Box(r,0.44,0.22,0.40,wick,x,0.295,0); hm7Box(r,0.40,0.02,0.36,hm7Mat("#6b4a2a",0.02,8),x,0.40,0); }
+    else { hm7Sph(r,0.36,0.26,0.32,jute,x,0.30,0,8); hm7Cyl(r,0.10,0.14,0.08,jute,x,0.45,0,10); } }
+  return etMergeByMat(r); };
 
-/* ---- CUCINA DI COMUNITA': piano + fornelli + pentola + cappa ---- */
+/* ---- CUCINA DI COMUNITA': mobile inox con forno, piano cottura, pentola,
+   cappa, schienale in piastrelle e barra con i mestoli ---- */
 LEXPROPS.eHob=function(id,o){ o=o||{};
   const r=new BABYLON.TransformNode(id,scene);
-  const w=o.w||2.20;
-  lpBox(r,w,0.90,0.62,"#9aa2a8",0,0.45,0);
-  lpBox(r,w+0.06,0.07,0.66,"#d7dbde",0,0.93,0);
-  lpCyl(r,0.26,0.02,"#2b2f33",-w*0.28,0.97,0.02);          // piastre
-  lpCyl(r,0.26,0.02,"#2b2f33",-w*0.02,0.97,0.02);
-  lpCyl(r,0.30,0.24,"#c2c8cc", w*0.26,1.08,0.02);          // pentola
-  lpCyl(r,0.32,0.03,"#8f979c", w*0.26,1.22,0.02);
-  lpBox(r,w*0.9,0.30,0.50,"#7d858b",0,2.10,-0.02);         // cappa
-  /* montanti: dal PIANO (0.965) alla BASE della cappa (1.95) -- prima si
-     fermavano a 1.40, sospesi nel vuoto sopra il piano (bug corretto la
-     scorsa volta). Ma allungandoli avevo lasciato la x di prima (∓0.30*w =
-     ∓0.66): la pentola sta a +0.26*w = +0.572 con raggio 0.15, cioe' fra
-     0.422 e 0.722 -- il montante destro ci passava esattamente IN MEZZO,
-     ed e' per quello che nello screenshot la cappa "finiva sopra alla
-     pentola". Spostati a ∓0.42*w = ∓0.924: 0.20 m di distanza dal bordo
-     della pentola (serve piu' di 0.025+0.15=0.175 per non toccarsi), e
-     ancora ben sotto la cappa (che e' larga 0.9*w, mezza larghezza 0.45*w
-     = 0.99). Stessi bracieri (a -0.28*w e -0.02*w) restano lontani anche
-     loro. */
-  lpBox(r,0.05,0.985,0.05,"#7d858b",-w*0.42,1.4575,-0.02);
-  lpBox(r,0.05,0.985,0.05,"#7d858b", w*0.42,1.4575,-0.02);
-  return r; };
+  const w=o.w||2.20, inox=hm7Mat("#b9c1c6",0.7,70), inoxD=hm7Mat("#8e979d",0.6,60), blk=hm7Mat("#1e2226",0.3,40);
+  hm7Box(r,w,0.86,0.62,inox,0,0.45,0);
+  hm7Box(r,w,0.08,0.60,blk,0,0.04,0.01);                                           // zoccolo
+  hm7Box(r,w*0.46,0.46,0.02,blk,-w*0.2,0.42,0.315);                                 // porta del forno
+  hm7Box(r,w*0.36,0.24,0.01,hm7Mat("#3a2a1c",0.8,80,"#1a0e06"),-w*0.2,0.44,0.327);   // oblo' del forno
+  hm7Box(r,w*0.40,0.03,0.04,inoxD,-w*0.2,0.69,0.34);                                // maniglia
+  [0.22,0.42].forEach(y=>hm7Box(r,w*0.40,0.30,0.02,inoxD,w*0.25,y+0.1,0.315));      // cassetti
+  for(let i=0;i<5;i++) hm7Cyl(r,0.05,0.05,0.03,blk,-w*0.42+i*0.12,0.80,0.33,12,Math.PI/2);   // manopole
+  hm7Box(r,w+0.06,0.05,0.66,hm7Mat("#d9dde0",0.6,64),0,0.915,0);
+  [-w*0.28,-w*0.02].forEach(x=>{ hm7Cyl(r,0.28,0.28,0.02,blk,x,0.95,0.02,24); hm7Tor(r,0.20,0.015,hm7Mat("#6b7278",0.4,40),x,0.965,0.02); });
+  hm7Cyl(r,0.32,0.30,0.26,inox,w*0.26,1.07,0.02,24);                                // pentola
+  hm7Cyl(r,0.33,0.33,0.02,inoxD,w*0.26,1.21,0.02,24);
+  hm7Sph(r,0.05,0.04,0.05,blk,w*0.26,1.24,0.02,8);
+  /* schienale in piastrelle verdi (texture), cappa, barra con mestoli */
+  const tiles=_ecoTexMat("tiles",128,128,(c,W,H)=>{ c.fillStyle="#9ab5a0"; c.fillRect(0,0,W,H);
+      for(let y=0;y<H;y+=32) for(let x=0;x<W;x+=32){ const k=0.92+((x*7+y*3)%11)/60; c.fillStyle="rgb("+Math.round(172*k)+","+Math.round(204*k)+","+Math.round(180*k)+")"; c.fillRect(x+2,y+2,28,28); } },
+    {u:w/0.5,v:2,sp:0.35,pow:60});
+  hm7Box(r,w,1.00,0.02,tiles,0,1.44,-0.30);
+  hm7Box(r,w*0.9,0.30,0.50,inoxD,0,2.10,-0.02);                                     // cappa
+  hm7Box(r,w*0.9-0.04,0.02,0.46,hm7Mat("#2b2f33",0.2,20),0,1.945,-0.02);
+  hm7Box(r,0.05,0.985,0.05,inoxD,-w*0.42,1.4575,-0.02);
+  hm7Box(r,0.05,0.985,0.05,inoxD, w*0.42,1.4575,-0.02);
+  hm7Cyl(r,0.025,0.025,w*0.7,inox,0,1.62,-0.26,10,0,Math.PI/2);                     // barra
+  const ut=[["#8a5a2e",0.30],["#6b7278",0.26],["#8a5a2e",0.24],["#6b7278",0.30]];
+  ut.forEach((q,i)=>{ const x=-w*0.3+i*w*0.2; hm7Box(r,0.02,q[1],0.015,q[0],x,1.62-q[1]/2-0.02,-0.25);
+    if(i%2) hm7Cyl(r,0.07,0.07,0.02,q[0],x,1.62-q[1]-0.02,-0.25,12,Math.PI/2); else hm7Box(r,0.06,0.07,0.015,q[0],x,1.62-q[1]-0.03,-0.25); });
+  return etMergeByMat(r); };
+
+/* ---- DECORO DELL'ECO POINT (nessun ingombro a terra: solid:false) ----
+   pannellatura in legno a doghe sui muri, fascia «REDUCE · REUSE ·
+   RECYCLE», giardino verticale, insegna col logo, lampade a sospensione,
+   corsie dipinte a terra e un bollino colorato davanti a ogni bidone.
+   Coordinate = coordinate della stanza (il prop sta a x 0, z 0). */
+LEXPROPS.eDecor=function(id,o){ o=o||{};
+  const r=new BABYLON.TransformNode(id,scene);
+  const SX=o.sx||5.4, S=o.sz||6.9, WH=2.7;
+  /* 1) pannellatura in legno, 1.05 m, su tutti e quattro i muri (porta a sud esclusa) */
+  const wood=_ecoWood(3,1), rail=hm7Mat("#6b4a2a",0.08,16);
+  const panel=(w,x,z,ry)=>{ const p=hm7Box(r,w,1.05,0.03,wood,x,0.545,z,ry); const t=hm7Box(r,w,0.05,0.06,rail,x,1.09,z,ry); return p; };
+  panel(SX*2-0.1,0,-S+0.03,0);                                        // nord
+  panel(S*2-0.1,-SX+0.03,0,Math.PI/2); panel(S*2-0.1,SX-0.03,0,Math.PI/2);   // ovest / est
+  panel(SX-1.1,-(SX+1.1)/2,S-0.03,0); panel(SX-1.1,(SX+1.1)/2,S-0.03,0);     // sud, ai lati della porta
+  /* 2) fascia con lo slogan, sopra la pannellatura del muro nord */
+  const bt=new BABYLON.DynamicTexture("ecoSlog"+(_lpN++),{width:1024,height:96},scene,true), bc=bt.getContext();
+  bc.fillStyle="#3f6b5c"; bc.fillRect(0,0,1024,96); bc.fillStyle="#f2c93e"; bc.font="bold 54px sans-serif"; bc.textAlign="center"; bc.textBaseline="middle";
+  bc.fillText("REDUCE · REUSE · RECYCLE",512,50); bt.update();
+  ecoPlane(r,3.0,0.28,0,2.25,-S+0.06,bt,"#2a3a30");
+  /* 3) giardino verticale sul muro sud, a destra della porta */
+  const gx=3.2, gz=S-0.06;
+  hm7Box(r,1.8,1.25,0.05,hm7Mat("#4a3a2a",0.05,10),gx,1.75,gz);
+  const leafs=[hm7Mat("#3f8a45",0.08,20),hm7Mat("#5aa84f",0.08,20),hm7Mat("#2f6f3a",0.08,20),hm7Mat("#7cbf5a",0.08,20)];
+  for(let i=0;i<34;i++){ const x=gx-0.8+((i*37)%17)/17*1.6, y=1.2+((i*53)%13)/13*1.1;
+    hm7Sph(r,0.24+((i*7)%5)*0.03,0.18+((i*3)%4)*0.03,0.12,leafs[i%4],x,y,gz-0.07,6); }
+  hm7Box(r,1.9,0.06,0.10,rail,gx,1.10,gz-0.03); hm7Box(r,1.9,0.06,0.10,rail,gx,2.40,gz-0.03);
+  /* 4) insegna col logo al centro del muro nord */
+  const lt=new BABYLON.DynamicTexture("ecoLogo"+(_lpN++),{width:512,height:256},scene,true), lc=lt.getContext();
+  lc.fillStyle="#f6f1e2"; lc.fillRect(0,0,512,256); lc.strokeStyle="#3f6b5c"; lc.lineWidth=12; lc.strokeRect(8,8,496,240);
+  lc.fillStyle="#3f8a45"; lc.beginPath(); lc.ellipse(120,128,62,40,-0.7,0,Math.PI*2); lc.fill();
+  lc.strokeStyle="#f6f1e2"; lc.lineWidth=5; lc.beginPath(); lc.moveTo(80,165); lc.lineTo(160,92); lc.stroke();
+  lc.fillStyle="#2b2318"; lc.font="bold 64px sans-serif"; lc.textAlign="left"; lc.textBaseline="middle"; lc.fillText("ECO",200,100);
+  lc.fillStyle="#3f6b5c"; lc.fillText("POINT",200,170); lt.update();
+  hm7Box(r,1.46,0.76,0.05,rail,0,1.72,-S+0.05);
+  ecoPlane(r,1.36,0.68,0,1.72,-S+0.085,lt,"#3a352c");
+  /* 5) lampade a sospensione sopra i banconi e sopra il bancone del caffe' */
+  const shade=hm7Mat("#2f3a34",0.3,40), bulb=hm7Mat("#fff3cf",0,1,"#ffe8a8"), cord=hm7Mat("#1e2226",0,1);
+  [[-2.5,-3.2],[-2.5,-1.2],[-2.5,1.2],[-2.5,3.2],[2.5,-3.2],[2.5,-1.2],[2.5,1.2],[2.5,3.2],[3.7,-5.4]].forEach(q=>{
+    hm7Cyl(r,0.012,0.012,0.62,cord,q[0],WH-0.31,q[1],6);
+    hm7Cyl(r,0.10,0.40,0.24,shade,q[0],WH-0.72,q[1],18);
+    const bb=hm7Sph(r,0.12,0.10,0.12,bulb,q[0],WH-0.84,q[1],8); bb.__keep=true;
+    if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(bb); });
+  /* 6) a terra: corsia centrale tratteggiata e bollini davanti ai bidoni */
+  const lane=hm7Mat("#e8c860",0.02,8);
+  for(let z=-S+1.2; z<S-1.0; z+=0.9) hm7Box(r,0.10,0.004,0.5,lane,0,0.024,z);
+  (o.bins||[]).forEach(bn=>{ hm7Cyl(r,0.62,0.62,0.004,hm7Mat(bn.hex,0.05,10),-SX+1.25,0.025,bn.z,28);
+    hm7Tor(r,0.62,0.03,hm7Mat("#f6f1e2",0.05,10),-SX+1.25,0.027,bn.z); });
+  return etMergeByMat(r); };
 
 /* ---- gli otto oggetti del bancone (0 KB). Tutti alti 0.18-0.32 m:
    stanno SU un piano a 0.775 e si guardano dall'alto. ---- */
@@ -32625,6 +32819,9 @@ let ECO_BOARD_NODE=null;
    il bug delle locandine dell'ODEON e delle foto del salone.
    ===================================================================== */
 UNIT_ECO.props=[
+  /* v296: tutto il decoro in un prop solo, senza ingombri */
+  { prop:"eDecor", x:0, z:0, solid:false, shadow:false, sx:5.4, sz:6.9,
+    bins:[{hex:"#4e8b3a",z:-4.8},{hex:"#3d6ea5",z:-2.4},{hex:"#d8a72e",z:0},{hex:"#8a8f96",z:2.4},{hex:"#8a5f3c",z:4.8}] },
   /* ---- OVEST: i cinque contenitori della raccolta ---- */
   { prop:"eBin", x:-4.90, z:-4.8, yaw: Math.PI/2, hex:"#4e8b3a", label:"GLASS",
     onBuilt:(n)=>{ ECO_BIN_NODES.glass=n; } },
@@ -33386,6 +33583,16 @@ function hm7Shadow(r,w,d,x,z,y,k){
   p.material=_hm7ShadowMat; p.position.set(x,y==null?0.026:y,z); p.parent=r; p.isPickable=false;
   if(k!=null) p.visibility=k;
   return p; }
+/* v296: l'ombra morbida del GIOCATORE al chiuso (negozi, scuola, metro,
+   casa...): li' le ombre del sole non entrano, e il ragazzo sembrava
+   galleggiare sul pavimento. Si spegne in citta' (c'e' il sole), seduti in
+   sala al cinema e durante la discesa in metro. */
+let _plBlob=null;
+scene.onBeforeRenderObservable.add(()=>{
+  if(typeof started==="undefined" || !started || typeof player==="undefined") return;
+  const want=(area!=="town") && !(typeof SHOW!=="undefined" && SHOW.seated) && !metroCinematic;
+  if(want && !_plBlob){ try{ _plBlob=hm7Shadow(player,0.82,0.70,0,0,0.035,0.6); _plBlob.alwaysSelectAsActiveMesh=true; }catch(e){ return; } }
+  if(_plBlob && _plBlob.isEnabled()!==want) _plBlob.setEnabled(want); });
 /* v270 — FUSIONE PER MATERIALE di un prop procedurale gia' montato. I prop
    ricchi di dettaglio (ospedale, aeroporto) nascono da decine di box: senza
    fonderli ogni box e' una draw call. Qui il nodo viene riportato un istante
@@ -34404,6 +34611,17 @@ registerAmbient("u2_7",[   // Anno 2 · Unit 7 — At home
     expect:{pool:["we can","can","save","water","shower","tap","turn off","short","less","bath","reuse"],hint:"con We can\u2026"} },
 ]);
 
+/* v296: il materiale della penombra al piede dei muri (scuro verso il muro,
+   in cima alla texture = +z locale della striscia) */
+let _wallAoM=null;
+function _wallAoMat(){ if(_wallAoM) return _wallAoM;
+  const dt=new BABYLON.DynamicTexture("giAOt",{width:8,height:128},scene,false), c=dt.getContext();
+  const g=c.createLinearGradient(0,0,0,128); g.addColorStop(0,"rgba(0,0,0,0.55)"); g.addColorStop(0.18,"rgba(0,0,0,0.30)");
+  g.addColorStop(0.5,"rgba(0,0,0,0.10)"); g.addColorStop(1,"rgba(0,0,0,0)");
+  c.clearRect(0,0,8,128); c.fillStyle=g; c.fillRect(0,0,8,128); dt.hasAlpha=true; dt.update();
+  const m=new BABYLON.StandardMaterial("giAOm",scene); m.diffuseTexture=dt; m.useAlphaFromDiffuseTexture=true;
+  m.diffuseColor=new BABYLON.Color3(0,0,0); m.specularColor=new BABYLON.Color3(0,0,0); m.disableLighting=true; m.alpha=0.8;
+  return (_wallAoM=m); }
 function buildInterior(u){
   const I=allocInterior(u); if(I.built) return; I.built=true;
   const C=I.center, S=u.size||9, SX=u.sizeX||S;
@@ -34430,6 +34648,14 @@ function buildInterior(u){
     pl.parent=I.root; pl.isPickable=false; }
   wallIn(SX*2,0,S,0); wallIn(SX*2,0,-S,Math.PI);              // muro sud / nord (larghezza SX*2)
   wallIn(S*2,SX,0,Math.PI/2); wallIn(S*2,-SX,0,-Math.PI/2);   // muro est / ovest (profondita' S*2)
+  /* v296: OMBRA AL PIEDE DEI MURI. Un pavimento che arriva al muro con la
+     stessa luce del centro stanza sembra incollato: la penombra lungo il
+     battiscopa (che nella realta' c'e' sempre) stacca le pareti dal
+     pavimento. Quattro strisce sfumate, un solo materiale. */
+  try{ const M=_wallAoMat(), D=0.95;
+    [[SX*2,0,S-D/2,0],[SX*2,0,-S+D/2,Math.PI],[S*2,SX-D/2,0,Math.PI/2],[S*2,-SX+D/2,0,-Math.PI/2]].forEach(q=>{
+      const g=BABYLON.MeshBuilder.CreateGround("giAO",{width:q[0],height:D},scene);
+      g.material=M; g.position.set(C.x+q[1],0.023,C.z+q[2]); g.rotation.y=q[3]; g.parent=I.root; g.isPickable=false; }); }catch(e){}
   addSolid(C.x-SX-T,C.x+SX+T,C.z+S-T/2,C.z+S+T,u.area);   // perimetro solido
   addSolid(C.x-SX-T,C.x+SX+T,C.z-S-T,C.z-S+T/2,u.area);
   addSolid(C.x-SX-T,C.x-SX+T/2,C.z-S,C.z+S,u.area);
@@ -34466,7 +34692,11 @@ function buildInterior(u){
     if(pr.onBuilt && node){ try{ pr.onBuilt(node,b); }catch(e){} }
     /* v269: ombra di contatto sotto gli arredi (unit che la chiedono) — per
        terra (pavimento a 0.02) o sul piano su cui l'oggetto e' appoggiato (pr.y) */
-    if(u.contactShadows && node && pr.shadow!==false && pr.prop!=="poster" && (pr.solid!==false || pr.y>0.05)){
+    /* v296 (Giacomo: «mancano ombre leggere in climate, ecopoint, salon,
+       market, job centre... controlla tutti i building»): le ombre di
+       contatto erano accese solo su TechLab e ospedale. Ora in TUTTI gli
+       interni, salvo chi le spegne esplicitamente (contactShadows:false). */
+    if(u.contactShadows!==false && node && pr.shadow!==false && pr.prop!=="poster" && (pr.solid!==false || pr.y>0.05)){
       try{ const s1=contactShadowFor(node,(pr.y>0.05?pr.y+0.004:0.027),1.0,(pr.y>0.05?0.12:0.45),10);
         /* a terra un secondo alone piu' stretto e piu' scuro: sul pavimento chiaro
            del laboratorio uno solo si leggeva appena */
@@ -34619,6 +34849,31 @@ function confirmLeaveQuest(q, target, act){
     buttons:[{label:"I'll stay outside", cls:"primary"},
              {label:"Go in anyway", cls:"ghost", act:act}] });
 }
+/* v296 — PASSAGGIO OMBRE: dopo che un interno e' costruito (anche dai suoi
+   builder «tardivi»: merce del mercato, attrezzature della caserma,
+   camion, arredi aggiunti dagli NPC) ogni oggetto appoggiato a terra che
+   ancora non ha un'ombra di contatto ne riceve una. Si guarda solo ai
+   figli diretti della radice dell'interno; si salta chi e' pavimento,
+   muro, soffitto, una targhetta, un NPC o un oggetto sospeso. Idempotente
+   (flag __csh), costa un giro sui nodi alla prima entrata. */
+function interiorShadowSweep(area){
+  const I=INTERIORS[area]; if(!I||!I.root) return 0;
+  let n=0;
+  I.root.getChildren().forEach(ch=>{
+    if(ch.__csh) return; ch.__csh=true;
+    const nm=ch.name||"";
+    if(/^(gif_|giwp|gicl|giAO|h7sh|egl)/.test(nm) || /_carrier$|_holder$/.test(nm) || ch.__ground || ch.__noCsh) return;
+    if(ch.getChildren().some(c=>c.name==="h7sh")) return;
+    let bb; try{ ch.computeWorldMatrix(true); (ch.getChildMeshes?ch.getChildMeshes():[]).forEach(m=>m.computeWorldMatrix(true));
+      bb=(ch.getHierarchyBoundingVectors?ch.getHierarchyBoundingVectors(true):null); }catch(e){ return; }
+    if(!bb || !isFinite(bb.min.y)) return;
+    const h=bb.max.y-bb.min.y, w=bb.max.x-bb.min.x, d=bb.max.z-bb.min.z;
+    if(bb.min.y>0.18 || h<0.12 || (w<0.15&&d<0.15) || w>9 || d>9) return;
+    /* appoggiato su un piano (merce sugli scaffali ecc.)? niente: solo a terra */
+    try{ const s1=contactShadowFor(ch,0.027,0.9,0.35,9); if(s1){ n++;
+        if(w<3.5 && d<3.5){ const s2=s1.clone("h7sh"); s2.parent=s1.parent; s2.scaling.set(0.72,1,0.72); s2.position.y+=0.001; } } }catch(e){}
+  });
+  return n; }
 function enterUnit(u, noQuest, _ok){
   if(!_ok){ const q=questInProgress(u);
     if(q){ confirmLeaveQuest(q, u, ()=>enterUnit(u,noQuest,true)); return; } }
@@ -34633,6 +34888,11 @@ function enterUnit(u, noQuest, _ok){
      ancora quella unit entra comunque — al concerto ci vanno tutti. */
   if(!noQuest) Quest.start(u);
   if(u.onEnter) u.onEnter();
+  /* v296: ombre di contatto su tutto cio' che poggia a terra (anche quello
+     costruito dopo, in onEnter): subito e poi di nuovo quando i builder
+     differiti hanno finito */
+  if(u.area!=="home"){ try{ interiorShadowSweep(u.area); }catch(e){}
+    setTimeout(()=>{ try{ interiorShadowSweep(u.area); }catch(e){} },900); }
 }
 /* Porta APERTA A TUTTI: si entra sempre, la questline parte solo se la unit
    e' davvero aperta per la coorte e non e' gia' stata finita. Il gate non
