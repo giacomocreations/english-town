@@ -3751,7 +3751,7 @@ function rebuildAvatar(){
   _avAnimCur=null; _legPins=null; _pinLegs=false;
   const _eraSeduto=SIT.on; SIT.on=false; SIT.pins=null; SIT.baseY=null;
   buildAvatar();
-  if(_eraSeduto) try{ dinerResit(); benchResit(); }catch(e){}
+  if(_eraSeduto) try{ dinerResit(); benchResit(); cafeResit(); }catch(e){}
   try{ applyLook(); }catch(e){}
   try{ refreshShadowCasters(); }catch(e){}
   /* ⚠️ L'AVATAR SPARIVA (segnalato da Giacomo). Non era la tinta: era
@@ -10690,7 +10690,7 @@ function cafe(x,z,opt){
   bx("black",0.34,0.14,0.4, 1.95,TOP+0.07,0.45);
   bx("black",0.05,0.2,0.32, 2.05,TOP+0.24,0.45).rotation.z=0.35;
   bx("screen",0.01,0.16,0.27, 2.08,TOP+0.25,0.45).rotation.z=0.35;
-  bx("steel",0.1,0.12,0.2, 0.8,TOP+0.06,0.15);
+  bx("steel",0.1,0.12,0.2, 0.8,TOP+0.06,0.62);    // v295: portatovaglioli spostato, davanti allo sgabello centrale va il vassoio
 
   /* ---- MACCHINA DELL'ESPRESSO (z 0.9..2.0): gruppi e portafiltri verso
           il barista, pannello colorato verso i clienti, tazzine sopra ---- */
@@ -23075,7 +23075,8 @@ function submitCafe(){
    geometria di cafe() e' la stessa, e l'origine di ogni bancone e' in
    CAFE_SPOTS. Tutto procedurale, materiali condivisi, 0 KB.
    ===================================================================== */
-const CAFE_PICK={ node:null, inter:null, st:"", npc:null, o:null, parts:null, timer:null, obs:null, spot:null, face:null, seq:null };
+const CAFE_PICK={ node:null, inter:null, st:"", npc:null, o:null, parts:null, timer:null, obs:null, spot:null, face:null, seq:null,
+                   stool:null, seated:false, gy:null };
 let _cpM=null;
 function _cafePickMats(){ if(_cpM) return _cpM;
   const K={};
@@ -23095,10 +23096,11 @@ function _cafeSpotOf(npc){ const p=npc&&npc.carrier&&npc.carrier.position; if(!p
   return (bd<6)?best:null; }
 function cafeClear(){ const P=CAFE_PICK;
   if(P.timer){ clearTimeout(P.timer); P.timer=null; }
+  if(P.seated) try{ _cafeStand(); }catch(e){}
   if(P.obs){ scene.onBeforeRenderObservable.remove(P.obs); P.obs=null; }
   if(P.inter){ try{ removeInteract(P.inter); }catch(e){} P.inter=null; }
   if(P.node){ try{ P.node.dispose(false,false); }catch(e){} P.node=null; }
-  P.st=""; P.parts=null; P.o=null; P.npc=null; P.spot=null; P.face=null; P.seq=null; }
+  P.st=""; P.parts=null; P.o=null; P.npc=null; P.spot=null; P.face=null; P.seq=null; P.stool=null; P.gy=null; }
 /* il vassoio con l'ordine; origine sul piano del vassoio */
 function _cafeBuildOrder(o,parent){
   const K=_cafePickMats(), R={ drink:null, level:null, food:null, bits:[] };
@@ -23106,7 +23108,7 @@ function _cafeBuildOrder(o,parent){
   const cyl=(o2,px,py,pz,k,par)=>{ o2.tessellation=o2.tessellation||18; const m=BABYLON.MeshBuilder.CreateCylinder("cpo",o2,scene); m.position.set(px,py,pz); return add(m,k,par); };
   const sph=(d,px,py,pz,k,par)=>{ const m=BABYLON.MeshBuilder.CreateSphere("cpo",{diameter:d,segments:8},scene); m.position.set(px,py,pz); return add(m,k,par); };
   const box=(w,h,d,px,py,pz,k,par)=>{ const m=BABYLON.MeshBuilder.CreateBox("cpo",{width:w,height:h,depth:d},scene); m.position.set(px,py,pz); return add(m,k,par); };
-  box(0.30,0.018,0.44,0,0.009,0,"tray",parent);
+  box(0.28,0.018,0.44,0,0.009,0,"tray",parent);
   box(0.11,0.004,0.11,-0.08,0.02,-0.15,"napkin",parent).rotation.y=0.3;
   const dk=(o.slip.drink&&o.slip.drink.en)||"Coffee", big=(o.slip.size&&o.slip.size.en==="Large");
   const S=big?1.22:1;
@@ -23147,119 +23149,143 @@ function _cafeBuildOrder(o,parent){
   }
   try{ _octDirty(); }catch(e){}
   return R; }
+/* =====================================================================
+   v295 (Giacomo: «il pick-up avviene con l'avatar troppo lontano, si vedono
+   le tazzine volare. Il tray deve essere davanti allo sgabello; se riesci a
+   farlo sedere sopra lo sgabello sarebbe l'ideale»).
+   ORA SI CONSUMA SEDUTI AL BANCONE:
+   · il vassoio compare sul bordo del bancone davanti allo SGABELLO piu'
+     vicino a te (tre sgabelli a z locale -2.2 / 0 / +2.2, sul lato
+     cliente del piano a x 0.63: 13 cm dal bordo, a portata di mano);
+   · E = ti siedi su quello sgabello (stessa posa seduta del diner e delle
+     panchine, piedi sul poggiapiedi ad anello), girato verso il bancone;
+   · tazza e cibo fanno mezzo metro, dal vassoio alla bocca di chi e'
+     seduto li' davanti: niente piu' volo attraverso il locale;
+   · il corpo resta fermo (in prima persona gira solo la testa, come da
+     seduti al diner); il primo passo = ti alzi, posi tutto sul vassoio,
+     E di nuovo ti rimette a sedere e si riprende da dove eri;
+   · finito, il barista saluta: «Bye!» e ti alzi, lui ritira il vassoio.
+   ===================================================================== */
+const CAFE_STOOLS=[-2.2,0,2.2];          // z locali degli sgabelli (x locale 0.1), vedi cafe()
+const CAFE_SEAT_Y=0.86, CAFE_FOOT_Y=0.34, CAFE_TRAY_X=0.65;
+/* il vassoio (0.28 x 0.44) davanti a ciascuno sgabello, misurato fra gli
+   oggetti del bancone: il primo scosta di 6 cm dalla vetrina dei dolci */
+const CAFE_TRAY_Z=[-2.26,0,2.2];
+function _cafeStoolW(P){ return new BABYLON.Vector3(P.spot.x+0.1, 0, P.spot.z+CAFE_STOOLS[P.stool]); }
 function cafeServe(npc,o){
   cafeClear();
   const spot=_cafeSpotOf(npc); if(!spot||!o) return;
   const P=CAFE_PICK; P.npc=npc; P.o=o; P.spot=spot; P.st="making";
+  /* lo sgabello piu' vicino a dove sei adesso */
+  let bi=1, bd=1e9; CAFE_STOOLS.forEach((zs,i)=>{ const d=Math.hypot(player.position.x-(spot.x+0.1), player.position.z-(spot.z+zs)); if(d<bd){ bd=d; bi=i; } });
+  P.stool=bi;
   P.timer=setTimeout(()=>{ P.timer=null;
     const n=new BABYLON.TransformNode("cafeOrder",scene); n.parent=townRoot;
-    n.position.set(spot.x+0.95, spot.y+1.18, spot.z-0.22); P.node=n;
+    /* bevanda e piatto affiancati lungo il bancone, davanti a chi siede */
+    n.position.set(spot.x+CAFE_TRAY_X, spot.y+1.18, spot.z+CAFE_TRAY_Z[bi]); P.node=n;
     P.parts=_cafeBuildOrder(o,n); P.st="ready";
-    try{ toast("☕ "+(npc.name||"The barista")+": “Here you are! It's on the counter.”"); }catch(e){}
-    P.inter=addInteract({ id:"cafePickup", area:"town", radius:3.2,
-      pos:()=>P.node?P.node.getAbsolutePosition():new BABYLON.Vector3(0,-99,0),
-      prompt:'☕ Press <b>E</b> to <b>take your order</b>',
-      interact:cafeTake });
+    const nS=4, nB=P.parts.food?3:0, steps=[];
+    for(let i=0;i<Math.max(nS,nB);i++){ if(i<nS) steps.push("sip"); if(i<nB) steps.push("bite"); }
+    P.seq={ steps, k:0, nS, nB, cnt:{sip:0,bite:0} };
+    try{ toast("☕ "+(npc.name||"The barista")+": “Here you are! Have a seat.”"); }catch(e){}
+    _cafeOffer('☕ Press <b>E</b> to <b>sit down</b> and have your order');
     /* se non lo prendi, dopo un paio di minuti il barista lo ritira */
     P.timer=setTimeout(()=>{ if(P.st==="ready") cafeClear(); },150000);
   },1400); }
-/* ⚠️ v294 (Giacomo: «se mi giro si vede che il cibo o il drink si sposta
-   come se volasse; l'avatar deve rimanere girato mentre prende il cibo»).
-   Mentre consumi sei AL BANCONE come da seduti al diner:
-   · il corpo resta girato verso il vassoio (CAFE_PICK.face). In prima persona
-     la testa gira di lato fino a POV_SEAT_TURN, come seduti (_povSeated), ma
-     il corpo — e quindi la bocca a cui va la tazza — non si muove;
-   · la bocca si calcola da quell'angolo FISSO, mai da rotation.y del momento;
-   · il primo passo (WASD, stick o tocco a terra) = posi tazza e cibo sul
-     vassoio e ti allontani: niente resta a mezz'aria. Tornando, E riprende
-     da dove eri rimasto (sorsi e morsi gia' fatti restano fatti). */
+function _cafeOffer(prompt){ const P=CAFE_PICK;
+  if(P.inter){ try{ removeInteract(P.inter); }catch(e){} }
+  P.inter=addInteract({ id:"cafePickup", area:"town", radius:3.2,
+    pos:()=>P.node?P.node.getAbsolutePosition():new BABYLON.Vector3(0,-99,0),
+    prompt:prompt, interact:cafeTake }); }
+/* la bocca di chi e' seduto: sopra l'anca, gli occhi scesi quanto il corpo */
 function _cafeMouth(){ const P=CAFE_PICK, ry=(P.face!=null)?P.face:player.rotation.y;
-  return new BABYLON.Vector3(player.position.x+Math.sin(ry)*0.24, player.position.y+AVATAR_HEIGHT*0.86, player.position.z+Math.cos(ry)*0.24); }
-function _cafeFaceTray(){ const P=CAFE_PICK, n=P.node; if(!n) return;
-  P.face=Math.atan2(n.position.x-player.position.x, n.position.z-player.position.z);
-  player.rotation.y=P.face;
-  try{ if(typeof POV!=="undefined" && POV.on){ camera.alpha=-P.face-Math.PI/2; camera.inertialAlphaOffset=0; camera.beta=Math.PI/2+0.05; } }catch(e){} }
+  const drop=(typeof SIT!=="undefined" && SIT.on)?SIT.drop:0;
+  return new BABYLON.Vector3(player.position.x+Math.sin(ry)*0.13, player.position.y+AVATAR_HEIGHT*0.86-drop, player.position.z+Math.cos(ry)*0.13); }
+/* seduti sullo sgabello, girati verso il bancone (+x) */
+function _cafeSit(){ const P=CAFE_PICK; if(!P.spot) return false;
+  if((typeof DINER!=="undefined" && DINER.seat) || (typeof BSIT!=="undefined" && BSIT.b)) return false;
+  const S=_cafeStoolW(P), f=new BABYLON.Vector3(1,0,0), gy=(P.gy!=null)?P.gy:player.position.y;
+  P.gy=gy; P.face=Math.PI/2;
+  moveTarget=null; pendingInteract=null; try{ tapMark.setEnabled(false); }catch(e){}
+  player.position.set(S.x,gy,S.z); player.rotation.y=P.face; player.computeWorldMatrix(true);
+  playAvatarAnim(IDLE_ANIM);
+  const off=playerSit(f,P.spot.y+CAFE_SEAT_Y,P.spot.y+CAFE_FOOT_Y);
+  if(off){ player.position.x=S.x-f.x*0.03-off.x; player.position.z=S.z-off.z; }
+  P.seated=true;
+  try{ if(typeof POV!=="undefined" && POV.on){ camera.alpha=-P.face-Math.PI/2; camera.inertialAlphaOffset=0; camera.beta=Math.PI/2+0.12; } }catch(e){}
+  return true; }
+function cafeResit(){ const P=CAFE_PICK; if(P.seated){ P.seated=false; _cafeSit(); } }
+/* in piedi accanto allo sgabello, dalla parte dei clienti (fuori dal suo solido) */
+function _cafeStand(){ const P=CAFE_PICK; if(!P.seated) return;
+  playerStand(); P.seated=false;
+  const S=_cafeStoolW(P);
+  player.position.set(S.x-0.9, (P.gy!=null)?P.gy:player.position.y, S.z); player.rotation.y=P.face!=null?P.face:player.rotation.y; }
 function cafeTake(){
-  const P=CAFE_PICK; if(P.st!=="ready"||!P.node) return;
+  const P=CAFE_PICK; if((P.st!=="ready" && P.st!=="paused")||!P.node) return;
   if(P.inter){ removeInteract(P.inter); P.inter=null; }
   if(P.timer){ clearTimeout(P.timer); P.timer=null; }
-  const sp=P.spot, n=P.node, R=P.parts;
-  /* la fascia libera del bancone dal lato cliente: fra la vetrina dei dolci
-     (fino a z -0.48) e i barattoli dei biscotti (da z 1.99), saltando il
-     portatovaglioli (z 0.05..0.25) */
-  let lz=Math.max(-0.24,Math.min(1.76,player.position.z-sp.z));
-  if(lz>-0.18 && lz<0.48) lz=(lz<0.15)?-0.24:0.48;
-  P.slideFrom=n.position.clone(); P.slideTo=new BABYLON.Vector3(sp.x+0.65, n.position.y, sp.z+lz);
-  /* la sequenza: sorsi e morsi alternati; il segno (k, cnt) sopravvive alle pause */
-  const nS=4, nB=R.food?3:0, steps=[];
-  for(let i=0;i<Math.max(nS,nB);i++){ if(i<nS) steps.push("sip"); if(i<nB) steps.push("bite"); }
-  P.seq={ steps, k:0, nS, nB, cnt:{sip:0,bite:0} };
-  try{ toast("☕ Enjoy! · Buon appetito!"); }catch(e){}
-  _cafeRun(true); }
-/* E di nuovo sul vassoio dopo esserti allontanato: si riprende */
-function cafeResume(){ const P=CAFE_PICK; if(P.st!=="paused"||!P.node) return;
-  if(P.inter){ removeInteract(P.inter); P.inter=null; }
-  if(P.timer){ clearTimeout(P.timer); P.timer=null; }
-  _cafeRun(false); }
-/* ti muovi mentre consumi: tazza e cibo tornano SUL VASSOIO, subito */
+  if(!_cafeSit()) return;
+  if(P.st==="ready") try{ toast("☕ Enjoy! · Buon appetito!"); }catch(e){}
+  _cafeRun(); }
+/* ti muovi: ti alzi e posi tutto sul vassoio (o, se avevi finito, te ne vai) */
+function cafeLeaveSeat(){ const P=CAFE_PICK;
+  if(P.st==="eating") cafePause();
+  else if(P.seated) _cafeStand(); }
 function cafePause(){ const P=CAFE_PICK; if(P.st!=="eating") return;
   if(P.obs){ scene.onBeforeRenderObservable.remove(P.obs); P.obs=null; }
   const R=P.parts;
   [R&&R.drink, R&&R.food].forEach(g=>{ if(g&&g.__home){ g.position.copyFrom(g.__home); g.rotation.z=0; } });
-  if(P.node && P.slideTo) P.node.position.copyFrom(P.slideTo);
-  P.st="paused"; P.face=null;
-  P.inter=addInteract({ id:"cafePickup", area:"town", radius:3.2,
-    pos:()=>P.node?P.node.getAbsolutePosition():new BABYLON.Vector3(0,-99,0),
-    prompt:'☕ Press <b>E</b> to <b>finish your order</b>', interact:cafeResume });
+  _cafeStand();
+  P.st="paused";
+  _cafeOffer('☕ Press <b>E</b> to <b>sit down</b> and <b>finish your order</b>');
   /* se non torni, il barista ritira tutto */
   P.timer=setTimeout(()=>{ if(P.st==="paused") cafeClear(); },60000); }
-function _cafeRun(slide){
+function _cafeRun(){
   const P=CAFE_PICK, n=P.node, R=P.parts, Q=P.seq; if(!n||!R||!Q) return;
   P.st="eating";
   [R.drink,R.food].forEach(g=>{ if(g && !g.__home) g.__home=g.position.clone(); });
-  if(slide) _cafeFaceTray();
-  let t0=performance.now(), phase=slide?"slide":"turn", cur=null, target=null;
+  let t0=performance.now(), phase="wait", cur=null, target=null;
   P.obs=scene.onBeforeRenderObservable.add(()=>{
     const now=performance.now();
     if(area!=="town"){ cafePause(); return; }
-    /* il corpo resta girato verso il vassoio. In prima persona ci pensa
-       _povBody (testa libera, corpo fermo); da fuori lo si tiene qui. */
+    /* il corpo resta girato verso il bancone. In prima persona ci pensa
+       _povBody (seduti: gira la testa, non il corpo); da fuori lo si tiene qui. */
     if(P.face!=null && !(typeof POV!=="undefined" && POV.on)) player.rotation.y=P.face;
-    if(phase==="slide"){ let u=(now-t0)/450; if(u>1) u=1; const e=u*u*(3-2*u);
-      BABYLON.Vector3.LerpToRef(P.slideFrom,P.slideTo,e,n.position);
-      if(u>=1){ _cafeFaceTray(); phase="wait"; t0=now; } return; }
-    if(phase==="turn"){ _cafeFaceTray(); phase="wait"; t0=now; return; }
-    if(phase==="wait"){ if(now-t0>500){ if(Q.k>=Q.steps.length){ phase="done"; _cafeDone(); return; }
+    if(phase==="wait"){ if(now-t0>(Q.k?500:900)){ if(Q.k>=Q.steps.length){ phase="done"; _cafeDone(); return; }
         const what=Q.steps[Q.k]; cur=(what==="sip")?R.drink:R.food; if(!cur){ Q.k++; t0=now; return; }
         cur.__what=what; phase="up"; t0=now;
         /* il bersaglio si fissa UNA volta per gesto: corpo fermo, bocca ferma */
         const inv=BABYLON.Matrix.Invert(n.getWorldMatrix()), mL=BABYLON.Vector3.TransformCoordinates(_cafeMouth(),inv);
-        target=mL.add(new BABYLON.Vector3(0,(what==="sip")?-0.06:-0.1,0)); } return; }
+        target=mL.add(new BABYLON.Vector3(0,(what==="sip")?-0.05:-0.09,0)); } return; }
     if(!cur) return;
     const home=cur.__home;
-    if(phase==="up"){ let u=(now-t0)/650; if(u>1) u=1; const e=u*u*(3-2*u);
+    /* la tazza si inclina verso chi beve (che sta a -x) */
+    const tilt=(cur.__what==="sip")?0.55:0;
+    if(phase==="up"){ let u=(now-t0)/600; if(u>1) u=1; const e=u*u*(3-2*u);
       BABYLON.Vector3.LerpToRef(home,target,e,cur.position);
-      cur.rotation.z=(cur.__what==="sip")?0.55*e:0;
+      cur.rotation.z=tilt*e;
       if(u>=1){ phase="hold"; t0=now; Q.k++;
         const c=Q.cnt; c[cur.__what]++;
         if(cur.__what==="sip" && R.level){ const f=Math.max(0.04,1-c.sip/Q.nS), L=R.level;
           L.scaling.y=f; L.position.y=L.__y0+L.__h*f/2; R.bits.forEach(b=>{ if(b.material!==_cafePickMats().cream||c.sip>1) b.setEnabled(false); }); }
         if(cur.__what==="bite" && R.bite){ const f=Math.max(0,1-c.bite/Q.nB); R.bite.scaling.setAll(Math.max(0.001,f)); if(f<=0) R.bite.setEnabled(false); } } return; }
-    if(phase==="hold"){ if(now-t0>600){ phase="down"; t0=now; } return; }
+    if(phase==="hold"){ if(now-t0>650){ phase="down"; t0=now; } return; }
     if(phase==="down"){ let u=(now-t0)/550; if(u>1) u=1; const e=u*u*(3-2*u);
-      BABYLON.Vector3.LerpToRef(target,home,e,cur.position); cur.rotation.z=(cur.__what==="sip")?0.55*(1-e):0;
+      BABYLON.Vector3.LerpToRef(target,home,e,cur.position); cur.rotation.z=tilt*(1-e);
       if(u>=1){ cur.position.copyFrom(home); cur.rotation.z=0; cur=null; phase="wait"; t0=now; } return; }
   }); }
 function _cafeDone(){ const P=CAFE_PICK;
   if(P.obs){ scene.onBeforeRenderObservable.remove(P.obs); P.obs=null; }
-  P.st="done"; P.face=null;
+  P.st="done";
   const npc=P.npc;
+  const bye=()=>{ _cafeStand(); if(P.timer) clearTimeout(P.timer); P.timer=setTimeout(cafeClear,1500); };
   DialogueBox.open({ npc, icon:"☕", sub:(P.o&&P.o.luogo&&P.o.luogo.nome)||"Café",
     text:"All done? I hope you enjoyed it! Have a nice day!",
     italian:"Finito? Spero ti sia piaciuto! Buona giornata!",
-    buttons:[{ label:"\u{1F44B} It was lovely, thanks! Bye!", cls:"primary", act:()=>{} }] });
-  /* il barista ritira il vassoio: il bancone torna vuoto, e tu te ne vai */
-  P.timer=setTimeout(cafeClear,2500); }
+    buttons:[{ label:"\u{1F44B} It was lovely, thanks! Bye! (stand up)", cls:"primary", act:bye },
+             { label:"Stay a bit", cls:"ghost", act:()=>{} }] });
+  /* chi resta seduto: il barista ritira comunque il vassoio vuoto */
+  P.timer=setTimeout(()=>{ if(P.node){ try{ P.node.dispose(false,false); }catch(e){} P.node=null; } },4000); }
 /* I due clienti non vendono niente: sono li' per essere parlati. Stessa
    porta degli altri NPC di citta' — ambient, domande, e basta. */
 function talkToCafeGuest(npc,icon,who){
@@ -35094,7 +35120,7 @@ function _povHead(mode){
    fino a un certo punto. */
 const POV_SEAT_TURN=1.5;       // quanto si gira la testa da seduti (rad, per lato)
 function _povSeated(){ return (typeof DINER!=="undefined" && DINER.seat) || (typeof BSIT!=="undefined" && BSIT.b) || (typeof SIT!=="undefined" && SIT.on)
-  || (typeof CAFE_PICK!=="undefined" && CAFE_PICK.st==="eating" && CAFE_PICK.face!=null); }   // v294: al bancone del caffe' il corpo resta fermo
+  || (typeof CAFE_PICK!=="undefined" && CAFE_PICK.seated); }   // v295: seduti sullo sgabello del caffe' 
 function _povBody(){
   if(_povSeated()){
     const a0=-player.rotation.y-Math.PI/2;
@@ -35309,7 +35335,7 @@ function clampArea(){ const c=area==="home"?HOME_C:(area==="cinema"?CINEMA_C:(ar
 function move(nx,nz,spd){
   if(typeof DINER!=="undefined" && DINER.seat) return false;   // v288: seduti al diner non si cammina (E per alzarsi)
   if(typeof BSIT!=="undefined" && BSIT.b) benchStand(true);     // v291: dalla panchina il primo passo ti rimette in piedi
-  if(typeof CAFE_PICK!=="undefined" && CAFE_PICK.st==="eating") cafePause();   // v294: al caffe' il primo passo posa tazza e cibo sul vassoio
+  if(typeof CAFE_PICK!=="undefined" && CAFE_PICK.seated) cafeLeaveSeat();   // v295: al caffe' il primo passo ti alza dallo sgabello (tazza e cibo sul vassoio)
   spd=spd||PLAYER_SPEED;
   const ox=player.position.x, oz=player.position.z;
   const px=ox+nx*spd, pz=oz+nz*spd;
