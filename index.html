@@ -908,8 +908,19 @@ function rainGust(dt){
    \"town\" aggiunge una riga qui. I valori vengono dalle costanti di
    buildAirport (RX=2, HW=60, zFront=-82, zBack=-150) piu' il mezzo metro di
    sporgenza del tetto, che e' largo HW+2. */
+/* v293 (Giacomo, 30 set: «piove dentro il ristorante»). Il Sunny Side
+   Diner (v288) e il Town Café sotto la tettoia stanno in "town" come il
+   terminal, ma nessuno li aveva aggiunti qui: sotto la veranda il
+   giocatore si prendeva l'acquazzone. `h` e' la quota del tetto: le gocce
+   che ci arrivano sotto si spengono anche quando il giocatore e' FUORI e il
+   sistema e' acceso (vedi rainBuild), cosi' dalla strada non si vede
+   piovere dentro la veranda. Veranda del diner x -7.4..7.4 z 23.8..37.2
+   (tetto a 3.3), cucina fino a 40.4; tettoia del café 9.4 x 8.6 centrata
+   a CAFE_XZ + (-0.6, 0), a 3.0 m. */
 const RAIN_COPERTO=[
-  { id:"terminal", x0:-29, x1:33, z0:-150, z1:-82 },   // hall del City Airport
+  { id:"terminal", x0:-29, x1:33, z0:-150, z1:-82, h:12 },   // hall del City Airport
+  { id:"diner",    x0:-7.6, x1:7.6, z0:23.6, z1:40.6, h:4.4 },  // Sunny Side Diner (veranda + cucina)
+  { id:"cafe",     x0:66.2, x1:76.6, z0:-4.5, z1:4.5, h:3.1 },  // Town Café, sotto la tettoia
 ];
 function rainCovered(x,z){
   for(let i=0;i<RAIN_COPERTO.length;i++){ const r=RAIN_COPERTO[i];
@@ -3293,7 +3304,21 @@ const SKY_CLOUDS=(function(){
       puffs.push({ dx:(j-(np-1)/2)*base*0.8+(Math.random()*10-5),
                    dy:(Math.random()*12-6), r:base*(0.8+Math.random()*0.6) });
     }
-    arr.push({x:cx,y:cy,a:a,puffs:puffs});
+    arr.push({x:cx,y:cy,a:a,puffs:puffs,flat:(Math.random()<0.45?0.4+Math.random()*0.25:0.75+Math.random()*0.25)});
+  }
+  return arr;
+})();
+/* v293: CIRRI — veli alti, a pennellate sottili e curve, quasi trasparenti.
+   Sono loro che danno profondita' al cielo: le nuvole 3D stanno a 40 m, i
+   cirri «a dieci chilometri», dipinti nella cupola. */
+const SKY_CIRRUS=(function(){
+  const arr=[], W=SKY_W, H=SKY_H, N=7;
+  for(let i=0;i<N;i++){
+    const x=Math.random()*W, y=H*(0.06+Math.random()*0.22), len=90+Math.random()*170, ang=(Math.random()-0.5)*0.5;
+    const strokes=[]; const ns=10+((Math.random()*10)|0);
+    for(let j=0;j<ns;j++) strokes.push({ o:(Math.random()-0.5)*26, t0:Math.random()*0.3, t1:0.6+Math.random()*0.4,
+      bend:(Math.random()-0.5)*18, w:1+Math.random()*2.6, a:0.05+Math.random()*0.10, hook:(Math.random()<0.4)?(Math.random()-0.5)*14:0 });
+    arr.push({x,y,len,ang,strokes});
   }
   return arr;
 })();
@@ -3305,13 +3330,26 @@ function drawSky(c,t,m,b){
   const cr=Math.round(255*Math.min(1,mc.r*0.55+0.40)),
         cg=Math.round(255*Math.min(1,mc.g*0.55+0.40)),
         cb=Math.round(255*Math.min(1,mc.b*0.55+0.40));
-  for(const cl of SKY_CLOUDS){ for(const p of cl.puffs){
-    const x=cl.x+p.dx, y=cl.y+p.dy, r=p.r, rg=c.createRadialGradient(x,y,0,x,y,r);
+  /* cirri prima (stanno «dietro»), poi i cumuli lontani */
+  c.save(); c.lineCap="round";
+  for(const ci of SKY_CIRRUS){
+    c.save(); c.translate(ci.x,ci.y); c.rotate(ci.ang);
+    for(const k of ci.strokes){
+      const x0=-ci.len/2+ci.len*k.t0, x1=-ci.len/2+ci.len*k.t1;
+      c.strokeStyle="rgba("+cr+","+cg+","+cb+","+k.a.toFixed(3)+")"; c.lineWidth=k.w;
+      c.beginPath(); c.moveTo(x0,k.o); c.quadraticCurveTo((x0+x1)/2,k.o+k.bend,x1,k.o+k.hook); c.stroke(); }
+    c.restore(); }
+  c.restore();
+  for(const cl of SKY_CLOUDS){
+    c.save(); c.translate(cl.x,cl.y); c.scale(1,cl.flat||1);
+    for(const p of cl.puffs){
+    const x=p.dx, y=p.dy, r=p.r, rg=c.createRadialGradient(x,y-r*0.25,0,x,y,r);
     rg.addColorStop(0,   "rgba("+cr+","+cg+","+cb+","+(0.9*cl.a).toFixed(3)+")");
     rg.addColorStop(0.55,"rgba("+cr+","+cg+","+cb+","+(0.45*cl.a).toFixed(3)+")");
     rg.addColorStop(1,   "rgba("+cr+","+cg+","+cb+",0)");
     c.fillStyle=rg; c.beginPath(); c.arc(x,y,r,0,Math.PI*2); c.fill();
-  } }
+    }
+    c.restore(); }
 }
 
 /* ---- CIELO (cupola con gradiente, non toccata dalla nebbia) ---- */
@@ -4344,7 +4382,11 @@ function updateDayNight(dt){ if(!DAY.enabled) return;
       if(rainF>0){ const rk=0.78*rainF;
         cD=lerpHex(cD,"#59626b",rk); cE=lerpHex(cE,"#6b7681",rk); }
       cloudMat.diffuseColor=BABYLON.Color3.FromHexString(cD);
-      cloudMat.emissiveColor=BABYLON.Color3.FromHexString(cE); } } }
+      cloudMat.emissiveColor=BABYLON.Color3.FromHexString(cE);
+      /* v293: la pancia delle nuvole, un tono sotto (piu' scura con la pioggia) */
+      if(typeof cloudMatLo!=="undefined" && cloudMatLo){ const kL=0.92-0.10*rainF;
+        cloudMatLo.diffuseColor=cloudMat.diffuseColor.scale(kL);
+        cloudMatLo.emissiveColor=cloudMat.emissiveColor.scale(kL); } } } }
 
 /* ---- CARTELLI GUI (testo 2D: non si specchia MAI) ---- */
 let adt=null; const labels=[];
@@ -5613,78 +5655,153 @@ function lamp(x,z){ if(insideSolid(x,z,1.4)) return; const pole=BABYLON.MeshBuil
    Ombra a terra: proxy sferico che scrive SOLO nella shadow map (colorWrite
    e depthWrite disattivati nel render normale), cosi' l'ombra deriva ancora. */
 const cloudList=[];
+/* v293 (Giacomo: «fai le nuvole piu' varie e realistiche»). Tre cose:
+   1. OMBREGGIATURA nella texture: prima il batuffolo era bianco piatto
+      (solo alpha). Ora ha una seconda texture di colore — cima luminosa,
+      pancia grigio-azzurra, orlo appena piu' chiaro controluce — e la base
+      e' TAGLIATA piatta come nei cumuli veri (condensano a una quota).
+      Due texture separate e non una con l'alpha: una diffuseTexture con
+      alpha accenderebbe l'alpha-test e i bordi tornerebbero seghettati.
+   2. QUATTRO FORME: cumulo (cupola sopra una base larga), cumulo alto
+      (torre a cavolfiore), strato (lungo e basso, batuffoli schiacciati) e
+      batuffoli di bel tempo (piccoli, sparsi). Ognuna con la sua quota,
+      dimensione e velocita'.
+   3. I batuffoli BASSI di ogni nuvola usano un materiale piu' scuro
+      (cloudMatLo): da sotto una nuvola e' sempre piu' grigia che da sopra.
+   L'atlas resta 2x2: tre varianti di batuffolo e una di velo sfilacciato
+   (quadrante 1,1) per gli strati. */
 const cloudTex=(function(){
-  const S=512, Q=256;                       // atlas 2x2 -> 4 varianti di batuffolo
+  const S=512, Q=256;
   const dt=new BABYLON.DynamicTexture("cloudTex",{width:S,height:S},scene,true);
+  const st=new BABYLON.DynamicTexture("cloudShade",{width:S,height:S},scene,true);
   const ctx=dt.getContext(), img=ctx.createImageData(S,S), d=img.data;
+  const ctx2=st.getContext(), img2=ctx2.createImageData(S,S), d2=img2.data;
   const hash=(x,y)=>{ const s=Math.sin(x*127.1+y*311.7)*43758.5453; return s-Math.floor(s); };
   const vnoise=(x,y)=>{ const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy,
       u=fx*fx*(3-2*fx),v=fy*fy*(3-2*fy),
       a=hash(ix,iy),b=hash(ix+1,iy),c2=hash(ix,iy+1),e=hash(ix+1,iy+1);
     return a+(b-a)*u+(c2-a)*v+(a-b-c2+e)*u*v; };
-  const fbm=(x,y)=>{ let f=0,amp=0.5,fr=1; for(let o=0;o<4;o++){ f+=amp*vnoise(x*fr,y*fr); amp*=0.5; fr*=2.07; } return f; };
+  const fbm=(x,y,o)=>{ let f=0,amp=0.5,fr=1; for(let k=0;k<(o||5);k++){ f+=amp*vnoise(x*fr,y*fr); amp*=0.5; fr*=2.07; } return f; };
   for(let qy=0;qy<2;qy++) for(let qx=0;qx<2;qx++){
-    const seed=(qx*2+qy)*37.7;
+    const v=qx*2+qy, seed=v*37.7, veil=(v===3);
     for(let py=0;py<Q;py++) for(let px=0;px<Q;px++){
-      const nx=(px/Q)*2-1, ny=(py/Q)*2-1;               // -1..1 nel quadrante
-      const n=fbm(nx*3.1+seed, ny*3.1+seed*1.31);
-      const r=Math.sqrt(nx*nx+ny*ny*1.55);              // batuffolo un filo schiacciato
-      const edge=r+(n-0.5)*0.75;                        // bordo eroso dal rumore
-      let a=1-(edge-0.30)/0.55; a=Math.max(0,Math.min(1,a)); a=a*a*(3-2*a);
-      a*=0.55+0.55*n; if(a>1)a=1;
+      const nx=(px/Q)*2-1, ny=(py/Q)*2-1;                // ny: -1 in alto, +1 in basso
+      const n=fbm(nx*(veil?2.2:2.7)+seed, ny*(veil?5.5:2.7)+seed*1.31);
+      let r, a;
+      if(veil){                                          // velo: lungo, sfilacciato, niente base netta
+        r=Math.sqrt(nx*nx*0.9+ny*ny*3.2);
+        const edge=r+(n-0.5)*1.0;
+        a=1-(edge-0.18)/0.62; a=Math.max(0,Math.min(1,a)); a=a*a*(3-2*a); a*=0.35+0.65*n;
+      } else {
+        r=Math.sqrt(nx*nx+ny*ny*1.45);
+        if(ny>0.30) r+=(ny-0.30)*(1.1+0.5*v);          // base piatta: sotto si taglia
+        const edge=r+(n-0.5)*0.7;
+        a=1-(edge-0.30)/0.50; a=Math.max(0,Math.min(1,a)); a=a*a*(3-2*a);
+        a*=0.86+0.34*n; if(a>1) a=1;
+      }
+      /* luce: dall'alto. up 1 in cima, 0 alla base. La texture di dettaglio
+         (n) incide un po' di piu' in basso, dove i cumuli sono «ribolliti». */
+      const up=Math.max(0,Math.min(1,(0.9-ny)/1.7));
+      let sh=0.80+0.26*Math.pow(up,0.9)+(n-0.5)*(veil?0.06:0.16);
+      const rim=Math.max(0,Math.min(1,(r-0.55)/0.35));    // orlo sottile: la luce lo attraversa
+      sh+=0.06*rim*up; sh=Math.max(0.68,Math.min(1,sh));
       const i=(((qy*Q+py)*S)+(qx*Q+px))*4;
       d[i]=255; d[i+1]=255; d[i+2]=255; d[i+3]=Math.round(a*255);
+      d2[i]=Math.round(255*Math.min(1,sh*0.975)); d2[i+1]=Math.round(255*Math.min(1,sh*0.985)); d2[i+2]=Math.round(255*Math.min(1,sh*1.04)); d2[i+3]=255;
     } }
-  ctx.putImageData(img,0,0); dt.update(); dt.hasAlpha=true; return dt;
+  ctx.putImageData(img,0,0); dt.update(); dt.hasAlpha=true;
+  ctx2.putImageData(img2,0,0); st.update();
+  dt.__shade=st; return dt;
 })();
-const cloudMat=(function(){ const m=new BABYLON.StandardMaterial("cloudM",scene);
+function _cloudMatMk(name,dif,emi){ const m=new BABYLON.StandardMaterial(name,scene);
   m.disableLighting=true;
-  m.diffuseColor=BABYLON.Color3.FromHexString("#ffffff");
-  m.emissiveColor=BABYLON.Color3.FromHexString("#f4f8fb");
+  m.diffuseTexture=cloudTex.__shade;
+  m.diffuseColor=BABYLON.Color3.FromHexString(dif);
+  m.emissiveColor=BABYLON.Color3.FromHexString(emi);
   m.specularColor=new BABYLON.Color3(0,0,0);
-  m.opacityTexture=cloudTex; m.backFaceCulling=false; return m; })();
+  m.opacityTexture=cloudTex; m.backFaceCulling=false; return m; }
+const cloudMat=_cloudMatMk("cloudM","#ffffff","#f4f8fb");
+const cloudMatLo=_cloudMatMk("cloudMLo","#eaedf1","#e1e6ec");     // pancia: sempre un tono sotto
 const cloudShadowMat=(function(){ const m=new BABYLON.StandardMaterial("cloudShM",scene);
   m.disableLighting=true; m.disableColorWrite=true; m.disableDepthWrite=true; return m; })();
-function cloud(x,y,z,s){ const c=new BABYLON.TransformNode("cl",scene); c.parent=townRoot;
-  // grappolo di billboard sovrapposti: largo e basso, centro piu' pieno
-  const n=6+Math.floor(Math.random()*3);
-  for(let i=0;i<n;i++){
-    const fx=(n>1?(i/(n-1))*2-1:0);                      // -1..1 lungo la nuvola
-    const px=fx*4.6*s+(Math.random()-0.5)*1.6*s;
-    const py=(Math.random()-0.3)*1.1*s*(1-Math.abs(fx)*0.6);
-    const pz=(Math.random()-0.5)*2.2*s;
-    const D=(6.5+Math.random()*3.5)*s*(1-Math.abs(fx)*0.35);
-    const qx=Math.floor(Math.random()*2), qy=Math.floor(Math.random()*2);
-    let u0=qx*0.5,u1=u0+0.5; if(Math.random()<0.5){ const t=u0;u0=u1;u1=t; }  // variante specchiata
-    const b=BABYLON.MeshBuilder.CreatePlane("cb",{size:D,
-      frontUVs:new BABYLON.Vector4(u0,qy*0.5,u1,qy*0.5+0.5)},scene);
-    b.material=cloudMat; b.billboardMode=BABYLON.Mesh.BILLBOARDMODE_ALL;
-    b.position.set(px,py,pz); b.parent=c;
-    b.visibility=0.72+Math.random()*0.28;                // strati -> senso di profondita'
-    b.applyFog=false; b.isPickable=false;
-    if(typeof glowL!=="undefined"&&glowL&&glowL.addExcludedMesh) glowL.addExcludedMesh(b);
+/* un batuffolo: variante v dell'atlas (0-2 batuffoli, 3 velo) */
+function _cloudPuff(c,px,py,pz,D,v,flat,lo){
+  const qx=(v/2)|0, qy=v%2;
+  let u0=qx*0.5,u1=u0+0.5; if(Math.random()<0.5){ const t=u0;u0=u1;u1=t; }   // specchiata
+  const b=BABYLON.MeshBuilder.CreatePlane("cb",{size:D,frontUVs:new BABYLON.Vector4(u0,qy*0.5,u1,qy*0.5+0.5)},scene);
+  b.material=lo?cloudMatLo:cloudMat; b.billboardMode=BABYLON.Mesh.BILLBOARDMODE_ALL;
+  b.position.set(px,py,pz); b.parent=c; if(flat) b.scaling.y=flat;
+  b.visibility=0.78+Math.random()*0.22;
+  b.applyFog=false; b.isPickable=false;
+  if(typeof glowL!=="undefined"&&glowL&&glowL.addExcludedMesh) glowL.addExcludedMesh(b);
+  return b; }
+function cloud(x,y,z,s,kind){ const c=new BABYLON.TransformNode("cl",scene); c.parent=townRoot;
+  kind=kind||"cumulus";
+  const R=Math.random, P=(px,py,pz,D,v,flat,lo)=>_cloudPuff(c,px*s,py*s,pz*s,D*s,v,flat,lo);
+  const v3=()=>(R()*3)|0;
+  let shW=1, shD=0.8;
+  if(kind==="cumulus"){
+    /* base larga e piatta (batuffoli bassi, scuri), poi la cupola al centro */
+    const nb=5+((R()*3)|0);
+    for(let i=0;i<nb;i++){ const f=(i/(nb-1))*2-1;
+      P(f*5.2+(R()-0.5)*1.2, -0.4+R()*0.4, (R()-0.5)*2.4, 7.2+R()*2.8, v3(), 0.72, true); }
+    const nt=3+((R()*3)|0);
+    for(let i=0;i<nt;i++){ const f=(nt>1?(i/(nt-1))*2-1:0);
+      P(f*3.0+(R()-0.5)*1.4, 1.3+R()*1.3*(1-Math.abs(f)*0.5), (R()-0.5)*2.0, 7.4+R()*3.0, v3(), 0, false); }
+    if(R()<0.6) P((R()-0.5)*2, 3.0+R()*0.8, 0, 5.8+R()*2.0, v3(), 0, false);
+  } else if(kind==="congestus"){
+    /* torre: si stringe salendo, cima a cavolfiore */
+    const nb=4+((R()*2)|0);
+    for(let i=0;i<nb;i++){ const f=(i/(nb-1))*2-1; P(f*4.4, -0.3+R()*0.3, (R()-0.5)*2.4, 7.4+R()*2.0, v3(), 0.78, true); }
+    const lv=4+((R()*2)|0);
+    for(let j=1;j<=lv;j++){ const w=1-j/(lv+1.5), n=Math.max(1,Math.round(3*w+R()));
+      for(let i=0;i<n;i++){ const f=(n>1?(i/(n-1))*2-1:0);
+        P(f*3.4*w+(R()-0.5)*1.2, j*1.7+R()*0.4, (R()-0.5)*2.0*w, (6.0+R()*2.6)*(0.75+0.35*w), v3(), 0, j<2); } }
+    shW=0.9; shD=1.0;
+  } else if(kind==="strato"){
+    /* banco lungo e basso: veli schiacciati, un paio di grumi */
+    const n=6+((R()*4)|0);
+    for(let i=0;i<n;i++){ const f=(i/(n-1))*2-1;
+      P(f*11+(R()-0.5)*2.4, (R()-0.5)*0.6, (R()-0.5)*5, 12+R()*5, (R()<0.6)?3:v3(), 0.45+R()*0.12, R()<0.4); }
+    shW=2.1; shD=1.3;
+  } else {   // "puffs": batuffoli di bel tempo, piccoli e staccati
+    const n=2+((R()*3)|0);
+    for(let i=0;i<n;i++) P((R()-0.5)*5, (R()-0.5)*0.6, (R()-0.5)*3, 5.2+R()*2.6, v3(), (R()<0.5)?0.82:0, R()<0.3);
+    shW=0.6; shD=0.5;
   }
   // proxy-ombra: invisibile a camera e probe, ma caster opaco nella shadow map
   [[-1.8,1.15],[1.8,1.0]].forEach(o=>{
     const sp=BABYLON.MeshBuilder.CreateSphere("csh",{diameter:6.5,segments:6},scene);
-    sp.material=cloudShadowMat; sp.scaling.set(o[1]*s,o[1]*0.5*s,o[1]*0.8*s);
-    sp.position.set(o[0]*s,0,0); sp.parent=c; sp.isPickable=false; sp.applyFog=false;
+    sp.material=cloudShadowMat; sp.scaling.set(o[1]*s*shW,o[1]*0.5*s,o[1]*shD*s);
+    sp.position.set(o[0]*s*shW,0,0); sp.parent=c; sp.isPickable=false; sp.applyFog=false;
     sp.__occluder=true; });
   c.position.set(x,y,z);                                 // dimensioni gia' assorbite in s
-  c.__drift=0.6+Math.random()*0.6;                       // deriva lenta (u/s)
+  c.__kind=kind;
+  c.__drift=(kind==="strato"?0.35:(kind==="puffs"?0.9:0.55))+Math.random()*0.5;   // deriva lenta (u/s)
   cloudList.push(c); return c; }
 function buildLife(){
   [[-9,7],[9,7],[-9,-7],[9,-7],[-31,7],[31,7],[-31,-7],[31,-7]].forEach(p=>tree(p[0],p[1],true));
   [[-6,6],[6,6],[-6,-6],[6,-6],[-28,6],[28,6]].forEach(p=>lamp(p[0],p[1]));
   // nuvole distribuite su TUTTO il cielo: griglia 4x4 jitterata (copertura uniforme
   // in ogni quadrante), quota e scala variabili -> niente addensamenti da un lato
+  /* v293: ogni cella pesca una FORMA (cumuli i piu' comuni, poi batuffoli,
+     strati e qualche torre), con quota e scala sue: gli strati stanno piu'
+     alti e larghi, i batuffoli piu' bassi e piccoli. */
   (function(){ const NX=4, NZ=4, SPAN=150;
+    const KINDS=[["cumulus",0.42],["puffs",0.24],["strato",0.20],["congestus",0.14]];
+    const pick=()=>{ let r=Math.random(); for(const k of KINDS){ if((r-=k[1])<=0) return k[0]; } return "cumulus"; };
     for(let ix=0;ix<NX;ix++) for(let iz=0;iz<NZ;iz++){
       const cx=(ix/(NX-1)-0.5)*2*SPAN + (Math.random()*40-20);
       const cz=(iz/(NZ-1)-0.5)*2*SPAN + (Math.random()*40-20);
       if(Math.abs(cx)<26 && Math.abs(cz)<26) continue;   // buco sopra il centro città
-      const cy=38+Math.random()*11, sc=2.4+Math.random()*1.4;
-      cloud(cx,cy,cz,sc);
+      const k=pick();
+      const cy=(k==="strato"?46+Math.random()*8:(k==="puffs"?34+Math.random()*6:36+Math.random()*9));
+      const sc=(k==="puffs"?1.6+Math.random()*1.0:(k==="congestus"?2.6+Math.random()*0.8:2.2+Math.random()*1.4));
+      cloud(cx,cy,cz,sc,k);
+      /* qualche batuffolo in piu' accanto ai cumuli: il cielo vero non e'
+         una griglia di nuvole tutte uguali e tutte sole */
+      if(k==="cumulus" && Math.random()<0.45)
+        cloud(cx+(Math.random()<0.5?-1:1)*(22+Math.random()*10), 33+Math.random()*5, cz+(Math.random()-0.5)*20, 1.4+Math.random()*0.8, "puffs");
     } })();
 }
 
@@ -23284,8 +23401,14 @@ function buildClockSquare(cx,cz){
 }
 function buildClockNPCs(){
   if(clockNpcBuilt) return; clockNpcBuilt=true;
-  BELL=spawnNPC({ id:"bell", name:"Mr. Bell", sub:"Clockmaker", area:"town",
-    x:CLOCK_SQ.x-3.5, z:CLOCK_SQ.z+2.5, face:0, tint:"yellow", height:1.79, interact:talkToBell }); regTownPop(BELL);
+  /* v293 (Giacomo: «differenzia Mr. Bell, mettigli pantaloni lunghi»). Era
+     il rig del giocatore tinto "yellow": felpa e PANTALONCINI, identico a
+     mezza citta'. Ora Man_B (maniche lunghe e pantaloni lunghi, come il
+     sindaco) ma vestito da orologiaio di 61 anni: gilet color tabacco,
+     pantaloni di flanella grigio fumo, capelli bianchi, un filo piu' basso. */
+  BELL=spawnNPC({ id:"bell", name:"Mr. Bell", sub:"Clockmaker", area:"town", model:"npcMan2",
+    x:CLOCK_SQ.x-3.5, z:CLOCK_SQ.z+2.5, face:0, height:1.74,
+    tint:{ Shirt:"#7a5230", Pants:"#4b4a4f", Hair:"#dcdad4" }, interact:talkToBell }); regTownPop(BELL);
   RUBY=spawnNPC({ id:"ruby", name:"Ruby", sub:"Student", area:"town",
     x:CLOCK_SQ.x-5, z:CLOCK_SQ.z+10.5, face:0, model:"avatarW", tint:"red", height:1.62, interact:talkToRuby }); regTownPop(RUBY);
 }
@@ -34216,7 +34339,14 @@ function enterArea(target){
   else if(target==="subway"){ baseRadius=16; camera.beta=0.82; }
   else if(INTERIORS[target]){ baseRadius=6.0; camera.beta=1.22; }   // FASE 2: interni generici
   else { baseRadius=VIEW.radius; camera.beta=VIEW.beta; }   // citta': visuale base (tasto V / SHIFT+V)
-  camera.radius=baseRadius; camWish=baseRadius;
+  /* v293: in prima persona il raggio e la beta dell'area nuova vanno nella
+     visuale SALVATA (quella a cui si torna premendo O), non sulla camera:
+     altrimenti entrando in un luogo lo sguardo scattava verso il basso e,
+     uscendo dalla POV, si ritrovava la distanza del luogo di prima. */
+  if(typeof POV!=="undefined" && POV.on && POV.save){
+    POV.save.radius=baseRadius; POV.save.beta=camera.beta;
+    camera.beta=Math.PI/2-0.10; camera.radius=POV.r; }
+  else { camera.radius=baseRadius; camWish=baseRadius; }
   setLabelsVisible(target);
   updateProximity();
 }
@@ -35921,6 +36051,103 @@ function subAdArt(c,W,H,t){
 }
 
 /* ---- Piattaforma sotterranea (costruita on-demand alla prima entrata) ---- */
+/* v293 — MATERIALI DELLA METRO, disegnati una volta (0 KB di asset). */
+let _subT=null;
+function _subTex(){ if(_subT) return _subT;
+  const T={}, rnd=_seedRand("subway");
+  const dyn=(n,w,h,draw,alpha)=>{ const d=new BABYLON.DynamicTexture(n,{width:w,height:h},scene,true); const c=d.getContext(); draw(c,w,h); if(alpha) d.hasAlpha=true; d.update(); return d; };
+  const sm=(n,tex,o)=>{ o=o||{}; const m=new BABYLON.StandardMaterial(n,scene); if(tex){ m.diffuseTexture=tex; }
+    m.diffuseColor=o.dc||new BABYLON.Color3(1,1,1); m.specularColor=o.sc||new BABYLON.Color3(0.05,0.05,0.05); if(o.sp) m.specularPower=o.sp;
+    if(o.em) m.emissiveColor=o.em; if(o.emT) m.emissiveTexture=tex; return m; };
+  /* parete: la texture e' ALTA quanto il muro (7 m, da -1.2 a 5.8) e si
+     ripete solo in orizzontale. Dal basso: fuliggine sotto la banchina,
+     zoccolo di piastrelle verde scuro, fascia blu, piastrelle crema a
+     mattoncino, fascia blu, fascia scura sotto il soffitto. */
+  const wt=dyn("sWallTx",512,1024,(c,W,H)=>{
+    const Y=m=>H*(5.8-m)/7.0;                       // quota in metri -> pixel
+    c.fillStyle="#b9b19f"; c.fillRect(0,0,W,H);
+    const tiles=(y0,y1,th,tw,base,var_,grout)=>{ c.fillStyle=grout; c.fillRect(0,Y(y1),W,Y(y0)-Y(y1));
+      let row=0; for(let y=Y(y1);y<Y(y0)-0.5;y+=th,row++){ const off=(row%2)?tw/2:0;
+        for(let x=-tw;x<W+tw;x+=tw){ const k=1+(rnd()-0.5)*var_;
+          const b=BABYLON.Color3.FromHexString(base); c.fillStyle="rgb("+Math.round(b.r*255*k)+","+Math.round(b.g*255*k)+","+Math.round(b.b*255*k)+")";
+          c.fillRect(x+off+1.5,y+1.5,tw-3,Math.min(th,Y(y0)-y)-3);
+          c.fillStyle="rgba(255,255,255,0.18)"; c.fillRect(x+off+2,y+2,tw-5,2); } } };
+    tiles(1.25,4.55,14.6,32,"#e6dfcc",0.07,"#a79f8c");     // crema
+    tiles(0.0,1.05,14.6,32,"#2f5d4f",0.10,"#1f3a32");      // zoccolo verde
+    c.fillStyle="#1f4fb0"; c.fillRect(0,Y(1.25),W,Y(1.05)-Y(1.25));   // fasce blu della linea
+    c.fillStyle="#1f4fb0"; c.fillRect(0,Y(4.75),W,Y(4.55)-Y(4.75));
+    c.fillStyle="#f2f2ee"; c.fillRect(0,Y(1.25)+2,W,2); c.fillRect(0,Y(4.75)+2,W,2);
+    c.fillStyle="#2c3238"; c.fillRect(0,0,W,Y(4.75));      // sopra: intonaco scuro
+    c.fillStyle="#262a2e"; c.fillRect(0,Y(0.0),W,H-Y(0.0));  // sotto la banchina: cemento
+    // fuliggine: sale dai binari e sfuma sulle piastrelle
+    const g=c.createLinearGradient(0,Y(2.2),0,H); g.addColorStop(0,"rgba(30,26,22,0)"); g.addColorStop(0.55,"rgba(30,26,22,0.35)"); g.addColorStop(1,"rgba(12,10,8,0.85)");
+    c.fillStyle=g; c.fillRect(0,Y(2.2),W,H-Y(2.2));
+    for(let i=0;i<260;i++){ c.fillStyle="rgba(40,34,28,"+(0.04+rnd()*0.08).toFixed(3)+")"; const x=rnd()*W, y=Y(2.6)+rnd()*(H-Y(2.6)); c.fillRect(x,y,1+rnd()*3,4+rnd()*26); } });
+  wt.wrapU=BABYLON.Texture.WRAP_ADDRESSMODE; wt.wrapV=BABYLON.Texture.CLAMP_ADDRESSMODE; wt.uScale=51/3.2; wt.anisotropicFilteringLevel=8;
+  T.wall=sm("sWallTm",wt,{dc:new BABYLON.Color3(0.92,0.92,0.92),sc:new BABYLON.Color3(0.22,0.22,0.22),sp:40});
+  /* pilastri: piastrelle blu scure verticali */
+  const pt=dyn("sPilTx",64,256,(c,W,H)=>{ c.fillStyle="#1b2735"; c.fillRect(0,0,W,H);
+    for(let y=0;y<H;y+=16) for(let x=0;x<W;x+=32){ const k=0.9+rnd()*0.2; c.fillStyle="rgb("+Math.round(40*k)+","+Math.round(62*k)+","+Math.round(92*k)+")"; c.fillRect(x+1,y+1,30,14); } });
+  T.pil=sm("sPilTm",pt,{sc:new BABYLON.Color3(0.25,0.25,0.25),sp:48});
+  /* massicciata: pietrisco scuro con qualche riflesso */
+  const bt=dyn("sBalTx",256,256,(c,W,H)=>{ c.fillStyle="#1c1a18"; c.fillRect(0,0,W,H);
+    for(let i=0;i<2600;i++){ const v=Math.round(28+rnd()*52); c.fillStyle="rgb("+v+","+Math.round(v*0.96)+","+Math.round(v*0.9)+")";
+      c.beginPath(); c.arc(rnd()*W,rnd()*H,0.8+rnd()*2.4,0,Math.PI*2); c.fill(); } });
+  bt.wrapU=bt.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE; bt.uScale=2; bt.vScale=32;
+  T.ballast=sm("sBalTm",bt,{dc:new BABYLON.Color3(0.9,0.9,0.9)});
+  T.pit=mat("sPitm","#0b0c0d");
+  T.rail=sm("sRailTm",null,{dc:BABYLON.Color3.FromHexString("#6d747b"),sc:new BABYLON.Color3(0.7,0.7,0.72),sp:64});
+  T.rail3=sm("sRail3Tm",null,{dc:BABYLON.Color3.FromHexString("#8a7a55"),sc:new BABYLON.Color3(0.3,0.3,0.3),sp:32});
+  T.cope=sm("sCopeTm",null,{dc:BABYLON.Color3.FromHexString("#55595d"),sc:new BABYLON.Color3(0.15,0.15,0.15)});
+  T.alu=sm("sAluTm",null,{dc:BABYLON.Color3.FromHexString("#8d969e"),sc:new BABYLON.Color3(0.45,0.45,0.45),sp:48});
+  T.bin=sm("sBinTm",null,{dc:BABYLON.Color3.FromHexString("#b3262c"),sc:new BABYLON.Color3(0.3,0.3,0.3),sp:40});
+  T.strip=sm("sStripTm",null,{dc:new BABYLON.Color3(0.9,0.95,1),em:new BABYLON.Color3(0.78,0.85,0.92)});
+  /* fascia tattile: bolle chiare su fondo avorio */
+  const tt=dyn("sTactTx",64,64,(c,W,H)=>{ c.fillStyle="#d8cfa8"; c.fillRect(0,0,W,H);
+    for(let y=8;y<H;y+=16) for(let x=8;x<W;x+=16){ c.fillStyle="#b9ae84"; c.beginPath(); c.arc(x+1,y+1,5,0,Math.PI*2); c.fill();
+      c.fillStyle="#efe8c8"; c.beginPath(); c.arc(x,y,4.5,0,Math.PI*2); c.fill(); } });
+  tt.wrapU=tt.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE; tt.uScale=2; tt.vScale=90;
+  T.tact=sm("sTactTm",tt,{dc:new BABYLON.Color3(0.8,0.8,0.8)});
+  /* MIND THE GAP dipinto sul bordo */
+  const gt=dyn("sGapTx",512,64,(c,W,H)=>{ c.clearRect(0,0,W,H); c.fillStyle="rgba(245,245,240,0.92)"; c.font="bold 46px sans-serif";
+    c.textAlign="center"; c.textBaseline="middle"; c.fillText("MIND THE GAP",W/2,H/2+2); },true);
+  const gm=sm("sGapTm",gt,{dc:new BABYLON.Color3(0.9,0.9,0.9)}); gm.useAlphaFromDiffuseTexture=true; gm.zOffset=-2;
+  T.gap=gm;
+  /* orologio */
+  T.clock=mat("sClkm","#1c2126");
+  const ct=dyn("sClkTx",256,256,(c,W,H)=>{ c.fillStyle="#f4f1e8"; c.beginPath(); c.arc(128,128,124,0,Math.PI*2); c.fill();
+    c.strokeStyle="#1c2126"; c.lineWidth=10; c.stroke(); c.fillStyle="#1c2126";
+    for(let i=0;i<12;i++){ const a=i/12*Math.PI*2; c.save(); c.translate(128,128); c.rotate(a); c.fillRect(-4,-112,8,i%3?16:26); c.restore(); }
+    const hand=(a,l,w)=>{ c.save(); c.translate(128,128); c.rotate(a); c.fillRect(-w/2,-l,w,l+12); c.restore(); };
+    hand(Math.PI*2*(10.1/12),62,10); hand(Math.PI*2*(9/60),96,7); c.fillStyle="#c8323a"; hand(Math.PI*2*(35/60),100,3); });
+  T.clockF=sm("sClkFm",ct,{em:new BABYLON.Color3(0.35,0.35,0.35)});
+  /* tondo e tabellone: si ridisegnano a ogni fermata (_subRoundel) */
+  T.roundelTx=new BABYLON.DynamicTexture("sRndTx",{width:512,height:256},scene,true); T.roundelTx.hasAlpha=true;
+  T.roundel=sm("sRndTm",T.roundelTx,{em:new BABYLON.Color3(0.55,0.55,0.55),emT:true}); T.roundel.useAlphaFromDiffuseTexture=true;
+  T.indTx=new BABYLON.DynamicTexture("sIndTx",{width:512,height:84},scene,true);
+  T.ind=sm("sIndTm",T.indTx,{em:new BABYLON.Color3(1,1,1),emT:true,dc:new BABYLON.Color3(0,0,0)});
+  _subT=T; return T; }
+/* il tondo della fermata (cerchio rosso, barra blu col nome) e il
+   tabellone dei prossimi treni, in arancio su nero */
+function _subRoundel(st){ const T=_subTex(), name=(st&&st.name||"Metro").toUpperCase();
+  const c=T.roundelTx.getContext(), W=512, H=256;
+  c.clearRect(0,0,W,H);
+  c.fillStyle="#d0202e"; c.beginPath(); c.arc(W/2,H/2,118,0,Math.PI*2); c.fill();
+  c.fillStyle="#000"; c.globalCompositeOperation="destination-out"; c.beginPath(); c.arc(W/2,H/2,78,0,Math.PI*2); c.fill();
+  c.globalCompositeOperation="source-over";
+  c.fillStyle="#1d3f9e"; c.fillRect(20,H/2-30,W-40,60);
+  let fs=40; c.font="bold "+fs+"px sans-serif"; while(c.measureText(name).width>W-70 && fs>18){ fs-=2; c.font="bold "+fs+"px sans-serif"; }
+  c.fillStyle="#ffffff"; c.textAlign="center"; c.textBaseline="middle"; c.fillText(name,W/2,H/2+2);
+  T.roundelTx.update();
+  const i=T.indTx.getContext(), iw=512, ih=84;
+  i.fillStyle="#050505"; i.fillRect(0,0,iw,ih);
+  const others=METRO_STATIONS.filter(s=>!st||s.id!==st.id);
+  const a=others[0]||{name:"Metro"}, b=others[others.length-1]||a;
+  i.fillStyle="#ffa01e"; i.font="bold 24px monospace"; i.textBaseline="middle"; i.textAlign="left";
+  i.fillText("1 "+a.name,12,24); i.fillText("2 "+b.name,12,60);
+  i.textAlign="right"; i.fillText("2 min",iw-12,24); i.fillText("5 min",iw-12,60);
+  for(let y=0;y<ih;y+=3){ i.fillStyle="rgba(0,0,0,0.35)"; i.fillRect(0,y,iw,1); }   // puntini del display a matrice
+  T.indTx.update(); }
 function buildSubwayPlatform(){
   if(subwayBuilt) return; subwayBuilt=true;
   const C=SUBWAY_C, SR=subwayRoot;
@@ -35949,13 +36176,39 @@ function buildSubwayPlatform(){
   [-PW/2+0.34,PW/2-0.34].forEach(dx=>{
     const yl=BABYLON.MeshBuilder.CreateBox("sYL",{width:0.22,height:0.04,depth:PL-0.4},scene);
     yl.material=mat("sYLm","#e8b04b"); yl.position.set(C.x+dx,0.02,C.z); yl.parent=SR; });
+  /* v293 (Giacomo: «migliora grafica interni metro»). Prima la banchina era
+     un blocco grigio a tinta unita: ora pavimento in graniglia, cordolo di
+     pietra chiara sul bordo, fascia tattile a bolle dietro la linea gialla e
+     la scritta MIND THE GAP dipinta sul bordo, come nella Tube vera. Sono
+     tutti piani appoggiati SOPRA la banchina (non calpestabili, non
+     pickable): la quota del giocatore (y=0) non cambia. */
+  { const T=_subTex();
+    const fl=BABYLON.MeshBuilder.CreateGround("sPlatFl",{width:PW-0.2,height:PL},scene);
+    fl.material=floorMat("sPlatFlm",{style:"terrazzo",hex:"#9aa1a6",hex2:"#5d6a74",tile:2.4,spec:0.16},PW-0.2,PL);
+    fl.position.set(C.x,0.008,C.z); fl.parent=SR; fl.isPickable=false; fl.receiveShadows=true;
+    [-1,1].forEach(sg=>{
+      const cp=BABYLON.MeshBuilder.CreateBox("sCope",{width:0.34,height:0.05,depth:PL},scene);
+      cp.material=T.cope; cp.position.set(C.x+sg*(PW/2-0.17),0.0,C.z); cp.parent=SR; cp.isPickable=false;
+      const tk=BABYLON.MeshBuilder.CreateGround("sTact",{width:0.46,height:PL-0.4},scene);
+      tk.material=T.tact; tk.position.set(C.x+sg*(PW/2-0.72),0.014,C.z); tk.parent=SR; tk.isPickable=false;
+      [-15,-5,5,15].forEach(dz=>{
+        /* il testo guarda la banchina: la sua «testa» punta verso i binari */
+        const g=BABYLON.MeshBuilder.CreateGround("sGap",{width:2.2,height:0.26},scene);
+        g.material=T.gap; g.position.set(C.x+sg*(PW/2-0.14),0.03,C.z+dz); g.rotation.y=sg*Math.PI/2;
+        g.parent=SR; g.isPickable=false; }); }); }
   // binari (2 piste ai lati) + rotaie + traversine + treno in galleria
   [-(PW/2+TW/2+0.1),(PW/2+TW/2+0.1)].forEach((dx,si)=>{
     const tg=BABYLON.MeshBuilder.CreateGround("sTrk",{width:TW,height:PL+18},scene);
-    tg.material=mat("sTrkm","#0a0e12"); tg.position.set(C.x+dx,trkFloorY,C.z); tg.parent=SR;
+    tg.material=_subTex().ballast; tg.position.set(C.x+dx,trkFloorY,C.z); tg.parent=SR;
     [-0.82,0.82].forEach(rdx=>{
       const r=BABYLON.MeshBuilder.CreateBox("sRail",{width:0.1,height:0.16,depth:PL+18},scene);
-      r.material=mat("sRailm","#3a4650"); r.position.set(C.x+dx+rdx,trkFloorY+0.1,C.z); r.parent=SR; });
+      r.material=_subTex().rail; r.position.set(C.x+dx+rdx,trkFloorY+0.1,C.z); r.parent=SR; });
+    /* v293: terza rotaia (quella della corrente) su isolatori, e la fossa
+       di drenaggio fra le rotaie: la Tube si riconosce da questo */
+    { const tr3=BABYLON.MeshBuilder.CreateBox("sRail3",{width:0.09,height:0.12,depth:PL+18},scene);
+      const ox=(dx<0?-1.3:1.3); tr3.material=_subTex().rail3; tr3.position.set(C.x+dx+ox,trkFloorY+0.22,C.z); tr3.parent=SR;
+      const pit=BABYLON.MeshBuilder.CreateGround("sPit",{width:0.8,height:PL+18},scene);
+      pit.material=_subTex().pit; pit.position.set(C.x+dx,trkFloorY+0.012,C.z); pit.parent=SR; }
     for(let i=0;i<=PL/2+4;i++){
       const tie=BABYLON.MeshBuilder.CreateBox("sTie",{width:TW-0.3,height:0.08,depth:0.26},scene);
       tie.material=mat("sTiem","#1e1408"); tie.position.set(C.x+dx,trkFloorY+0.02,C.z-PL/2-4+i*2); tie.parent=SR; }
@@ -35984,10 +36237,15 @@ function buildSubwayPlatform(){
     const w=BABYLON.MeshBuilder.CreateBox("sWall",{width:0.55,height:TH+2.0,depth:PL+6},scene);
     w.material=mat("sWallm","#2b343e"); w.position.set(C.x+dx,(TH+2.0)/2-1.2,C.z); w.parent=SR; w.__occluder=true;
     addSolid(C.x+dx-0.4,C.x+dx+0.4,C.z-PL/2-3,C.z+PL/2+3,"subway"); });
-  // fascia piastrelle chiare a mezza altezza (dettaglio metro)
-  [-(TWT/2)+0.3,(TWT/2)-0.3].forEach(dx=>{
-    const tile=BABYLON.MeshBuilder.CreateBox("sTile",{width:0.06,height:1.4,depth:PL+5},scene);
-    tile.material=mat("sTilem","#cdd6df"); tile.position.set(C.x+dx,1.7,C.z); tile.parent=SR; });
+  /* v293: la parete di la' dai binari e' PIASTRELLATA come una stazione
+     vera — piastrelle crema a correre, zoccolo scuro, due fasce blu della
+     linea, fuliggine in basso vicino ai binari. Un piano per lato davanti
+     al muro (che resta il solido): prima c'era solo una fascia chiara alta
+     1,4 m su un muro grigio scuro. */
+  [-1,1].forEach(sg=>{
+    const wp=BABYLON.MeshBuilder.CreatePlane("sWallT",{width:PL+5,height:TH+2.0},scene);
+    wp.material=_subTex().wall; wp.position.set(C.x+sg*(TWT/2-0.29),(TH+2.0)/2-1.2,C.z);
+    wp.rotation.y=sg*Math.PI/2; wp.parent=SR; wp.isPickable=false; wp.__occluder=true; });
   /* ===== MANIFESTI PUBBLICITARI (richiesta di Giacomo, 23 ago): sotto
      terra, nello spazio che in una metro vera ospiterebbe le pubblicita',
      due annunci per i due locali serali della citta' — entrambi alle 20,
@@ -36053,21 +36311,65 @@ function buildSubwayPlatform(){
     adBuild("subAdGig",   "gig",    C.x+ADX, C.z+3.5, -Math.PI/2); }
   // ===== soffitto =====
   const ceil=BABYLON.MeshBuilder.CreateBox("sCeil",{width:TWT+1,height:0.5,depth:PL+6},scene);
-  ceil.material=mat("sCeilm","#1a212b"); ceil.position.set(C.x,TH+0.25,C.z); ceil.parent=SR; ceil.__occluder=true;
+  ceil.material=mat("sCeilm","#3b444d","#1c2126");   // v293: un filo di luce propria, se no e' un buco nero ceil.position.set(C.x,TH+0.25,C.z); ceil.parent=SR; ceil.__occluder=true;
   // archi + pilastri ogni 7m
   for(let i=-3;i<=3;i++){
     const az=C.z+i*7;
     const ar=BABYLON.MeshBuilder.CreateBox("sArch",{width:TWT+0.2,height:0.4,depth:0.45},scene);
-    ar.material=mat("sArchm","#222d38"); ar.position.set(C.x,TH-0.1,az); ar.parent=SR; ar.__occluder=true;
+    ar.material=mat("sArchm","#4a5560"); ar.position.set(C.x,TH-0.1,az); ar.parent=SR; ar.__occluder=true;
     [-(TWT/2-0.4),(TWT/2-0.4)].forEach(px=>{
       const pil=BABYLON.MeshBuilder.CreateBox("sPil",{width:0.46,height:TH,depth:0.46},scene);
-      pil.material=mat("sPilm","#26303c"); pil.position.set(C.x+px,TH/2,az); pil.parent=SR; pil.__occluder=true; }); }
+      pil.material=_subTex().pil; pil.position.set(C.x+px,TH/2,az); pil.parent=SR; pil.__occluder=true; }); }
   // pannelli luce fluorescenti (emissivi)
   for(let i=-3;i<=3;i++){
     const lp=BABYLON.MeshBuilder.CreateBox("sLP",{width:PW-0.8,height:0.1,depth:1.7},scene);
     const lm=mat("sLPm_"+i,"#eef4fa"); lm.emissiveColor=new BABYLON.Color3(0.62,0.68,0.74);
     lp.material=lm; lp.position.set(C.x,TH-0.08,C.z+i*6); lp.parent=SR;
-    if(glowL) glowL.addExcludedMesh(lp); }
+    if(glowL) glowL.addExcludedMesh(lp);
+    /* v293: la plafoniera ha un corpo (alluminio) e pende da due tiranti */
+    const hs=BABYLON.MeshBuilder.CreateBox("sLPh",{width:PW-0.6,height:0.08,depth:1.9},scene);
+    hs.material=_subTex().alu; hs.position.set(C.x,TH-0.01,C.z+i*6); hs.parent=SR; hs.isPickable=false; }
+  /* v293: DUE LINEE DI LUCE lungo i bordi della banchina (strisce emissive
+     sotto le travi) + canalina dei cavi sulle pareti: la galleria prima era
+     buia ai lati e si leggeva come un cassone nero. */
+  [-1,1].forEach(sg=>{
+    const ls=BABYLON.MeshBuilder.CreateBox("sLS",{width:0.18,height:0.06,depth:PL-2},scene);
+    ls.material=_subTex().strip; ls.position.set(C.x+sg*(PW/2+0.2),TH-0.45,C.z); ls.parent=SR; ls.isPickable=false;
+    if(glowL) glowL.addExcludedMesh(ls);
+    const ct=BABYLON.MeshBuilder.CreateBox("sCab",{width:0.14,height:0.12,depth:PL+4},scene);
+    ct.material=_subTex().alu; ct.position.set(C.x+sg*(TWT/2-0.36),TH-0.35,C.z); ct.parent=SR; ct.isPickable=false; });
+  /* v293: TONDI con il nome della fermata sulle due pareti (fra un
+     pilastro e l'altro, lontani dai manifesti a z ±3,5), un tabellone dei
+     treni in arrivo appeso sopra la banchina, cestini e un orologio. I tondi
+     e il tabellone si ridisegnano in updateSubwaySign: cambiano a ogni
+     fermata. */
+  { const T=_subTex();
+    [-1,1].forEach(sg=>[-17.5,-10.5,10.5,17.5].forEach(dz=>{
+      const rp=BABYLON.MeshBuilder.CreatePlane("sRnd",{width:2.6,height:1.3},scene);
+      rp.material=T.roundel; rp.position.set(C.x+sg*(TWT/2-0.33),3.1,C.z+dz); rp.rotation.y=sg*Math.PI/2;
+      rp.parent=SR; rp.isPickable=false; if(glowL) glowL.addExcludedMesh(rp); }));
+    /* di traverso sulla banchina, leggibile da chi ci cammina lungo */
+    const ib=BABYLON.MeshBuilder.CreateBox("sIndB",{width:2.6,height:0.5,depth:0.2},scene);
+    ib.material=mat("sIndBm","#11161c"); ib.position.set(C.x,TH-1.15,C.z-2); ib.parent=SR; ib.__occluder=true;
+    [-1,1].forEach(sg=>{ const ip=BABYLON.MeshBuilder.CreatePlane("sInd",{width:2.45,height:0.4},scene);
+      ip.material=T.ind; ip.position.set(C.x,TH-1.15,C.z-2+sg*0.105); ip.rotation.y=(sg>0)?Math.PI:0; ip.parent=SR; ip.isPickable=false;
+      if(glowL) glowL.addExcludedMesh(ip); });
+    [-0.9,0.9].forEach(dx=>{ const r=BABYLON.MeshBuilder.CreateCylinder("sIndR",{diameter:0.03,height:0.9,tessellation:6},scene);
+      r.material=T.alu; r.position.set(C.x+dx,TH-0.47,C.z-2); r.parent=SR; r.isPickable=false; });
+    // orologio da banchina, a doppia faccia, appeso sopra l'uscita
+    const ck=BABYLON.MeshBuilder.CreateCylinder("sClk",{diameter:0.9,height:0.12,tessellation:28},scene);
+    ck.material=T.clock; ck.rotation.x=Math.PI/2; ck.position.set(C.x,TH-1.0,C.z+14); ck.parent=SR; ck.isPickable=false;
+    [-0.066,0.066].forEach(o=>{ const f=BABYLON.MeshBuilder.CreateDisc("sClkF",{radius:0.4,tessellation:28},scene);
+      f.material=T.clockF; f.position.set(C.x,TH-1.0,C.z+14+o); f.rotation.y=(o<0)?0:Math.PI; f.parent=SR; f.isPickable=false; });
+    const ckr=BABYLON.MeshBuilder.CreateCylinder("sClkR",{diameter:0.03,height:0.6,tessellation:6},scene);
+    ckr.material=T.alu; ckr.position.set(C.x,TH-0.3,C.z+14); ckr.parent=SR; ckr.isPickable=false;
+    // cestini (fra le panchine, contro il bordo interno)
+    [[-1,-3],[1,9],[-1,15],[1,-15]].forEach(b=>{ const bx0=C.x+b[0]*(PW/2-1.25), bz=C.z+b[1];
+      const bn=BABYLON.MeshBuilder.CreateCylinder("sBin",{diameterTop:0.46,diameterBottom:0.42,height:0.8,tessellation:16},scene);
+      bn.material=T.bin; bn.position.set(bx0,0.4,bz); bn.parent=SR; bn.__occluder=true;
+      const lid=BABYLON.MeshBuilder.CreateCylinder("sBinL",{diameter:0.5,height:0.06,tessellation:16},scene);
+      lid.material=T.alu; lid.position.set(bx0,0.83,bz); lid.parent=SR;
+      addSolid(bx0-0.25,bx0+0.25,bz-0.25,bz+0.25,"subway"); }); }
   // ===== insegna stazione (DynamicTexture, aggiornata all'entrata) =====
   subwaySignTex=new BABYLON.DynamicTexture("sSignDT",{width:512,height:190},scene,false);
   const signBrd=BABYLON.MeshBuilder.CreateBox("sSignBrd",{width:9.5,height:1.5,depth:0.16},scene);
@@ -36230,6 +36532,7 @@ function updateSubwaySign(stId){
   ctx.fillText("\uD83D\uDE87 "+st.name.toUpperCase(),256,94);
   ctx.fillStyle="#3a5a80"; ctx.font="600 26px sans-serif"; ctx.fillText("M1 \u00B7 Metropolitan Line",256,148);
   subwaySignTex.update();
+  try{ _subRoundel(st); }catch(e){ console.warn("roundel",e); }
 }
 
 /* =====================================================================
@@ -36285,6 +36588,10 @@ function playMetroDescent(stId){
   if(metroCinematic) return;
   const S=metroStairs[stId];
   if(!S || !avatarMeshes.length){ enterSubway(stId); return; }   // fallback se manca la scala/avatar
+  /* v293 (Giacomo: «quando entri in metro, se sei in POV diventa non POV»):
+     la discesa resta una regia vista da fuori, ma chi era in prima persona
+     ci RITORNA appena arriva sulla banchina (enterSubway). */
+  _metroPovBack=!!(typeof POV!=="undefined" && POV.on);
   try{ povSet(false,true); }catch(e){}   // v285: la discesa si guarda da fuori
   metroCinematic=true;
   moveTarget=null; pendingInteract=null;
@@ -36314,6 +36621,7 @@ function playMetroDescent(stId){
 }
 
 /* ---- enterSubway / exitSubway ---- */
+let _metroPovBack=false;
 function enterSubway(stId){
   buildSubwayPlatform();
   currentMetroStation=stId;
@@ -36326,6 +36634,9 @@ function enterSubway(stId){
     if(typeof tapMark!=="undefined"&&tapMark) tapMark.setEnabled(false);
     camera.target.copyFrom(player.position); camera.target.y+=2.0;
     camera.alpha=Math.PI/2;
+    /* v293: si torna in prima persona, guardando lungo la banchina (-z,
+       lo stesso verso della camera da fuori: alpha PI/2 <-> rotation PI) */
+    if(_metroPovBack){ _metroPovBack=false; player.rotation.y=Math.PI; try{ povSet(true,true); }catch(e){} }
     updateSubwaySign(stId); updateProximity();
     const st=METRO_STATIONS.find(s=>s.id===stId);
     toast("\uD83D\uDE87 Stazione "+(st?st.name:"Metro"));
@@ -36566,6 +36877,14 @@ function rainBuild(){
   ps.direction1=new BABYLON.Vector3(-0.6,-9,-0.6);
   ps.direction2=new BABYLON.Vector3( 0.6,-9, 0.6);
   ps.minEmitPower=1; ps.maxEmitPower=1; ps.updateSpeed=0.012;
+  /* v293: sotto i tetti di RAIN_COPERTO la goccia muore. Serve quando il
+     giocatore e' accanto alla veranda (fuori, quindi il sistema e' acceso)
+     e la scatola di emissione, larga 34 m, copre anche il tetto. */
+  const _upd=ps.updateFunction;
+  ps.updateFunction=function(parts){ _upd(parts);
+    for(let i=0;i<parts.length;i++){ const q=parts[i], p=q.position;
+      for(let k=0;k<RAIN_COPERTO.length;k++){ const r=RAIN_COPERTO[k];
+        if(p.x>=r.x0 && p.x<=r.x1 && p.z>=r.z0 && p.z<=r.z1 && p.y<(r.h||12)){ q.age=q.lifeTime; q.color.a=0; break; } } } };
   /* \u26a0\ufe0f Le gocce NON fanno ombra e NON entrano nell'octree: sono contenuto
      dinamico puro, e infilarle fra i mesh selezionabili farebbe ricostruire
      l'albero mentre piove. */
