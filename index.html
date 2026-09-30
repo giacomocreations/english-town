@@ -8900,37 +8900,89 @@ function buildMayor(){
    petto il punto piu' avanti della maglia sotto il collo. Si costruisce li'
    (nel mondo) e si appende all'osso del busto. La catena d'oro e il
    medaglione sono stati TOLTI (Giacomo: «togli la collana a Mayor»). */
+/* v292 (Giacomo: «la cravatta di Mr. Bianchi e' fuori posto»). Due errori
+   in uno: (1) il davanti si prendeva dal collo agli occhi, ma su Man_B il
+   materiale «Eyes» non e' solo gli occhi (743 vertici, baricentro
+   all'altezza della vita) e il verso usciva rovesciato: la cravatta finiva
+   sulla schiena; (2) le misure si prendevano sulle posizioni animate
+   calcolate a CPU, che per questi glTF NON coincidono con quello che
+   disegna la scheda (stessa trappola degli accessori, vedi la nota su
+   _accSkin): il busto «misurato» stava 20 cm piu' in la' di quello vero.
+   Ora si fa come per gli accessori del giocatore: si misura nello spazio
+   GREZZO dei vertici della maglia (posa di bind), il davanti e' quello del
+   carrier riportato in quello spazio, si costruisce li' e si pesa sull'osso
+   del busto (_accSkin). Combacia per costruzione e segue l'Idle. */
 function mayorDress(n){
-  const V3=BABYLON.Vector3, pts=re=>{ const o=[]; n.meshes.forEach(m=>{ if(!m.material||!re.test(m.material.name)) return;
-      m.computeWorldMatrix(true); const W=m.getWorldMatrix(), p=m.getPositionData(true,false)||[];
-      for(let i=0;i<p.length;i+=3) o.push(V3.TransformCoordinates(new V3(p[i],p[i+1],p[i+2]),W)); }); return o; };
-  const shirt=pts(/Shirt/), eyes=pts(/Eyes?$/);
-  if(!shirt.length||!eyes.length) return null;
-  const avg=a=>a.reduce((s,p)=>s.addInPlace(p),new V3(0,0,0)).scale(1/a.length);
-  let yN=-1e9; shirt.forEach(p=>{ if(p.y>yN) yN=p.y; });
-  const neck=avg(shirt.filter(p=>p.y>yN-0.04)), E=avg(eyes);
-  let F=new V3(E.x-neck.x,0,E.z-neck.z); if(F.length()<1e-4) return null; F.normalize();
-  const R=V3.Cross(new V3(0,1,0),F).normalize();
-  /* il petto: il punto piu' avanti della maglia, vicino al centro, 8 cm sotto il collo */
-  const front=y=>{ let best=-1e9; shirt.forEach(p=>{ const d=p.subtract(neck); if(Math.abs(p.y-y)<0.025 && Math.abs(V3.Dot(d,R))<0.05){ const f=V3.Dot(d,F); if(f>best) best=f; } }); return best>-1e9?best:0.08; };
-  const at=(x,y,dz)=>neck.add(R.scale(x)).add(new V3(0,y-neck.y,0)).add(F.scale(front(y)+dz));
+  const V3=BABYLON.Vector3;
+  const shirt=n.meshes.find(m=>m.skeleton && m.material && /Shirt/.test(m.material.name)); if(!shirt) return null;
+  const sk=shirt.skeleton;
+  let bi=-1; for(const nm of ["Torso","Chest","Spine2","Spine1","Spine"]){ bi=sk.bones.findIndex(b=>b.name===nm); if(bi>=0) break; }
+  if(bi<0) return null;
+  n.carrier.computeWorldMatrix(true); shirt.computeWorldMatrix(true);
+  /* ⚠️ dal grezzo al mondo passa anche l'osso: su Man_B la matrice della
+     mesh scala di 37 e lo scheletro compensa. Si usa quella completa del
+     busto (osso * mesh), l'unica che dice quanto vale un metro qui. */
+  let T=shirt.getWorldMatrix();
+  try{ const TM=sk.getTransformMatrices(shirt); if(TM && TM.length>=(bi+1)*16) T=BABYLON.Matrix.FromArray(TM,bi*16).multiply(T); }catch(e){}
+  const inv=T.clone().invert();
+  const fy=n.carrier.rotation.y-(typeof NPC_FACE_OFFSET!=="undefined"?NPC_FACE_OFFSET:0);
+  let F=V3.TransformNormal(new V3(Math.sin(fy),0,Math.cos(fy)),inv); const s=F.length(); if(s<1e-6) return null; F.normalize();
+  const U=V3.TransformNormal(new V3(0,1,0),inv).normalize(), R=V3.Cross(U,F).normalize();
+  const raw=shirt.getVerticesData(BABYLON.VertexBuffer.PositionKind)||[], P=[];
+  for(let i=0;i<raw.length;i+=3) P.push(new V3(raw[i],raw[i+1],raw[i+2]));
+  let top=-1e9; P.forEach(p=>{ const u=V3.Dot(p,U); if(u>top) top=u; });
+  const nk=P.filter(p=>V3.Dot(p,U)>top-0.04*s); if(!nk.length) return null;
+  const E=nk.reduce((a,p)=>a.addInPlace(p),new V3(0,0,0)).scale(1/nk.length);
+  const L=P.map(p=>{ const d=p.subtract(E); return { x:V3.Dot(d,R)/s, y:V3.Dot(d,U)/s, z:V3.Dot(d,F)/s }; });
+  /* il davanti della maglia alla quota y (0 = bordo del collo), vicino al centro */
+  /* ⚠️ Man_B e' low-poly: a certe quote, al centro del petto, non c'e' un
+     vertice nella fascia, e il «piu' avanti» diventava la schiena (misurato:
+     -9 cm a 22 cm sotto il collo). Si interpola fra il vertice davanti piu'
+     vicino sopra e quello sotto: e' la superficie vera fra i due. */
+  const FC=L.filter(l=>Math.abs(l.x)<0.07 && l.z>0);
+  const front=y=>{ let a=null, c=null;
+    FC.forEach(l=>{ const d=l.y-y;
+      if(d>=0){ if(!a || d<a.d-0.004 || (Math.abs(d-a.d)<=0.004 && l.z>a.z)) a={ d, z:l.z }; }
+      else { const e=-d; if(!c || e<c.d-0.004 || (Math.abs(e-c.d)<=0.004 && l.z>c.z)) c={ d:e, z:l.z }; } });
+    if(a && c) return (a.z*c.d+c.z*a.d)/Math.max(1e-6,a.d+c.d);
+    return a?a.z:(c?c.z:0.08); };
   const g=new BABYLON.TransformNode("mayorAcc",scene);
-  const white=hm7Mat("#f2f1ec",0.1,20), tie=hm7Mat("#7a1f2b",0.35,40), yaw=Math.atan2(F.x,F.z);
-  const b=(w,h,d,m,pos,rz,rx)=>{ const q=BABYLON.MeshBuilder.CreateBox("mAcc",{width:w,height:h,depth:d},scene);
-    q.material=m; q.position.copyFrom(pos); q.rotation.set(rx||0,yaw,rz||0); q.parent=g; return q; };
-  const yc=yN-0.035;
-  b(0.055,0.09,0.01,white,at(-0.026,yc,0.004),0.45);                    // colletto a V
-  b(0.055,0.09,0.01,white,at( 0.026,yc,0.004),-0.45);
-  b(0.04,0.035,0.018,tie,at(0,yc-0.012,0.01));                          // nodo
-  b(0.045,0.24,0.012,tie,at(0,yc-0.15,0.008),0,-0.04);                  // cravatta
-  etMergeByMat(g);
-  g.getChildMeshes().forEach(m=>{ m.isPickable=false; m.alwaysSelectAsActiveMesh=true; });
-  const sk=(n.meshes.find(m=>m.skeleton)||{}).skeleton;
-  const bone=sk&&(["Torso","Chest","Spine2","Spine1","Spine"].map(nm=>sk.bones.find(x=>x.name===nm)).find(Boolean));
-  const tn=bone&&bone.getTransformNode&&bone.getTransformNode();
-  g.computeWorldMatrix(true);
-  if(tn){ tn.computeWorldMatrix(true); g.setParent(tn); } else g.setParent(n.carrier);
-  return g;
+  const white=hm7Mat("#f2f1ec",0.1,20), tie=hm7Mat("#7a1f2b",0.35,40);
+  const b=(w,h,d,m,x,y,dz,rz,rx)=>{ const q=BABYLON.MeshBuilder.CreateBox("mAcc",{width:w,height:h,depth:d},scene);
+    q.material=m; q.position.set(x,y,front(y)+dz); q.rotation.set(rx||0,0,rz||0); q.parent=g; return q; };
+  const yc=-0.035;
+  b(0.055,0.09,0.01,white,-0.026,yc,0.004,0.45);                      // colletto a V
+  b(0.055,0.09,0.01,white, 0.026,yc,0.004,-0.45);
+  b(0.04,0.035,0.018,tie,0,yc-0.012,0.01);                            // nodo
+  /* la cravatta: UNA striscia che segue il petto riga per riga (prima tre
+     scatole a gradini), piu' larga in basso, con la punta; spessa 8 mm */
+  { const rows=[], Y0=yc-0.028, Y1=-0.25, NR=14, TH=0.008;
+    for(let k=0;k<=NR;k++){ const y=Y0+(Y1-Y0)*k/NR, t=k/NR; rows.push({ y, z:front(y)+0.006, w:0.019+0.008*t }); }
+    const tipY=Y1-0.026, tipZ=front(tipY)+0.006;
+    const P=[], T=[], Vf=[], Vb=[];
+    rows.forEach(r=>{ Vf.push(P.length); P.push(new V3(-r.w,r.y,r.z+TH/2), new V3(r.w,r.y,r.z+TH/2));
+                      Vb.push(P.length); P.push(new V3(-r.w,r.y,r.z-TH/2), new V3(r.w,r.y,r.z-TH/2)); });
+    const tf=P.length; P.push(new V3(0,tipY,tipZ+TH/2)); const tb=P.length; P.push(new V3(0,tipY,tipZ-TH/2));
+    for(let k=0;k<NR;k++){ const f0=Vf[k], f1=Vf[k+1], b0=Vb[k], b1=Vb[k+1];
+      T.push([f0,f0+1,f1+1],[f0,f1+1,f1]);                       // davanti
+      T.push([f0,f1,b1],[f0,b1,b0]); T.push([f0+1,b0+1,b1+1],[f0+1,b1+1,f1+1]); }   // i due fianchi
+    const fl=Vf[NR], bl=Vb[NR];
+    T.push([fl,fl+1,tf]);                                          // la punta, davanti e sui fianchi
+    T.push([fl,tf,tb],[fl,tb,bl]); T.push([fl+1,bl+1,tb],[fl+1,tb,tf]);
+    const cz=rows.reduce((q,r)=>q+r.z,0)/rows.length-0.05;
+    const m=_hairMesh(P,T,c=>new V3(c.x*0.6,0,c.z-cz)); m.material=tie; m.parent=g; }
+  try{ _accMerge(g); }catch(e){}
+  /* ogni vertice prende le ossa (e i pesi) del punto di maglia piu' vicino:
+     cosi' si muove come la stoffa che ha sotto (il busto e il petto non
+     girano insieme nell'Idle, e appeso al solo busto si staccava) */
+  const MI=shirt.getVerticesData(BABYLON.VertexBuffer.MatricesIndicesKind), MW=shirt.getVerticesData(BABYLON.VertexBuffer.MatricesWeightsKind);
+  const wfn=(MI&&MW)?(l=>{ let bk=0, bd=1e9; for(let k=0;k<L.length;k++){ const q=L[k], d=(q.x-l.x)*(q.x-l.x)+(q.y-l.y)*(q.y-l.y)+(q.z-l.z)*(q.z-l.z); if(d<bd){ bd=d; bk=k; } }
+      const r=[]; for(let j=0;j<4;j++){ const w=MW[bk*4+j]; if(w>0) r.push([MI[bk*4+j],w]); } return r.length?r:[[bi,1]]; }):null;
+  const M={ E, R, U, F, s }, out=[];
+  g.getChildMeshes().forEach(m=>{ try{ const o=_accSkin(m,shirt,M,bi,{ wfn }); o.alwaysSelectAsActiveMesh=true; out.push(o); }catch(e){ console.warn("mayorDress skin",e); } });
+  g.dispose(false,false);
+  n.__mayorAcc=out; try{ _octDirty(); }catch(e){}
+  return out;
 }
 function talkToMayor(npc){
   npc=npc||MAYOR; if(!npc) return;
@@ -50610,16 +50662,16 @@ const ACC_BUILD={
      spessa e lucida del colore scelto, lenti viola specchiate, tre brillanti
      d'oro sull'angolo, cerniere dorate sulle stanghette larghe. */
   designer(g,M,C){ const z=Math.max(M.faceZ,0.015)+0.023, fr=_accC(C,0.7), gold=_accMat("#e2bd4f",0.95,"#3a2c0c"),
-      lensM=_accMat("#4a2f6e",0.95,"#23113a"), lw=0.071, lh=0.045, cx=0.012+lw/2, y=0.004, xw=Math.max(cx+lw/2+0.018,M.skHW+0.009);
+      lensM=_accMat("#4a2f6e",0.95,"#23113a"), lw=0.062, lh=0.039, cx=0.011+lw/2, y=0.004, xw=Math.max(cx+lw/2+0.015,M.skHW+0.009);   // v292: un filo piu' piccoli (Giacomo: «troppo grandi»)
     [-1,1].forEach(s=>{ const n=new BABYLON.TransformNode("acc",scene); n.parent=g; n.position.set(s*cx,y,z); n.rotation.z=s*0.16;
-      const f=_accLens(lw+0.016,lh+0.013,0.009,3.6,0.22); f.material=fr; f.position.z=-0.002; f.parent=n;
+      const f=_accLens(lw+0.013,lh+0.011,0.008,3.6,0.22); f.material=fr; f.position.z=-0.002; f.parent=n;
       const l=_accLens(lw,lh,0.006,3.6,0.22); l.material=lensM; l.position.z=0.003; l.parent=n;
       /* la punta «a gatto» sull'angolo esterno in alto */
       const wn=new BABYLON.TransformNode("acc",scene); wn.parent=n; wn.position.set(s*(lw/2+0.001),lh*0.36,-0.0015); wn.rotation.z=s*0.5;
-      const w=_accLens(0.036,0.016,0.009,2.2,0); w.material=fr; w.parent=wn;
+      const w=_accLens(0.030,0.014,0.008,2.2,0); w.material=fr; w.parent=wn;
       for(let k=0;k<3;k++){ const d=BABYLON.MeshBuilder.CreateIcoSphere("acc",{radius:0.0024,subdivisions:1,flat:true},scene);
-        d.material=gold; d.parent=n; d.position.set(s*(lw*0.22+k*0.0095),lh/2+0.0045-k*0.0006,0.0045); }
-      _accTemple(g,fr,s,cx+lw/2+0.007,y+lh*0.3,z-0.004,xw,M.back+0.05,0.0045);
+        d.material=gold; d.parent=n; d.position.set(s*(lw*0.22+k*0.0085),lh/2+0.004-k*0.0006,0.0042); }
+      _accTemple(g,fr,s,cx+lw/2+0.006,y+lh*0.3,z-0.004,xw,M.back+0.05,0.004);
       const h=BABYLON.MeshBuilder.CreateBox("acc",{width:0.004,height:0.009,depth:0.018},scene);
       h.material=gold; h.position.set(s*(xw+0.0045),y+lh*0.3-0.004,z-0.03); h.parent=g; });
     _accBridge(g,fr,z,cx-lw/2-0.003,y+0.011,0.0042); },
