@@ -23075,7 +23075,7 @@ function submitCafe(){
    geometria di cafe() e' la stessa, e l'origine di ogni bancone e' in
    CAFE_SPOTS. Tutto procedurale, materiali condivisi, 0 KB.
    ===================================================================== */
-const CAFE_PICK={ node:null, inter:null, st:"", npc:null, o:null, parts:null, timer:null, obs:null, spot:null };
+const CAFE_PICK={ node:null, inter:null, st:"", npc:null, o:null, parts:null, timer:null, obs:null, spot:null, face:null, seq:null };
 let _cpM=null;
 function _cafePickMats(){ if(_cpM) return _cpM;
   const K={};
@@ -23098,7 +23098,7 @@ function cafeClear(){ const P=CAFE_PICK;
   if(P.obs){ scene.onBeforeRenderObservable.remove(P.obs); P.obs=null; }
   if(P.inter){ try{ removeInteract(P.inter); }catch(e){} P.inter=null; }
   if(P.node){ try{ P.node.dispose(false,false); }catch(e){} P.node=null; }
-  P.st=""; P.parts=null; P.o=null; P.npc=null; P.spot=null; }
+  P.st=""; P.parts=null; P.o=null; P.npc=null; P.spot=null; P.face=null; P.seq=null; }
 /* il vassoio con l'ordine; origine sul piano del vassoio */
 function _cafeBuildOrder(o,parent){
   const K=_cafePickMats(), R={ drink:null, level:null, food:null, bits:[] };
@@ -23163,64 +23163,96 @@ function cafeServe(npc,o){
     /* se non lo prendi, dopo un paio di minuti il barista lo ritira */
     P.timer=setTimeout(()=>{ if(P.st==="ready") cafeClear(); },150000);
   },1400); }
-function _cafeMouth(){ const ry=player.rotation.y, sit=0;
-  return new BABYLON.Vector3(player.position.x+Math.sin(ry)*0.24, player.position.y+AVATAR_HEIGHT*0.86-sit, player.position.z+Math.cos(ry)*0.24); }
+/* ⚠️ v294 (Giacomo: «se mi giro si vede che il cibo o il drink si sposta
+   come se volasse; l'avatar deve rimanere girato mentre prende il cibo»).
+   Mentre consumi sei AL BANCONE come da seduti al diner:
+   · il corpo resta girato verso il vassoio (CAFE_PICK.face). In prima persona
+     la testa gira di lato fino a POV_SEAT_TURN, come seduti (_povSeated), ma
+     il corpo — e quindi la bocca a cui va la tazza — non si muove;
+   · la bocca si calcola da quell'angolo FISSO, mai da rotation.y del momento;
+   · il primo passo (WASD, stick o tocco a terra) = posi tazza e cibo sul
+     vassoio e ti allontani: niente resta a mezz'aria. Tornando, E riprende
+     da dove eri rimasto (sorsi e morsi gia' fatti restano fatti). */
+function _cafeMouth(){ const P=CAFE_PICK, ry=(P.face!=null)?P.face:player.rotation.y;
+  return new BABYLON.Vector3(player.position.x+Math.sin(ry)*0.24, player.position.y+AVATAR_HEIGHT*0.86, player.position.z+Math.cos(ry)*0.24); }
+function _cafeFaceTray(){ const P=CAFE_PICK, n=P.node; if(!n) return;
+  P.face=Math.atan2(n.position.x-player.position.x, n.position.z-player.position.z);
+  player.rotation.y=P.face;
+  try{ if(typeof POV!=="undefined" && POV.on){ camera.alpha=-P.face-Math.PI/2; camera.inertialAlphaOffset=0; camera.beta=Math.PI/2+0.05; } }catch(e){} }
 function cafeTake(){
   const P=CAFE_PICK; if(P.st!=="ready"||!P.node) return;
   if(P.inter){ removeInteract(P.inter); P.inter=null; }
   if(P.timer){ clearTimeout(P.timer); P.timer=null; }
-  P.st="eating";
   const sp=P.spot, n=P.node, R=P.parts;
-  /* il vassoio viene verso di te, sul bordo del bancone; ti giri verso di lui */
   /* la fascia libera del bancone dal lato cliente: fra la vetrina dei dolci
      (fino a z -0.48) e i barattoli dei biscotti (da z 1.99), saltando il
      portatovaglioli (z 0.05..0.25) */
   let lz=Math.max(-0.24,Math.min(1.76,player.position.z-sp.z));
   if(lz>-0.18 && lz<0.48) lz=(lz<0.15)?-0.24:0.48;
-  const from=n.position.clone(), to=new BABYLON.Vector3(sp.x+0.65, n.position.y, sp.z+lz);
-  const face=Math.atan2(to.x-player.position.x, to.z-player.position.z);
-  player.rotation.y=face;
-  try{ if(typeof POV!=="undefined" && POV.on){ camera.alpha=-face-Math.PI/2; camera.beta=Math.PI/2+0.05; } }catch(e){}
-  /* la sequenza: sorsi e morsi alternati, poi i saluti */
-  const steps=[]; const nS=4, nB=R.food?3:0;
+  P.slideFrom=n.position.clone(); P.slideTo=new BABYLON.Vector3(sp.x+0.65, n.position.y, sp.z+lz);
+  /* la sequenza: sorsi e morsi alternati; il segno (k, cnt) sopravvive alle pause */
+  const nS=4, nB=R.food?3:0, steps=[];
   for(let i=0;i<Math.max(nS,nB);i++){ if(i<nS) steps.push("sip"); if(i<nB) steps.push("bite"); }
-  let k=0, t0=performance.now(), phase="slide", cur=null, curHome=null, cnt={sip:0,bite:0};
+  P.seq={ steps, k:0, nS, nB, cnt:{sip:0,bite:0} };
   try{ toast("☕ Enjoy! · Buon appetito!"); }catch(e){}
+  _cafeRun(true); }
+/* E di nuovo sul vassoio dopo esserti allontanato: si riprende */
+function cafeResume(){ const P=CAFE_PICK; if(P.st!=="paused"||!P.node) return;
+  if(P.inter){ removeInteract(P.inter); P.inter=null; }
+  if(P.timer){ clearTimeout(P.timer); P.timer=null; }
+  _cafeRun(false); }
+/* ti muovi mentre consumi: tazza e cibo tornano SUL VASSOIO, subito */
+function cafePause(){ const P=CAFE_PICK; if(P.st!=="eating") return;
+  if(P.obs){ scene.onBeforeRenderObservable.remove(P.obs); P.obs=null; }
+  const R=P.parts;
+  [R&&R.drink, R&&R.food].forEach(g=>{ if(g&&g.__home){ g.position.copyFrom(g.__home); g.rotation.z=0; } });
+  if(P.node && P.slideTo) P.node.position.copyFrom(P.slideTo);
+  P.st="paused"; P.face=null;
+  P.inter=addInteract({ id:"cafePickup", area:"town", radius:3.2,
+    pos:()=>P.node?P.node.getAbsolutePosition():new BABYLON.Vector3(0,-99,0),
+    prompt:'☕ Press <b>E</b> to <b>finish your order</b>', interact:cafeResume });
+  /* se non torni, il barista ritira tutto */
+  P.timer=setTimeout(()=>{ if(P.st==="paused") cafeClear(); },60000); }
+function _cafeRun(slide){
+  const P=CAFE_PICK, n=P.node, R=P.parts, Q=P.seq; if(!n||!R||!Q) return;
+  P.st="eating";
+  [R.drink,R.food].forEach(g=>{ if(g && !g.__home) g.__home=g.position.clone(); });
+  if(slide) _cafeFaceTray();
+  let t0=performance.now(), phase=slide?"slide":"turn", cur=null, target=null;
   P.obs=scene.onBeforeRenderObservable.add(()=>{
     const now=performance.now();
-    /* se ti allontani, lasci tutto sul bancone: lo ritirera' il barista */
-    if(area!=="town" || Math.hypot(player.position.x-n.position.x, player.position.z-n.position.z)>3.6){
-      scene.onBeforeRenderObservable.remove(P.obs); P.obs=null; P.st="left";
-      if(cur&&curHome) cur.position.copyFrom(curHome);
-      P.timer=setTimeout(cafeClear,8000); return; }
+    if(area!=="town"){ cafePause(); return; }
+    /* il corpo resta girato verso il vassoio. In prima persona ci pensa
+       _povBody (testa libera, corpo fermo); da fuori lo si tiene qui. */
+    if(P.face!=null && !(typeof POV!=="undefined" && POV.on)) player.rotation.y=P.face;
     if(phase==="slide"){ let u=(now-t0)/450; if(u>1) u=1; const e=u*u*(3-2*u);
-      BABYLON.Vector3.LerpToRef(from,to,e,n.position);
-      if(u>=1){ phase="wait"; t0=now; } return; }
-    if(phase==="wait"){ if(now-t0>500){ if(k>=steps.length){ phase="done"; _cafeDone(); return; }
-        const what=steps[k++]; cur=(what==="sip")?R.drink:R.food; if(!cur){ t0=now; return; }
-        curHome=cur.position.clone(); cur.__what=what; phase="up"; t0=now; } return; }
+      BABYLON.Vector3.LerpToRef(P.slideFrom,P.slideTo,e,n.position);
+      if(u>=1){ _cafeFaceTray(); phase="wait"; t0=now; } return; }
+    if(phase==="turn"){ _cafeFaceTray(); phase="wait"; t0=now; return; }
+    if(phase==="wait"){ if(now-t0>500){ if(Q.k>=Q.steps.length){ phase="done"; _cafeDone(); return; }
+        const what=Q.steps[Q.k]; cur=(what==="sip")?R.drink:R.food; if(!cur){ Q.k++; t0=now; return; }
+        cur.__what=what; phase="up"; t0=now;
+        /* il bersaglio si fissa UNA volta per gesto: corpo fermo, bocca ferma */
+        const inv=BABYLON.Matrix.Invert(n.getWorldMatrix()), mL=BABYLON.Vector3.TransformCoordinates(_cafeMouth(),inv);
+        target=mL.add(new BABYLON.Vector3(0,(what==="sip")?-0.06:-0.1,0)); } return; }
     if(!cur) return;
-    /* su alla bocca (in coordinate del vassoio), una pausa, giu' */
-    const mouth=_cafeMouth(), inv=BABYLON.Matrix.Invert(n.getWorldMatrix());
-    const mL=BABYLON.Vector3.TransformCoordinates(mouth,inv);
-    const target=(cur.__what==="sip")?mL.add(new BABYLON.Vector3(0,-0.06,0)):mL.add(new BABYLON.Vector3(0,-0.1,0));
+    const home=cur.__home;
     if(phase==="up"){ let u=(now-t0)/650; if(u>1) u=1; const e=u*u*(3-2*u);
-      BABYLON.Vector3.LerpToRef(curHome,target,e,cur.position);
+      BABYLON.Vector3.LerpToRef(home,target,e,cur.position);
       cur.rotation.z=(cur.__what==="sip")?0.55*e:0;
-      if(u>=1){ phase="hold"; t0=now;
-        cnt[cur.__what]++;
-        if(cur.__what==="sip" && R.level){ const f=Math.max(0.04,1-cnt.sip/nS), L=R.level;
-          L.scaling.y=f; L.position.y=L.__y0+L.__h*f/2; R.bits.forEach(b=>{ if(b.material!==_cafePickMats().cream||cnt.sip>1) b.setEnabled(false); }); }
-        if(cur.__what==="bite" && R.bite){ const f=Math.max(0,1-cnt.bite/nB); R.bite.scaling.setAll(Math.max(0.001,f)); if(f<=0) R.bite.setEnabled(false); }
-        try{ SFX&&SFX.sip&&SFX.sip(); }catch(e){} } return; }
-    if(phase==="hold"){ cur.position.copyFrom(target); if(now-t0>600){ phase="down"; t0=now; } return; }
+      if(u>=1){ phase="hold"; t0=now; Q.k++;
+        const c=Q.cnt; c[cur.__what]++;
+        if(cur.__what==="sip" && R.level){ const f=Math.max(0.04,1-c.sip/Q.nS), L=R.level;
+          L.scaling.y=f; L.position.y=L.__y0+L.__h*f/2; R.bits.forEach(b=>{ if(b.material!==_cafePickMats().cream||c.sip>1) b.setEnabled(false); }); }
+        if(cur.__what==="bite" && R.bite){ const f=Math.max(0,1-c.bite/Q.nB); R.bite.scaling.setAll(Math.max(0.001,f)); if(f<=0) R.bite.setEnabled(false); } } return; }
+    if(phase==="hold"){ if(now-t0>600){ phase="down"; t0=now; } return; }
     if(phase==="down"){ let u=(now-t0)/550; if(u>1) u=1; const e=u*u*(3-2*u);
-      BABYLON.Vector3.LerpToRef(target,curHome,e,cur.position); cur.rotation.z=(cur.__what==="sip")?0.55*(1-e):0;
-      if(u>=1){ cur.position.copyFrom(curHome); cur.rotation.z=0; cur=null; phase="wait"; t0=now; } return; }
+      BABYLON.Vector3.LerpToRef(target,home,e,cur.position); cur.rotation.z=(cur.__what==="sip")?0.55*(1-e):0;
+      if(u>=1){ cur.position.copyFrom(home); cur.rotation.z=0; cur=null; phase="wait"; t0=now; } return; }
   }); }
 function _cafeDone(){ const P=CAFE_PICK;
   if(P.obs){ scene.onBeforeRenderObservable.remove(P.obs); P.obs=null; }
-  P.st="done";
+  P.st="done"; P.face=null;
   const npc=P.npc;
   DialogueBox.open({ npc, icon:"☕", sub:(P.o&&P.o.luogo&&P.o.luogo.nome)||"Café",
     text:"All done? I hope you enjoyed it! Have a nice day!",
@@ -35061,7 +35093,8 @@ function _povHead(mode){
    testa. Seduti (diner, panchina) il corpo non si gira: si gira la testa,
    fino a un certo punto. */
 const POV_SEAT_TURN=1.5;       // quanto si gira la testa da seduti (rad, per lato)
-function _povSeated(){ return (typeof DINER!=="undefined" && DINER.seat) || (typeof BSIT!=="undefined" && BSIT.b) || (typeof SIT!=="undefined" && SIT.on); }
+function _povSeated(){ return (typeof DINER!=="undefined" && DINER.seat) || (typeof BSIT!=="undefined" && BSIT.b) || (typeof SIT!=="undefined" && SIT.on)
+  || (typeof CAFE_PICK!=="undefined" && CAFE_PICK.st==="eating" && CAFE_PICK.face!=null); }   // v294: al bancone del caffe' il corpo resta fermo
 function _povBody(){
   if(_povSeated()){
     const a0=-player.rotation.y-Math.PI/2;
@@ -35276,6 +35309,7 @@ function clampArea(){ const c=area==="home"?HOME_C:(area==="cinema"?CINEMA_C:(ar
 function move(nx,nz,spd){
   if(typeof DINER!=="undefined" && DINER.seat) return false;   // v288: seduti al diner non si cammina (E per alzarsi)
   if(typeof BSIT!=="undefined" && BSIT.b) benchStand(true);     // v291: dalla panchina il primo passo ti rimette in piedi
+  if(typeof CAFE_PICK!=="undefined" && CAFE_PICK.st==="eating") cafePause();   // v294: al caffe' il primo passo posa tazza e cibo sul vassoio
   spd=spd||PLAYER_SPEED;
   const ox=player.position.x, oz=player.position.z;
   const px=ox+nx*spd, pz=oz+nz*spd;
@@ -35880,6 +35914,15 @@ function taxiTo(d){ closeMap(); _fade(true);
   },360); }
 (function(){ const s=document.getElementById("star-btn"); if(s) s.onclick=()=>toggleDiary();
   const d=document.getElementById("diary-close"); if(d) d.onclick=closeDiary;
+  /* v294 (Giacomo: «il menu teca si puo' chiudere cliccando fuori dalla
+     finestra»): un clic sullo sfondo scuro chiude il diario (Teca compresa).
+     Conta solo se il clic NASCE e FINISCE sullo sfondo: chi trascina una
+     barra o seleziona del testo dentro la finestra e molla fuori non
+     perde il diario. */
+  const dov=document.getElementById("diary-ov");
+  if(dov){ let downOut=false;
+    dov.addEventListener("pointerdown",e=>{ downOut=(e.target===dov); });
+    dov.addEventListener("click",e=>{ if(downOut && e.target===dov) closeDiary(); downOut=false; }); }
   const a=document.getElementById("tab-card");  if(a) a.onclick=()=>setDiaryTab("card");
   const b=document.getElementById("tab-diary"); if(b) b.onclick=()=>setDiaryTab("diary");
   const c=document.getElementById("tab-album"); if(c) c.onclick=()=>setDiaryTab("album");
