@@ -7576,7 +7576,9 @@ function buildMayor(){
      sindaco (quella dei mayor inglesi): si riconosce da lontano ed e' sua. */
   MAYOR=spawnNPC({ id:"mayor", name:"Mr. Bianchi", sub:"The Mayor", area:"town",
     model:"npcMan2", height:1.80, snap:false, radius:3.0,
-    tint:{ Shirt:"#23324f", Pants:"#262a33", Hair:"#7a7a7a" },
+    /* v284 (Giacomo, 30 set): pelle chiara, e' di origini italiane (Mr.
+       Bianchi); la pelle non entra nelle variazioni anti-gemello (_NO_VESTITO) */
+    tint:{ Shirt:"#23324f", Pants:"#262a33", Hair:"#7a7a7a", Skin:"#f1d2bd" },
     x:sp.x, z:sp.z, face:sp.face,
     prompt:()=>Card.has()?'Press <b>E</b> to talk to the <b>Mayor</b>'
                          :'Press <b>E</b>: the <b>Mayor</b> has something for you',
@@ -7588,25 +7590,45 @@ function buildMayor(){
 /* colletto, cravatta e catena d'oro: costruiti davanti al petto (fronte +z
    del rig, 5,5 cm dalla superficie) e poi appesi all'osso Torso, cosi'
    seguono il respiro dell'Idle e il giro verso il giocatore. */
+/* v284 — colletto e cravatta APPOGGIATI AL PETTO VERO. Prima si mettevano a
+   quote scritte a mano nel sistema del carrier (y 1.41, 5,5 cm davanti) e poi
+   si appendevano all'osso: sul modello non combaciavano e colletto, cravatta
+   e catena fluttuavano accanto al sindaco (visto a schermo, 30 set). Ora si
+   misura sul modello cosi' com'e' in quel momento: il DAVANTI e' la
+   direzione dal collo agli occhi, il collo e' il bordo alto della maglia, il
+   petto il punto piu' avanti della maglia sotto il collo. Si costruisce li'
+   (nel mondo) e si appende all'osso del busto. La catena d'oro e il
+   medaglione sono stati TOLTI (Giacomo: «togli la collana a Mayor»). */
 function mayorDress(n){
-  const FZ=0.055, g=new BABYLON.TransformNode("mayorAcc",scene); g.parent=n.carrier;
-  const gold=hm7Mat("#d4a93a",0.85,90,"#3a2a08"), white=hm7Mat("#f2f1ec",0.1,20), tie=hm7Mat("#7a1f2b",0.35,40);
-  const b=(w,h,d,m,x,y,z)=>{ const q=BABYLON.MeshBuilder.CreateBox("mAcc",{width:w,height:h,depth:d},scene);
-    q.material=m; q.position.set(x,y,z); q.parent=g; return q; };
-  b(0.06,0.12,0.012,white,-0.03,1.41,FZ).rotation.z=0.45;              // colletto a V
-  b(0.06,0.12,0.012,white, 0.03,1.41,FZ).rotation.z=-0.45;
-  b(0.045,0.04,0.02,tie,0,1.42,FZ+0.006);                              // nodo
-  b(0.05,0.26,0.014,tie,0,1.27,FZ+0.004).rotation.x=-0.05;             // cravatta
-  const pts=[]; for(let i=0;i<=16;i++){ const a=Math.PI*(i/16);
-    pts.push(new BABYLON.Vector3(-Math.cos(a)*0.105, 1.45-Math.sin(a)*0.13, FZ*(0.1+0.95*Math.sin(a))+0.008)); }
-  const ch=BABYLON.MeshBuilder.CreateTube("mChain",{path:pts,radius:0.009,tessellation:6},scene); ch.material=gold; ch.parent=g;
-  const md=BABYLON.MeshBuilder.CreateCylinder("mMed",{diameter:0.07,height:0.012,tessellation:18},scene);
-  md.material=gold; md.rotation.x=Math.PI/2; md.position.set(0,1.305,FZ+0.018); md.parent=g;
+  const V3=BABYLON.Vector3, pts=re=>{ const o=[]; n.meshes.forEach(m=>{ if(!m.material||!re.test(m.material.name)) return;
+      m.computeWorldMatrix(true); const W=m.getWorldMatrix(), p=m.getPositionData(true,false)||[];
+      for(let i=0;i<p.length;i+=3) o.push(V3.TransformCoordinates(new V3(p[i],p[i+1],p[i+2]),W)); }); return o; };
+  const shirt=pts(/Shirt/), eyes=pts(/Eyes?$/);
+  if(!shirt.length||!eyes.length) return null;
+  const avg=a=>a.reduce((s,p)=>s.addInPlace(p),new V3(0,0,0)).scale(1/a.length);
+  let yN=-1e9; shirt.forEach(p=>{ if(p.y>yN) yN=p.y; });
+  const neck=avg(shirt.filter(p=>p.y>yN-0.04)), E=avg(eyes);
+  let F=new V3(E.x-neck.x,0,E.z-neck.z); if(F.length()<1e-4) return null; F.normalize();
+  const R=V3.Cross(new V3(0,1,0),F).normalize();
+  /* il petto: il punto piu' avanti della maglia, vicino al centro, 8 cm sotto il collo */
+  const front=y=>{ let best=-1e9; shirt.forEach(p=>{ const d=p.subtract(neck); if(Math.abs(p.y-y)<0.025 && Math.abs(V3.Dot(d,R))<0.05){ const f=V3.Dot(d,F); if(f>best) best=f; } }); return best>-1e9?best:0.08; };
+  const at=(x,y,dz)=>neck.add(R.scale(x)).add(new V3(0,y-neck.y,0)).add(F.scale(front(y)+dz));
+  const g=new BABYLON.TransformNode("mayorAcc",scene);
+  const white=hm7Mat("#f2f1ec",0.1,20), tie=hm7Mat("#7a1f2b",0.35,40), yaw=Math.atan2(F.x,F.z);
+  const b=(w,h,d,m,pos,rz,rx)=>{ const q=BABYLON.MeshBuilder.CreateBox("mAcc",{width:w,height:h,depth:d},scene);
+    q.material=m; q.position.copyFrom(pos); q.rotation.set(rx||0,yaw,rz||0); q.parent=g; return q; };
+  const yc=yN-0.035;
+  b(0.055,0.09,0.01,white,at(-0.026,yc,0.004),0.45);                    // colletto a V
+  b(0.055,0.09,0.01,white,at( 0.026,yc,0.004),-0.45);
+  b(0.04,0.035,0.018,tie,at(0,yc-0.012,0.01));                          // nodo
+  b(0.045,0.24,0.012,tie,at(0,yc-0.15,0.008),0,-0.04);                  // cravatta
   etMergeByMat(g);
   g.getChildMeshes().forEach(m=>{ m.isPickable=false; m.alwaysSelectAsActiveMesh=true; });
   const sk=(n.meshes.find(m=>m.skeleton)||{}).skeleton;
-  const bone=sk&&sk.bones.find(x=>x.name==="Torso"), tn=bone&&bone.getTransformNode&&bone.getTransformNode();
-  if(tn){ n.carrier.computeWorldMatrix(true); tn.computeWorldMatrix(true); g.computeWorldMatrix(true); g.setParent(tn); }
+  const bone=sk&&(["Torso","Chest","Spine2","Spine1","Spine"].map(nm=>sk.bones.find(x=>x.name===nm)).find(Boolean));
+  const tn=bone&&bone.getTransformNode&&bone.getTransformNode();
+  g.computeWorldMatrix(true);
+  if(tn){ tn.computeWorldMatrix(true); g.setParent(tn); } else g.setParent(n.carrier);
   return g;
 }
 function talkToMayor(npc){
@@ -48183,13 +48205,18 @@ function _botTube(meshes,style,hex){
      In alto la gamba parte ESATTAMENTE dalla sezione del guscio al taglio e
      sfuma verso il profilo dello stile (in multipli del raggio al ginocchio).
        t = 0 taglio, 1 ginocchio, 2 caviglia */
-  const PROF={ plain:[0,1.34,1.26], smart:[0,1.2,1.1], joggers:[0,1.4,1.28], cargo:[0,1.6,1.5] }[style]||[0,1.34,1.26];
+  /* v284 (Giacomo: «smart e joggers vedo solo delle linee in piu'»): tagli
+     piu' marcati. Smart stretto e DRITTO (ginocchio = caviglia) con la piega
+     che sporge davvero; Trousers dritto normale; Joggers larghi fino al
+     ginocchio e poi ARRICCIATI sopra un polsino stretto; Cargo larghi. */
+  const PROF={ plain:[0,1.34,1.3], smart:[0,1.14,1.14], joggers:[0,1.62,1.45], cargo:[0,1.6,1.5] }[style]||[0,1.34,1.3];
   const dirAt0=a=>Fw.scale(Math.cos(a)).add(D.scale(Math.sin(a)));
   const bw=n=>{ const b=sk.bones.find(x=>x.name===n), tn=b&&b.getTransformNode&&b.getTransformNode(); if(!tn) return null; tn.computeWorldMatrix(true); return tn.getAbsolutePosition().clone(); };
   const yS=yCut+0.004, yE=yBot+0.004;
   const kL=bw("LowerLeg.L"), kR=bw("LowerLeg.R");
   let kneeY=(kL&&kR)?(kL.y+kR.y)/2:(yCut+yBot)/2; if(!(kneeY<yCut-0.1 && kneeY>yE+0.1)) kneeY=yE+(yCut-yE)*0.52;
-  const ys=[]; for(let y=yS;;y-=step){ if(y<yE) y=yE; ys.push(y); if(y<=yE) break; }
+  /* anelli piu' fitti in fondo ai joggers: l'arricciatura ha un passo di 3,6 cm */
+  const ys=[]; for(let y=yS;;y-=((style==="joggers"&&y<yE+0.22)?0.008:step)){ if(y<yE) y=yE; ys.push(y); if(y<=yE) break; }
   const legs=[1,-1].map(sd=>{ const list=S.filter(x=>x.side===sd), sp=[];
     shell.forEach(T=>T.forEach(r=>{ if(r.side===sd) sp.push(r); }));
     let C=ys.map(y=>{ const b=list.filter(x=>Math.abs(x.p.y-y)<0.03), c=b.length?cen(b):cen(list); return new V3(c.x,y,c.z); });
@@ -48212,9 +48239,12 @@ function _botTube(meshes,style,hex){
   legs.forEach(l=>{ l.rA=rA;
     l.rings=ys.map((y,j)=>{ const t=(y>=kneeY)?Math.max(0,Math.min(1,(yS-y)/Math.max(0.05,yS-kneeY))):1+Math.min(1,(kneeY-y)/Math.max(0.05,kneeY-yE));
       let rP=(t<=1?PROF[1]:PROF[1]+(PROF[2]-PROF[1])*(t-1))*rK;
-      if(style==="joggers"){ const dz=y-yE; if(dz<0.06) rP=rA*1.3; else if(dz<0.1) rP*=1.06; }       // polsino e arricciatura sopra
+      if(style==="joggers"){ const dz=y-yE;                                                         // polsino stretto e arricciatura sopra
+        if(dz<0.055) rP=rA*1.12; else if(dz<0.2) rP*=1+0.09*Math.sin((dz-0.055)*2*Math.PI/0.036)*(1-(dz-0.055)/0.145); }
       const s=(t<1)?t*t*(3-2*t):1, rr=[];
-      for(let i=0;i<NA;i++){ const a=i/NA*2*Math.PI, c=Math.cos(a), shape=rP*(1+0.05*c*c);
+      for(let i=0;i<NA;i++){ const a=i/NA*2*Math.PI, c=Math.cos(a);
+        let shape=rP*(1+0.05*c*c);
+        if(style==="smart" && c>0) shape*=1+0.13*Math.pow(c,10);                         // la piega: uno spigolo davanti
         const rt=l.top?Math.max(rP*0.8,l.top.r[i]-margin-0.002):shape;
         rr.push(rt*(1-s)+shape*s); }
       return { c:l.C[j], r:rr, t }; }); });
