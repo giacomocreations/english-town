@@ -331,7 +331,13 @@
     background:rgba(251,247,236,.22);border:2px solid rgba(251,247,236,.5);color:var(--ink,#2b2320);
     font-weight:800;font-size:22px;display:none;box-shadow:0 6px 16px rgba(0,0,0,.25);touch-action:manipulation;}
   #runBtn.on{background:var(--sun);}
-  @media (pointer:coarse){#stick,#actBtn,#runBtn{display:block;}}
+  /* v285: prima persona (dagli occhi). Sopra il tasto E, fuori dalla
+     traiettoria del pollice che va da CORRI a E. */
+  #povBtn{position:fixed;z-index:15;right:32px;bottom:128px;width:52px;height:52px;border-radius:50%;
+    background:rgba(251,247,236,.22);border:2px solid rgba(251,247,236,.5);color:var(--ink,#2b2320);
+    font-weight:800;font-size:22px;display:none;box-shadow:0 6px 16px rgba(0,0,0,.25);touch-action:manipulation;padding:0;}
+  #povBtn.on{background:var(--sun);}
+  @media (pointer:coarse){#stick,#actBtn,#runBtn,#povBtn{display:block;}}
   /* il long-press sulla scena serve a RUOTARE la visuale: non deve piu'
      offrire "copia immagine" e il resto del menu di sistema. */
   #game{touch-action:none;-webkit-touch-callout:none;user-select:none;-webkit-user-select:none;}
@@ -612,6 +618,7 @@
 <div id="stick"><div id="knob"></div></div>
 <button id="actBtn">E</button>
 <button id="runBtn">🏃</button>
+<button id="povBtn" aria-pressed="false" title="Prima persona">👁️</button>
 <button id="map-btn" title="Mappa città (M)">🗺️</button>
 <div id="kbhelp">
   <span><b>WASD</b> / <b>&#8593;&#8595;&#8592;&#8594;</b> muoviti</span>
@@ -620,6 +627,7 @@
   <span><b>Q</b> cambia oggetto</span>
   <span><b>M</b> mappa</span>
   <span><b>V</b> visuale</span>
+  <span><b>O</b> occhi (1ª persona)</span>
   <span><b>H</b> nascondi</span>
 </div>
 <button id="star-btn" title="Diario dell'Esploratore"><span>⭐</span><span id="star-n">0</span></button>
@@ -11394,6 +11402,7 @@ function spawnNPC(cfg){
       if(this.label){ const k=labels.indexOf(this.label); if(k>=0) labels.splice(k,1);
         if(this.label.ctrl&&adt) adt.removeControl(this.label.ctrl); }
       for(const k in this.anims) try{ this.anims[k].dispose(); }catch(e){}
+      try{ detachSharedDressMats(this.carrier); }catch(e){}   // v285: i materiali del guardaroba sono di tutti
       try{ this.carrier.dispose(false,true); }catch(e){}
       const i=NPCS.indexOf(this); if(i>=0) NPCS.splice(i,1);
       if(typeof refreshShadowCasters==="function") refreshShadowCasters(); },
@@ -11426,6 +11435,8 @@ function spawnNPC(cfg){
     set(v){ _npcMet[npc.name]=!!v; if(v) npcTouch(npc); } });
   NPCS.push(npc);
   if(typeof refreshShadowCasters==="function") refreshShadowCasters();
+  /* v285: i gemelli del protagonista si vestono col guardaroba (in coda) */
+  try{ npcDressLater(npc,cfg); }catch(e){}
   return npc;
 }
 /* rotazione dolce verso il giocatore quando è vicino (chiamata dal render loop) */
@@ -27672,6 +27683,7 @@ function showSeatPicker(L){
    ~1.80 — fuori limite. `camera.update()` li riapplica a ogni frame, quindi
    non basta impostare la posizione una volta. ---- */
 function showSit(row,seat){
+  try{ povSet(false,true); }catch(e){}   // v285: da seduti la camera e' del cinema
   showBuildStage();
   const p=showSeatPos(row,seat), sc=showScreenCenter();
   SHOW.seated=true; SHOW.idx=0; SHOW.asked=false; SHOW.miss=0;
@@ -27785,7 +27797,7 @@ function showStand(silent){
 /* barra in sovrimpressione: al buio, con i comandi di movimento spenti,
    serve UN bottone chiaro per tornare in piedi (ed ESC su desktop). */
 function showSeatBar(on){
-  const hide=["stick","actBtn","runBtn"];
+  const hide=["stick","actBtn","runBtn","povBtn"];
   hide.forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display=on?"none":""; });
   if(on){
     if(!SHOW.bar){
@@ -33233,6 +33245,84 @@ function tryInteract(){ if(loginPending) return;
   if(typeof SHOW!=="undefined" && SHOW.seated) return;   // al buio, seduti: solo "Alzati"
   if(nearInter&&nearInter.enabled) nearInter.interact(); }
 
+/* =====================================================================
+   v285 — VISUALE IN PRIMA PERSONA (Giacomo, 30 set: «calcando un tasto la
+   visione POV, dagli occhi dell'avatar: tra gli scaffali piu' stretti non si
+   riesce a vedere bene»). Tasto O su computer, bottone 👁️ sul tablet.
+
+   NON e' una seconda camera: e' la STESSA ArcRotateCamera con il raggio
+   bloccato a 5 cm e il bersaglio sugli occhi. Cosi' tutto quello che gia'
+   funziona resta com'e': ruotare trascinando (dito o mouse), il tap-to-move
+   (il pick parte dalla camera), le targhette, i prompt E, la mappa.
+   · il corpo si SPEGNE (avatarRoot), come al cinema da seduti: la testa
+     non entra nell'inquadratura e le mani non coprono lo scaffale;
+   · beta si apre anche verso l'alto (1.45 bastava per guardare DALL'ALTO
+     il giocatore, dagli occhi serve alzare lo sguardo sugli scaffali alti);
+   · W va dove GUARDI: la direzione si legge da alpha, non dalla posizione
+     della camera rispetto al giocatore (a 5 cm sarebbe rumore);
+   · niente collisione della camera e niente muri sfumati: la camera e'
+     dentro la testa, non c'e' niente fra lei e il giocatore;
+   · la profondita' di campo si spegne: e' l'effetto «modellino» tarato
+     per la camera alta, dagli occhi sfocherebbe tutto oltre i 5 cm;
+   · minZ scende a 5 cm, se no lo scaffale a mezzo metro verrebbe tagliato.
+   Si esce da soli (senza chiedere) quando la camera la prende qualcun
+   altro: seduti al cinema, discesa in metro, finale. V riporta alla
+   visuale base e quindi esce anche dalla prima persona.
+   ===================================================================== */
+const POV={ on:false, r:0.05, eye:1.64, save:null };
+function povSet(on,silent){
+  on=!!on; if(POV.on===on) return POV.on;
+  if(on){
+    if((typeof SHOW!=="undefined" && SHOW.seated) || metroCinematic || (typeof FIN!=="undefined" && FIN.on)) return false;
+    POV.save={ lr:camera.lowerRadiusLimit, ur:camera.upperRadiusLimit, lb:camera.lowerBetaLimit, ub:camera.upperBetaLimit,
+               radius:camWish, beta:camera.beta, fov:camera.fov, minZ:camera.minZ };
+    POV.on=true;
+    camera.lowerRadiusLimit=POV.r; camera.upperRadiusLimit=POV.r; camera.radius=POV.r;
+    camera.lowerBetaLimit=0.40; camera.upperBetaLimit=2.45;
+    camera.alpha=-player.rotation.y-Math.PI/2;      // si guarda dove guarda l'avatar
+    camera.beta=Math.PI/2-0.10;                      // sguardo appena verso il basso: ripiani e pavimento
+    camera.fov=0.95; camera.minZ=0.05;
+    camera.inertialAlphaOffset=0; camera.inertialBetaOffset=0; camera.inertialRadiusOffset=0;
+    _povPlace();
+    if(avatarRoot) avatarRoot.setEnabled(false);
+    if(pipe && pipe.depthOfFieldEnabled) pipe.depthOfFieldEnabled=false;
+    faded.forEach(m=>{ m.visibility=1; }); faded.length=0;
+    moveTarget=null; pendingInteract=null; if(tapMark) tapMark.setEnabled(false);
+  } else {
+    POV.on=false;
+    const S=POV.save||{ lr:4, ur:40, lb:0.35, ub:1.45, radius:VIEW.radius, beta:VIEW.beta, fov:0.8, minZ:1 };
+    camera.lowerRadiusLimit=S.lr; camera.upperRadiusLimit=S.ur;
+    camera.lowerBetaLimit=S.lb; camera.upperBetaLimit=S.ub;
+    camera.fov=S.fov; camera.minZ=S.minZ;
+    camera.beta=Math.max(S.lb,Math.min(S.ub,S.beta));
+    camera.radius=S.radius; camWish=S.radius; _camApplied=-1;
+    camera.inertialAlphaOffset=0; camera.inertialBetaOffset=0; camera.inertialRadiusOffset=0;
+    /* il corpo torna solo se nessun altro lo vuole spento (seduti al cinema) */
+    if(avatarRoot && !(typeof SHOW!=="undefined" && SHOW.seated)) avatarRoot.setEnabled(true);
+    if(pipe) pipe.depthOfFieldEnabled=(typeof qLevel==="undefined" || qLevel==="alto");
+    POV.save=null;
+  }
+  const bt=document.getElementById("povBtn");
+  if(bt){ bt.classList.toggle("on",POV.on); bt.setAttribute("aria-pressed",POV.on?"true":"false"); }
+  if(!silent) toast(POV.on ? "\u{1F441}️ First person · "+(IS_TOUCH?"tocca \u{1F441}️":"premi O")+" per uscire"
+                           : "\u{1F3A5} Third person");
+  return POV.on;
+}
+function povToggle(){ return povSet(!POV.on); }
+/* gli occhi: sopra il giocatore, un filo davanti (dove sarebbe il viso) */
+function _povPlace(){
+  const ry=player.rotation.y;
+  camera.target.set(player.position.x+Math.sin(ry)*0.10, player.position.y+POV.eye, player.position.z+Math.cos(ry)*0.10);
+}
+/* ogni fotogramma in prima persona: tiene spento cio' che altri possono
+   riaccendere (il corpo ricostruito cambiando vestito, la profondita' di
+   campo riaccesa dal pulsante qualita') */
+function povTick(){
+  if(avatarRoot && avatarRoot.isEnabled(false)) avatarRoot.setEnabled(false);
+  if(pipe && pipe.depthOfFieldEnabled) pipe.depthOfFieldEnabled=false;
+  _povPlace();
+}
+
 const keys={};
 function __typingNow(e){ const t=e&&e.target, tag=t&&t.tagName;
   return tag==="INPUT"||tag==="TEXTAREA"||(t&&t.isContentEditable); }
@@ -33279,8 +33369,13 @@ window.addEventListener("keydown",e=>{ if(__typingNow(e)) return;   // non rubar
   /* H = mostra/nascondi la legenda dei tasti (non e' un tasto di collaudo:
      e' una preferenza, come V). */
   if(k==="h"){ const kb=document.getElementById("kbhelp"); if(kb) kb.classList.toggle("off"); return; }
-  /* V = torna alla VISUALE BASE · SHIFT+V = salva quella corrente come base */
-  if(k==="v"){ if(e.shiftKey) saveView(); else { applyView(); toast("🎥 Visuale base"); } }
+  /* O = prima persona (dagli occhi) on/off. Preferenza del giocatore, come V. */
+  if(k==="o"){ e.preventDefault(); povToggle(); return; }
+  /* V = torna alla VISUALE BASE · SHIFT+V = salva quella corrente come base.
+     ⚠️ In prima persona si esce PRIMA: salvare come «base» un raggio di 5 cm
+     vorrebbe dire ritrovarsi dentro la testa a ogni V. */
+  if(k==="v"){ if(POV.on) povSet(false,true);
+    if(e.shiftKey) saveView(); else { applyView(); toast("🎥 Visuale base"); } }
   });
 window.addEventListener("keyup",e=>{ if(__typingNow(e)) return; keys[e.key.toLowerCase()]=false; });
 document.addEventListener("focusin",e=>{ if(__typingNow(e)) for(const k in keys) keys[k]=false; });
@@ -33296,6 +33391,7 @@ function sMove(e){ for(const t of e.changedTouches){ if(t.identifier!==sid) cont
   const mx=40,d=Math.hypot(dx,dy); if(d>mx){dx*=mx/d;dy*=mx/d;} knob.style.left=(35+dx)+"px"; knob.style.top=(35+dy)+"px";
   stickVec.x=dx/mx; stickVec.y=dy/mx; } }
 document.getElementById("actBtn").addEventListener("click",tryInteract);
+document.getElementById("povBtn").addEventListener("click",e=>{ e.preventDefault(); povToggle(); });
 // Pulsante CORRI dedicato (mobile): tieni premuto per correre, esattamente come
 // Shift su desktop. Più affidabile della "profondità" del joystick, che su
 // schermo piccolo il pollice spinge quasi sempre vicino al bordo (falso "corre
@@ -33441,7 +33537,10 @@ scene.registerBeforeRender(()=>{
     if(pipe && pipe.depthOfFieldEnabled){ pipe.depthOfField.focusDistance=BABYLON.Vector3.Distance(camera.position,camera.target)*1000; }
     return;
   }
-  let fwd=player.position.subtract(camera.position); fwd.y=0;
+  /* in prima persona «avanti» e' dove si guarda: si legge da alpha (la
+     camera sta a 5 cm dagli occhi, la differenza di posizione sarebbe rumore) */
+  let fwd=POV.on ? new BABYLON.Vector3(-Math.cos(camera.alpha),0,-Math.sin(camera.alpha))
+                 : player.position.subtract(camera.position); fwd.y=0;
   if(fwd.lengthSquared()<0.001) fwd=new BABYLON.Vector3(0,0,1); fwd.normalize();
   const right=new BABYLON.Vector3(fwd.z,0,-fwd.x);
   let mx=0,mz=0;
@@ -33491,11 +33590,12 @@ scene.registerBeforeRender(()=>{
   // camera dietro le spalle SOLO andando avanti (W/stick su): strafe (A/D) e retro (S) NON ruotano la camera
   const fFwd = keys["w"]||keys["arrowup"]||(stickVec.y<-0.35);
   const fOther = keys["a"]||keys["d"]||keys["s"]||keys["arrowleft"]||keys["arrowright"]||keys["arrowdown"]||(Math.abs(stickVec.x)>0.35)||(stickVec.y>0.35);
-  if(kbMove && fFwd && !fOther){ const ta=-player.rotation.y-Math.PI/2;
+  if(kbMove && fFwd && !fOther && !POV.on){ const ta=-player.rotation.y-Math.PI/2;
     let d=((ta-camera.alpha+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI; camera.alpha+=d*0.09; }
   // mira un po' sopra il giocatore → l'avatar sta più in basso e centrato
-  _tmp.copyFrom(player.position); _tmp.y+=2.0;
-  BABYLON.Vector3.LerpToRef(camera.target,_tmp,0.15,camera.target);
+  if(POV.on) povTick();                // prima persona: la camera sta sugli occhi, senza ritardo
+  else { _tmp.copyFrom(player.position); _tmp.y+=2.0;
+    BABYLON.Vector3.LerpToRef(camera.target,_tmp,0.15,camera.target); }
   // tilt-shift: messa a fuoco sull'avatar (effetto "modellino")
   if(pipe && pipe.depthOfFieldEnabled){ pipe.depthOfField.focusDistance=BABYLON.Vector3.Distance(camera.position,camera.target)*1000; }
   // COLLISIONE TELECAMERA: impedisce di attraversare muri/edifici dietro di essa.
@@ -33503,7 +33603,7 @@ scene.registerBeforeRender(()=>{
   // occluder e' piu' vicino del raggio desiderato, accorcio camera.radius
   // (si applica al frame successivo, impercettibile). Margine 0.6 per non
   // "toccare" la superficie.
-  { /* 1) rotella/pinch (o cambio area) hanno mosso il raggio? quella e' la
+  if(!POV.on){ /* 1) rotella/pinch (o cambio area) hanno mosso il raggio? quella e' la
           nuova volonta' del giocatore: aggiorno camWish. */
     if(_camApplied>=0 && Math.abs(camera.radius-_camApplied)>0.02) camWish=camera.radius;
     camWish=Math.min(camera.upperRadiusLimit,Math.max(camera.lowerRadiusLimit,camWish));
@@ -33540,7 +33640,7 @@ scene.registerBeforeRender(()=>{
   // dissolvi gli ostacoli tra camera e avatar: l'avatar resta visibile E sempre della stessa dimensione
   faded.forEach(m=>{ m.visibility=1; }); faded.length=0;
   const dir=camera.target.subtract(camera.position); const dist=dir.length();
-  if(dist>1.2){ dir.scaleInPlace(1/dist);
+  if(dist>1.2 && !POV.on){ dir.scaleInPlace(1/dist);
     const ray=new BABYLON.Ray(camera.position,dir,dist-1.0);
     const hits=scene.multiPickWithRay(ray,mm=>mm.__occluder===true);
     if(hits) for(const h of hits){ const m=h.pickedMesh; if(m){ m.visibility=0.22; faded.push(m); } } }
@@ -34679,6 +34779,7 @@ function playMetroDescent(stId){
   if(metroCinematic) return;
   const S=metroStairs[stId];
   if(!S || !avatarMeshes.length){ enterSubway(stId); return; }   // fallback se manca la scala/avatar
+  try{ povSet(false,true); }catch(e){}   // v285: la discesa si guarda da fuori
   metroCinematic=true;
   moveTarget=null; pendingInteract=null;
   if(typeof tapMark!=="undefined"&&tapMark) tapMark.setEnabled(false);
@@ -38672,6 +38773,7 @@ function finFade(to,ms,cb){
    --------------------------------------------------------------------- */
 function finStart(){
   if(FIN.on) return;
+  try{ povSet(false,true); }catch(e){}   // v285: il finale e' una regia, non si guarda dagli occhi
   FIN.on=true;
   try{ DialogueBox.close(); }catch(e){}
   finFade(1,700,function(){
@@ -50149,6 +50251,119 @@ function setPlayerFit(id){
   return id;
 }
 
+/* =====================================================================
+   v285 — GLI NPC «GEMELLI» SI VESTONO COL GUARDAROBA (Giacomo, 30 set:
+   «mettere i vari pantaloni, i vestiti che abbiamo messo come accessori
+   nuovi, agli avatar NPC uguali al protagonista, per differenziare»).
+   Un terzo degli uomini in citta' pesca lo stesso rig del giocatore
+   (NPC_POOL.avatar): tinta a parte erano sette copie del protagonista.
+   Ora ognuno ha un SUO guardaroba: pantaloni (Trousers, Smart, Joggers,
+   Cargo o i pantaloncini di sempre) col loro colore, a volte una giacca,
+   un taglio, un cappello, gli occhiali, una sciarpa o una collana.
+   ⚠️ E' LO STESSO MOTORE del giocatore e dei compagni (dressBottom,
+   dressCoat, dressHair, dressAcc): nessuna seconda copia da tenere
+   allineata, e un capo nuovo nella Teca finisce anche addosso agli NPC.
+   ⚠️ DETERMINISTICO come modello e tinta (pickNpcModel/pickNpcTint): hash
+   sull'id, con un sale diverso per ogni scelta. Mr. Finch esce dal bar e
+   rientra vestito uguale; con Math.random() cambierebbe a ogni porta.
+   ⚠️ A RATE, UN PEZZO PER FOTOGRAMMA. Vestire un corpo costa (misurato in
+   Chromium headless: pantaloni ~75 ms, giacca ~85, taglio ~85, accessori
+   ~35): tutto insieme dentro spawnNPC erano ~0,3 s per NPC, cioe' un
+   secondo e mezzo di schermo fermo al primo avvio. In coda si spalma su
+   pochi fotogrammi e nessuno se ne accorge.
+   ⚠️ I colori di pelle e capelli si LEGGONO dal modello (non si scelgono):
+   la gamba scoperta della gonna e il taglio nuovo devono essere quelli
+   che quell'NPC ha gia'.
+   Per tenere un NPC com'e' (una divisa, un personaggio da riconoscere):
+   dress:false nella sua configurazione.
+   ===================================================================== */
+const NPC_DRESS_RIG={ avatar:"m", avatarW:"f" };   // solo i rig del giocatore: gli altri non hanno le mesh Casual_*
+function _npcCol(mt){ const c=mt&&(mt.albedoColor||mt.diffuseColor); try{ return c?c.toHexString():null; }catch(e){ return null; } }
+/* l'aspetto di un NPC: un oggetto come Look.state(), deciso dall'id */
+function npcLookFor(id,rig){
+  /* ⚠️ _npcHash da solo e' un hash «alla Java»: con il sale davanti, due
+     scelte dello stesso NPC differiscono di una costante, e le prove davano
+     giacca e cappellino a quasi tutti. Un rimescolamento dei bit le stacca. */
+  const mix=x=>{ x^=x>>>16; x=Math.imul(x,0x7feb352d); x^=x>>>15; x=Math.imul(x,0x846ca68b); x^=x>>>16; return x>>>0; };
+  const h=salt=>mix(_npcHash(salt+"|"+id)), pick=(arr,salt)=>arr[h(salt)%arr.length], p100=salt=>h(salt)%100;
+  const cols=ACC_COLS.filter(c=>c.hex && !c.metal);
+  const col=salt=>(p100(salt+"o")<50 ? "" : pick(cols,salt).id);    // meta' «Original», meta' un colore
+  const L={ rig, bottom:pick(lookBottomsFor(rig),"b").id, bcol:pick(LOOK_BCOL.filter(c=>c.hex),"bc").id,
+            coat:"", coatc:"", cut:"", hat:"", hatc:"", face:"", facec:"", neck:"", neckc:"" };
+  if(p100("c")<38){ L.coat=pick(LOOK_COATS,"cw").id; L.coatc=col("cc"); }
+  /* i tagli: al ragazzo soprattutto rasati e ricci, code e chignon piu' rari */
+  if(p100("t")<35) L.cut=pick(rig==="f" ? ["short","ponytail","bun","curly","long"]
+                                        : ["buzz","curly","buzz","curly","long","ponytail"],"tw");
+  const acc=slot=>LOOK_ACC.filter(a=>a.slot===slot);
+  if(p100("h")<40){ L.hat=pick(acc("head"),"hw").id; L.hatc=col("hc"); }
+  if(p100("f")<28){ L.face=pick(acc("face"),"fw").id; L.facec=col("fc"); }
+  if(p100("n")<24){ L.neck=pick(acc("neck"),"nw").id; L.neckc=col("nc"); }
+  return L;
+}
+const _npcDressQ=[];
+function npcDressLater(npc,cfg){
+  if(!npc || (cfg && cfg.dress===false)) return;
+  const rig=NPC_DRESS_RIG[npc.__model]; if(!rig) return;
+  npc.__look=npcLookFor(npc.id,rig);
+  _npcDressQ.push({ npc, step:0 });
+}
+/* un pezzo alla volta, nello stesso ordine di _vesti: il cappello si misura
+   sul taglio, la collana si appoggia sulla giacca */
+const _NPC_DRESS_STEPS=[
+  function(n,L,ms){
+    const legsM=ms.find(m=>/Casual_Legs/.test(m.name)&&m.material&&!/Skin/.test(m.material.name));
+    const skinM=ms.find(m=>m.material&&/Skin/.test(m.material.name));
+    const bc=(LOOK_BCOL.find(x=>x.id===L.bcol)||{}).hex;
+    const b=lookBottom(L.rig,L.bottom);
+    /* i pantaloncini del ragazzo sono quelli del modello: restano del colore
+       della sua tinta, come prima */
+    dressBottom(ms,L.rig,b,(b.tube||L.rig==="f")?(bc||_npcCol(legsM&&legsM.material)||"#3f5f86"):_npcCol(legsM&&legsM.material),
+                _npcCol(skinM&&skinM.material)||"#d3a172"); },
+  function(n,L,ms){ dressCoat(ms,L.coat,L.coatc); },
+  function(n,L,ms){ if(!L.cut) return;
+    const hm=ms.find(m=>/Casual_Head/.test(m.name)&&m.material&&/Hair/.test(m.material.name)&&m.getTotalVertices()>300);
+    dressHair(ms,L.rig,L.cut,_npcCol(hm&&hm.material)||"#3a2a18"); },
+  function(n,L,ms){ dressAcc(ms,{ head:L.hat, face:L.face, neck:L.neck, headc:L.hatc, facec:L.facec, neckc:L.neckc }); },
+];
+function _npcDressDone(npc){
+  /* le mesh nuove sono figlie del corpo: fanno ombra come l'NPC, non si
+     cliccano, prendono la nebbia, e stanno nel suo elenco di mesh */
+  const known=new Set(npc.meshes);
+  npc.holder.getChildMeshes(false).forEach(m=>{
+    if(known.has(m) || !m.getTotalVertices || !m.getTotalVertices()) return;
+    m.isPickable=false; m.applyFog=true; m.alwaysSelectAsActiveMesh=true; m.__npcCast=true;
+    npc.meshes.push(m); });
+  try{ refreshShadowCasters(); }catch(e){}
+  try{ _octDirty(); }catch(e){}
+}
+scene.onBeforeRenderObservable.add(()=>{
+  if(!_npcDressQ.length) return;
+  const t0=performance.now();
+  while(_npcDressQ.length && performance.now()-t0<8){
+    const j=_npcDressQ[0], n=j.npc;
+    if(!n.carrier || n.carrier.isDisposed() || NPCS.indexOf(n)<0){ _npcDressQ.shift(); continue; }
+    try{ _NPC_DRESS_STEPS[j.step](n,n.__look,n.meshes); }catch(e){ console.warn("[npc] vestito",n.id,e); }
+    if(++j.step>=_NPC_DRESS_STEPS.length){ _npcDressQ.shift(); _npcDressDone(n); }
+  }
+});
+/* ⚠️ I MATERIALI DEL GUARDAROBA SONO CONDIVISI (cache _accM/_coatM/_cutM:
+   uno per colore, per tutti). Un corpo si butta con dispose(false,true),
+   che distrugge anche i materiali: senza questo passaggio il primo NPC
+   uscito di scena col cappellino rosso si sarebbe portato via il cappellino
+   rosso del giocatore. Si staccano prima, e restano a chi li usa ancora. */
+function detachSharedDressMats(root){
+  if(!root) return;
+  const sh=new Set([].concat(Object.values(_accM),Object.values(_coatM),Object.values(_cutM)));
+  if(!sh.size) return;
+  root.getChildMeshes(false).forEach(m=>{ if(m.material && sh.has(m.material)) m.material=null; });
+}
+/* Console docente: chi e' vestito come. */
+ET.vestitiNPC=function(){
+  const o={}; NPCS.forEach(n=>{ if(n.__look){ const L=n.__look;
+    const b=lookBottom(L.rig,L.bottom), tinto=!!(b.tube||L.rig==="f");    // i pantaloncini del ragazzo restano del colore della tinta
+    o[n.id]=[L.bottom+(tinto?"/"+L.bcol:""),L.coat,L.cut,L.hat,L.face,L.neck].filter(Boolean).join(" · "); } });
+  console.table(o); return o; };
+
 /* ---- LA TECA (Diario › scheda 💎) --------------------------------------
    ⚠️ Questa scheda vale piu' della raccolta in se': E' la tabella dei
    verbi irregolari, costruita da loro giocando. Le righe accese sono
@@ -50905,7 +51120,9 @@ const Presenza=(function(){
     try{ if(b.inter){ removeInteract(b.inter); b.inter=null; } }catch(e){}
     try{ for(const k in b.anims) b.anims[k].dispose(); }catch(e){}
     /* true = butta anche i materiali: sono CLONI nostri, non quelli del GLB
-       condiviso con gli NPC. */
+       condiviso con gli NPC. ⚠️ Tranne quelli del guardaroba (cappelli,
+       giacche, tagli): quelli sono condivisi, vedi detachSharedDressMats. */
+    try{ detachSharedDressMats(b.carrier); }catch(e){}
     try{ b.carrier.dispose(false,true); }catch(e){}
   }
   /* la chiave del compagno non e' memorizzata nell'oggetto: si ritrova. Con
