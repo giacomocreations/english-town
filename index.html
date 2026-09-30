@@ -5784,9 +5784,20 @@ function streetBench(x,z,ry){ if(insideSolid(x,z,1.6)) return;
   const root=spawnProp('bench_park', x, z, 2.0,
     {byHeight:false, ry:ry||0, yaw:PROP_YAW.bench, occluder:true, solid:true, solidInset:0.1});
   if(!root) return root;
+  /* v292 (Giacomo: «le sedute al parco sono strane, sospese in aria»): i
+     tavoli girati di traverso (fontana, gazebo, sabbiera) escono piu'
+     piccoli (fitAndPlace misura l'ingombro ruotato: alti 0,78 invece di 1),
+     e la panca non stava piu' a 0,80 m dal centro: il raggio non la trovava
+     e si restava seduti a mezz'aria. Tutto si misura sulla scala vera, k.
+     E il tavolo si appoggia sul prato/pavimento (prima era affondato di
+     14-20 cm: la panca stava a una spanna da terra). */
+  const gy=_benchGround(x,z,0.5);
+  root.computeWorldMatrix(true); root.getChildMeshes().forEach(m=>m.computeWorldMatrix(true));
+  const bb=root.getHierarchyBoundingVectors(true), k=Math.max(0.3,(bb.max.y-bb.min.y)||1);
+  if(gy>0.01) root.position.y+=gy-bb.min.y;
   const r=(ry||0)+PROP_YAW.bench, lines=[-1,1].map(s=>{
     /* la panca corre lungo la z locale: la fila e' quella, lo sguardo verso il centro */
-    const L=_benchLine(x,z,r+Math.PI/2,0,-s*0.80,0.55,null,{ hip:0.0, stand:-1 });
+    const L=_benchLine(x,z,r+Math.PI/2,0,-s*0.80*k,0.55*k,null,{ hip:0.0, stand:-1 }); L.k=k;
     if(s<0){ L.fx=-L.fx; L.fz=-L.fz; } return L; });
   /* ⚠️ lo sguardo va sempre verso il tavolo: dal punto della fila al centro */
   lines.forEach(L=>{ const dx=x-L.cx, dz=z-L.cz, d=Math.hypot(dx,dz)||1; L.fx=dx/d; L.fz=dz/d; });
@@ -7618,6 +7629,11 @@ function buildDiner(){
   /* ⚠️ un piano si legge dal lato della sua faccia: chi arriva da Home guarda
      verso +z, quindi il piano va girato (si legge diritto da nord) */
   sign.rotation.y=Math.PI; sign.scaling.x=-1;
+  /* v292 (Giacomo: «Sunny Side da dietro si legge al contrario»): il piano
+     e' a due facce, e dal lato sud (il parcheggio, la strada di dietro) si
+     vedeva il retro, specchiato. Un secondo piano, 2 cm piu' indietro e
+     girato, si legge diritto da sud; da nord resta coperto dal primo. */
+  const signB=sign.clone("dnSignB"); signB.position.z+=0.02; signB.rotation.y=0; signB.isPickable=false;
   [-3.3,3.3].forEach(px=>{ const s=BABYLON.MeshBuilder.CreateCylinder("dnSp",{diameter:0.1,height:1.3,tessellation:8},scene);
     s.material=M.chrome; s.position.set(px,KH+0.55,KZ0+0.4); s.parent=root; });
   /* lavagna del menu sulla facciata, a destra del passavivande */
@@ -8229,9 +8245,10 @@ function _benchGround(x,z,y0){
 /* la quota vera della seduta sotto il punto (per i GLB): il primo piano sotto 0,8 m da terra */
 function _benchSeatY(b,x,z,gy){
   if(!b.root) return gy+0.45;
+  b.root.getChildMeshes().forEach(m=>m.computeWorldMatrix(true));
   const ms=b.root.getChildMeshes(), hits=scene.multiPickWithRay(new BABYLON.Ray(new BABYLON.Vector3(x,gy+0.8,z),new BABYLON.Vector3(0,-1,0),1.2),m=>ms.indexOf(m)>=0);
   let y=null; (hits||[]).forEach(h=>{ const hy=h.pickedPoint.y; if(hy>gy+0.15 && (y===null||hy>y)) y=hy; });
-  return y===null?gy+0.45:y; }
+  return y===null?gy+0.52*((b.lines[0]&&b.lines[0].k)||1):y; }
 function benchSit(b){
   if(BSIT.b || (typeof DINER!=="undefined" && DINER.seat) || area!=="town") return;
   if(typeof SHOW!=="undefined" && SHOW.seated) return;
@@ -9839,17 +9856,21 @@ function bench(x,z,ry,opt){
   ry=ry||0; opt=opt||{};
   const b=new BABYLON.TransformNode("bench",scene); b.parent=townRoot; b.position.set(x,0,z); b.rotation.y=ry;
   const gy=_benchGround(x,z,0);
-  const seat=BABYLON.MeshBuilder.CreateBox("bs",{width:3.6,height:0.12,depth:0.62},scene);
-  seat.material=mat("bsm","#8590a0"); seat.position.set(0,gy+0.44,0.02); seat.parent=b; seat.__occluder=true;
+  /* v292 (Giacomo: «le due panchine non GLB vedono le gambe incastrate
+     dentro»): la seduta era profonda 62 cm e il ginocchio non arrivava al
+     bordo, gli stinchi scendevano DENTRO la seduta. Ora 44 cm, e l'anca sta
+     piu' indietro: le ginocchia sporgono e le gambe scendono davanti. */
+  const seat=BABYLON.MeshBuilder.CreateBox("bs",{width:3.6,height:0.12,depth:0.44},scene);
+  seat.material=mat("bsm","#8590a0"); seat.position.set(0,gy+0.44,-0.07); seat.parent=b; seat.__occluder=true;
   const back=BABYLON.MeshBuilder.CreateBox("bb",{width:3.6,height:0.55,depth:0.1},scene);
   back.material=mat("bbm","#6c7682"); back.position.set(0,gy+0.84,-0.36); back.rotation.x=-0.12; back.parent=b;
-  [-1.6,1.6].forEach(dx=>{ const lg=BABYLON.MeshBuilder.CreateBox("bl",{width:0.2,height:0.38,depth:0.62},scene);
-    lg.material=mat("blm","#3a4148"); lg.position.set(dx,gy+0.19,0.02); lg.parent=b;
+  [-1.6,1.6].forEach(dx=>{ const lg=BABYLON.MeshBuilder.CreateBox("bl",{width:0.2,height:0.38,depth:0.44},scene);
+    lg.material=mat("blm","#3a4148"); lg.position.set(dx,gy+0.19,-0.07); lg.parent=b;
     const ls=BABYLON.MeshBuilder.CreateBox("bl",{width:0.2,height:0.5,depth:0.1},scene);
     ls.material=mat("blm","#3a4148"); ls.position.set(dx,gy+0.72,-0.34); ls.rotation.x=-0.12; ls.parent=b; });
   /* seduta 3.6 larga + schienale che sporge a z=-0.47 → 3.8 x 1.2 */
   addSolidRot(x,z,ry,1.9,0.6,"town");
-  return regBench("bench",x,z,[_benchLine(x,z,ry,0,-0.08,1.5,gy+0.50,{ hip:0.02 })],{ radius:2.6, noInter:opt.noInter });
+  return regBench("bench",x,z,[_benchLine(x,z,ry,0,-0.14,1.5,gy+0.50,{ hip:0.02 })],{ radius:2.6, noInter:opt.noInter });
 }
 
 
@@ -26638,6 +26659,53 @@ const AUDIO=(function(){
   return { play, stop, duckOn, duckOff, cycle, refreshBtn, muted, playing, time, gain, bind, unbind };
 })();
 (function(){ const b=document.getElementById("au-btn"); if(b) b.addEventListener("click",()=>AUDIO.cycle()); })();
+/* =====================================================================
+   v292 — MUSICA IN CUFFIA (Giacomo: «se metti le cuffie si sente la musica,
+   volume 30%, quella del beat club»). Chi porta le cuffie (Teca, slot
+   testa) sente le canzoni del Beat Club in ordine sparso, al 30% del volume
+   scelto col bottone \u{1F50A} (muto = muto anche qui) e abbassate con il
+   resto quando parla un NPC (AUDIO.gain() comprende il ducking).
+   E' un <audio> SUO, non AUDIO.play(): il club resta padrone del suo
+   brano, e quando il concerto suona (AUDIO.playing()) le cuffie tacciono;
+   tacciono anche al cinema, da seduti. Se la cartella audio/ non c'e' si
+   resta in silenzio, senza toast ripetuti.
+   ⚠️ I brani sono file da 2-4 MB: scendono solo a chi mette le cuffie, uno
+   alla volta, in streaming.
+   ===================================================================== */
+const PHONES=(function(){
+  const VOL=0.30;
+  let a=null, idx=-1, on=false, blocked=false, dead=false;
+  function wearing(){ try{ return Look.state().hat==="headphones"; }catch(e){ return false; } }
+  function allowed(){
+    if(typeof loginPending!=="undefined" && loginPending) return false;
+    if(document.hidden) return false;
+    if(AUDIO.muted()) return false;                                     // muto: niente da scaricare
+    if(AUDIO.playing()) return false;                                   // il concerto: suona il club
+    if(typeof SHOW!=="undefined" && SHOW.seated) return false;          // al cinema si guarda il film
+    return true; }
+  function vol(){ if(a) a.volume=Math.max(0,Math.min(1,VOL*AUDIO.gain())); }
+  function play(){ if(!a) return; const p=a.play(); if(p&&p.catch) p.catch(()=>{ blocked=true; }); }
+  function next(announce){
+    if(typeof GIG_SONGS==="undefined" || !GIG_SONGS.length) return;
+    let k=Math.floor(Math.random()*GIG_SONGS.length); if(GIG_SONGS.length>1 && k===idx) k=(k+1)%GIG_SONGS.length; idx=k;
+    if(a){ try{ a.pause(); a.removeAttribute("src"); a.load(); }catch(e){} }
+    const el=new Audio(GIG_DIR+GIG_SONGS[idx].f); a=el; el.preload="auto"; vol();
+    el.addEventListener("ended",()=>{ if(a===el && on) next(true); });
+    el.addEventListener("error",()=>{ if(a===el){ a=null; dead=true; } });   // file assente: silenzio
+    play();
+    if(announce) toast("\u{1F3A7} Now playing: \u00ab"+GIG_SONGS[idx].t+"\u00bb");
+  }
+  function tick(){
+    const want=!dead && wearing() && allowed();
+    if(want && !on){ on=true; if(a && !a.ended) play(); else next(true); }
+    else if(!want && on){ on=false; if(a) try{ a.pause(); }catch(e){} }
+    vol();
+  }
+  /* autoplay negato dal browser: si riprova al primo gesto */
+  ["pointerdown","keydown","touchstart"].forEach(ev=>window.addEventListener(ev,()=>{ if(blocked && on){ blocked=false; play(); } },{passive:true}));
+  setInterval(tick,500);
+  return { tick, playing:()=>!!(a && on && !a.paused), title:()=>idx>=0?GIG_SONGS[idx].t:"" };
+})();
 /* Abbassamento automatico quando parla il sintetizzatore: senza, la voce
    dell'NPC e la canzone si accavallano e non si capisce ne' l'una ne' l'altra. */
 (function(){ const _say=TTS.say.bind(TTS);
@@ -49983,6 +50051,9 @@ const LOOK_ACC=[
   { id:"bucket",    slot:"head", en:"Hiking hat",     ic:"\u{1F452}", col:"#8a7a52", req:{ quest:"u3_3", stars:1200 } },
   /* slot occhi */
   { id:"shades",    slot:"face", en:"Sunglasses",     ic:"\u{1F576}️", col:"#1c1e22", req:{ quest:"u1", stars:300 } },
+  /* v292: altri due occhiali da sole, sempre piu' di stile (vedi ACC_BUILD) */
+  { id:"aviator",   slot:"face", en:"Aviator sunglasses",  ic:"\u{1F576}\uFE0F", col:"#d6ae3c", req:{ stars:1000 } },
+  { id:"designer",  slot:"face", en:"Designer sunglasses", ic:"\u{1F60E}", col:"#7a1f3d", req:{ stars:2000 } },
   { id:"glasses",   slot:"face", en:"Round glasses",  ic:"\u{1F453}", col:"#6b3f24", req:{ gems:25 } },
   /* slot collo */
   { id:"necklace",  slot:"neck", en:"Necklace",       ic:"\u{1F4FF}", col:"#3f9fd0", req:{ stars:700 } },
@@ -50323,6 +50394,56 @@ function _accMerge(g){
     L.forEach(m=>{ [BABYLON.VertexBuffer.UVKind,BABYLON.VertexBuffer.UV2Kind,BABYLON.VertexBuffer.ColorKind].forEach(k=>{ if(m.isVerticesDataPresent(k)) m.removeVerticesData(k); }); });
     const r=BABYLON.Mesh.MergeMeshes(L,true,true); if(r){ r.material=mat; r.parent=g; } });
 }
+/* v292 — LA CALOTTA CHE AVVOLGE LA TESTA, in comune fra cappellino, berretto
+   di lana e cappello da escursionista (Giacomo: «se hai i capelli ricci,
+   escono un po' dai cappelli»). Prima solo il cappellino avvolgeva la testa
+   vera; berretto e cappello da escursionista erano una mezza sfera e un
+   tronco di cono di misura fissa, e i ricci li bucavano. Qui la calotta sta
+   sempre FUORI dai punti della testa (pelle + capelli del modello o taglio
+   scelto, M.HS), per spicchi e per quota, riempiendo le valli e lisciando.
+   o = { zc, rx, rz, yT, yb(a), NA, NU, pad, prof(u)->[kr,ky], rib(a,u), topDz } */
+function _accCrown(M,o){
+  const V=BABYLON.Vector3, zc=o.zc, NA=o.NA||48, NU=o.NU||10, TA=2*Math.PI/NA, pad=o.pad||0.006, yT=o.yT, yb=o.yb;
+  const Re=a=>1/Math.sqrt(Math.pow(Math.sin(a)/o.rx,2)+Math.pow(Math.cos(a)/o.rz,2));
+  const prof=o.prof||(u=>[Math.pow(Math.cos(u*Math.PI/2),0.8), Math.sin(u*Math.PI/2)]);
+  /* i punti della testa per spicchi: la calotta non ci deve entrare */
+  const bins=[]; for(let i=0;i<NA;i++) bins.push([]);
+  (M.HS||M.HRL||[]).forEach(l=>{ const a=Math.atan2(l.x,l.z-zc), i=((Math.floor((a+Math.PI)/TA))%NA+NA)%NA; bins[i].push(l); });
+  const W=Math.max(1,Math.round(NA/48));
+  const need=(i,y)=>{ let r=0; for(let d=-W;d<=W;d++) bins[(i+d+NA)%NA].forEach(l=>{ if(Math.abs(l.y-y)<0.014) r=Math.max(r,Math.hypot(l.x,l.z-zc)); }); return r; };
+  const R=[], Y=[];
+  for(let j=0;j<NU;j++){ const u=j/NU, pr=prof(u), row=[], ry=[];
+    for(let i=0;i<NA;i++){ const a=-Math.PI+i*TA, b=yb(a), y=b+(yT-b)*pr[1];
+      ry.push(y); row.push(Math.max(Re(a)*pr[0], need(i,y)+pad)); }
+    /* ciuffi e punte non devono fare bozzi: valli riempite, poi lisciato */
+    const r0=row.slice(), K=Math.max(6,3*W);
+    for(let k=0;k<K;k++){ const r2=row.map((r,i)=>Math.max(r0[i],(row[(i+NA-1)%NA]+r+row[(i+1)%NA])/3)); for(let i=0;i<NA;i++) row[i]=r2[i]; }
+    R.push(row); Y.push(ry); }
+  /* ogni riga non piu' larga di quella sotto: la calotta si chiude, non si gonfia */
+  for(let j=1;j<NU;j++) for(let i=0;i<NA;i++) R[j][i]=Math.min(R[j][i],R[j-1][i]);
+  if(o.rib) for(let j=0;j<NU;j++) for(let i=0;i<NA;i++) R[j][i]*=1+o.rib(-Math.PI+i*TA,j/NU);
+  const at=(i,j)=>{ const a=-Math.PI+(i%NA)*TA; return new V(Math.sin(a)*R[j][i%NA], Y[j][i%NA], zc+Math.cos(a)*R[j][i%NA]); };
+  /* il raggio della calotta allo spicchio i e alla quota y */
+  const rAt=(i,y)=>{ i=((i%NA)+NA)%NA; if(y<=Y[0][i]) return R[0][i];
+    for(let j=0;j<NU-1;j++) if(y<=Y[j+1][i]){ const t=(y-Y[j][i])/Math.max(1e-6,Y[j+1][i]-Y[j][i]); return R[j][i]+(R[j+1][i]-R[j][i])*t; }
+    return R[NU-1][i]; };
+  const top=new V(0,yT,zc+(o.topDz==null?0.004:o.topDz)), P=[], T=[];
+  for(let j=0;j<NU;j++) for(let i=0;i<NA;i++) P.push(at(i,j));
+  P.push(top); const pole=P.length-1;
+  for(let j=0;j<NU-1;j++) for(let i=0;i<NA;i++){ const a=j*NA+i, b=j*NA+(i+1)%NA, d=(j+1)*NA+i, e=(j+1)*NA+(i+1)%NA; T.push([a,b,e],[a,e,d]); }
+  for(let i=0;i<NA;i++) T.push([(NU-1)*NA+i,(NU-1)*NA+(i+1)%NA,pole]);
+  const cen=new V(0,(yT+yb(Math.PI))/2-0.04,zc);
+  const mesh=(g,mat)=>{ const m=_hairMesh(P,T,p=>p.subtract(cen)); m.material=mat; m.parent=g; return m; };
+  /* dentro, un filo piu' scuro: il bordo non deve lasciar vedere il vuoto */
+  const inner=(g,mat)=>{ const m=_hairMesh(P.map(p=>p.subtract(cen).scale(0.985).add(cen)),T,p=>cen.subtract(p)); m.material=mat; m.parent=g; return m; };
+  return { R, Y, NA, NU, TA, zc, yb, at, rAt, top, cen, mesh, inner };
+}
+/* anelli chiusi attorno alla testa (fasce, risvolti, tese): rings = [[V3 x NA], ...] dal basso in alto */
+function _accRings(g,rings,out,mat){
+  const P=[], T=[], n=rings[0].length;
+  rings.forEach(r=>r.forEach(p=>P.push(p)));
+  for(let j=0;j<rings.length-1;j++) for(let i=0;i<n;i++){ const a=j*n+i, b=j*n+(i+1)%n, d=(j+1)*n+i, e=(j+1)*n+(i+1)%n; T.push([a,b,e],[a,e,d]); }
+  const m=_hairMesh(P,T,out); m.material=mat; m.parent=g; return m; }
 const ACC_BUILD={
   /* v291 (Giacomo, 30 set: «il capellino sembra un elmetto, e dall'alto si
      vedono due cerchi, uno grande e uno piccolo, che si intersecano»): era
@@ -50338,33 +50459,9 @@ const ACC_BUILD={
     const V=BABYLON.Vector3, zc=(M.front+M.back)/2, rx=M.halfW*1.03, rz=(M.front-M.back)/2*1.03;
     const yT=M.top+0.012, yF=yT-0.100, yB=yT-0.165;          // cima, bordo sulla fronte, bordo sulla nuca
     const c=_accC(C,0.12), under=_accMat(_hexMul(C.hex,0.62),0.05), seamM=_accMat(_hexMul(C.hex,0.72),0.1);
-    const NA=48, NU=10, TA=2*Math.PI/NA;
     const yb=a=>yB+(yF-yB)*(1+Math.cos(a))/2;
-    const Re=a=>1/Math.sqrt(Math.pow(Math.sin(a)/rx,2)+Math.pow(Math.cos(a)/rz,2));
-    /* i punti della testa per spicchi: la calotta non ci deve entrare */
-    const bins=[]; for(let i=0;i<NA;i++) bins.push([]);
-    (M.HS||M.HRL||[]).forEach(l=>{ const a=Math.atan2(l.x,l.z-zc), i=((Math.floor((a+Math.PI)/TA))%NA+NA)%NA; bins[i].push(l); });
-    const need=(i,y)=>{ let r=0; for(let d=-1;d<=1;d++) bins[(i+d+NA)%NA].forEach(l=>{ if(Math.abs(l.y-y)<0.014) r=Math.max(r,Math.hypot(l.x,l.z-zc)); }); return r; };
-    const R=[], Y=[];
-    for(let j=0;j<NU;j++){ const ph=j/NU*Math.PI/2, row=[], ry=[];
-      for(let i=0;i<NA;i++){ const a=-Math.PI+i*TA, b=yb(a), y=b+(yT-b)*Math.sin(ph);
-        ry.push(y); row.push(Math.max(Re(a)*Math.pow(Math.cos(ph),0.8), need(i,y)+0.006)); }
-      /* ciuffi e punte non devono fare bozzi: valli riempite, poi lisciato */
-      const r0=row.slice();
-      for(let k=0;k<6;k++){ const r2=row.map((r,i)=>Math.max(r0[i],(row[(i+NA-1)%NA]+r+row[(i+1)%NA])/3)); for(let i=0;i<NA;i++) row[i]=r2[i]; }
-      R.push(row); Y.push(ry); }
-    /* ogni riga non piu' larga di quella sotto: la calotta si chiude, non si gonfia */
-    for(let j=1;j<NU;j++) for(let i=0;i<NA;i++) R[j][i]=Math.min(R[j][i],R[j-1][i]);
-    const at=(i,j)=>{ const a=-Math.PI+(i%NA)*TA; return new V(Math.sin(a)*R[j][i%NA], Y[j][i%NA], zc+Math.cos(a)*R[j][i%NA]); };
-    const top=new V(0,yT,zc+0.004), P=[], T=[];
-    for(let j=0;j<NU;j++) for(let i=0;i<NA;i++) P.push(at(i,j));
-    P.push(top); const pole=P.length-1;
-    for(let j=0;j<NU-1;j++) for(let i=0;i<NA;i++){ const a=j*NA+i, b=j*NA+(i+1)%NA, d=(j+1)*NA+i, e=(j+1)*NA+(i+1)%NA; T.push([a,b,e],[a,e,d]); }
-    for(let i=0;i<NA;i++) T.push([(NU-1)*NA+i,(NU-1)*NA+(i+1)%NA,pole]);
-    const cen=new V(0,(yT+yB)/2-0.04,zc);
-    const crown=_hairMesh(P,T,p=>p.subtract(cen)); crown.material=c; crown.parent=g;
-    /* dentro, un filo piu' scuro: il bordo non deve lasciar vedere il vuoto */
-    const inner=_hairMesh(P.map(p=>p.subtract(cen).scale(0.985).add(cen)),T,p=>cen.subtract(p)); inner.material=under; inner.parent=g;
+    const K=_accCrown(M,{ zc, rx, rz, yT, yb, NA:48, NU:10 }), R=K.R, NA=K.NA, NU=K.NU, TA=K.TA, at=K.at, top=K.top;
+    K.mesh(g,c); K.inner(g,under);
     /* le cuciture dei sei spicchi e il bottone */
     for(let s=0;s<6;s++){ const i0=Math.round(s*NA/6), path=[];
       for(let j=0;j<NU;j++){ const p=at(i0,j), a=-Math.PI+i0*TA; path.push(p.add(new V(Math.sin(a),0.35,Math.cos(a)).normalize().scale(0.0012))); }
@@ -50387,12 +50484,32 @@ const ACC_BUILD={
     strip(dn,()=>new V(0,-1,0),under);
     /* il bordo della visiera: una striscia fra sopra e sotto */
     strip(up.map((r,k)=>[r[1],dn[k][1]]),p=>new V(p.x,0,p.z-zc),c); },
-  beanie(g,M,C){ const zc=(M.front+M.back)/2-0.005, rx=M.halfW*1.11, rz=(M.front-M.back)/2*1.09, base=Math.max(0.03,M.top-0.15);
-    const c=_accC(C,0.05), c2=_accMat(_hexLum(C.hex)>0.75?"#2f5f8a":"#e8e4da",0.05);
-    const d=BABYLON.MeshBuilder.CreateSphere("acc",{diameter:1,segments:14,slice:0.5},scene);
-    d.material=c; d.scaling.set(rx*2,(M.top-base+0.035)*2,rz*2); d.position.set(0,base,zc); d.parent=g;
-    const band=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:1,height:0.045,tessellation:28},scene);
-    band.material=c2; band.scaling.set(rx*2.04,1,rz*2.04); band.position.set(0,base+0.012,zc); band.parent=g; },   // v291: senza pon pon (Giacomo)
+  /* v292 (Giacomo: «il wooly hat si puo' rifinire meglio, ora e' un po'
+     finto»): era mezza sfera liscia con un cilindro chiaro attorno. Ora e'
+     un berretto di lana vero: avvolge la testa (e i capelli, ricci compresi),
+     scende sulla fronte e dietro sulla nuca, e' a COSTE verticali che si
+     stringono verso la cima, ha il RISVOLTO dello stesso colore a coste piu'
+     fitte, rigonfio sul bordo, e l'etichettina cucita davanti. */
+  beanie(g,M,C){
+    const V=BABYLON.Vector3, zc=(M.front+M.back)/2-0.004, rx=M.halfW*1.04, rz=(M.front-M.back)/2*1.04;
+    const yT=M.top+0.024, yF=yT-0.122, yB=yT-0.195;
+    const knit=_accC(C,0.03), cuffM=C.metal?knit:_accMat(_hexMul(C.hex,0.9),0.03), under=_accMat(_hexMul(C.hex,0.55),0.03);
+    const yb=a=>yB+(yF-yB)*(1+Math.cos(a))/2, RIBS=36, CR=0.030;
+    const K=_accCrown(M,{ zc, rx, rz, yT, yb, NA:108, NU:12, pad:0.009, topDz:-0.006,
+      prof:u=>[Math.pow(Math.cos(u*Math.PI/2),0.72), Math.pow(Math.sin(u*Math.PI/2),0.9)],
+      rib:(a,u)=>0.022*Math.max(0,Math.cos(a*RIBS))*(1-u)*(1-u) });
+    K.mesh(g,knit); K.inner(g,under);
+    /* il risvolto: dal bordo in su per CR, poco fuori dalla calotta, con le
+       coste piu' fitte e il bordo in alto rigonfio (la lana ripiegata) */
+    const NA=K.NA, TA=K.TA, ring=(dy,dr,ribA)=>{ const r=[]; for(let i=0;i<NA;i++){ const a=-Math.PI+i*TA, y=yb(a)+dy;
+        const rr=(K.rAt(i,Math.min(y,yb(a)+CR))+dr)*(1+(ribA||0)*Math.max(0,Math.cos(a*RIBS*1.5)));
+        r.push(new V(Math.sin(a)*rr, y, zc+Math.cos(a)*rr)); } return r; };
+    _accRings(g,[ ring(-0.004,-0.004,0), ring(-0.001,0.005,0.012), ring(CR*0.5,0.007,0.014), ring(CR-0.002,0.008,0.012), ring(CR+0.002,0.003,0), ring(CR+0.001,-0.002,0) ],
+      p=>new V(p.x,0,p.z-zc),cuffM);
+    /* l'etichettina davanti, sul risvolto */
+    const i0=Math.round(NA/2), r0=K.rAt(i0,yF+CR*0.5)+0.011;
+    const lab=BABYLON.MeshBuilder.CreateBox("acc",{width:0.026,height:0.014,depth:0.0025},scene);
+    lab.material=_accMat(_hexLum(C.hex)>0.6?"#2a2d33":"#efe9dc",0.1); lab.position.set(0,yF+CR*0.5,zc+r0); lab.parent=g; },
   /* v281 (Giacomo: «la headband lascia un colore uniforme, davanti non mi
      piace»): era un toro rosso tutto uguale che girava attorno ai capelli
      staccato dalla testa. Ora e' una fascia sportiva che APPOGGIA sulla
@@ -50422,9 +50539,20 @@ const ACC_BUILD={
     const b=strip(0,0,0,TH,dn); b.material=line; b.parent=g;
     const t=strip(Hh,Hh,TH,0,up); t.material=line; t.parent=g; },
   /* archetto e gusci del colore scelto, cuscinetti sempre scuri */
-  headphones(g,M,C){ const zc=(M.front+M.back)/2-0.01, rx=M.halfW*1.08, k=_accC(C,0.35), pad=_accMat("#1a1c20",0.1),
+  headphones(g,M,C){ const zc=(M.front+M.back)/2-0.01, k=_accC(C,0.35), pad=_accMat("#1a1c20",0.1),
       plate=_accMat(_hexLum(C.hex)<0.2?"#3fa7c9":_hexMul(C.hex,0.7),0.3);
-    const pts=[]; for(let i=0;i<=16;i++){ const a=Math.PI*i/16; pts.push(new BABYLON.Vector3(-Math.cos(a)*rx, 0.0+Math.sin(a)*(M.top+0.02), zc)); }
+    /* v292: l'archetto passa SOPRA i capelli (i ricci lo inghiottivano): per
+       ogni punto dell'arco, fuori dai capelli che stanno sul suo piano */
+    const HP=(M.HS||M.HRL||[]).filter(l=>Math.abs(l.z-zc)<0.045);
+    const rx0=M.halfW*1.08, ry0=M.top+0.02, NB=16, RR=[];
+    for(let i=0;i<=NB;i++){ const t=Math.PI*i/NB, dx=-Math.cos(t), dy=Math.sin(t);
+      let r=1/Math.sqrt(Math.pow(dx/rx0,2)+Math.pow(dy/ry0,2));
+      HP.forEach(l=>{ const rl=Math.hypot(l.x,l.y); if(rl<1e-4) return; const c=(l.x*dx+l.y*dy)/rl; if(c>0.98) r=Math.max(r,rl+0.02); });
+      RR.push(r); }
+    for(let k2=0;k2<2;k2++){ const R2=RR.map((r,i)=>Math.max(r,((RR[i-1]||r)+r+(RR[i+1]||r))/3)); for(let i=0;i<=NB;i++) RR[i]=R2[i]; }
+    const rx=Math.max(rx0,RR[0],RR[NB]);
+    const pts=[]; for(let i=0;i<=NB;i++){ const t=Math.PI*i/NB; let x=-Math.cos(t)*RR[i], y=Math.sin(t)*RR[i];
+      if(i===0||i===NB) x=Math.sign(x)*rx; pts.push(new BABYLON.Vector3(x, y, zc)); }
     const band=BABYLON.MeshBuilder.CreateTube("acc",{path:pts,radius:0.013,tessellation:8},scene); band.material=k; band.parent=g;
     [-1,1].forEach(s=>{ const cush=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.08,height:0.016,tessellation:18},scene);
       cush.material=pad; cush.rotation.z=Math.PI/2; cush.position.set(s*(rx-0.006),-0.01,zc); cush.parent=g;
@@ -50432,14 +50560,28 @@ const ACC_BUILD={
       cup.material=k; cup.rotation.z=Math.PI/2; cup.position.set(s*(rx+0.014),-0.01,zc); cup.parent=g;
       const cap=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.058,height:0.006,tessellation:18},scene);
       cap.material=plate; cap.rotation.z=Math.PI/2; cap.position.set(s*(rx+0.032),-0.01,zc); cap.parent=g; }); },
-  bucket(g,M,C){ const zc=(M.front+M.back)/2, rx=M.halfW*1.08, rz=(M.front-M.back)/2*1.06, base=Math.max(0.045,M.top-0.12);
-    const c=_accC(C,0.05), band=_accMat(_hexMul(C.hex,0.55),0.05);
-    const cr=BABYLON.MeshBuilder.CreateCylinder("acc",{diameterTop:0.8,diameterBottom:1,height:1,tessellation:24},scene);
-    cr.material=c; cr.scaling.set(rx*2,M.top-base+0.03,rz*2); cr.position.set(0,base+(M.top-base+0.03)/2,zc); cr.parent=g;
-    const b1=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:1,height:0.03,tessellation:24},scene);
-    b1.material=band; b1.scaling.set(rx*2.02,1,rz*2.02); b1.position.set(0,base+0.025,zc); b1.parent=g;
-    const br=BABYLON.MeshBuilder.CreateCylinder("acc",{diameterTop:1,diameterBottom:1.15,height:0.02,tessellation:28},scene);
-    br.material=c; br.scaling.set(rx*2.7,1,rz*2.7); br.position.set(0,base-0.005,zc); br.parent=g; },
+  /* v292: il cappello da escursionista avvolge la testa come gli altri (i
+     ricci lo bucavano): calotta a cima piatta, fascia piu' scura, tesa che
+     segue il bordo della calotta e scende un poco */
+  bucket(g,M,C){ const V=BABYLON.Vector3, zc=(M.front+M.back)/2, rx=M.halfW*1.05, rz=(M.front-M.back)/2*1.05;
+    const yT=M.top+0.03, base=yT-0.125;
+    const c=_accC(C,0.05), band=_accMat(_hexMul(C.hex,0.55),0.05), under=_accMat(_hexMul(C.hex,0.7),0.05);
+    const yb=a=>base+0.008*Math.cos(a);
+    const K=_accCrown(M,{ zc, rx, rz, yT, yb, NA:48, NU:10, pad:0.008, topDz:0,
+      prof:u=>u<=0.7?[1-0.14*u/0.7, 0.9*u/0.7]:(t=>[0.86*Math.pow(Math.cos(t*Math.PI/2),0.5), 0.9+0.1*Math.sin(t*Math.PI/2)])((u-0.7)/0.3) });
+    K.mesh(g,c); K.inner(g,under);
+    const NA=K.NA, TA=K.TA, ring=(y0,dr,dy)=>{ const r=[]; for(let i=0;i<NA;i++){ const a=-Math.PI+i*TA, y=yb(a)+y0, rr=K.rAt(i,Math.max(yb(a),y))+dr;
+      r.push(new V(Math.sin(a)*rr, y+(dy?dy(a):0), zc+Math.cos(a)*rr)); } return r; };
+    const rad=p=>new V(p.x,0,p.z-zc);
+    _accRings(g,[ ring(0.006,0.003), ring(0.032,0.003) ],rad,band);
+    /* la tesa: sopra e sotto, e il bordo */
+    const W=0.055, droop=a=>-0.018-0.004*Math.cos(a);
+    const tIn=ring(0.002,-0.002), tOut=[], bIn=[], bOut=[];
+    for(let i=0;i<NA;i++){ const a=-Math.PI+i*TA, p=tIn[i], d=new V(Math.sin(a),0,Math.cos(a));
+      tOut.push(p.add(d.scale(W)).add(new V(0,droop(a),0))); bIn.push(p.add(new V(0,-0.006,0))); bOut.push(tOut[i].add(new V(0,-0.006,0))); }
+    _accRings(g,[tIn,tOut],()=>new V(0,1,0),c);
+    _accRings(g,[bIn,bOut],()=>new V(0,-1,0),under);
+    _accRings(g,[bOut,tOut],rad,c); },
   /* v279 (Giacomo: «le lenti un po' piu' lunghe»): lenti larghe 6,6 cm
      invece di 5,5 e un filo piu' alte, a superellisse che si stringe in basso;
      montatura del colore scelto tutt'attorno, ponte ad arco, stanghette tonde. */
@@ -50450,6 +50592,37 @@ const ACC_BUILD={
       const l=_accLens(lw,lh,0.006,3.2,0.16); l.material=k; l.position.set(s*cx,y,z+0.0016); l.parent=g;
       _accTemple(g,fr,s,cx+lw/2+0.002,y+lh*0.26,z-0.002,xw,M.back+0.05,0.0042); });
     _accBridge(g,fr,z,cx-lw/2+0.002,y+0.008,0.0036); },
+  /* v292 (Giacomo: «aggiungi altri 2 tipi di occhiali da sole, via via piu'
+     stilosi»). AVIATOR: lenti a goccia (larghe in alto, strette in basso
+     verso il naso) in un filo di metallo sottile, doppio ponte, naselli,
+     lenti verde scuro specchiate. Il colore scelto va sul metallo. */
+  aviator(g,M,C){ const z=Math.max(M.faceZ,0.015)+0.021, fr=C.metal?_accC(C,0.9):_accMat(C.hex,0.9,_hexMul(C.hex,0.25)),
+      lensM=_accMat("#23332c",0.95,"#08130f"), lw=0.064, lh=0.052, cx=0.011+lw/2, y=-0.003, xw=Math.max(cx+lw/2+0.01,M.skHW+0.007);
+    [-1,1].forEach(s=>{ const n=new BABYLON.TransformNode("acc",scene); n.parent=g; n.position.set(s*cx,y,z); n.rotation.z=s*0.10;
+      const f=_accLens(lw+0.005,lh+0.005,0.003,2.4,0.34); f.material=fr; f.position.z=-0.0009; f.parent=n;
+      const l=_accLens(lw,lh,0.004,2.4,0.34); l.material=lensM; l.position.z=0.0011; l.parent=n;
+      _accTemple(g,fr,s,cx+lw/2,y+lh*0.3,z-0.002,xw,M.back+0.05,0.0023);
+      const pad=BABYLON.MeshBuilder.CreateSphere("acc",{diameter:0.0075,segments:6},scene);
+      pad.material=_accMat("#e8e4da",0.5); pad.position.set(s*0.011,y-0.011,z-0.009); pad.parent=g; });
+    _accBridge(g,fr,z,cx-lw/2+0.004,y+0.012,0.0021);            // ponte basso
+    _accBridge(g,fr,z+0.0005,cx-lw*0.18,y+lh*0.46,0.0018); },   // e la barra in alto, da lente a lente
+  /* DESIGNER: grandi, a occhi di gatto (l'angolo esterno che sale), montatura
+     spessa e lucida del colore scelto, lenti viola specchiate, tre brillanti
+     d'oro sull'angolo, cerniere dorate sulle stanghette larghe. */
+  designer(g,M,C){ const z=Math.max(M.faceZ,0.015)+0.023, fr=_accC(C,0.7), gold=_accMat("#e2bd4f",0.95,"#3a2c0c"),
+      lensM=_accMat("#4a2f6e",0.95,"#23113a"), lw=0.071, lh=0.045, cx=0.012+lw/2, y=0.004, xw=Math.max(cx+lw/2+0.018,M.skHW+0.009);
+    [-1,1].forEach(s=>{ const n=new BABYLON.TransformNode("acc",scene); n.parent=g; n.position.set(s*cx,y,z); n.rotation.z=s*0.16;
+      const f=_accLens(lw+0.016,lh+0.013,0.009,3.6,0.22); f.material=fr; f.position.z=-0.002; f.parent=n;
+      const l=_accLens(lw,lh,0.006,3.6,0.22); l.material=lensM; l.position.z=0.003; l.parent=n;
+      /* la punta «a gatto» sull'angolo esterno in alto */
+      const wn=new BABYLON.TransformNode("acc",scene); wn.parent=n; wn.position.set(s*(lw/2+0.001),lh*0.36,-0.0015); wn.rotation.z=s*0.5;
+      const w=_accLens(0.036,0.016,0.009,2.2,0); w.material=fr; w.parent=wn;
+      for(let k=0;k<3;k++){ const d=BABYLON.MeshBuilder.CreateIcoSphere("acc",{radius:0.0024,subdivisions:1,flat:true},scene);
+        d.material=gold; d.parent=n; d.position.set(s*(lw*0.22+k*0.0095),lh/2+0.0045-k*0.0006,0.0045); }
+      _accTemple(g,fr,s,cx+lw/2+0.007,y+lh*0.3,z-0.004,xw,M.back+0.05,0.0045);
+      const h=BABYLON.MeshBuilder.CreateBox("acc",{width:0.004,height:0.009,depth:0.018},scene);
+      h.material=gold; h.position.set(s*(xw+0.0045),y+lh*0.3-0.004,z-0.03); h.parent=g; });
+    _accBridge(g,fr,z,cx-lw/2-0.003,y+0.011,0.0042); },
   glasses(g,M,C){ const z=Math.max(M.faceZ,0.015)+0.02, fr=_accC(C,0.3), cx=0.035, xw=Math.max(cx+0.034,M.skHW+0.006);
     [-1,1].forEach(s=>{ const r=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:0.048,thickness:0.0065,tessellation:24},scene);
       r.material=fr; r.rotation.x=Math.PI/2; r.position.set(s*cx,0.004,z); r.parent=g;
@@ -50586,7 +50759,8 @@ function dressAcc(meshes,acc,holder){
     const M0=H.__accM || (H.__accM=_accMeasure(meshes)); if(!M0) return;
     const M=(env && S.id==="head")?Object.assign({},M0,env):Object.assign({},M0);
     /* v291: anche il cappellino si appoggia sulla testa vera (la calotta la avvolge) */
-    if(S.id==="head" && (want==="headband"||want==="cap")){ const V3=BABYLON.Vector3, hs=(M0.SPL||[]).slice();
+    /* v292: e tutti gli altri copricapo (i ricci bucavano berretto e cappello) */
+    if(S.id==="head" && /^(headband|cap|beanie|bucket|headphones)$/.test(want)){ const V3=BABYLON.Vector3, hs=(M0.SPL||[]).slice();
       const cm=(H.__cut&&H.__cut.meshes)||[];
       if(cm.length) cm.forEach(m=>{ const p=m.getVerticesData(BABYLON.VertexBuffer.PositionKind)||[];
         for(let i=0;i<p.length;i+=6){ const d=new V3(p[i],p[i+1],p[i+2]).subtract(M0.E); hs.push({ x:V3.Dot(d,M0.R)/M0.s, y:V3.Dot(d,M0.U)/M0.s, z:V3.Dot(d,M0.F)/M0.s }); } });
