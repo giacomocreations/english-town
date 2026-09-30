@@ -3415,6 +3415,117 @@ function pinLegsToBind(){              // riapplica la bind-pose (gira DOPO la v
     k.tn.scaling.copyFrom(k.s);
   }
 }
+/* =====================================================================
+   v288 — SEDERSI DAVVERO (Giacomo, 30 set: «l'avatar si puo' anche sedere,
+   organizza che si possa sedere ai tavoli»). I rig Quaternius non hanno
+   una clip «seduto» (vedi il cinema e il falo'): la posa si COSTRUISCE
+   sulle ossa, con lo stesso meccanismo che gia' tiene ferme le gambe in
+   piedi (le «pin» alla bind-pose applicate dopo le animazioni).
+   · si parte dalla bind-pose (le gambe dritte, misurate al caricamento);
+   · la coscia ruota NEL MONDO finche' il ginocchio sta davanti all'anca,
+     in orizzontale; lo stinco finche' la caviglia scende al pavimento
+     (inclinato in avanti se la sedia e' bassa per quella gamba);
+   · la rotazione del mondo si riporta nello spazio dell'osso passando per
+     la matrice del genitore — cosi' non importa com'e' orientato l'osso
+     nel modello, ne' il ribaltamento destro/sinistro del glTF;
+   · poi il corpo intero scende (holder.y) finche' l'anca sta sulla seduta.
+   Il busto resta animato (respira, gesticola): e' seduto, non congelato.
+   Vale per il giocatore e per gli NPC con le stesse ossa (tutti i nostri
+   rig: UpperLeg/LowerLeg/Foot .L/.R). */
+function _sitWorldRot(tn,pivot,from,to){
+  const V=BABYLON.Vector3, M=BABYLON.Matrix;
+  const a=from.normalizeToNew(), b=to.normalizeToNew();
+  const q=new BABYLON.Quaternion(); BABYLON.Quaternion.FromUnitVectorsToRef(a,b,q);
+  let R=new M(); M.FromQuaternionToRef(q,R);
+  if(V.Distance(V.TransformNormal(a,R),b)>1e-3) R=R.transpose();     // convenzione riga/colonna: si verifica, non si suppone
+  const Rp=M.Translation(-pivot.x,-pivot.y,-pivot.z).multiply(R).multiply(M.Translation(pivot.x,pivot.y,pivot.z));
+  const P=tn.parent.getWorldMatrix(), Pi=P.clone().invert();
+  if(!tn.rotationQuaternion) tn.rotationQuaternion=BABYLON.Quaternion.FromEulerVector(tn.rotation);
+  const L=M.Compose(tn.scaling,tn.rotationQuaternion,tn.position).multiply(P).multiply(Rp).multiply(Pi);
+  const sc=new V(), r=new BABYLON.Quaternion(), t=new V(); L.decompose(sc,r,t);
+  tn.rotationQuaternion.copyFrom(r);
+}
+function _sitRefresh(root){ root.computeWorldMatrix(true);
+  const all=root.getDescendants(false).filter(d=>d.computeWorldMatrix);
+  const depth=t=>{ let d=0; for(let q=t.parent;q;q=q.parent) d++; return d; };
+  all.sort((a,b)=>depth(a)-depth(b)).forEach(d=>d.computeWorldMatrix(true)); }
+/* pins = [{tn,p,q,s}] della bind-pose; fwd = davanti nel mondo; seatY = quota
+   della seduta; groundY = pavimento. Ritorna { pins (copie, gambe piegate), drop } */
+function sitPoseFor(root,pins,fwd,seatY,groundY){
+  if(!pins||!pins.length||!root) return null;
+  const V=BABYLON.Vector3, up=new V(0,1,0), f=new V(fwd.x,0,fwd.z).normalize();
+  const saved=pins.map(k=>({tn:k.tn, q:k.tn.rotationQuaternion?k.tn.rotationQuaternion.clone():null, p:k.tn.position.clone()}));
+  pins.forEach(k=>{ k.tn.position.copyFrom(k.p); if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion(); k.tn.rotationQuaternion.copyFrom(k.q); });
+  _sitRefresh(root);
+  let hipY=null, drop=0; const out=new Map();
+  /* ⚠️ OGNI PEZZO DEL PERSONAGGIO HA IL SUO SCHELETRO (testa, busto, gambe,
+     piedi: vedi _toHeadRaw), quindi «la coscia sinistra» sono PIU' nodi, uno
+     per catena. Piegarne uno solo lasciava i piedi fermi in piedi e la
+     scarpa si stirava dal ginocchio a terra (visto a schermo). Si piega ogni
+     catena, ciascuna col suo ginocchio e la sua caviglia. */
+  const end=(t,n)=>new RegExp("(^|_)"+n.replace(".","\\.")+"$").test(t.name);
+  const tns=pins.map(k=>k.tn);
+  /* ⚠️ Nel rig del giocatore il PIEDE NON E' FIGLIO DELLO STINCO: sta sotto
+     Root (piedi «a controllo», misurato: av_Foot.L<av_Root). Piegando la
+     gamba il piede restava sul pavimento sotto l'anca e la scarpa si stirava
+     fino al ginocchio. Se il piede non discende dallo stinco lo si SPOSTA
+     alla nuova caviglia; se ne discende (rig degli NPC) segue da solo. */
+  const outP=new Map();
+  ["L","R"].forEach(sd=>{
+    tns.filter(t=>end(t,"UpperLeg."+sd)).forEach(U=>{
+      const K=U.getDescendants(false).find(d=>end(d,"LowerLeg."+sd)); if(!K) return;
+      const pK0=K.getAbsolutePosition().clone();
+      let F=null, fd=1e9;
+      tns.concat(root.getDescendants(false)).forEach(t=>{ if(!end(t,"Foot."+sd)||!t.getAbsolutePosition) return;
+        const d=BABYLON.Vector3.Distance(t.getAbsolutePosition(),pK0); if(d<fd){ fd=d; F=t; } });
+      if(!F) return;
+      const footChild=F.isDescendantOf(K);
+      const pH=U.getAbsolutePosition().clone(), pK=pK0, pA=F.getAbsolutePosition().clone();
+      const lT=V.Distance(pH,pK), lS=V.Distance(pK,pA), ankle=Math.max(0.03,pA.y-groundY);
+      /* la direzione dello stinco nello spazio dell'osso-ginocchio: dopo aver
+         piegato la coscia lo stinco e' girato con lei, e va ripresa da qui */
+      const shinLoc=V.TransformNormal(pA.subtract(pK),K.getWorldMatrix().clone().invert());
+      _sitWorldRot(U,pH,pK.subtract(pH),f.add(up.scale(0.06)));
+      _sitRefresh(root);
+      const hy=seatY+0.085*(lT/0.40);                 // l'anca sta un filo sopra la seduta
+      if(hipY===null){ hipY=pH.y; drop=pH.y-hy; }
+      const need=(hy+0.02)-(groundY+ankle), c=Math.max(0.2,Math.min(1,need/lS)), sn=Math.sqrt(1-c*c);
+      const dir=up.scale(-c).add(f.scale(sn));
+      const K2=K.getAbsolutePosition().clone();
+      /* lo stinco: dalla sua direzione di riposo (ginocchio->caviglia) alla nuova */
+      _sitWorldRot(K,K2,V.TransformNormal(shinLoc,K.getWorldMatrix()),dir);
+      _sitRefresh(root);
+      out.set(U,U.rotationQuaternion.clone()); out.set(K,K.rotationQuaternion.clone());
+      if(!footChild && F.parent){
+        const tgt=K2.add(dir.scale(lS)), inv=F.parent.getWorldMatrix().clone().invert();
+        const lp=BABYLON.Vector3.TransformCoordinates(tgt,inv);
+        F.position.copyFrom(lp); outP.set(F,lp.clone()); _sitRefresh(root);
+      }
+    });
+  });
+  const res=pins.map(k=>({ tn:k.tn, p:(outP.get(k.tn)||k.p).clone(), s:k.s.clone(), q:(out.get(k.tn)||k.q).clone() }));
+  /* le ossa non pinnate (se ce ne fossero) tornano com'erano */
+  saved.forEach(k=>{ if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); k.tn.position.copyFrom(k.p); });
+  return { pins:res, drop:Math.max(0,drop) };
+}
+function _applyPins(pins){ for(const k of pins){ k.tn.position.copyFrom(k.p);
+  if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion();
+  k.tn.rotationQuaternion.copyFrom(k.q); k.tn.scaling.copyFrom(k.s); } }
+/* il giocatore: SIT.on vince sulle pin in piedi */
+const SIT={ on:false, pins:null, drop:0, baseY:null };
+function playerSit(fwd,seatY,groundY){
+  if(!avatarRoot || !_legPins) return false;
+  const r=sitPoseFor(avatarRoot,_legPins,fwd,seatY,groundY); if(!r) return false;
+  if(SIT.baseY===null) SIT.baseY=avatarRoot.position.y;
+  SIT.pins=r.pins; SIT.drop=r.drop; SIT.on=true;
+  avatarRoot.position.y=SIT.baseY-r.drop;
+  return true;
+}
+function playerStand(){
+  if(!SIT.on) return; SIT.on=false; SIT.pins=null;
+  if(avatarRoot && SIT.baseY!==null) avatarRoot.position.y=SIT.baseY;
+  SIT.baseY=null;
+}
 function playAvatarAnim(name){
   const g=avatarAnims[name]; if(!g || _avAnimCur===g) return;
   for(const k in avatarAnims) avatarAnims[k].stop();
@@ -3494,7 +3605,7 @@ function buildAvatar(){
      osservatore in più, e dopo cinque prove davanti allo specchio le gambe
      sarebbero state "pinnate" cinque volte per fotogramma. */
   if(!_pinHooked){ _pinHooked=true;
-    scene.onBeforeRenderObservable.add(()=>{ if(_pinLegs) pinLegsToBind(); }); }
+    scene.onBeforeRenderObservable.add(()=>{ if(SIT.on && SIT.pins) _applyPins(SIT.pins); else if(_pinLegs) pinLegsToBind(); }); }
 }
 let _pinHooked=false;
 /* Ricostruzione a caldo dell'avatar. L'ordine conta:
@@ -3523,7 +3634,9 @@ function rebuildAvatar(){
   for(const k in _gemFitMats){ try{ _gemFitMats[k].dispose(); }catch(e){} delete _gemFitMats[k]; }
   for(const k in avatarAnims){ try{ avatarAnims[k].dispose(); }catch(e){} delete avatarAnims[k]; }
   _avAnimCur=null; _legPins=null; _pinLegs=false;
+  const _eraSeduto=SIT.on; SIT.on=false; SIT.pins=null; SIT.baseY=null;
   buildAvatar();
+  if(_eraSeduto) try{ dinerResit(); }catch(e){}
   try{ applyLook(); }catch(e){}
   try{ refreshShadowCasters(); }catch(e){}
   /* ⚠️ L'AVATAR SPARIVA (segnalato da Giacomo). Non era la tinta: era
@@ -6195,6 +6308,7 @@ function buildPedestrians(){
   buildRanger();
   buildMayor();
   buildTownCafe(); buildCafeNPCs(); buildKiosk(); buildStoryBench(); buildNightBench();
+  try{ buildDiner(); }catch(e){ console.warn("[diner]",e); }   // v288: il diner nel lotto a sud di Home
   /* ⚠️⚠️ IL TERMINAL ERA DISABITATO FUORI DA UNIT 1 (Giacomo, 5 set: «con
      Theo non si puo' ancora parlare», e aveva ragione da prima che io
      toccassi qualsiasi cosa).
@@ -7177,6 +7291,614 @@ function readFragment(f){
    ===================================================================== */
 const CAFE_XZ={ x:72, z:0 }, KIOSK_XZ={ x:63, z:0 };
 let NEWSAGENT=null;
+/* =====================================================================
+   v288 — IL DINER (Giacomo, 30 set: «costruisci il ristorante davanti a
+   Home, un ristorante vero con tavoli e sedie, stile American diner; e una
+   quest come per il caffe': ti siedi, arriva il cameriere, ordini dal
+   menu, poi chiedi il conto e paghi. L'avatar si puo' sedere»).
+
+   DOVE: il lotto libero a sud di Home (x -8..8, z 23..41), lasciato vuoto
+   apposta nella v273 («un lotto libero da 16 m per il ristorante»).
+
+   COM'E' FATTO (tutto procedurale, 0 KB):
+   · in fondo la cucina, un blocco crema con la fascia rossa e i profili
+     cromati, il passavivande con il campanello, il bancone con gli sgabelli
+     e l'insegna al neon «SUNNY SIDE DINER» sul tetto;
+   · davanti una veranda coperta a scacchi bianchi e neri: quattro tavoli
+     con il piano azzurro e il bordo cromato, due sedie rosse ciascuno, la
+     ringhiera cromata con l'ingresso al centro, il jukebox;
+   · la tettoia e' un occluder: quando la camera guarda dall'alto sbiadisce
+     come i muri, e si vede il tavolo.
+
+   COME SI MANGIA (sempre aperto di giorno, come il caffe': niente gate,
+   niente Progress, stelle col contatore del caffe' ma a nome di Ray):
+     1. ti siedi (E su una sedia libera): l'avatar si SIEDE davvero
+        (sitPoseFor), la camera resta libera;
+     2. Ray, il cameriere, arriva al tavolo col menu: da bere, da mangiare,
+        il contorno — frasi pronte in prima, si scrive da seconda in poi
+        (lo stesso impianto dell'ordine al caffe');
+     3. torna al passavivande e ti porta il piatto: compare sul tavolo;
+     4. dopo un po' ripassa: «How was everything? Any dessert?»;
+     5. chiedi il conto («Can I have the bill, please?»): lo porta, con lo
+        scontrino voce per voce;
+     6. paghi (card / cash) e ti alzi.
+   Due clienti, Hank e June, sono gia' seduti al tavolo in fondo a destra:
+   si parla con loro come con gli altri NPC di citta'.
+   ===================================================================== */
+const DINER={ x:0, z:32, gy:0, built:false, name:"Sunny Side Diner",
+  tables:[], seats:[], waiter:null, guests:[], st:"idle", seat:null, o:null,
+  food:[], busy:false, meInter:null, timer:null };
+const DINER_MENU={
+  drinks:[
+    { k:["chocolate milkshake","chocolate shake"],            en:"Chocolate milkshake", p:4.00, ic:"shake", c:"#7a4a2c" },
+    { k:["strawberry milkshake","strawberry shake","milkshake","shake"], en:"Strawberry milkshake", p:4.00, ic:"shake", c:"#e98aa6" },
+    { k:["lemonade","lemon"],                                 en:"Lemonade",           p:2.50, ic:"glass", c:"#f2e38a" },
+    { k:["cola","coke"],                                      en:"Cola",               p:2.20, ic:"glass", c:"#3a1d12" },
+    { k:["orange juice","juice","orange"],                    en:"Orange juice",       p:2.40, ic:"glass", c:"#f0a02c" },
+    { k:["water","tap water","glass of water"],               en:"Water",              p:0,    ic:"glass", c:"#cfe8f2" },
+  ],
+  mains:[
+    { k:["veggie burger","vegetarian burger","veggie"],       en:"Veggie burger",      p:8.00, ic:"burger", c:"#5f8a3a" },
+    { k:["cheeseburger","cheese burger","burger","hamburger"], en:"Cheeseburger",      p:8.50, ic:"burger", c:"#6b3b22" },
+    { k:["hot dog","hotdog","sausage"],                       en:"Hot dog",            p:6.00, ic:"hotdog", c:"#b0452c" },
+    { k:["pancakes","pancake","maple syrup"],                 en:"Pancakes with maple syrup", p:6.50, ic:"pancakes", c:"#d9a45a" },
+    { k:["fried chicken","chicken"],                          en:"Fried chicken",      p:9.00, ic:"chicken", c:"#c98a3e" },
+    { k:["mac and cheese","macaroni","mac"],                  en:"Mac and cheese",     p:7.00, ic:"mac", c:"#f2c14e" },
+  ],
+  sides:[
+    { k:["onion rings","onion","rings"],                      en:"Onion rings",        p:3.00, ic:"rings", c:"#d9a45a" },
+    { k:["french fries","fries","chips"],                     en:"French fries",       p:2.50, ic:"fries", c:"#f2c14e" },
+    { k:["salad","green salad"],                              en:"Green salad",        p:3.00, ic:"salad", c:"#5f9a4a" },
+    { k:["coleslaw"],                                         en:"Coleslaw",           p:2.00, ic:"salad", c:"#efe6c8" },
+  ],
+  desserts:[
+    { k:["apple pie","pie"],                                  en:"Apple pie",          p:3.50, ic:"pie", c:"#d99a45" },
+    { k:["ice cream sundae","sundae","ice cream"],            en:"Ice cream sundae",   p:4.00, ic:"sundae", c:"#f4e6d0" },
+    { k:["brownie","chocolate brownie","chocolate cake","cake"], en:"Chocolate brownie", p:3.50, ic:"brownie", c:"#4a2a17" },
+  ]
+};
+const _DN_NO={ k:["no thanks","no thank","nothing","that's all","thats all","i'm fine","im fine","no"], en:"—", p:0 };
+const DINER_TURNS={
+  drink:{ field:"Drink", key:"drink", q:"Hi there, welcome to the Sunny Side Diner! Here's the menu. Can I get you something to drink?",
+    it:"Benvenuto! Ecco il menu. Posso portarti qualcosa da bere?",
+    voci:()=>DINER_MENU.drinks,
+    pool:["milkshake","shake","chocolate","strawberry","lemonade","cola","coke","juice","orange","water","please","can","could","have","like","i'd","a"],
+    hint:"ordina da bere dal menu — «Can I have a lemonade, please?»",
+    ready:["A chocolate milkshake, please.","A lemonade, please.","Can I have a cola, please?","Just water, please."], nulla:null },
+  main:{ field:"Main", key:"main", q:"Great choice! And what would you like to eat?", it:"Ottima scelta! E cosa vuoi mangiare?",
+    voci:()=>DINER_MENU.mains,
+    pool:["burger","cheeseburger","veggie","hot","dog","pancakes","chicken","mac","cheese","please","i'd","like","have","can","could","the","a"],
+    hint:"scegli un piatto dal menu — «I'd like a cheeseburger, please.»",
+    ready:["I'd like a cheeseburger, please.","Can I have the pancakes, please?","The fried chicken, please.","A veggie burger, please."], nulla:null },
+  side:{ field:"Side", key:"side", q:"Would you like a side with that? Fries, onion rings, a salad...?", it:"Vuoi un contorno? Patatine, anelli di cipolla, insalata...?",
+    voci:()=>DINER_MENU.sides,
+    pool:["fries","chips","onion","rings","salad","coleslaw","no","thanks","please","yes","some"],
+    hint:"scegli un contorno, oppure di’ di no — «Some fries, please.»",
+    ready:["Some fries, please.","Onion rings, please.","A salad, please.","No, thanks."], nulla:_DN_NO },
+  dessert:{ field:"Dessert", key:"dessert", q:"How was everything? Would you like a dessert?", it:"Com'era? Vuoi un dolce?",
+    voci:()=>DINER_MENU.desserts,
+    pool:["pie","apple","sundae","ice","cream","brownie","cake","no","thanks","delicious","great","good","please","yes","full"],
+    hint:"scegli un dolce, oppure di’ di no — «It was delicious! No, thanks.»",
+    ready:["It was delicious! An apple pie, please.","Yes, an ice cream sundae, please!","It was great, thanks. No dessert for me.","No, thanks. I'm full!"], nulla:_DN_NO },
+  bill:{ field:"Bill", key:"bill", q:"Is everything OK? Can I get you anything else?", it:"Tutto bene? Ti porto qualcos'altro?",
+    voci:()=>[{ k:["bill","check","pay","cheque"], en:"The bill", p:0 }],
+    pool:["bill","check","cheque","pay","please","can","could","have","i","we"],
+    hint:"chiedi il conto — «Can I have the bill, please?»",
+    ready:["Can I have the bill, please?","Could I have the check, please?"], nulla:null },
+  pay:{ field:"Payment", key:"pay", q:"", it:"Come vuoi pagare?",
+    voci:()=>[ { k:["card","credit card","debit card","credit","debit"], en:"By card", p:0 },
+               { k:["cash","coins","notes","money"],                     en:"In cash", p:0 } ],
+    pool:["card","cash","credit","debit","coins","money","notes","by","in","please","pay","here","you","are"],
+    hint:"«By card, please» oppure «In cash, please»",
+    ready:["By card, please.","In cash, please. Here you are."], nulla:null },
+};
+function dinerOpen(){ try{ return townOpen(); }catch(e){ return true; } }
+function _dnYear(){ try{ return studentYear(); }catch(e){ return 1; } }
+
+/* ------------------------------------------------------------------ */
+/* COSTRUZIONE                                                          */
+/* ------------------------------------------------------------------ */
+function _dinerMats(){
+  if(DINER.M) return DINER.M;
+  const sh=(m,s,pw)=>{ m.specularColor=new BABYLON.Color3(s,s,s); m.specularPower=pw||48; return m; };
+  const M={
+    cream: sh(mat("dn_cream","#f3ead6"),0.10,24), red: sh(mat("dn_red","#c8323a"),0.30,48),
+    chrome:sh(mat("dn_chrome","#d5dce2"),0.95,96), dark: mat("dn_dark","#23262b"),
+    aqua:  sh(mat("dn_aqua","#7fd1c7"),0.40,64), vinyl: sh(mat("dn_vinyl","#b8262e"),0.45,40),
+    white: sh(mat("dn_white","#f7f5ef"),0.30,48), steel: sh(mat("dn_steel","#aab3ba"),0.8,80),
+    black: mat("dn_black","#1b1c1f"), roof: mat("dn_roof","#e9e4d8"), yellow: sh(mat("dn_yel","#f2c14e"),0.2,32),
+    wood:  mat("dn_wood","#6b4a2e"), leaf: mat("dn_leaf","#4f8a52"), pot: mat("dn_pot","#b86a45"),
+    glass: (function(){ const g=sh(mat("dn_glass","#bfe0ec"),0.8,96); g.alpha=0.35; return g; })(),
+    pass:  mat("dn_pass","#3a2f28","#1a120c"),
+  };
+  /* neon: di giorno acceso piano, di notte pieno (nightLights come le finestre) */
+  const neon=(n,h)=>{ const m=mat(n,h,h); m.disableLighting=true; return m; };
+  M.neonR=neon("dn_neonR","#ff4b5c"); M.neonB=neon("dn_neonB","#4fe3ff");
+  const bu=mat("dn_bulb","#fff1c8","#000000"); bu.__nightEmissive=BABYLON.Color3.FromHexString("#ffd98a"); nightLights.push(bu); M.bulb=bu;
+  /* tela a righe bianche e rosse per la mantovana */
+  const st=new BABYLON.DynamicTexture("dn_awnT",{width:256,height:64},scene,true), c=st.getContext();
+  for(let i=0;i<8;i++){ c.fillStyle=(i%2)?"#f7f5ef":"#c8323a"; c.fillRect(i*32,0,32,64); } st.update();
+  const aw=new BABYLON.StandardMaterial("dn_awn",scene); aw.diffuseTexture=st; aw.specularColor=new BABYLON.Color3(0.05,0.05,0.05); aw.backFaceCulling=false;
+  st.uScale=6; M.awn=aw;
+  return (DINER.M=M);
+}
+function _dnTex(name,w,h,draw){ const dt=new BABYLON.DynamicTexture(name,{width:w,height:h},scene,true);
+  const c=dt.getContext(); draw(c,w,h); dt.update(); return dt; }
+function buildDiner(){
+  if(DINER.built) return; DINER.built=true;
+  const X=DINER.x, M=_dinerMats();
+  const h=scene.pickWithRay(new BABYLON.Ray(new BABYLON.Vector3(X,6,32),new BABYLON.Vector3(0,-1,0),12),m=>m.__ground===true&&m.isEnabled());
+  const gy=DINER.gy=(h&&h.hit)?h.pickedPoint.y:0.04;
+  const root=new BABYLON.TransformNode("diner",scene); root.parent=townRoot; root.position.set(X,gy,0);
+  DINER.root=root;
+  const G={}; const put=(k,m,occ)=>{ const g=G[k]||(G[k]={mat:M[k],list:[],occ:false}); if(occ) g.occ=true; g.list.push(m); return m; };
+  const bx=(k,w,hh,d,px,py,pz,occ)=>{ const b=BABYLON.MeshBuilder.CreateBox("dnb",{width:w,height:hh,depth:d},scene); b.position.set(px,py,pz); return put(k,b,occ); };
+  const cy=(k,o,px,py,pz)=>{ o.tessellation=o.tessellation||16; const b=BABYLON.MeshBuilder.CreateCylinder("dnc",o,scene); b.position.set(px,py,pz); return put(k,b); };
+  const sp=(k,dia,px,py,pz,seg)=>{ const b=BABYLON.MeshBuilder.CreateSphere("dns",{diameter:dia,segments:seg||8},scene); b.position.set(px,py,pz); return put(k,b); };
+  const solid=(x0,x1,z0,z1)=>addSolid(X+x0,X+x1,z0,z1,"town");
+
+  /* ---- pavimento a scacchi (veranda + cucina) ---- */
+  const fl=BABYLON.MeshBuilder.CreateGround("dnFloor",{width:15.2,height:16.8},scene);
+  fl.material=floorMat("dn_floorM",{style:"check",hex:"#f1efe8",hex2:"#1f2226",tile:1.2,spec:0.18},15.2,16.8);
+  fl.position.set(0,0.012,32); fl.parent=root; fl.__ground=true; fl.receiveShadows=true;
+
+  /* ---- CUCINA: blocco in fondo, facciata a z 37.2 ---- */
+  const KZ0=37.2, KZ1=40.4, KH=4.0;
+  bx("cream",14.4,KH,KZ1-KZ0, 0,KH/2,(KZ0+KZ1)/2,true);
+  bx("red",14.46,0.95,KZ1-KZ0+0.06, 0,0.475,(KZ0+KZ1)/2,true);                // fascia rossa in basso
+  [0.98,2.95].forEach(y=>bx("chrome",14.5,0.07,KZ1-KZ0+0.1, 0,y,(KZ0+KZ1)/2,true)); // profili cromati
+  bx("red",14.7,0.28,KZ1-KZ0+0.4, 0,KH+0.14,(KZ0+KZ1)/2,true);               // cornicione
+  solid(-7.3,7.3,KZ0-0.05,KZ1+0.05);
+  /* finestre ai lati del passavivande, porta della cucina (oblò) */
+  [-5.6,5.6].forEach(px=>{ bx("chrome",2.1,1.35,0.06, px,1.95,KZ0-0.03); bx("glass",1.9,1.15,0.05, px,1.95,KZ0-0.07); });
+  bx("chrome",1.1,2.2,0.06, -3.6,1.1,KZ0-0.03); bx("red",1.0,2.1,0.06, -3.6,1.05,KZ0-0.07);
+  cy("chrome",{diameter:0.42,height:0.05},-3.6,1.55,KZ0-0.1).rotation.x=Math.PI/2;
+  cy("glass",{diameter:0.34,height:0.06},-3.6,1.55,KZ0-0.12).rotation.x=Math.PI/2;
+  /* passavivande: vano scuro, mensola cromata, campanello, piatti in attesa */
+  bx("pass",3.6,0.95,0.05, 0.6,2.0,KZ0-0.03);
+  bx("chrome",3.9,0.06,0.45, 0.6,1.5,KZ0-0.2);
+  cy("steel",{diameterTop:0.02,diameterBottom:0.14,height:0.08},1.9,1.57,KZ0-0.2);
+  sp("steel",0.035,1.9,1.62,KZ0-0.2,6);
+  /* ---- BANCONE con sgabelli ---- */
+  bx("red",6.2,0.95,0.7, 0.6,0.475,36.5,true); bx("chrome",6.25,0.05,0.72, 0.6,0.93,36.5);
+  bx("white",6.4,0.06,0.9, 0.6,0.99,36.45,true);
+  [-1.6,-0.1,1.4,2.9].forEach(px=>{ cy("chrome",{diameter:0.08,height:0.72},px,0.36,35.75); cy("chrome",{diameter:0.4,height:0.03},px,0.02,35.75);
+    cy("vinyl",{diameter:0.42,height:0.1},px,0.76,35.75); solid(px-0.22,px+0.22,35.53,35.97); });
+  solid(-2.5,3.7,36.1,37.2);
+  /* ---- JUKEBOX ---- */
+  bx("wood",0.9,1.2,0.6, 6.3,0.6,36.6,true); cy("wood",{diameter:0.9,height:0.6},6.3,1.2,36.6).rotation.x=Math.PI/2;
+  bx("neonB",0.7,0.05,0.02, 6.3,1.05,36.29); bx("neonR",0.7,0.05,0.02, 6.3,0.85,36.29);
+  bx("glass",0.5,0.35,0.02, 6.3,1.35,36.29); bx("chrome",0.6,0.25,0.02, 6.3,0.45,36.29);
+  solid(5.8,6.8,36.25,36.95);
+  /* ---- VERANDA: tettoia, pali, ringhiera, lucine ---- */
+  const CZ0=23.8, CZ1=KZ0, CW=14.8, CH=3.3;
+  const roof=BABYLON.MeshBuilder.CreateBox("dnRoof",{width:CW,height:0.14,depth:CZ1-CZ0},scene);
+  roof.material=M.roof; roof.position.set(0,CH,(CZ0+CZ1)/2); roof.parent=root; roof.__occluder=true;
+  const val=(w,px,pz,ry)=>{ const v=BABYLON.MeshBuilder.CreatePlane("dnval",{width:w,height:0.4},scene);
+    v.position.set(px,CH-0.25,pz); v.rotation.y=ry; v.parent=root; v.material=M.awn; v.isPickable=false; return v; };
+  val(CW,0,CZ0-0.02,0); val(CZ1-CZ0,-CW/2-0.02,(CZ0+CZ1)/2,Math.PI/2); val(CZ1-CZ0,CW/2+0.02,(CZ0+CZ1)/2,Math.PI/2);
+  [[-7.2,24.1],[7.2,24.1],[-7.2,30.6],[7.2,30.6]].forEach(p=>{ cy("chrome",{diameter:0.14,height:CH},p[0],CH/2,p[1]); solid(p[0]-0.12,p[0]+0.12,p[1]-0.12,p[1]+0.12); });
+  for(let i=0;i<24;i++) sp("bulb",0.09,-7.1+i*(14.2/23),CH-0.5,CZ0+0.02,5);
+  /* ringhiera: davanti con l'ingresso al centro (x -1.6..1.6), e sui lati */
+  const rail=(x0,x1,z0,z1)=>{ const L=Math.max(Math.abs(x1-x0),Math.abs(z1-z0)), alongX=Math.abs(x1-x0)>Math.abs(z1-z0);
+    const cx=(x0+x1)/2, cz=(z0+z1)/2;
+    [0.95,0.5].forEach(y=>bx("chrome",alongX?L:0.05,0.05,alongX?0.05:L, cx,y,cz));
+    const n=Math.max(2,Math.round(L/1.2)); for(let i=0;i<=n;i++){ const t=i/n; cy("chrome",{diameter:0.06,height:0.97},alongX?x0+(x1-x0)*t:cx,0.485,alongX?cz:z0+(z1-z0)*t); }
+    solid(Math.min(x0,x1)-0.08,Math.max(x0,x1)+0.08,Math.min(z0,z1)-0.08,Math.max(z0,z1)+0.08); };
+  rail(-7.4,-1.6,23.7,23.7); rail(1.6,7.4,23.7,23.7); rail(-7.4,-7.4,23.7,KZ0-0.1); rail(7.4,7.4,23.7,KZ0-0.1);
+  /* due vasi ai lati dell'ingresso */
+  [-2.1,2.1].forEach(px=>{ cy("pot",{diameterTop:0.55,diameterBottom:0.4,height:0.5},px,0.25,24.2); sp("leaf",0.7,px,0.75,24.2,6); sp("leaf",0.5,px+0.12,1.02,24.25,6); solid(px-0.3,px+0.3,23.9,24.5); });
+  /* ---- TAVOLI e SEDIE ---- */
+  const TABLES=[[-3.3,27.4],[3.3,27.4],[-3.3,31.8],[3.3,31.8]];
+  TABLES.forEach((t,ti)=>{
+    const [tx,tz]=t;
+    cy("aqua",{diameter:0.95,height:0.05,tessellation:28},tx,0.76,tz);
+    cy("chrome",{diameter:0.99,height:0.035,tessellation:28},tx,0.735,tz);
+    cy("chrome",{diameter:0.08,height:0.72},tx,0.37,tz); cy("chrome",{diameter:0.5,height:0.03},tx,0.02,tz);
+    /* salsiere: ketchup e senape, portatovaglioli */
+    cy("red",{diameter:0.06,height:0.16,tessellation:10},tx-0.08,0.87,tz+0.06); cy("yellow",{diameter:0.06,height:0.16,tessellation:10},tx+0.02,0.87,tz+0.06);
+    bx("chrome",0.12,0.1,0.06, tx+0.14,0.84,tz+0.06);
+    solid(tx-0.5,tx+0.5,tz-0.5,tz+0.5);
+    DINER.tables.push({ i:ti, x:X+tx, z:tz, top:gy+0.785 });
+    [-1,1].forEach(sd=>{
+      const cx=tx+sd*0.82, cz=tz;
+      /* seduta, schienale (dal lato opposto al tavolo), gambe cromate */
+      bx("vinyl",0.46,0.08,0.46, cx,0.46,cz);
+      bx("vinyl",0.08,0.5,0.46, cx+sd*0.23,0.75,cz);
+      bx("chrome",0.03,0.5,0.4, cx+sd*0.26,0.72,cz);
+      [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(q=>cy("chrome",{diameter:0.035,height:0.42,tessellation:6},cx+q[0]*0.19,0.21,cz+q[1]*0.19));
+      solid(cx-0.26,cx+0.26,cz-0.26,cz+0.26);
+      DINER.seats.push({ t:DINER.tables[DINER.tables.length-1], sd, x:X+cx, z:cz, seatY:gy+0.50,
+        face:Math.atan2(-sd,0), standX:X+cx, standZ:cz-0.8, taken:null });
+    });
+  });
+  _mergeGroups(G,root);
+  root.getChildMeshes().forEach(m=>{ m.isPickable=(m===fl); m.receiveShadows=true; });
+  /* ---- INSEGNA AL NEON sul tetto della cucina (legge chi arriva da Home) ---- */
+  const sign=BABYLON.MeshBuilder.CreatePlane("dnSign",{width:7.2,height:1.8},scene);
+  const dt=_dnTex("dn_signT",1024,256,(c,W,H)=>{ c.fillStyle="#1b1c1f"; c.fillRect(0,0,W,H);
+    c.strokeStyle="#4fe3ff"; c.lineWidth=10; c.strokeRect(12,12,W-24,H-24);
+    c.fillStyle="#ff4b5c"; c.font="bold 118px Georgia"; c.textAlign="center"; c.textBaseline="middle";
+    c.shadowColor="#ff4b5c"; c.shadowBlur=24; c.fillText("SUNNY SIDE",W/2,H*0.4);
+    c.fillStyle="#4fe3ff"; c.shadowColor="#4fe3ff"; c.font="bold 64px Segoe UI"; c.fillText("★  D I N E R  ★",W/2,H*0.8); });
+  const sm=new BABYLON.StandardMaterial("dn_signM",scene); sm.diffuseTexture=dt; sm.emissiveTexture=dt; sm.emissiveColor=new BABYLON.Color3(0.9,0.9,0.9);
+  sm.specularColor=new BABYLON.Color3(0,0,0); sm.backFaceCulling=false; sign.material=sm;
+  sign.position.set(0,KH+1.25,KZ0+0.3); sign.parent=root; sign.isPickable=false;
+  /* ⚠️ un piano si legge dal lato della sua faccia: chi arriva da Home guarda
+     verso +z, quindi il piano va girato (si legge diritto da nord) */
+  sign.rotation.y=Math.PI; sign.scaling.x=-1;
+  [-3.3,3.3].forEach(px=>{ const s=BABYLON.MeshBuilder.CreateCylinder("dnSp",{diameter:0.1,height:1.3,tessellation:8},scene);
+    s.material=M.chrome; s.position.set(px,KH+0.55,KZ0+0.4); s.parent=root; });
+  /* lavagna del menu sulla facciata, a destra del passavivande */
+  const mb=BABYLON.MeshBuilder.CreatePlane("dnMenuBoard",{width:1.6,height:1.2},scene);
+  const mdt=_dnTex("dn_menuT",512,384,(c,W,H)=>{ c.fillStyle="#1f2a26"; c.fillRect(0,0,W,H); c.strokeStyle="#d5dce2"; c.lineWidth=10; c.strokeRect(5,5,W-10,H-10);
+    c.fillStyle="#ffd98a"; c.font="bold 44px Segoe UI"; c.textAlign="center"; c.fillText("TODAY'S MENU",W/2,56);
+    c.font="28px Segoe UI"; c.fillStyle="#f3ead6"; c.textAlign="left";
+    ["Cheeseburger ........ £8.50","Hot dog ............. £6.00","Pancakes ............ £6.50","Fried chicken ....... £9.00","Milkshakes .......... £4.00","Apple pie ........... £3.50"].forEach((l,i)=>c.fillText(l,34,112+i*44)); });
+  const mm=new BABYLON.StandardMaterial("dn_menuM",scene); mm.diffuseTexture=mdt; mm.emissiveColor=new BABYLON.Color3(0.35,0.35,0.35); mm.specularColor=new BABYLON.Color3(0,0,0);
+  mb.material=mm; mb.position.set(3.4,1.95,KZ0-0.07); mb.rotation.y=Math.PI; mb.scaling.x=-1; mb.parent=root; mb.isPickable=false;
+  /* cartello all'ingresso */
+  const ps=BABYLON.MeshBuilder.CreatePlane("dnSeatSign",{width:0.9,height:0.6},scene);
+  const pdt=_dnTex("dn_seatT",256,170,(c,W,H)=>{ c.fillStyle="#f7f5ef"; c.fillRect(0,0,W,H); c.fillStyle="#c8323a"; c.fillRect(0,0,W,40);
+    c.fillStyle="#f7f5ef"; c.font="bold 26px Segoe UI"; c.textAlign="center"; c.fillText("WELCOME!",W/2,29);
+    c.fillStyle="#23262b"; c.font="bold 30px Segoe UI"; c.fillText("Please",W/2,84); c.fillText("seat yourself",W/2,124); });
+  const pmm=new BABYLON.StandardMaterial("dn_seatM",scene); pmm.diffuseTexture=pdt; pmm.emissiveColor=new BABYLON.Color3(0.3,0.3,0.3); pmm.specularColor=new BABYLON.Color3(0,0,0);
+  ps.material=pmm; ps.position.set(-1.9,1.25,23.55); ps.rotation.y=Math.PI; ps.scaling.x=-1; ps.parent=root; ps.isPickable=false;
+  const pp=BABYLON.MeshBuilder.CreateCylinder("dnSeatPole",{diameter:0.05,height:0.95,tessellation:8},scene); pp.material=M.chrome; pp.position.set(-1.9,0.47,23.58); pp.parent=root;
+  if(typeof glowL!=="undefined"&&glowL){ [mb,ps].forEach(m=>glowL.addExcludedMesh(m)); }
+  /* ombre: cucina, tettoia e arredi fanno ombra come il resto della citta' */
+  root.getChildMeshes().forEach(m=>{ if(m!==fl && m!==sign) m.__occluder=m.__occluder||(m===roof); });
+  /* cartellino col nome, come gli edifici */
+  try{ const anc=anchorMesh(townRoot,X,gy+KH+2.8,KZ0); guiLabel(anc,"\u{1F354} "+DINER.name,"Open every day",true,"town"); }catch(e){}
+  buildDinerNPCs();
+  dinerSeatInteracts();
+  scene.onBeforeRenderObservable.add(dinerTick);
+}
+
+/* ------------------------------------------------------------------ */
+/* PERSONE: il cameriere e due clienti seduti                           */
+/* ------------------------------------------------------------------ */
+/* ⚠️ davanti agli sgabelli, non fra gli sgabelli: a z 35,4 il solido gonfiato
+   degli sgabelli copriva la strada e Ray impiegava un minuto a tornare */
+const DINER_WAITER_HOME={ x:-2.6, z:34.75 };
+function buildDinerNPCs(){
+  const gy=DINER.gy;
+  DINER.waiter=spawnNPC({ id:"ray", name:"Ray", sub:"Waiter", area:"town", model:"avatar", dress:false,
+    tint:{ Purple:"#f4f1ea", LightBlue:"#23262b" }, height:1.78,
+    x:DINER.x+DINER_WAITER_HOME.x, y:gy, z:DINER_WAITER_HOME.z, face:Math.PI, snap:false, radius:2.6,
+    interact:n=>talkToWaiter(n) });
+  regTownPop(DINER.waiter);
+  /* i due clienti: tavolo in fondo a destra, uno per sedia */
+  const T=DINER.tables[3], S=DINER.seats.filter(s=>s.t===T);
+  const G=[ { id:"hank", name:"Hank", model:"npcMan2", tint:"yellow", h:1.80 }, { id:"june", name:"June", model:"npcWomanB", tint:"teal", h:1.66 } ];
+  G.forEach((g,i)=>{ const s=S[i]; if(!s) return;
+    const n=spawnNPC({ id:g.id, name:g.name, sub:"Customer", area:"town", model:g.model, keepModel:true, tint:g.tint, height:g.h,
+      x:s.x, y:gy, z:s.z, face:s.face, snap:false, watch:false, radius:2.2, interact:n=>talkToDinerGuest(n) });
+    if(!n) return; s.taken=n.id; n.watch=false; DINER.guests.push(n); regTownPop(n);
+    setTimeout(()=>{ try{ npcSit(n,s); }catch(e){ console.warn("[diner] sit",e); } },0);
+  });
+}
+/* un NPC si siede: stessa posa del giocatore, sulle sue pin */
+function npcSit(n,s){
+  const f=new BABYLON.Vector3(Math.sin(s.face),0,Math.cos(s.face));
+  n.carrier.rotation.y=s.face; n.baseYaw=s.face;
+  n.carrier.computeWorldMatrix(true);
+  const r=sitPoseFor(n.holder,n.pins,f,s.seatY,DINER.gy); if(!r) return;
+  r.pins.forEach((k,i)=>{ n.pins[i].q.copyFrom(k.q); n.pins[i].p.copyFrom(k.p); });
+  n.holder.position.y-=r.drop; n.__seated=true;
+}
+function talkToDinerGuest(n){
+  if(typeof ambientReady==="function" && ambientReady(n,null)){ openAmbient(n,null,"\u{1F354}","Customer"); return; }
+  const hank=(n.id==="hank");
+  DialogueBox.open({ npc:n, icon:"\u{1F354}", sub:"Customer",
+    text:hank?"Hi! Try the pancakes here — they're the best in town.":"Hello! We come here every Friday. The milkshakes are amazing!",
+    italian:hank?"Ciao! Prova i pancake qui: sono i migliori della città.":"Ciao! Veniamo qui ogni venerdì. I frappè sono fantastici!",
+    buttons:[{label:"Thanks!", cls:"primary", act:()=>{}}] });
+}
+function talkToWaiter(n){
+  if(DINER.seat){ dinerMeAction(); return; }
+  DialogueBox.open({ npc:n, icon:"\u{1F354}", sub:"Waiter",
+    text:"Hi! Please take a seat anywhere you like. I'll be right with you!",
+    italian:"Ciao! Siediti dove vuoi: arrivo subito. (Vai a una sedia libera e premi E.)",
+    buttons:[{label:"OK, thanks!", cls:"primary", act:()=>{}}] });
+}
+
+/* ------------------------------------------------------------------ */
+/* SEDERSI e ALZARSI                                                    */
+/* ------------------------------------------------------------------ */
+function dinerSeatInteracts(){
+  DINER.seats.forEach((s,i)=>{ if(s.taken) return;
+    s.inter=addInteract({ id:"diner_seat_"+i, area:"town", radius:1.25,
+      pos:()=>new BABYLON.Vector3(s.x,0,s.z),
+      prompt:()=>dinerOpen()?'Press <b>E</b> to <b>sit down</b>':'\u{1F319} The diner is closed now',
+      interact:()=>dinerSit(s) });
+  });
+  /* mentre sei seduto: una sola E, sempre la piu' vicina (e' su di te) */
+  DINER.meInter=addInteract({ id:"diner_me", area:"town", radius:3.0, enabled:false, prio:-2,
+    pos:()=>player.position, prompt:()=>dinerMePrompt(), interact:()=>dinerMeAction() });
+}
+function dinerSit(s){
+  if(DINER.seat) return;
+  if(!dinerOpen()){ toast("\u{1F319} The diner is closed now. Come back tomorrow!"); return; }
+  if(typeof POV!=="undefined" && POV.on) try{ povSet(false,true); }catch(e){}
+  DINER.seat=s; DINER.st="seated"; DINER.o={ slip:{}, sbagli:0, tent:0 };
+  moveTarget=null; pendingInteract=null; try{ tapMark.setEnabled(false); }catch(e){}
+  /* il corpo sulla seduta: il bacino sta un po' dietro al centro della sedia */
+  const f=new BABYLON.Vector3(Math.sin(s.face),0,Math.cos(s.face));
+  player.position.set(s.x-f.x*0.06, DINER.gy, s.z-f.z*0.06); player.rotation.y=s.face;
+  playAvatarAnim(IDLE_ANIM);
+  playerSit(f,s.seatY,DINER.gy);
+  DINER.seats.forEach(q=>{ if(q.inter) q.inter.enabled=false; });
+  DINER.meInter.enabled=true;
+  toast("\u{1FA91} You sit down. The waiter is coming…");
+  dinerLater(1400,()=>dinerWaiterTo(s.t,()=>dinerAsk("drink",()=>dinerAsk("main",()=>dinerAsk("side",dinerKitchen)))));
+}
+/* rifatto dopo una ricostruzione dell'avatar (cambio di corpo dalla Teca) */
+function dinerResit(){ const s=DINER.seat; if(!s) return;
+  playerSit(new BABYLON.Vector3(Math.sin(s.face),0,Math.cos(s.face)),s.seatY,DINER.gy); }
+function dinerStand(silent){
+  const s=DINER.seat; if(!s) return;
+  clearTimeout(DINER.timer); DINER.timer=null;
+  playerStand();
+  player.position.set(s.standX,DINER.gy,s.standZ);
+  DINER.seat=null; DINER.st="idle"; DINER.o=null; _dinerClearFood();
+  DINER.seats.forEach(q=>{ if(q.inter) q.inter.enabled=true; });
+  DINER.meInter.enabled=false;
+  try{ DialogueBox.close(); }catch(e){}
+  if(DINER.waiter && !DINER.busy) dinerWaiterHome();
+  if(!silent) toast("\u{1F44B} You stand up.");
+}
+function dinerLater(ms,fn){ clearTimeout(DINER.timer); DINER.timer=setTimeout(()=>{ DINER.timer=null; if(DINER.seat) fn(); },ms); }
+/* il giocatore e' stato portato via (taxi, metro, ricarica di un'area) */
+function dinerTick(){
+  const s=DINER.seat; if(!s) return;
+  if(area!=="town" || Math.hypot(player.position.x-s.x,player.position.z-s.z)>1.2){ dinerStand(true); return; }
+  player.rotation.y=s.face;
+}
+
+/* ------------------------------------------------------------------ */
+/* IL CAMERIERE CAMMINA                                                 */
+/* ------------------------------------------------------------------ */
+/* ⚠️ il punto del cameriere e' FUORI dal tavolo gonfiato del raggio di chi
+   cammina (blocked): a 0,95 m dal centro finiva sul bordo del solido e Ray
+   restava a camminare sul posto a un metro dal tavolo (visto nel collaudo). */
+function _dnSpot(t){ return new BABYLON.Vector3(t.x, 0, t.z-1.12); }
+function dinerWaiterTo(t,then){
+  const w=DINER.waiter; if(!w){ then(); return; }
+  DINER.busy=true;
+  const aisle=()=>new BABYLON.Vector3(DINER.x, 0, t.z-1.12);
+  npcWalkSeq(w,[aisle,()=>_dnSpot(t)],0.35,()=>{ DINER.busy=false;
+      const p=w.pos(); w.carrier.rotation.y=Math.atan2(player.position.x-p.x,player.position.z-p.z)+NPC_FACE_OFFSET;
+      w.watch=true; if(DINER.seat) then(); else dinerWaiterHome(); },
+    "town",()=>{ DINER.busy=false; },{ detour:true, speed:2.3 });   // un cameriere ha fretta
+}
+function dinerWaiterHome(then){
+  const w=DINER.waiter; if(!w){ if(then) then(); return; }
+  DINER.busy=true;
+  const p=w.pos(), T=new BABYLON.Vector3(DINER.x+DINER_WAITER_HOME.x,0,DINER_WAITER_HOME.z);
+  npcWalkSeq(w,[()=>new BABYLON.Vector3(DINER.x,0,p.z),()=>new BABYLON.Vector3(DINER.x,0,DINER_WAITER_HOME.z),()=>T],0.3,()=>{
+      DINER.busy=false; w.carrier.rotation.y=Math.PI; w.baseYaw=Math.PI; w.watch=true; if(then) then(); },
+    "town",()=>{ DINER.busy=false; },{ detour:true, speed:2.3 });   // un cameriere ha fretta
+}
+
+/* ------------------------------------------------------------------ */
+/* L'ORDINE: un turno alla volta (stesso impianto del caffe')           */
+/* ------------------------------------------------------------------ */
+function _dnItemRow(t,v){ return '<div style="display:flex;justify-content:space-between;padding:2px 0;"><span>'+t+': '+_escHtml(v.en)+'</span><span style="opacity:.75">'+(v.p?'£'+v.p.toFixed(2):'')+'</span></div>'; }
+function dinerTotal(o){ let s=0; ["drink","main","side","dessert"].forEach(k=>{ const v=o.slip[k]; if(v) s+=(v.p||0); }); return s; }
+function dinerSlipHtml(o,final){
+  const rows=["drink","main","side","dessert"].filter(k=>o.slip[k] && o.slip[k].p>=0 && o.slip[k].en!=="—")
+    .map(k=>_dnItemRow(DINER_TURNS[k].field,o.slip[k])).join("");
+  return '<div style="background:#f7f5ef;border:1px solid #d9cfc0;border-radius:10px;padding:10px 14px;margin-top:8px;">'
+    +'<div style="font-weight:800;margin-bottom:6px;">\u{1F9FE} '+(final?"Your bill":"Your order")+'</div>'
+    +(rows||'<div style="opacity:.6">…</div>')
+    +(final?('<div style="border-top:1px dashed #b9c4c9;margin-top:6px;padding-top:6px;display:flex;justify-content:space-between;font-weight:800;"><span>Total:</span><span>£'+dinerTotal(o).toFixed(2)+'</span></div>'):'')
+    +'</div>'; }
+function dinerMenuHtml(){
+  const sec=(t,L)=>'<div style="font-weight:800;margin-top:8px;color:#c8323a;">'+t+'</div>'
+    +L.map(v=>'<div style="display:flex;justify-content:space-between;padding:1px 0;"><span>'+_escHtml(v.en)+'</span><span style="opacity:.75">'+(v.p?'£'+v.p.toFixed(2):'free')+'</span></div>').join("");
+  return '<div style="background:#fffaf0;border:2px solid #c8323a;border-radius:12px;padding:10px 14px;margin-top:8px;font-size:.95em;">'
+    +'<div style="font-weight:900;text-align:center;letter-spacing:.08em;color:#1b1c1f;">★ SUNNY SIDE DINER ★</div>'
+    +'<div style="text-align:center;opacity:.6;font-size:.85em;">Park Avenue · open every day</div>'
+    +sec("Burgers &amp; mains",DINER_MENU.mains)+sec("Sides",DINER_MENU.sides)
+    +sec("Drinks",DINER_MENU.drinks)+sec("Desserts",DINER_MENU.desserts)+'</div>'; }
+function dinerShowMenu(back){
+  DialogueBox.open({ npc:DINER.waiter, icon:"\u{1F4CB}", sub:DINER.name+" — menu",
+    text:"Here's the menu. Take your time!", italian:"Ecco il menu: con calma.", autoSpeak:false, html:dinerMenuHtml(),
+    buttons:[{ label:"✔ Ready to order", cls:"primary", act:()=>{ if(back) back(); } }] });
+}
+/* la domanda del turno `key`; poi(v) quando la risposta e' presa */
+function dinerAsk(key,poi,qOverride){
+  const o=DINER.o, w=DINER.waiter; if(!o||!DINER.seat) return;
+  const t=DINER_TURNS[key], q=qOverride||t.q;
+  DINER.st="ask:"+key;
+  const sub=DINER.name+" — "+t.field;
+  const again=()=>dinerAsk(key,poi,qOverride);
+  const leave={ label:"Leave", cls:"ghost", act:()=>dinerStand() };
+  if(_dnYear()<=1){
+    const ch=t.ready.map(fr=>({ label:fr, act:()=>_dinerTake(key,fr,false,poi) }));
+    if(key!=="bill"&&key!=="pay") ch.push({ label:"\u{1F4CB} Menu", act:()=>dinerShowMenu(again) });
+    DialogueBox.open({ npc:w, icon:"\u{1F354}", sub:sub, text:q, italian:t.it, html:(key==="pay"?dinerSlipHtml(o,true):dinerSlipHtml(o,false)), choices:ch, buttons:[leave] });
+    return;
+  }
+  o.tent=0;
+  DialogueBox.open({ npc:w, icon:"\u{1F354}", sub:sub, text:q, italian:t.it,
+    html:(key==="pay"?dinerSlipHtml(o,true):dinerSlipHtml(o,false))
+      +'<textarea id="dnTA" rows="2" style="width:100%;box-sizing:border-box;font:inherit;margin-top:8px;padding:8px;border-radius:10px;border:1px solid #ccd6da;resize:vertical;" placeholder="Answer in English..."></textarea>'
+      +'<div id="dnFb" style="margin-top:8px;"></div>',
+    buttons:[ { label:"✔ Say it", cls:"primary", keepOpen:true, act:()=>_dinerSubmit(key,poi) },
+      ...((key!=="bill"&&key!=="pay")?[{ label:"\u{1F4CB} Menu", act:()=>dinerShowMenu(again) }]:[]), leave ] });
+}
+function _dinerTake(key,testo,male,poi){
+  const o=DINER.o; if(!o) return;
+  const t=DINER_TURNS[key];
+  let v=t.nulla?_cafeTrova(testo,[t.nulla]):null;
+  if(!v) v=_cafeTrova(testo,t.voci());
+  if(!v) v=t.voci()[0];
+  o.slip[key]=v; if(male) o.sbagli++;
+  setTimeout(()=>{ if(DINER.seat) poi(v); },260);
+}
+function _dinerSubmit(key,poi){
+  const o=DINER.o; if(!o) return;
+  const ta=document.getElementById("dnTA"), fb=document.getElementById("dnFb"); if(!ta||!fb) return;
+  const t=DINER_TURNS[key];
+  if(linguaccia(ta.value)){ fb.innerHTML=linguacciaHtml(); return; }
+  const ev=ambEval(ta.value,{ q:t.q||"Can I help you?", it:t.it, expect:{ pool:t.pool, hint:t.hint } });
+  if(ev.stage==="short"){ o.tent++;
+    fb.innerHTML='<div style="font-weight:800;color:#a05a2c;">\u{1F7E1} Say a full sentence!</div>'
+      +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">'+_trSpan("Say a full sentence!","Una parola sola non basta: "+t.hint+".")+'</div>';
+    return; }
+  const scelta=(t.nulla?_cafeTrova(ta.value,[t.nulla]):null)||_cafeTrova(ta.value,t.voci());
+  if(!scelta && o.tent<1){ o.tent++;
+    const enMsg=(key==="bill"||key==="pay")?"Sorry, could you say that again?":"Sorry, that's not on the menu! Have a look.";
+    fb.innerHTML='<div style="font-weight:800;color:#a05a2c;">\u{1F7E1} '+_escHtml(enMsg)+'</div>'
+      +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">'+_trSpan(enMsg,t.hint.charAt(0).toUpperCase()+t.hint.slice(1)+".")+'</div>';
+    try{ speechSynthesis.resume(); TTS.say(enMsg,{gender:"m"}); }catch(e){}
+    return; }
+  const male=(!scelta)||!!ev.form||(ev.pert&&ev.pert.checked&&!ev.pert.ok);
+  const nota=ev.form?(ev.form.recast?_escHtml(ev.form.recast):ev.form.it):"";
+  fb.innerHTML='<div style="font-weight:800;color:#1c7a4a;">\u{1F7E2} '+(scelta?("✓ "+_escHtml(scelta.en)):"✓ OK")+'</div>'
+    +(nota?('<div style="opacity:.78;font-size:.93em;margin-top:4px;">\u{1F4A1} '+nota+'</div>'):"");
+  _dinerTake(key,ta.value,!!male,poi);
+}
+/* ---- in cucina e ritorno col piatto ---- */
+function dinerKitchen(){
+  const w=DINER.waiter, s=DINER.seat; if(!s) return;
+  DINER.st="cooking";
+  DialogueBox.open({ npc:w, icon:"\u{1F354}", sub:DINER.name, text:"Perfect! I'll be right back with your order.",
+    italian:"Perfetto! Torno subito con la tua ordinazione.", html:dinerSlipHtml(DINER.o,false),
+    buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] });
+  dinerWaiterHome(()=>dinerLater(2200,()=>dinerWaiterTo(s.t,_dinerServeMain)));
+}
+function _dinerServeMain(){
+  const w=DINER.waiter; if(!DINER.seat) return;
+  _dinerServe(["drink","main","side"]); DINER.st="eating";
+  DialogueBox.open({ npc:w, icon:"\u{1F354}", sub:DINER.name, text:"Here you are. Enjoy your meal!",
+    italian:"Ecco a te. Buon appetito!", buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] });
+  dinerWaiterHome(()=>dinerLater(9000,_dinerCheckBack));
+}
+/* dopo un po' ripassa al tavolo: com'era? il dolce? */
+function _dinerCheckBack(){
+  const s=DINER.seat; if(!s || DINER.st!=="eating") return;
+  dinerWaiterTo(s.t,()=>{ if(DINER.st!=="eating") return; dinerAsk("dessert",_dinerDessert); });
+}
+function _dinerDessert(v){
+  const w=DINER.waiter, s=DINER.seat; if(!s) return;
+  if(v && v.en!=="\u2014"){
+    DINER.st="dessert";
+    DialogueBox.open({ npc:w, icon:"\u{1F354}", sub:DINER.name, text:"Coming right up!", italian:"Arriva subito!",
+      buttons:[{ label:"Thanks!", cls:"primary", act:()=>{} }] });
+    dinerWaiterHome(()=>dinerLater(1800,()=>dinerWaiterTo(s.t,_dinerServeDessert)));
+  } else {
+    DINER.st="eating2";
+    DialogueBox.open({ npc:w, icon:"\u{1F354}", sub:DINER.name, text:"No problem! Just call me when you want the bill.",
+      italian:"Nessun problema! Chiamami quando vuoi il conto (premi E).", buttons:[{ label:"OK!", cls:"primary", act:()=>{} }] });
+    dinerWaiterHome();
+  }
+}
+function _dinerServeDessert(){
+  if(!DINER.seat) return;
+  _dinerServe(["dessert"]); DINER.st="eating2";
+  DialogueBox.open({ npc:DINER.waiter, icon:"\u{1F354}", sub:DINER.name, text:"There you go. Just call me when you want the bill!",
+    italian:"Ecco qua. Chiamami quando vuoi il conto (premi E).", buttons:[{ label:"OK!", cls:"primary", act:()=>{} }] });
+  dinerWaiterHome();
+}
+/* ---- il conto e il pagamento ---- */
+function dinerBill(){
+  const w=DINER.waiter, s=DINER.seat, o=DINER.o; if(!s||!o) return;
+  DINER.st="bill";
+  dinerAsk("bill",()=>{
+    DialogueBox.open({ npc:w, icon:"\u{1F354}", sub:DINER.name, text:"Sure! I'll bring it right away.", italian:"Certo! Te lo porto subito.",
+      buttons:[{ label:"Thanks!", cls:"primary", act:()=>{} }] });
+    const go=()=>dinerWaiterTo(s.t,()=>{
+      const tot=dinerTotal(o).toFixed(2);
+      dinerAsk("pay",v=>{
+        const cash=v && /cash/i.test(v.en);
+        const kind=(_dnYear()<=1)?"cafeOrderReady":(o.sbagli?"cafeOrderRetry":"cafeOrder");
+        let got=0; try{ got=Stars.awardCafeOrder(npcCardId(w),kind); }catch(e){}
+        DINER.st="paid";
+        DialogueBox.open({ npc:w, icon:"\u{1F354}", sub:DINER.name+" — paid"+(got>0?"  ⭐ +"+got:""),
+          text:(cash?"Thank you! Here's your change. ":"Thank you! ")+"Have a nice day, and come back soon!",
+          italian:"Grazie! "+(cash?"Ecco il resto. ":"")+"Buona giornata, e torna presto!",
+          html:dinerSlipHtml(o,true),
+          buttons:[{ label:"\u{1F44B} Goodbye! (stand up)", cls:"primary", act:()=>dinerStand() },
+                   { label:"Stay a bit", cls:"ghost", act:()=>{} }] });
+        dinerWaiterHome();
+      },"Here's your bill. That's £"+tot+", please. How would you like to pay?");
+    });
+    if(DINER.busy) dinerLater(1500,go); else go();
+  });
+}
+/* la E su di te mentre sei seduto */
+function dinerMePrompt(){
+  const st=DINER.st;
+  if(st==="eating"||st==="eating2") return 'Press <b>E</b>: <b>ask for the bill</b> or stand up';
+  if(st==="paid") return 'Press <b>E</b> to <b>stand up</b>';
+  return 'Press <b>E</b>: talk to the waiter or stand up';
+}
+function dinerMeAction(){
+  const st=DINER.st;
+  const ch=[];
+  if(st==="eating"||st==="eating2") ch.push({ label:"\u{1F9FE} Ask for the bill", act:()=>{ if(DINER.busy){ dinerLater(1500,dinerBillCall); } else dinerBillCall(); } });
+  if(/^ask:/.test(st)){ const k=st.slice(4); ch.push({ label:"\u{1F354} Back to the waiter", act:()=>{
+      if(k==="drink") dinerAsk("drink",()=>dinerAsk("main",()=>dinerAsk("side",dinerKitchen)));
+      else if(k==="main") dinerAsk("main",()=>dinerAsk("side",dinerKitchen));
+      else if(k==="side") dinerAsk("side",dinerKitchen);
+      else if(k==="bill"||k==="pay") dinerBill();
+      else toast("⏳ The waiter is coming…"); } }); }
+  ch.push({ label:"\u{1F4CB} Look at the menu", act:()=>dinerShowMenu(()=>{}) });
+  ch.push({ label:"\u{1F6B6} Stand up", act:()=>dinerStand() });
+  DialogueBox.open({ name:"\u{1FA91} "+DINER.name, sub:"At your table", text:(st==="paid")?"Time to go?":"What do you want to do?",
+    italian:(st==="eating"||st==="eating2")?"Quando hai finito, chiedi il conto al cameriere.":"Scegli che cosa fare.", autoSpeak:false, choices:ch,
+    buttons:[{ label:"Close", cls:"ghost", act:()=>{} }] });
+}
+function dinerBillCall(){ const s=DINER.seat; if(!s) return;
+  /* il cameriere arriva al tavolo, poi gli chiedi il conto con le tue parole */
+  dinerWaiterTo(s.t,dinerBill); }
+
+/* ------------------------------------------------------------------ */
+/* IL CIBO SUL TAVOLO                                                   */
+/* ------------------------------------------------------------------ */
+function _dinerClearFood(){ DINER.food.forEach(m=>{ try{ m.dispose(false,false); }catch(e){} }); DINER.food=[]; }
+function _dinerServe(keys){
+  const s=DINER.seat, o=DINER.o; if(!s||!o) return;
+  const M=_dinerMats(), t=s.t, y=t.top, dx=s.sd*0.2;    // dalla parte di chi e' seduto
+  const cx=t.x+dx, cz=t.z;
+  const add=(m,k)=>{ m.material=(typeof k==="string")?M[k]:k; m.parent=townRoot; m.isPickable=false; DINER.food.push(m); return m; };
+  const colM=(hex)=>{ const k="dn_c_"+hex; return scene.getMaterialByName(k)||mat(k,hex); };
+  const C=(o2,px,py,pz,k)=>{ o2.tessellation=o2.tessellation||16; const m=BABYLON.MeshBuilder.CreateCylinder("dnf",o2,scene); m.position.set(px,py,pz); return add(m,k); };
+  const S=(d,px,py,pz,k)=>{ const m=BABYLON.MeshBuilder.CreateSphere("dnf",{diameter:d,segments:8},scene); m.position.set(px,py,pz); return add(m,k); };
+  const B=(w,h,d,px,py,pz,k)=>{ const m=BABYLON.MeshBuilder.CreateBox("dnf",{width:w,height:h,depth:d},scene); m.position.set(px,py,pz); return add(m,k); };
+  keys.forEach(key=>{ const v=o.slip[key]; if(!v || v.en==="—") return;
+    if(key==="drink"){ const gx=cx+0.05, gz=cz+0.22;
+      if(v.ic==="shake"){ C({diameterTop:0.1,diameterBottom:0.07,height:0.2},gx,y+0.1,gz,"glass"); C({diameterTop:0.1,diameterBottom:0.08,height:0.14},gx,y+0.08,gz,colM(v.c));
+        S(0.1,gx,y+0.21,gz,"white").scaling.y=0.6; S(0.03,gx,y+0.25,gz,"red"); const st=C({diameter:0.01,height:0.2},gx+0.02,y+0.28,gz,"red"); st.rotation.z=0.25; }
+      else { C({diameter:0.08,height:0.15},gx,y+0.075,gz,"glass"); if(v.p>0||true) C({diameter:0.07,height:0.12},gx,y+0.06,gz,colM(v.c)); } }
+    if(key==="main"){ C({diameter:0.3,height:0.015,tessellation:24},cx,y+0.008,cz,"white");
+      if(v.ic==="burger"){ C({diameter:0.13,height:0.03},cx,y+0.03,cz,colM("#d99a45")); C({diameter:0.135,height:0.025},cx,y+0.057,cz,colM(v.c));
+        C({diameter:0.14,height:0.008},cx,y+0.073,cz,colM("#f2c14e")); C({diameter:0.14,height:0.006},cx,y+0.08,cz,colM("#5f9a4a"));
+        const tp=S(0.135,cx,y+0.09,cz,colM("#d99a45")); tp.scaling.y=0.55; }
+      else if(v.ic==="hotdog"){ const b=C({diameter:0.06,height:0.2},cx,y+0.04,cz,colM("#d99a45")); b.rotation.z=Math.PI/2; b.scaling.z=1.4;
+        const sg=C({diameter:0.04,height:0.22},cx,y+0.07,cz,colM(v.c)); sg.rotation.z=Math.PI/2;
+        const mu=C({diameter:0.012,height:0.18},cx,y+0.092,cz,colM("#f2c14e")); mu.rotation.z=Math.PI/2; }
+      else if(v.ic==="pancakes"){ for(let i=0;i<4;i++) C({diameter:0.16-i*0.005,height:0.022},cx,y+0.02+i*0.023,cz,colM(v.c));
+        C({diameter:0.05,height:0.012},cx,y+0.115,cz,colM("#f7e7b0")); C({diameter:0.14,height:0.005},cx,y+0.105,cz,colM("#8a4a1a")); }
+      else if(v.ic==="chicken"){ [[-0.05,0],[0.05,0.03],[0,-0.05]].forEach(q=>{ const d=S(0.09,cx+q[0],y+0.045,cz+q[1],colM(v.c)); d.scaling.set(1.3,0.7,0.9); }); }
+      else { C({diameter:0.2,height:0.04},cx,y+0.03,cz,"white"); C({diameter:0.18,height:0.03},cx,y+0.045,cz,colM(v.c)); } }
+    if(key==="side"){ const sx=cx-0.02, sz=cz-0.22;
+      if(v.ic==="fries"){ B(0.1,0.08,0.07,sx,y+0.04,sz,"red"); for(let i=0;i<7;i++) B(0.012,0.1,0.012,sx-0.035+i*0.012,y+0.1,sz+((i%2)?0.01:-0.01),colM(v.c)); }
+      else if(v.ic==="rings"){ C({diameter:0.18,height:0.012},sx,y+0.006,sz,"white");
+        for(let i=0;i<3;i++){ const r=BABYLON.MeshBuilder.CreateTorus("dnf",{diameter:0.08,thickness:0.025,tessellation:14},scene); r.position.set(sx-0.04+i*0.04,y+0.02+i*0.012,sz); add(r,colM(v.c)); } }
+      else { C({diameterTop:0.14,diameterBottom:0.08,height:0.06},sx,y+0.03,sz,"white"); S(0.12,sx,y+0.06,sz,colM(v.c)).scaling.y=0.45; } }
+    if(key==="dessert"){ const ex=cx+0.12, ez=cz-0.2;
+      C({diameter:0.16,height:0.012,tessellation:20},ex,y+0.006,ez,"white");
+      if(v.ic==="sundae"){ C({diameterTop:0.1,diameterBottom:0.04,height:0.1},ex,y+0.06,ez,"glass"); S(0.08,ex,y+0.12,ez,colM(v.c)); S(0.025,ex,y+0.17,ez,"red"); }
+      else if(v.ic==="brownie"){ B(0.08,0.04,0.06,ex,y+0.032,ez,colM(v.c)); }
+      else { const p=C({diameter:0.12,height:0.035,tessellation:3},ex,y+0.03,ez,colM(v.c)); p.rotation.y=0.3; } }
+  });
+  try{ _octDirty(); }catch(e){}
+}
+
 function buildTownCafe(){
   const y=(typeof _pedGroundY==="function")?_pedGroundY(CAFE_XZ.x,CAFE_XZ.z):0;
   cafe(CAFE_XZ.x, CAFE_XZ.z, { outdoor:true, y:y });
@@ -11489,6 +12211,7 @@ function updateNPCs(){
    comportamenti restano simmetrici anche lì. */
 function updatePlayerFacing(stopped){
   if(!stopped) return;
+  if(typeof DINER!=="undefined" && DINER.seat) return;   // seduti si guarda il tavolo, non il cameriere
   let best=null, bestD=1e9;
   for(let i=0;i<NPCS.length;i++){ const n=NPCS[i];
     if(n.area!==area) continue;
@@ -19381,6 +20104,12 @@ const PAROLACCE=[
   "fuck","fucking","fucker","fuckoff","shit","shitty","bullshit","bitch",
   "bitches","asshole","arsehole","cunt","wanker","twat","bastard","slut",
   "whore","nigger","nigga","faggot","fag","motherfucker","piss off","dickhead",
+  /* v288 (Giacomo, 30 set: «metti anche suck, dick e derivati»). Scelta del
+     docente, contro la cautela scritta sopra sul compagno che si chiama
+     Dick: in classe pesa di piu' l'uso come insulto. «Suck» e' a parola
+     intera: «suckle», «sucrose» e simili non vengono toccati. */
+  "suck","sucks","sucked","sucking","sucker","suckers","sucky",
+  "dick","dicks","dickheads","dickhead","dickface","dicky",
 ];
 const _PAROLACCE_SET=new Set(PAROLACCE.filter(function(w){ return w.indexOf(" ")<0; }));
 /* ⚠️ Schiacciare le lettere ripetute a UNA sola rompe le doppie vere
@@ -33526,6 +34255,7 @@ function clampArea(){ const c=area==="home"?HOME_C:(area==="cinema"?CINEMA_C:(ar
   player.position.x=Math.max(c.x-bx,Math.min(c.x+bx,player.position.x));
   player.position.z=Math.max(c.z-bz,Math.min(c.z+bz,player.position.z)); }
 function move(nx,nz,spd){
+  if(typeof DINER!=="undefined" && DINER.seat) return false;   // v288: seduti al diner non si cammina (E per alzarsi)
   spd=spd||PLAYER_SPEED;
   const ox=player.position.x, oz=player.position.z;
   const px=ox+nx*spd, pz=oz+nz*spd;
@@ -33803,6 +34533,7 @@ function mapPlaces(){
      aeroporto invece sono unit vere (u2_5 e u1) e ora sono li' sopra:
      avevano un nome da segnavia ("Station") al posto del nome del libro. */
   out.push({ ic:"🌳", name:"Park", hub:true, x:84, z:0, ax:84, az:0, open:true });
+  out.push({ ic:"\u{1F354}", name:"Diner", hub:true, x:0, z:32, ax:0, az:22.6, open:true });   // v288
   return out;
 }
 function buildMapPins(){
@@ -50431,7 +51162,7 @@ function _npcCol(mt){ const c=mt&&(mt.albedoColor||mt.diffuseColor); try{ return
    ti ascolti: ed e' proprio a loro che si parla. Si riconoscono dal
    mestiere scritto sotto il nome (cfg.sub), oppure con counter:true nella
    configurazione. Il cappello resta possibile: si pesca fra gli altri. */
-const NPC_COUNTER_RE=/barista|shopkeeper|shop assistant|cashier|receptionist|clerk|box office|check-in|registrar|cook|tourist information|clockmaker|career adviser|security|teacher/i;
+const NPC_COUNTER_RE=/barista|waiter|waitress|shopkeeper|shop assistant|cashier|receptionist|clerk|box office|check-in|registrar|cook|tourist information|clockmaker|career adviser|security|teacher/i;
 function npcAtCounter(cfg){ return !!(cfg && (cfg.counter || NPC_COUNTER_RE.test(String(cfg.sub||"")))); }
 function npcLookFor(id,rig,opt){
   opt=opt||{};
