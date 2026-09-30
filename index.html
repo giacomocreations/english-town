@@ -738,6 +738,17 @@ const EMBED_VOICE={
 // ---- TUNING ----
 const ASSETS_DIR="./assets/";
 const BUILDING_SCALE=6.0;
+/* v286 — I PALAZZI SI ALZANO, SOLO IN ALTEZZA (Giacomo, 30 set: «in tutti i
+   palazzi le porte sono piu' basse degli NPC»). Misurato: con la scala 6 la
+   porta del Corner Shop arrivava a ~1,9 m e il piano terra a ~2,3 m, mentre
+   interni, arredi e NPC sono in metri veri (soffitti 2,7, porte vere 2,1-2,4).
+   Erano i palazzi a essere bassi, non le persone ad essere alte.
+   ⚠️ Solo Y: la PIANTA resta identica, quindi strade, marciapiedi, solidi,
+   punti delle porte e cristalli non si spostano. Tutto cio' che sta SUI
+   palazzi (anta vera, tende, insegne, cisterne, cartelli, terrazza del
+   finale) e' gia' misurato sul modello scalato, e sale con lui. */
+const BUILDING_YS=1.25;
+function bldScale(root,s){ root.scaling.set(s, s*BUILDING_YS, s); }
 const PLAYER_SPEED=0.16;
 const RUN_MULT=1.8;     // corsa: Shift (desktop) o joystick spinto a fondo (mobile)
 const PLAYER_R=0.55;            // raggio collisione giocatore
@@ -3347,7 +3358,9 @@ const METRO_STATIONS=[
 const player=new BABYLON.TransformNode("player",scene);
 // --- AVATAR low-poly animato (Hoodie_Character.glb, skinnato) ---
 const AVATAR_FACE_Y = 0;          // offset orientamento: se cammina all\u0027indietro prova 0
-const AVATAR_HEIGHT = 1.85;      // altezza target in metri
+/* v286: 1,85 era un adulto alto; il giocatore e' un ragazzo di prima media.
+   Con 1,65 resta un po' sotto gli adulti della citta' (NPC 1,62-1,84). */
+const AVATAR_HEIGHT = 1.65;      // altezza target in metri
 let avatarRoot=null, avatarMeshes=[]; const avatarAnims={}; let _avAnimCur=null;
 let IDLE_ANIM="Idle";                       // idle di default (fallback se Idle_Neutral mancasse)
 // === FIX DEFINITIVO PIEDI =================================================
@@ -5189,7 +5202,7 @@ function buildTown(){
       try{ const tx=root.getChildMeshes().find(mm=>/Text\d*$/i.test(mm.name));
         if(tx) mirrorMeshWorldZ(tx); }catch(e){ console.warn("[cinema insegna]",e); }
     } else {
-      root.scaling.setAll(BUILDING_SCALE); root.position.set(p.x,0,p.z);
+      bldScale(root,BUILDING_SCALE); root.position.set(p.x,0,p.z);
       const b=bbox(root); root.position.y += -b.min.y; b2=bbox(root);
     }
     root.getChildMeshes().forEach(mm=>{ mm.__occluder=true; mm.__camBlock=true;
@@ -5354,7 +5367,7 @@ function buildTown(){
   FILLER.forEach(f=>{
     const rr=spawn(f.m,townRoot); const root=rr&&rr.root; if(!root) return;
     root.rotation.y=f.r||0;
-    root.scaling.setAll(BUILDING_SCALE*(f.s||1));
+    bldScale(root,BUILDING_SCALE*(f.s||1));
     root.position.set(f.x,0,f.z);
     const b=bbox(root); root.position.y+=-b.min.y; const b2=bbox(root);
     if(f.pad){ const pw=f.padW||16, pd=f.padD||16;
@@ -8198,7 +8211,7 @@ function buildStation(){
   plaza.material=sidewalkMat("stpm",34,30); plaza.position.set(S.x,0.04,S.z); plaza.parent=townRoot; plaza.__ground=true;
   // edificio stazione (riusa un modello)
   const {root}=spawn("bE",townRoot);
-  root.scaling.setAll(BUILDING_SCALE*0.92); root.position.set(S.x-2,0,S.z); root.rotation.y=-Math.PI/2;
+  bldScale(root,BUILDING_SCALE*0.92); root.position.set(S.x-2,0,S.z); root.rotation.y=-Math.PI/2;
   root.getChildMeshes().forEach(mm=>{mm.__occluder=true; mm.__camBlock=true;});
   let b=bbox(root); root.position.y+=-b.min.y; b=bbox(root);
   addSolid(b.min.x,b.max.x,b.min.z,b.max.z,"town");
@@ -33278,7 +33291,7 @@ function tryInteract(){ if(loginPending) return;
    altro: seduti al cinema, discesa in metro, finale. V riporta alla
    visuale base e quindi esce anche dalla prima persona.
    ===================================================================== */
-const POV={ on:false, r:0.05, eye:1.64, save:null };
+const POV={ on:false, r:0.05, eye:AVATAR_HEIGHT*0.90, save:null };   // gli occhi: ~9/10 dell'altezza
 function povSet(on,silent){
   on=!!on; if(POV.on===on) return POV.on;
   if(on){
@@ -50289,7 +50302,15 @@ function setPlayerFit(id){
 const NPC_DRESS_RIG={ avatar:"m", avatarW:"f" };   // solo i rig del giocatore: gli altri non hanno le mesh Casual_*
 function _npcCol(mt){ const c=mt&&(mt.albedoColor||mt.diffuseColor); try{ return c?c.toHexString():null; }catch(e){ return null; } }
 /* l'aspetto di un NPC: un oggetto come Look.state(), deciso dall'id */
-function npcLookFor(id,rig){
+/* v286 — NIENTE CUFFIE A CHI STA DIETRO UN BANCONE (Giacomo, 30 set). Un
+   barista o un'impiegata al check-in con le cuffie in testa sembra che non
+   ti ascolti: ed e' proprio a loro che si parla. Si riconoscono dal
+   mestiere scritto sotto il nome (cfg.sub), oppure con counter:true nella
+   configurazione. Il cappello resta possibile: si pesca fra gli altri. */
+const NPC_COUNTER_RE=/barista|shopkeeper|shop assistant|cashier|receptionist|clerk|box office|check-in|registrar|cook|tourist information|clockmaker|career adviser|security|teacher/i;
+function npcAtCounter(cfg){ return !!(cfg && (cfg.counter || NPC_COUNTER_RE.test(String(cfg.sub||"")))); }
+function npcLookFor(id,rig,opt){
+  opt=opt||{};
   /* ⚠️ _npcHash da solo e' un hash «alla Java»: con il sale davanti, due
      scelte dello stesso NPC differiscono di una costante, e le prove davano
      giacca e cappellino a quasi tutti. Un rimescolamento dei bit le stacca. */
@@ -50298,12 +50319,12 @@ function npcLookFor(id,rig){
   const cols=ACC_COLS.filter(c=>c.hex && !c.metal);
   const col=salt=>(p100(salt+"o")<50 ? "" : pick(cols,salt).id);    // meta' «Original», meta' un colore
   const L={ rig, bottom:pick(lookBottomsFor(rig),"b").id, bcol:pick(LOOK_BCOL.filter(c=>c.hex),"bc").id,
-            coat:"", coatc:"", cut:"", hat:"", hatc:"", face:"", facec:"", neck:"", neckc:"" };
+            coat:"", coatc:"", cut:"", hat:"", hatc:"", face:"", facec:"", neck:"", neckc:"", counter:!!opt.counter };
   if(p100("c")<38){ L.coat=pick(LOOK_COATS,"cw").id; L.coatc=col("cc"); }
   /* i tagli: al ragazzo soprattutto rasati e ricci, code e chignon piu' rari */
   if(p100("t")<35) L.cut=pick(rig==="f" ? ["short","ponytail","bun","curly","long"]
                                         : ["buzz","curly","buzz","curly","long","ponytail"],"tw");
-  const acc=slot=>LOOK_ACC.filter(a=>a.slot===slot);
+  const acc=slot=>LOOK_ACC.filter(a=>a.slot===slot && !(opt.counter && a.id==="headphones"));
   if(p100("h")<40){ L.hat=pick(acc("head"),"hw").id; L.hatc=col("hc"); }
   if(p100("f")<28){ L.face=pick(acc("face"),"fw").id; L.facec=col("fc"); }
   if(p100("n")<24){ L.neck=pick(acc("neck"),"nw").id; L.neckc=col("nc"); }
@@ -50313,7 +50334,7 @@ const _npcDressQ=[];
 function npcDressLater(npc,cfg){
   if(!npc || (cfg && cfg.dress===false)) return;
   const rig=NPC_DRESS_RIG[npc.__model]; if(!rig) return;
-  npc.__look=npcLookFor(npc.id,rig);
+  npc.__look=npcLookFor(npc.id,rig,{ counter:npcAtCounter(cfg) });
   _npcDressQ.push({ npc, step:0 });
 }
 /* un pezzo alla volta, nello stesso ordine di _vesti: il cappello si misura
@@ -50370,7 +50391,7 @@ function detachSharedDressMats(root){
 ET.vestitiNPC=function(){
   const o={}; NPCS.forEach(n=>{ if(n.__look){ const L=n.__look;
     const b=lookBottom(L.rig,L.bottom), tinto=!!(b.tube||L.rig==="f");    // i pantaloncini del ragazzo restano del colore della tinta
-    o[n.id]=[L.bottom+(tinto?"/"+L.bcol:""),L.coat,L.cut,L.hat,L.face,L.neck].filter(Boolean).join(" · "); } });
+    o[n.id]=[L.counter?"[bancone]":"",L.bottom+(tinto?"/"+L.bcol:""),L.coat,L.cut,L.hat,L.face,L.neck].filter(Boolean).join(" · "); } });
   console.table(o); return o; };
 
 /* ---- LA TECA (Diario › scheda 💎) --------------------------------------
@@ -50818,7 +50839,7 @@ const PRES_TTL   = 10000;   // ms senza ricevere nulla -> il compagno sparisce
 const PRES_LIBERA= 20000;   // ms di corpo inutilizzato prima di distruggerlo
 const PRES_CULL  = 45;      // stessa distanza di taglio dei pedoni
 const PRES_RIPROVA=60000;   // ms fra due riletture dell'interruttore, finche' e' spento
-const PRES_H     = 1.78;    // altezza, come gli NPC
+const PRES_H     = 1.65;    // altezza: i compagni sono ragazzi come il giocatore (AVATAR_HEIGHT)
 const Presenza=(function(){
   let acceso=false, motivo="non avviato", classe="", mio="", pubblica=true, parla=true;
   let ref=null, radice=null, timer=null, t0=0;
