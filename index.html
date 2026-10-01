@@ -29743,33 +29743,76 @@ function gigFXEnable(on){
    modo che sia possibile durante il concerto ballare per il protagonista»).
    L'avatar non ha una clip «dance» (5 clip: Idle, Walk, Run, Wave,
    Interact), quindi si balla come balla la band: sull'OROLOGIO DEL BRANO
-   (AUDIO.time() x bpm) il corpo salta sul battito, ondeggia a destra e a
-   sinistra ogni due battute, e le braccia alternano Wave (mani in alto,
-   otto battute) e Idle (otto battute di solo ondeggiare).
+   (AUDIO.time() x bpm) il corpo salta sul battito e ondeggia a destra e a
+   sinistra; le braccia seguono un giro di pose (vedi v298 qui sotto).
    · si comincia con E (o toccando il cartellino) solo a concerto acceso e
      solo nel club; l'interazione ha prio alta = scelta per ultima, quindi
      NPC e oggetti vicini vincono sempre (Q per scorrere);
    · si smette con E, camminando, a fine concerto o uscendo;
    · il salto si fa sull'avatar (avatarRoot.position.y) e si rimette a posto
      all'ultimo fotogramma: niente avatar che resta sollevato. */
-const PDANCE={ on:false, inter:null, baseY:0, face:0, anim:"Idle" };
+/* v298 (Giacomo, 1 ott: «durante il concerto non puo' ballare perche' puo'
+   solo parlare con i 2 tizi: fai in modo che avvicinandosi alla folla possa
+   ballare; e che alzi anche l'altro braccio, alternandoli, e a volte
+   insieme»).
+   · VICINO ALLA FOLLA (entro 1,8 m da uno spettatore) la E balla: il
+     cartellino del ballo passa davanti a Joe ed Elsie (prio -1). Lontano
+     dalla calca torna in coda (prio 5) e la E resta per parlare. Q scorre
+     comunque fra le due cose.
+   · LE BRACCIA non sono piu' la clip Wave (un braccio solo): sono quattro
+     pose calcolate al momento con lo stesso motore delle pose da seduti
+     (_armPose) — destro su, sinistro su, tutti e due su, tutti e due giu' a
+     gomiti piegati — e si passa dall'una all'altra a tempo: due battute
+     ciascuna, in un giro di otto passi (destro, sinistro, destro, sinistro,
+     tutti e due, tutti e due, giu', tutti e due). Le pin si applicano dopo
+     le animazioni (onBeforeRender), come quelle delle gambe. */
+const PDANCE={ on:false, inter:null, baseY:0, face:0, anim:"Idle", poses:null, mix:null, obs:null, near:false };
+const DANCE_SEQ=["R","L","R","L","B","B","D","B"];
+function danceNearCrowd(){
+  const px=player.position.x, pz=player.position.z;
+  for(let i=0;i<CROWD.length;i++){ const sp=CROWD[i].spots||[];
+    for(let j=0;j<sp.length;j++) if(Math.hypot(px-sp[j][0],pz-sp[j][1])<1.8) return true; }
+  return false; }
 function danceInit(){
   if(PDANCE.inter) return;
   PDANCE.inter=addInteract({ id:"beat_dance", area:UNIT_MUSIC.area, radius:2.5, prio:5, enabled:false,
     pos:()=>player.position,
     prompt:()=>PDANCE.on?'\u{1F483} Press <b>E</b> to <b>stop dancing</b>':'\u{1F483} Press <b>E</b> to <b>dance</b>!',
     interact:()=>{ PDANCE.on?danceStop():danceStart(); } });
+  /* le braccia del ballo dopo le animazioni del fotogramma */
+  PDANCE.obs=scene.onBeforeRenderObservable.add(()=>{ if(PDANCE.on && PDANCE.mix) _applyPins(PDANCE.mix); });
 }
+/* le quattro pose delle braccia, col corpo girato com'e' adesso */
+function _dancePoses(){
+  if(!avatarRoot) return null;
+  const V=BABYLON.Vector3, up=new V(0,1,0), dn=new V(0,-1,0), ry=player.rotation.y, f=new V(Math.sin(ry),0,Math.cos(ry));
+  const pins=_restPinsFor(avatarRoot,_ARM_RE); if(!pins.length) return null;
+  const saved=pins.map(k=>({tn:k.tn, q:k.tn.rotationQuaternion?k.tn.rotationQuaternion.clone():null, p:k.tn.position.clone()}));
+  const raisedU=o=>up.scale(0.86).add(o.scale(0.42)).add(f.scale(0.12));
+  const raisedF=o=>up.scale(0.95).add(o.scale(-0.12)).add(f.scale(0.12));
+  const downU=o=>dn.scale(0.93).add(o.scale(0.22)).add(f.scale(0.12));
+  const downF=o=>dn.scale(0.30).add(f.scale(0.85)).add(o.scale(-0.20));      // gomito piegato, pugno davanti
+  const make=(rU,lU)=>{
+    _applyPins(pins); _sitRefresh(avatarRoot);
+    const isUp=sd=>(sd==="R"?rU:lU);
+    const out=_armPose(avatarRoot,pins.map(k=>k.tn),f,
+      (o,sd)=>isUp(sd)?raisedU(o):downU(o), (o,sd)=>isUp(sd)?raisedF(o):downF(o));
+    return pins.map(k=>({ tn:k.tn, p:k.p.clone(), s:k.s.clone(), q:(out.get(k.tn)||k.q).clone() })); };
+  const P={ R:make(true,false), L:make(false,true), B:make(true,true), D:make(false,false) };
+  saved.forEach(k=>{ if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); k.tn.position.copyFrom(k.p); });
+  return P; }
 function danceStart(){
   if(PDANCE.on || !GIG.on || area!==UNIT_MUSIC.area || !avatarRoot) return;
   try{ standUpAll(); }catch(e){}
-  PDANCE.on=true; PDANCE.baseY=avatarRoot.position.y; PDANCE.face=player.rotation.y; PDANCE.anim="Wave";
+  PDANCE.on=true; PDANCE.baseY=avatarRoot.position.y; PDANCE.face=player.rotation.y; PDANCE.anim=IDLE_ANIM;
+  try{ PDANCE.poses=_dancePoses(); }catch(e){ console.warn("[dance] pose",e); PDANCE.poses=null; }
+  PDANCE.mix=PDANCE.poses?PDANCE.poses.D.map(k=>({ tn:k.tn, p:k.p.clone(), s:k.s.clone(), q:k.q.clone() })):null;
   moveTarget=null; pendingInteract=null;
   try{ toast("\u{1F483} Let's dance! (E or walk to stop)"); }catch(e){}
 }
 function danceStop(){
   if(!PDANCE.on) return;
-  PDANCE.on=false;
+  PDANCE.on=false; PDANCE.mix=null;
   if(avatarRoot) avatarRoot.position.y=PDANCE.baseY;
   player.rotation.y=PDANCE.face;
   playAvatarAnim(IDLE_ANIM);
@@ -29777,16 +29820,29 @@ function danceStop(){
 function danceTick(){
   if(!PDANCE.inter) danceInit();
   const can=GIG.on && area===UNIT_MUSIC.area;
-  if(PDANCE.inter) PDANCE.inter.enabled=can;
+  if(PDANCE.inter){ PDANCE.inter.enabled=can;
+    /* vicino alla calca il ballo passa davanti a tutti (vedi sopra) */
+    const near=can && (PDANCE.on || danceNearCrowd());
+    if(near!==PDANCE.near){ PDANCE.near=near; PDANCE.inter.prio=near?-1:5; } }
   if(!PDANCE.on) return;
   if(!can || !avatarRoot){ danceStop(); return; }
   const S=GIG_SONGS[GIG.idx]||{}, bpm=S.bpm||110;
   /* se la musica non scorre (autoplay negato, file mancante) si balla
      sull'orologio del gioco: mai un ballerino congelato */
   const at=AUDIO.time(), beat=(at>0?at:performance.now()/1000)*bpm/60;
-  PDANCE.anim=(Math.floor(beat/8)%2===0)?"Wave":IDLE_ANIM;
-  avatarRoot.position.y=PDANCE.baseY+Math.abs(Math.sin(beat*Math.PI))*0.07;
+  const step=Math.floor(beat/2), ph=(beat/2)-step;
+  const cur=DANCE_SEQ[step%DANCE_SEQ.length], prev=DANCE_SEQ[(step+DANCE_SEQ.length-1)%DANCE_SEQ.length];
+  const both=(cur==="B");
+  avatarRoot.position.y=PDANCE.baseY+Math.abs(Math.sin(beat*Math.PI))*(both?0.10:0.065);
   player.rotation.y=PDANCE.face+Math.sin(beat*Math.PI/2)*0.32;
+  const P=PDANCE.poses, M=PDANCE.mix;
+  if(P && M){
+    /* cambio di posa nel primo terzo delle due battute, poi si tiene */
+    let u=Math.min(1,ph/0.33); u=u*u*(3-2*u);
+    const A=P[prev], B=P[cur];
+    for(let i=0;i<M.length;i++){ BABYLON.Quaternion.SlerpToRef(A[i].q,B[i].q,u,M[i].q); BABYLON.Vector3.LerpToRef(A[i].p,B[i].p,u,M[i].p); }
+    PDANCE.anim=IDLE_ANIM;
+  } else PDANCE.anim=(Math.floor(beat/8)%2===0)?"Wave":IDLE_ANIM;      // ripiego: la clip
 }
 function gigTick(){
   danceTick();
