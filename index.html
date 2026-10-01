@@ -33029,10 +33029,44 @@ LEXPROPS.eCup=function(id,o){ const r=new BABYLON.TransformNode(id,scene);
   hd.material=lpMat("#f2efe6"); hd.position.set(0.10,0.075,0); hd.rotation.x=Math.PI/2; hd.parent=r;
   lpCyl(r,0.19,0.015,"#dcd6c6",0,0.008,0);                 // piattino
   return r; };
+/* v297 (Giacomo, 1 ott: «migliora la bowl»). Prima erano tre cilindri
+   dritti: da sopra il bancone si leggeva come un barattolo, non una
+   ciotola. Ora e' una ciotola VERA fatta al tornio (CreateLathe): piede ad
+   anello, pancia che si allarga, bordo arrotondato e l'interno cavo che si
+   vede, con la minestra dentro, due pezzetti di verdura, una fascia blu
+   sotto il bordo e il cucchiaio appoggiato. Stesso ingombro di prima
+   (diametro ~0.31, alta ~0.13), stesso posto sul bancone. */
 LEXPROPS.eBowl=function(id,o){ const r=new BABYLON.TransformNode(id,scene);
-  lpCyl(r,0.13,0.02,"#e4ded0",0,0.01,0);
-  lpCyl(r,0.30,0.12,"#e4ded0",0,0.08,0);
-  lpCyl(r,0.25,0.03,"#d8a24a",0,0.13,0);                   // minestra
+  const V=(x,y)=>new BABYLON.Vector3(x,y,0);
+  /* profilo: piede, parete esterna, bordo, parete interna, fondo interno */
+  const prof=[V(0,0.004),V(0.058,0.004),V(0.064,0.0),V(0.07,0.004),V(0.068,0.018),
+    V(0.085,0.024),V(0.112,0.042),V(0.134,0.066),V(0.149,0.094),V(0.156,0.118),
+    V(0.157,0.126),V(0.153,0.131),V(0.147,0.127),V(0.141,0.108),V(0.128,0.082),
+    V(0.105,0.058),V(0.072,0.042),V(0.035,0.036),V(0,0.035)];
+  const bw=BABYLON.MeshBuilder.CreateLathe("ecobowl"+(_lpN++),{shape:prof,tessellation:32,
+    sideOrientation:BABYLON.Mesh.DOUBLESIDE},scene);
+  const cer=new BABYLON.StandardMaterial("ecobowlM"+(_lpN++),scene);
+  cer.diffuseColor=BABYLON.Color3.FromHexString("#f1ebdc");
+  cer.specularColor=new BABYLON.Color3(0.32,0.32,0.30); cer.specularPower=48;
+  cer.emissiveColor=new BABYLON.Color3(0.14,0.13,0.12);          // la parete in ombra resta ceramica, non grigio scuro
+  bw.material=cer; bw.parent=r;
+  /* fascia decorativa blu sotto il bordo */
+  const band=BABYLON.MeshBuilder.CreateTorus("ecobowlb"+(_lpN++),{diameter:0.304,thickness:0.007,tessellation:40},scene);
+  band.material=lpMat("#3f6fa8"); band.position.y=0.106; band.parent=r;
+  /* minestra: un disco appena sotto il bordo, color zucca, con due
+     pezzetti di verdura che la fanno leggere come cibo e non come vernice */
+  const soup=BABYLON.MeshBuilder.CreateDisc("ecobowls"+(_lpN++),{radius:0.131,tessellation:32},scene);
+  soup.material=lpMat("#d8902f"); soup.rotation.x=Math.PI/2; soup.position.y=0.094; soup.parent=r;
+  [[0.04,0.03,"#5f8f3a"],[-0.05,-0.02,"#c8452f"],[0.01,-0.06,"#5f8f3a"],[-0.02,0.06,"#efe2c8"]].forEach(q=>{
+    const b=BABYLON.MeshBuilder.CreateBox("ecobowlv"+(_lpN++),{size:0.018},scene);
+    b.material=lpMat(q[2]); b.position.set(q[0],0.097,q[1]); b.rotation.y=q[0]*20; b.parent=r; });
+  /* cucchiaio appoggiato al bordo: manico che esce dalla ciotola */
+  const sp=new BABYLON.TransformNode("ecobowlsp"+(_lpN++),scene); sp.parent=r;
+  sp.position.set(0.05,0.104,0.02); sp.rotation.set(0,-0.6,0.36);
+  const head=BABYLON.MeshBuilder.CreateSphere("ecobowlsh"+(_lpN++),{diameterX:0.05,diameterY:0.012,diameterZ:0.036,segments:8},scene);
+  head.material=lpMat("#b6bcc0"); head.parent=sp;
+  const hnd=BABYLON.MeshBuilder.CreateBox("ecobowlsm"+(_lpN++),{width:0.17,height:0.006,depth:0.014},scene);
+  hnd.material=lpMat("#b6bcc0"); hnd.position.x=0.105; hnd.parent=sp;
   return r; };
 
 /* =====================================================================
