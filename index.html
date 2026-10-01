@@ -943,7 +943,12 @@ function rainGust(dt){
 const RAIN_COPERTO=[
   { id:"terminal", x0:-29, x1:33, z0:-150, z1:-82, h:12 },   // hall del City Airport
   { id:"diner",    x0:-7.6, x1:7.6, z0:23.6, z1:40.6, h:4.4 },  // Sunny Side Diner (veranda + cucina)
-  { id:"cafe",     x0:66.2, x1:76.6, z0:-4.5, z1:4.5, h:3.1 },  // Town Café, sotto la tettoia
+  /* soft: sotto una TENDA la pioggia si sente ancora, attutita (Giacomo,
+     1 ott: «sotto il cafe' il rumore della pioggia non deve scomparire, ma
+     solo attutito leggermente perche' e' una tenda»). Valore = quanta ne
+     resta; il suono passa anche da un filtro piu' cupo (SFX, rainTick_).
+     Gocce e frasi «it's raining» restano spente: li' sotto non piove. */
+  { id:"cafe",     x0:66.2, x1:76.6, z0:-4.5, z1:4.5, h:3.1, soft:0.6 },  // Town Café, sotto la tettoia
 ];
 function rainCovered(x,z){
   for(let i=0;i<RAIN_COPERTO.length;i++){ const r=RAIN_COPERTO[i];
@@ -959,6 +964,14 @@ function rainHere(){
   return RAIN.forza;
 }
 function rainOn(){ return rainHere()>0.06; }
+/* quanto la pioggia si SENTE (non quanto piove): sotto una tenda c'e' ancora */
+function rainHeard(){
+  try{ if(typeof area!=="undefined" && area!=="town") return { l:0, soft:false }; }catch(e){}
+  let id=null; try{ if(typeof player!=="undefined" && player) id=rainCovered(player.position.x, player.position.z); }catch(e){}
+  if(!id) return { l:RAIN.forza, soft:false };
+  const r=RAIN_COPERTO.find(x=>x.id===id);
+  return (r && r.soft) ? { l:RAIN.forza*r.soft, soft:true } : { l:0, soft:false };
+}
 /* Lo stato a parole, in inglese: lo usano il cartello, gli NPC e l'Unit 2_3.
    Tre gradini, non un numero: "it's raining a bit" e "it's pouring" sono
    due frasi diverse e vanno insegnate diverse. */
@@ -9913,7 +9926,10 @@ function hydrant(x,z){ if(insideSolid(x,z,0.5)) return; const M=_pm();
      (ostacolo 0.75 m). La lancia laterale sporge a 0.30 ma e' un tubo di 14 cm
      a mezza gamba: resta fuori dal solido apposta, se ne sarebbe mangiati
      altri 10 cm per niente. */
-  addSolid(x-0.20,x+0.20,z-0.20,z+0.20,"town"); }
+  /* v297: 0.06, non 0.20 (la base): col raggio
+     del giocatore (0.55) si sbatteva contro l'idrante gia' stando di fianco:
+     quasi un punto, cosi' l'ostacolo vero resta di ~0.6 m */
+  addSolid(x-0.06,x+0.06,z-0.06,z+0.06,"town"); }
 
 /* ATTRAVERSAMENTO a barre bianche ("continental", stile USA).
    acrossH=true: attraversa una strada che corre lungo X (barre parallele a X).
@@ -10028,8 +10044,14 @@ function buildNYC(){
   //      z=±7.0 invece di ±9.3, cosi' NON tappano il corridoio lungo le facciate:
   //      con il raggio-giocatore l'idrante a ridosso del muro rendeva il passaggio
   //      impossibile anche dove sembrava esserci spazio)
-  [[-16,7.0],[24,7.0],[48,7.0],[-40,7.0],
-   [-16,-7.0],[30,-7.0],[-48,-7.0],
+  /* v297 (Giacomo, 1 ott: «c'e' un idrante rosso vicino alla rotonda che
+     blocca il passaggio anche se sei affianco»): quelli a x=48 e x=-48
+     stavano sul bordo dell'anello delle rotonde (47,0 r 6.5 e -52,0 r 5.5),
+     proprio dove si gira a piedi attorno — ora che le rotonde si
+     attraversano ci passano tutti. Spostati di qualche metro lungo il
+     marciapiede, lontano dall'anello. */
+  [[-16,7.0],[24,7.0],[37,7.0],[-40,7.0],
+   [-16,-7.0],[30,-7.0],[-40,-7.0],
    [12,-28.2],[-24,-28.2],[-64.6,20],[-64.6,-16]].forEach(p=>hydrant(p[0],p[1]));
   // ---- CARTELLI stradali verdi agli angoli
   streetSign(-7.4,  7.4,"HIGH STREET",Math.PI,"PARK AVE",-Math.PI/2);
@@ -28857,23 +28879,26 @@ const SFX=(function(){
      filo piu' su. Se in classe risulta troppo, RAIN_MAX a 0 la zittisce
      senza toccare il visivo. */
   const RAIN_MAX=0.075;
-  let rSrc=null, rVol=null, rHp=null, rLast=-1;
+  let rSrc=null, rVol=null, rHp=null, rLp=null, rLast=-1, rSoft=null;
   function rainBuild_(c){
     if(rSrc) return;
     rSrc=c.createBufferSource(); rSrc.buffer=noise; rSrc.loop=true;
     rSrc.playbackRate.value=1.0;
     rHp=c.createBiquadFilter(); rHp.type="highpass"; rHp.frequency.value=380;
-    const lp=c.createBiquadFilter(); lp.type="lowpass"; lp.frequency.value=7200; lp.Q.value=0.4;
+    const lp=c.createBiquadFilter(); lp.type="lowpass"; lp.frequency.value=7200; lp.Q.value=0.4; rLp=lp;
     rVol=c.createGain(); rVol.gain.value=0;
     rSrc.connect(rHp); rHp.connect(lp); lp.connect(rVol); rVol.connect(master);
     rSrc.start(0, Math.random()*0.9);
   }
   function rainAudioLevel(){
-    try{ return (typeof rainHere==="function")?rainHere():0; }catch(e){ return 0; }
+    try{ return (typeof rainHeard==="function")?rainHeard():{ l:rainHere(), soft:false }; }catch(e){ return { l:0, soft:false }; }
   }
   function rainTick_(c){
-    const l=rainAudioLevel(), v=l*RAIN_MAX*lvl();
+    const H=rainAudioLevel(), l=H.l, v=l*RAIN_MAX*lvl();
     if(!rSrc){ if(v<=0) return; rainBuild_(c); }        // niente acqua = niente nodi
+    /* sotto la tenda: piu' cupo (via gli acuti delle gocce vicine) */
+    if(rLp && H.soft!==rSoft){ rSoft=H.soft;
+      try{ rLp.frequency.linearRampToValueAtTime(H.soft?2300:7200, c.currentTime+0.5); }catch(e){ try{ rLp.frequency.value=H.soft?2300:7200; }catch(e2){} } }
     /* \u26a0\ufe0f LO ZERO SI SCRIVE SEMPRE (Giacomo: \"quando \u00e8 asciutto rimane il
        rumore\"). L'isteresi copiata dagli altri letti ha una soglia di 0,002
        su un volume che arriva a 0,075: mentre l'acqua sfuma, l'ultimo
