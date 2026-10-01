@@ -245,9 +245,17 @@
   #quest-compass.show{display:flex;}
   #quest-compass .qc-arrow{font-size:26px;line-height:1;transition:transform .15s linear;}
   #quest-compass .qc-dist{font-size:10.5px;font-weight:800;color:var(--plum);margin-top:1px;}
-  #quest-modal{position:fixed;inset:0;z-index:25;background:rgba(18,27,34,.55);display:none;
-    align-items:center;justify-content:center;padding:20px;}
+  /* v297 (Giacomo, 1 ott: «il pop up non deve essere al centro e coprire
+     lo schermo, ma sulla destra in basso, con un grado di trasparenza
+     assicurandoti che rimanga leggibile»). Niente piu' velo scuro sul
+     mondo: lo strato resta (intercetta i clic, cosi' durante un dialogo
+     non si cammina per sbaglio col tocco), ma e' trasparente, e la card sta
+     in basso a destra. Prima dell'avvio (login) resta al centro: li' il
+     gioco non c'e' ancora e la finestra E' la schermata. */
+  #quest-modal{position:fixed;inset:0;z-index:25;background:transparent;display:none;
+    align-items:flex-end;justify-content:flex-end;padding:16px;}
   #quest-modal.show{display:flex;}
+  #quest-modal.centered{align-items:center;justify-content:center;background:rgba(18,27,34,.55);padding:20px;}
   /* \u26a0\ufe0f ALTEZZA MASSIMA + CORPO SCORREVOLE (Giacomo, 11 set: \u00abnon posso
      chiudere questa finestra\u00bb, screenshot del quaderno con dodici testi).
      Senza max-height la card cresce quanto il contenuto: la riga dei
@@ -261,9 +269,24 @@
      \u26a0\ufe0f `min-height:0` sul corpo non e' decorativo: senza, un figlio flex
      non scende mai sotto la sua altezza naturale e l'overflow non scatta \u2014
      la card tornerebbe a sfondare lo schermo esattamente come prima. */
-  #qm-card{background:var(--paper);border-radius:18px;padding:22px 24px;max-width:440px;width:88vw;
-    text-align:center;box-shadow:0 18px 50px rgba(0,0,0,.35);
-    max-height:88vh;display:flex;flex-direction:column;}
+  /* trasparenza leggibile: fondo carta al 90% + sfocatura di quello che
+     sta dietro (il testo resta scuro su chiaro, il mondo si intravede) */
+  #qm-card{background:rgba(251,247,236,.90);border-radius:18px;padding:20px 22px;max-width:430px;width:430px;
+    text-align:center;box-shadow:0 14px 40px rgba(0,0,0,.30);border:1px solid rgba(255,255,255,.6);
+    -webkit-backdrop-filter:blur(8px) saturate(1.15);backdrop-filter:blur(8px) saturate(1.15);
+    max-height:72vh;display:flex;flex-direction:column;position:relative;box-sizing:border-box;}
+  #quest-modal.centered #qm-card{background:var(--paper);max-height:88vh;width:88vw;max-width:440px;}
+  /* telefono / tablet stretto: foglio in basso, largo quanto lo schermo */
+  @media (max-width:640px){
+    #quest-modal{padding:8px;}
+    #qm-card{width:100%;max-width:none;max-height:62vh;padding:16px 16px;}
+  }
+  /* NON SI CHIUDE MENTRE PARLA (v297): finche' la voce legge, i bottoni
+     sono spenti (anche da tastiera: vedi SpeakLock) e compare «Listen…». */
+  #qm-card.speaking .qm-btn{opacity:.42;pointer-events:none;cursor:not-allowed;filter:grayscale(.35);}
+  #qm-card.speaking::after{content:"\1F50A  Listen\2026";position:absolute;top:-13px;right:18px;
+    background:var(--signal,#2f7d6d);color:#fff;font-size:12px;font-weight:800;padding:4px 10px;
+    border-radius:999px;box-shadow:0 3px 10px rgba(0,0,0,.2);letter-spacing:.02em;}
   #qm-card .qm-title{font-size:21px;font-weight:800;color:var(--ink);flex:0 0 auto;}
   #qm-card .qm-sub{font-size:14px;color:#5d6b72;margin-top:8px;line-height:1.4;flex:0 0 auto;}
   #qm-card .qm-body{margin-top:14px;flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;}
@@ -12752,6 +12775,39 @@ function buildCinema(){
    Google en-GB > Google en-US > qualsiasi en-GB > en-US > en*. Su alcuni
    browser le voci arrivano in ritardo -> onvoiceschanged riprova.
    ===================================================================== */
+/* =====================================================================
+   🔇 NON SI CHIUDE MENTRE PARLA (Giacomo, 1 ott 2026: «fai in modo che non
+   si possa chiudere il pop up con le domande prima che abbia finito di
+   parlare, se no non ascoltano niente; uguale per i gem»).
+   Una regola sola, nel TTS: ogni say() fatta mentre la finestra e' aperta
+   accende il blocco, e lo spegne quando finisce QUELLA lettura (se nel
+   frattempo ne e' partita un'altra, aspetta l'ultima). Finche' e' acceso i
+   bottoni della card sono spenti (CSS .speaking), e anche Esc / Invio /
+   click programmatici vengono ignorati (SpeakLock.locked() nei gestori).
+   pending(): chi fa partire la voce in RITARDO (autoSpeak a 160 ms, gemme
+   a 470 ms) accende il blocco subito, se no ci sarebbe una finestra di un
+   attimo in cui si chiude prima che parli. Se la voce poi non parte (TTS
+   assente, autoplay negato) il blocco si spegne da solo.
+   ⚠️ Non puo' restare acceso per sempre: say() ha gia' il suo watchdog
+   (1,5 s + 90 ms a carattere) e risolve comunque, e close() lo spegne.
+   ===================================================================== */
+const SpeakLock=(function(){
+  let pendT=null;
+  const ov=()=>document.getElementById("quest-modal"), cd=()=>document.getElementById("qm-card");
+  function isOpen(){ const e=ov(); return !!(e && e.classList.contains("show")); }
+  function set(on){ const c=cd(); if(c) c.classList.toggle("speaking",!!on); }
+  function locked(){ const c=cd(); return isOpen() && !!(c && c.classList.contains("speaking")); }
+  function unlock(){ if(pendT){ clearTimeout(pendT); pendT=null; } set(false); }
+  function pending(ms){
+    if(!(typeof TTS!=="undefined" && TTS.available())) return;
+    set(true); if(pendT) clearTimeout(pendT);
+    const s0=TTS._seq||0;
+    pendT=setTimeout(()=>{ pendT=null; if((TTS._seq||0)===s0 || !TTS._busy) set(false); }, ms||1500);
+  }
+  /* una card nuova eredita il blocco solo se la voce sta ancora parlando */
+  function sync(){ set(!!pendT || !!(typeof TTS!=="undefined" && TTS._busy)); }
+  return { lock:()=>set(true), unlock, pending, locked, isOpen, sync };
+})();
 const TTS={
   /* Velocita' di default alzata da 0.85 a 0.97 (richiesta di Giacomo, 23
      ago): un po' piu' naturale, ma resta sotto 1 — a 1 pieno il ritmo
@@ -12823,6 +12879,10 @@ const TTS={
   say(text,opts){ opts=opts||{};
     return new Promise(res=>{
       if(!this.available()||!text){ res(false); return; }
+      /* blocco della finestra finche' QUESTA lettura non finisce (SpeakLock) */
+      const my=this._seq=(this._seq||0)+1; this._busy=true;
+      try{ if(SpeakLock.isOpen()) SpeakLock.lock(); }catch(e){}
+      const res0=res; res=ok=>{ if(my===TTS._seq){ TTS._busy=false; try{ SpeakLock.unlock(); }catch(e){} } res0(ok); };
       try{
         speechSynthesis.cancel();                 // stop di qualsiasi lettura precedente
         speechSynthesis.resume();                 // bug noto Chrome: puo' restare "in pausa" e muto
@@ -12859,7 +12919,8 @@ const TTS={
         speechSynthesis.speak(u);
       }catch(e){ res(false); }
     }); },
-  stop(){ if(this.available()) try{ speechSynthesis.cancel(); }catch(e){} },
+  stop(){ this._seq=(this._seq||0)+1; this._busy=false; try{ SpeakLock.unlock(); }catch(e){}
+    if(this.available()) try{ speechSynthesis.cancel(); }catch(e){} },
 };
 TTS.init();
 
@@ -13462,9 +13523,11 @@ const WordTiles=(function(){
    WordTiles), choices? [{label,act,keepOpen}], html? (corpo libero),
    buttons? [{label,act,cls,keepOpen}] (footer, es. "Ho capito") }.
    ===================================================================== */
+/* al centro solo prima che il gioco parta (login, benvenuto): dopo, in basso a destra */
+function _modalPlace(el){ try{ el.classList.toggle("centered", typeof started==="undefined" || !started); }catch(e){} }
 const DialogueBox=(function(){
   const el=document.getElementById("quest-modal"), card=document.getElementById("qm-card");
-  function close(){ el.classList.remove("show"); card.innerHTML=""; try{ TTS.stop(); }catch(e){} }
+  function close(){ el.classList.remove("show"); card.innerHTML=""; try{ TTS.stop(); }catch(e){} try{ SpeakLock.unlock(); }catch(e){} }
   function speakBtn(text,opts){
     const b=document.createElement("button"); b.type="button"; b.className="dlg-speak"; b.textContent="🔊";
     b.onclick=()=>{ if(b.classList.contains("playing")) return; b.classList.add("playing");
@@ -13472,7 +13535,7 @@ const DialogueBox=(function(){
     return b;
   }
   function open(cfg){
-    cfg=cfg||{}; card.innerHTML="";
+    cfg=cfg||{}; card.innerHTML=""; SpeakLock.sync();
     const npcName=cfg.name||(cfg.npc&&cfg.npc.name)||"";
     /* Voce per genere: eredita da cfg.npc.gender (spawnNPC lo imposta
        sempre); cfg.ttsOpts, se il chiamante lo passa, vince comunque —
@@ -13491,7 +13554,8 @@ const DialogueBox=(function(){
       const t=document.createElement("div"); t.className="dlg-text"; t.textContent=cfg.text; row.appendChild(t);
       row.appendChild(speakBtn(cfg.text,ttsOpts));
       card.appendChild(row);
-      if(cfg.autoSpeak!==false) setTimeout(()=>{ const b=row.querySelector(".dlg-speak"); if(b) b.click(); },160);
+      if(cfg.autoSpeak!==false){ SpeakLock.pending(1400);
+        setTimeout(()=>{ const b=row.querySelector(".dlg-speak"); if(b) b.click(); },160); }
     }
     if(cfg.italian){
       /* Due usi ben distinti dello stesso campo, e vanno trattati diversi:
@@ -13528,7 +13592,7 @@ const DialogueBox=(function(){
     if(cfg.tiles) WordTiles.render(body,cfg.tiles);
     else if(cfg.choices){ const row=document.createElement("div"); row.className="qm-btns";
       cfg.choices.forEach(c=>{ const x=document.createElement("button"); x.type="button"; x.className="qm-btn"; x.textContent=c.label;
-        x.onclick=()=>{ if(!c.keepOpen) close(); if(c.act) c.act(); }; row.appendChild(x); });
+        x.onclick=()=>{ if(SpeakLock.locked()) return; if(!c.keepOpen) close(); if(c.act) c.act(); }; row.appendChild(x); });
       body.appendChild(row);
     }
     /* v271 — MAI UNA FINESTRA SENZA USCITA (Giacomo, 28 set: all'ospedale «i
@@ -13541,9 +13605,10 @@ const DialogueBox=(function(){
     if(!cfg.buttons && !cfg.choices && !cfg.tiles && !cfg.html) cfg.buttons=[{label:"OK", cls:"primary"}];
     if(cfg.buttons){ const row=document.createElement("div"); row.className="qm-btns";
       cfg.buttons.forEach(bt=>{ const x=document.createElement("button"); x.type="button"; x.className="qm-btn "+(bt.cls||""); x.textContent=bt.label;
-        x.onclick=()=>{ if(!bt.keepOpen) close(); if(bt.act) bt.act(); }; row.appendChild(x); });
+        x.onclick=()=>{ if(SpeakLock.locked()) return; if(!bt.keepOpen) close(); if(bt.act) bt.act(); }; row.appendChild(x); });
       card.appendChild(row);
     }
+    _modalPlace(el);
     el.classList.add("show");
   }
   return {open, close};
@@ -15224,7 +15289,7 @@ function _escAttrIt(t){ return String(t).replace(/&/g,"&amp;").replace(/"/g,"&qu
 /* ---- overlay riusabile (scaffold per gli step successivi) ---- */
 const QModal=(function(){
   const el=document.getElementById("quest-modal"), card=document.getElementById("qm-card");
-  function close(){ el.classList.remove("show"); card.innerHTML=""; }
+  function close(){ el.classList.remove("show"); card.innerHTML=""; try{ SpeakLock.unlock(); }catch(e){} }
   /* \u26a0\ufe0f ESC CHIUDE. Seconda via d'uscita, non la prima: il bottone resta
      quello che si deve vedere (su tablet una tastiera non c'e'). Ma quando
      una finestra e' lunga, Esc e' la prima cosa che si prova, e non trovarla
@@ -15235,20 +15300,21 @@ const QModal=(function(){
   document.addEventListener("keydown", function(e){
     if(e.key!=="Escape" && e.keyCode!==27) return;
     if(!el.classList.contains("show")) return;
+    if(SpeakLock.locked()){ e.preventDefault(); return; }      // sta ancora parlando
     e.preventDefault(); close();
   });
   function open(cfg){
-    cfg=cfg||{}; card.innerHTML="";
+    cfg=cfg||{}; card.innerHTML=""; SpeakLock.sync();
     if(cfg.title){ const h=document.createElement("div"); h.className="qm-title"; h.innerHTML=cfg.title; card.appendChild(h); }
     if(cfg.sub){ const s=document.createElement("div"); s.className="qm-sub"; s.innerHTML=cfg.sub; card.appendChild(s); }
     if(cfg.html){ const b=document.createElement("div"); b.className="qm-body"; b.innerHTML=cfg.html; card.appendChild(b); }
     const row=document.createElement("div"); row.className="qm-btns";
     (cfg.buttons||[{label:"OK",cls:"primary"}]).forEach(bt=>{
       const x=document.createElement("button"); x.className="qm-btn "+(bt.cls||""); x.textContent=bt.label;
-      x.onclick=()=>{ if(!bt.keepOpen) close(); if(bt.act) bt.act(); };
+      x.onclick=()=>{ if(SpeakLock.locked()) return; if(!bt.keepOpen) close(); if(bt.act) bt.act(); };
       row.appendChild(x);
     });
-    card.appendChild(row); el.classList.add("show");
+    card.appendChild(row); _modalPlace(el); el.classList.add("show");
   }
   return {open, close, card};
 })();
@@ -53083,6 +53149,7 @@ function gemAsk(g,it,kd){
    Non e' una catena di battute TTS: e' una sola say() ritardata, quindi il
    setTimeout qui non viola la regola del "mai setTimeout fra due say()". */
 function gemSpeak(text){
+  try{ SpeakLock.pending(1200); }catch(e){}
   setTimeout(function(){
     const el=document.getElementById("quest-modal");
     if(!el||!el.classList.contains("show")) return;      // gia' chiuso: silenzio
