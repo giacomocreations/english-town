@@ -8449,9 +8449,9 @@ function dinerDrop(){
 
    IL GIORNALE: all'edicola «Can I have a newspaper, please?» te lo da'
    davvero: resta in mano (piegato nella destra) anche camminando. Seduto
-   su una panchina lo apri con due mani e leggi la prima pagina (la stessa
-   di prima, con la colonna delle lettere dell'Architetto). Lo puoi
-   ripiegare, rileggere, o lasciare sulla panchina.
+   su una panchina lo apri con due mani e lo sfogli: notizie, la tua
+   missione, cosa fare dopo, la colonna delle lettere (vedi readGazette).
+   Lo puoi ripiegare, rileggere, o lasciare sulla panchina.
    ===================================================================== */
 const BENCHES=[];
 const BSIT={ b:null, L:null, S:null, f:null, seatY:0, gy:0, reading:false, meInter:null };
@@ -8611,9 +8611,13 @@ function _newsBuild(){
   [-1,1].forEach(s=>{ const p=BABYLON.MeshBuilder.CreatePlane("newsFp",{width:0.19,height:0.28,
       frontUVs:new BABYLON.Vector4(0,0.25,0.5,1), backUVs:new BABYLON.Vector4(0.5,0.25,0,1), sideOrientation:BABYLON.Mesh.DOUBLESIDE},scene);
     p.material=M.m; p.rotation.y=s*Math.PI/2; p.position.x=s*0.0065; p.parent=fold; });
-  /* aperto: due pagine a V (dal lato di chi legge le pagine interne, da fuori la prima pagina) */
+  /* aperto: due pagine a V (dal lato di chi legge le pagine interne, da fuori la prima pagina).
+     ⚠️ La V si apre VERSO chi legge: la piega al centro sta piu' lontana e i
+     bordi esterni vengono avanti, come un giornale vero tenuto con due mani.
+     Con -s*0.22 (rotazione y di Babylon: x locale -> (cos,0,-sin)) i bordi
+     andavano via dal giocatore e il giornale sembrava piegato al contrario. */
   const open=new BABYLON.TransformNode("newsOpen",scene);
-  [-1,1].forEach(s=>{ const hinge=new BABYLON.TransformNode("newsH",scene); hinge.parent=open; hinge.rotation.y=-s*0.22;
+  [-1,1].forEach(s=>{ const hinge=new BABYLON.TransformNode("newsH",scene); hinge.parent=open; hinge.rotation.y=s*0.22;
     const p=BABYLON.MeshBuilder.CreatePlane("newsOp",{width:0.29,height:0.40,
       frontUVs:new BABYLON.Vector4(0.5,0,1,1), backUVs:new BABYLON.Vector4(0.5,0,0,1), sideOrientation:BABYLON.Mesh.DOUBLESIDE},scene);
     p.material=M.m; p.position.x=s*0.145; p.parent=hinge; });
@@ -8843,10 +8847,10 @@ function buildKiosk(){
    dove l'Architetto ha fatto stampare la sua (canale del frammento f3). */
 const GAZETTE_FRONT={
   en:"QUESTTOWN GAZETTE \u2014 The clock on the tower is late again. The market opens at "
-    +"eight. A new family lives in the house near the school. And, on page two, a letter "
+    +"eight. A new family lives in the house near the school. And, on page four, a letter "
     +"from a reader who does not write his name.",
   it:"L'orologio della torre \u00e8 di nuovo indietro. Il mercato apre alle otto. Una famiglia "
-    +"nuova abita nella casa vicino alla scuola. E a pagina due, la lettera di un lettore "
+    +"nuova abita nella casa vicino alla scuola. E a pagina quattro, la lettera di un lettore "
     +"che non firma con il suo nome.",
 };
 /* Edizione Downtown (canale del frammento f7): stessa edicola, stessa
@@ -8855,11 +8859,11 @@ const GAZETTE_FRONT={
 const GAZETTE_FRONT2={
   en:"QUESTTOWN GAZETTE \u2014 DOWNTOWN EDITION \u2014 The new Eco Point recycling bins are "
     +"a success. The ODEON Cinema has a new film this week. Central Station has two new "
-    +"platforms. And, on page two, another letter from the same reader who never writes "
+    +"platforms. And, on page four, another letter from the same reader who never writes "
     +"his name.",
   it:"EDIZIONE DOWNTOWN \u2014 I nuovi bidoni per il riciclo dell'Eco Point sono un successo. "
     +"L'ODEON Cinema ha un nuovo film questa settimana. La Central Station ha due nuovi "
-    +"binari. E a pagina due, un'altra lettera dello stesso lettore che non firma mai "
+    +"binari. E a pagina quattro, un'altra lettera dello stesso lettore che non firma mai "
     +"con il suo nome.",
 };
 /* Terza edizione (canale del frammento f11): stessa edicola, stessa Mrs.
@@ -8869,11 +8873,11 @@ const GAZETTE_FRONT3={
   en:"QUESTTOWN GAZETTE \u2014 NEW DISTRICT EDITION \u2014 The Job Centre Tower has hired "
     +"twenty new firefighters this month. Bit, the TechLab robot, has learnt three new "
     +"words. The Climate & Fire Station says the town is safe again after last week's "
-    +"flood. And, on page two, one more letter from the reader who never signs his name.",
+    +"flood. And, on page four, one more letter from the reader who never signs his name.",
   it:"EDIZIONE NEW DISTRICT \u2014 La Job Centre Tower ha assunto venti nuovi pompieri "
     +"questo mese. Bit, il robot del TechLab, ha imparato tre parole nuove. La Climate "
     +"& Fire Station dice che la citt\u00e0 \u00e8 di nuovo al sicuro dopo l'alluvione della "
-    +"settimana scorsa. E a pagina due, un'altra lettera dello stesso lettore che non "
+    +"settimana scorsa. E a pagina quattro, un'altra lettera dello stesso lettore che non "
     +"firma mai con il suo nome.",
 };
 /* ⚠️ ORDINE = ordine di lettura, non ordine di soglia: si controllano in
@@ -8917,17 +8921,159 @@ function buyGazette(npc){
               { label:"Thank you! \u{1FA91} I'll read it on a bench", cls:"ghost", act:()=>{} } ] });
   toast("\u{1F4F0} You've got the Gazette! Sit on a bench to read it.");
 }
-function readGazette(npc){
-  const f=currentGazetteIssue(), bt=[];
-  if(f){
-    const ready=(!Frag.has(f.id) && Frag.unitsDone(f.yr)>=f.thr);
-    if(ready) bt.push({ label:"\u{1F4DC} Read the letters column", cls:"primary", act:()=>openFragment(f) });
+/* =====================================================================
+   📰 LA GAZETTE SI SFOGLIA (Giacomo, 1 ott 2026: «non ricordo piu' se ha un
+   senso con la storia: facciamo che la possa sfogliare e leggere le
+   notizie, la missione spiegata e le prossime quest, in base a dove e'
+   arrivato»). Prima era una pagina sola: tre notizie di colore e il
+   bottone delle lettere. Un ragazzo che torna dopo due settimane non aveva
+   nessun posto dove ritrovare il filo della storia.
+   Quattro pagine, sempre nello stesso ordine:
+     1. Front page   — le notizie dell'edizione (GAZETTE_FRONT/2/3, invariate);
+     2. Your mission — la storia dell'Architetto e a che punto sei (lettere,
+                       parole, timbri); dopo il finale, il Master Citizen;
+     3. What's next  — la prossima unit APERTA da fare, le lettere gia'
+                       pronte da cercare, quante unit mancano alla prossima;
+     4. Letters      — la colonna delle lettere: il frammento f3/f7/f11
+                       resta qui, dov'e' sempre stato.
+   ⚠️ Tutto si calcola ALL'APERTURA (Gate, Progress, Frag, Card, finDone):
+   niente testo fisso che invecchia. Le unit chiuse dal gate non si citano
+   mai come «prossima»: manderebbero il ragazzo davanti a una porta chiusa
+   (stessa regola di rangerNextGoal).
+   ===================================================================== */
+const GAZ_PAGES=["front","mission","next","letters"];
+const GAZ_TITLE={ front:"Front page", mission:"Your mission", next:"What's next", letters:"Letters" };
+/* le prossime unit da fare: prima quella in corso, poi le aperte e non finite, in ordine di curricolo */
+function gazNextUnits(max){
+  const out=[];
+  try{ if(Quest.unit && Quest.unit.id){ const s=Gate.info(Quest.unit.id);
+    if(s && !Progress.get(s.id).done) out.push(s); } }catch(e){}
+  for(let i=0;i<SYLLABUS.length && out.length<max;i++){ const s=SYLLABUS[i];
+    if(out.indexOf(s)>=0) continue;
+    try{ if(!Gate.unlocked(s.id) || Progress.get(s.id).done) continue; }catch(e){ continue; }
+    out.push(s); }
+  return out.slice(0,max);
+}
+/* dove sta la porta di una unit (per la bussola): stessa fonte di rangerEscort */
+function gazUnitTarget(id){
+  try{ const q=QUESTS[id];
+    const dp=(q&&q.doorPos) || (id==="u3" && typeof homeDoorPos!=="undefined" ? homeDoorPos : null);
+    if(dp) return new BABYLON.Vector3(dp.x,0,dp.z); }catch(e){}
+  const n=RANGER_NAV.find(r=>r.id===id);
+  return n?new BABYLON.Vector3(n.x,0,n.z):null;
+}
+/* la prossima lettera ancora lontana: quante unit di quale anno mancano */
+function gazNextLetter(){
+  for(let i=0;i<FRAGMENTS.length;i++){ const f=FRAGMENTS[i];
+    if(f.todo || Frag.has(f.id)) continue;
+    const miss=f.thr-Frag.unitsDone(f.yr);
+    if(miss>0) return { f, miss }; }
+  return null;
+}
+function _gazBox(inner){
+  return '<div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:#f4f0e4;'
+    +'border:1px solid #d9d2bf;color:#1d2a32;line-height:1.45;">'+inner+'</div>'; }
+function _gazWords(){
+  let w=[]; try{ w=Frag.passphrase(); }catch(e){}
+  return w.length
+    ? '<div style="margin-top:6px;padding:6px 10px;border-radius:8px;background:#22303c;color:#f2c93e;'
+      +'font-family:monospace;letter-spacing:.5px;">'+_escHtml(w.join(" · "))+'</div>'
+    : '';
+}
+function gazPage(page,f){
+  let n=0, done=false, card=false, stamps=0;
+  try{ n=Frag.count(); }catch(e){}
+  try{ done=finDone(); }catch(e){}
+  try{ card=Card.has(); stamps=Card.stamps(); }catch(e){}
+  if(page==="front"){ const fr=gazetteFrontFor(f); return { en:fr.en, it:fr.it, html:"" }; }
+  if(page==="mission"){
+    if(done) return {
+      en:"MASTER CITIZEN! You found all twelve letters and you said the twelve words to the lift. "
+        +"At the top of the tower you met The Architect: Mr. Cossu, your English teacher. "
+        +"The town was in you. Now QuestTown is your home: play the units again and collect stars!",
+      it:"MASTER CITIZEN! Hai trovato tutte e dodici le lettere e hai detto le dodici parole "
+        +"all'ascensore. In cima alla torre hai incontrato l'Architetto: Mr. Cossu, il tuo "
+        +"professore d'inglese. La città eri tu. Ora QuestTown è casa tua: rigioca le unità e raccogli stelle!",
+      html:_gazBox("\u{1F4DC} Letters: <b>12 / 12</b>"+_gazWords()) };
+    return {
+      en:"WELCOME, NEW CITIZEN! The Architect designed this town, but nobody has ever seen him. "
+        +"He hid twelve letters for you. Every letter has one special word: find all twelve, "
+        +"say them to the lift of the Job Centre Tower, and you will meet him.",
+      it:"BENVENUTO, NUOVO CITTADINO! L'Architetto ha progettato questa città, ma nessuno l'ha "
+        +"mai visto. Ha nascosto dodici lettere per te. In ogni lettera c'è una parola speciale: "
+        +"trovale tutte e dodici, dille all'ascensore della Job Centre Tower e lo incontrerai.",
+      html:_gazBox("\u{1F4DC} Letters found: <b>"+n+" / 12</b>"+_gazWords()
+        +'<div style="margin-top:6px;">'+(card
+          ? "\u{1FAAA} Stamps on your Citizen Card: <b>"+stamps+"</b> <span style=\"opacity:.7\">(one for every unit you finish)</span>"
+          : "\u{1FAAA} No Citizen Card yet: the Mayor is waiting for you outside the Town Hall!")+'</div>'
+        +'<div style="margin-top:6px;opacity:.75;font-size:.92em;">\u{1F4A1} Every letter opens when you finish some units of its year: four letters in Year 1, four in Year 2, four in Year 3.</div>') };
+  }
+  if(page==="next"){
+    const L=[], LI=[];
+    if(!card){ L.push("Go to the Mayor, outside the Town Hall, and get your Citizen Card.");
+               LI.push("Vai dal Sindaco, davanti al Municipio, e prendi la tua Citizen Card."); }
+    if(n>=12 && !done){ L.push("You've got all twelve words! Go to the Job Centre Tower and say them to the lift.");
+                        LI.push("Hai tutte e dodici le parole! Vai alla Job Centre Tower e dille all'ascensore."); }
+    const av=done?[]:(function(){ try{ return Frag.available()||[]; }catch(e){ return []; } })();
+    av.forEach(a=>{
+      if(a.ch==="gazette"){ L.push("A letter is waiting for you on page four of this newspaper: read the Letters column!");
+                            LI.push("Una lettera ti aspetta a pagina quattro di questo giornale: leggi la colonna delle lettere!"); }
+      else { L.push("A letter is waiting for you. Where? "+a.where+".");
+             LI.push("Una lettera ti aspetta: "+a.place+"."); } });
+    const nu=gazNextUnits(3);
+    if(nu.length){
+      L.push("Your next lesson: "+nu[0].ic+" "+nu[0].t+". Go there and walk in!");
+      LI.push("La prossima lezione: "+nu[0].ic+" "+nu[0].t+" ("+nu[0].lex+"). Vai lì ed entra!");
+      if(nu.length>1){ L.push("After that: "+nu.slice(1).map(u=>u.ic+" "+u.t).join(", ")+".");
+                       LI.push("Dopo: "+nu.slice(1).map(u=>u.ic+" "+u.t).join(", ")+"."); }
+    } else if(!done){
+      L.push("You've finished all the open units. Well done! New units open in class, with your teacher.");
+      LI.push("Hai finito tutte le unità aperte. Bravo! Le nuove si aprono in classe, con il tuo professore.");
+    }
+    const nl=(function(){ try{ return gazNextLetter(); }catch(e){ return null; } })();
+    if(nl && n<12 && !done){ L.push("The next letter: finish "+nl.miss+" more unit"+(nl.miss>1?"s":"")+" of Year "+nl.f.yr+".");
+                    LI.push("La prossima lettera: finisci ancora "+nl.miss+" unità dell'Anno "+nl.f.yr+"."); }
+    if(done){ L.push("Play your favourite units again, talk to people in town and collect stars!");
+              LI.push("Rigioca le tue unità preferite, parla con la gente in città e raccogli stelle!"); }
+    const html='<ol style="margin:10px 0 0;padding-left:22px;line-height:1.5;text-align:left;">'
+      +L.map(x=>'<li style="margin-bottom:4px;">'+_escHtml(x)+'</li>').join("")+'</ol>';
+    return { en:"WHAT'S NEXT FOR YOU — your plan for the next days.", it:LI.join(" "),
+             html, unit:nu[0]||null };
+  }
+  /* letters */
+  if(!f) return { en:"LETTERS — No letters today. Come back when you finish more units!",
+                  it:"Oggi nessuna lettera. Torna quando hai finito altre unità!", html:"" };
+  const ready=(!Frag.has(f.id) && Frag.unitsDone(f.yr)>=f.thr);
+  return ready
+    ? { en:"LETTERS — Today there is a letter from a reader who does not write his name. "
+          +"It starts: «Dear new citizen…»",
+        it:"Oggi c'è la lettera di un lettore che non firma con il suo nome. Comincia così: «Caro nuovo cittadino…»",
+        html:"", ready:true }
+    : { en:"LETTERS — The letter from the reader who never signs his name. You've already read it: "
+          +"you can read it again!",
+        it:"La lettera del lettore che non firma mai. L'hai già letta: puoi rileggerla!", html:"" };
+}
+function readGazette(npc,page){
+  page=(GAZ_PAGES.indexOf(page)>=0)?page:"front";
+  const f=currentGazetteIssue(), i=GAZ_PAGES.indexOf(page), P=gazPage(page,f), bt=[];
+  if(page==="letters" && f){
+    if(P.ready) bt.push({ label:"\u{1F4DC} Read the letter", cls:"primary", act:()=>openFragment(f) });
     else bt.push({ label:"\u{1F4DC} Read that letter again", cls:"primary", act:()=>readFragment(f) });
   }
-  bt.push({ label:"Thank you!", cls:"ghost", act:()=>{} });
-  const front=gazetteFrontFor(f);
-  DialogueBox.open({ npc, name:npc?null:"\u{1F4F0} QuestTown Gazette", icon:"\u{1F4F0}", sub:"QuestTown Gazette \u00b7 front page",
-    text:front.en, italian:front.it, autoSpeak:false, buttons:bt });
+  if(page==="next" && P.unit){
+    const tg=gazUnitTarget(P.unit.id), u=P.unit;
+    if(tg && area==="town") bt.push({ label:"\u{1F9ED} Show me the way", act:()=>{
+      NAV.target=tg; NAV.label=u.ic+" "+u.t;
+      toast("\u{1F9ED} "+u.ic+" "+u.t+": segui la freccia in alto!"); } });
+  }
+  if(i<GAZ_PAGES.length-1){ const nx=GAZ_PAGES[i+1];
+    bt.push({ label:"\u{1F4F0} "+GAZ_TITLE[nx]+" ▶", cls:(bt.length?"":"primary"), act:()=>readGazette(npc,nx) }); }
+  if(i>0){ const pv=GAZ_PAGES[i-1];
+    bt.push({ label:"◀ "+GAZ_TITLE[pv], act:()=>readGazette(npc,pv) }); }
+  bt.push({ label:(BSIT.b?"\u{1F5DE}️ Close the newspaper":"Thank you!"), cls:"ghost", act:()=>{} });
+  DialogueBox.open({ npc, name:npc?null:"QuestTown Gazette", icon:"\u{1F4F0}",
+    sub:"QuestTown Gazette · page "+(i+1)+" of "+GAZ_PAGES.length+" · "+GAZ_TITLE[page],
+    text:P.en, italian:P.it, html:P.html||undefined, autoSpeak:false, buttons:bt });
 }
 
 /* =====================================================================
@@ -20917,6 +21063,87 @@ function askLooksLikeQuestion(txt){
   if(/^\s*(do|does|did|can|could|are|is|am|was|were|have|has|will|would|shall|should|may|must)\b/.test(t)) return true;
   return false;
 }
+/* ============================================================================
+   DOMANDE SULL'ARCHITETTO (Giacomo, 1 ott 2026: al Sindaco «Who is the
+   Architect?» rispondeva «Me! I do it myself.», cioe' il cassetto generico
+   del «who»). L'Architetto e' il filo di tutta la storia: in citta' TUTTI
+   ne conoscono la leggenda (vedi ARCH_TALES), quindi qualunque NPC deve
+   rispondere in modo coerente col canone — nessuno l'ha mai visto, dicono
+   che viva in cima alla torre del New District, ha lasciato dodici lettere
+   per un nuovo cittadino — e, dopo il finale, sapere chi e': Mr. Cossu.
+   Si controlla PRIMA di askMatch: «Do you know the Architect?» contiene
+   «you» e finirebbe su una delle ASK_QS sull'NPC.
+   Stessa regola di coerenza delle risposte generiche: scelta deterministica
+   su NPC + domanda (_askSeed). Nessun rilancio: «And you? Who is the
+   Architect?» chiesto al ragazzo non avrebbe senso.
+   ========================================================================= */
+function askIsArchitect(txt){
+  /* «architecture / architettura» no: e' un'altra domanda */
+  const t=String(txt||"");
+  if(/\barch?it+e(c|k)?t+ur/i.test(t)) return false;
+  return /\barch?it+e(c|k)?t/i.test(t);
+}
+function askArchitect(typed,bio){
+  const raw=String(typed||"");
+  if(!askIsArchitect(raw)) return null;
+  const txt=raw.toLowerCase().replace(/[?!.,;:]/g," ").replace(/\s+/g," ").trim();
+  if(!askLooksLikeQuestion(txt)) return null;
+  const s=_askSeed(bio,txt), ty=askType(txt);
+  let done=false, n=0;
+  try{ done=finDone(); }catch(e){}
+  try{ n=Frag.count(); }catch(e){}
+  if(done) return _pickDet([
+    {en:"You know the answer! The Architect is Mr. Cossu, your English teacher.",
+     it:"La risposta la sai! L'Architetto è Mr. Cossu, il tuo professore d'inglese."},
+    {en:"Mr. Cossu, of course! You met him at the top of the tower.",
+     it:"Mr. Cossu, ovvio! L'hai incontrato in cima alla torre."},
+    {en:"It's Mr. Cossu! He built this town for you, Master Citizen.",
+     it:"È Mr. Cossu! Ha costruito questa città per te, Master Citizen."}],s);
+  /* quante lettere hai gia': l'NPC te lo ricorda, cosi' la risposta spinge
+     verso la caccia invece di chiudere il discorso */
+  const tip=n>=12
+    ? {en:" You've got all twelve letters: go to the lift in the Job Centre Tower!",
+       it:" Hai tutte e dodici le lettere: vai all'ascensore della Job Centre Tower!"}
+    : n>0 ? {en:" You've got "+n+" of his letters. Keep looking!",
+             it:" Hai già "+n+" delle sue lettere. Continua a cercare!"}
+          : {en:" Read his letters and you'll find out!",
+             it:" Leggi le sue lettere e lo scoprirai!"};
+  const add=function(a){ return { en:a.en+tip.en, it:a.it+tip.it }; };
+  /* «Are you the Architect?»: la risposta e' su di se', non sulla leggenda */
+  if(/\b(are you|were you|you are|is it you)\b/.test(txt)) return add(_pickDet([
+    {en:"Me? No, I'm not The Architect! But I'd love to meet him.",
+     it:"Io? No, non sono l'Architetto! Ma mi piacerebbe tanto conoscerlo."},
+    {en:"Ha ha! No, it isn't me. Nobody knows who he is.",
+     it:"Ah ah! No, non sono io. Nessuno sa chi sia."}],s));
+  if(ty==="where") return add(_pickDet([
+    {en:"Nobody knows! Some people say he lives at the top of the tower, in the New District. But the lift never works.",
+     it:"Nessuno lo sa! C'è chi dice che viva in cima alla torre, nel New District. Ma l'ascensore non funziona mai."},
+    {en:"At the top of the tower in the New District, they say. I've never been there.",
+     it:"In cima alla torre del New District, dicono. Io non ci sono mai stato/a."}],s));
+  if(ty==="why"||ty==="what"||ty==="how") return add(_pickDet([
+    {en:"The Architect designed every street and every house in this town. And he wrote twelve letters for a new citizen.",
+     it:"L'Architetto ha progettato ogni strada e ogni casa di questa città. E ha scritto dodici lettere per un nuovo cittadino."},
+    {en:"It's a mystery! He left twelve letters, hidden in the town. Every letter has a special word.",
+     it:"È un mistero! Ha lasciato dodici lettere nascoste in città. In ogni lettera c'è una parola speciale."}],s));
+  if(ty==="when") return add(_pickDet([
+    {en:"A long time ago! This town is very old, and he designed all of it.",
+     it:"Tanto tempo fa! Questa città è molto antica, e l'ha progettata tutta lui."}],s));
+  if(ty==="yesno") return add(_pickDet([
+    {en:"No, I don't know him. Nobody has ever seen The Architect!",
+     it:"No, non lo conosco. Nessuno ha mai visto l'Architetto!"},
+    {en:"Only the legend! Nobody has ever seen his face.",
+     it:"Solo la leggenda! Nessuno ha mai visto la sua faccia."},
+    {en:"No, I've never met him. But I know his story: he built this town.",
+     it:"No, non l'ho mai incontrato. Ma conosco la sua storia: ha costruito questa città."}],s));
+  /* who e tutto il resto */
+  return add(_pickDet([
+    {en:"Nobody knows! They say one person designed the whole town. We call this person The Architect.",
+     it:"Nessuno lo sa! Dicono che una sola persona abbia progettato tutta la città: la chiamiamo l'Architetto."},
+    {en:"That's the big mystery of QuestTown! Nobody has ever seen him.",
+     it:"È il grande mistero di QuestTown! Nessuno l'ha mai visto."},
+    {en:"I don't know! He built this town, but nobody has ever seen him.",
+     it:"Non lo so! Ha costruito questa città, ma nessuno l'ha mai visto."}],s));
+}
 /* Risposta generica per TIPO. Ritorna null solo se non sembra una domanda. */
 function askGeneric(typed,bio){
   const txt=String(typed||"").toLowerCase().replace(/[?!.,;:]/g," ").replace(/\s+/g," ").trim();
@@ -21068,6 +21295,19 @@ function submitAskFree(){
   }
   if(linguaccia(typed)){ fb.innerHTML=linguacciaHtml(); return; }
   const bio=npcBio(_ASKFREE.npc);
+  const arch=askArchitect(typed,bio);
+  if(arch){
+    npcTouch(_ASKFREE.npc);
+    const badA=askFormCheck(typed, ftLevel());
+    const gotA=Stars.awardAskNPC(npcCardId(_ASKFREE.npc), badA?"retry":"first");
+    fb.innerHTML=(badA?'<div style="opacity:.72;font-size:.93em;margin-bottom:6px;">\u{1F7E1} '+badA.it+'</div>':'')
+      +'<div style="font-weight:800;">\u{1F7E2} '+_escHtml(arch.en)
+      +(gotA>0?' <span style="color:#a05a2c">\u2b50 +'+gotA+'</span>':'')+'</div>'
+      +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">'+_escHtml(arch.it)+'</div>';
+    try{ speechSynthesis.resume(); TTS.say(arch.en); }catch(e){}
+    _askDone(ta,null);
+    return;
+  }
   const q=askMatch(typed);
   /* Fuori dalle 24 note NON si rifiuta più per argomento: si risponde in modo
      plausibile e in carattere. Si rifiuta solo ciò che non è una domanda, e il
