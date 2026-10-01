@@ -29021,7 +29021,9 @@ function rainForceCycle(){
 /* =====================================================================
    IL CONCERTO DELLE 20:00
    ---------------------------------------------------------------------
-   Sette canzoni di Giacomo, scritte per la sua classe: ognuna e' una
+   Undici canzoni di Giacomo, scritte per la sua classe (le ultime quattro
+   aggiunte il 1 ott: We Are Stars, Yes You Can, Count It Up, Cars Will
+   Fly — bpm misurati sull'audio, per il ballo e le luci): ognuna e' una
    struttura grammaticale cantata. Non appartengono a Unit 2 — coprono tre
    anni — e per questo il club ha la PORTA APERTA A TUTTI: chi e' in prima
    viene al concerto e sente cantare il present perfect che studiera' in
@@ -29031,6 +29033,12 @@ function rainForceCycle(){
    ===================================================================== */
 const GIG_DIR="audio/beatclub/";
 const GIG_SONGS=[
+  { f:"we_are_stars.mp3", t:"We Are Stars", yr:1, u:"Anno 1 \u00b7 Starter-Unit 1",
+    gram:"verb to be \u00b7 am / is / are", sec:177, bpm:131,
+    lines:["I am, you are, he is, she is!","It is, we are, you are, they are!",
+           "Yes, we are here \u2014 yes, we are stars!","No, we aren't sad \u2014 no, we aren't far!"],
+    chat:{ en:"Are you happy tonight? Yes, I am! We are stars!",
+           it:"Sei felice stasera? S\u00ec! Siamo delle star!" } },
   { f:"is_there_a_sofa.mp3", t:"Is There a Sofa?", yr:1, u:"Anno 1 \u00b7 Unit 3",
     gram:"there is / there are", sec:122, bpm:148,
     lines:["Is there? Yes, there is.","Are there? Yes, there are.",
@@ -29049,6 +29057,12 @@ const GIG_SONGS=[
            "She doesn't know, she doesn't know","Cook the sauce and turn it off!"],
     chat:{ en:"My brother doesn't like this song. But I love it!",
            it:"A mio fratello questa canzone non piace. A me s\u00ec!" } },
+  { f:"yes_you_can.mp3", t:"Yes, You Can", yr:1, u:"Anno 1 \u00b7 Unit 7",
+    gram:"can / can't", sec:125, bpm:145,
+    lines:["Can I play the game with you? Yes, you can!","I can run, I can jump, I can fly so high,",
+           "You can reach for the stars in the big blue sky.","I can speak English now, I can beat the test!"],
+    chat:{ en:"Can you sing this song? Yes, I can! Everybody can!",
+           it:"Sai cantare questa canzone? S\u00ec! Tutti possono!" } },
   { f:"from_present_to_past.mp3", t:"To the Past", yr:2, u:"Anno 2 \u00b7 Unit 3",
     gram:"irregular verbs \u00b7 present \u2192 past", sec:176, bpm:101,
     lines:["Yeah, we got the flow, we never go slow","Irregular verbs, everybody knows",
@@ -29067,6 +29081,18 @@ const GIG_SONGS=[
            "Did you do it? I didn't do it.","Did you see it? I didn't see it."],
     chat:{ en:"Did you see the drummer? She was fantastic!",
            it:"Hai visto la batterista? Era fantastica!" } },
+  { f:"count_it_up.mp3", t:"Count It Up", yr:2, u:"Anno 2 \u00b7 Unit 6",
+    gram:"how much / how many \u00b7 some / any \u00b7 a lot, a few, a little", sec:126, bpm:137,
+    lines:["How much time? How many friends?","How much money in your hands?",
+           "Got some energy, got any doubts?","How much? How many? Some or any? Count it up!"],
+    chat:{ en:"How many people are here tonight? A lot!",
+           it:"Quante persone ci sono stasera? Tantissime!" } },
+  { f:"cars_will_fly.mp3", t:"Cars Will Fly", yr:3, u:"Anno 3 \u00b7 Unit 2-4",
+    gram:"will \u00b7 first conditional", sec:130, bpm:101,
+    lines:["Cars will fly in the sky!","Teachers will be AI!",
+           "Phones will project a hologram!","If we plant more trees, the world will be green!"],
+    chat:{ en:"In 2050 cars will fly. Will you have a flying car?",
+           it:"Nel 2050 le auto voleranno. Avrai un'auto volante?" } },
   { f:"how_long_have_you_been_here.mp3", t:"How Long Have You Been Here?", yr:3, u:"Anno 3",
     gram:"present perfect \u00b7 how long", sec:180, bpm:138,
     lines:["How long have you been here?","How long, how long\u2026",
