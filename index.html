@@ -30718,7 +30718,7 @@ function salonRestoreBoard(){ try{ salonBoardDraw(salonCardGet()); }catch(e){} }
    poltrone, tappeto nell'angolo d'attesa, stampe incorniciate.
    Coordinate della stanza: muri a x ±5.0 e z ±6.5, porta a sud al centro. */
 LEXPROPS.sDecor=function(id,o){ o=o||{};
-  const r=new BABYLON.TransformNode(id,scene);
+  const r=new BABYLON.TransformNode(id,scene); r.__noDoorBlock=true;
   const SX=5.0, S=6.5, WH=3.0;
   const sage=hm7Mat("#86a393",0.15,30), gold=hm7Mat("#c9a24a",0.8,80), cream=hm7Mat("#efe6d8",0.1,20);
   /* boiserie: pannelli a riquadri alti 1.0 m con cornice d'oro */
@@ -32626,7 +32626,7 @@ LEXPROPS.eHob=function(id,o){ o=o||{};
    corsie dipinte a terra e un bollino colorato davanti a ogni bidone.
    Coordinate = coordinate della stanza (il prop sta a x 0, z 0). */
 LEXPROPS.eDecor=function(id,o){ o=o||{};
-  const r=new BABYLON.TransformNode(id,scene);
+  const r=new BABYLON.TransformNode(id,scene); r.__noDoorBlock=true;
   const SX=o.sx||5.4, S=o.sz||6.9, WH=2.7;
   /* 1) pannellatura in legno, 1.05 m, su tutti e quattro i muri (porta a sud esclusa) */
   const wood=_ecoWood(3,1), rail=hm7Mat("#6b4a2a",0.08,16);
@@ -34871,6 +34871,12 @@ function exitDoorSpot(u,I,C,S,SX){
   const box=[];
   I.root.getChildMeshes().forEach(m=>{
     if(/^(gif_|giwp|giex_|anc)/.test(m.name)) return;
+    /* v297: il decoro a parete (eDecor, sDecor) e' fuso per materiale in
+       mesh che abbracciano TUTTA la stanza: il suo ingombro copriva ogni
+       punto del muro sud e la porta d'uscita non trovava piu' posto (Eco
+       Point e Style Salon restavano senza porta). Il decoro lascia libero il
+       varco al centro del muro sud apposta. */
+    for(let a=m.parent;a;a=a.parent) if(a.__noDoorBlock) return;
     m.computeWorldMatrix(true);
     const b=m.getBoundingInfo().boundingBox, mn=b.minimumWorld, mx=b.maximumWorld;
     if(mx.z<C.z+S-0.9 || mx.y<0.05 || mn.y>HD+0.2) return;
