@@ -29782,24 +29782,30 @@ function gigFXEnable(on){
    ballare»): VICINO ALLA FOLLA (entro 1,8 m da uno spettatore) la E balla —
    il cartellino del ballo passa davanti a Joe ed Elsie (prio -1); lontano
    dalla calca torna in coda (prio 5). Q scorre comunque fra le due cose.
-   v299 (Giacomo: «il ballo era molto meglio prima, il movimento del braccio
-   andava bene, solo volevo che alternasse anche l'altro; e si rivolge
-   sempre dietro ai tizi: quando balla deve guardare il palco, come fa il
-   cantante»). Quindi:
-   · il braccio e' di nuovo la clip Wave (le pose calcolate non piacevano);
-     l'ALTRO braccio si ottiene SPECCHIANDO il corpo (scaling.x negativo
-     sull'avatar: Babylon inverte da solo il verso delle facce), un giro di
-     quattro battute col destro e uno col sinistro. Il personaggio e'
-     simmetrico, lo specchio non si vede;
-   · si GUARDA IL PALCO (il centro del palco, non dove si guardava prima) e
-     ci si muove come Max, il cantante: un saltello ogni due battute
-     (0,075 m) e un'oscillazione di ±0,13 rad sullo stesso giro. */
-const PDANCE={ on:false, inter:null, baseY:0, baseSX:1, face:0, anim:"Idle", near:false, mir:false };
+   v300 (Giacomo, 1 ott: «lascia solo il ballo originale con un braccio:
+   quando cambia braccio scatta, come se partisse una posizione nuova del
+   corpo; e non va a tempo, come invece va il pubblico sui bpm»). Quindi:
+   · UN BRACCIO SOLO, la clip Wave, sempre la stessa: niente specchio;
+   · LA CLIP E' AGGANCIATA AL BRANO: non gira per conto suo (1,67 s a giro,
+     che su nessun brano cade a tempo) ma il suo fotogramma si calcola a
+     ogni istante dal battito — un giro di braccio = 2 o 4 battute esatte,
+     scelte per stare vicino alla velocita' naturale della clip;
+   · IL SALTELLO E' QUELLO DEL PUBBLICO: uno a ogni battuta, con la fase
+     della fila di spettatori piu' vicina (CROWD[].phase), cosi' si salta
+     insieme a chi si ha davanti; l'oscillazione e' quella del cantante;
+   · si GUARDA IL PALCO. */
+const PDANCE={ on:false, inter:null, baseY:0, face:0, anim:"Idle", near:false, phase:0 };
 function danceNearCrowd(){
   const px=player.position.x, pz=player.position.z;
   for(let i=0;i<CROWD.length;i++){ const sp=CROWD[i].spots||[];
     for(let j=0;j<sp.length;j++) if(Math.hypot(px-sp[j][0],pz-sp[j][1])<1.8) return true; }
   return false; }
+/* la fase di salto della fila piu' vicina */
+function danceCrowdPhase(){
+  const px=player.position.x, pz=player.position.z; let best=1e9, ph=0;
+  for(let i=0;i<CROWD.length;i++){ const sp=CROWD[i].spots||[];
+    for(let j=0;j<sp.length;j++){ const d=Math.hypot(px-sp[j][0],pz-sp[j][1]); if(d<best){ best=d; ph=CROWD[i].phase||0; } } }
+  return ph; }
 function danceInit(){
   if(PDANCE.inter) return;
   PDANCE.inter=addInteract({ id:"beat_dance", area:UNIT_MUSIC.area, radius:2.5, prio:5, enabled:false,
@@ -29811,16 +29817,11 @@ function danceInit(){
 function danceStageFace(){
   try{ const C=INTERIORS[UNIT_MUSIC.area].center;
     return Math.atan2(C.x-player.position.x, (C.z-5.0)-player.position.z); }catch(e){ return Math.PI; } }
-function _danceMirror(on){
-  if(!avatarRoot || PDANCE.mir===on) return;
-  PDANCE.mir=on; avatarRoot.scaling.x=Math.abs(PDANCE.baseSX)*(on?-1:1);
-  avatarRoot.position.x=on?-PDANCE.baseX:PDANCE.baseX;      // stesso punto a terra, specchiato
-}
 function danceStart(){
   if(PDANCE.on || !GIG.on || area!==UNIT_MUSIC.area || !avatarRoot) return;
   try{ standUpAll(); }catch(e){}
-  PDANCE.on=true; PDANCE.baseY=avatarRoot.position.y; PDANCE.baseSX=avatarRoot.scaling.x; PDANCE.baseX=avatarRoot.position.x;
-  PDANCE.mir=false; PDANCE.face=danceStageFace(); PDANCE.anim="Wave";
+  PDANCE.on=true; PDANCE.baseY=avatarRoot.position.y;
+  PDANCE.face=danceStageFace(); PDANCE.phase=danceCrowdPhase(); PDANCE.anim="Wave";
   player.rotation.y=PDANCE.face;
   moveTarget=null; pendingInteract=null;
   try{ toast("\u{1F483} Let's dance! (E or walk to stop)"); }catch(e){}
@@ -29828,8 +29829,8 @@ function danceStart(){
 function danceStop(){
   if(!PDANCE.on) return;
   PDANCE.on=false;
-  _danceMirror(false);
-  if(avatarRoot){ avatarRoot.position.y=PDANCE.baseY; avatarRoot.scaling.x=PDANCE.baseSX; avatarRoot.position.x=PDANCE.baseX; }
+  if(avatarRoot) avatarRoot.position.y=PDANCE.baseY;
+  const g=avatarAnims["Wave"]; if(g){ try{ g.speedRatio=1; }catch(e){} }
   playAvatarAnim(IDLE_ANIM);
 }
 function danceTick(){
@@ -29842,14 +29843,19 @@ function danceTick(){
   if(!PDANCE.on) return;
   if(!can || !avatarRoot){ danceStop(); return; }
   const S=GIG_SONGS[GIG.idx]||{}, bpm=S.bpm||110;
-  /* se la musica non scorre (autoplay negato, file mancante) si balla
-     sull'orologio del gioco: mai un ballerino congelato */
+  /* lo stesso orologio del pubblico (gigTick); se la musica non scorre
+     (autoplay negato) si balla sull'orologio del gioco */
   const at=AUDIO.time(), beat=(at>0?at:performance.now()/1000)*bpm/60;
-  const p=beat*0.5;                                   // lo stesso giro del cantante
-  avatarRoot.position.y=PDANCE.baseY+Math.abs(Math.sin(p*Math.PI))*0.075;
-  player.rotation.y=PDANCE.face+Math.sin(p*Math.PI*2)*0.13;
+  avatarRoot.position.y=PDANCE.baseY+Math.abs(Math.sin((beat+PDANCE.phase)*Math.PI))*0.085;
+  player.rotation.y=PDANCE.face+Math.sin(beat*Math.PI)*0.13;
   PDANCE.anim="Wave";
-  _danceMirror(Math.floor(beat/4)%2===1);             // quattro battute col destro, quattro col sinistro
+  /* il braccio a tempo: fotogramma della clip dal battito */
+  const g=avatarAnims["Wave"];
+  if(g && _avAnimCur===g){
+    const clip=(g.to-g.from)/60, spb=60/bpm, per=(clip/spb>=3)?4:2;
+    const u=(beat/per)-Math.floor(beat/per);
+    try{ g.speedRatio=0; g.goToFrame(g.from+u*(g.to-g.from)); }catch(e){}
+  }
 }
 function gigTick(){
   danceTick();
