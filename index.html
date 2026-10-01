@@ -26158,12 +26158,19 @@ function buildBeatNPCs(){
        entrava nel flight case, a 2.10/4.30 nel piano di un tavolino.
        Qui e' nel corridoio fra i tavoli e le casse, libero da entrambi. */
     x:C.x+3.20, z:C.z+4.90, face:-2.56, height:1.79, interact:talkToMick,
+    /* v297 (Giacomo, 1 ott): le cuffie le porta il fonico, non il roadie */
+    look:{ hat:"", hatc:"" },
     tint:{ Purple:"#2f3a44", LightBlue:"#3a3a42", Hair:"#4a3a28" } });
   DEV=spawnNPC({ id:"dev", name:"Dev", sub:"Sound engineer", area:UNIT_MUSIC.area,
     /* ⚠️ DIETRO la console, fra mixer (x 4.55) e muro est (5.5), non davanti:
        a x 3.70 finiva dentro la calca e spariva fra due sagome. Il banco
        regia e' il suo posto naturale e da li' domina la sala. */
     x:C.x+5.02+BEAT_DX, z:C.z-0.12, face:-1.42, height:1.74, interact:talkToDev,
+    /* v297: il fonico alla console ha le CUFFIE (Giacomo, 1 ott). Le mette il
+       guardaroba degli NPC, che vale solo sul rig del giocatore: per questo
+       model "avatar" con keepModel, se no il sorteggio poteva dargli un
+       corpo senza le mesh dove le cuffie si agganciano. */
+    model:"avatar", keepModel:true, look:{ hat:"headphones", hatc:"" },
     tint:{ Purple:"#7a3b5e", LightBlue:"#2b2b33", Hair:"#1f1a16" } });
   guiLabel(anchorMesh(I.root, C.x-5.20-BEAT_DX, 2.45, C.z-3.40), "\u{1F4F7} Last night", null, true, UNIT_MUSIC.area);
 }
@@ -53698,6 +53705,14 @@ function _npcCol(mt){ const c=mt&&(mt.albedoColor||mt.diffuseColor); try{ return
    configurazione. Il cappello resta possibile: si pesca fra gli altri. */
 const NPC_COUNTER_RE=/barista|waiter|waitress|shopkeeper|shop assistant|cashier|receptionist|clerk|box office|check-in|registrar|cook|tourist information|clockmaker|career adviser|security|teacher/i;
 function npcAtCounter(cfg){ return !!(cfg && (cfg.counter || NPC_COUNTER_RE.test(String(cfg.sub||"")))); }
+/* v297 — GLI ATLETI IN TENUTA SPORTIVA (Giacomo, 1 ott: «gli atleti sul
+   campo devono essere vestiti sportivi e non con sciarpa o occhiali e
+   altro»). Chi fa sport di mestiere (Athlete, Coach, Player...) o ha
+   sport:true prende solo pantaloncini o tuta (Joggers), niente giacca,
+   cappello, occhiali, sciarpa o collana. Il resto del guardaroba (tinta,
+   capelli) resta suo. */
+const NPC_SPORT_RE=/athlete|coach|player|runner|swimmer|footballer/i;
+function npcIsSporty(cfg){ return !!(cfg && (cfg.sport || NPC_SPORT_RE.test(String(cfg.sub||"")))); }
 function npcLookFor(id,rig,opt){
   opt=opt||{};
   /* ⚠️ _npcHash da solo e' un hash «alla Java»: con il sale davanti, due
@@ -53709,6 +53724,12 @@ function npcLookFor(id,rig,opt){
   const col=salt=>(p100(salt+"o")<50 ? "" : pick(cols,salt).id);    // meta' «Original», meta' un colore
   const L={ rig, bottom:pick(lookBottomsFor(rig),"b").id, bcol:pick(LOOK_BCOL.filter(c=>c.hex),"bc").id,
             coat:"", coatc:"", cut:"", hat:"", hatc:"", face:"", facec:"", neck:"", neckc:"", counter:!!opt.counter };
+  if(opt.sport){
+    const sb=lookBottomsFor(rig).filter(b=>b.id==="joggers"||b.id==="shorts");
+    if(sb.length) L.bottom=pick(sb,"sb").id;
+    if(p100("t")<35) L.cut=pick(rig==="f" ? ["ponytail","short","bun"] : ["buzz","curly","buzz"],"tw");
+    return L;                                    // niente giacca, cappello, occhiali, sciarpa
+  }
   if(p100("c")<38){ L.coat=pick(LOOK_COATS,"cw").id; L.coatc=col("cc"); }
   /* i tagli: al ragazzo soprattutto rasati e ricci, code e chignon piu' rari */
   if(p100("t")<35) L.cut=pick(rig==="f" ? ["short","ponytail","bun","curly","long"]
@@ -53723,7 +53744,10 @@ const _npcDressQ=[];
 function npcDressLater(npc,cfg){
   if(!npc || (cfg && cfg.dress===false)) return;
   const rig=NPC_DRESS_RIG[npc.__model]; if(!rig) return;
-  npc.__look=npcLookFor(npc.id,rig,{ counter:npcAtCounter(cfg) });
+  npc.__look=npcLookFor(npc.id,rig,{ counter:npcAtCounter(cfg), sport:npcIsSporty(cfg) });
+  /* cfg.look: i pezzi decisi a mano (es. le cuffie al fonico del Beat Club)
+     vincono sul sorteggio */
+  if(cfg && cfg.look) Object.assign(npc.__look,cfg.look);
   _npcDressQ.push({ npc, step:0 });
 }
 /* un pezzo alla volta, nello stesso ordine di _vesti: il cappello si misura
