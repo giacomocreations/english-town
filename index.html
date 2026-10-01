@@ -3709,8 +3709,34 @@ function eatHandPos(){ const h=EAT.hand; if(!h) return null;
   const chain=[]; for(let q=h;q;q=q.parent) chain.unshift(q);
   chain.forEach(n=>{ if(n.computeWorldMatrix) n.computeWorldMatrix(true); });
   return h.getAbsolutePosition().clone(); }
+/* v297 (Giacomo, 1 ott: «quando beve il bicchiere non si piega in avanti
+   ma all'indietro, in modo innaturale»). L'inclinazione era g.rotation.z:
+   un asse LOCALE della tazza, quindi il verso dipendeva da come era girato
+   il vassoio o il tavolo rispetto a chi beve — a volte la tazza si
+   rovesciava verso il naso, a volte verso l'esterno. Ora si inclina nel
+   MONDO: l'asse e' orizzontale e perpendicolare allo sguardo (f), e il
+   verso si sceglie verificando che l'orlo vada VERSO chi beve (il fondo si
+   alza davanti, come quando si beve davvero). */
+function eatTilt(g,f,a){
+  if(!g) return;
+  if(!g.__homeRot) g.__homeRot=g.rotation.clone();
+  if(a<=0.0005){ g.rotationQuaternion=null; g.rotation.copyFrom(g.__homeRot); return; }
+  const V=BABYLON.Vector3, M=BABYLON.Matrix, Q=BABYLON.Quaternion;
+  const axis=new V(-f.z,0,f.x);
+  let T=M.RotationAxis(axis,a);
+  /* l'orlo (su locale della tazza = su del mondo a riposo) deve andare verso chi beve: dot(su', f) < 0 */
+  if(V.TransformNormal(new V(0,1,0),T).dot(f)>0) T=M.RotationAxis(axis,-a);
+  const base=M.RotationYawPitchRoll(g.__homeRot.y,g.__homeRot.x,g.__homeRot.z);
+  let Rp=M.Identity();
+  if(g.parent){ g.parent.computeWorldMatrix(true); const sc=new V(), rq=new Q(), tr=new V();
+    g.parent.getWorldMatrix().decompose(sc,rq,tr); rq.toRotationMatrix(Rp); }
+  const Rpi=Rp.clone().invert();
+  const L=base.multiply(Rp).multiply(T).multiply(Rpi);
+  g.rotationQuaternion=Q.FromRotationMatrix(L);
+}
 function eatStop(){ if(EAT.obs){ scene.onBeforeRenderObservable.remove(EAT.obs); EAT.obs=null; }
-  const Q=EAT.q; if(Q && Q.cur){ const g=Q.cur.g; if(g&&g.__home){ g.position.copyFrom(g.__home); g.rotation.z=0; g.rotation.x=0; } Q.cur=null; }
+  const Q=EAT.q; if(Q && Q.cur){ const g=Q.cur.g; if(g&&g.__home){ g.position.copyFrom(g.__home);
+      if(g.__homeRot){ g.rotationQuaternion=null; g.rotation.copyFrom(g.__homeRot); } else { g.rotation.z=0; g.rotation.x=0; } } Q.cur=null; }
   EAT.busy=false; try{ eatArm(0); }catch(e){} }
 /* steps: [{ g:TransformNode, what:"sip"|"bite", apply:()=>{} }] — ognuno
    sale alla mano, resta un attimo, torna al suo posto. fwd: verso dove si
@@ -3718,7 +3744,8 @@ function eatStop(){ if(EAT.obs){ scene.onBeforeRenderObservable.remove(EAT.obs);
 function eatRun(steps,fwd,onDone){
   eatStop(); if(!steps.length){ if(onDone) onDone(); return; }
   EAT.busy=true; EAT.q={ steps, k:0, cur:null };
-  steps.forEach(s=>{ if(s.g && !s.g.__home) s.g.__home=s.g.position.clone(); });
+  steps.forEach(s=>{ if(s.g && !s.g.__home) s.g.__home=s.g.position.clone();
+    if(s.g && !s.g.__homeRot && !s.g.rotationQuaternion) s.g.__homeRot=s.g.rotation.clone(); });
   const V=BABYLON.Vector3, f=new V(fwd.x,0,fwd.z).normalize();
   let t0=performance.now(), phase="wait";
   const handLocal=(g,what)=>{ const hp=eatHandPos(); if(!hp||!g.parent) return g.__home.clone();
@@ -3732,13 +3759,13 @@ function eatRun(steps,fwd,onDone){
       Q.cur=Q.steps[Q.k]; phase="up"; t0=now; return; }
     const c=Q.cur, g=c.g, tilt=(c.what==="sip")?0.6:0;
     if(phase==="up"){ let u=(now-t0)/650; if(u>1) u=1; const e=u*u*(3-2*u);
-      eatArm(e); V.LerpToRef(g.__home,handLocal(g,c.what),e,g.position); g.rotation.z=tilt*e*e;
+      eatArm(e); V.LerpToRef(g.__home,handLocal(g,c.what),e,g.position); if(tilt) eatTilt(g,f,tilt*e*e);
       if(u>=1){ phase="hold"; t0=now; Q.k++; try{ c.apply&&c.apply(); }catch(e2){} } return; }
-    if(phase==="hold"){ eatArm(1); g.position.copyFrom(handLocal(g,c.what)); g.rotation.z=tilt;
+    if(phase==="hold"){ eatArm(1); g.position.copyFrom(handLocal(g,c.what)); if(tilt) eatTilt(g,f,tilt);
       if(now-t0>650){ phase="down"; t0=now; } return; }
     if(phase==="down"){ let u=(now-t0)/600; if(u>1) u=1; const e=u*u*(3-2*u);
-      eatArm(1-e); V.LerpToRef(handLocal(g,c.what),g.__home,e,g.position); g.rotation.z=tilt*(1-e);
-      if(u>=1){ g.position.copyFrom(g.__home); g.rotation.z=0; eatArm(0); Q.cur=null; phase="wait"; t0=now; } return; }
+      eatArm(1-e); V.LerpToRef(handLocal(g,c.what),g.__home,e,g.position); if(tilt) eatTilt(g,f,tilt*(1-e));
+      if(u>=1){ g.position.copyFrom(g.__home); if(tilt) eatTilt(g,f,0); eatArm(0); Q.cur=null; phase="wait"; t0=now; } return; }
   }); }
 function playAvatarAnim(name){
   const g=avatarAnims[name]; if(!g || _avAnimCur===g) return;
