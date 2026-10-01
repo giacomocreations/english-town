@@ -29560,7 +29560,58 @@ function gigFXEnable(on){
    La fase viene dall'orologio del BRANO, non da un contatore nostro: se
    l'audio parte in ritardo o l'utente cambia canzone, il pubblico resta a
    tempo da solo. */
+/* =====================================================================
+   💃 BALLARE AL CONCERTO (Giacomo, 1 ott 2026: «dentro il Beat Club fai in
+   modo che sia possibile durante il concerto ballare per il protagonista»).
+   L'avatar non ha una clip «dance» (5 clip: Idle, Walk, Run, Wave,
+   Interact), quindi si balla come balla la band: sull'OROLOGIO DEL BRANO
+   (AUDIO.time() x bpm) il corpo salta sul battito, ondeggia a destra e a
+   sinistra ogni due battute, e le braccia alternano Wave (mani in alto,
+   otto battute) e Idle (otto battute di solo ondeggiare).
+   · si comincia con E (o toccando il cartellino) solo a concerto acceso e
+     solo nel club; l'interazione ha prio alta = scelta per ultima, quindi
+     NPC e oggetti vicini vincono sempre (Q per scorrere);
+   · si smette con E, camminando, a fine concerto o uscendo;
+   · il salto si fa sull'avatar (avatarRoot.position.y) e si rimette a posto
+     all'ultimo fotogramma: niente avatar che resta sollevato. */
+const PDANCE={ on:false, inter:null, baseY:0, face:0, anim:"Idle" };
+function danceInit(){
+  if(PDANCE.inter) return;
+  PDANCE.inter=addInteract({ id:"beat_dance", area:UNIT_MUSIC.area, radius:2.5, prio:5, enabled:false,
+    pos:()=>player.position,
+    prompt:()=>PDANCE.on?'\u{1F483} Press <b>E</b> to <b>stop dancing</b>':'\u{1F483} Press <b>E</b> to <b>dance</b>!',
+    interact:()=>{ PDANCE.on?danceStop():danceStart(); } });
+}
+function danceStart(){
+  if(PDANCE.on || !GIG.on || area!==UNIT_MUSIC.area || !avatarRoot) return;
+  try{ standUpAll(); }catch(e){}
+  PDANCE.on=true; PDANCE.baseY=avatarRoot.position.y; PDANCE.face=player.rotation.y; PDANCE.anim="Wave";
+  moveTarget=null; pendingInteract=null;
+  try{ toast("\u{1F483} Let's dance! (E or walk to stop)"); }catch(e){}
+}
+function danceStop(){
+  if(!PDANCE.on) return;
+  PDANCE.on=false;
+  if(avatarRoot) avatarRoot.position.y=PDANCE.baseY;
+  player.rotation.y=PDANCE.face;
+  playAvatarAnim(IDLE_ANIM);
+}
+function danceTick(){
+  if(!PDANCE.inter) danceInit();
+  const can=GIG.on && area===UNIT_MUSIC.area;
+  if(PDANCE.inter) PDANCE.inter.enabled=can;
+  if(!PDANCE.on) return;
+  if(!can || !avatarRoot){ danceStop(); return; }
+  const S=GIG_SONGS[GIG.idx]||{}, bpm=S.bpm||110;
+  /* se la musica non scorre (autoplay negato, file mancante) si balla
+     sull'orologio del gioco: mai un ballerino congelato */
+  const at=AUDIO.time(), beat=(at>0?at:performance.now()/1000)*bpm/60;
+  PDANCE.anim=(Math.floor(beat/8)%2===0)?"Wave":IDLE_ANIM;
+  avatarRoot.position.y=PDANCE.baseY+Math.abs(Math.sin(beat*Math.PI))*0.07;
+  player.rotation.y=PDANCE.face+Math.sin(beat*Math.PI/2)*0.32;
+}
 function gigTick(){
+  danceTick();
   if(!CROWD.length && !GIG_BAND_NPC.length) return;
   if(!GIG.on || area!==UNIT_MUSIC.area){ return; }
   const S=GIG_SONGS[GIG.idx]||{}; const bpm=S.bpm||110;
@@ -36292,7 +36343,9 @@ scene.registerBeforeRender(()=>{
       // scivolamento smette di avvicinare davvero al bersaglio: niente inseguimento
       // del bordo di un ostacolo per piu' di un frame senza progresso reale.
       if(nd>=d-0.001){ moveTarget=null; tapMark.setEnabled(false); tgtMove=false; } } }
-  playAvatarAnim((kbMove||moveTarget) ? (running&&(kbMove||tgtMove)?"Run":"Walk") : IDLE_ANIM);
+  /* 💃 chi balla e poi cammina smette di ballare (vedi PDANCE) */
+  if(PDANCE.on && (kbMove||moveTarget)) danceStop();
+  playAvatarAnim((kbMove||moveTarget) ? (running&&(kbMove||tgtMove)?"Run":"Walk") : (PDANCE.on?PDANCE.anim:IDLE_ANIM));
   // CINEMA: l\u0027avatar segue il dislivello (sale sulle gradinate, non sprofonda)
   if(area==="cinema"){
     _gTmp.set(player.position.x, player.position.y+8, player.position.z);
