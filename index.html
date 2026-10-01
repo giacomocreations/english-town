@@ -3708,6 +3708,12 @@ function sitPoseFor(root,pins,fwd,seatY,groundY,arms){
   const restUp=(o,sd,ctx)=>{ const r=_sitRestArm(o,f,sd,ctx); return r?r.e.subtract(ctx.pU):dn.scale(0.97).add(f.scale(0.2)); };
   const restFore=(o,sd,ctx)=>(ctx&&ctx.restW)?ctx.restW.subtract(ctx.restE):dn.scale(0.72).add(f.scale(0.62));
   const restHand=(o,sd,ctx)=>(ctx&&ctx.restW)?{ d:f.add(o.scale(-0.12)).normalize(), n:dn.clone() }:null;
+  /* v298: arms.lean = il busto si piega in avanti (radianti), PRIMA delle
+     braccia: le spalle vanno avanti col busto e il braccio parte da li' */
+  if(arms && arms.lean){ const tl=all.map(k=>k.tn), a=arms.lean(root,tl,f)||0;
+    if(a>0.001){ const lu=up.scale(Math.cos(a)).add(f.scale(Math.sin(a))), sp=_sitSpineTop(tl);
+      sp.forEach(S=>_sitWorldRot(S,S.getAbsolutePosition().clone(),up,lu)); _sitRefresh(root);
+      sp.forEach(S=>out.set(S,S.rotationQuaternion.clone())); } }
   _armPose(root,all.map(k=>k.tn),f,
     /* v290 (Giacomo: «piu' naturale con le braccia lungo i fianchi o
        leggermente piegate, non cosi' avanti»): braccio quasi verticale,
@@ -3721,6 +3727,12 @@ function sitPoseFor(root,pins,fwd,seatY,groundY,arms){
   saved.forEach(k=>{ if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); k.tn.position.copyFrom(k.p); });
   return { pins:res, drop:Math.max(0,drop), hip:hn?hip.scale(1/hn):null };
 }
+/* le prime ossa del busto di ogni catena (ogni pezzo ha il suo scheletro):
+   ruotando queste si piega tutto quello che sta sopra, braccia e testa */
+function _sitSpineTop(tns){
+  const re=/(^|_)(Abdomen|Torso|Chest)$/;
+  return tns.filter(t=>{ if(!re.test(t.name)) return false;
+    for(let q=t.parent;q;q=q.parent) if(re.test(q.name||"")) return false; return true; }); }
 function _applyPins(pins){ for(const k of pins){ k.tn.position.copyFrom(k.p);
   if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion();
   k.tn.rotationQuaternion.copyFrom(k.q); k.tn.scaling.copyFrom(k.s); } }
@@ -3794,10 +3806,88 @@ const EAT_ARMS={
   fore:(o,f,dn,sd,ctx,rest)=>{ if(sd==="R" && ctx && ctx.eatElbow) return ctx.eatWrist.subtract(ctx.eatElbow);
     return (sd==="R") ? dn.scale(-0.78).add(f.scale(-0.05)).add(o.scale(-0.62)) : (rest?rest(o,sd,ctx):dn.scale(0.72).add(f.scale(0.62))); },
   hand:(o,f,dn,sd,ctx,rest)=>(sd==="R") ? _eatHandDir(o,f) : (rest?rest(o,sd,ctx):null) };
+/* =====================================================================
+   v298 — CI SI ALLUNGA A PRENDERLO (Giacomo, 1 ott: «dovrebbe piegare il
+   busto in avanti per prendere il cibo e il drink, se no sembra che volino
+   da soli fino alla mano»). Prima la tazza partiva dal vassoio e scivolava
+   nell'aria fino alla mano, che saliva dalla coscia alla bocca. Ora ogni
+   gesto ha tre pose: a riposo -> ALLUNGATO (busto piegato in avanti, il
+   braccio destro steso fino all'oggetto, sul vassoio o nel piatto, le dita
+   che si chiudono) -> alla bocca, e poi a ritroso: si riappoggia l'oggetto
+   al suo posto, le dita si aprono, il busto torna dritto.
+   La posa allungata dipende da DOVE sta l'oggetto: si calcola al primo
+   gesto (sitPoseFor, con arms.lean) e si tiene finche' si resta seduti.
+   Il busto si piega quanto serve perche' la mano ci arrivi (almeno un
+   poco, sempre: il gesto si deve vedere), il braccio al contrario come
+   alla bocca (due ossa, gomito fuori e giu').
+   ===================================================================== */
+const EAT_REACH={ leanMin:0.24, leanMax:0.72, reachK:0.96 };
+function _eatReachHand(o,f){ const V=BABYLON.Vector3, up=new V(0,1,0);
+  /* dita in avanti e in giu', verso il centro; palmo verso l'oggetto */
+  const d=f.scale(0.80).subtract(o.scale(0.28)).subtract(up.scale(0.38)).normalize();
+  let n=o.scale(-1); n=n.subtract(d.scale(V.Dot(n,d))).normalize();
+  return { d, n }; }
+/* gomito e polso (due ossa) dalla spalla pU a un polso voluto */
+function _eatIK(pU,l1,l2,wrist,pole){ const V=BABYLON.Vector3;
+  const d=wrist.subtract(pU), L=Math.min(d.length(),l1+l2-0.002), dir=d.normalizeToNew();
+  const A=(l1*l1-l2*l2+L*L)/(2*L), h=Math.sqrt(Math.max(0,l1*l1-A*A));
+  let p=pole.subtract(dir.scale(V.Dot(pole,dir))); if(p.length()<1e-4) p=pole.clone(); p.normalize();
+  return { e:pU.add(dir.scale(A)).add(p.scale(h)), w:pU.add(dir.scale(L)) }; }
+/* gw = punto di presa dell'oggetto nel mondo; r = suo raggio; k = polso -> centro del palmo */
+function _eatReachArms(gw,r,k){
+  const V=BABYLON.Vector3, up=new V(0,1,0);
+  const wristFor=(o,f)=>gw.add(o.scale(r+0.010)).subtract(_eatReachHand(o,f).d.scale(k));
+  const pole=(o,dn)=>o.scale(0.75).add(dn.scale(0.55));
+  return {
+    lean:(root,tns,f)=>{
+      const U=tns.find(t=>/(^|_)UpperArm\.R$/.test(t.name)); if(!U) return EAT_REACH.leanMin;
+      const Lw=U.getDescendants(false).find(d=>/(^|_)LowerArm\.R$/.test(d.name));
+      const H=Lw&&Lw.getDescendants(false).find(d=>/(^|_)(Wrist|Palm|Hand)\.R$/.test(d.name)); if(!H) return EAT_REACH.leanMin;
+      const pU=U.getAbsolutePosition().clone(), reach=(V.Distance(pU,Lw.getAbsolutePosition())+V.Distance(Lw.getAbsolutePosition(),H.getAbsolutePosition()))*EAT_REACH.reachK;
+      const ch=tns.find(t=>/(^|_)Chest$/.test(t.name))||tns.find(t=>/(^|_)Torso$/.test(t.name));
+      let o=pU.subtract(ch?ch.getAbsolutePosition():pU); o.y=0; o=o.subtract(f.scale(V.Dot(o,f)));
+      if(o.length()<1e-4) o=V.Cross(up,f).scale(-1); o.normalize();
+      const sp=_sitSpineTop(tns)[0], piv=sp?sp.getAbsolutePosition().clone():pU.subtract(up.scale(0.3));
+      const W=wristFor(o,f), ax=V.Cross(up,f).normalize(), v=pU.subtract(piv);
+      /* il busto ruota attorno all'asse di lato: quanto basta perche' la spalla arrivi */
+      for(let a=EAT_REACH.leanMin;a<EAT_REACH.leanMax;a+=0.02){
+        const c=Math.cos(a), s=Math.sin(a);
+        const vr=v.scale(c).add(V.Cross(ax,v).scale(s)).add(ax.scale(V.Dot(ax,v)*(1-c)));
+        if(V.Distance(piv.add(vr),W)<=reach) return a; }
+      return EAT_REACH.leanMax; },
+    up:(o,f,dn,sd,ctx,rest)=>{ if(sd!=="R"||!ctx) return rest(o,sd,ctx);
+      const ik=_eatIK(ctx.pU,ctx.l1,ctx.l2,wristFor(o,f),pole(o,dn)); ctx.reachE=ik.e; ctx.reachW=ik.w;
+      return ik.e.subtract(ctx.pU); },
+    fore:(o,f,dn,sd,ctx,rest)=>(sd==="R"&&ctx&&ctx.reachE)?ctx.reachW.subtract(ctx.reachE):rest(o,sd,ctx),
+    hand:(o,f,dn,sd,ctx,rest)=>(sd==="R")?_eatReachHand(o,f):rest(o,sd,ctx) }; }
+/* la posa «allungato verso g» (pins come SIT.pins), o null */
+function eatReachPose(g,what){
+  if(g.__reach && g.__reachOf===EAT.rest) return g.__reach;
+  g.__reach=null; g.__reachOf=EAT.rest;
+  const S=EAT.seat; if(!S||!SIT.on||!EAT.rest||!EAT.hand||typeof avatarRoot==="undefined"||!avatarRoot||!_legPins) return null;
+  const V=BABYLON.Vector3, B=_eatBounds(g);
+  /* dove si prende l'oggetto, a casa sua (dritto) */
+  g.computeWorldMatrix(true);
+  const h=B.mx.y-B.mn.y, frac=(what==="sip")?0.32:0.45;
+  const gw=V.TransformCoordinates(new V((B.mn.x+B.mx.x)/2,B.mn.y+h*frac,(B.mn.z+B.mx.z)/2),g.getWorldMatrix());
+  /* polso -> centro del palmo, misurato sulla mano vera */
+  eatHandPos(); const hb=_handBasis(EAT.hand);
+  const k=hb?Math.min(0.12,Math.max(0.04,V.Dot(hb.c.subtract(hb.w),hb.d))):0.07;
+  /* sitPoseFor misura le gambe col corpo in piedi (come in eatPrepare):
+     lo si rialza per un attimo e il bersaglio sale con lui */
+  const y0=avatarRoot.position.y, lift=(SIT.baseY!=null)?SIT.baseY-y0:0;
+  let r=null;
+  try{ avatarRoot.position.y=y0+lift; _sitRefresh(avatarRoot);
+    r=sitPoseFor(avatarRoot,_legPins,S.f,S.seatY,S.groundY,_eatReachArms(gw.add(new V(0,lift,0)),B.r,k)); }
+  catch(e){ r=null; }
+  finally{ avatarRoot.position.y=y0; _sitRefresh(avatarRoot); }
+  if(!r||!r.pins||r.pins.length!==EAT.rest.length) return null;
+  return (g.__reach=r.pins); }
 const EAT={ rest:null, sip:null, mix:null, hand:null, obs:null, busy:false };
 /* da chiamare PRIMA di playerSit (stesso f, stessa seduta): prepara la posa «alla bocca» */
 function eatPrepare(f,seatY,groundY){
   EAT.sip=null; EAT.rest=null; EAT.mix=null; EAT.hand=null; EAT.fing=null;
+  EAT.seat={ f:f.clone(), seatY, groundY };                 // v298: per la posa «mi allungo verso il vassoio»
   if(typeof avatarRoot==="undefined" || !avatarRoot || !_legPins) return;
   try{ const r=sitPoseFor(avatarRoot,_legPins,f,seatY,groundY,EAT_ARMS); if(r) EAT.sip=r.pins; }catch(e){}
   const ds=avatarRoot.getDescendants(false);
@@ -3811,9 +3901,12 @@ function eatAfterSit(){ EAT.rest=SIT.pins;
   else EAT.mix=null; }
 function eatArm(t){ if(!EAT.mix||!SIT.on) return;
   if(t<=0.001){ SIT.pins=EAT.rest; eatFingers(0); return; }
-  const R=EAT.rest, S=EAT.sip, M=EAT.mix;
-  for(let i=0;i<M.length;i++){ BABYLON.Quaternion.SlerpToRef(R[i].q,S[i].q,t,M[i].q); BABYLON.Vector3.LerpToRef(R[i].p,S[i].p,t,M[i].p); }
-  SIT.pins=M; _applyPins(M); eatFingers(t); }
+  eatBlend(EAT.rest,EAT.sip,t,t); }
+/* fusione fra due pose qualsiasi (riposo, «allungato», «alla bocca»); fing = quanto sono chiuse le dita */
+function eatBlend(A,B,t,fing){ if(!EAT.mix||!SIT.on||!A||!B) return;
+  const M=EAT.mix;
+  for(let i=0;i<M.length;i++){ BABYLON.Quaternion.SlerpToRef(A[i].q,B[i].q,t,M[i].q); BABYLON.Vector3.LerpToRef(A[i].p,B[i].p,t,M[i].p); }
+  SIT.pins=M; _applyPins(M); eatFingers(fing); }
 /* v297 — LE DITA SI CHIUDONO attorno a tazza e cibo. Ogni falange (2 e 3
    di indice, medio, anulare, mignolo; il pollice un po' meno) ruota verso
    il palmo di un angolo proporzionale al gesto. Si riparte sempre dalla
@@ -3835,6 +3928,7 @@ function eatFingers(t){
   if(!EAT.fing.length) return;
   EAT.fing.forEach(F=>F.tn.rotationQuaternion.copyFrom(F.base));
   if(t<=0.001){ EAT.fingT=0; return; }
+  eatHandPos();                                    // la catena fino al polso, ricalcolata adesso (v298)
   const hb=_handBasis(EAT.hand); if(!hb) return;
   const V=BABYLON.Vector3;
   const refresh=n=>{ const ch=[]; for(let q=n;q;q=q.parent) ch.unshift(q); ch.forEach(x=>x.computeWorldMatrix&&x.computeWorldMatrix(true)); };
@@ -3861,6 +3955,7 @@ function _eatBounds(g){
   const r=Math.min(0.06,Math.max(0.02,Math.max(mx.x-mn.x,mx.z-mn.z)/2*0.92));
   return (g.__gb={ mn, mx, r }); }
 function eatGripLocal(g,what){
+  eatHandPos();
   const V=BABYLON.Vector3, B=_eatBounds(g), hb=_handBasis(EAT.hand);
   if(!hb || !g.parent) return g.__home.clone();
   const h=B.mx.y-B.mn.y, frac=(what==="sip")?0.32:0.45;
@@ -3907,7 +4002,13 @@ function eatStop(){ if(EAT.obs){ scene.onBeforeRenderObservable.remove(EAT.obs);
   EAT.busy=false; try{ eatArm(0); }catch(e){} }
 /* steps: [{ g:TransformNode, what:"sip"|"bite", apply:()=>{} }] — ognuno
    sale alla mano, resta un attimo, torna al suo posto. fwd: verso dove si
-   guarda (per l'offset della tazza davanti alla mano). */
+   guarda (per l'offset della tazza davanti alla mano).
+   v298: «reach» ci si allunga verso l'oggetto (busto in avanti, dita che si
+   chiudono), «up» lo si porta alla bocca, «hold», «down» lo si riappoggia,
+   «release» le dita si aprono e il busto torna dritto. L'oggetto si muove
+   SOLO quando e' nella mano: lo scarto fra dove sta e dove la mano lo
+   stringe (c.D, pochi cm) si consuma durante la salita e si ricostruisce
+   durante la discesa, cosi' parte e torna esattamente al suo posto. */
 function eatRun(steps,fwd,onDone){
   eatStop(); if(!steps.length){ if(onDone) onDone(); return; }
   EAT.busy=true; EAT.q={ steps, k:0, cur:null };
@@ -3916,20 +4017,37 @@ function eatRun(steps,fwd,onDone){
     if(s.g) try{ _eatBounds(s.g); }catch(e){} });
   const V=BABYLON.Vector3, f=new V(fwd.x,0,fwd.z).normalize();
   let t0=performance.now(), phase="wait";
+  const sm=u=>u*u*(3-2*u);
   EAT.obs=scene.onBeforeRenderObservable.add(()=>{
     const Q=EAT.q, now=performance.now();
     if(phase==="wait"){ if(now-t0<(Q.k?450:800)) return;
       if(Q.k>=Q.steps.length){ eatStop(); EAT.q=null; if(onDone) onDone(); return; }
-      Q.cur=Q.steps[Q.k]; phase="up"; t0=now; return; }
-    const c=Q.cur, g=c.g, tilt=(c.what==="sip")?0.6:0;
-    if(phase==="up"){ let u=(now-t0)/650; if(u>1) u=1; const e=u*u*(3-2*u);
-      eatArm(e); if(tilt) eatTilt(g,f,tilt*e*e); V.LerpToRef(g.__home,eatGripLocal(g,c.what),e,g.position);
+      const c=Q.steps[Q.k]; Q.cur=c; c.D=null;
+      c.R=null; try{ c.R=eatReachPose(c.g,c.what); }catch(e){ c.R=null; }
+      phase=c.R?"reach":"up"; t0=performance.now(); return; }
+    const c=Q.cur, g=c.g, tilt=(c.what==="sip")?0.6:0, R=c.R;
+    if(phase==="reach"){ let u=(now-t0)/560; if(u>1) u=1; const e=sm(u);
+      eatBlend(EAT.rest,R,e,Math.max(0,(e-0.6)/0.4));
+      if(u>=1){ eatBlend(EAT.rest,R,1,1);
+        const gl=eatGripLocal(g,c.what); c.D=g.__home.subtract(gl);
+        phase="up"; t0=now; } return; }
+    const grip=()=>eatGripLocal(g,c.what);
+    if(phase==="up"){ let u=(now-t0)/650; if(u>1) u=1; const e=sm(u);
+      if(R) eatBlend(R,EAT.sip,e,1); else eatArm(e);
+      if(tilt) eatTilt(g,f,tilt*e*e);
+      if(c.D) g.position.copyFrom(grip().add(c.D.scale(1-e))); else V.LerpToRef(g.__home,grip(),e,g.position);
       if(u>=1){ phase="hold"; t0=now; Q.k++; try{ c.apply&&c.apply(); }catch(e2){} } return; }
-    if(phase==="hold"){ eatArm(1); if(tilt) eatTilt(g,f,tilt); g.position.copyFrom(eatGripLocal(g,c.what));
+    if(phase==="hold"){ eatArm(1); if(tilt) eatTilt(g,f,tilt); g.position.copyFrom(grip());
       if(now-t0>650){ phase="down"; t0=now; } return; }
-    if(phase==="down"){ let u=(now-t0)/600; if(u>1) u=1; const e=u*u*(3-2*u);
-      eatArm(1-e); if(tilt) eatTilt(g,f,tilt*(1-e)); V.LerpToRef(eatGripLocal(g,c.what),g.__home,e,g.position);
-      if(u>=1){ g.position.copyFrom(g.__home); if(tilt) eatTilt(g,f,0); eatArm(0); Q.cur=null; phase="wait"; t0=now; } return; }
+    if(phase==="down"){ let u=(now-t0)/600; if(u>1) u=1; const e=sm(u);
+      if(R) eatBlend(R,EAT.sip,1-e,1); else eatArm(1-e);
+      if(tilt) eatTilt(g,f,tilt*(1-e));
+      if(c.D) g.position.copyFrom(grip().add(c.D.scale(e))); else V.LerpToRef(grip(),g.__home,e,g.position);
+      if(u>=1){ g.position.copyFrom(g.__home); if(tilt) eatTilt(g,f,0);
+        if(R){ phase="release"; t0=now; } else { eatArm(0); Q.cur=null; phase="wait"; t0=now; } } return; }
+    if(phase==="release"){ let u=(now-t0)/520; if(u>1) u=1; const e=sm(u);
+      eatBlend(EAT.rest,R,1-e,Math.max(0,1-e/0.4));
+      if(u>=1){ eatArm(0); Q.cur=null; phase="wait"; t0=now; } return; }
   }); }
 function playAvatarAnim(name){
   const g=avatarAnims[name]; if(!g || _avAnimCur===g) return;
@@ -8395,6 +8513,7 @@ function dinerAsk(key,poi,qOverride,itOverride){
       +'<div id="dnFb" style="margin-top:8px;"></div>',
     buttons:[ { label:"✔ Say it", cls:"primary", keepOpen:true, act:()=>_dinerSubmit(key,poi) },
       ...((key!=="bill"&&key!=="pay")?[{ label:"\u{1F4CB} Menu", act:()=>dinerShowMenu(again) }]:[]), leave ] });
+  _ordBozza(o,key,"dnTA");                        // v298: la frase scritta sopravvive al menu
 }
 function _dinerTake(key,testo,male,poi){
   const o=DINER.o; if(!o) return;
@@ -8402,7 +8521,7 @@ function _dinerTake(key,testo,male,poi){
   let v=t.nulla?_cafeTrova(testo,[t.nulla]):null;
   if(!v) v=_cafeTrova(testo,t.voci());
   if(!v) v=t.voci()[0];
-  o.slip[key]=v; if(male) o.sbagli++;
+  o.slip[key]=v; o.bozza=null; if(male) o.sbagli++;
   setTimeout(()=>{ if(DINER.seat||DINER.debt) poi(v); },260);
 }
 function _dinerSubmit(key,poi){
@@ -8592,6 +8711,11 @@ function _dinerFoodSet(keys,parent,ox,oy,oz){
 function _dinerServe(keys){
   const s=DINER.seat; if(!s||!DINER.o) return;
   const t=s.t, set=_dinerFoodSet(keys,townRoot,t.x+s.sd*0.2,t.top,t.z);   // dalla parte di chi e' seduto
+  /* v298: il bicchiere dalla parte della mano DESTRA (con cui si prende):
+     da meta' delle sedie stava a sinistra, fuori portata del braccio */
+  if(set && keys.indexOf("drink")>=0){ set.computeWorldMatrix(true);
+    const dw=BABYLON.Vector3.TransformNormal(new BABYLON.Vector3(0,0,1),set.getWorldMatrix());
+    if(dw.x*Math.cos(s.face)-dw.z*Math.sin(s.face)<0){ set.rotation.y+=Math.PI; set.computeWorldMatrix(true); } }
   if(set){ DINER.food.push(set); _dinerEat(set,keys); }
 }
 /* v297 — SI MANGIA DAVVERO (Giacomo: «il sistema di mangiare mettilo anche
@@ -23705,7 +23829,18 @@ function runCafeOrder(){
       { label:"\u2714 Say it", cls:"primary", keepOpen:true, act:function(){ submitCafe(); } },
       { label:"\u{1F4CB} Menu", cls:"", act:function(){ cafeMostraMenu(function(){ runCafeOrder(); }); } },
       { label:"Leave", cls:"ghost", act:function(){ _CAFE=null; } } ] });
+  _ordBozza(o,o.idx,"uCafeTA");
 }
+/* v298 — LA FRASE GIA' SCRITTA RESTA (Giacomo, 1 ott: «per le seconde e
+   terze che devono scrivere l'ordine, quando richiamano il menu fai in modo
+   che quello che uno ha gia' scritto non si cancelli»). Aprire il menu
+   chiude la finestra e la ricrea al ritorno, textarea vuota compresa. Ora
+   quello che si scrive si tiene nell'ordine (o.bozza, legata al turno k) e
+   torna nella casella quando la domanda si riapre; al turno dopo si butta. */
+function _ordBozza(o,k,id){
+  const ta=document.getElementById(id); if(!ta||!o) return;
+  if(o.bozza && o.bozza.k===k) ta.value=o.bozza.v; else o.bozza=null;
+  ta.addEventListener("input",()=>{ o.bozza={ k, v:ta.value }; }); }
 function cafeMostraMenu(poi){
   const L=(_CAFE&&_CAFE.luogo)||CAFE_LUOGO_DEF;
   DialogueBox.open({ npc:(_CAFE&&_CAFE.npc)||null, icon:"\u{1F4CB}", sub:L.nome+" \u2014 menu",
@@ -23726,7 +23861,7 @@ function cafePassa(testo, male){
      bugia). Succede solo dopo che il ragazzo e' gia' passato dal secondo
      tentativo, cioe' quando abbiamo deciso di non fare muro. */
   if(!v) v=t.voci()[0];
-  o.slip[t.key]=v;
+  o.slip[t.key]=v; o.bozza=null;
   if(male) o.sbagli++;
   o.idx++;
   setTimeout(runCafeOrder, 260);
