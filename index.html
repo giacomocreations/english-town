@@ -3536,7 +3536,7 @@ function _restPinsFor(root,re,skip){
 }
 /* piega le braccia: la parte alta verso upDir, l'avambraccio verso foreDir
    (vettori nel mondo, funzioni del lato: out = verso l'esterno) */
-function _armPose(root,tns,f,upDir,foreDir){
+function _armPose(root,tns,f,upDir,foreDir,handFn){
   const V=BABYLON.Vector3, end=(t,n)=>new RegExp("(^|_)"+n.replace(".","\\.")+"$").test(t.name);
   const out=new Map(), up=new V(0,1,0);
   let chest=null; tns.forEach(t=>{ if(end(t,"Chest")||(!chest&&end(t,"Torso"))) chest=t; });
@@ -3548,17 +3548,63 @@ function _armPose(root,tns,f,upDir,foreDir){
       const c=chest?chest.getAbsolutePosition():pU;
       let o=pU.subtract(c); o.y=0; o=o.subtract(f.scale(V.Dot(o,f))); if(o.length()<1e-4) o=V.Cross(up,f).scale(sd==="L"?1:-1); o.normalize();
       const foreLoc=V.TransformNormal(pH.subtract(pL),L.getWorldMatrix().clone().invert());
-      _sitWorldRot(U,pU,pL.subtract(pU),upDir(o,sd));
+      /* ctx: chi calcola la posa puo' sapere dove sono spalla, gomito e mano
+         (serve alla cinematica inversa del braccio che porta alla bocca) */
+      const ctx={ root, pU, pL, pH, l1:V.Distance(pU,pL), l2:V.Distance(pL,pH), H };
+      _sitWorldRot(U,pU,pL.subtract(pU),upDir(o,sd,ctx));
       _sitRefresh(root);
       const pL2=L.getAbsolutePosition().clone();
-      _sitWorldRot(L,pL2,V.TransformNormal(foreLoc,L.getWorldMatrix()),foreDir(o,sd));
+      _sitWorldRot(L,pL2,V.TransformNormal(foreLoc,L.getWorldMatrix()),foreDir(o,sd,ctx));
       _sitRefresh(root);
       out.set(U,U.rotationQuaternion.clone()); out.set(L,L.rotationQuaternion.clone());
+      /* la MANO: direzione delle dita e verso del palmo (solo se richiesto) */
+      const want=handFn && handFn(o,sd,ctx);
+      if(want){ const hb=_handBasis(H);
+        if(hb){ const pW=H.getAbsolutePosition().clone();
+          _sitWorldRot(H,pW,hb.d,want.d); _sitRefresh(root);
+          const hb2=_handBasis(H);
+          if(hb2){ const dd=want.d.normalizeToNew();
+            const a=hb2.n.subtract(dd.scale(V.Dot(hb2.n,dd))), b=want.n.subtract(dd.scale(V.Dot(want.n,dd)));
+            if(a.length()>1e-3 && b.length()>1e-3){ _sitWorldRot(H,pW,a,b); _sitRefresh(root); } }
+          out.set(H,H.rotationQuaternion.clone()); } }
     });
   });
   return out;
 }
-const _SIT_BODY_RE=/^(Hips|Abdomen|Torso|Chest|Shoulder\.[LR]|UpperArm\.[LR]|LowerArm\.[LR])$/;
+const SIT_THIGH={};
+const SIT_THIGH_R={ m:0.075, f:0.088 };          // raggio coscia (il corpo femminile ha cosce piu' piene)
+function _sitRestArm(o,f,sd,ctx){
+  const T=SIT_THIGH[sd]; if(!T||!ctx) return null;
+  const V=BABYLON.Vector3, up=new V(0,1,0);
+  let rig="m"; try{ rig=(typeof _rigInScena!=="undefined"&&_rigInScena)||Look.rig(); }catch(e){}
+  const palm=V.Lerp(T.hip,T.knee,0.55).add(up.scale(SIT_THIGH_R[rig==="f"?"f":"m"]+0.012)).add(o.scale(0.012));
+  const wrist=palm.subtract(f.scale(0.055));
+  const d=wrist.subtract(ctx.pU), L=Math.min(d.length(),ctx.l1+ctx.l2-0.002), dir=d.normalizeToNew();
+  const A=(ctx.l1*ctx.l1-ctx.l2*ctx.l2+L*L)/(2*L), h=Math.sqrt(Math.max(0,ctx.l1*ctx.l1-A*A));
+  let pole=o.scale(0.55).subtract(f.scale(0.6)).add(up.scale(-0.2)); pole=pole.subtract(dir.scale(V.Dot(pole,dir)));
+  if(pole.length()<1e-4) pole=o.clone(); pole.normalize();
+  ctx.restE=ctx.pU.add(dir.scale(A)).add(pole.scale(h)); ctx.restW=ctx.pU.add(dir.scale(L));
+  return { e:ctx.restE, w:ctx.restW }; }
+const _SIT_BODY_RE=/^(Hips|Abdomen|Torso|Chest|Shoulder\.[LR]|UpperArm\.[LR]|LowerArm\.[LR]|Wrist\.[LR])$/;
+/* v297 — LA MANO DESTRA COME BASE: d = verso le dita (palmo->nocche del
+   medio), n = verso cui guarda il PALMO (dove si piegano le dita), c =
+   centro del palmo. Dalle ossa vere, adesso. */
+function _handBasis(H){
+  if(!H) return null;
+  const V=BABYLON.Vector3, ds=H.getDescendants(false);
+  const g=n=>ds.find(d=>new RegExp("(^|_)"+n+"\\.[LR]$").test(d.name));
+  const M1=g("Middle1"), M2=g("Middle2"), M4=g("Middle4"), I2=g("Index2"), P2=g("Pinky2");
+  if(!M1||!M2||!I2||!P2) return null;
+  [H,M1,M2,M4,I2,P2].forEach(x=>{ if(x&&x.computeWorldMatrix) x.computeWorldMatrix(true); });
+  const w=H.getAbsolutePosition(), m1=M1.getAbsolutePosition(), m2=M2.getAbsolutePosition();
+  const d=m2.subtract(m1); if(d.length()<1e-4) return null; d.normalize();
+  const a=I2.getAbsolutePosition().subtract(P2.getAbsolutePosition());
+  let n=V.Cross(d,a); if(n.length()<1e-5) return null; n.normalize();
+  /* il verso giusto: dove si curvano le dita (se sono gia' un po' piegate) */
+  if(M4){ const t=M4.getAbsolutePosition().subtract(m2); const perp=t.subtract(d.scale(V.Dot(t,d)));
+    if(perp.length()>0.004 && V.Dot(perp,n)<0) n.scaleInPlace(-1); }
+  return { d, n, c:m1.add(m2).scale(0.5), w:w.clone() };
+}
 const _ARM_RE=/^(Shoulder\.[LR]|UpperArm\.[LR]|LowerArm\.[LR])$/;
 /* un NPC con le braccia avanti (il vassoio). Ritorna { pins, hand } */
 function carryPoseFor(root,fwd){
@@ -3603,6 +3649,7 @@ function sitPoseFor(root,pins,fwd,seatY,groundY,arms){
      fino al ginocchio. Se il piede non discende dallo stinco lo si SPOSTA
      alla nuova caviglia; se ne discende (rig degli NPC) segue da solo. */
   const outP=new Map();
+  delete SIT_THIGH.L; delete SIT_THIGH.R;
   ["L","R"].forEach(sd=>{
     tns.filter(t=>end(t,"UpperLeg."+sd)).forEach(U=>{
       const K=U.getDescendants(false).find(d=>end(d,"LowerLeg."+sd)); if(!K) return;
@@ -3629,6 +3676,7 @@ function sitPoseFor(root,pins,fwd,seatY,groundY,arms){
       _sitWorldRot(K,K2,V.TransformNormal(shinLoc,K.getWorldMatrix()),dir);
       _sitRefresh(root);
       out.set(U,U.rotationQuaternion.clone()); out.set(K,K.rotationQuaternion.clone());
+      SIT_THIGH[sd]={ hip:pH.clone(), knee:K2.clone() };       // dove appoggiare la mano (v297)
       if(!footChild && F.parent){
         const tgt=K2.add(dir.scale(lS)), inv=F.parent.getWorldMatrix().clone().invert();
         const lp=BABYLON.Vector3.TransformCoordinates(tgt,inv);
@@ -3638,13 +3686,23 @@ function sitPoseFor(root,pins,fwd,seatY,groundY,arms){
   });
   /* le braccia lungo i fianchi, appena piegate */
   const dn=new V(0,-1,0);
+  /* v297 (Giacomo, 1 ott: «la ragazza seduta ha le mani dentro le cosce»):
+     la posa a riposo non e' piu' una direzione fissa (giu' e un po' avanti,
+     che sulle cosce piu' larghe del corpo femminile finiva DENTRO la
+     gamba) ma una mano APPOGGIATA: il palmo sta sulla superficie della
+     coscia, a meta' fra anca e ginocchio, dita in avanti, palmo in giu'.
+     Braccio calcolato al contrario (due ossa), gomito indietro e in fuori. */
+  const restUp=(o,sd,ctx)=>{ const r=_sitRestArm(o,f,sd,ctx); return r?r.e.subtract(ctx.pU):dn.scale(0.97).add(f.scale(0.2)); };
+  const restFore=(o,sd,ctx)=>(ctx&&ctx.restW)?ctx.restW.subtract(ctx.restE):dn.scale(0.72).add(f.scale(0.62));
+  const restHand=(o,sd,ctx)=>(ctx&&ctx.restW)?{ d:f.add(o.scale(-0.12)).normalize(), n:dn.clone() }:null;
   _armPose(root,all.map(k=>k.tn),f,
     /* v290 (Giacomo: «piu' naturale con le braccia lungo i fianchi o
        leggermente piegate, non cosi' avanti»): braccio quasi verticale,
        avambraccio appena piegato in avanti, la mano accanto alla coscia.
        v291: arms = { up, fore } per un'altra posa (il giornale aperto) */
-    arms?((o,sd)=>arms.up(o,f,dn,sd)):(o=>dn.scale(0.97).add(f.scale(0.2))),
-    arms?((o,sd)=>arms.fore(o,f,dn,sd)):(o=>dn.scale(0.72).add(f.scale(0.62)))).forEach((q,tn)=>out.set(tn,q));
+    arms?((o,sd,ctx)=>arms.up(o,f,dn,sd,ctx,restUp)):restUp,
+    arms?((o,sd,ctx)=>arms.fore(o,f,dn,sd,ctx,restFore)):restFore,
+    arms?((o,sd,ctx)=>(arms.hand?arms.hand(o,f,dn,sd,ctx,restHand):null)):restHand).forEach((q,tn)=>out.set(tn,q));
   const res=all.map(k=>({ tn:k.tn, p:(outP.get(k.tn)||k.p).clone(), s:k.s.clone(), q:(out.get(k.tn)||k.q).clone() }));
   /* le ossa tornano com'erano (le pin le rimettono al fotogramma dopo) */
   saved.forEach(k=>{ if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); k.tn.position.copyFrom(k.p); });
@@ -3684,26 +3742,121 @@ function playerStand(){
      scendono col braccio;
    · a ogni sorso il livello scende, a ogni morso il cibo si rimpicciolisce.
    ===================================================================== */
+/* v297 (Giacomo, 1 ott: «il bicchiere e il cibo non vengono presi al bordo
+   inferiore»). Prima il braccio portava la MANO APERTA davanti alla bocca,
+   dita in su sulla faccia, e la tazza le stava accanto (dalla parte del
+   dorso). Ora il braccio destro si calcola al contrario (cinematica
+   inversa a due ossa): si parte da dove deve stare l'ORLO della tazza —
+   alla bocca, gia' inclinata — si scende al punto di presa (la parte BASSA
+   della tazza) e da li' al polso; il gomito va in fuori e in giu'. La mano
+   si gira con le dita in avanti e il palmo verso la tazza, e le dita si
+   chiudono attorno (eatFingers). Misure della tazza tipo (H 0.10, raggio
+   0.042, presa a 0.035 dal fondo): per gli altri oggetti la posizione la
+   detta la mano vera, fotogramma per fotogramma (eatGripLocal). */
+const EAT_CUP={ H:0.10, r:0.042, hg:0.035, tilt:0.6 };
+function _eatSipTarget(o,f,ctx){
+  const V=BABYLON.Vector3, up=new V(0,1,0);
+  const Hd=ctx.root.getDescendants(false).find(d=>/(^|_)Head$/.test(d.name));
+  const head=Hd?Hd.getAbsolutePosition():ctx.pU.add(up.scale(0.14));
+  const mouth=head.add(f.scale(0.085)).add(up.scale(0.005));
+  const a=EAT_CUP.tilt, u=up.scale(Math.cos(a)).subtract(f.scale(Math.sin(a))), fp=f.scale(Math.cos(a)).add(up.scale(Math.sin(a)));
+  const grip=mouth.subtract(u.scale(EAT_CUP.H-EAT_CUP.hg)).add(fp.scale(EAT_CUP.r));
+  const hd=_eatHandDir(o,f), palm=grip.add(o.scale(EAT_CUP.r+0.012));
+  const wrist=palm.subtract(hd.d.scale(0.055));
+  /* due ossa: gomito fuori e giu' */
+  const d=wrist.subtract(ctx.pU), L=Math.min(d.length(),ctx.l1+ctx.l2-0.002), dir=d.normalizeToNew();
+  const A=(ctx.l1*ctx.l1-ctx.l2*ctx.l2+L*L)/(2*L), h=Math.sqrt(Math.max(0,ctx.l1*ctx.l1-A*A));
+  let pole=o.scale(0.75).add(up.scale(-0.65)); pole=pole.subtract(dir.scale(V.Dot(pole,dir))); pole.normalize();
+  const elbow=ctx.pU.add(dir.scale(A)).add(pole.scale(h));
+  ctx.eatElbow=elbow; ctx.eatWrist=ctx.pU.add(dir.scale(L));
+  return ctx; }
+function _eatHandDir(o,f){ const V=BABYLON.Vector3, up=new V(0,1,0);
+  /* dita in avanti (un po' verso il centro), palmo verso la tazza (verso il centro) */
+  const d=f.scale(0.88).subtract(o.scale(0.30)).add(up.scale(0.12)).normalize();
+  let n=o.scale(-1); n=n.subtract(d.scale(V.Dot(n,d))).normalize();
+  return { d, n }; }
 const EAT_ARMS={
-  up:(o,f,dn,sd)=>(sd==="R") ? f.scale(0.75).add(dn.scale(0.55)).add(o.scale(0.30)) : dn.scale(0.97).add(f.scale(0.2)),
-  fore:(o,f,dn,sd)=>(sd==="R") ? dn.scale(-0.78).add(f.scale(-0.05)).add(o.scale(-0.62)) : dn.scale(0.72).add(f.scale(0.62)) };
+  up:(o,f,dn,sd,ctx,rest)=>{ if(sd==="R" && ctx){ _eatSipTarget(o,f,ctx); return ctx.eatElbow.subtract(ctx.pU); }
+    return (sd==="R") ? f.scale(0.75).add(dn.scale(0.55)).add(o.scale(0.30)) : (rest?rest(o,sd,ctx):dn.scale(0.97).add(f.scale(0.2))); },
+  fore:(o,f,dn,sd,ctx,rest)=>{ if(sd==="R" && ctx && ctx.eatElbow) return ctx.eatWrist.subtract(ctx.eatElbow);
+    return (sd==="R") ? dn.scale(-0.78).add(f.scale(-0.05)).add(o.scale(-0.62)) : (rest?rest(o,sd,ctx):dn.scale(0.72).add(f.scale(0.62))); },
+  hand:(o,f,dn,sd,ctx,rest)=>(sd==="R") ? _eatHandDir(o,f) : (rest?rest(o,sd,ctx):null) };
 const EAT={ rest:null, sip:null, mix:null, hand:null, obs:null, busy:false };
 /* da chiamare PRIMA di playerSit (stesso f, stessa seduta): prepara la posa «alla bocca» */
 function eatPrepare(f,seatY,groundY){
-  EAT.sip=null; EAT.rest=null; EAT.mix=null; EAT.hand=null;
+  EAT.sip=null; EAT.rest=null; EAT.mix=null; EAT.hand=null; EAT.fing=null;
   if(typeof avatarRoot==="undefined" || !avatarRoot || !_legPins) return;
   try{ const r=sitPoseFor(avatarRoot,_legPins,f,seatY,groundY,EAT_ARMS); if(r) EAT.sip=r.pins; }catch(e){}
   const ds=avatarRoot.getDescendants(false);
-  EAT.hand=ds.find(d=>/(^|_)Hand\.R$/.test(d.name))||ds.find(d=>/(^|_)(Wrist|Palm)\.R$/.test(d.name))||null; }
+  /* il polso da cui discendono le dita (ogni pezzo ha il suo scheletro:
+     serve la copia che porta davvero la mano, per _handBasis) */
+  EAT.hand=ds.find(d=>/(^|_)(Wrist|Hand|Palm)\.R$/.test(d.name) && d.getDescendants(false).some(x=>/(^|_)Middle2\.R$/.test(x.name)))
+         ||ds.find(d=>/(^|_)Hand\.R$/.test(d.name))||ds.find(d=>/(^|_)(Wrist|Palm)\.R$/.test(d.name))||null; }
 /* dopo playerSit: la posa a riposo e' SIT.pins */
 function eatAfterSit(){ EAT.rest=SIT.pins;
   if(EAT.sip && EAT.rest && EAT.sip.length===EAT.rest.length) EAT.mix=EAT.rest.map(k=>({ tn:k.tn, p:k.p.clone(), s:k.s.clone(), q:k.q.clone() }));
   else EAT.mix=null; }
 function eatArm(t){ if(!EAT.mix||!SIT.on) return;
-  if(t<=0.001){ SIT.pins=EAT.rest; return; }
+  if(t<=0.001){ SIT.pins=EAT.rest; eatFingers(0); return; }
   const R=EAT.rest, S=EAT.sip, M=EAT.mix;
   for(let i=0;i<M.length;i++){ BABYLON.Quaternion.SlerpToRef(R[i].q,S[i].q,t,M[i].q); BABYLON.Vector3.LerpToRef(R[i].p,S[i].p,t,M[i].p); }
-  SIT.pins=M; _applyPins(M); }
+  SIT.pins=M; _applyPins(M); eatFingers(t); }
+/* v297 — LE DITA SI CHIUDONO attorno a tazza e cibo. Ogni falange (2 e 3
+   di indice, medio, anulare, mignolo; il pollice un po' meno) ruota verso
+   il palmo di un angolo proporzionale al gesto. Si riparte sempre dalla
+   rotazione di riposo salvata, cosi' niente si accumula fotogramma dopo
+   fotogramma; a gesto finito tornano com'erano. Ogni pezzo del corpo ha
+   il suo scheletro: si piegano tutte le copie. */
+const EAT_CURL={ "2":0.95, "3":0.85 }, EAT_CURL_THUMB={ "2":0.35, "3":0.30 };
+function eatFingers(t){
+  if(typeof avatarRoot==="undefined" || !avatarRoot) return;
+  if(!EAT.fing || EAT.fingOf!==avatarRoot){
+    EAT.fingOf=avatarRoot; EAT.fing=[];
+    avatarRoot.getDescendants(false).forEach(d=>{ const m=/(^|_)(Index|Middle|Ring|Pinky|Thumb)([23])\.R$/.exec(d.name);
+      if(m && d.computeWorldMatrix){ if(!d.rotationQuaternion) d.rotationQuaternion=BABYLON.Quaternion.FromEulerVector(d.rotation);
+        const kid=d.getChildren().find(c=>c.getAbsolutePosition);
+        if(kid) EAT.fing.push({ tn:d, kid, base:d.rotationQuaternion.clone(), ang:(m[2]==="Thumb"?EAT_CURL_THUMB:EAT_CURL)[m[3]] }); } });
+    /* dalla radice in giu': prima le falangi 2, poi le 3 */
+    EAT.fing.sort((a,b)=>a.tn.name.slice(-3).localeCompare(b.tn.name.slice(-3)));
+  }
+  if(!EAT.fing.length) return;
+  EAT.fing.forEach(F=>F.tn.rotationQuaternion.copyFrom(F.base));
+  if(t<=0.001){ EAT.fingT=0; return; }
+  const hb=_handBasis(EAT.hand); if(!hb) return;
+  const V=BABYLON.Vector3;
+  const refresh=n=>{ const ch=[]; for(let q=n;q;q=q.parent) ch.unshift(q); ch.forEach(x=>x.computeWorldMatrix&&x.computeWorldMatrix(true)); };
+  EAT.fing.forEach(F=>{
+    refresh(F.kid);
+    const p=F.tn.getAbsolutePosition().clone(), sg=F.kid.getAbsolutePosition().subtract(p);
+    if(sg.length()<1e-4) return; sg.normalize();
+    const np=hb.n.subtract(sg.scale(V.Dot(hb.n,sg))); if(np.length()<1e-3) return; np.normalize();
+    const a=F.ang*t, to=sg.scale(Math.cos(a)).add(np.scale(Math.sin(a)));
+    _sitWorldRot(F.tn,p,sg,to);
+  });
+  EAT.fingT=t;
+}
+/* dove deve stare l'oggetto (nel sistema del suo genitore) perche' la sua
+   parte BASSA sia nel palmo: punto di presa dell'oggetto = centro del
+   palmo + (raggio) verso cui guarda il palmo */
+function _eatBounds(g){
+  if(g.__gb) return g.__gb;
+  const V=BABYLON.Vector3; g.computeWorldMatrix(true);
+  const inv=g.getWorldMatrix().clone().invert(); let mn=new V(1e9,1e9,1e9), mx=new V(-1e9,-1e9,-1e9);
+  g.getChildMeshes(false).forEach(m=>{ if(!m.isEnabled()) return; m.computeWorldMatrix(true); m.refreshBoundingInfo();
+    m.getBoundingInfo().boundingBox.vectorsWorld.forEach(v=>{ const l=V.TransformCoordinates(v,inv); mn=V.Minimize(mn,l); mx=V.Maximize(mx,l); }); });
+  if(mn.x>mx.x){ mn=new V(-0.04,0,-0.04); mx=new V(0.04,0.1,0.04); }
+  const r=Math.min(0.06,Math.max(0.02,Math.max(mx.x-mn.x,mx.z-mn.z)/2*0.92));
+  return (g.__gb={ mn, mx, r }); }
+function eatGripLocal(g,what){
+  const V=BABYLON.Vector3, B=_eatBounds(g), hb=_handBasis(EAT.hand);
+  if(!hb || !g.parent) return g.__home.clone();
+  const h=B.mx.y-B.mn.y, frac=(what==="sip")?0.32:0.45;
+  const gl=new V((B.mn.x+B.mx.x)/2, B.mn.y+h*frac, (B.mn.z+B.mx.z)/2);
+  const want=hb.c.add(hb.n.scale(B.r+0.010));
+  g.computeWorldMatrix(true);
+  const now=V.TransformCoordinates(gl,g.getWorldMatrix()), originW=g.getAbsolutePosition().add(want.subtract(now));
+  g.parent.computeWorldMatrix(true);
+  return V.TransformCoordinates(originW,g.parent.getWorldMatrix().clone().invert()); }
 /* la mano destra nel mondo, adesso (catena ricalcolata dalla radice) */
 function eatHandPos(){ const h=EAT.hand; if(!h) return null;
   const chain=[]; for(let q=h;q;q=q.parent) chain.unshift(q);
@@ -3735,6 +3888,7 @@ function eatTilt(g,f,a){
   g.rotationQuaternion=Q.FromRotationMatrix(L);
 }
 function eatStop(){ if(EAT.obs){ scene.onBeforeRenderObservable.remove(EAT.obs); EAT.obs=null; }
+  try{ eatFingers(0); }catch(e){}
   const Q=EAT.q; if(Q && Q.cur){ const g=Q.cur.g; if(g&&g.__home){ g.position.copyFrom(g.__home);
       if(g.__homeRot){ g.rotationQuaternion=null; g.rotation.copyFrom(g.__homeRot); } else { g.rotation.z=0; g.rotation.x=0; } } Q.cur=null; }
   EAT.busy=false; try{ eatArm(0); }catch(e){} }
@@ -3745,13 +3899,10 @@ function eatRun(steps,fwd,onDone){
   eatStop(); if(!steps.length){ if(onDone) onDone(); return; }
   EAT.busy=true; EAT.q={ steps, k:0, cur:null };
   steps.forEach(s=>{ if(s.g && !s.g.__home) s.g.__home=s.g.position.clone();
-    if(s.g && !s.g.__homeRot && !s.g.rotationQuaternion) s.g.__homeRot=s.g.rotation.clone(); });
+    if(s.g && !s.g.__homeRot && !s.g.rotationQuaternion) s.g.__homeRot=s.g.rotation.clone();
+    if(s.g) try{ _eatBounds(s.g); }catch(e){} });
   const V=BABYLON.Vector3, f=new V(fwd.x,0,fwd.z).normalize();
   let t0=performance.now(), phase="wait";
-  const handLocal=(g,what)=>{ const hp=eatHandPos(); if(!hp||!g.parent) return g.__home.clone();
-    const w=hp.add(f.scale(what==="sip"?0.05:0.07)).add(new V(0,what==="sip"?0.0:0.02,0));
-    g.parent.computeWorldMatrix(true);
-    return V.TransformCoordinates(w,BABYLON.Matrix.Invert(g.parent.getWorldMatrix())); };
   EAT.obs=scene.onBeforeRenderObservable.add(()=>{
     const Q=EAT.q, now=performance.now();
     if(phase==="wait"){ if(now-t0<(Q.k?450:800)) return;
@@ -3759,12 +3910,12 @@ function eatRun(steps,fwd,onDone){
       Q.cur=Q.steps[Q.k]; phase="up"; t0=now; return; }
     const c=Q.cur, g=c.g, tilt=(c.what==="sip")?0.6:0;
     if(phase==="up"){ let u=(now-t0)/650; if(u>1) u=1; const e=u*u*(3-2*u);
-      eatArm(e); V.LerpToRef(g.__home,handLocal(g,c.what),e,g.position); if(tilt) eatTilt(g,f,tilt*e*e);
+      eatArm(e); if(tilt) eatTilt(g,f,tilt*e*e); V.LerpToRef(g.__home,eatGripLocal(g,c.what),e,g.position);
       if(u>=1){ phase="hold"; t0=now; Q.k++; try{ c.apply&&c.apply(); }catch(e2){} } return; }
-    if(phase==="hold"){ eatArm(1); g.position.copyFrom(handLocal(g,c.what)); if(tilt) eatTilt(g,f,tilt);
+    if(phase==="hold"){ eatArm(1); if(tilt) eatTilt(g,f,tilt); g.position.copyFrom(eatGripLocal(g,c.what));
       if(now-t0>650){ phase="down"; t0=now; } return; }
     if(phase==="down"){ let u=(now-t0)/600; if(u>1) u=1; const e=u*u*(3-2*u);
-      eatArm(1-e); V.LerpToRef(handLocal(g,c.what),g.__home,e,g.position); if(tilt) eatTilt(g,f,tilt*(1-e));
+      eatArm(1-e); if(tilt) eatTilt(g,f,tilt*(1-e)); V.LerpToRef(eatGripLocal(g,c.what),g.__home,e,g.position);
       if(u>=1){ g.position.copyFrom(g.__home); if(tilt) eatTilt(g,f,0); eatArm(0); Q.cur=null; phase="wait"; t0=now; } return; }
   }); }
 function playAvatarAnim(name){
@@ -23672,7 +23823,8 @@ function _cafeBuildOrder(o,parent){
     const st=cyl({diameter:0.007,height:0.18*S,tessellation:6},0.012,H*0.75,0,"cream",D); st.rotation.z=0.22;   // cannuccia: resta
   } else {
     const mug=/chocolate/i.test(dk), H=(mug?0.10:0.07)*S, dT=(mug?0.085:0.09)*S, dB=(mug?0.08:0.065)*S;
-    if(!mug) cyl({diameter:0.15*S,height:0.01,tessellation:24},0,0.005,0,"plate",D);                 // piattino
+    /* il piattino resta sul vassoio: alla bocca va la tazza (v297) */
+    if(!mug) cyl({diameter:0.15*S,height:0.01,tessellation:24},D.position.x,D.position.y+0.005,D.position.z,"plate",parent);
     const base=mug?0:0.01;
     cyl({diameterTop:dT,diameterBottom:dB,height:H},0,base+H/2,0,"cup",D);
     const hd=BABYLON.MeshBuilder.CreateTorus("cpo",{diameter:0.045*S,thickness:0.011*S,tessellation:12},scene);
@@ -23792,7 +23944,8 @@ function _cafeRun(){
   const P=CAFE_PICK, n=P.node, R=P.parts, Q=P.seq; if(!n||!R||!Q) return;
   P.st="eating";
   /* v297: i gesti che mancano, col braccio vero (eatRun) */
-  const steps=Q.steps.slice(Q.k).map(what=>({ g:(what==="sip")?R.drink:R.food, what,
+  /* alla bocca va il BOCCONE (R.bite), il piatto resta sul vassoio (v297) */
+  const steps=Q.steps.slice(Q.k).map(what=>({ g:(what==="sip")?R.drink:(R.bite||R.food), what,
     apply:()=>{ Q.k++; const c=Q.cnt; c[what]++;
       if(what==="sip" && R.level){ const f=Math.max(0.04,1-c.sip/Q.nS), L=R.level;
         L.scaling.y=f; L.position.y=L.__y0+L.__h*f/2; R.bits.forEach(b=>{ if(b.material!==_cafePickMats().cream||c.sip>1) b.setEnabled(false); }); }
