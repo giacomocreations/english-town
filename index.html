@@ -6219,7 +6219,9 @@ function buildTrain(){
 const TRAFFIC_YAW=-Math.PI/2+CAR_FRONT, TRAFFIC_SPEED=1.0;
 const _trafficCars=[];
 let _carsOpenState=null;
+const ROUNDABOUTS=[];
 function buildRoundabout(cx,cz,rApr,rIsl,withTree){
+  ROUNDABOUTS.push({ cx, cz, rApr, rIsl });
   const mk=(r,y,col)=>{ const d=BABYLON.MeshBuilder.CreateDisc("rb"+(_sgN++),{radius:r,tessellation:40},scene);
     d.rotation.x=Math.PI/2; d.material=mat("rbm"+(_sgN++),col); d.position.set(cx,y,cz);
     d.parent=townRoot; d.__ground=true; d.isPickable=false; };
@@ -6233,7 +6235,42 @@ function buildRoundabout(cx,cz,rApr,rIsl,withTree){
     d.rotation.x=Math.PI/2; d.material=grassMat("rbm"+(_sgN++),2*r,2*r); d.position.set(cx,0.15,cz);   // (era #5b9d4f a tinta unita)
     d.parent=townRoot; d.__ground=true; d.isPickable=false; }
   if(withTree) spawnProp('tree_broad',cx,cz,4.5,{byHeight:true,occluder:true});
-  addSolid(cx-rIsl,cx+rIsl,cz-rIsl,cz+rIsl,"town");   // niente passeggiate nell'aiuola
+  /* v297 (Giacomo, 1 ott: «rendi le rotonde attraversabili»): l'aiuola non
+     e' piu' un muro. Prima addSolid copriva tutto il quadrato dell'isola e
+     per passare da una parte all'altra della strada si doveva fare il giro.
+     Ora ci si cammina sopra (cordolo ed erba sono gia' __ground, quindi i
+     piedi salgono di 15 cm); resta solido solo il tronco dell'albero. */
+  if(withTree) addSolid(cx-0.45,cx+0.45,cz-0.45,cz+0.45,"town");
+}
+/* v297 — IL PEDONE E' IN CARREGGIATA? (Giacomo, 1 ott: «anche se sono sul
+   marciapiede vicino al Sindaco non passano le macchine, anche se c'e'
+   margine»). La frenata scattava per chiunque fosse a meno di 3,4 m in
+   QUALSIASI direzione: con la corsia a 2,75 m dal centro strada e il
+   marciapiede che comincia a 5,5, chi stava sul bordo del marciapiede era
+   gia' dentro il raggio e le auto si piantavano. Ora si frena solo se il
+   giocatore e' davvero sulla carreggiata: la superficie piu' alta sotto i
+   piedi e' asfalto di strada, linee o strisce (stesso criterio dei pedoni
+   e del Ranger), oppure e' dentro il cerchio di una rotonda — isola
+   compresa, ora che ci si cammina sopra: le auto in curva passano a un
+   metro dal cordolo. Il raycast si rifa' ogni 120 ms, non a ogni auto. */
+const _PED_ROAD={ t:0, x:1e9, z:1e9, on:false };
+function pedOnCarriageway(){
+  const px=player.position.x, pz=player.position.z, now=performance.now();
+  if(now-_PED_ROAD.t<120 && Math.abs(px-_PED_ROAD.x)<0.25 && Math.abs(pz-_PED_ROAD.z)<0.25) return _PED_ROAD.on;
+  _PED_ROAD.t=now; _PED_ROAD.x=px; _PED_ROAD.z=pz;
+  let on=false;
+  for(let i=0;i<ROUNDABOUTS.length && !on;i++){ const R=ROUNDABOUTS[i];
+    if(Math.hypot(px-R.cx,pz-R.cz)<R.rApr+0.3) on=true; }
+  if(!on){
+    try{
+      const ROAD=/^(roadm|lnm|cwm)/;
+      const h=scene.multiPickWithRay(new BABYLON.Ray(new BABYLON.Vector3(px,3,pz),new BABYLON.Vector3(0,-1,0),6),
+        m=>m.isEnabled() && !!m.material && (m.__ground===true || ROAD.test(m.material.name)));
+      let top=null; if(h) for(const q of h){ const y=q.pickedPoint.y; if(y<=1.2 && (!top||y>top.y)) top={ y, n:q.pickedMesh.material.name }; }
+      on=!!(top && ROAD.test(top.n));
+    }catch(e){ on=true; }               // nel dubbio si frena, come prima
+  }
+  return (_PED_ROAD.on=on);
 }
 function _arcPts(cx,cz,R,a0,a1,steps){ const p=[];
   for(let i=0;i<=steps;i++){ const a=(a0+(a1-a0)*i/steps)*Math.PI/180;
@@ -6347,8 +6384,10 @@ function buildTraffic(){
          dove ahead/lat non lo vedono): fermarsi per prudenza e' un conto,
          suonare e' un altro. Chi sta sul marciapiede accanto a una coda ha
          lat>2,1 e non si prende nessun clacson. */
-      const inCorsia=(ahead>-0.5 && ahead<6 && lat<2.1);
-      let vw=(Math.hypot(rx,rz)<3.4 || inCorsia)?0:c.v;
+      const near=(Math.abs(rx)<7 && Math.abs(rz)<7);
+      const onRoad=near && pedOnCarriageway();          // sul marciapiede non si frena (v297)
+      const inCorsia=onRoad && (ahead>-0.5 && ahead<6 && lat<2.1);
+      let vw=(onRoad && (Math.hypot(rx,rz)<3.4 || inCorsia))?0:c.v;
       // CODA: distanza (lungo il percorso) dall'auto piu' vicina DAVANTI
       // sullo stesso loop; auto lunghe ~4.4 m, quindi gap centri 7 m ~=
       // 2.6 m tra paraurti. <14 rallenta, <8.5 target 0, <7 stop netto.
