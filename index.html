@@ -1100,12 +1100,17 @@ const TOWN=[
    gia' collaudati: sono i RANGER_POSTS o gli approdi delle quest).
    ===================================================================== */
 const TOWN_OPEN=[
-  { qid:"u1",   x:2,   z:-84,  ax:14,  az:-70   },  // City Airport (fronte terminal)
-  { qid:"u5",   x:74,  z:-30,  ax:70,  az:-24   },  // Clock Tower (vialetto del parco)
-  { qid:"u7",   x:112, z:34,   ax:104, az:20    },  // Sports Field (vialetto sud)
-  { qid:"u2_3", x:105, z:-3.5, ax:105, az:2     },  // Weather Station (imbocco da sud)
-  { qid:"u3_3", x:97,  z:-47,  ax:97,  az:-43.6 },  // Hikers' Camp (riva ovest del lago)
-  { qid:"u2_5", x:-86, z:0,    ax:-78, az:7     },  // Central Station
+  { qid:"u1",   x:2,   z:-84,  ax:14,  az:-70,  inter:"airport"      },  // City Airport (fronte terminal)
+  { qid:"u5",   x:74,  z:-30,  ax:70,  az:-24,  inter:"clocktower"   },  // Clock Tower (vialetto del parco)
+  /* u7: il taxi ti lascia DAVANTI al tabellone della squadra (113,19, faccia a
+     nord), a ~2 m dal punto del «press E to start» (113,20.4, raggio 4.2),
+     girato verso il tabellone. Prima sbucava sul vialetto a (104,20): 9 m
+     di distanza, il messaggio non compariva e non si capiva dove andare
+     (Giacomo, 1 ott). */
+  { qid:"u7",   x:112, z:34,   ax:113.5, az:22.5, face:Math.PI, inter:"pitch" },  // Sports Field (tabellone)
+  { qid:"u2_3", x:105, z:-3.5, ax:105, az:2,     inter:"weatherstn"   },  // Weather Station (imbocco da sud)
+  { qid:"u3_3", x:97,  z:-47,  ax:97,  az:-43.6, inter:"survivalcamp" },  // Hikers' Camp (riva ovest del lago)
+  { qid:"u2_5", x:-86, z:0,    ax:-78, az:7,     inter:"station"      },  // Central Station
 ];
 
 /* Stazione (gateway ovest) e Parco (zona verde est) sono costruiti a parte. */
@@ -13243,6 +13248,57 @@ function updatePlayerFacing(stopped){
    comporre in ordine, tap su una tessera già composta la rimette nel banco
    (non solo "cancella ultima" — più comodo su schermi piccoli).
    ===================================================================== */
+/* =====================================================================
+   PIU' RISPOSTE GIUSTE NELLE TESSERE (Giacomo, 1 ott 2026: nella quest
+   dello sport «What do you think ABOUT basketball?» veniva segnata
+   sbagliata, perche' "about" era fra i distrattori e il controllo era un
+   confronto esatto con UNA frase sola). Quasi tutte le attivita' a tessere
+   confrontano la riga con tokens.join(" "): invece di riscriverle una per
+   una, il motore riconosce qui le varianti che sono inglese giusto quanto
+   la frase prevista, e in quel caso passa a onCheck la frase prevista.
+   Cosi' lo stato della unit avanza come sempre, e chi ha scritto una
+   forma diversa ma corretta vede il verde, con la forma del libro accanto.
+   Due livelli:
+     · tilesCanon(): equivalenze GENERALI e sicure — forme contratte e
+       piene (it is = it's, will not = won't, cannot = can't...), think
+       of/about, what/which + nome, how/what about, lots of/a lot of, la
+       particella dei phrasal verbs prima o dopo il complemento (turn off
+       the tap = turn the tap off), maiuscole e punteggiatura;
+     · cfg.alts: frasi alternative scritte a mano dalla singola attivita',
+       per i casi che non si possono generalizzare (if/when...).
+   ⚠️ Le equivalenze devono essere SEMPRE inglese corretto in entrambi i
+   sensi: un'equivalenza sbagliata insegnerebbe un errore come giusto.
+   ===================================================================== */
+const _TC_RULES=[
+  [/ (is|are|was|were|do|does|did|has|have|had|should|could|would|must) not /g," $1n't "],
+  [/ (can not|cannot) /g," can't "], [/ will not /g," won't "], [/ shall not /g," shan't "],
+  [/ (it|he|she|that|what|where|who|how|there|here) is /g," $1's "],
+  [/ i am /g," i'm "], [/ (you|we|they) are /g," $1're "],
+  [/ (i|you|we|they) (have) got /g," $1've got "], [/ (he|she|it) has got /g," $1's got "],
+  [/ (i|you|we|they|he|she|it) will /g," $1'll "], [/ (i|you|we|they|he|she) would /g," $1'd "],
+  [/ let us /g," let's "],
+  [/ (it|he|she|that)'s not /g," $1 isn't "], [/ (you|we|they)'re not /g," $1 aren't "],
+  [/ (think|thinks|thought) about /g," $1 of "],
+  [/ how about /g," what about "],
+  [/ which /g," what "],
+  [/ lots of /g," a lot of "],
+  [/ on the weekend /g," at the weekend "],
+  [/ (take|takes|put|puts|turn|turns|switch|switches|throw|throws|pick|picks|clean|cleans|tidy|tidies|wash|washes|try|tries|write|writes) (out|off|on|up|away|down) (the|my|your|his|her|our|their|this|that|it) (\w+) /g," $1 $3 $4 $2 "],
+];
+function tilesCanon(str){
+  let t=" "+String(str||"").toLowerCase().replace(/[‘’`]/g,"'")
+    .replace(/[.,!?;:«»"“”…]/g," ").replace(/\s+/g," ").trim()+" ";
+  /* due passate: una regola puo' preparare il terreno a un'altra
+     (it is not -> it isn't, "it's not" -> it isn't) */
+  for(let k=0;k<2;k++) _TC_RULES.forEach(r=>{ t=t.replace(r[0],r[1]); });
+  return t.replace(/\s+/g," ").trim();
+}
+function tilesEquivalent(words,answer,alts){
+  const a=tilesCanon(words.join(" "));
+  if(!a) return false;
+  if(answer && answer.length && a===tilesCanon(answer.join(" "))) return true;
+  return (alts||[]).some(x=>tilesCanon(Array.isArray(x)?x.join(" "):x)===a);
+}
 const WordTiles=(function(){
   function shuf(a){ a=a.slice(); for(let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0;
     const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
@@ -13364,8 +13420,13 @@ const WordTiles=(function(){
     checkBtn.textContent=uiEn(cfg.checkLabel||"\u2714 Controlla");
     checkBtn.onclick=()=>{
       const words=built.map(pi=>pool[pi]);
-      const res=cfg.onCheck?cfg.onCheck(words,words.join(" ")):{ok:words.join(" ")===answer.join(" ")};
+      /* un'altra forma giusta della stessa frase (vedi tilesCanon): a
+         onCheck arriva la frase prevista, al ragazzo il verde */
+      const altOk=(words.join(" ")!==answer.join(" ")) && tilesEquivalent(words,answer,cfg.alts);
+      const cw=altOk?answer.slice():words;
+      const res=cfg.onCheck?cfg.onCheck(cw,cw.join(" ")):{ok:altOk||words.join(" ")===answer.join(" ")};
       let msg=res.msg||(res.ok?"\u2713 Giusto!":"Riprova!");
+      if(res.ok && altOk) msg+="  "+(yrEnglish()?"Also correct: ":"Va bene anche: ")+"\u00ab"+answer.join(" ")+"\u00bb";
       gapAt=-1;
       if(!res.ok){
         const g=findGap(words,answer);
@@ -24862,9 +24923,15 @@ function u7BuildSecond(a,o){
     text:"Tell me your opinion!",
     italian:"Componi con la seconda formula: In my opinion, \u2026 is \u2026",
     html:u7OpinionHTML(Quest.state.op.card),
+    /* ⚠️ «In my opinion, it's fun.» e «I think basketball is fun.» sono
+       inglese giusto quanto la frase prevista: si accettano (la prima con
+       alts, la seconda qui sotto, con l'invito a provare l'altra formula). */
     tiles:{ tokens:tokens.slice(), distractors:["I think","are","it's"], checkLabel:"\u2714 Rispondi",
+      alts:["In my opinion, it's "+o+"."],
       onCheck:(w,joined)=>{ const op=Quest.state.op;
         if(joined===tokens.join(" ")){ op.tries=0; return {ok:true,msg:"\u2713 Right!"}; }
+        if(tilesCanon(joined)===tilesCanon("I think basketball is "+o)){ op.tries=0;
+          return {ok:true,msg:"\u2713 Right! (The book's second formula: In my opinion, basketball is "+o+".)"}; }
         op.tries++; let msg="Riprova!"; if(op.tries>=2) msg+="  \u{1F4A1} In my opinion, + soggetto + IS + aggettivo.";
         return {ok:false,msg}; },
       onSuccess:()=>{ const op=Quest.state.op; op.card.basket="In my opinion, it's "+o; op.idx=3; op.tries=0; u7OpinionDone(a); } },
@@ -36211,7 +36278,11 @@ function mapPlaces(){
       let open=true;
       if(q){ try{ open=Gate.unlocked(q); }catch(e){ open=true; } }
       out.push({ ic:b.ic||"🏢", name:b.t||"", yr:b.yr||1, x:b.x, z:b.z,
-                 ax:b.x, az: b.flip ? b.z-9 : (b.z>=0 ? b.z-9 : b.z+9), open:open });
+                 ax:b.x, az: b.flip ? b.z-9 : (b.z>=0 ? b.z-9 : b.z+9), open:open,
+                 /* l'interazione della porta: per quasi tutti unit_<qid>; il
+                    cinema e casa tua hanno la loro, la Plaza la sua openq_ */
+                 inter:(b.qid==="u2_4"?"cinema":b.qid?"unit_"+b.qid
+                        :b.openQuest?"openq_"+b.openQuest:(b.t==="Home"?"home":null)) });
     });
   }catch(e){}
   /* LE UNIT OPEN-WORLD (TOWN_OPEN): stesso trattamento degli edifici —
@@ -36222,7 +36293,7 @@ function mapPlaces(){
       const s=Gate.info(p.qid); if(!s) return;
       let open=true; try{ open=Gate.unlocked(p.qid); }catch(e){ open=true; }
       out.push({ ic:s.ic, name:s.t, yr:s.yr, x:p.x, z:p.z,
-                 ax:(p.ax==null?p.x:p.ax), az:(p.az==null?p.z:p.az), open:open });
+                 ax:(p.ax==null?p.x:p.ax), az:(p.az==null?p.z:p.az), face:p.face, inter:p.inter, open:open });
     });
   }catch(e){}
   /* il parco non e' una unit: e' il posto DOVE stanno tre unit. Resta uno
@@ -36344,7 +36415,7 @@ function buildMapPins(){
     btn.title=p.name+(p.open?"":" · chiuso per ora");
     btn.innerHTML='<span class="bx">'+(p.open?p.ic:"🔒")+'</span>'
       +'<span class="nm"'+nmSt+'>'+_escHtml(p.name)+'</span>';
-    btn.onclick=function(){ taxiTo({ name:p.name, x:p.ax, z:p.az }); };
+    btn.onclick=function(){ taxiTo({ name:p.name, x:p.ax, z:p.az, face:p.face, inter:p.inter }); };
     cv.appendChild(btn);
   });
   // dove sei tu, adesso
@@ -36556,11 +36627,37 @@ function standUpAll(){
   try{ if(typeof BSIT!=="undefined" && BSIT.b) benchStand(true); }catch(e){}
   try{ if(typeof SUBSIT!=="undefined" && SUBSIT.on) subBenchStand(true); }catch(e){}
   try{ if(typeof SIT!=="undefined" && SIT.on) playerStand(); }catch(e){} }
+/* IL TAXI TI LASCIA DOVE COMPARE IL «PRESS E» (Giacomo, 1 ott: al campo
+   sportivo si sbucava a 9 m dal cartello e il messaggio per cominciare la
+   quest non si vedeva). d.inter e' l'id dell'interazione che avvia la unit
+   (cartello o porta): si cerca un punto libero a ~2 m da lei, dal lato da
+   cui si arrivava (ax,az), e ci si gira verso di lei. Se l'interazione non
+   c'e' (unit non costruita, id cambiato) si resta al vecchio approdo. */
+function _taxiNearInter(d){
+  try{
+    const I=d.inter && interactables.find(o=>o.id===d.inter && o.area==="town");
+    if(!I || !I.pos) return null;
+    const P=I.pos(), R=I.radius||3.4;
+    let ux=d.x-P.x, uz=d.z-P.z; const L=Math.hypot(ux,uz);
+    if(L<0.01){ ux=0; uz=1; } else { ux/=L; uz/=L; }
+    const base=Math.atan2(ux,uz);
+    const dists=[Math.min(2.2,R*0.6), Math.min(1.6,R*0.45), Math.min(2.8,R-0.6)];
+    for(const dd of dists) for(const off of [0,25,-25,50,-50,80,-80,115,-115,150,-150,180]){
+      const a=base+off*Math.PI/180, x=P.x+Math.sin(a)*dd, z=P.z+Math.cos(a)*dd;
+      if(typeof blocked==="function" && blocked(x,z)) continue;
+      return { x, z, face:Math.atan2(P.x-x, P.z-z) };
+    }
+  }catch(e){ console.warn("[taxi] inter",e); }
+  return null;
+}
 function taxiTo(d){ closeMap(); _fade(true);
   standUpAll();
   setTimeout(()=>{
-    const sp=_taxiSpot(d.x,d.z); const tx=sp.x, tz=sp.z;
+    const ni=_taxiNearInter(d);
+    const sp=ni||_taxiSpot(d.x,d.z); const tx=sp.x, tz=sp.z;
     player.position.set(tx,0,tz);
+    if(typeof d.face==="number") player.rotation.y=d.face;
+    else if(ni) player.rotation.y=ni.face;
     moveTarget=null; pendingInteract=null; if(typeof tapMark!=="undefined"&&tapMark) tapMark.setEnabled(false);
     camera.target.copyFrom(player.position); camera.target.y+=2.0;
     updateProximity(); toast("🚕 "+d.name);
@@ -43792,7 +43889,9 @@ function tlProtoSay(){
   DialogueBox.open({ name:"\u{1F6E0}\uFE0F Maker bench", sub:"Write the instructions", autoSpeak:false,
     text:"Every machine needs one line of instructions. Say it!",
     italian:"Componi la frase con le tessere: prima la condizione (if\u2026), poi il risultato (\u2026 will\u2026).",
+    /* «When you press the button, it will…» e' giusto quanto «If…» */
     tiles:{ tokens, distractors:["will","to","when"], checkLabel:"\u2714 Scrivi sul prototipo",
+      alts:[["When"].concat(tokens.slice(1))],
       onCheck:(w)=>{ if(w.join(" ")===tokens.join(" ")) return {ok:true,msg:"\u2713 Instructions written."};
         pr.tries=(pr.tries||0)+1;
         let m="Riprova: dopo if il verbo sta al presente, e il risultato va con will.";
