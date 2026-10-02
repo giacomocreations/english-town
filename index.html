@@ -12629,15 +12629,21 @@ function homeNightTick(){
    · si disegnano SOLO il tuo avatar e le cose del bagno a meno di 6 m
      (lista rifatta ogni mezzo secondo, solo quando sei in casa — il corpo
      si ricostruisce quando lo cambi alla Teca);
-   · la texture e' 512 px e Babylon la ridisegna solo se lo specchio e'
-     inquadrato (fuori casa homeRoot e' spento);
+   · la texture e' 1024 px e Babylon la ridisegna
+     solo se lo specchio e' inquadrato (fuori casa homeRoot e' spento);
    · in prima persona la testa e' nascosta alla telecamera (POV_HEAD_BIT):
      mentre si disegna il riflesso la maschera si apre, cosi' nello specchio
      ti vedi intero, come in uno specchio vero. */
 function homeMirror(c,w,h){
   const pl=BABYLON.MeshBuilder.CreatePlane("homeMirror",{width:w,height:h},scene);
   pl.position.copyFrom(c); pl.rotation.y=Math.PI; pl.parent=homeRoot; pl.isPickable=false;
-  const mt=new BABYLON.MirrorTexture("homeMirrorTex",512,scene,true);
+  /* v302 (Giacomo: «lo specchio ha una definizione bassa»): era 512 px per
+     prudenza. Ora 1024 con antialiasing (4 campioni); sulla
+     qualita' «Low» si toglie solo l'antialiasing. Costa poco: lo specchio
+     disegna solo te e il bagno, e solo quando lo inquadri. */
+  const lowQ=(typeof qLevel!=="undefined" && qLevel==="basso");
+  const mt=new BABYLON.MirrorTexture("homeMirrorTex",1024,scene,true);
+  try{ if(!lowQ) mt.samples=4; }catch(e){}
   mt.mirrorPlane=new BABYLON.Plane(0,0,-1,c.z);
   mt.level=0.95; mt.renderList=[];
   const m=new BABYLON.StandardMaterial("homeMirrorM",scene);
