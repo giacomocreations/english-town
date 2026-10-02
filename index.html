@@ -6623,8 +6623,114 @@ function _addTrafficCar(loop,phase,speed,ci){
   const seg=[],L=[]; let tot=0;
   for(let i=0;i<loop.length;i++){ const a=loop[i], b=loop[(i+1)%loop.length];
     const dl=Math.hypot(b[0]-a[0],b[1]-a[1]); seg.push(dl); L.push(tot); tot+=dl; }
-  _trafficCars.push({root,loop,seg,L,tot,s:phase*tot,v:speed,cv:speed,near:false,halt:0});
+  const tc={root,loop,seg,L,tot,s:phase*tot,v:speed,cv:speed,near:false,halt:0};
+  _trafficCars.push(tc);
+  /* v301: le ruote si staccano dopo (non rallenta l'avvio), una auto alla volta */
+  setTimeout(()=>{ try{ tc.wh=carWheelsRig(tc); }catch(e){ console.warn("[ruote]",e); } },1500+_trafficCars.length*120);
 }
+/* =====================================================================
+   v301 — LE RUOTE GIRANO (Giacomo, 2 ott: «le ruote delle macchine non
+   girano... si puo' fare?»). Nei modelli delle auto le ruote NON sono
+   oggetti a parte: gomme e cerchi sono fusi nella carrozzeria (stesso
+   mesh, a volte stesso materiale). Quindi si STACCANO, una volta sola per
+   auto, al momento in cui entra nel traffico:
+   · si portano tutti i vertici nel sistema dell'auto (y su, asse lungo e
+     asse di lato ricavati dall'ingombro);
+   · si dividono in PEZZI connessi (vertici fusi per posizione: i modelli
+     low-poly hanno ogni faccia coi suoi vertici);
+   · GOMMA = pezzo che tocca terra, tondo (alto quanto lungo), sul fianco,
+     alto 25-95 cm; i pezzi che stanno dentro il suo cerchio (cerchione,
+     mozzo) vanno con lei;
+   · i triangoli di ogni ruota diventano un mesh nuovo appeso a un PERNO al
+     centro della ruota, e si tolgono dall'originale (makeGeometryUnique:
+     la geometria e' condivisa fra auto dello stesso modello).
+   Nel giro del traffico il perno ruota attorno all'asse di lato di
+   (strada fatta / raggio): ferma l'auto, ferme le ruote. Il verso giusto
+   si ricava dai numeri (la cima della ruota deve andare avanti), non si
+   suppone. Se un modello non ha pezzi che sembrano ruote non si tocca. */
+function carWheelsRig(c){
+  const V3=BABYLON.Vector3, VB=BABYLON.VertexBuffer, root=c.root;
+  root.computeWorldMatrix(true);
+  const meshes=root.getChildMeshes(false).filter(m=>m.getTotalVertices&&m.getTotalVertices()>0&&m.getIndices&&!m.isAnInstance);
+  meshes.forEach(m=>m.computeWorldMatrix(true));
+  const rInv=root.getWorldMatrix().clone().invert();
+  /* tutti i vertici nel sistema dell'auto */
+  const D=meshes.map(m=>{ const p=m.getVerticesData(VB.PositionKind), n=m.getVerticesData(VB.NormalKind), M=m.getWorldMatrix().multiply(rInv);
+    const P=new Array(p.length/3); for(let i=0;i<P.length;i++) P[i]=V3.TransformCoordinates(new V3(p[3*i],p[3*i+1],p[3*i+2]),M);
+    return { m, P, N:n, M, idx:Array.from(m.getIndices()) }; });
+  let mn=new V3(1e9,1e9,1e9), mx=new V3(-1e9,-1e9,-1e9);
+  D.forEach(d=>d.P.forEach(p=>{ mn=V3.Minimize(mn,p); mx=V3.Maximize(mx,p); }));
+  const longX=(mx.x-mn.x)>(mx.z-mn.z), H=mx.y-mn.y;
+  const lo=p=>longX?p.x:p.z, la=p=>longX?p.z:p.x;
+  const midLat=(la(mn)+la(mx))/2, halfW=(la(mx)-la(mn))/2;
+  /* pezzi connessi, mesh per mesh */
+  const comps=[];
+  D.forEach((d,di)=>{ const nv=d.P.length, par=new Int32Array(nv); for(let i=0;i<nv;i++) par[i]=i;
+    const f=i=>{ while(par[i]!==i){ par[i]=par[par[i]]; i=par[i]; } return i; }, u=(a,b)=>{ a=f(a); b=f(b); if(a!==b) par[a]=b; };
+    const key=new Map(); d.P.forEach((p,i)=>{ const k=Math.round(p.x*2000)+"|"+Math.round(p.y*2000)+"|"+Math.round(p.z*2000); const o=key.get(k); if(o!=null) u(i,o); else key.set(k,i); });
+    for(let t=0;t<d.idx.length;t+=3){ u(d.idx[t],d.idx[t+1]); u(d.idx[t],d.idx[t+2]); }
+    const g=new Map();
+    for(let t=0;t<d.idx.length;t+=3){ const r=f(d.idx[t]); let c0=g.get(r); if(!c0){ c0={ di, tris:[], mn:new V3(1e9,1e9,1e9), mx:new V3(-1e9,-1e9,-1e9) }; g.set(r,c0); }
+      c0.tris.push(t); for(let k=0;k<3;k++){ const p=d.P[d.idx[t+k]]; c0.mn=V3.Minimize(c0.mn,p); c0.mx=V3.Maximize(c0.mx,p); } }
+    g.forEach(c0=>comps.push(c0)); });
+  /* le gomme */
+  const tyres=comps.filter(q=>{ const ey=q.mx.y-q.mn.y, el=lo(q.mx)-lo(q.mn), ew=la(q.mx)-la(q.mn), lc=(la(q.mn)+la(q.mx))/2;
+    return ey>0.25 && ey<0.95 && ey<H*0.7 && q.mn.y<mn.y+0.12 && Math.abs(el-ey)<0.35*ey && ew<0.6 && Math.abs(lc-midLat)>0.25*halfW; });
+  if(tyres.length<2 || tyres.length>8) return null;
+  /* gomma e cerchione passano tutti e due il filtro: si fondono per posizione
+     (stessa ruota = centri a meno di 25 cm), la ruota e' la gomma piu' grande */
+  const W=[];
+  tyres.slice().sort((a,b)=>(b.mx.y-b.mn.y)-(a.mx.y-a.mn.y)).forEach(q=>{ const c0=q.mn.add(q.mx).scale(0.5);
+    const w=W.find(w=>V3.Distance(w.c,c0)<0.25); if(w) w.parts.push(q); else W.push({ c:c0, r:(q.mx.y-q.mn.y)/2, parts:[q] }); });
+  if(W.length<2 || W.length>6) return null;
+  comps.forEach(q=>{ if(tyres.indexOf(q)>=0) return; const cc=q.mn.add(q.mx).scale(0.5);
+    for(const w of W){ if(Math.hypot(lo(cc)-lo(w.c),cc.y-w.c.y)+Math.max(lo(q.mx)-lo(q.mn),q.mx.y-q.mn.y)/2<=w.r*1.05 && Math.abs(la(cc)-la(w.c))<0.35){ w.parts.push(q); break; } } });
+  /* asse di lato e verso del rotolamento */
+  const lat=longX?new V3(0,0,1):new V3(1,0,0);
+  const fwd=new V3(Math.sin(-TRAFFIC_YAW),0,Math.cos(-TRAFFIC_YAW));
+  const topMoved=V3.TransformCoordinates(new V3(0,1,0),BABYLON.Matrix.RotationAxis(lat,0.1));
+  const sgn=(V3.Dot(topMoved,fwd)>0)?1:-1;
+  /* nuovi mesh per ruota, e via i triangoli dall'originale */
+  const drop=D.map(()=>new Set());
+  const out=[];
+  W.forEach((w,wi)=>{
+    const piv=new BABYLON.TransformNode("wheelPiv"+(_sgN++),scene); piv.parent=root; piv.position.copyFrom(w.c);
+    const byMesh=new Map(); w.parts.forEach(q=>{ if(!byMesh.has(q.di)) byMesh.set(q.di,[]); byMesh.get(q.di).push(q); });
+    byMesh.forEach((qs,di)=>{ const d=D[di], m=d.m;
+      /* per sotto-materiale (MultiMaterial): i triangoli si dividono per submesh */
+      const subOf=t=>{ for(const sm of m.subMeshes) if(t>=sm.indexStart && t<sm.indexStart+sm.indexCount) return sm; return m.subMeshes[0]; };
+      const groups=new Map();
+      qs.forEach(q=>q.tris.forEach(t=>{ drop[di].add(t); const sm=subOf(t), k=sm?sm.materialIndex:0; if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(t); }));
+      const uv=m.getVerticesData(VB.UVKind), nm=d.N;
+      const nrmM=d.M.clone(); nrmM.setTranslationFromFloats(0,0,0);
+      groups.forEach((tris,mi)=>{ const pos=[], nor=[], uvs=[], ind=[];
+        tris.forEach(t=>{ for(let k=0;k<3;k++){ const vi=d.idx[t+k], p=d.P[vi].subtract(w.c); pos.push(p.x,p.y,p.z);
+          if(nm){ const n=V3.TransformNormal(new V3(nm[3*vi],nm[3*vi+1],nm[3*vi+2]),nrmM).normalize(); nor.push(n.x,n.y,n.z); }
+          if(uv) uvs.push(uv[2*vi],uv[2*vi+1]); ind.push(ind.length); } });
+        const vd=new BABYLON.VertexData(); vd.positions=pos; vd.indices=ind;
+        if(nm) vd.normals=nor; else { const nn=[]; BABYLON.VertexData.ComputeNormals(pos,ind,nn); vd.normals=nn; }
+        if(uv) vd.uvs=uvs;
+        const wm=new BABYLON.Mesh("wheel"+wi+"_"+(_sgN++),scene); vd.applyToMesh(wm);
+        const mat=m.material; wm.material=(mat && mat.subMaterials)?(mat.subMaterials[mi]||mat.subMaterials[0]):mat;
+        wm.parent=piv; wm.isPickable=false; wm.receiveShadows=m.receiveShadows; wm.__occluder=m.__occluder;
+        try{ if(m.layerMask!=null) wm.layerMask=m.layerMask; }catch(e){}
+      }); });
+    out.push({ piv, r:Math.max(0.12,w.r) });
+  });
+  /* l'originale senza le ruote */
+  D.forEach((d,di)=>{ if(!drop[di].size) return; const m=d.m;
+    try{ m.makeGeometryUnique(); }catch(e){}
+    const subs=m.subMeshes.map(sm=>({ mi:sm.materialIndex, s:sm.indexStart, n:sm.indexCount }));
+    const ni=[], ns=[];
+    subs.forEach(sb=>{ const st=ni.length; for(let t=sb.s;t<sb.s+sb.n;t+=3){ if(drop[di].has(t)) continue; ni.push(d.idx[t],d.idx[t+1],d.idx[t+2]); }
+      ns.push({ mi:sb.mi, s:st, n:ni.length-st }); });
+    m.setIndices(ni);
+    m.subMeshes=[]; const nv=m.getTotalVertices();
+    ns.forEach(sb=>{ if(sb.n>0) new BABYLON.SubMesh(sb.mi,0,nv,sb.s,sb.n,m); });
+  });
+  return { wheels:out, axis:lat, sgn, ang:0 };
+}
+
 /* PASS AUDIO — la sfrecciata di un'auto che passa (richiesta di Giacomo,
    scelta fra le opzioni proposte il 23 ago). Estratta come funzione a se'
    stante — non inline nel loop di rendering — per lo stesso motivo per
@@ -6751,6 +6857,9 @@ function buildTraffic(){
         if(c.halt>1.2){ try{ SFX.carHorn(c.root.position.x,c.root.position.z); }catch(e){} }
       } else c.halt=0;
       c.s=(c.s+c.cv*TRAFFIC_SPEED*dt)%c.tot;
+      if(c.wh){ const W=c.wh; W.ang+=c.cv*TRAFFIC_SPEED*dt/W.wheels[0].r*W.sgn;      // v301: le ruote rotolano
+        for(let q=0;q<W.wheels.length;q++){ const pv=W.wheels[q].piv;
+          pv.rotationQuaternion=BABYLON.Quaternion.RotationAxis(W.axis,W.ang*(W.wheels[0].r/W.wheels[q].r)); } }
       i=0; while(i<c.seg.length-1 && c.L[i+1]<=c.s) i++;
       const a=c.loop[i], b=c.loop[(i+1)%c.loop.length], t=(c.s-c.L[i])/c.seg[i];
       c.root.position.x=a[0]+(b[0]-a[0])*t;
