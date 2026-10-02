@@ -1708,6 +1708,14 @@ const UNIT_TRAVEL={ id:"u2_5", area:"station", areaName:"Central Station",
    fratelli (funzioni, con Ivy) e il record di famiglia (final, con Mr.
    Dunn) — mai come lessico astratto a sé stante.
    ===================================================================== */
+/* v300: geometria dell'albero genealogico (serve gia' qui ai props; il
+   disegno e' in famDrawPerson / LEXPROPS.famTree, sezione Town Hall) */
+const FAM_TREE={ x0:-2.6, x1:2.6, y0:0.52, y1:3.08, sz:0.56,
+  /* righe (quota del centro del ritratto) e posizioni x */
+  rows:{ gp:2.36, pa:1.62, ki:0.88 },
+  at:{ grandfather:[-1.65,"gp"], grandmother:[-0.75,"gp"], father:[-1.2,"pa"], mother:[1.2,"pa"],
+       sister:[-1.95,"ki"], me:[-0.65,"ki"], brother:[0.65,"ki"], baby:[1.95,"ki"] } };
+function famPos(who){ const a=FAM_TREE.at[who]; return { x:a[0], y:FAM_TREE.rows[a[1]] }; }
 const UNIT2={ id:"u2", area:"townhall", areaName:"Town Hall",
   title:"Unit 2 — My family life", size:9, tint:"#e6ddc8", wallH:3.2,   // v259: soffitto piu' alto, da edificio pubblico
   enterToast:"Sei entrato alla Town Hall",
@@ -1749,28 +1757,35 @@ const UNIT2={ id:"u2", area:"townhall", areaName:"Town Hall",
     { prop:"plant", x:-7.8, z: 7.4 },
     { prop:"plant", x: 7.9, z:-5.2 },
     /* SCRITTE in inglese (poster procedurali) */
-    { prop:"poster", x: 0,     z:-8.90, yaw:0,     w:2.6, h:0.55, py:2.55,
+    /* v300: il banner si sposta a sinistra (al centro c'e' l'albero) */
+    { prop:"poster", x:-5.6,  z:-8.90, yaw:0,     w:2.6, h:0.55, py:2.55,
       bg:"#2c3a4a", ink:"#f2e8d2", l1:"TOWN HALL", l2:"family records office", fig:"none", solid:false },
+    { prop:"poster", x: 5.6,  z:-8.90, yaw:0,     w:2.6, h:0.55, py:2.55,
+      bg:"#5a4a3a", ink:"#f6f1e2", l1:"FAMILY RECORDS", l2:"births \u00b7 families \u00b7 weddings", fig:"none", solid:false },
     { prop:"poster", x:-8.90, z: 6.6,  yaw: Math.PI/2, w:1.6, h:0.9,
       bg:"#5a4a3a", ink:"#f6f1e2", l1:"TAKE A NUMBER", l2:"1st \u00b7 2nd \u00b7 3rd \u00b7 4th...", fig:"none", solid:false },
     { prop:"poster", x: 8.90, z: 5.0,  yaw:-Math.PI/2, w:1.6, h:0.9,
       bg:"#3a6a4a", ink:"#f6f1e2", l1:"WELCOME", l2:"ask us for information", fig:"none", solid:false },
-    /* ALBERO GENEALOGICO (muro nord) = item lessicali: SOLO emoji, mai la
-       parola scritta (vedi nota sopra). 7 ritratti, spaziati 2m, nessuna
-       sovrapposizione col banner sopra (banner y[2.275,2.825], ritratti
-       y[1.075,2.025] — margine reale 0.25m). */
-    { en:"mother",      it:"madre",    pl:"mothers",      prop:"poster", x:-6, z:-8.90, yaw:0, w:0.95, h:0.95, py:1.55, bg:"#e8eef2", ink:"#1c2a34", emoji:"\u{1F469}", solid:false },
-    { en:"father",      it:"padre",    pl:"fathers",      prop:"poster", x:-4, z:-8.90, yaw:0, w:0.95, h:0.95, py:1.55, bg:"#e8eef2", ink:"#1c2a34", emoji:"\u{1F468}", solid:false },
-    { en:"sister",      it:"sorella",  pl:"sisters",      prop:"poster", x:-2, z:-8.90, yaw:0, w:0.95, h:0.95, py:1.55, bg:"#e8eef2", ink:"#1c2a34", emoji:"\u{1F467}", solid:false },
-    { en:"brother",     it:"fratello", pl:"brothers",     prop:"poster", x: 0, z:-8.90, yaw:0, w:0.95, h:0.95, py:1.55, bg:"#e8eef2", ink:"#1c2a34", emoji:"\u{1F466}", solid:false },
-    { en:"grandmother", it:"nonna",    pl:"grandmothers", prop:"poster", x: 2, z:-8.90, yaw:0, w:0.95, h:0.95, py:1.55, bg:"#e8eef2", ink:"#1c2a34", emoji:"\u{1F475}", solid:false },
-    { en:"grandfather", it:"nonno",    pl:"grandfathers", prop:"poster", x: 4, z:-8.90, yaw:0, w:0.95, h:0.95, py:1.55, bg:"#e8eef2", ink:"#1c2a34", emoji:"\u{1F474}", solid:false },
-    { en:"baby",        it:"neonato",  pl:"babies",       prop:"poster", x: 6, z:-8.90, yaw:0, w:0.95, h:0.95, py:1.55, bg:"#e8eef2", ink:"#1c2a34", emoji:"\u{1F476}", solid:false },
+    /* ALBERO GENEALOGICO (muro nord) — v300: ritratti DISEGNATI su un albero
+       vero, dal punto di vista di Leo (vedi FAM_TREE e famDrawPerson).
+       y = quota del centro del ritratto: e' anche la quota vera per
+       updateProximity, cosi' i ritratti di righe diverse non si confondono. */
+    { prop:"famTree", x:0, z:-8.93, yaw:0, solid:false, shadow:false },
+    { prop:"famPortrait", who:"me", x:famPos("me").x, y:famPos("me").y, z:-8.895, yaw:0, solid:false, shadow:false },
+    { en:"mother", it:"madre", pl:"mothers", prop:"famPortrait", who:"mother", x:famPos("mother").x, y:famPos("mother").y, z:-8.895, yaw:0, solid:false, shadow:false },
+    { en:"father", it:"padre", pl:"fathers", prop:"famPortrait", who:"father", x:famPos("father").x, y:famPos("father").y, z:-8.895, yaw:0, solid:false, shadow:false },
+    { en:"sister", it:"sorella", pl:"sisters", prop:"famPortrait", who:"sister", x:famPos("sister").x, y:famPos("sister").y, z:-8.895, yaw:0, solid:false, shadow:false },
+    { en:"brother", it:"fratello", pl:"brothers", prop:"famPortrait", who:"brother", x:famPos("brother").x, y:famPos("brother").y, z:-8.895, yaw:0, solid:false, shadow:false },
+    { en:"grandmother", it:"nonna", pl:"grandmothers", prop:"famPortrait", who:"grandmother", x:famPos("grandmother").x, y:famPos("grandmother").y, z:-8.895, yaw:0, solid:false, shadow:false },
+    { en:"grandfather", it:"nonno", pl:"grandfathers", prop:"famPortrait", who:"grandfather", x:famPos("grandfather").x, y:famPos("grandfather").y, z:-8.895, yaw:0, solid:false, shadow:false },
+    { en:"baby", it:"neonata", pl:"babies", find:"Leo's baby sister", prop:"famPortrait", who:"baby", x:famPos("baby").x, y:famPos("baby").y, z:-8.895, yaw:0, solid:false, shadow:false },
   ],
   steps:[
-  { id:"lex",   strand:"lessico",    type:"findFurniture", count:3,
-    intro:"Benvenuto alla <b>Town Hall</b>! Guarda l'<b>albero genealogico</b> sul muro e <b>trova i membri della famiglia</b> che ti chiedo. Toccali!",
-    introObjEn:"Find the family members on the list.", introObj:"Trova i membri della famiglia richiesti." },
+  { id:"lex",   strand:"lessico",    type:"findFurniture", count:3, art:"Leo's ",
+    intro:"Benvenuto alla <b>Town Hall</b>! Sul muro c'\u00e8 l'<b>albero genealogico</b> della famiglia Robins. "
+         +"<b>Leo</b> \u00e8 il ragazzo con la stella (<b>ME</b>): trova i <b>suoi</b> familiari \u2014 "
+         +"<i>Leo's mother</i> = la mamma di Leo. Segui le linee dell'albero!",
+    introObjEn:"Look at the family tree and find Leo's family.", introObj:"Guarda l'albero e trova i familiari di Leo." },
   { id:"gram",  strand:"grammatica", type:"babyInterview",
     intro:"<b>Mr. Dunn</b> ti incarica di intervistare <b>Ivy</b> per completare il modulo della neonata: componi le domande con le tessere — <i>Be interrogativo, question words e il possessivo 's</i> — e Ivy risponderà!",
     introObjEn:"Interview Ivy for the baby form.", introObj:"Intervista Ivy per il modulo della neonata." },
@@ -19525,17 +19540,20 @@ const MECH={
        continuano a vedere "the " come prima. */
     const ART=(s.art!=null?s.art:"the ");
     const st=Quest.state; st.targets=targets; st.idx=0; st.wrong=0;
+    /* v300: un item puo' dire come lo si chiede (find: «Leo's baby sister»
+       invece di «Leo's baby») */
+    const NM=e=>(e.find||(ART+e.en));
     function showObj(){ const f=targets[st.idx];
-      questHudSet("lessico", HOBJ("Find: <b>"+ART+f.en+"</b> &nbsp;("+(st.idx+1)+"/"+n+")","Trova: <b>"+ART+f.en+"</b> &nbsp;("+(st.idx+1)+"/"+n+")"), Quest.i, Quest.total); }
+      questHudSet("lessico", HOBJ("Find: <b>"+NM(f)+"</b> &nbsp;("+(st.idx+1)+"/"+n+")","Trova: <b>"+NM(f)+"</b> &nbsp;("+(st.idx+1)+"/"+n+")"), Quest.i, Quest.total); }
     function onTap(entry){
       const target=targets[st.idx];
-      if(entry===target){ st.wrong=0; toast("✓ Right! "+ART+entry.en);
+      if(entry===target){ st.wrong=0; toast("✓ Right! "+NM(entry));
         st.idx++;
         if(st.idx>=n){ Quest.complete("🔎 Lessico completato!"); return; }
         showObj();
       } else {
         st.wrong++;
-        let m="❌ That's not "+ART+target.en+". Try again!";
+        let m="❌ That's not "+NM(target)+". Try again!";
         if(st.wrong>=2) m+= yrEnglish()
           ? ((target.room && !(Quest.unit && target.room===Quest.unit.areaName))
                ? "  \u{1F4A1} Look in "+roomPhraseText(target.room)+"." : "  \u{1F4A1} Look around carefully!")
@@ -23155,6 +23173,175 @@ function schoolAssistDone(){
    Anna/Oscar · Tom/Zoe · Grace/Tim: saluto contestuale allo step; durante
    il "loro" step il tap va DIRETTO alla meccanica (familyForm -> Mr. Dunn,
    familyChat -> Ivy, familyInterview -> Mr. Dunn). ===================== */
+/* =====================================================================
+   v300 — L'ALBERO GENEALOGICO DELLA TOWN HALL (Giacomo, 2 ott: «le
+   immagini delle persone sono tutti bambini invecchiati, c'e' un bambino
+   con i baffi! E come si puo' indovinare brother? Ci vorrebbe un albero
+   genealogico»). Prima: sette ritratti-EMOJI in fila. L'emoji la disegna
+   il font del dispositivo, e su molti tablet «man» e «old man» sono la
+   stessa faccina tonda da bambino con i baffi o la barba; e in una fila
+   senza legami «brother» non si distingue da «boy» o «son».
+   Ora:
+   · i ritratti sono DISEGNATI qui (canvas, 0 KB), uguali su ogni
+     dispositivo, con l'eta' che si legge: capelli bianchi, rughe e
+     occhiali per i nonni; spalle larghe, colletto e cravatta, capelli
+     lunghi e orecchini per i genitori; ragazza adolescente con la coda,
+     bambino piu' piccolo con le lentiggini, neonata col ciuccio;
+   · stanno su un ALBERO vero (famTree): nonni -> papa' (con la mamma) ->
+     quattro figli, con le linee della parentela;
+   · il punto di vista e' LEO, il ragazzo con la stella e «ME»: la domanda
+     e' «Find Leo's brother» (l'art dello step lessico), cosi' «brother»
+     si deduce dall'albero — ed e' anche il possessivo 's della unit.
+   Nessuna parola inglese accanto ai ritratti (stesso principio di prima):
+   l'unica scritta e' il nome di Leo, che e' il riferimento, non la risposta.
+   ===================================================================== */
+/* una persona, disegnata in un quadrato S x S */
+function famDrawPerson(c,S,who){
+  const P={
+    grandfather:{ skin:"#efc6a2", hair:"#e6e6e2", shirt:"#7a5a3c", age:"old", m:true },
+    grandmother:{ skin:"#f2cdb0", hair:"#dcdcdc", shirt:"#8a5a9a", age:"old" },
+    father:     { skin:"#e9b892", hair:"#5a3a22", shirt:"#3f6fa8", age:"adult", m:true },
+    mother:     { skin:"#f0c09c", hair:"#7a3f22", shirt:"#3f8a5c", age:"adult" },
+    sister:     { skin:"#f3cba6", hair:"#d9a441", shirt:"#d86a9a", age:"teen" },
+    me:         { skin:"#f0c4a0", hair:"#4a2e1a", shirt:"#e0a030", age:"kid", m:true },
+    brother:    { skin:"#f3cba6", hair:"#c0562c", shirt:"#4e8b3a", age:"child", m:true },
+    baby:       { skin:"#f6d2b6", hair:"#c99a5a", shirt:"#f2a6c0", age:"baby" } }[who];   // Lucy, la neonata del modulo di Ivy
+  if(!P) return;
+  const A=P.age;
+  /* proporzioni per eta': testa piu' grande e corpo piu' piccolo nei piccoli */
+  const hr={ old:0.165, adult:0.165, teen:0.165, kid:0.17, child:0.175, baby:0.2 }[A]*S;
+  const cy={ old:0.42, adult:0.40, teen:0.45, kid:0.48, child:0.52, baby:0.52 }[A]*S;
+  const sh={ old:0.40, adult:0.43, teen:0.33, kid:0.30, child:0.27, baby:0.26 }[A]*S;   // mezze spalle
+  const cx=S/2, ink="#3a2a20";
+  c.lineCap="round"; c.lineJoin="round";
+  /* capelli lunghi DIETRO (mamma, sorella) */
+  if(who==="mother"){ c.fillStyle=P.hair; c.beginPath(); c.ellipse(cx,cy+hr*0.55,hr*1.22,hr*1.55,0,0,Math.PI*2); c.fill(); }
+  if(who==="sister"){ c.fillStyle=P.hair; c.beginPath(); c.ellipse(cx+hr*1.05,cy+hr*0.35,hr*0.32,hr*0.95,-0.35,0,Math.PI*2); c.fill(); }
+  /* busto */
+  c.fillStyle=P.shirt; c.beginPath();
+  c.moveTo(cx-sh,S); c.quadraticCurveTo(cx-sh,cy+hr*1.25,cx-hr*0.5,cy+hr*1.12);
+  c.lineTo(cx+hr*0.5,cy+hr*1.12); c.quadraticCurveTo(cx+sh,cy+hr*1.25,cx+sh,S); c.closePath(); c.fill();
+  /* collo */
+  if(A!=="baby"){ c.fillStyle=P.skin; c.fillRect(cx-hr*0.28,cy+hr*0.7,hr*0.56,hr*0.5); }
+  /* vestiti che dicono l'eta' */
+  if(who==="father"){ c.fillStyle="#f6f1e2"; c.beginPath(); c.moveTo(cx-hr*0.45,cy+hr*1.1); c.lineTo(cx,cy+hr*1.45); c.lineTo(cx+hr*0.45,cy+hr*1.1); c.lineTo(cx+hr*0.2,cy+hr*1.1); c.lineTo(cx,cy+hr*1.25); c.lineTo(cx-hr*0.2,cy+hr*1.1); c.fill();
+    c.fillStyle="#b8323a"; c.beginPath(); c.moveTo(cx,cy+hr*1.22); c.lineTo(cx-hr*0.14,cy+hr*1.42); c.lineTo(cx,cy+hr*2.3); c.lineTo(cx+hr*0.14,cy+hr*1.42); c.fill(); }
+  if(who==="grandfather"){ c.strokeStyle="#5a3f28"; c.lineWidth=S*0.012; c.beginPath(); c.moveTo(cx-hr*0.35,cy+hr*1.15); c.lineTo(cx,cy+hr*1.9); c.lineTo(cx+hr*0.35,cy+hr*1.15); c.stroke();
+    c.fillStyle="#e8d9b0"; [2.05,2.4].forEach(k=>{ c.beginPath(); c.arc(cx,cy+hr*k,S*0.012,0,Math.PI*2); c.fill(); }); }
+  if(who==="grandmother"){ c.fillStyle="#f6f1e2"; for(let i=-3;i<=3;i++){ c.beginPath(); c.arc(cx+i*hr*0.17,cy+hr*1.2+Math.abs(i)*-hr*0.03+hr*0.08,S*0.014,0,Math.PI*2); c.fill(); } }
+  if(who==="mother"){ c.strokeStyle="#f2d65a"; c.lineWidth=S*0.008; c.beginPath(); c.arc(cx,cy+hr*0.95,hr*0.42,0.3,Math.PI-0.3); c.stroke(); }
+  if(who==="brother"){ c.fillStyle="#f6f1e2"; [1.45,1.85,2.25].forEach(k=>c.fillRect(cx-sh,cy+hr*k,sh*2,hr*0.18)); }
+  if(who==="me"){ c.fillStyle="#fff6c9"; star(c,cx+sh*0.45,cy+hr*1.75,hr*0.32); }
+  if(who==="baby"){ c.fillStyle="#ffffff"; c.beginPath(); c.ellipse(cx,cy+hr*1.15,hr*0.6,hr*0.35,0,0,Math.PI); c.fill(); }
+  /* orecchie e testa */
+  c.fillStyle=P.skin;
+  c.beginPath(); c.ellipse(cx-hr*0.98,cy+hr*0.05,hr*0.17,hr*0.24,0,0,Math.PI*2); c.ellipse(cx+hr*0.98,cy+hr*0.05,hr*0.17,hr*0.24,0,0,Math.PI*2); c.fill();
+  const fw=(A==="baby"||A==="child")?1.0:(A==="kid"||A==="teen")?0.93:0.9, fh=(A==="baby")?0.98:(A==="child"||A==="kid")?1.05:1.15;
+  c.beginPath(); c.ellipse(cx,cy,hr*fw,hr*fh,0,0,Math.PI*2); c.fill();
+  /* capelli DAVANTI */
+  c.fillStyle=P.hair;
+  if(who==="grandfather"){   // calvo in cima, bianco ai lati
+    c.beginPath(); c.ellipse(cx-hr*0.82,cy-hr*0.25,hr*0.22,hr*0.42,0.2,0,Math.PI*2); c.ellipse(cx+hr*0.82,cy-hr*0.25,hr*0.22,hr*0.42,-0.2,0,Math.PI*2); c.fill(); }
+  else if(who==="grandmother"){ c.beginPath(); c.ellipse(cx,cy-hr*0.62,hr*0.98,hr*0.6,0,Math.PI,Math.PI*2); c.fill();
+    c.beginPath(); c.arc(cx,cy-hr*1.28,hr*0.38,0,Math.PI*2); c.fill();                       // lo chignon
+    c.beginPath(); c.ellipse(cx-hr*0.82,cy-hr*0.2,hr*0.24,hr*0.45,0.15,0,Math.PI*2); c.ellipse(cx+hr*0.82,cy-hr*0.2,hr*0.24,hr*0.45,-0.15,0,Math.PI*2); c.fill(); }
+  else if(who==="father"){ c.beginPath(); c.ellipse(cx,cy-hr*0.72,hr*0.95,hr*0.52,0,Math.PI,Math.PI*2); c.fill(); c.fillRect(cx-hr*0.95,cy-hr*0.75,hr*0.2,hr*0.5); c.fillRect(cx+hr*0.75,cy-hr*0.75,hr*0.2,hr*0.5); }
+  else if(who==="mother"){ c.beginPath(); c.ellipse(cx,cy-hr*0.62,hr*1.0,hr*0.62,0,Math.PI,Math.PI*2); c.fill();
+    c.beginPath(); c.moveTo(cx-hr*0.95,cy-hr*0.6); c.quadraticCurveTo(cx-hr*0.2,cy-hr*0.35,cx+hr*0.2,cy-hr*1.05); c.lineTo(cx-hr*0.6,cy-hr*1.0); c.fill(); }
+  else if(who==="sister"){ c.beginPath(); c.ellipse(cx,cy-hr*0.62,hr*0.98,hr*0.6,0,Math.PI,Math.PI*2); c.fill();
+    c.fillStyle="#d84a7a"; c.beginPath(); c.ellipse(cx+hr*0.72,cy-hr*0.62,hr*0.2,hr*0.12,0.5,0,Math.PI*2); c.fill(); }
+  else if(who==="me"){ c.beginPath(); c.ellipse(cx,cy-hr*0.66,hr*0.98,hr*0.55,0,Math.PI,Math.PI*2); c.fill();
+    c.beginPath(); c.moveTo(cx-hr*0.6,cy-hr*0.8); c.lineTo(cx-hr*0.2,cy-hr*0.45); c.lineTo(cx+hr*0.1,cy-hr*0.85); c.lineTo(cx+hr*0.5,cy-hr*0.5); c.lineTo(cx+hr*0.8,cy-hr*0.9); c.fill(); }
+  else if(who==="brother"){ for(let i=0;i<7;i++){ const a=Math.PI*(1.05+i*0.13); c.beginPath(); c.arc(cx+Math.cos(a)*hr*0.85,cy-hr*0.55+Math.sin(a)*hr*0.55,hr*0.28,0,Math.PI*2); c.fill(); } }
+  else if(who==="baby"){ c.strokeStyle=P.hair; c.lineWidth=S*0.014; c.beginPath(); c.arc(cx+hr*0.08,cy-hr*0.86,hr*0.16,Math.PI*0.9,Math.PI*2.4); c.stroke();
+    c.fillStyle="#e0507a"; c.beginPath(); c.ellipse(cx-hr*0.5,cy-hr*0.78,hr*0.2,hr*0.12,0.5,0,Math.PI*2); c.ellipse(cx-hr*0.22,cy-hr*0.92,hr*0.2,hr*0.12,0.5,0,Math.PI*2); c.fill(); }
+  /* occhi */
+  const ey=cy-hr*(A==="baby"?-0.02:0.05), ex=hr*(A==="baby"?0.36:0.38), er=hr*({baby:0.13,child:0.12,kid:0.11,teen:0.11}[A]||0.085);
+  c.fillStyle=ink; [-1,1].forEach(s=>{ c.beginPath(); c.ellipse(cx+s*ex,ey,er*0.8,er,0,0,Math.PI*2); c.fill(); });
+  if(A!=="old" && A!=="adult"){ c.fillStyle="#ffffff"; [-1,1].forEach(s=>{ c.beginPath(); c.arc(cx+s*ex+er*0.25,ey-er*0.35,er*0.3,0,Math.PI*2); c.fill(); }); }
+  if(who==="sister"||who==="mother"){ c.strokeStyle=ink; c.lineWidth=S*0.008; [-1,1].forEach(s=>{ c.beginPath(); c.moveTo(cx+s*(ex+er*0.6),ey-er*0.4); c.lineTo(cx+s*(ex+er*1.3),ey-er*1.0); c.stroke(); }); }
+  /* sopracciglia */
+  c.strokeStyle=(A==="old")?"#bdbdbd":P.hair; c.lineWidth=S*(A==="old"?0.02:0.014);
+  if(A!=="baby") [-1,1].forEach(s=>{ c.beginPath(); c.moveTo(cx+s*ex*0.55,ey-hr*0.28); c.quadraticCurveTo(cx+s*ex,ey-hr*0.38,cx+s*ex*1.45,ey-hr*0.26); c.stroke(); });
+  /* guance */
+  if(A!=="old"&&A!=="adult"){ c.fillStyle="rgba(232,110,110,0.35)"; [-1,1].forEach(s=>{ c.beginPath(); c.arc(cx+s*hr*0.58,cy+hr*0.3,hr*0.16,0,Math.PI*2); c.fill(); }); }
+  /* naso */
+  c.strokeStyle="rgba(120,70,40,0.6)"; c.lineWidth=S*0.01;
+  if(A!=="baby"){ c.beginPath(); c.moveTo(cx,cy+hr*0.05); c.quadraticCurveTo(cx+hr*0.14,cy+hr*0.3,cx-hr*0.02,cy+hr*0.33); c.stroke(); }
+  /* bocca */
+  if(who==="baby"){ c.fillStyle="#6fb0e0"; c.beginPath(); c.ellipse(cx,cy+hr*0.5,hr*0.26,hr*0.16,0,0,Math.PI*2); c.fill(); c.fillStyle="#e8f2fa"; c.beginPath(); c.arc(cx,cy+hr*0.5,hr*0.08,0,Math.PI*2); c.fill(); }
+  else { c.strokeStyle=(who==="mother"||who==="sister")?"#c0405a":"#8a3a2a"; c.lineWidth=S*0.014;
+    c.beginPath(); c.arc(cx,cy+hr*0.35,hr*0.3,0.25*Math.PI,0.75*Math.PI); c.stroke(); }
+  /* l'eta' nei dettagli: rughe, occhiali, baffi, barba, lentiggini, orecchini */
+  if(A==="old"){ c.strokeStyle="rgba(120,70,40,0.45)"; c.lineWidth=S*0.007;
+    [0.55,0.68].forEach(k=>{ c.beginPath(); c.moveTo(cx-hr*0.4,cy-hr*k); c.quadraticCurveTo(cx,cy-hr*(k+0.06),cx+hr*0.4,cy-hr*k); c.stroke(); });
+    [-1,1].forEach(s=>{ c.beginPath(); c.moveTo(cx+s*hr*0.62,ey+hr*0.02); c.lineTo(cx+s*hr*0.76,ey+hr*0.08); c.stroke(); });
+    c.strokeStyle="#5a4a3a"; c.lineWidth=S*0.011;
+    [-1,1].forEach(s=>{ c.beginPath(); c.arc(cx+s*ex,ey,hr*0.2,0,Math.PI*2); c.stroke(); });
+    c.beginPath(); c.moveTo(cx-ex+hr*0.2,ey); c.lineTo(cx+ex-hr*0.2,ey); c.stroke(); }
+  if(who==="grandfather"){ c.fillStyle="#f2f2ee"; c.beginPath(); c.ellipse(cx-hr*0.17,cy+hr*0.42,hr*0.24,hr*0.1,-0.2,0,Math.PI*2); c.ellipse(cx+hr*0.17,cy+hr*0.42,hr*0.24,hr*0.1,0.2,0,Math.PI*2); c.fill(); }
+  if(who==="father"){ c.fillStyle="rgba(90,58,34,0.35)"; c.beginPath(); c.ellipse(cx,cy+hr*0.62,hr*0.66,hr*0.5,0,0,Math.PI); c.fill(); }
+  if(who==="brother"){ c.fillStyle="rgba(170,90,50,0.55)"; [[-0.55,0.15],[-0.45,0.25],[-0.62,0.28],[0.55,0.15],[0.45,0.25],[0.62,0.28]].forEach(q=>{ c.beginPath(); c.arc(cx+q[0]*hr,cy+q[1]*hr,S*0.006,0,Math.PI*2); c.fill(); }); }
+  if(who==="mother"||who==="grandmother"){ c.fillStyle="#f2d65a"; [-1,1].forEach(s=>{ c.beginPath(); c.arc(cx+s*hr*0.98,cy+hr*0.3,S*0.012,0,Math.PI*2); c.fill(); }); }
+  function star(c,x,y,r){ c.beginPath(); for(let i=0;i<10;i++){ const a=-Math.PI/2+i*Math.PI/5, rr=(i%2?r*0.45:r); c.lineTo(x+Math.cos(a)*rr,y+Math.sin(a)*rr); } c.closePath(); c.fill(); }
+}
+/* un ritratto incorniciato (prop lessicale: o.who) */
+LEXPROPS.famPortrait=function(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene);
+  const s=o.sz||FAM_TREE.sz, S=256;
+  const dt=new BABYLON.DynamicTexture("famp"+(_lpN++),{width:S,height:S},scene,true), c=dt.getContext();
+  const bg={ grandfather:"#dfe6ea", grandmother:"#dfe6ea", father:"#e6eedf", mother:"#e6eedf" }[o.who]||"#f2e8d6";
+  c.fillStyle=bg; c.fillRect(0,0,S,S);
+  c.save(); c.beginPath(); c.rect(14,14,S-28,S-28); c.clip(); famDrawPerson(c,S,o.who); c.restore();
+  if(o.who==="me"){ c.fillStyle="#f2b23a"; c.fillRect(14,S-62,S-28,48);
+    c.fillStyle="#2b2318"; c.font="bold 34px sans-serif"; c.textAlign="center"; c.textBaseline="middle"; c.fillText("★ LEO · ME",S/2,S-38); }
+  c.strokeStyle=(o.who==="me")?"#f2b23a":"#9a7a3a"; c.lineWidth=14; c.strokeRect(7,7,S-14,S-14);
+  c.strokeStyle="#5a3f28"; c.lineWidth=3; c.strokeRect(15,15,S-30,S-30);
+  dt.update();
+  const m=new BABYLON.StandardMaterial("fampm"+(_lpN++),scene); m.diffuseTexture=dt;
+  m.emissiveColor=BABYLON.Color3.FromHexString("#5a554c"); m.specularColor=new BABYLON.Color3(0.02,0.02,0.02);
+  const pl=BABYLON.MeshBuilder.CreatePlane("famp"+(_lpN++),{width:s,height:s},scene);
+  pl.material=m; pl.rotation.y=Math.PI; pl.isPickable=false; pl.parent=r;
+  if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(pl);
+  return r; };
+/* il tabellone dell'albero: chioma, tronco, titolo e le LINEE della parentela */
+LEXPROPS.famTree=function(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene);
+  const T=FAM_TREE, Wm=T.x1-T.x0, Hm=T.y1-T.y0, PX=200, W=Math.round(Wm*PX), H=Math.round(Hm*PX);
+  const dt=new BABYLON.DynamicTexture("famt"+(_lpN++),{width:W,height:H},scene,true), c=dt.getContext();
+  /* ⚠️ guardando il muro nord da dentro la sala la x del mondo cresce verso
+     SINISTRA: senza il ribaltamento le linee finivano a specchio dei ritratti */
+  const X=x=>(T.x1-x)*PX, Y=y=>(T.y1-y)*PX, half=T.sz/2;
+  c.fillStyle="#f4ecd8"; c.fillRect(0,0,W,H);
+  /* l'albero dietro: tronco e chioma, tenui */
+  c.fillStyle="rgba(122,90,60,0.28)"; c.beginPath(); c.moveTo(X(-0.35),H); c.lineTo(X(-0.18),Y(1.9)); c.lineTo(X(0.18),Y(1.9)); c.lineTo(X(0.35),H); c.fill();
+  c.fillStyle="rgba(110,160,90,0.22)";
+  [[-1.6,2.3,1.1],[0,2.55,1.2],[1.6,2.3,1.1],[-0.8,1.8,1.0],[0.8,1.8,1.0]].forEach(q=>{ c.beginPath(); c.ellipse(X(q[0]),Y(q[1]),q[2]*PX,q[2]*PX*0.55,0,0,Math.PI*2); c.fill(); });
+  c.strokeStyle="#7a5a3c"; c.lineWidth=12; c.strokeRect(6,6,W-12,H-12);
+  c.fillStyle="#3a2a20"; c.font="bold 44px serif"; c.textAlign="center"; c.textBaseline="middle";
+  c.fillText("THE ROBINS FAMILY", W/2, Y(T.y1-0.16));
+  /* le linee */
+  const L=(pts)=>{ c.beginPath(); pts.forEach((p,i)=>i?c.lineTo(X(p[0]),Y(p[1])):c.moveTo(X(p[0]),Y(p[1]))); c.stroke(); };
+  c.strokeStyle="#5a3f28"; c.lineWidth=9;
+  const gf=famPos("grandfather"), gm=famPos("grandmother"), fa=famPos("father"), mo=famPos("mother");
+  L([[gf.x+half,gf.y],[gm.x-half,gm.y]]);                                  // nonni, sposati
+  const gmid=(gf.x+gm.x)/2; L([[gmid,gf.y],[gmid,fa.y+half]]);              // il loro figlio: papa'
+  L([[fa.x+half,fa.y],[mo.x-half,mo.y]]);                                  // papa' e mamma, sposati
+  const pmid=(fa.x+mo.x)/2, bar=FAM_TREE.rows.ki+half+0.14;
+  L([[pmid,fa.y],[pmid,bar]]);
+  const kids=["sister","me","brother","baby"].map(famPos);
+  L([[kids[0].x,bar],[kids[3].x,bar]]);
+  kids.forEach(k=>L([[k.x,bar],[k.x,k.y+half]]));
+  /* i cuoricini sui matrimoni */
+  c.fillStyle="#c8452f"; [[gmid,gf.y],[pmid,fa.y]].forEach(p=>{ const x=X(p[0]), y=Y(p[1]);
+    c.beginPath(); c.moveTo(x,y+14); c.bezierCurveTo(x-24,y-4,x-12,y-22,x,y-8); c.bezierCurveTo(x+12,y-22,x+24,y-4,x,y+14); c.fill(); });
+  dt.update();
+  const m=new BABYLON.StandardMaterial("famtm"+(_lpN++),scene); m.diffuseTexture=dt;
+  m.emissiveColor=BABYLON.Color3.FromHexString("#5a554c"); m.specularColor=new BABYLON.Color3(0.02,0.02,0.02);
+  const pl=BABYLON.MeshBuilder.CreatePlane("famt"+(_lpN++),{width:Wm,height:Hm},scene);
+  pl.material=m; pl.rotation.y=Math.PI; pl.position.set((T.x0+T.x1)/2,(T.y0+T.y1)/2,0); pl.isPickable=false; pl.parent=r;
+  lpBox(r,Wm+0.08,Hm+0.08,0.03,"#5a3f28",(T.x0+T.x1)/2,(T.y0+T.y1)/2,-0.02);
+  if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(pl);
+  return r; };
+
 let townhallNpcBuilt=false, DUNN=null, IVY=null;
 function buildTownHallNPCs(){
   if(townhallNpcBuilt) return; townhallNpcBuilt=true;
@@ -23167,7 +23354,7 @@ function buildTownHallNPCs(){
 }
 function dunnStepLine(){
   switch(Quest.step&&Quest.step.id){
-    case "lex":    return { en:"Welcome to the Town Hall! Look at the family tree on the wall.", it:"Trova i membri della famiglia." };
+    case "lex":    return { en:"Welcome to the Town Hall! Look at the family tree on the wall. Leo is the boy with the star: find Leo's family!", it:"Guarda l'albero sul muro: Leo \u00e8 il ragazzo con la stella. Trova i suoi familiari seguendo le linee." };
     case "gram":   return { en:"Go and interview Ivy about the new baby — I need that form filled in!", it:"Vai da Ivy per l'intervista sulla neonata." };
     case "func":   return { en:"Go and chat with Ivy over there, in the waiting area!", it:"Vai da Ivy per chiacchierare." };
     case "listen": return { en:"Listen to the Robins family record and touch the photos in order!", it:"Ascolta il registro dei Robins e tocca i ritratti in ordine." };
@@ -23416,7 +23603,7 @@ function openFamilyInterview(){
    testo dopo 2 riascolti, o subito se il dispositivo non ha voce). ---- */
 const ROBINS_LINES=[
   "This is the Robins family record.",
-  "The sister is older than the brother.",
+  "Leo's sister is older than his brother.",
   "The baby is the youngest of all.",
 ];
 const ROBINS_AGE_WORDS=["oldest","2nd oldest","youngest"];
@@ -36027,7 +36214,7 @@ function buildInterior(u){
        all'altezza dello sguardo, che e' anche quello che stai guardando.
        ⚠️ Non cambia nulla per gli arredi a pavimento (pr.y assente = 0, come
        prima) ne' per il raggio, che si misura solo in orizzontale. */
-    if(pr.en) u.items.push({ en:pr.en, it:pr.it||pr.en, pl:pr.pl||null, noSing:!!pr.noSing,
+    if(pr.en) u.items.push({ en:pr.en, it:pr.it||pr.en, pl:pr.pl||null, noSing:!!pr.noSing, find:pr.find||null,
       room:u.areaName||u.title||"the shop",
       mesh:node, pos:new BABYLON.Vector3(C.x+pr.x,(pr.y||0),C.z+pr.z) });
   });
