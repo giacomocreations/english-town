@@ -6626,7 +6626,8 @@ function _addTrafficCar(loop,phase,speed,ci){
   const tc={root,loop,seg,L,tot,s:phase*tot,v:speed,cv:speed,near:false,halt:0};
   _trafficCars.push(tc);
   /* v301: le ruote si staccano dopo (non rallenta l'avvio), una auto alla volta */
-  setTimeout(()=>{ try{ tc.wh=carWheelsRig(tc); }catch(e){ console.warn("[ruote]",e); } },1500+_trafficCars.length*120);
+  setTimeout(()=>{ try{ tc.wh=carWheelsRig(tc); }catch(e){ console.warn("[ruote]",e); }
+    try{ carGroundRig(tc); }catch(e){ console.warn("[quota auto]",e); } },1500+_trafficCars.length*120);
 }
 /* =====================================================================
    v301 — LE RUOTE GIRANO (Giacomo, 2 ott: «le ruote delle macchine non
@@ -6648,6 +6649,30 @@ function _addTrafficCar(loop,phase,speed,ci){
    (strada fatta / raggio): ferma l'auto, ferme le ruote. Il verso giusto
    si ricava dai numeri (la cima della ruota deve andare avanti), non si
    suppone. Se un modello non ha pezzi che sembrano ruote non si tocca. */
+/* v301 (Giacomo, 2 ott: «la parte inferiore delle ruote sembra fusa con
+   l'asfalto»). Era vero, e da sempre: il carrier dell'auto stava a y=0 ma
+   la carreggiata e' a 0.08 (0.12 sulle rotatorie), e i modelli hanno la
+   gomma qualche cm sotto la loro origine: 8-20 cm di ruota dentro la
+   strada. Ora: (1) lift = di quanto va alzata l'auto perche' il punto piu'
+   basso delle gomme (o della carrozzeria, se le ruote non si sono potute
+   staccare) stia a quota 0 del carrier; (2) la quota della strada si misura
+   UNA VOLTA lungo tutto il giro (un campione al metro, stesso raycast dei
+   pedoni) e ogni fotogramma si legge interpolando. */
+function carGroundRig(c){
+  const root=c.root; root.computeWorldMatrix(true);
+  let mn=1e9;
+  const ms=(c.wh&&c.wh.wheels.length)?[].concat(...c.wh.wheels.map(w=>w.piv.getChildMeshes(false))):root.getChildMeshes(false);
+  ms.forEach(m=>{ if(!m.getTotalVertices||!m.getTotalVertices()) return; m.computeWorldMatrix(true); m.refreshBoundingInfo();
+    mn=Math.min(mn,m.getBoundingInfo().boundingBox.minimumWorld.y); });
+  if(mn>1e8) return;
+  c.lift=root.position.y-mn+0.004;
+  const n=Math.max(2,Math.ceil(c.tot)), G=new Float32Array(n+1);
+  for(let k=0;k<=n;k++){ const p=carLoopPos(c,(k/n)*c.tot); G[k]=_pedGroundY(p[0],p[1]); }
+  c.gy=G; c.gyN=n;
+}
+function carLoopPos(c,s){ s=((s%c.tot)+c.tot)%c.tot; let i=0; while(i<c.seg.length-1 && c.L[i+1]<=s) i++;
+  const a=c.loop[i], b=c.loop[(i+1)%c.loop.length], t=(s-c.L[i])/c.seg[i];
+  return [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t]; }
 function carWheelsRig(c){
   const V3=BABYLON.Vector3, VB=BABYLON.VertexBuffer, root=c.root;
   root.computeWorldMatrix(true);
@@ -6863,6 +6888,8 @@ function buildTraffic(){
       i=0; while(i<c.seg.length-1 && c.L[i+1]<=c.s) i++;
       const a=c.loop[i], b=c.loop[(i+1)%c.loop.length], t=(c.s-c.L[i])/c.seg[i];
       c.root.position.x=a[0]+(b[0]-a[0])*t;
+      if(c.gy){ const u=c.s/c.tot*c.gyN, k0=Math.floor(u), f=u-k0;            // v301: sulla strada, non dentro
+        c.root.position.y=c.lift+c.gy[k0]*(1-f)+c.gy[Math.min(c.gyN,k0+1)]*f; }
       c.root.position.z=a[1]+(b[1]-a[1])*t;
       const tgt=Math.atan2(b[0]-a[0],b[1]-a[1])+TRAFFIC_YAW;
       let d=tgt-c.root.rotation.y;
@@ -36576,6 +36603,7 @@ function enterArea(target){
   if(typeof area!=="undefined" && area==="market" && target!=="market"){ try{ marketOnLeave(); }catch(e){} }   // v256
   area=target;
   townRoot.setEnabled(target==="town"); homeRoot.setEnabled(target==="home");
+  if(target==="home"){ setTimeout(()=>{ try{ homeShadowSweep(); }catch(e){} },120); setTimeout(()=>{ try{ homeShadowSweep(); }catch(e){} },1200); }   // v301
   cinemaRoot.setEnabled(target==="cinema"); subwayRoot.setEnabled(target==="subway");
   for(const k in INTERIORS) INTERIORS[k].root.setEnabled(k===target);   // FASE 2: interni generici
   if(cinemaLight) cinemaLight.setEnabled(target==="cinema");
@@ -36646,8 +36674,20 @@ function confirmLeaveQuest(q, target, act){
    (flag __csh), costa un giro sui nodi alla prima entrata. */
 function interiorShadowSweep(area){
   const I=INTERIORS[area]; if(!I||!I.root) return 0;
+  return shadowSweepRoot(I.root,false); }
+/* v301 (Giacomo, 2 ott: «home non ha ombre!»). La casa non e' un interno
+   generico (buildHome, a mano) e lo sweep la saltava: mobili, letto, divano,
+   vasca stavano sul pavimento senza un filo d'ombra. Stesso sweep sulla
+   radice della casa, con in piu' il filtro per le PARETI (pbox lunghi,
+   sottili e alti come la stanza) che li' sono figli diretti come i mobili. */
+function homeShadowSweep(){
+  if(typeof homeRoot==="undefined" || !homeRoot) return 0;
+  const n=shadowSweepRoot(homeRoot,true);
+  if(n) try{ refreshShadowCasters(); }catch(e){}
+  return n; }
+function shadowSweepRoot(root,walls){
   let n=0;
-  I.root.getChildren().forEach(ch=>{
+  root.getChildren().forEach(ch=>{
     if(ch.__csh) return; ch.__csh=true;
     const nm=ch.name||"";
     if(/^(gif_|giwp|gicl|giAO|h7sh|egl)/.test(nm) || /_carrier$|_holder$/.test(nm) || ch.__ground || ch.__noCsh) return;
@@ -36657,6 +36697,8 @@ function interiorShadowSweep(area){
     if(!bb || !isFinite(bb.min.y)) return;
     const h=bb.max.y-bb.min.y, w=bb.max.x-bb.min.x, d=bb.max.z-bb.min.z;
     if(bb.min.y>0.18 || h<0.12 || (w<0.15&&d<0.15) || w>9 || d>9) return;
+    if(walls && h>2.1 && Math.min(w,d)<0.35) return;                 // una parete (o un tramezzo), non un mobile
+    if(walls && /^(rf|wall|door|win|floor|ceil|qN|qW|mirGlass|mirFrame|homeMirror)/i.test(nm)) return;
     /* appoggiato su un piano (merce sugli scaffali ecc.)? niente: solo a terra */
     try{ const s1=contactShadowFor(ch,0.027,0.9,0.35,9); if(s1){ n++;
         if(w<3.5 && d<3.5){ const s2=s1.clone("h7sh"); s2.parent=s1.parent; s2.scaling.set(0.72,1,0.72); s2.position.y+=0.001; } } }catch(e){}
