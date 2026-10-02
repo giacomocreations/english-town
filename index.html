@@ -52462,6 +52462,7 @@ function dressShoes(meshes,kind,hex,holder){
   if(!meshes) return false;
   const old=meshes.__boots||[];
   old.forEach(m=>{ try{ const i=holder?holder.indexOf(m):-1; if(i>=0) holder.splice(i,1); m.dispose(false,true); }catch(e){} });
+  if(old.length) try{ _octDirty(); }catch(e){}
   meshes.__boots=[];
   if(kind!=="boots" || !hex) return old.length>0;
   const tube=meshes.find(m=>m.__tube && m.__tube.meshes && m.__tube.meshes.some(x=>x.isEnabled()));
@@ -52495,7 +52496,11 @@ function dressShoes(meshes,kind,hex,holder){
     const shaft=BABYLON.MeshBuilder.CreateCylinder("bootShaft",{height:h,diameterTop:2*(r+0.006),diameterBottom:2*Math.max(r,rShoe),tessellation:22,cap:BABYLON.Mesh.NO_CAP},scene);
     const cuff=BABYLON.MeshBuilder.CreateTorus("bootCuff",{diameter:2*(r+0.008),thickness:0.016,tessellation:22},scene);
     cuff.position.y=h/2; cuff.parent=shaft;
-    [shaft,cuff].forEach(m=>{ m.material=mat; m.isPickable=false; m.__noTint=true; });
+    /* ⚠️ v302 (Giacomo: «i boots scompaiono se cambi scarpe»): come cappelli e
+       occhiali, sempre selezionati. Senza, la scena (che sceglie cosa
+       disegnare con l'octree) li vedeva solo dopo una ricostruzione
+       dell'albero: da stivale a stivale il gambale nuovo restava invisibile. */
+    [shaft,cuff].forEach(m=>{ m.material=mat; m.isPickable=false; m.__noTint=true; m.alwaysSelectAsActiveMesh=true; m.applyFog=true; });
     mat.backFaceCulling=false;
     shaft.position.copyFrom(base.add(dir.scale(h/2)));
     shaft.rotationQuaternion=BABYLON.Quaternion.FromUnitVectorsToRef(up,dir,new BABYLON.Quaternion());
@@ -52503,6 +52508,10 @@ function dressShoes(meshes,kind,hex,holder){
     made.push(shaft,cuff); });
   meshes.__boots=made;
   if(holder) made.forEach(m=>{ if(holder.indexOf(m)<0) holder.push(m); });
+  /* ⚠️ l'octree si ricostruisce da solo solo se cambia il NUMERO di mesh:
+     da stivale a stivale se ne tolgono 4 e se ne mettono 4, il conto torna
+     uguale e il gambale nuovo restava fuori dall'albero, invisibile */
+  try{ _octDirty(); }catch(e){}
   return true;
 }
 /* =====================================================================
