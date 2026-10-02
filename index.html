@@ -33548,58 +33548,263 @@ LEXPROPS.eDecor=function(id,o){ o=o||{};
     hm7Tor(r,0.62,0.03,hm7Mat("#f6f1e2",0.05,10),-SX+1.25,0.027,bn.z); });
   return etMergeByMat(r); };
 
-/* ---- gli otto oggetti del bancone (0 KB). Tutti alti 0.18-0.32 m:
+/* ---- gli otto oggetti del bancone (0 KB). Tutti alti 0.18-0.37 m:
    stanno SU un piano a 0.775 e si guardano dall'alto. ---- */
+/* v299 (Giacomo, 2 ott: «migliora graficamente gli altri oggetti, tranne la
+   scodella: la busta di plastica non si capisce che e' una busta»). Erano
+   cilindri e scatole dritte con un rettangolino-etichetta: da sopra il
+   bancone la bottiglia, il barattolo e la lattina si somigliavano e la
+   busta sembrava un vaso. Ora ogni oggetto ha la SUA sagoma (fatta al
+   tornio, come la ciotola, o cucita a mano) e il MATERIALE si legge:
+   plastica trasparente e lucida, vetro con la marmellata che si vede,
+   alluminio a specchio, cartoncino, ceramica. L'etichetta stampata dice
+   anche di che cosa e' fatto (PLASTIC, GLASS, ALU, PAPER) — e' quello che
+   c'e' scritto davvero sulle confezioni, ed e' l'indizio per il bidone.
+   Stessi ingombri di prima (alti 0.20-0.37, sul piano a 0.775); il
+   davanti (+z locale) guarda la corsia centrale (yaw nei props). */
+const _ecoMx={};
+function ecoMx(key,hex,o){ o=o||{}; if(_ecoMx[key]) return _ecoMx[key];
+  const m=new BABYLON.StandardMaterial("ecomx_"+key,scene);
+  m.diffuseColor=BABYLON.Color3.FromHexString(hex);
+  const sp=(o.spec!=null)?o.spec:0.05; m.specularColor=new BABYLON.Color3(sp,sp,sp); m.specularPower=o.pow||32;
+  const em=(o.em!=null)?o.em:0.13; m.emissiveColor=new BABYLON.Color3(em,em,em);   // come la ciotola: in ombra non diventa grigio scuro
+  if(o.alpha!=null) m.alpha=o.alpha;
+  if(o.ds) m.backFaceCulling=false;
+  if(o.tex){ m.diffuseTexture=o.tex; if(o.texAlpha){ o.tex.hasAlpha=true; m.useAlphaFromDiffuseTexture=true; } }
+  return (_ecoMx[key]=m); }
+/* una texture disegnata una volta sola (W x H px), riusata */
+function ecoTex(key,W,H,draw,alpha,mirror){ const k="tx_"+key; if(_ecoMx[k]) return _ecoMx[k];
+  const dt=new BABYLON.DynamicTexture("ecotx_"+key,{width:W,height:H},scene,true);
+  dt.hasAlpha=!!alpha; const c=dt.getContext();
+  if(alpha) c.clearRect(0,0,W,H);
+  /* mirror: per le fasce avvolte (ecoWrap) — visto da fuori il giro del
+     cilindro va al contrario e le scritte uscivano a specchio */
+  c.save(); if(mirror){ c.translate(W,0); c.scale(-1,1); }
+  draw(c,W,H); c.restore(); dt.update(); return (_ecoMx[k]=dt); }
+function ecoLathe(r,pts,m,tess){ const V=BABYLON.Vector3;
+  const l=BABYLON.MeshBuilder.CreateLathe("ecolt"+(_lpN++),{shape:pts.map(p=>new V(p[0],p[1],0)),tessellation:tess||32,
+    sideOrientation:BABYLON.Mesh.DOUBLESIDE},scene);
+  l.material=m; l.parent=r; return l; }
+/* fascia d'etichetta avvolta (arc = frazione di giro, centrata sul davanti +z) */
+function ecoWrap(r,rad,h,y,m,arc){
+  const c=BABYLON.MeshBuilder.CreateCylinder("ecowr"+(_lpN++),{diameter:rad*2,height:h,tessellation:40,
+    cap:BABYLON.Mesh.NO_CAP,arc:arc||1},scene);
+  c.material=m; c.position.y=y; c.parent=r;
+  if(arc && arc<1) c.rotation.y=-Math.PI/2+Math.PI*arc;      // il centro dell'arco sul davanti
+  return c; }
+function ecoTxt(c,t,x,y,font,col){ c.font=font; c.fillStyle=col; c.textAlign="center"; c.textBaseline="middle"; c.fillText(t,x,y); }
+/* il simbolo del riciclo (tre frecce in triangolo) col materiale sotto */
+function ecoRecy(c,x,y,s,col,txt){
+  c.save(); c.translate(x,y); c.strokeStyle=col; c.fillStyle=col; c.lineWidth=s*0.13; c.lineJoin="round";
+  for(let i=0;i<3;i++){ c.save(); c.rotate(i*Math.PI*2/3);
+    c.beginPath(); c.moveTo(-s*0.30,s*0.30); c.lineTo(s*0.16,s*0.30); c.stroke();
+    c.beginPath(); c.moveTo(s*0.30,s*0.30); c.lineTo(s*0.12,s*0.18); c.lineTo(s*0.12,s*0.42); c.closePath(); c.fill(); c.restore(); }
+  c.restore();
+  if(txt) ecoTxt(c,txt,x,y+s*0.78,"bold "+Math.round(s*0.42)+"px sans-serif",col); }
+
+/* ---- a bottle: bottiglietta d'acqua in PLASTICA (PET), trasparente,
+   con le costole, il tappo blu e l'etichetta «WATER» ---- */
 LEXPROPS.eBottle=function(id,o){ const r=new BABYLON.TransformNode(id,scene);
-  lpCyl(r,0.17,0.24,"#7fb8d8",0,0.12,0);
-  lpCyl(r,0.09,0.07,"#7fb8d8",0,0.275,0);
-  lpCyl(r,0.10,0.04,"#3f6b5c",0,0.32,0);
-  lpBox(r,0.15,0.09,0.005,"#f2e8d2",0,0.13,0.088);
+  const pet=ecoMx("pet","#bfe0f2",{alpha:0.42,spec:0.9,pow:90,em:0.18,ds:true});
+  const prof=[[0,0.006],[0.05,0],[0.066,0.008],[0.076,0.03],[0.078,0.06]];
+  for(let y=0.075;y<0.215;y+=0.03) prof.push([0.074,y],[0.079,y+0.015]);     // le costole
+  prof.push([0.079,0.225],[0.074,0.25],[0.058,0.275],[0.036,0.296],[0.026,0.305],[0.026,0.322]);
+  ecoLathe(r,prof,pet,36);
+  /* l'acqua dentro, quasi piena */
+  ecoLathe(r,[[0,0.01],[0.062,0.012],[0.071,0.04],[0.072,0.24],[0,0.24]],ecoMx("h2o","#7fbfe4",{alpha:0.38,spec:0.6,pow:60,em:0.2}),28);
+  lpCyl(r,0.066,0.036,"#2f6fb8",0,0.338,0);                                    // tappo
+  const ring=BABYLON.MeshBuilder.CreateTorus("ecobt"+(_lpN++),{diameter:0.058,thickness:0.008,tessellation:20},scene);
+  ring.material=lpMat("#2f6fb8"); ring.position.y=0.318; ring.parent=r;
+  const lab=ecoTex("bottle",512,128,(c,W,H)=>{
+    const g=c.createLinearGradient(0,0,0,H); g.addColorStop(0,"#2f78c4"); g.addColorStop(1,"#1d4f8a"); c.fillStyle=g; c.fillRect(0,0,W,H);
+    c.fillStyle="#ffffff"; c.fillRect(0,H*0.80,W,H*0.07);
+    [0.25,0.75].forEach(u=>{ ecoTxt(c,"WATER",W*u,H*0.38,"bold 54px sans-serif","#ffffff");
+      ecoTxt(c,"PLASTIC \u00b7 PET",W*u,H*0.70,"bold 20px sans-serif","#cfe6ff"); });
+    ecoRecy(c,W*0.5,H*0.40,40,"#cfe6ff","1"); ecoRecy(c,W*0.02,H*0.40,40,"#cfe6ff",""); },false,true);
+  ecoWrap(r,0.0805,0.085,0.15,ecoMx("bottleLab","#ffffff",{tex:lab,spec:0.3,pow:40,em:0.25}));
   return r; };
+
+/* ---- a can: lattina di ALLUMINIO, rossa, col bordo e la linguetta ---- */
 LEXPROPS.eCan=function(id,o){ const r=new BABYLON.TransformNode(id,scene);
-  lpCyl(r,0.15,0.20,"#c8452f",0,0.10,0);
-  lpCyl(r,0.155,0.02,"#b6bcc0",0,0.20,0);
-  lpCyl(r,0.155,0.02,"#b6bcc0",0,0.01,0);
-  lpBox(r,0.11,0.05,0.005,"#f6f1e2",0,0.11,0.078);
+  const alu=ecoMx("alu","#b9c0c7",{spec:0.7,pow:90,em:0.1});
+  ecoLathe(r,[[0,0.014],[0.05,0.004],[0.062,0],[0.071,0.008],[0.074,0.022]],alu,32);           // fondo
+  ecoLathe(r,[[0.074,0.188],[0.07,0.2],[0.062,0.21],[0.063,0.216],[0.058,0.218],[0.055,0.209],[0,0.207]],alu,32);  // spalla e coperchio
+  const lab=ecoTex("can",512,128,(c,W,H)=>{
+    c.fillStyle="#c8302c"; c.fillRect(0,0,W,H);
+    c.fillStyle="#f6f1e2"; c.beginPath(); c.moveTo(0,H*0.70);
+    for(let x=0;x<=W;x+=8) c.lineTo(x,H*0.70+Math.sin(x/W*Math.PI*4)*H*0.08);
+    c.lineTo(W,H*0.80); for(let x=W;x>=0;x-=8) c.lineTo(x,H*0.80+Math.sin(x/W*Math.PI*4)*H*0.08); c.fill();
+    [0.25,0.75].forEach(u=>{ ecoTxt(c,"FIZZ",W*u,H*0.36,"italic bold 50px sans-serif","#ffffff");
+      ecoTxt(c,"METAL \u00b7 ALU",W*u,H*0.92,"bold 15px sans-serif","#ffe3d6"); }); },false,true);
+  ecoWrap(r,0.074,0.166,0.105,ecoMx("canLab","#ffffff",{tex:lab,spec:0.7,pow:80,em:0.2}));
+  /* linguetta: anello piatto + rivetto */
+  const tab=BABYLON.MeshBuilder.CreateBox("ecotab"+(_lpN++),{width:0.026,height:0.004,depth:0.042},scene);
+  tab.material=alu; tab.position.set(0,0.211,0.012); tab.parent=r;
+  const hole=BABYLON.MeshBuilder.CreateBox("ecotab"+(_lpN++),{width:0.014,height:0.005,depth:0.014},scene);
+  hole.material=lpMat("#7c8288"); hole.position.set(0,0.2115,0.022); hole.parent=r;
+  lpCyl(r,0.008,0.006,"#a7adb3",0,0.212,0);
   return r; };
+
+/* ---- a jar: barattolo di VETRO con la marmellata di fragole che si vede,
+   coperchio a quadretti legato con lo spago ---- */
 LEXPROPS.eJar=function(id,o){ const r=new BABYLON.TransformNode(id,scene);
-  lpCyl(r,0.19,0.19,"#d8b45a",0,0.095,0);                  // marmellata dentro
-  lpCyl(r,0.20,0.20,"#cfe4ee",0,0.10,0);                   // vetro
-  lpCyl(r,0.17,0.04,"#6b2230",0,0.215,0);                  // coperchio
-  lpBox(r,0.14,0.07,0.005,"#f6f1e2",0,0.10,0.103);
+  ecoLathe(r,[[0,0.07],[0.084,0.068],[0.088,0.06],[0.088,0.012],[0.08,0.004],[0,0.004]],ecoMx("jam","#a3202b",{spec:0.5,pow:60,em:0.12}),32);  // marmellata (fino a 0.07 dal fondo e' piena)
+  ecoLathe(r,[[0,0.14],[0.086,0.138],[0.088,0.07],[0,0.07]],ecoMx("jamTop","#a3202b",{alpha:0.85,spec:0.5,pow:60,em:0.12}),32);
+  const gl=ecoMx("glass","#dbeef4",{alpha:0.30,spec:1.0,pow:120,em:0.2,ds:true});
+  ecoLathe(r,[[0,0.002],[0.076,0],[0.09,0.01],[0.094,0.03],[0.094,0.15],[0.088,0.168],[0.078,0.176],[0.078,0.19]],gl,36);
+  [0.18,0.187].forEach(y=>{ const t=BABYLON.MeshBuilder.CreateTorus("ecojt"+(_lpN++),{diameter:0.158,thickness:0.006,tessellation:28},scene);
+    t.material=gl; t.position.y=y; t.parent=r; });
+  /* coperchio dorato e la stoffa a quadretti sopra */
+  lpCyl(r,0.17,0.026,"#c9a24a",0,0.198,0);
+  const chk=ecoTex("gingham",128,128,(c,W,H)=>{ c.fillStyle="#f6f1e2"; c.fillRect(0,0,W,H);
+    c.fillStyle="rgba(200,48,44,0.55)"; for(let i=0;i<8;i+=2){ c.fillRect(i*16,0,16,H); c.fillRect(0,i*16,W,16); } });
+  const cl=ecoMx("cloth","#ffffff",{tex:chk,em:0.18,ds:true});
+  const top=BABYLON.MeshBuilder.CreateDisc("ecojc"+(_lpN++),{radius:0.1,tessellation:28},scene);
+  top.material=cl; top.rotation.x=Math.PI/2; top.position.y=0.2125; top.parent=r;
+  ecoLathe(r,[[0.1,0.2125],[0.106,0.2],[0.112,0.18],[0.118,0.168]],cl,28);           // la stoffa che ricade
+  const tw=BABYLON.MeshBuilder.CreateTorus("ecojs"+(_lpN++),{diameter:0.176,thickness:0.007,tessellation:28},scene);
+  tw.material=lpMat("#a8875a"); tw.position.y=0.192; tw.parent=r;
+  /* l'etichetta due volte (davanti e dietro), su una fascia che fa il giro */
+  const lab=ecoTex("jar",512,128,(c,W,H)=>{ c.fillStyle="rgba(0,0,0,0)"; c.clearRect(0,0,W,H);
+    [0,256].forEach(o=>{ c.save(); c.translate(o,0);
+      c.fillStyle="#f6eedb"; c.fillRect(20,6,216,116);
+      c.strokeStyle="#a3202b"; c.lineWidth=5; c.strokeRect(24,10,208,108);
+      /* la fragola */
+      c.fillStyle="#d2342e"; c.beginPath(); c.moveTo(64,36); c.quadraticCurveTo(98,38,82,92); c.quadraticCurveTo(64,106,46,92); c.quadraticCurveTo(30,38,64,36); c.fill();
+      c.fillStyle="#4e8b3a"; c.beginPath(); c.ellipse(64,34,16,6,0,0,Math.PI*2); c.fill();
+      c.fillStyle="#f6e27a"; [[56,54],[70,58],[62,72],[74,76],[54,82]].forEach(p=>c.fillRect(p[0],p[1],3,4));
+      ecoTxt(c,"JAM",162,50,"bold 46px serif","#7a1820");
+      ecoTxt(c,"GLASS JAR",162,94,"bold 20px sans-serif","#4e5f69"); c.restore(); }); },true,true);
+  ecoWrap(r,0.0955,0.075,0.09,ecoMx("jarLab","#ffffff",{tex:lab,texAlpha:true,em:0.2,ds:true}));
   return r; };
+
+/* ---- a carton: il cartone del latte col TETTO A CAPANNA (cartoncino),
+   bianco e blu, MILK sul davanti e il tappo sul tetto ---- */
+function ecoGable(r,w,d,y0,y1,m){
+  const x=w/2, z=d/2;
+  const pos=[ -x,y0,z,  x,y0,z,  x,y1,0,  -x,y1,0,        // falda davanti
+              -x,y0,-z, x,y0,-z, x,y1,0,  -x,y1,0,        // falda dietro
+              x,y0,-z,  x,y0,z,  x,y1,0,                  // timpano destro
+              -x,y0,-z, -x,y0,z, -x,y1,0 ];               // timpano sinistro
+  const ind=[0,1,2, 0,2,3, 4,6,5, 4,7,6, 8,10,9, 11,12,13];
+  const uv=[0,0, 1,0, 1,1, 0,1,  0,0, 1,0, 1,1, 0,1,  0,0, 1,0, 0.5,1,  0,0, 1,0, 0.5,1];
+  const vd=new BABYLON.VertexData(); vd.positions=pos; vd.indices=ind; vd.uvs=uv;
+  const nr=[]; BABYLON.VertexData.ComputeNormals(pos,ind,nr); vd.normals=nr;
+  const mm=new BABYLON.Mesh("ecogb"+(_lpN++),scene); vd.applyToMesh(mm); mm.material=m; mm.parent=r; return mm; }
 LEXPROPS.eCarton=function(id,o){ const r=new BABYLON.TransformNode(id,scene);
-  lpBox(r,0.16,0.26,0.16,"#e9e4d6",0,0.13,0);
-  const t1=lpBox(r,0.16,0.10,0.02,"#d8d2c2",0,0.30,-0.045); t1.rotation.x= 0.42;
-  const t2=lpBox(r,0.16,0.10,0.02,"#d8d2c2",0,0.30, 0.045); t2.rotation.x=-0.42;
-  lpBox(r,0.12,0.10,0.005,"#4f7fae",0,0.16,0.083);
+  const W=0.15, H=0.215;
+  lpBox(r,W,H,W,"#f4f2ec",0,H/2,0);
+  const face=ecoTex("milk",256,384,(c,w,h)=>{ c.fillStyle="#f8f7f2"; c.fillRect(0,0,w,h);
+    c.fillStyle="#2f6fb8"; c.fillRect(0,0,w,h*0.16); c.fillRect(0,h*0.88,w,h*0.12);
+    /* prato e mucca stilizzata: si capisce che dentro c'e' il latte */
+    c.fillStyle="#7cbf5a"; c.beginPath(); c.ellipse(w/2,h*0.80,w*0.62,h*0.10,0,0,Math.PI*2); c.fill();
+    c.fillStyle="#ffffff"; c.fillRect(w*0.30,h*0.56,w*0.42,h*0.16); c.strokeStyle="#22303a"; c.lineWidth=4; c.strokeRect(w*0.30,h*0.56,w*0.42,h*0.16);
+    c.fillStyle="#22303a"; c.beginPath(); c.ellipse(w*0.44,h*0.62,w*0.07,h*0.035,0.4,0,Math.PI*2); c.fill();
+    c.beginPath(); c.ellipse(w*0.62,h*0.66,w*0.05,h*0.03,-0.3,0,Math.PI*2); c.fill();
+    c.fillStyle="#f6f1e2"; c.fillRect(w*0.70,h*0.52,w*0.14,h*0.09); c.strokeRect(w*0.70,h*0.52,w*0.14,h*0.09);
+    [0.34,0.44,0.60,0.68].forEach(u=>c.fillRect(w*u,h*0.72,w*0.03,h*0.07));
+    ecoTxt(c,"MILK",w/2,h*0.34,"bold 76px sans-serif","#2f6fb8");
+    ecoTxt(c,"FRESH \u00b7 1 L",w/2,h*0.45,"bold 24px sans-serif","#4e5f69");
+    ecoTxt(c,"PAPER CARTON",w/2,h*0.94,"bold 21px sans-serif","#ffffff"); });
+  const fm=ecoMx("milkFace","#ffffff",{tex:face,em:0.2});
+  [[0,W/2+0.0015,0],[0,-W/2-0.0015,Math.PI],[W/2+0.0015,0,-Math.PI/2],[-W/2-0.0015,0,Math.PI/2]].forEach(q=>{
+    const p=BABYLON.MeshBuilder.CreatePlane("ecomk"+(_lpN++),{width:W,height:H},scene);
+    p.material=fm; p.position.set(q[0],H/2,q[1]); p.rotation.y=q[2]+Math.PI; p.parent=r; });
+  ecoGable(r,W,W,H,H+0.065,ecoMx("gable","#2f6fb8",{em:0.16,ds:true}));
+  lpBox(r,W,0.026,0.010,"#f4f2ec",0,H+0.075,0);                                 // la cucitura in cima
+  const cap=lpCyl(r,0.04,0.016,"#f2f2ee",0,H+0.035,0.035); cap.rotation.x=0.82;     // il tappo sulla falda
   return r; };
+
+/* ---- a box: la scatola della PIZZA, di cartone ondulato, piatta e larga,
+   due una sull'altra ---- */
 LEXPROPS.eBox=function(id,o){ const r=new BABYLON.TransformNode(id,scene);
-  lpBox(r,0.42,0.20,0.34,"#b98a55",0,0.10,0);
-  lpBox(r,0.44,0.02,0.10,"#e0d6c0",0,0.205,0);             // nastro
-  lpBox(r,0.10,0.02,0.36,"#e0d6c0",0,0.205,0);
+  const kraft=ecoMx("kraft","#c39a63",{em:0.12});
+  const lid=ecoTex("pizzabox",512,512,(c,W,H)=>{ c.fillStyle="#cfa66d"; c.fillRect(0,0,W,H);
+    c.strokeStyle="rgba(120,84,40,0.25)"; c.lineWidth=2; for(let x=6;x<W;x+=14){ c.beginPath(); c.moveTo(x,0); c.lineTo(x,H); c.stroke(); }
+    c.fillStyle="#c8302c"; c.beginPath(); c.arc(W/2,H*0.44,150,0,Math.PI*2); c.fill();
+    c.fillStyle="#f6f1e2"; c.beginPath(); c.arc(W/2,H*0.44,132,0,Math.PI*2); c.fill();
+    /* la fetta */
+    c.fillStyle="#e8b04a"; c.beginPath(); c.moveTo(W/2,H*0.44+70); c.lineTo(W/2-62,H*0.44-58); c.quadraticCurveTo(W/2,H*0.44-84,W/2+62,H*0.44-58); c.closePath(); c.fill();
+    c.fillStyle="#d2342e"; [[-18,-30],[16,-18],[-2,10],[22,-48],[-30,-52]].forEach(p=>{ c.beginPath(); c.arc(W/2+p[0],H*0.44+p[1],10,0,Math.PI*2); c.fill(); });
+    c.fillStyle="#c8892e"; c.fillRect(W/2-64,H*0.44-64,128,10);
+    ecoTxt(c,"PIZZA",W/2,H*0.82,"bold 86px sans-serif","#c8302c");
+    ecoTxt(c,"CARDBOARD \u00b7 PAPER",W/2,H*0.94,"bold 26px sans-serif","#6b4a24"); });
+  lid.uScale=-1; lid.vScale=-1; lid.wrapU=lid.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE;   // girata di 180: si legge dalla corsia
+  const top=ecoMx("pizzaLid","#ffffff",{tex:lid,em:0.15});
+  const S=0.40, T=0.055;
+  [[0,0],[1,0.12]].forEach(([i,rot])=>{
+    const g=new BABYLON.TransformNode("ecopz"+(_lpN++),scene); g.parent=r; g.position.y=i*T; g.rotation.y=rot;
+    const b=BABYLON.MeshBuilder.CreateBox("ecopzb"+(_lpN++),{width:S,height:T-0.002,depth:S},scene);
+    b.material=kraft; b.position.y=T/2; b.parent=g;
+    /* il bordo ondulato: una riga piu' scura a meta' spessore */
+    lpBox(g,S+0.003,0.008,S+0.003,"#a07a48",0,T*0.5,0);
+    if(i===1){ const p=BABYLON.MeshBuilder.CreatePlane("ecopzl"+(_lpN++),{size:S-0.01},scene);
+      p.material=top; p.rotation.x=Math.PI/2; p.position.y=T+0.0015; p.parent=g; }
+  });
   return r; };
+
+/* ---- a bag: il sacchetto di PLASTICA della spesa («a canottiera»):
+   bianco, sottile, un po' trasparente e lucido, con le pieghe, la pancia
+   e i due manici ad ansa che salgono dai fianchi; sul davanti il logo del
+   supermercato e la scritta PLASTIC BAG. ---- */
 LEXPROPS.eBag=function(id,o){ const r=new BABYLON.TransformNode(id,scene);
-  /* corpo a tre fasce che si restringono verso l'alto: e' la sagoma che
-     assottiglia a leggersi come SACCHETTO, non una scatola dritta. */
-  lpBox(r,0.30,0.10,0.18,"#d9d3c4",0,0.06,  0);
-  lpBox(r,0.26,0.09,0.15,"#d9d3c4",0,0.155, 0);
-  lpBox(r,0.20,0.08,0.12,"#d9d3c4",0,0.235, 0);
-  lpBox(r,0.13,0.045,0.07,"#c4bda9",0,0.2975,0);      // collo raccolto
-  /* maniglie AD ANELLO (mezzo toro), non due stecchini dritti -- stesso
-     trucco del manico di eCup: senza, si leggeva "manico di scopa". */
-  const h1=BABYLON.MeshBuilder.CreateTorus("ecobagh"+(_lpN++),{diameter:0.115,thickness:0.017,tessellation:16},scene);
-  h1.material=lpMat("#8f9887"); h1.position.set(-0.065,0.365,0); h1.rotation.x=Math.PI/2; h1.parent=r;
-  const h2=BABYLON.MeshBuilder.CreateTorus("ecobagh"+(_lpN++),{diameter:0.115,thickness:0.017,tessellation:16},scene);
-  h2.material=lpMat("#8f9887"); h2.position.set(0.065,0.365,0); h2.rotation.x=Math.PI/2; h2.parent=r;
-  lpBox(r,0.15,0.09,0.005,"#3f6b5c",0,0.155,0.078);
+  const V=BABYLON.Vector3, film=ecoMx("film","#f3f3ee",{alpha:0.86,spec:0.55,pow:42,em:0.2,ds:true});
+  /* sezioni orizzontali: rettangolo arrotondato che si gonfia in pancia e
+     si appiattisce in cima, con le grinze del film */
+  const lv=[[0.004,0.25,0.11],[0.03,0.27,0.13],[0.08,0.285,0.145],[0.14,0.29,0.14],[0.20,0.285,0.11],[0.245,0.275,0.075],[0.275,0.27,0.05]];
+  const N=48, paths=lv.map(([y,w,d],li)=>{ const pts=[];
+    for(let k=0;k<N;k++){ const a=k/N*Math.PI*2, ca=Math.cos(a), sa=Math.sin(a);
+      const rx=Math.sign(ca)*Math.pow(Math.abs(ca),0.6), rz=Math.sign(sa)*Math.pow(Math.abs(sa),0.6);
+      const wr=(li>0)?1+0.035*Math.sin(a*11+y*55)+0.02*Math.sin(a*5-y*30):1;
+      pts.push(new V(rx*w/2*wr, y+(li>0?0.004*Math.sin(a*7+li):0), rz*d/2*wr)); }
+    return pts; });
+  const body=BABYLON.MeshBuilder.CreateRibbon("ecobag"+(_lpN++),{pathArray:paths,closePath:true,sideOrientation:BABYLON.Mesh.DOUBLESIDE},scene);
+  body.material=film; body.parent=r;
+  lpBox(r,0.24,0.004,0.10,"#e6e6df",0,0.003,0);                               // il fondo
+  /* i manici: due anse piatte che continuano i fianchi */
+  [-1,1].forEach(sd=>{ const cx=sd*0.088, outer=[], inner=[];
+    for(let i=0;i<=16;i++){ const t=i/16*Math.PI;
+      outer.push(new V(cx-sd*0.047*Math.cos(t)*-1, 0.268+0.105*Math.sin(t), 0));
+      inner.push(new V(cx-sd*0.020*Math.cos(t)*-1, 0.268+0.066*Math.sin(t), 0)); }
+    [-0.011,0.011].forEach(z=>{ const sh=p=>p.map(q=>new V(q.x,q.y,z));
+      const h=BABYLON.MeshBuilder.CreateRibbon("ecobagh"+(_lpN++),{pathArray:[sh(outer),sh(inner)],sideOrientation:BABYLON.Mesh.DOUBLESIDE},scene);
+      h.material=film; h.parent=r; }); });
+  /* il logo stampato, davanti e dietro */
+  const logo=ecoTex("bagLogo",256,224,(c,W,H)=>{
+    c.fillStyle="#3f8a45"; c.beginPath(); c.arc(W/2,H*0.36,64,0,Math.PI*2); c.fill();
+    c.fillStyle="#ffffff"; c.beginPath(); c.ellipse(W/2-8,H*0.36-4,30,18,-0.6,0,Math.PI*2); c.fill();
+    c.strokeStyle="#3f8a45"; c.lineWidth=5; c.beginPath(); c.moveTo(W/2-34,H*0.36+18); c.lineTo(W/2+18,H*0.36-20); c.stroke();
+    ecoTxt(c,"SUPERMARKET",W/2,H*0.74,"bold 30px sans-serif","#3f8a45");
+    ecoTxt(c,"PLASTIC BAG",W/2,H*0.90,"bold 24px sans-serif","#2b5d8a"); },true);
+  const lm=ecoMx("bagLogo","#ffffff",{tex:logo,texAlpha:true,em:0.25});
+  [[0.0735,Math.PI],[-0.0735,0]].forEach(q=>{
+    const p=BABYLON.MeshBuilder.CreatePlane("ecobagl"+(_lpN++),{width:0.15,height:0.13},scene);
+    p.material=lm; p.position.set(0,0.135,q[0]); p.rotation.y=q[1]; p.parent=r; });
   return r; };
+
+/* ---- a cup: tazza da te' di CERAMICA, col manico vero (a «C», non un
+   anello), il te' dentro, il piattino e il cucchiaino ---- */
 LEXPROPS.eCup=function(id,o){ const r=new BABYLON.TransformNode(id,scene);
-  lpCyl(r,0.16,0.14,"#f2efe6",0,0.07,0);
-  lpCyl(r,0.13,0.02,"#8a5a2e",0,0.135,0);                  // t\u00e8 dentro
-  const hd=BABYLON.MeshBuilder.CreateTorus("ecocup"+(_lpN++),{diameter:0.13,thickness:0.022,tessellation:14},scene);
-  hd.material=lpMat("#f2efe6"); hd.position.set(0.10,0.075,0); hd.rotation.x=Math.PI/2; hd.parent=r;
-  lpCyl(r,0.19,0.015,"#dcd6c6",0,0.008,0);                 // piattino
+  const V=BABYLON.Vector3, cer=ecoMx("china","#f3eee2",{spec:0.35,pow:50,em:0.15});
+  ecoLathe(r,[[0,0.006],[0.06,0.002],[0.104,0.012],[0.112,0.02],[0.108,0.022],[0.07,0.016],[0,0.016]],cer,36);  // piattino
+  const y0=0.016;
+  ecoLathe(r,[[0,y0+0.004],[0.042,y0],[0.05,y0+0.006],[0.054,y0+0.02],[0.064,y0+0.06],[0.074,y0+0.105],[0.079,y0+0.122],
+    [0.08,y0+0.128],[0.076,y0+0.131],[0.072,y0+0.12],[0.064,y0+0.085],[0.054,y0+0.04],[0.045,y0+0.02],[0,y0+0.018]],cer,36);
+  const tea=BABYLON.MeshBuilder.CreateDisc("ecocupt"+(_lpN++),{radius:0.07,tessellation:32},scene);
+  tea.material=lpMat("#8a5a2e"); tea.rotation.x=Math.PI/2; tea.position.y=y0+0.108; tea.parent=r;
+  const band=BABYLON.MeshBuilder.CreateTorus("ecocupb"+(_lpN++),{diameter:0.151,thickness:0.006,tessellation:36},scene);
+  band.material=lpMat("#3f6fa8"); band.position.y=y0+0.112; band.parent=r;
+  /* il manico: un tubo a C attaccato alla parete (lato destro, +x) */
+  const hp=[]; for(let i=0;i<=14;i++){ const t=-Math.PI/2+i/14*Math.PI;
+    hp.push(new V(0.062+0.05*Math.cos(t)+(i===0||i===14?-0.006:0), y0+0.07+0.038*Math.sin(-t), 0)); }
+  const hd=BABYLON.MeshBuilder.CreateTube("ecocuph"+(_lpN++),{path:hp,radius:0.012,tessellation:12,cap:BABYLON.Mesh.CAP_ALL},scene);
+  hd.material=cer; hd.parent=r;
+  /* il cucchiaino sul piattino */
+  const sp=new BABYLON.TransformNode("ecocups"+(_lpN++),scene); sp.parent=r; sp.position.set(-0.03,0.02,0.072); sp.rotation.y=0.25;
+  const sh=BABYLON.MeshBuilder.CreateSphere("ecocupsh"+(_lpN++),{diameterX:0.034,diameterY:0.008,diameterZ:0.024,segments:8},scene);
+  sh.material=lpMat("#b6bcc0"); sh.parent=sp;
+  const sm=BABYLON.MeshBuilder.CreateBox("ecocupsm"+(_lpN++),{width:0.09,height:0.004,depth:0.008},scene);
+  sm.material=lpMat("#b6bcc0"); sm.position.x=-0.06; sm.parent=sp;
   return r; };
 /* v297 (Giacomo, 1 ott: «migliora la bowl»). Prima erano tre cilindri
    dritti: da sopra il bancone si leggeva come un barattolo, non una
@@ -33800,23 +34005,42 @@ function ecoRestoreBoard(){ try{ ecoMenuDraw(ecoMenuGet()); }catch(e){} }
    colore del bidone — bisogna sapere che un barattolo e' di vetro e un
    cartone del latte e' carta. Le stoviglie non vanno in nessun bidone:
    vanno nella cassa del RIUSO. E' il punto della unit. ---- */
+/* v299 (Giacomo, 2 ott: «per alcuni non e' chiaro in quale bidone vanno:
+   la busta va nella plastica secondo la quest, ma se e' di carta va nella
+   carta. Bisogna indicare che tipo di busta e'»). Ogni oggetto ora ha:
+   · `mat` = di che cosa e' fatto, DETTO nell'indizio di Hugo («It's made
+     of plastic, not paper»), cosi' la risposta giusta non dipende da un
+     oggetto immaginato diverso da quello della quest;
+   · `kind`/`kindIt` = il nome preciso («a plastic shopping bag»), che
+     compare quando lo si prende e resta scritto mentre si cerca il bidone;
+   · `say` = la frase che Hugo dice quando lo si prende.
+   Anche il disegno lo dice: busta lucida e trasparente col logo e la
+   scritta PLASTIC BAG, cartone del latte con PAPER CARTON, ecc. */
 const ECO_ITEMS=[
   { key:"bottle", en:"a bottle", it:"bottiglia",          prop:"eBottle", bin:"plastic",
-    clue:"We drink water from it and we take it to school every day." },
+    kind:"a plastic water bottle", kindIt:"bottiglietta d\u0027acqua di plastica", say:"It's a plastic bottle.",
+    clue:"It's made of plastic. We drink water from it and we take it to school every day." },
   { key:"can",    en:"a can",    it:"lattina",            prop:"eCan",    bin:"metal",
-    clue:"It's small and round, and there's a fizzy drink inside." },
+    kind:"a metal drink can", kindIt:"lattina di metallo (alluminio)", say:"It's a metal can.",
+    clue:"It's made of metal. It's small and round, and there's a fizzy drink inside." },
   { key:"jar",    en:"a jar",    it:"barattolo",          prop:"eJar",    bin:"glass",
-    clue:"You can see through it and we keep jam in it." },
+    kind:"a glass jam jar", kindIt:"barattolo di vetro della marmellata", say:"It's a glass jar.",
+    clue:"It's made of glass: you can see through it, and we keep jam in it." },
   { key:"carton", en:"a carton", it:"cartone del latte",  prop:"eCarton", bin:"paper",
-    clue:"There's milk inside, and it isn't a bottle." },
+    kind:"a milk carton (it's made of card, a thick paper)", kindIt:"cartone del latte (di cartoncino, cio\u00e8 carta spessa)", say:"It's a carton. It's made of card, a thick paper.",
+    clue:"It's made of card, a thick paper. There's milk inside, and it isn't a bottle." },
   { key:"box",    en:"a box",    it:"scatola",            prop:"eBox",    bin:"paper",
-    clue:"It's brown and big, and the pizza arrives in it." },
+    kind:"a cardboard pizza box", kindIt:"scatola della pizza, di cartone", say:"It's a cardboard box.",
+    clue:"It's made of cardboard. It's brown and big, and the pizza arrives in it." },
   { key:"bag",    en:"a bag",    it:"sacchetto",          prop:"eBag",    bin:"plastic",
-    clue:"You put your shopping in it at the supermarket." },
+    kind:"a plastic shopping bag (not a paper bag!)", kindIt:"sacchetto della spesa di plastica (non di carta!)", say:"It's a plastic bag, not a paper bag.",
+    clue:"It's made of plastic, not paper. You put your shopping in it at the supermarket." },
   { key:"cup",    en:"a cup",    it:"tazza",              prop:"eCup",    bin:"reuse",
-    clue:"We drink tea or hot chocolate from it, and it's got a handle." },
+    kind:"a china teacup: we wash it and use it again", kindIt:"tazza di ceramica: si lava e si usa ancora", say:"It's a china cup. We wash it and use it again.",
+    clue:"We drink tea or hot chocolate from it, and it's got a handle. We wash it and use it again." },
   { key:"bowl",   en:"a bowl",   it:"ciotola",            prop:"eBowl",   bin:"reuse",
-    clue:"You eat soup or cereal from it, with a spoon." },
+    kind:"a china bowl: we wash it and use it again", kindIt:"ciotola di ceramica: si lava e si usa ancora", say:"It's a china bowl. We wash it and use it again.",
+    clue:"You eat soup or cereal from it, with a spoon. We wash it and use it again." },
 ];
 const ECO_BINS=[
   { key:"glass",   en:"GLASS",   it:"vetro",    hex:"#4e8b3a", z:-4.8 },
@@ -33862,13 +34086,13 @@ UNIT_ECO.props=[
   { prop:"eBench", w:3.4, x:-2.50, z: 2.70, yaw: Math.PI/2 },
   { prop:"eBench", w:3.4, x: 2.50, z:-2.70, yaw: Math.PI/2 },
   { prop:"eBench", w:3.4, x: 2.50, z: 2.70, yaw: Math.PI/2 },
-  { prop:"eBottle", x:-2.50, z:-3.8, y:0.81, solid:false, en:"a bottle", it:"bottiglia" },
-  { prop:"eCan",    x:-2.50, z:-1.3, y:0.81, solid:false, en:"a can",    it:"lattina" },
-  { prop:"eJar",    x:-2.50, z: 1.3, y:0.81, solid:false, en:"a jar",    it:"barattolo" },
-  { prop:"eCarton", x:-2.50, z: 3.8, y:0.81, solid:false, en:"a carton", it:"cartone del latte" },
-  { prop:"eBox",    x: 2.50, z:-3.8, y:0.81, solid:false, en:"a box",    it:"scatola" },
-  { prop:"eBag",    x: 2.50, z:-1.3, y:0.81, solid:false, en:"a bag",    it:"sacchetto" },
-  { prop:"eCup",    x: 2.50, z: 1.3, y:0.81, solid:false, en:"a cup",    it:"tazza" },
+  { prop:"eBottle", x:-2.50, z:-3.8, y:0.81, yaw: Math.PI/2, solid:false, en:"a bottle", it:"bottiglia" },
+  { prop:"eCan",    x:-2.50, z:-1.3, y:0.81, yaw: Math.PI/2, solid:false, en:"a can",    it:"lattina" },
+  { prop:"eJar",    x:-2.50, z: 1.3, y:0.81, yaw: Math.PI/2, solid:false, en:"a jar",    it:"barattolo" },
+  { prop:"eCarton", x:-2.50, z: 3.8, y:0.81, yaw: Math.PI/2, solid:false, en:"a carton", it:"cartone del latte" },
+  { prop:"eBox",    x: 2.50, z:-3.8, y:0.81, yaw:-Math.PI/2, solid:false, en:"a box",    it:"scatola" },
+  { prop:"eBag",    x: 2.50, z:-1.3, y:0.81, yaw:-Math.PI/2, solid:false, en:"a bag",    it:"sacchetto" },
+  { prop:"eCup",    x: 2.50, z: 1.3, y:0.81, yaw:-Math.PI/2, solid:false, en:"a cup",    it:"tazza" },
   { prop:"eBowl",   x: 2.50, z: 3.8, y:0.81, solid:false, en:"a bowl",   it:"ciotola" },
   /* ---- NORD: cucina di comunita' + bancone ---- */
   { prop:"eHob",  w:2.20, x:-3.40, z:-6.45, yaw: 0 },
@@ -34037,7 +34261,10 @@ function ecoLexHud(){
   const t=bs.list[bs.idx]; if(!t) return;
   const n=bs.list.length;
   if(bs.phase==="bin"){
-    questHudSet("lessico", HOBJ("\u267b\uFE0F <b>"+t.en+"</b> \u2014 which bin does it go in? &nbsp;("+(bs.idx+1)+"/"+n+")" +'<div style="margin-top:4px;">Go to the right bin and press <b>E</b>.</div>',"\u267b\uFE0F <b>"+t.en+"</b> \u2014 in quale bidone va? &nbsp;("+(bs.idx+1)+"/"+n+")"
+    /* v299: che cosa e' DI PRECISO (di che materiale), scritto mentre si cerca il bidone */
+    const kd=t.kind?'<div style="margin-top:3px;font-style:italic;">'+_escHtml(t.kind)+'</div>':'';
+    const kdIt=t.kindIt?'<div style="margin-top:3px;font-style:italic;">'+_escHtml(t.kindIt)+'</div>':'';
+    questHudSet("lessico", HOBJ("\u267b\uFE0F <b>"+t.en+"</b> \u2014 which bin does it go in? &nbsp;("+(bs.idx+1)+"/"+n+")"+kd +'<div style="margin-top:4px;">Go to the right bin and press <b>E</b>.</div>',"\u267b\uFE0F <b>"+t.en+"</b> \u2014 in quale bidone va? &nbsp;("+(bs.idx+1)+"/"+n+")"+kdIt
       +'<div style="margin-top:4px;">Vai al contenitore giusto e premi <b>E</b>.</div>'), Quest.i, Quest.total);
     return;
   }
@@ -34079,7 +34306,7 @@ MECH.binSort=function(s){
   buildEcoNPCs();
   const entries=(UNIT_ECO.items||[]).filter(e=>!!ecoItem(e.en));
   if(!entries.length){ mechStub(s); return; }
-  entries.forEach(e=>{ const d=ecoItem(e.en); e.clue=d.clue; e.bin=d.bin; e.key=d.key; });
+  entries.forEach(e=>{ const d=ecoItem(e.en); e.clue=d.clue; e.bin=d.bin; e.key=d.key; e.kind=d.kind; e.kindIt=d.kindIt; e.say=d.say; });
   const st=Quest.state;
   st.bs=st.bs||{ list:pick(entries, Math.min(s.count||6, entries.length)), idx:0,
                  phase:"item", wrong:0, plays:0, revealed:false };
@@ -34097,9 +34324,9 @@ MECH.binSort=function(s){
         const t=bs.list[bs.idx];
         if(entry===t){
           bs.phase="bin"; bs.wrong=0;
-          toast("\u2713 "+entry.en+" \u2014 "+entry.it);
+          toast("\u2713 "+entry.en+" \u2014 "+(entry.kindIt||entry.it));
           ecoLexHud();
-          setTimeout(()=>{ try{ speechSynthesis.resume(); TTS.say("Yes, "+entry.en+". Now, which bin?"); }catch(e){} },260);
+          setTimeout(()=>{ try{ speechSynthesis.resume(); TTS.say("Yes, "+entry.en+". "+(entry.say?entry.say+" ":"")+"Now, which bin?"); }catch(e){} },260);
         } else {
           bs.wrong++;
           if(bs.wrong>=2){ bs.revealed=true; ecoLexHud(); }
@@ -34421,11 +34648,30 @@ const ECO_DISHTYPES=[
   { k:"salad", label:"\u{1F957} salad" },
   { k:"pizza", label:"\u{1F355} pizza" },
 ];
+/* v299 (Giacomo, 2 ott: «nel final deve essere indicato il motivo per cui
+   non e' stato sprecato qualcosa: potrebbe essere difficile, forse da
+   rimodulare con degli aiuti»). Il PERCHE' prima si doveva inventare da
+   soli dentro il testo libero, e li' ci si fermava. Ora:
+   1. dopo l'avanzo e il piatto c'e' una TERZA scelta, «Why don't we throw
+      them away?», con quattro motivi gia' scritti (con la traduzione):
+      nessuno e' sbagliato, si sceglie quello che convince di piu';
+   2. nella scrittura c'e' il riquadro AIUTI: tre frasi-traccia da toccare
+      («Our dish of the day is…», «There are … apples in it.», «We didn't
+      throw them away because …») e le parole da mettere al posto dei
+      puntini (le quantita' e il motivo scelto). Chi vuole scrive da se'.
+   Il controllo resta lo stesso (quantita' + motivo), ma «because» ora
+   conta come motivo e i puntini lasciati vuoti vengono segnalati. */
+const ECO_REASONS=[
+  { k:"good",   en:"They're old, but they're still good to eat.", it:"Sono vecchi, ma ancora buoni da mangiare." },
+  { k:"hungry", en:"A lot of people haven't got enough food.",     it:"Tante persone non hanno abbastanza cibo." },
+  { k:"planet", en:"Throwing food away is bad for the planet.",    it:"Buttare il cibo fa male al pianeta." },
+  { k:"money",  en:"We don't waste money on new food.",            it:"Cos\u00ec non sprechiamo soldi per altro cibo." },
+];
 const U2_6_FINAL_REQ={ minSent:2,
   patterns:[ {re:/\b(some|any|a lot of|lots of|a few|a little|enough|much|many)\b/i,
               label:"Usa un\u0027espressione di quantit\u00e0"},
-             {re:/\b(waste|wasted|throw|threw|recycle|left|leftovers?|old|free|share)\b/i,
-              label:"Di\u0027 perch\u00e9 non si butta (waste / throw away / leftovers\u2026)"} ],
+             {re:/\b(because|waste|wasted|throw|threw|recycle|left|leftovers?|old|free|share|still good|planet|money)\b/i,
+              label:"Di\u0027 perch\u00e9 non l\u0027avete buttato (We didn\u0027t throw them away because\u2026)"} ],
   passBand:"yellow" };
 function ecoSaveMenu(lf,dt,text){
   let by=""; try{ by=Student.code||""; }catch(e){}
@@ -34455,20 +34701,50 @@ function runWasteMenu(npc){
         act:()=>{ wm.dt=d; runWasteMenu(npc); } })).concat([{label:"Leave", cls:"ghost", act:()=>{}}]) });
     return;
   }
+  if(!wm.why){
+    questHudSet("final", HOBJ("Why don\u0027t we <b>throw them away</b>? Choose a reason.","Perch\u00e9 <b>non li buttiamo via</b>? Scegli un motivo."), Quest.i, Quest.total);
+    DialogueBox.open({ npc:npc||FERN, icon:"\u2B50", sub:"Final task \u2014 il perch\u00e9",
+      text:"Great! Now, why don't we throw the "+wm.lf.en+" away?",
+      italian:"Scegli il motivo che ti convince di pi\u00f9: nessuno \u00e8 sbagliato. Lo userai nella frase con because.",
+      html:'<div style="background:#f4f1e8;border:1px solid #ccd6da;border-radius:10px;padding:8px 12px;margin-top:8px;font-size:.92em;">'
+        +ECO_REASONS.map(r=>'<div style="padding:3px 0;"><b>'+_escHtml(r.en)+'</b><br><span style="opacity:.72;">'+_escHtml(r.it)+'</span></div>').join("")+'</div>',
+      buttons:ECO_REASONS.map(r=>({ label:r.en, cls:"primary",
+        act:()=>{ wm.why=r; runWasteMenu(npc); } })).concat([{label:"Leave", cls:"ghost", act:()=>{}}]) });
+    return;
+  }
   openWasteWriting(npc);
 }
 function openWasteWriting(npc){
   const wm=Quest.state.wm;
   const name=(wm.lf.sing+" "+wm.dt.k).replace(/^./,c=>c.toUpperCase());
-  questHudSet("final", HOBJ("Last step: present your <b>"+_escHtml(name)+"</b> (2+ sentences).","Ultimo passo: presenta il tuo <b>"+_escHtml(name)+"</b> (2+ frasi)."), Quest.i, Quest.total);
+  const why=wm.why||ECO_REASONS[0], whyLow=why.en.charAt(0).toLowerCase()+why.en.slice(1);
+  questHudSet("final", HOBJ("Last step: present your <b>"+_escHtml(name)+"</b> (2+ sentences) and say <b>why</b> you didn\u0027t throw the "+_escHtml(wm.lf.en)+" away.","Ultimo passo: presenta il tuo <b>"+_escHtml(name)+"</b> (2+ frasi) e di\u0027 <b>perch\u00e9</b> non avete buttato gli avanzi."), Quest.i, Quest.total);
+  /* gli AIUTI: frasi-traccia (si aggiungono in fondo) e parole che vanno al
+     posto dei primi puntini «…» rimasti */
+  const chip=(kind,txt,lab,hi)=>'<button type="button" class="qm-btn eco-chip" data-k="'+kind+'" data-t="'+_escHtml(txt)+'" style="padding:4px 10px;margin:3px 4px 0 0;font-size:.9em;'
+    +(hi?'background:#3f8a45;color:#fff;':'')+'">'+_escHtml(lab||txt)+'</button>';
+  const frames=["Our dish of the day is "+name+".", "There are \u2026 "+wm.lf.en+" in it.", "We didn\u0027t throw them away because \u2026"];
+  const qty=["a few","a lot of","some"];
+  const rs=[why].concat(ECO_REASONS.filter(r=>r!==why));
+  const help='<div style="background:#f4f1e8;border:1px solid #ccd6da;border-radius:10px;padding:8px 10px;margin-top:8px;font-size:.92em;">'
+    +'<div style="font-weight:800;">\u{1F9E9} Help \u00b7 Aiuti</div>'
+    +'<div style="opacity:.75;margin:2px 0 4px;">Tocca una frase per scriverla, poi tocca la parola che va al posto dei puntini \u2026</div>'
+    +'<div><b>1.</b> '+frames.map(f=>chip("f",f)).join("")+'</div>'
+    +'<div style="margin-top:4px;"><b>2.</b> how many? '+qty.map(q=>chip("q",q)).join("")+'</div>'
+    +'<div style="margin-top:4px;"><b>3.</b> why? '+rs.map((r,i)=>{ const t=r.en.charAt(0).toLowerCase()+r.en.slice(1); return chip("r",t,null,i===0); }).join("")+'</div></div>';
   DialogueBox.open({ npc:npc||FERN, icon:"\u2B50", sub:"Today's zero-waste dish", autoSpeak:false,
-    text:name+"! Write it on the board for everybody.",
-    italian:"Scrivi almeno 2 frasi: che cosa c\u0027\u00e8 dentro e perch\u00e9 non si butta niente. Usa un\u0027espressione di quantit\u00e0.",
+    text:name+"! Write it on the board for everybody: what's in it, and why didn't we throw the "+wm.lf.en+" away?",
+    italian:"Scrivi almeno 2 frasi: che cosa c\u0027\u00e8 dentro (con una quantit\u00e0: a few, a lot of\u2026) e perch\u00e9 non avete buttato gli avanzi (because\u2026). Il tuo motivo: \u00ab"+why.it+"\u00bb",
     html:'<textarea id="ecoFinTA" rows="4" style="width:100%;box-sizing:border-box;font:inherit;'
       +'padding:8px;border-radius:10px;border:1px solid #ccd6da;resize:vertical;" '
-      +'placeholder="There are a few '+_escHtml(wm.lf.en)+' in it. We didn\u0027t throw them away..."></textarea>'
-      +'<div id="ecoFinFb" style="margin-top:10px;"></div>',
+      +'placeholder="There are a few '+_escHtml(wm.lf.en)+' in it. We didn\u0027t throw them away because '+_escHtml(whyLow)+'"></textarea>'
+      +help+'<div id="ecoFinFb" style="margin-top:10px;"></div>',
     buttons:[ {label:"\u2714 Hand it in", cls:"primary", keepOpen:true, act:()=>{
+        const ta0=document.getElementById("ecoFinTA"), fb0=document.getElementById("ecoFinFb");
+        if(ta0 && fb0 && !ta0.__passed && ta0.value.indexOf("\u2026")>=0){
+          fb0.innerHTML='<div style="font-weight:800;color:#a05a2c;">\u{1F7E1} Complete the dots \u2026</div>'
+            +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">Ci sono ancora dei puntini \u2026: tocca una parola degli aiuti (2 o 3) o scrivila tu.</div>';
+          return; }
         submitProduzione({ taId:"ecoFinTA", fbId:"ecoFinFb", req:U2_6_FINAL_REQ,
           completeMsg:"\u2B50 Final task completato!" });
         const ta=document.getElementById("ecoFinTA");
@@ -34478,6 +34754,19 @@ function openWasteWriting(npc){
           if(fb) fb.innerHTML+='<div style="margin-top:8px;font-weight:700;">\u{1F4CB} Il tuo piatto \u00e8 sulla lavagna dell\u0027Eco Point!</div>';
         } } },
       {label:"Leave", cls:"ghost", act:()=>{}} ] });
+  const ta=document.getElementById("ecoFinTA"); if(!ta) return;
+  /* la bozza resta se si chiude e si riapre (come per gli ordini) */
+  if(wm.draft) ta.value=wm.draft;
+  ta.addEventListener("input",()=>{ wm.draft=ta.value; });
+  document.querySelectorAll(".eco-chip").forEach(b=>{ b.onclick=()=>{
+    const t=b.getAttribute("data-t"), k=b.getAttribute("data-k"); let v=ta.value;
+    if(k==="f"){ v=v.replace(/\s+$/,""); v=(v?v+" ":"")+t; }
+    else { /* la quantita' va nei puntini dopo «are», il motivo in quelli dopo «because» */
+      const m=(k==="q")?/\bare\s*\u2026/i.exec(v):/\bbecause\s*\u2026/i.exec(v);
+      const i=m?m.index+m[0].length-1:v.indexOf("\u2026");
+      if(i>=0){ let rest=v.slice(i+1); if(/[.!?]$/.test(t) && /^[.!?]/.test(rest)) rest=rest.slice(1); v=v.slice(0,i)+t+rest; }
+      else v=v.replace(/\s+$/,"")+(v?" ":"")+t; }
+    ta.value=v; wm.draft=v; try{ ta.focus(); ta.setSelectionRange(v.length,v.length); }catch(e){} }; });
 }
 MECH.wasteMenu=function(s){
   buildEcoNPCs();
