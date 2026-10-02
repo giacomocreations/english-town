@@ -6721,25 +6721,27 @@ function carWheelsRig(c){
   W.forEach((w,wi)=>{
     const piv=new BABYLON.TransformNode("wheelPiv"+(_sgN++),scene); piv.parent=root; piv.position.copyFrom(w.c);
     const byMesh=new Map(); w.parts.forEach(q=>{ if(!byMesh.has(q.di)) byMesh.set(q.di,[]); byMesh.get(q.di).push(q); });
+    /* v302: ogni pezzo di ruota e' un CLONE del mesh originale con solo i
+       triangoli di quella ruota (stessi vertici, normali, tangenti, uv,
+       materiali): la superficie resta identica a com'era fusa nella
+       carrozzeria. Il clone si appende al perno conservando la posizione
+       nel mondo. Prima i vertici si ricopiavano a mano e sui cerchi
+       anteriori del SUV la luce cambiava (Giacomo: «col colore della
+       carrozzeria»). */
     byMesh.forEach((qs,di)=>{ const d=D[di], m=d.m;
-      /* per sotto-materiale (MultiMaterial): i triangoli si dividono per submesh */
-      const subOf=t=>{ for(const sm of m.subMeshes) if(t>=sm.indexStart && t<sm.indexStart+sm.indexCount) return sm; return m.subMeshes[0]; };
-      const groups=new Map();
-      qs.forEach(q=>q.tris.forEach(t=>{ drop[di].add(t); const sm=subOf(t), k=sm?sm.materialIndex:0; if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(t); }));
-      const uv=m.getVerticesData(VB.UVKind), nm=d.N;
-      const nrmM=d.M.clone(); nrmM.setTranslationFromFloats(0,0,0);
-      groups.forEach((tris,mi)=>{ const pos=[], nor=[], uvs=[], ind=[];
-        tris.forEach(t=>{ for(let k=0;k<3;k++){ const vi=d.idx[t+k], p=d.P[vi].subtract(w.c); pos.push(p.x,p.y,p.z);
-          if(nm){ const n=V3.TransformNormal(new V3(nm[3*vi],nm[3*vi+1],nm[3*vi+2]),nrmM).normalize(); nor.push(n.x,n.y,n.z); }
-          if(uv) uvs.push(uv[2*vi],uv[2*vi+1]); ind.push(ind.length); } });
-        const vd=new BABYLON.VertexData(); vd.positions=pos; vd.indices=ind;
-        if(nm) vd.normals=nor; else { const nn=[]; BABYLON.VertexData.ComputeNormals(pos,ind,nn); vd.normals=nn; }
-        if(uv) vd.uvs=uvs;
-        const wm=new BABYLON.Mesh("wheel"+wi+"_"+(_sgN++),scene); vd.applyToMesh(wm);
-        const mat=m.material; wm.material=(mat && mat.subMaterials)?(mat.subMaterials[mi]||mat.subMaterials[0]):mat;
-        wm.parent=piv; wm.isPickable=false; wm.receiveShadows=m.receiveShadows; wm.__occluder=m.__occluder;
-        try{ if(m.layerMask!=null) wm.layerMask=m.layerMask; }catch(e){}
-      }); });
+      const set=new Set(); qs.forEach(q=>q.tris.forEach(t=>{ set.add(t); drop[di].add(t); }));
+      const wm=m.clone("wheel"+wi+"_"+(_sgN++),m.parent,true); if(!wm) return;     // stesso genitore: stessa posizione nel mondo
+      try{ wm.makeGeometryUnique(); }catch(e){}
+      const subs=m.subMeshes.map(sm=>({ mi:sm.materialIndex, s:sm.indexStart, n:sm.indexCount }));
+      const ni=[], ns=[];
+      subs.forEach(sb=>{ const st=ni.length; for(let t=sb.s;t<sb.s+sb.n;t+=3){ if(!set.has(t)) continue; ni.push(d.idx[t],d.idx[t+1],d.idx[t+2]); }
+        ns.push({ mi:sb.mi, s:st, n:ni.length-st }); });
+      wm.setIndices(ni); wm.subMeshes=[]; const nv=wm.getTotalVertices();
+      ns.forEach(sb=>{ if(sb.n>0) new BABYLON.SubMesh(sb.mi,0,nv,sb.s,sb.n,wm); });
+      wm.computeWorldMatrix(true); wm.setParent(piv);
+      wm.isPickable=false; wm.__occluder=m.__occluder; wm.receiveShadows=m.receiveShadows;
+      try{ wm.refreshBoundingInfo(); }catch(e){}
+    });
     out.push({ piv, r:Math.max(0.12,w.r) });
   });
   /* l'originale senza le ruote */
@@ -12650,7 +12652,10 @@ function homeMirror(c,w,h){
   m.diffuseColor=new BABYLON.Color3(0.04,0.05,0.06); m.specularColor=new BABYLON.Color3(0.25,0.25,0.25);
   m.emissiveColor=new BABYLON.Color3(0.03,0.035,0.04); m.reflectionTexture=mt;
   pl.material=m;
-  if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(pl);
+  /* ⚠️ v302 (Giacomo: «di notte lo specchio e la casa sono abbaglianti»):
+     NON va escluso dal glow. Escluso, nel passaggio del glow non copriva la
+     lastra azzurra dietro, che «brillava» attraverso il riflesso e lo
+     sbiancava. Incluso, col suo emissive quasi nero, la copre e basta. */
   let savedMask=null;
   mt.onBeforeRenderObservable.add(()=>{ const cam=scene.activeCamera; if(!cam) return;
     savedMask=cam.layerMask; cam.layerMask=savedMask|(typeof POV_HEAD_BIT!=="undefined"?POV_HEAD_BIT:0); });
@@ -12896,7 +12901,7 @@ function buildHome(){
   furn("f_toilet", 4.6,-7.6, Math.PI,   0.7, true,  "toilet","water","Bathroom");      // v254: trovabile
   // SPECCHIO sopra il lavandino (muro nord z=-H)
   const mirF=pbox("mirFrame",1.15,1.20,0.06, 2.7,1.72,-8.28, "#6b7480",null,false);
-  pbox("mirGlass",0.98,1.02,0.04, 2.7,1.72,-8.24, "#bfe0ea","#5f8996",false);
+  pbox("mirGlass",0.98,1.02,0.04, 2.7,1.72,-8.24, "#bfe0ea",null,false);     // v302: niente emissive (ora davanti c'e' lo specchio vero)
   try{ homeMirror(new BABYLON.Vector3(C.x+2.7,1.72,C.z-8.24+0.022),0.98,1.02); }catch(e){ console.warn("[specchio]",e); }
   // DOCCIA nell'angolo fronte-ovest del bagno (pareti piastrellate + vetri)
   const SHX=2.35, SHZ=-3.5, SHH=2.4, SS=1.6;
@@ -36686,9 +36691,44 @@ function interiorShadowSweep(area){
    vasca stavano sul pavimento senza un filo d'ombra. Stesso sweep sulla
    radice della casa, con in piu' il filtro per le PARETI (pbox lunghi,
    sottili e alti come la stanza) che li' sono figli diretti come i mobili. */
+/* v302 (Giacomo, 2 ott: «di notte la casa e' avvolta in un glow abbagliante,
+   di giorno no»). Il glow (solo su qualita' Alta) di notte sale a 0.8 e fa
+   brillare TUTTO cio' che ha un po' di luce propria: in casa pareti, mobili e
+   pavimenti ce l'hanno (un fondo, perche' al buio non spariscano), quindi la
+   casa intera si sbiancava. In casa il glow resta solo alle LUCI vere
+   (lampadine, lampade, schermi, finestre illuminate): tutto il resto si
+   esclude, una volta, entrando. */
+function homeGlowTrim(){
+  if(typeof glowL==="undefined" || !glowL || typeof homeRoot==="undefined" || !homeRoot) return;
+  const LIGHT=/bulb|lamp|light|led|screen|tv|monitor|glow|neon|candle|win|glass|bb$/i;
+  homeRoot.getChildMeshes(false).forEach(m=>{ if(m.__glowTrim) return; m.__glowTrim=true;
+    const mt=m.material; if(!mt) return;
+    if(m.__keep || m.name==="homeMirror" || LIGHT.test(m.name||"") || LIGHT.test(mt.name||"")) return;   // lo specchio resta: deve coprire
+    try{ glowL.addExcludedMesh(m); }catch(e){} }); }
 function homeShadowSweep(){
   if(typeof homeRoot==="undefined" || !homeRoot) return 0;
-  const n=shadowSweepRoot(homeRoot,true);
+  try{ homeGlowTrim(); }catch(e){}
+  let n=shadowSweepRoot(homeRoot,true);
+  /* v302: i mobili fatti a PEZZI (il tavolo da pranzo: dtTop + 4 dtLeg) —
+     nessun pezzo da solo passa lo sweep (il piano non tocca terra, le gambe
+     sono troppo sottili). Si raggruppano per prefisso del nome e, se il
+     gruppo tocca terra ed e' un mobile (alto, non enorme), prende un'ombra
+     sola sotto l'ingombro di tutti i pezzi. */
+  try{ const G={};
+    homeRoot.getChildren().forEach(ch=>{ if(ch.__cshGrp || !ch.getTotalVertices || !ch.getTotalVertices()) return;
+      if(ch.getChildren().some(c=>/h7sh/.test(c.name))) return;
+      const m=/^([a-z]{2,4})(?=[A-Z0-9])/.exec(ch.name||""); if(!m) return;
+      (G[m[1]]=G[m[1]]||[]).push(ch); });
+    Object.keys(G).forEach(k=>{ const L=G[k]; if(L.length<2) return;
+      let mn=new BABYLON.Vector3(1e9,1e9,1e9), mx=new BABYLON.Vector3(-1e9,-1e9,-1e9);
+      L.forEach(c=>{ c.computeWorldMatrix(true); c.refreshBoundingInfo(); const b=c.getBoundingInfo().boundingBox;
+        mn=BABYLON.Vector3.Minimize(mn,b.minimumWorld); mx=BABYLON.Vector3.Maximize(mx,b.maximumWorld); });
+      const w=mx.x-mn.x, d=mx.z-mn.z, h=mx.y-mn.y;
+      if(mn.y>0.18 || h<0.3 || w>3.2 || d>3.2 || (w<0.25&&d<0.25)) return;
+      L.forEach(c=>c.__cshGrp=true);
+      const sh=hm7Shadow(homeRoot,w*1.18+0.3,d*1.18+0.3,(mn.x+mx.x)/2,(mn.z+mx.z)/2,0.027,0.9);
+      const s2=sh.clone("h7sh"); s2.parent=homeRoot; s2.scaling.set(0.72,1,0.72); s2.position.y+=0.001; n++; }); }
+  catch(e){ console.warn("[ombre casa a pezzi]",e); }
   if(n) try{ refreshShadowCasters(); }catch(e){}
   return n; }
 function shadowSweepRoot(root,walls){
@@ -46602,7 +46642,11 @@ function contactShadowFor(n,gyWorld,k,pad,maxS){
   const P=n.getAbsolutePosition(), sc=n.scaling||{x:1,z:1};
   const cx=((bb.min.x+bb.max.x)/2-P.x)/(sc.x||1), cz=((bb.min.z+bb.max.z)/2-P.z)/(sc.z||1);
   const pd=(pad==null?0.25:pad);
-  const sh=hm7Shadow(n,(w*1.18+pd)/(sc.x||1),(d*1.18+pd)/(sc.z||1),cx,cz,gyWorld-P.y,k==null?0.85:k);
+  /* ⚠️ v302: anche la QUOTA va divisa per la scala del nodo, come larghezza e
+     centro. Prima no: sotto un mobile GLB rimpicciolito (le sedie di casa,
+     scala 0.54) l'ombra finiva a 1,4 cm invece di 2,7 — sotto il pavimento a
+     2 cm, invisibile (Giacomo: «le sedie e il tavolo non hanno ombre»). */
+  const sh=hm7Shadow(n,(w*1.18+pd)/(sc.x||1),(d*1.18+pd)/(sc.z||1),cx,cz,(gyWorld-P.y)/(sc.y||1),k==null?0.85:k);
   sh.__npcCast=false; sh.receiveShadows=false; return sh; }
 let svNpcBuilt=false, VIK=null;
 function buildSurvivalNPCs(){
