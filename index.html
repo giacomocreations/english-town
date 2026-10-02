@@ -36179,7 +36179,18 @@ function interTopOf(o){
 function placeInterArrow(o){
   if(!o){ if(interArrow) interArrow.setEnabled(false); return; }
   const a=ensureInterArrow(), t=interTopOf(o);
-  a.position.set(t.x, t.y+0.26+Math.sin(performance.now()/320)*0.045, t.z);
+  /* v299 (Giacomo, 2 ott: «in POV la freccia gialla e' gigante e copre lo
+     schermo»). In terza persona la telecamera sta a qualche metro e la
+     freccia (20 cm) si vede piccola; in prima persona gli occhi sono a
+     mezzo metro dall'oggetto e lo stesso cono riempie la vista. In POV la
+     freccia si rimpicciolisce con la distanza dagli occhi: sempre della
+     stessa misura apparente, piccola, e piu' bassa sopra l'oggetto. */
+  let k=1;
+  if(typeof POV!=="undefined" && POV.on){ const cam=scene.activeCamera;
+    if(cam){ const cp=cam.globalPosition||cam.position;
+      k=Math.max(0.1,Math.min(0.6,Math.hypot(cp.x-t.x,cp.y-(t.y+0.1),cp.z-t.z)*0.14)); } }
+  a.scaling.setAll(k);
+  a.position.set(t.x, t.y+(0.26+Math.sin(performance.now()/320)*0.045)*k, t.z);
   a.setEnabled(true);
 }
 function cycleInter(dir){
