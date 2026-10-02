@@ -255,6 +255,11 @@
   #quest-modal{position:fixed;inset:0;z-index:25;background:transparent;display:none;
     align-items:flex-end;justify-content:flex-end;padding:16px;}
   #quest-modal.show{display:flex;}
+  /* v301: il velo trasparente del popup non cattura il puntatore: si puo'
+     trascinare sullo schermo e girare la visuale mentre si legge. La card
+     resta cliccabile; i popup centrati (velo scuro) restano modali. */
+  #quest-modal:not(.centered){pointer-events:none;}
+  #quest-modal:not(.centered) #qm-card{pointer-events:auto;}
   #quest-modal.centered{align-items:center;justify-content:center;background:rgba(18,27,34,.55);padding:20px;}
   /* \u26a0\ufe0f ALTEZZA MASSIMA + CORPO SCORREVOLE (Giacomo, 11 set: \u00abnon posso
      chiudere questa finestra\u00bb, screenshot del quaderno con dodici testi).
@@ -1491,6 +1496,7 @@ const UNIT6={ id:"u6", area:"market", areaName:"The Market",
    generico). ===================================================================== */
 const UNIT0={ id:"u0", area:"school", areaName:"Town School",
   title:"Starter — Town School", size:9, sizeX:3.8, tint:"#e8e0cf",
+  ceilHex:"#f3efe6", ceilEm:"#a8a49c",      // v301 (Giacomo: «metti un soffitto alla classe»)
   enterToast:"Sei entrato alla Town School",
   onEnter:()=>{ schoolShuffleDesks(); setTimeout(buildSchoolNPCs,0); },   // stesso pattern anti-TTS di buildEmma
   /* v252: il lessico pesca SOLO dagli oggetti oggi sui banchi */
@@ -1796,7 +1802,9 @@ const UNIT2={ id:"u2", area:"townhall", areaName:"Town Hall",
     intro:"<b>Mr. Dunn</b> legge il registro della famiglia Robins: <b>ascolta</b> (🔊) chi è più grande e chi più piccolo, poi <b>tocca i ritratti</b> in ordine di età!",
     introObjEn:"Listen and put the three Robins in order.", introObj:"Ascolta e ordina i tre fratelli Robins." },
   { id:"write", strand:"writing",    type:"writeMessage",
-    pad:{x:-2.0,z:6.6,title:"👪 My family",sub:"Writing — la mia famiglia",
+    /* v301: il modulo sta DAVVERO accanto al bancone di Mr. Dunn, come dice
+       la consegna (prima era a x -2 z 6.6, vicino all'uscita) */
+    pad:{x:-6.4,z:-2.4,title:"👪 My family",sub:"Writing — la mia famiglia",
       italian:"Scrivi almeno 3 frasi sulla tua famiglia: quante persone siete, chi sono, usa un possessivo 's.",
       placeholder:"There are four people in my family. My mother's name is Anna. My brother is ten..."},
     req:{ minSent:3,
@@ -7532,6 +7540,32 @@ function despawnFragment(id){
   if(o.mesh && !o.mesh.isDisposed()) o.mesh.dispose();
   delete FRAG_MESHES[id];
 }
+/* v301 (Giacomo, 2 ott: «quando si sblocca un indizio, la prima persona con
+   cui parli ti dice che c'e' un indizio da qualche parte, come fa il Mayor:
+   cosi' non si rischia che l'alunno non lo prenda mai»). Il toast
+   «Si dice che qualcosa sia apparso…» passa in tre secondi e si perde.
+   Ora, per ogni lettera disponibile e non ancora raccontata, il PRIMO
+   personaggio con cui si parla (chiunque sia) lo dice a voce, con il posto,
+   e poi la conversazione continua normalmente. Una volta sola per lettera
+   (et_frags.told, salvato con il resto dei frammenti). */
+function fragNewsTell(npc,cont){
+  let av=[]; try{ av=Frag.available()||[]; }catch(e){ return false; }
+  if(!av.length) return false;
+  let s; try{ s=Sync.get("et_frags",{got:{}})||{got:{}}; }catch(e){ return false; }
+  const told=s.told||{};
+  const f=av.find(x=>!told[x.id]); if(!f) return false;
+  s.got=s.got||{}; s.told=Object.assign({},told); s.told[f.id]=1;
+  try{ Sync.set("et_frags",s); }catch(e){}
+  const gaz=(f.ch==="gazette");
+  const en=gaz?"Oh, wait! Have you read the newspaper today? There's a letter from The Architect on page four, in the Letters column. Go and read it!"
+              :"Oh, wait! Have you heard? People say The Architect left a letter in town. Where? "+f.where+". Go and look for it!";
+  const it=gaz?"Aspetta! Hai letto il giornale di oggi? A pagina quattro, nella colonna delle lettere, c'\u00e8 una lettera dell'Architetto. Vai a leggerla!"
+              :"Aspetta! Hai sentito? Dicono che l'Architetto abbia lasciato una lettera in citt\u00e0: "+f.place+". Vai a cercarla!";
+  DialogueBox.open({ npc, icon:"\u{1F4DC}", sub:(npc&&npc.name?npc.name+" \u2014 ":"")+"news!",
+    text:en, italian:it,
+    buttons:[{ label:"\u{1F44D} Thanks! I'll look for it", cls:"primary", act:()=>{ try{ if(cont) cont(); }catch(e){} } }] });
+  return true;
+}
 /* Chiamata a ogni unit completata e all'accesso: fa comparire i frammenti la
    cui soglia e' stata raggiunta. La notifica e' DISCRETA come da canone:
    dice la zona, non le coordinate — cercare fa parte del gioco. */
@@ -8042,11 +8076,13 @@ const _DN_NO={ k:["no thanks","no thank","nothing","that's all","thats all","i'm
 const DINER_TURNS={
   drink:{ field:"Drink", key:"drink", q:"Hi there, welcome to the Sunny Side Diner! Here's the menu. Can I get you something to drink?",
     it:"Benvenuto! Ecco il menu. Posso portarti qualcosa da bere?",
+    qAgain:"So, what would you like to drink?", itAgain:"Allora, cosa vuoi da bere?",
     voci:()=>DINER_MENU.drinks,
     pool:["milkshake","shake","chocolate","strawberry","lemonade","cola","coke","juice","orange","water","please","can","could","have","like","i'd","a"],
     hint:"ordina da bere dal menu — «Can I have a lemonade, please?»",
     ready:["A chocolate milkshake, please.","A lemonade, please.","Can I have a cola, please?","Just water, please."], nulla:null },
   main:{ field:"Main", key:"main", q:"Great choice! And what would you like to eat?", it:"Ottima scelta! E cosa vuoi mangiare?",
+    qAgain:"So, what would you like to eat?", itAgain:"Allora, cosa vuoi mangiare?",
     voci:()=>DINER_MENU.mains,
     pool:["burger","cheeseburger","veggie","hot","dog","pancakes","chicken","mac","cheese","please","i'd","like","have","can","could","the","a"],
     hint:"scegli un piatto dal menu — «I'd like a cheeseburger, please.»",
@@ -8057,6 +8093,7 @@ const DINER_TURNS={
     hint:"scegli un contorno, oppure di’ di no — «Some fries, please.»",
     ready:["Some fries, please.","Onion rings, please.","A salad, please.","No, thanks."], nulla:_DN_NO },
   dessert:{ field:"Dessert", key:"dessert", q:"How was everything? Would you like a dessert?", it:"Com'era? Vuoi un dolce?",
+    qAgain:"So, would you like a dessert?", itAgain:"Allora, vuoi un dolce?",
     voci:()=>DINER_MENU.desserts,
     pool:["pie","apple","sundae","ice","cream","brownie","cake","no","thanks","delicious","great","good","please","yes","full"],
     hint:"scegli un dolce, oppure di’ di no — «It was delicious! No, thanks.»",
@@ -8286,6 +8323,18 @@ function npcSit(n,s){
   if(r.hip){ const c=n.carrier.position;
     c.x+=(s.x-f.x*DINER_HIP_BACK)-r.hip.x; c.z+=(s.z-f.z*DINER_HIP_BACK)-r.hip.z; }
 }
+/* v301: la stessa cosa di npcSit, per qualunque sedia (x,z = centro della
+   seduta nel mondo, face = verso dove guarda, seatY = piano della seduta,
+   gy = pavimento, hipBack = di quanto l'anca sta dietro il centro) */
+function npcSitAt(n,x,z,face,seatY,gy,hipBack){
+  const f=new BABYLON.Vector3(Math.sin(face),0,Math.cos(face));
+  n.carrier.rotation.y=face; n.baseYaw=face;
+  n.carrier.computeWorldMatrix(true); _sitRefresh(n.carrier);
+  const r=sitPoseFor(n.holder,n.pins,f,seatY,gy); if(!r) return false;
+  n.pins=r.pins; n.holder.position.y-=r.drop; n.__seated=true;
+  if(r.hip){ const c=n.carrier.position; c.x+=(x-f.x*hipBack)-r.hip.x; c.z+=(z-f.z*hipBack)-r.hip.z; }
+  return true;
+}
 function talkToDinerGuest(n){
   if(typeof ambientReady==="function" && ambientReady(n,null)){ openAmbient(n,null,"\u{1F354}","Customer"); return; }
   const hank=(n.id==="hank");
@@ -8508,7 +8557,14 @@ function dinerShowMenu(back){
 /* la domanda del turno `key`; poi(v) quando la risposta e' presa */
 function dinerAsk(key,poi,qOverride,itOverride){
   const o=DINER.o, w=DINER.waiter; if(!o||!(DINER.seat||DINER.debt)) return;
-  const t=DINER_TURNS[key], q=qOverride||t.q, itq=itOverride||t.it;
+  const t=DINER_TURNS[key];
+  /* v301 (Giacomo, 2 ott: «dopo il saluto guardi il menu e ti risaluta:
+     basta una volta»). Il benvenuto (e «Great choice!», «How was
+     everything?») si dice SOLO la prima volta che si fa quella domanda in
+     questo ordine; tornando dal menu, o dal tasto «Back to the waiter», la
+     domanda torna asciutta: «So, what would you like to drink?». */
+  o.asked=o.asked||{}; const first=!o.asked[key]; o.asked[key]=1;
+  const q=first?(qOverride||t.q):(t.qAgain||qOverride||t.q), itq=first?(itOverride||t.it):(t.itAgain||itOverride||t.it);
   if(DINER.seat) DINER.st="ask:"+key;
   const sub=DINER.name+" — "+t.field;
   const again=()=>dinerAsk(key,poi,qOverride,itOverride);
@@ -12430,6 +12486,46 @@ function homeNightTick(){
     m.emissiveColor.set(b.r*0.30*(1-0.35*n)+warm.r*0.12*n, b.g*0.30*(1-0.35*n)+warm.g*0.12*n, b.b*0.30*(1-0.35*n)+warm.b*0.12*n); });
 }
 
+/* v301 (Giacomo, 2 ott: «fai in modo che lo specchio di casa rifletta la
+   tua immagine come uno specchio vero»). Prima era una lastra azzurrina.
+   Ora e' una MirrorTexture: il mondo ribaltato sul piano dello specchio
+   (muro nord del bagno, guarda +z). Per non pesare:
+   · si disegnano SOLO il tuo avatar e le cose del bagno a meno di 6 m
+     (lista rifatta ogni mezzo secondo, solo quando sei in casa — il corpo
+     si ricostruisce quando lo cambi alla Teca);
+   · la texture e' 512 px e Babylon la ridisegna solo se lo specchio e'
+     inquadrato (fuori casa homeRoot e' spento);
+   · in prima persona la testa e' nascosta alla telecamera (POV_HEAD_BIT):
+     mentre si disegna il riflesso la maschera si apre, cosi' nello specchio
+     ti vedi intero, come in uno specchio vero. */
+function homeMirror(c,w,h){
+  const pl=BABYLON.MeshBuilder.CreatePlane("homeMirror",{width:w,height:h},scene);
+  pl.position.copyFrom(c); pl.rotation.y=Math.PI; pl.parent=homeRoot; pl.isPickable=false;
+  const mt=new BABYLON.MirrorTexture("homeMirrorTex",512,scene,true);
+  mt.mirrorPlane=new BABYLON.Plane(0,0,-1,c.z);
+  mt.level=0.95; mt.renderList=[];
+  const m=new BABYLON.StandardMaterial("homeMirrorM",scene);
+  m.diffuseColor=new BABYLON.Color3(0.04,0.05,0.06); m.specularColor=new BABYLON.Color3(0.25,0.25,0.25);
+  m.emissiveColor=new BABYLON.Color3(0.03,0.035,0.04); m.reflectionTexture=mt;
+  pl.material=m;
+  if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(pl);
+  let savedMask=null;
+  mt.onBeforeRenderObservable.add(()=>{ const cam=scene.activeCamera; if(!cam) return;
+    savedMask=cam.layerMask; cam.layerMask=savedMask|(typeof POV_HEAD_BIT!=="undefined"?POV_HEAD_BIT:0); });
+  mt.onAfterRenderObservable.add(()=>{ const cam=scene.activeCamera; if(cam && savedMask!=null) cam.layerMask=savedMask; savedMask=null; });
+  let last=0;
+  scene.onBeforeRenderObservable.add(()=>{
+    if(typeof area==="undefined" || area!=="home") return;
+    const now=performance.now(); if(now-last<500) return; last=now;
+    const L=[];
+    try{ if(typeof avatarRoot!=="undefined" && avatarRoot) avatarRoot.getChildMeshes(false).forEach(x=>{ if(x.isEnabled()) L.push(x); }); }catch(e){}
+    homeRoot.getChildMeshes(false).forEach(x=>{ if(x===pl || !x.isEnabled() || !x.getBoundingInfo) return;
+      try{ const bs=x.getBoundingInfo().boundingSphere, p=bs.centerWorld;     // anche pavimenti, pareti e soffitto (grandi: conta il bordo)
+        if(p.z+bs.radiusWorld>=c.z && BABYLON.Vector3.Distance(p,c)-bs.radiusWorld<6) L.push(x); }catch(e){} });
+    mt.renderList=L;
+  });
+  return pl;
+}
 function buildHome(){
   if(homeBuilt) return; homeBuilt=true;
   const C=HOME_C, H=HOME_H;
@@ -12659,6 +12755,7 @@ function buildHome(){
   // SPECCHIO sopra il lavandino (muro nord z=-H)
   const mirF=pbox("mirFrame",1.15,1.20,0.06, 2.7,1.72,-8.28, "#6b7480",null,false);
   pbox("mirGlass",0.98,1.02,0.04, 2.7,1.72,-8.24, "#bfe0ea","#5f8996",false);
+  try{ homeMirror(new BABYLON.Vector3(C.x+2.7,1.72,C.z-8.24+0.022),0.98,1.02); }catch(e){ console.warn("[specchio]",e); }
   // DOCCIA nell'angolo fronte-ovest del bagno (pareti piastrellate + vetri)
   const SHX=2.35, SHZ=-3.5, SHH=2.4, SS=1.6;
   const shT=pbox("shTray",SS,0.09,SS, SHX,0.045, SHZ, "#e8eef1",null,true);
@@ -13610,7 +13707,9 @@ function spawnNPC(cfg){
     npc.inter=addInteract({ id:"npc_"+id, area:npc.area, radius:cfg.radius||3.0,
       pos:()=>npc.pos(), meshes:meshes,
       prompt:cfg.prompt||('Press <b>E</b> to talk to <b>'+npc.name+'</b>'),
-      interact:()=>{ if(cfg.interact) cfg.interact(npc); } });
+      interact:()=>{ if(!cfg.interact) return;
+        if(fragNewsTell(npc,()=>cfg.interact(npc))) return;      // v301: prima la notizia della lettera
+        cfg.interact(npc); } });
   }
   /* metPlayer PERSISTENTE: spawnNPC ricostruisce gli oggetti NPC ogni volta
      che si entra in un interno, quindi un flag semplice si azzerava e
@@ -13906,6 +14005,20 @@ function _modalPlace(el){ try{ el.classList.toggle("centered", typeof started===
 const DialogueBox=(function(){
   const el=document.getElementById("quest-modal"), card=document.getElementById("qm-card");
   function close(){ el.classList.remove("show"); card.innerHTML=""; try{ TTS.stop(); }catch(e){} try{ SpeakLock.unlock(); }catch(e){} }
+  /* v301 (Giacomo, 2 ott: «se premi INVIO vale come OK / Send it»): nelle
+     caselle di testo dei dialoghi il tasto Invio preme il bottone principale
+     (Send it, Say it, Hand it in, OK next…). Per andare a capo: Maiusc+Invio.
+     Un solo ascoltatore, agganciato una volta; agisce solo se il cursore e'
+     in una casella DENTRO la finestra aperta. */
+  document.addEventListener("keydown", function(e){
+    if((e.key!=="Enter" && e.keyCode!==13) || e.shiftKey || e.isComposing || e.altKey || e.ctrlKey || e.metaKey) return;
+    const t=e.target; if(!t || !card.contains(t)) return;
+    if(!(t.tagName==="TEXTAREA" || (t.tagName==="INPUT" && /^(text|search|)$/i.test(t.type||"")))) return;
+    if(!el.classList.contains("show")) return;
+    const b=[...card.querySelectorAll(".qm-btn.primary")].find(x=>x.offsetParent && !x.disabled);
+    if(!b) return;
+    e.preventDefault(); e.stopPropagation(); b.click();
+  }, true);
   function speakBtn(text,opts){
     const b=document.createElement("button"); b.type="button"; b.className="dlg-speak"; b.textContent="🔊";
     b.onclick=()=>{ if(b.classList.contains("playing")) return; b.classList.add("playing");
@@ -15322,6 +15435,17 @@ const Sync=(function(){
    sessione di sviluppo per una di prova (e a evitare ET.apriTutto() ogni volta).
    Le ⭐ non sono comunque a prova di manomissione: mai usarle per valutare. */
 const DOCENTI=["PROF-COSSU"];
+/* v301 — CODICI DI COLLAUDO (Giacomo, 2 ott: «dammi due codici che conosco
+   solo io, per giocare insieme con tutto aperto e fare una prova»). Due
+   codici separati = due quaderni separati (ognuno i suoi progressi), tutti e
+   due con la citta' aperta come il docente. Qui NON c'e' il codice ma solo
+   la sua IMPRONTA (due FNV con sali diversi): leggendo il file non lo si
+   ricava. Diversamente da PROF-COSSU non si verificano sull'UID Firebase
+   (servono proprio su DUE dispositivi diversi): per toglierli basta
+   svuotare COLLAUDO_H. */
+const COLLAUDO_H=["1bq6dkg.18p2aq7","1qres5l.1x5kg0q"];
+function _collaudoH(c){ const s=String(c||"").trim().toUpperCase(); return _fnv("qt|"+s).toString(36)+"."+_fnv(s+"|qt#").toString(36); }
+function isCollaudo(c){ return !!c && COLLAUDO_H.indexOf(_collaudoH(c))>=0; }
 /* ⚠️ IL CODICE DOCENTE NON E' UN SEGRETO E NON PUO' ESSERLO. Sta in chiaro
    qui dentro, in un file HTML che chiunque puo' aprire col tasto destro:
    basta un Ctrl+F per trovarlo. Fino alla 138 chi lo scriveva otteneva
@@ -15350,6 +15474,7 @@ const Student=(function(){
      nei primi secondi), true = uid confermato, false = smentito dal server. */
   let docOk=null;
   function isTeacher(c){
+    if(isCollaudo(c||code)) return true;                 // v301: codici di collaudo, tutto aperto
     if(DOCENTI.indexOf((c||code||"").toUpperCase())<0) return false;
     return docOk!==false;
   }
@@ -17835,10 +17960,14 @@ const LEXPROPS={
       lpBox(r,0.62,0.045,0.38,"#efe6d3",x,0.40,0);                 // ripiano interno
       [[-0.30,-0.18],[0.30,-0.18],[-0.30,0.18],[0.30,0.18]].forEach(p=>
         lpBox(r,0.045,0.62,0.045,"#8a6a45",x+p[0],0.31,p[1]));     // gambe banco
-      lpBox(r,0.40,0.045,0.40,"#7a5a3a",x,0.24,0.42);              // seduta sedia
-      lpBox(r,0.40,0.44,0.045,"#7a5a3a",x,0.46,0.62);              // schienale
+      /* v301 (Giacomo: «verifica che le sedie siano adatte agli NPC»): la
+         seduta era a 26 cm, da asilo; un ragazzo di 1.50-1.55 m ci stava
+         con le ginocchia al mento. Ora a 42 cm (sotto il piano del banco a
+         62 restano 20 cm per le cosce), schienale e gambe in proporzione. */
+      lpBox(r,0.40,0.045,0.40,"#7a5a3a",x,0.40,0.42);              // seduta sedia
+      lpBox(r,0.40,0.40,0.045,"#7a5a3a",x,0.62,0.62);              // schienale
       [[-0.16,-0.16],[0.16,-0.16],[-0.16,0.16],[0.16,0.16]].forEach(p=>
-        lpBox(r,0.04,0.24,0.04,"#5d4226",x+p[0],0.12,0.42+p[1]));  // gambe sedia
+        lpBox(r,0.04,0.40,0.04,"#5d4226",x+p[0],0.20,0.42+p[1]));  // gambe sedia
     }
     return r; },
   /* ===== v252 — POSTER DI RIPASSO (Town School) ===========================
@@ -20203,6 +20332,16 @@ function stationAssistDone(){
    seconda di dove guardi (stessa lezione delle auto del traffico). */
 const SCHOOL_DESK_ITEMS=["pen","pencil","rubber","ruler","book","pencil case","calculator","pencil sharpener","exercise book","tablet"];
 const SCHOOL_DESKS=(function(){ const a=[]; [-2.0,1.7,5.0].forEach(z=>[-1.15,0,1.15].forEach(x=>a.push({x,z}))); return a; })();
+/* v301 (Giacomo: «metti degli alunni seduti… attento che non coprano gli
+   school objects da cercare»): due banchi sono dei COMPAGNI SEDUTI e gli
+   oggetti da cercare non ci vanno mai — si mescolano sugli altri sette
+   (gli oggetti in uso sono sette: ce n'e' uno per banco). I compagni non
+   hanno interazione: non rubano la E agli oggetti. */
+const SCHOOL_PUPILS=[
+  { id:"pupil_lily", name:"Lily", model:"avatarW", h:1.50, desk:{x:-1.15,z:1.7} },
+  { id:"pupil_ben",  name:"Ben",  model:"avatar",  h:1.52, desk:{x: 1.15,z:5.0} },
+];
+const SCHOOL_FREE_DESKS=SCHOOL_DESKS.filter(d=>!SCHOOL_PUPILS.some(p=>p.desk.x===d.x&&p.desk.z===d.z));
 function schoolShuffleDesks(){
   const I=(typeof INTERIORS!=="undefined")?INTERIORS[UNIT0.area]:null; if(!I||!UNIT0.items) return false;
   const C=I.center;
@@ -20210,7 +20349,7 @@ function schoolShuffleDesks(){
   const must=desk.filter(it=>it.en==="exercise book");
   const rest=shuffle(desk.filter(it=>it.en!=="exercise book"));
   const on=must.concat(rest.slice(0,6)), off=rest.slice(6);
-  const spots=shuffle(SCHOOL_DESKS).slice(0,on.length);
+  const spots=shuffle(SCHOOL_FREE_DESKS).slice(0,on.length);
   let nuovi=false;
   on.forEach((it,i)=>{ const d=spots[i];
     const x=d.x+(Math.random()<0.5?-0.17:0.17)+(Math.random()-0.5)*0.06;
@@ -20234,8 +20373,22 @@ function buildSchoolNPCs(){
   // e muro ovest, ~1.05m di spazio reale nella nuova aula stretta).
   GRACE=spawnNPC({ id:"grace", name:"Miss Grace", sub:"Teacher", area:UNIT0.area,
     x:C.x-2.5, z:C.z-6.9, face:0, model:"avatarW", height:1.70, interact:talkToGrace });
-  TIM=spawnNPC({ id:"tim", name:"Tim", sub:"Classmate", area:UNIT0.area,
+  /* v301: Tim e' un ragazzo come gli altri: il rig del giocatore (non un
+     adulto a sorteggio) e, essendo un compagno di classe, niente cappello
+     ne' occhiali in aula (npcLookFor: opt.school) */
+  TIM=spawnNPC({ id:"tim", name:"Tim", sub:"Classmate", area:UNIT0.area, model:"avatar", keepModel:true,
     x:C.x-0.2, z:C.z+3.4, face:Math.PI, tint:"yellow", height:1.55, interact:talkToTim });
+  SCHOOL_PUPILS.forEach(p=>{ try{
+    const n=spawnNPC({ id:p.id, name:p.name, sub:"Pupil", area:UNIT0.area, model:p.model, keepModel:true,
+      x:C.x+p.desk.x, z:C.z+p.desk.z+0.42, face:Math.PI, height:p.h, snap:false, watch:false });
+    /* le pin delle gambe arrivano qualche fotogramma dopo lo spawn: si
+       ritenta finche' ci sono (al massimo ~4 s) */
+    if(n){ n.watch=false;
+      const tryS=k=>{ if(n.__seated) return; let ok=false;
+        try{ ok=!!(n.pins&&n.pins.length) && npcSitAt(n,C.x+p.desk.x,C.z+p.desk.z+0.42,Math.PI,0.4225,0,0.04); }catch(e){ console.warn("[school] sit",e); }
+        if(!ok && k<40) setTimeout(()=>tryS(k+1),100); };
+      setTimeout(()=>tryS(0),0); }
+  }catch(e){ console.warn("[school] pupil",e); } });
   initSchoolAssist();
 }
 /* v251 — il saluto del primo incontro contiene GIA' il benvenuto
@@ -22791,7 +22944,11 @@ registerAmbient("u0",[   // Starter — Town School
   { q:"What's your favourite colour?", it:"Qual è il tuo colore preferito? Rispondi con una frase.",
     expect:{pool:["red","blue","green","yellow","black","white","pink","purple","orange","brown","grey","gray"],hint:"con un colore"} },
   { q:"What's your favourite animal?", it:"Qual è il tuo animale preferito? Rispondi con una frase.",
-    expect:{pool:["dog","cat","horse","rabbit","bird","fish","hamster","lion","tiger","dolphin","elephant","turtle","snake","mouse"],hint:"con un animale"} },
+    expect:{pool:["dog","cat","horse","rabbit","bird","fish","hamster","lion","tiger","dolphin","elephant","turtle","snake","mouse",
+      /* v301: piu' animali (Giacomo: «It's a lion» va accettato sempre) */
+      "giraffe","monkey","bear","panda","wolf","fox","zebra","penguin","shark","whale","cow","pig","sheep","goat","duck","chicken",
+      "frog","owl","parrot","eagle","butterfly","spider","crocodile","kangaroo","koala","cheetah","leopard","hippo","rhino","deer",
+      "puppy","kitten","guinea pig","pony","unicorn","dinosaur","animal","animals"],hint:"con un animale"} },
   { q:"What's your favourite school subject?", it:"Qual è la tua materia preferita? Rispondi con una frase.",
     expect:{pool:["English","maths","math","science","history","geography","art","music","PE","sport","Italian","technology"],hint:"con una materia"} },
   { q:"How old are you?", it:"Quanti anni hai? Rispondi con una frase.",
@@ -23302,6 +23459,16 @@ LEXPROPS.famPortrait=function(id,o){ o=o||{}; const r=new BABYLON.TransformNode(
   const pl=BABYLON.MeshBuilder.CreatePlane("famp"+(_lpN++),{width:s,height:s},scene);
   pl.material=m; pl.rotation.y=Math.PI; pl.isPickable=false; pl.parent=r;
   if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(pl);
+  /* v301 (Giacomo, 2 ott: «quando scegli il nome — nonna, nonno… — si deve
+     illuminare la foto selezionata»): la foto selezionata (quella che la E
+     prenderebbe, scelta anche con Q / ◀ ▶) si accende e prende una cornice
+     gialla luminosa. Vedi interHilite in updateProximity. */
+  const fr=BABYLON.MeshBuilder.CreatePlane("famph"+(_lpN++),{width:s+0.12,height:s+0.12},scene);
+  const fm=new BABYLON.StandardMaterial("famphm"+(_lpN++),scene);
+  fm.diffuseColor=new BABYLON.Color3(0,0,0); fm.emissiveColor=BABYLON.Color3.FromHexString("#ffd84a"); fm.disableLighting=true;
+  fr.material=fm; fr.rotation.y=Math.PI; fr.position.z=-0.004; fr.isPickable=false; fr.parent=r; fr.setEnabled(false);
+  const em0=m.emissiveColor.clone(), em1=BABYLON.Color3.FromHexString("#d8d4c8");
+  r.__hlOn=(on)=>{ fr.setEnabled(!!on); m.emissiveColor=on?em1:em0; };
   return r; };
 /* il tabellone dell'albero: chioma, tronco, titolo e le LINEE della parentela */
 LEXPROPS.famTree=function(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene);
@@ -23435,8 +23602,15 @@ const INTERVIEW_QS=[
     answerTxt:"Yes, she is a girl!", value:"Girl" },
   { field:"Age",    tokens:["How","old","is","the","baby?"], distractors:["What","many","are"],
     answerTxt:"She's two weeks old.", value:"2 weeks" },
-  { field:"Father", tokens:["What","is","the","father's","name?"], distractors:["fathers","Whats","is's"],
-    answerTxt:"His name is Mr. Robins.", value:"Mr. Robins" },
+  /* v301 (Giacomo: «metti anche HIS/HER: What is her father's name?»):
+     her = della bimba, his = del papa'. Il distrattore e' sempre l'altro
+     dei due, cosi' la scelta e' proprio quella. */
+  { field:"Father", tokens:["What","is","her","father's","name?"], distractors:["his","fathers","is's"],
+    answerTxt:"His name is Tom Robins.", value:"Tom Robins" },
+  { field:"Father's job", tokens:["What","is","his","job?"], distractors:["her","jobs","are"],
+    answerTxt:"He's a teacher.", value:"teacher" },
+  { field:"Mother", tokens:["What","is","her","mother's","name?"], distractors:["his","mothers","Whats"],
+    answerTxt:"Her mother? That's me! My name is Ivy.", value:"Ivy Robins" },
 ];
 function babyFormHtml(bi){
   const rows=INTERVIEW_QS.map((q,i)=>{
@@ -24786,7 +24960,7 @@ function runTowerTimetable(npc){
           text:last?"The town timetable is complete! Thank you!":"Perfect! Next line, please.",
           italian:last?"Orario completato!":"Riga aggiunta all'orario della citta'.",
           html:timetableHTML(tt.idx),
-          buttons:[{label:last?"\u{1F389} Fatto!":"Avanti", cls:"primary",
+          buttons:[{label:last?"\u{1F389} Done!":"Next \u25B6", cls:"primary",
             act:()=>{ if(last) Quest.complete("\u{1F550} Grammatica completata! Town timetable \u2713");
                       else runTowerTimetable(npc); }}] });
       } },
@@ -25470,7 +25644,7 @@ function recordAthlete(a){
           text:last?"The team sheet is complete! Great work!":"Thanks! Now go and interview the next one.",
           italian:last?"TEAM SHEET completo \u2014 e' anche in bacheca, a bordo campo.":"Riga aggiunta. Prossimo atleta!",
           html:u7SheetHTML(),
-          buttons:[{label:last?"\u{1F389} Fatto!":"Avanti", cls:"primary",
+          buttons:[{label:last?"\u{1F389} Done!":"Next \u25B6", cls:"primary",
             act:()=>{ if(last) Quest.complete("\u{1F4CB} Grammatica completata! Team sheet \u2713");
                       else u7HudInterview(); }}] });
       } },
@@ -36669,6 +36843,14 @@ function placeInterArrow(o){
   a.position.set(t.x, t.y+(0.26+Math.sin(performance.now()/320)*0.045)*k, t.z);
   a.setEnabled(true);
 }
+/* v301: l'oggetto selezionato si «accende» se il suo prop lo sa fare
+   (root.__hlOn: oggi i ritratti dell'albero della Town Hall) */
+let _interHl=null;
+function interHilite(o){
+  let root=null; try{ const m=o&&o.meshes&&o.meshes[0]; if(m && m.__hlOn) root=m; }catch(e){}
+  if(root===_interHl) return;
+  try{ if(_interHl) _interHl.__hlOn(false); }catch(e){}
+  _interHl=root; try{ if(root) root.__hlOn(true); }catch(e){} }
 function cycleInter(dir){
   if(interCands.length<2) return;
   let i=interCands.findIndex(c=>interKeyOf(c)===interSelId);
@@ -36696,7 +36878,7 @@ function updateProximity(){
      scorrere fra i candidati, quindi il compagno e' comunque raggiungibile. */
   list.sort((a,b)=>((a.prio||0)-(b.prio||0)) || (a.__d3-b.__d3));
   interCands=list;
-  if(!list.length){ nearInter=null; interSelId=null; interManual=false;
+  if(!list.length){ nearInter=null; interSelId=null; interManual=false; interHilite(null);
     if(interArrow) interArrow.setEnabled(false);
     if(_promptHtml!==""){ _promptHtml=""; promptEl.classList.remove("show"); }
     else promptEl.classList.remove("show");
@@ -36720,7 +36902,7 @@ function updateProximity(){
     if(better || (!interManual && gap>INTER_HYST) || (interManual && gap>INTER_MANUAL_RELEASE)){
       sel=best; interManual=false; }
   }
-  interSelId=interKeyOf(sel); nearInter=sel;
+  interSelId=interKeyOf(sel); nearInter=sel; interHilite(sel);
   const base=typeof sel.prompt==="function"?sel.prompt():sel.prompt;
   let html=base||"";
   if(list.length>1){
@@ -37093,6 +37275,7 @@ let moveTarget=null, pendingInteract=null, started=false;
 scene.onPointerObservable.add(pi=>{
   if(pi.type!==BABYLON.PointerEventTypes.POINTERTAP||!started) return;
   if(typeof SHOW!=="undefined" && SHOW.seated) return;
+  if(typeof _dlgOpen==="function" && _dlgOpen()) return;     // v301: col popup aperto il tocco sullo schermo non fa camminare (si gira solo la visuale)
   const pick=scene.pick(scene.pointerX,scene.pointerY); if(!pick.hit||!pick.pickedPoint) return;
   let cur=pick.pickedMesh, inter=null; while(cur){ if(cur.__inter){ inter=cur.__inter; break; } cur=cur.parent; }
   if(inter&&inter.enabled&&inter.area===area){ const w=typeof inter.pos==="function"?inter.pos():inter.pos;
@@ -37191,9 +37374,21 @@ scene.registerBeforeRender(()=>{
   if(fwd.lengthSquared()<0.001) fwd=new BABYLON.Vector3(0,0,1); fwd.normalize();
   const right=new BABYLON.Vector3(fwd.z,0,-fwd.x);
   let mx=0,mz=0;
+  /* v301 (Giacomo, 2 ott: «anche quando c'e' il popup devo poter girare la
+     testa: non mi muovo ma mi giro»). Con una finestra aperta i tasti e la
+     levetta non fanno camminare: ← → (A D) girano lo sguardo, e il
+     trascinamento sullo schermo ruota la visuale come sempre (il velo
+     trasparente del popup non ferma piu' il puntatore: vedi #quest-modal). */
+  const dlgLock=(typeof _dlgOpen==="function") && _dlgOpen();
+  if(dlgLock){
+    if(keys["a"]||keys["arrowleft"])  camera.alpha-=0.028;
+    if(keys["d"]||keys["arrowright"]) camera.alpha+=0.028;
+    moveTarget=null; pendingInteract=null;
+  } else {
   if(keys["w"]||keys["arrowup"]){mx+=fwd.x;mz+=fwd.z;} if(keys["s"]||keys["arrowdown"]){mx-=fwd.x;mz-=fwd.z;}
   if(keys["d"]||keys["arrowright"]){mx+=right.x;mz+=right.z;} if(keys["a"]||keys["arrowleft"]){mx-=right.x;mz-=right.z;}
   if(stickVec.x||stickVec.y){mx+=fwd.x*(-stickVec.y)+right.x*stickVec.x; mz+=fwd.z*(-stickVec.y)+right.z*stickVec.x;}
+  }
   const len=Math.hypot(mx,mz); let kbMove=false;
   const running=(keys["shift"]||keys["shiftleft"]||keys["shiftright"])||touchRunHeld||stickRunning();
   // (rimossa la corsa "a fondo joystick": su schermo piccolo il pollice spinge
@@ -39594,6 +39789,7 @@ function ensureStudent(){
    non e' in anagrafica, quindi diventa OSPITE, senza punti. */
 function verificaDocente(){
   if(!Student.teacher) return;
+  if(isCollaudo(Student.code)) return;     // v301: i codici di collaudo non si verificano sull'UID
   const chi=Student.code;
   Cloud.attendi(9000).then(function(ok){
     if(Student.code!==chi || !Student.teacher) return;
@@ -39677,7 +39873,7 @@ function loginEntra(){
   if(/[.#$\[\]\/]/.test(v)){ if(err) err.textContent="Il codice non pu\u00f2 contenere . # $ [ ] /"; return; }
   /* il docente non sta in anagrafica: si riconosce prima di chiedere al cloud,
      se no diventerebbe ospite a casa sua. */
-  if(DOCENTI.indexOf(v)>=0){ Student.setCode(v); QModal.close(); welcomeStudent(); return; }
+  if(DOCENTI.indexOf(v)>=0 || isCollaudo(v)){ Student.setCode(v); QModal.close(); welcomeStudent(); return; }
   const btn=document.querySelector("#qm-card .qm-btn.primary");
   if(btn){ btn.disabled=true; btn.textContent="checking\u2026"; }
   if(err) err.textContent="";
@@ -48424,7 +48620,7 @@ function cfHazRight(e){
   const last=(hw.i>=hw.list.length);
   DialogueBox.open({ npc:CF_NPC.nadia, icon:"\u2705", sub:"Trovato",
     text:say, italian:e.h.it,
-    buttons:[{label:last?"\u2714 Fine":"Avanti", cls:"primary", act:function(){
+    buttons:[{label:last?"\u2714 Done":"Next \u25B6", cls:"primary", act:function(){
       if(last){ setTimeout(cfHazFinish,400); return; }
       hw.tries=0; cfHazHud(); setTimeout(function(){ cfHazSay(false); },350); } }] });
 }
@@ -52038,14 +52234,76 @@ const LOOK_HAIR=[
    sono: ora sono codice morto, ma toccarli vuol dire rientrare nelle
    correzioni del 30 ago (suola piu' chiara della tomaia + fondo di
    emissive perche' il piede non sparisca in ombra), e non c'e' motivo. */
+/* v301 (Giacomo, 2 ott: «si puo' lavorare sulle scarpe e renderle
+   distinte, trainers e boots? I colori sono sempre un po' piu' sbiaditi di
+   quello che si seleziona»). `kind`: trainers = la scarpa del modello con la
+   suola bianca; boots = suola scura di gomma + GAMBALE fino a meta'
+   stinco, col risvolto in cima (dressShoes). Due stivali e due scarpe in
+   piu'. I colori ora escono uguali al campione: vedi applyPlayerFit. */
 const LOOK_SHOES=[
-  { id:"k1", en:"White trainers",it:"bianche",       hex:"#e8e6e1", cost:0  },
-  { id:"k2", en:"Black boots",   it:"nere",          hex:"#26232a", cost:10 },
-  { id:"k3", en:"Red trainers",  it:"rosse",         hex:"#b2402f", cost:20 },
-  { id:"k4", en:"Blue trainers", it:"blu",           hex:"#2f5a94", cost:36 },
-  { id:"k5", en:"Green boots",   it:"verdi",         hex:"#3d7a4a", cost:58 },
-  { id:"k6", en:"Gold trainers", it:"dorate",        hex:"#c9a03c", cost:88 },
+  { id:"k1", en:"White trainers",it:"bianche",       hex:"#e8e6e1", cost:0,  kind:"trainers" },
+  { id:"k2", en:"Black boots",   it:"nere",          hex:"#26232a", cost:10, kind:"boots" },
+  { id:"k3", en:"Red trainers",  it:"rosse",         hex:"#b2402f", cost:20, kind:"trainers" },
+  { id:"k7", en:"Brown boots",   it:"marroni",       hex:"#7a4a26", cost:28, kind:"boots" },
+  { id:"k4", en:"Blue trainers", it:"blu",           hex:"#2f5a94", cost:36, kind:"trainers" },
+  { id:"k8", en:"Pink trainers", it:"rosa",          hex:"#e07aa6", cost:46, kind:"trainers" },
+  { id:"k5", en:"Green boots",   it:"verdi",         hex:"#3d7a4a", cost:58, kind:"boots" },
+  { id:"k6", en:"Gold trainers", it:"dorate",        hex:"#c9a03c", cost:88, kind:"trainers" },
 ];
+/* v301 — il GAMBALE dello stivale. Si misura sul corpo vero, in posa di
+   riposo (come pantaloni e accessori): caviglia = osso Foot, ginocchio =
+   osso LowerLeg; il raggio e' quello della gamba fra caviglia e meta'
+   stinco (+1 cm) e mai piu' stretto della bocca della scarpa. Il pezzo e'
+   rigido e si appende all'osso LowerLeg di ogni lato: segue lo stinco
+   quando si cammina, si corre o ci si siede. Con i pantaloni lunghi il
+   gambale sta sotto la stoffa: non si costruisce. */
+function dressShoes(meshes,kind,hex,holder){
+  if(!meshes) return false;
+  const old=meshes.__boots||[];
+  old.forEach(m=>{ try{ const i=holder?holder.indexOf(m):-1; if(i>=0) holder.splice(i,1); m.dispose(false,true); }catch(e){} });
+  meshes.__boots=[];
+  if(kind!=="boots" || !hex) return old.length>0;
+  const tube=meshes.find(m=>m.__tube && m.__tube.meshes && m.__tube.meshes.some(x=>x.isEnabled()));
+  if(tube) return old.length>0;
+  const F=meshes.find(m=>m.skeleton && m.material && /_avFeet/.test(m.material.name||"")); if(!F) return old.length>0;
+  const V3=BABYLON.Vector3, sk=F.skeleton, up=new V3(0,1,0);
+  _botRest(sk); F.computeWorldMatrix(true);
+  const tn=n=>{ const b=sk.bones.find(x=>new RegExp("(^|_)"+n.replace(".","\\.")+"$").test(x.name)); return b&&b.getTransformNode?b.getTransformNode():null; };
+  /* vertici in posa di riposo (scarpa + gambe), nel mondo */
+  const pts=m=>{ try{ m.computeWorldMatrix(true); const W=m.getWorldMatrix(), lp=m.getPositionData(true,false), o=[];
+      for(let i=0;i<lp.length;i+=3) o.push(V3.TransformCoordinates(new V3(lp[i],lp[i+1],lp[i+2]),W)); return o; }catch(e){ return []; } };
+  const feetP=pts(F), legP=[]; meshes.filter(m=>/Casual_Legs/.test(m.name)&&m.skeleton&&m.isEnabled()).forEach(m=>{ if(m.skeleton!==sk) _botRest(m.skeleton); pts(m).forEach(p=>legP.push(p)); });
+  const side={};
+  ["L","R"].forEach(sd=>{ const K=tn("LowerLeg."+sd), A=tn("Foot."+sd); if(!K||!A) return;
+    K.computeWorldMatrix(true); A.computeWorldMatrix(true);
+    side[sd]={ K, k:K.getAbsolutePosition().clone(), a:A.getAbsolutePosition().clone() }; });
+  if(!side.L || !side.R) return old.length>0;
+  const dAx=(p,S)=>{ const d=S.k.subtract(S.a), t=Math.max(0,Math.min(1,V3.Dot(p.subtract(S.a),d)/d.lengthSquared())); return { t, r:V3.Distance(p,S.a.add(d.scale(t))) }; };
+  const mat=new BABYLON.StandardMaterial("bootM",scene); const c=BABYLON.Color3.FromHexString(hex);
+  mat.diffuseColor=c; mat.specularColor=new BABYLON.Color3(0.12,0.12,0.12); mat.specularPower=40; mat.emissiveColor=c.scale(0.12);
+  const made=[];
+  ["L","R"].forEach(sd=>{ const S=side[sd], O=side[sd==="L"?"R":"L"], len=V3.Distance(S.k,S.a), dir=S.k.subtract(S.a).normalize();
+    /* bocca della scarpa: i vertici della scarpa di questo lato vicino alla caviglia */
+    let shoeTop=S.a.y, rShoe=0.045;
+    feetP.forEach(p=>{ if(V3.Distance(p,S.a)>V3.Distance(p,O.a)) return; if(p.y>shoeTop) shoeTop=p.y; });
+    feetP.forEach(p=>{ if(V3.Distance(p,S.a)>V3.Distance(p,O.a)) return; if(p.y>shoeTop-0.025){ const r=Math.hypot(p.x-S.a.x,p.z-S.a.z); if(r>rShoe && r<0.12) rShoe=r; } });
+    let rLeg=0; legP.forEach(p=>{ const a=dAx(p,S), b=dAx(p,O); if(a.r>b.r) return; if(a.t<0.04||a.t>0.5) return; if(a.r>rLeg && a.r<0.11) rLeg=a.r; });
+    const r=Math.max(rLeg+0.012, rShoe*0.92, 0.045);
+    const y0=Math.min(shoeTop, S.a.y+0.06)-0.015, h=Math.max(0.12, len*0.48);
+    const base=S.a.add(dir.scale((y0-S.a.y)/Math.max(0.3,dir.y)));
+    const shaft=BABYLON.MeshBuilder.CreateCylinder("bootShaft",{height:h,diameterTop:2*(r+0.006),diameterBottom:2*Math.max(r,rShoe),tessellation:22,cap:BABYLON.Mesh.NO_CAP},scene);
+    const cuff=BABYLON.MeshBuilder.CreateTorus("bootCuff",{diameter:2*(r+0.008),thickness:0.016,tessellation:22},scene);
+    cuff.position.y=h/2; cuff.parent=shaft;
+    [shaft,cuff].forEach(m=>{ m.material=mat; m.isPickable=false; m.__noTint=true; });
+    mat.backFaceCulling=false;
+    shaft.position.copyFrom(base.add(dir.scale(h/2)));
+    shaft.rotationQuaternion=BABYLON.Quaternion.FromUnitVectorsToRef(up,dir,new BABYLON.Quaternion());
+    shaft.computeWorldMatrix(true); shaft.setParent(S.K);
+    made.push(shaft,cuff); });
+  meshes.__boots=made;
+  if(holder) made.forEach(m=>{ if(holder.indexOf(m)<0) holder.push(m); });
+  return true;
+}
 /* =====================================================================
    v277 — IL SOTTO: pantaloni, pantaloncini, pinocchietto, gonna
    (Giacomo, 29 set: «non possiamo disegnare dei pantaloni sopra? una gonna
@@ -54558,10 +54816,19 @@ function applyPlayerFit(id){
          della tomaia, e c'e' un fondo di emissive perche' in ombra il piede
          non diventi una macchia nera («sembra manchi un piede»). Tingendo a
          mano si perderebbero tutte e due. */
+      /* v301: la SUOLA. Trainers: bianca (piu' chiara della tomaia, come
+         prima). Boots: gomma scura. */
+      const boots=((LOOK_SHOES.find(x=>x.id===_L.shoes)||{}).kind==="boots");
       if(/White/i.test(cur.name))
-        c=new BABYLON.Color3(Math.min(1,c.r*1.5+0.28), Math.min(1,c.g*1.5+0.28),
-                             Math.min(1,c.b*1.5+0.28));
-      if(mt.emissiveColor!==undefined) mt.emissiveColor=c.scale(0.40);
+        c=boots ? BABYLON.Color3.FromHexString("#2b2522")
+                : new BABYLON.Color3(Math.min(1,c.r*1.5+0.28), Math.min(1,c.g*1.5+0.28), Math.min(1,c.b*1.5+0.28));
+      /* v301 (Giacomo: «colori sbiaditi»): l'emissive al 40% della tinta la
+         schiariva tutta. Ne basta un fondo al 12%, quanto serve perche' in
+         ombra il piede non diventi una macchia nera. E il materiale del GLB
+         e' PBR: vuole il colore in spazio LINEARE — dato cosi' com'e' (sRGB)
+         esce piu' chiaro e slavato del campione della Teca. */
+      if(mt.emissiveColor!==undefined) mt.emissiveColor=c.scale(0.12);
+      if(mt.albedoColor) c=c.toLinearSpace();
     }
     if(mt.albedoColor) mt.albedoColor=c;
     else if(mt.diffuseColor) mt.diffuseColor=c;
@@ -54576,6 +54843,10 @@ function applyPlayerFit(id){
     for(let i=avatarMeshes.length-1;i>=0;i--){ const m=avatarMeshes[i]; if(m.name==="botTube" && (!LT || LT.__tube.meshes.indexOf(m)<0)) avatarMeshes.splice(i,1); }
     if(LT){ let n=0; LT.__tube.meshes.forEach(m=>{ if(avatarMeshes.indexOf(m)<0){ avatarMeshes.push(m); n++; } }); if(n) try{ refreshShadowCasters(); }catch(e){} } }
   catch(e){ console.warn("dressBottom:",e); }
+  /* v301: gli stivali (gambale), dopo il sotto: con i pantaloni lunghi non servono */
+  try{ const ks=LOOK_SHOES.find(x=>x.id===_L.shoes)||LOOK_SHOES[0];
+       if(dressShoes(avatarMeshes, ks.kind, TINTA.shoes, avatarMeshes)) refreshShadowCasters(); }
+  catch(e){ console.warn("dressShoes:",e); }
   /* v278: accessori (testa, occhi, collo). Le mesh nuove finiscono in
      avatarMeshes, cosi' fanno ombra come il resto del corpo. */
   /* v279: prima il taglio (i cappelli si misurano su quello), poi gli accessori */
@@ -54701,6 +54972,10 @@ function npcAtCounter(cfg){ return !!(cfg && (cfg.counter || NPC_COUNTER_RE.test
    capelli) resta suo. */
 const NPC_SPORT_RE=/athlete|coach|player|runner|swimmer|footballer/i;
 function npcIsSporty(cfg){ return !!(cfg && (cfg.sport || NPC_SPORT_RE.test(String(cfg.sub||"")))); }
+/* v301 (Giacomo, 2 ott: «in classe Tim ha un cappello»): i compagni di
+   classe in aula non portano cappello, occhiali da sole, sciarpa o giacca */
+const NPC_SCHOOL_RE=/classmate|pupil|student/i;
+function npcIsPupil(cfg){ return !!(cfg && (cfg.school || NPC_SCHOOL_RE.test(String(cfg.sub||"")))); }
 function npcLookFor(id,rig,opt){
   opt=opt||{};
   /* ⚠️ _npcHash da solo e' un hash «alla Java»: con il sale davanti, due
@@ -54712,6 +54987,10 @@ function npcLookFor(id,rig,opt){
   const col=salt=>(p100(salt+"o")<50 ? "" : pick(cols,salt).id);    // meta' «Original», meta' un colore
   const L={ rig, bottom:pick(lookBottomsFor(rig),"b").id, bcol:pick(LOOK_BCOL.filter(c=>c.hex),"bc").id,
             coat:"", coatc:"", cut:"", hat:"", hatc:"", face:"", facec:"", neck:"", neckc:"", counter:!!opt.counter };
+  if(opt.school){
+    if(p100("t")<35) L.cut=pick(rig==="f" ? ["ponytail","short","bun","long"] : ["buzz","curly","buzz"],"tw");
+    return L;                                    // niente giacca, cappello, occhiali, sciarpa
+  }
   if(opt.sport){
     const sb=lookBottomsFor(rig).filter(b=>b.id==="joggers"||b.id==="shorts");
     if(sb.length) L.bottom=pick(sb,"sb").id;
@@ -54732,7 +55011,7 @@ const _npcDressQ=[];
 function npcDressLater(npc,cfg){
   if(!npc || (cfg && cfg.dress===false)) return;
   const rig=NPC_DRESS_RIG[npc.__model]; if(!rig) return;
-  npc.__look=npcLookFor(npc.id,rig,{ counter:npcAtCounter(cfg), sport:npcIsSporty(cfg) });
+  npc.__look=npcLookFor(npc.id,rig,{ counter:npcAtCounter(cfg), sport:npcIsSporty(cfg), school:npcIsPupil(cfg) });
   /* cfg.look: i pezzi decisi a mano (es. le cuffie al fonico del Beat Club)
      vincono sul sorteggio */
   if(cfg && cfg.look) Object.assign(npc.__look,cfg.look);
@@ -54896,7 +55175,7 @@ function buildTeca(){
       h+=_tcCol('data-bcol="'+k.id+'"',on,!r.open,k.hex||_hood.legs,k.en,r.label); });
     h+='</div><div class="dy-sec">Shoes</div><div class="gem-fits">';
     LOOK_SHOES.forEach(function(k){ const open=(prof||k.cost<=0||tot>=k.cost), on=(_L.shoes===k.id);
-      h+=_tcCard('data-shoes="'+k.id+'"',on,!open,_tcSw(k.hex||"#cdd6dc",k.hex||"#8b97a1",(k.hex?"":"\u{1F45F}")),k.en,
+      h+=_tcCard('data-shoes="'+k.id+'"',on,!open,_tcSw(k.hex||"#cdd6dc",k.hex||"#8b97a1",(k.kind==="boots"?"\u{1F97E}":"\u{1F45F}")),k.en,
         on?"you're wearing them":(open?"tap to wear them":"\u{1F48E} "+k.cost)); });
     h+='</div>';
   }
@@ -55529,12 +55808,16 @@ const Presenza=(function(){
       }
       let c=BABYLON.Color3.FromHexString(T[slot]);
       if(slot==="hair" && /Eyebrows/.test(mt.name)) c=c.scale(0.62);
+      const kd=(LOOK_SHOES.find(function(x){return x.id===L.shoes;})||{}).kind;
       if(slot==="shoes" && /White/i.test(mt.name))
-        c=new BABYLON.Color3(Math.min(1,c.r*1.5+0.28), Math.min(1,c.g*1.5+0.28),
-                             Math.min(1,c.b*1.5+0.28));
+        c=(kd==="boots") ? BABYLON.Color3.FromHexString("#2b2522")
+          : new BABYLON.Color3(Math.min(1,c.r*1.5+0.28), Math.min(1,c.g*1.5+0.28), Math.min(1,c.b*1.5+0.28));
+      if(slot==="shoes"){ if(mt.emissiveColor!==undefined) mt.emissiveColor=c.scale(0.12); if(mt.albedoColor) c=c.toLinearSpace(); }   // v301
       if(mt.albedoColor) mt.albedoColor=c; else if(mt.diffuseColor) mt.diffuseColor=c;
     });
     try{ dressBottom(b.meshes, L.rig, lookBottom(L.rig,L.bottom), T.legs, T.skin); }catch(e){}   // v277
+    try{ const ks=LOOK_SHOES.find(function(x){return x.id===L.shoes;})||LOOK_SHOES[0];
+         dressShoes(b.meshes, ks.kind, T.shoes); }catch(e){}                                      // v301
     try{ dressCoat(b.meshes, L.coat, L.coatc); }catch(e){}                                       // v280
     try{ dressHair(b.meshes, L.rig, L.cut, T.hair); }catch(e){}                                  // v279
     try{ dressAcc(b.meshes, { head:L.hat, face:L.face, neck:L.neck,
