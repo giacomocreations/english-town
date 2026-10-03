@@ -3015,15 +3015,16 @@ function swBaseTex(){ if(_swBaseTx) return _swBaseTx;
    lucido: niente rumore e niente anelli. Sotto i tetti di RAIN_COPERTO
    (veranda del diner, tettoia del cafe', terminal) resta asciutto. */
 class WetFXPlugin extends BABYLON.MaterialPluginBase{
-  constructor(material){ super(material,"WetFX",220,{WETFX:false}); this._enable(true); }
+  constructor(material,pave){ super(material,"WetFX",220,{WETFX:false}); this._pave=pave?1:0; this._enable(true); }
   getClassName(){ return "WetFXPlugin"; }
   prepareDefines(defines){ defines.WETFX=true; }
   getUniforms(){ return {
     ubo:[{name:"tWet",size:1,type:"float"},{name:"tRain",size:1,type:"float"},{name:"tTime",size:1,type:"float"},
          {name:"tQ",size:1,type:"float"},{name:"tSunDir",size:3,type:"vec3"},{name:"tSunCol",size:3,type:"vec3"},
          {name:"tSkyZ",size:3,type:"vec3"},{name:"tSkyM",size:3,type:"vec3"},{name:"tSkyH",size:3,type:"vec3"},
-         {name:"tCov0",size:4,type:"vec4"},{name:"tCov1",size:4,type:"vec4"},{name:"tCov2",size:4,type:"vec4"}],
-    fragment:"#ifdef WETFX\nuniform float tWet;uniform float tRain;uniform float tTime;uniform float tQ;uniform vec3 tSunDir;uniform vec3 tSunCol;uniform vec3 tSkyZ;uniform vec3 tSkyM;uniform vec3 tSkyH;uniform vec4 tCov0;uniform vec4 tCov1;uniform vec4 tCov2;\n#endif" }; }
+         {name:"tCov0",size:4,type:"vec4"},{name:"tCov1",size:4,type:"vec4"},{name:"tCov2",size:4,type:"vec4"},
+         {name:"tPave",size:1,type:"float"}],
+    fragment:"#ifdef WETFX\nuniform float tWet;uniform float tRain;uniform float tTime;uniform float tQ;uniform vec3 tSunDir;uniform vec3 tSunCol;uniform vec3 tSkyZ;uniform vec3 tSkyM;uniform vec3 tSkyH;uniform vec4 tCov0;uniform vec4 tCov1;uniform vec4 tCov2;uniform float tPave;\n#endif" }; }
   bindForSubMesh(ubo){ const W=WETFX;
     ubo.updateFloat("tWet",W.wet); ubo.updateFloat("tRain",W.rain);
     ubo.updateFloat("tTime",(typeof WATERFX!=="undefined")?WATERFX.t:performance.now()/1000%3600);
@@ -3039,7 +3040,8 @@ class WetFXPlugin extends BABYLON.MaterialPluginBase{
     const c0=cv(0),c1=cv(1),c2=cv(2);
     ubo.updateFloat4("tCov0",c0[0],c0[1],c0[2],c0[3]);
     ubo.updateFloat4("tCov1",c1[0],c1[1],c1[2],c1[3]);
-    ubo.updateFloat4("tCov2",c2[0],c2[1],c2[2],c2[3]); }
+    ubo.updateFloat4("tCov2",c2[0],c2[1],c2[2],c2[3]);
+    ubo.updateFloat("tPave",this._pave); }
   getCustomCode(shaderType){ if(shaderType!=="fragment") return null;
     return {
 CUSTOM_FRAGMENT_DEFINITIONS:`#ifdef WETFX
@@ -3058,6 +3060,21 @@ vec2 tDrop(vec2 p,float cell,float seed,float time,float dens){
   return (r>0.0001?d/r:vec2(0.0))*(-2.0*x*e)*on; }
 #endif`,
 CUSTOM_FRAGMENT_UPDATE_DIFFUSE:`#ifdef WETFX
+/* MARCIAPIEDI MENO UNIFORMI (Giacomo, 3 ott). La texture e' una sola,
+   ripetuta ogni 6 m: da lontano si vede il motivo e ogni lastra ha lo stesso
+   tono. Le UV sono allineate al mondo (alignWorldUV: coordinata texture =
+   mondo/6), quindi le lastre da 1,5 m cadono sulla griglia mondo di 1,5 m:
+   qui ogni lastra prende un tono suo (e qualcuna e' stata sostituita, piu'
+   scura), sopra c'e' sporco a chiazze larghe che non si ripete, e lungo le
+   fughe si accumula un filo di sporco. Asciutto o bagnato, da «Medium» in su. */
+if(tPave>0.5 && tQ>0.5 && normalW.y>0.7){
+  vec2 tPc=vPositionW.xz/1.5; vec2 tCell=floor(tPc); float tSh=tHash(tCell+vec2(3.1,7.7));
+  float tTone=0.93+0.13*tSh; if(tSh>0.94) tTone*=0.84;
+  float tMd=tNoise(vPositionW.xz*0.06)*0.6+tNoise(vPositionW.xz*0.23+5.0)*0.4;
+  float tDirt=smoothstep(0.48,0.88,tMd);
+  vec2 tF=fract(tPc); float tE=min(min(tF.x,1.0-tF.x),min(tF.y,1.0-tF.y));
+  baseColor.rgb*=tTone*(1.0-0.16*tDirt)*(1.0-0.10*(1.0-smoothstep(0.0,0.09,tE)))*mix(vec3(1.0),vec3(1.02,1.0,0.96),tDirt);
+}
 float tK=0.0; float tPud=0.0; vec3 tN=normalW;
 if(tWet>0.001 && normalW.y>0.7){
   vec2 tP=vPositionW.xz;
@@ -3104,8 +3121,8 @@ if(tK>0.001){
 }
 #endif` }; }
 }
-function wetFX(m){ if(!m||m.__wetFX) return m;
-  try{ m.__wetFX=new WetFXPlugin(m); }catch(e){ console.warn("Bagnato non attivo:",e); }
+function wetFX(m,pave){ if(!m||m.__wetFX) return m;
+  try{ m.__wetFX=new WetFXPlugin(m,pave); }catch(e){ console.warn("Bagnato non attivo:",e); }
   return m; }
 /* ASFALTO (Giacomo, 3 ott: «troppo uniforme, dagli un tocco di realismo»).
    Era un grigio pieno (#3c4248). Ora una texture disegnata una volta (0 KB):
@@ -3179,7 +3196,7 @@ function sidewalkMat(name,w,h,tileM){
      difetto delle ombre tagliate: per schiarire ancora, agire sulla texture. */
   m.diffuseColor=new BABYLON.Color3(0.57,0.57,0.57);
   m.specularColor=new BABYLON.Color3(0.02,0.02,0.02);
-  return wetFX(m);
+  return wetFX(m,true);
 }
 
 /* ACCIOTTOLATO DEI VIALETTI DEL PARCO — stessa tecnica delle lastre: canvas
@@ -3386,6 +3403,10 @@ function alignWorldUV(baseTx,REP){
       const m2=mt.clone(mt.name+"_w"); tex=new BABYLON.Texture(null,scene,{internalTexture:base});
       tex.wrapU=tex.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE; tex.anisotropicFilteringLevel=8;
       m2.diffuseTexture=tex; m.material=m2; used.set(m2,key);
+      /* il clone deve portarsi dietro bagnato e variazione delle lastre: se
+         Babylon non ha copiato il plugin, lo si riaggancia (una volta sola) */
+      try{ if(mt.__wetFX){ const has=m2.pluginManager&&m2.pluginManager.getPlugin&&m2.pluginManager.getPlugin("WetFX");
+        if(has){ has._pave=mt.__wetFX._pave; m2.__wetFX=has; } else wetFX(m2,mt.__wetFX._pave===1); } }catch(e){}
     } else used.set(mt,key);
     tex.uScale=Su; tex.uOffset=Ou; tex.vScale=Sv; tex.vOffset=Ov;
   });
@@ -4509,19 +4530,62 @@ function fzOn(){ return (typeof qAlmenoAlto==="function" && qAlmenoAlto())?1:0; 
    orizzontale = lungo la facciata (la tangente si ricava dalla normale),
    cosi' le colature restano verticali su ogni lato del palazzo. */
 class FacadeFXPlugin extends BABYLON.MaterialPluginBase{
-  constructor(material){ super(material,"FacadeFX",230,{FACADEFX:false}); this._enable(true); }
+  constructor(material,kind){ super(material,"FacadeFX",230,{FACADEFX:false}); this._kind=(kind==null?-1:kind); this._enable(true); }
   getClassName(){ return "FacadeFXPlugin"; }
   isCompatible(shaderLanguage){ return shaderLanguage===BABYLON.ShaderLanguage.GLSL; }
   prepareDefines(defines){ defines.FACADEFX=true; }
-  getUniforms(){ return { ubo:[{name:"fQ",size:1,type:"float"},{name:"fWet",size:1,type:"float"}],
-    fragment:"#ifdef FACADEFX\nuniform float fQ;uniform float fWet;\n#endif" }; }
+  getUniforms(){ return { ubo:[{name:"fQ",size:1,type:"float"},{name:"fWet",size:1,type:"float"},
+      {name:"fCl",size:1,type:"float"},{name:"fKind",size:1,type:"float"}],
+    fragment:"#ifdef FACADEFX\nuniform float fQ;uniform float fWet;uniform float fCl;uniform float fKind;\n#endif" }; }
   bindForSubMesh(ubo){ ubo.updateFloat("fQ",fzOn());
+    ubo.updateFloat("fCl",(typeof qLevel!=="undefined"&&qLevel==="basso")?0:1);
+    ubo.updateFloat("fKind",this._kind);
     ubo.updateFloat("fWet",(typeof WETFX!=="undefined")?WETFX.wet:0); }
   getCustomCode(shaderType){ if(shaderType!=="fragment") return null;
     return {
 CUSTOM_FRAGMENT_DEFINITIONS:"#ifdef FACADEFX\n"+FZ_GLSL+"\n#endif",
 CUSTOM_FRAGMENT_UPDATE_ALBEDO:`#ifdef FACADEFX
 #ifdef NORMAL
+/* RIVESTIMENTO (Giacomo, 3 ott: «il rivestimento della Clock Tower sa
+   proprio di palazzo vero, fallo sugli altri building»). I GLB della citta'
+   non hanno texture: il paramento si disegna qui, in coordinate mondo, solo
+   sui MURI (fKind>=0; cornici, porte e tetti restano lisci). Tre tipi:
+     0 pietra a conci: corsi da 62 cm, conci da 1,25 m sfalsati, giunti scuri;
+     1 mattoni: corsi da 16 cm, mattoni da 42 cm sfalsati, malta chiara;
+     2 bugnato: conci al piano terra (sotto i 4,2 m), intonaco sopra.
+   Ogni concio/mattone ha un tono suo. Il colore del palazzo resta il suo:
+   si modula, non si sostituisce. I giunti si allargano di un pixel e si
+   spengono quando diventano piu' fini di un pixel (da lontano sfarfallerebbero).
+   Da «Medium» in su (fCl): sui Chromebook di classe si vede. */
+if(fCl>0.5 && fKind>-0.5){
+  vec3 rcP=vPositionW; vec3 rcN=normalize(vNormalW);
+  if(abs(rcN.y)<0.45){
+    vec2 rcT=rcN.xz; float rcL=length(rcT); rcT=rcL>0.001?vec2(-rcT.y,rcT.x)/rcL:vec2(1.0,0.0);
+    float rcU=dot(rcP.xz,rcT);
+    vec3 rcV=vEyePosition.xyz-rcP; float rcD=length(rcV);
+    float rcPix=rcD*0.0013/max(abs(dot(rcN,rcV/rcD)),0.25);          // metri per pixel, circa
+    float rcBrick=step(0.5,fKind)*step(fKind,1.5), rcRust=step(1.5,fKind);
+    float rcH=mix(0.62,0.16,rcBrick), rcLn=mix(1.25,0.42,rcBrick);
+    float rcRow=floor(rcP.y/rcH), rcCu=rcU/rcLn+mod(rcRow,2.0)*0.5;
+    vec2 rcId=vec2(floor(rcCu),rcRow);
+    float rcFy=fract(rcP.y/rcH), rcFx=fract(rcCu);
+    float rcDy=min(rcFy,1.0-rcFy)*rcH, rcDx=min(rcFx,1.0-rcFx)*rcLn;
+    float rcJw=mix(0.010,0.009,rcBrick);
+    float rcJ=max(1.0-smoothstep(rcJw,rcJw+rcPix,rcDy),1.0-smoothstep(rcJw,rcJw+rcPix,rcDx));
+    float rcFade=clamp(1.0-(rcPix-rcJw)/(rcJw*2.5),0.0,1.0);          // giunto sotto il pixel: si spegne
+    float rcB=fzHash(rcId+vec2(fKind*13.1,fKind*7.3));
+    float rcTone=mix(0.93+0.13*rcB,0.84+0.26*rcB,rcBrick);
+    /* bugnato: sopra i 4,2 m niente conci, intonaco con un filo di rumore */
+    float rcOn=1.0-rcRust*step(4.2,rcP.y);
+    rcJ*=rcOn; rcTone=mix(0.97+0.05*fzNoise(rcP.xz*1.7+rcP.y*1.3),rcTone,rcOn);
+    /* smusso: il bordo alto del concio prende luce, quello basso e' in ombra */
+    float rcTop=(1.0-smoothstep(0.0,0.03+rcPix,(1.0-rcFy)*rcH))*rcOn*(1.0-rcBrick);
+    float rcBot=(1.0-smoothstep(0.0,0.03+rcPix,rcFy*rcH))*rcOn*(1.0-rcBrick);
+    vec3 rcMortar=mix(surfaceAlbedo*0.55,mix(surfaceAlbedo,vec3(0.50,0.49,0.46),0.75),rcBrick);
+    vec3 rcA=surfaceAlbedo*mix(1.0,rcTone,clamp(rcFade+0.35,0.0,1.0))*(1.0+0.06*rcTop*rcFade-0.08*rcBot*rcFade);
+    surfaceAlbedo=mix(rcA,rcMortar,rcJ*rcFade);
+  }
+}
 if(fQ>0.5){
   vec3 fzP=vPositionW; vec3 fzN=normalize(vNormalW);   // normalW qui non esiste ancora (lo shader PBR la calcola dopo l albedo)
   float fzVert=1.0-smoothstep(0.45,0.8,abs(fzN.y));
@@ -4632,9 +4696,16 @@ if(gQ>0.5){
 #endif
 #endif` }; }
 }
+/* tipo di rivestimento: solo i MURI (_defaultMat dei GLB della citta');
+   il tipo si sceglie dal nome dell'edificio (stabile fra un avvio e l'altro):
+   circa 40% pietra, 30% mattoni, 30% bugnato */
+function facadeKind(m){ const n=String(m&&m.name||"");
+  if(!/^_defaultMat/.test(n)) return -1;
+  let h=7; for(let i=0;i<n.length;i++) h=(h*31+n.charCodeAt(i))>>>0;
+  const r=(h%100)/100; return r<0.4?0:(r<0.7?1:2); }
 function facadeFX(m){ if(!m||m.__facadeFX||m.__windowFX) return m;
   if(!(m.getClassName&&m.getClassName()==="PBRMaterial")) return m;
-  try{ m.__facadeFX=new FacadeFXPlugin(m); }catch(e){ console.warn("Facciate v2 non attive:",e); }
+  try{ m.__facadeFX=new FacadeFXPlugin(m,facadeKind(m)); }catch(e){ console.warn("Facciate v2 non attive:",e); }
   return m; }
 function windowFX(m){ if(!m||m.__windowFX) return m;
   if(!(m.getClassName&&m.getClassName()==="PBRMaterial")) return m;
@@ -6992,8 +7063,15 @@ function buildRoundabout(cx,cz,rApr,rIsl,withTree){
   //  dritto a pianelle e' gia' presente sotto per tutta la lunghezza della
   //  strada, quindi le righe continuano senza interruzioni invece di sparire
   //  sotto un disco a tinta piatta)
-  mk(rApr,0.12,"#3c4248");        // anello asfaltato (sopra i trattini a y=0.11)
-  mk(rIsl,0.14,"#c7ccd1");        // cordolo dell'isola centrale
+  /* v3 ott (Giacomo: «le rotonde sono troppo uniformi»): l'anello usa lo
+     STESSO asfalto delle strade (UV allineate al mondo da alignWorldUV,
+     quindi prosegue senza cuciture dalla carreggiata) e il cordolo e' pietra */
+  const ring=BABYLON.MeshBuilder.CreateDisc("rb"+(_sgN++),{radius:rApr,tessellation:56},scene);   // anello asfaltato (sopra i trattini a y=0.11)
+  ring.rotation.x=Math.PI/2; ring.material=roadMat("rbm"+(_sgN++)); ring.position.set(cx,0.12,cz);
+  ring.parent=townRoot; ring.__ground=true; ring.isPickable=false;
+  { const cb=BABYLON.MeshBuilder.CreateDisc("rb"+(_sgN++),{radius:rIsl,tessellation:56},scene);  // cordolo dell'isola centrale
+    cb.rotation.x=Math.PI/2; cb.material=stoneMat("rbm"+(_sgN++),3,3,false,[0.70,0.71,0.72]); cb.position.set(cx,0.14,cz);
+    cb.parent=townRoot; cb.__ground=true; cb.isPickable=false; }
   { const r=rIsl-0.6, d=BABYLON.MeshBuilder.CreateDisc("rb"+(_sgN++),{radius:r,tessellation:40},scene);   // erba dell'isola
     d.rotation.x=Math.PI/2; d.material=grassMat("rbm"+(_sgN++),2*r,2*r); d.position.set(cx,0.15,cz);   // (era #5b9d4f a tinta unita)
     d.parent=townRoot; d.__ground=true; d.isPickable=false; }
@@ -10850,7 +10928,7 @@ function buildProps(){
   // (prima le auto stavano sul fondo grigio). Materiale "roadm..." apposta:
   // il punto-quest (BAD) non deve mai scaricare il giocatore in un parcheggio.
   // Corridoio z -30.5..-24: piazzola 6.2 m, stalli da 3 m centrati sulle auto.
-  const pkM=mat("roadmPark","#3c4248"), pkL=mat("roadmParkLn","#e9ece8");
+  const pkM=roadMat("roadmPark"), pkL=mat("roadmParkLn","#e9ece8");
   [[-45,-42,-39],[39,42,45]].forEach(xs=>{ const x0=xs[0]-1.5, x1=xs[xs.length-1]+1.5;
     const pad=BABYLON.MeshBuilder.CreateGround("pkPad",{width:(x1-x0)+1.0,height:6.2},scene);
     pad.material=pkM; pad.position.set((x0+x1)/2,0.035,BLZ); pad.parent=townRoot; pad.__ground=true;
@@ -11013,7 +11091,7 @@ function buildAirport(){
   // ACCORCIATA a est (termina a x=38, davanti al terminal): il vecchio tratto
   // che moriva sulla promenade di Central Park è ora ESPLANADE pedonale (v. sotto)
   const road=BABYLON.MeshBuilder.CreateGround("aprd",{width:116,height:18},scene);
-  road.material=mat("aprdm","#3c4248"); road.position.set(-20,0.086,zRoad); road.parent=townRoot;
+  road.material=roadMat("aprdm");   // v3 ott: stesso asfalto delle altre strade road.position.set(-20,0.086,zRoad); road.parent=townRoot;
   for(let x=-74;x<=30;x+=8){ const d=BABYLON.MeshBuilder.CreateGround("aprdl",{width:3.6,height:0.6},scene);
     d.material=mat("aprdlm","#1d2a32","#e8d99a"); d.position.set(RX+x,0.116,zRoad); d.parent=townRoot; }
   [-7.6,7.6].forEach(dz=>{ const e=BABYLON.MeshBuilder.CreateGround("aprde",{width:116,height:0.45},scene);
@@ -11036,7 +11114,7 @@ function buildAirport(){
 
   // ===== VIALE D'ACCESSO (N-S) + PIAZZALE =====
   const av=BABYLON.MeshBuilder.CreateGround("apav",{width:12,height:24},scene);
-  av.material=mat("apavm","#3c4248"); av.position.set(AX,0.079,zAv); av.parent=townRoot;
+  av.material=roadMat("apavm"); av.position.set(AX,0.079,zAv); av.parent=townRoot;
   for(let z=-10;z<=10;z+=4.5){ const d=BABYLON.MeshBuilder.CreateGround("apavl",{width:0.6,height:2.2},scene);
     d.material=mat("apavlm","#1d2a32","#d9c98f"); d.position.set(AX,0.12,zAv+z); d.parent=townRoot; }
   const fore=BABYLON.MeshBuilder.CreateGround("apfo",{width:42,height:22},scene);
@@ -18715,7 +18793,9 @@ const LEXPROPS={
     const n=o.n||3, gap=o.gap||1.15, w0=-(n-1)*gap/2;
     for(let i=0;i<n;i++){ const x=w0+i*gap;
       lpBox(r,0.70,0.045,0.46,"#c9a06a",x,0.62,0);                 // piano banco
-      lpBox(r,0.62,0.045,0.38,"#efe6d3",x,0.40,0);                 // ripiano interno
+      /* (v3 ott, Giacomo: tolto il «ripiano interno» bianco a 40 cm: da
+         seduti le gambe degli alunni ci passavano attraverso, e visto da
+         fuori sembrava un secondo tavolino incastrato sotto il banco) */
       [[-0.30,-0.18],[0.30,-0.18],[-0.30,0.18],[0.30,0.18]].forEach(p=>
         lpBox(r,0.045,0.62,0.045,"#8a6a45",x+p[0],0.31,p[1]));     // gambe banco
       /* v301 (Giacomo: «verifica che le sedie siano adatte agli NPC»): la
