@@ -7226,6 +7226,7 @@ function buildTrain(){
            TRAFFIC_SPEED = moltiplicatore globale della velocita'.
    ===================================================================== */
 const TRAFFIC_YAW=-Math.PI/2+CAR_FRONT, TRAFFIC_SPEED=1.0;
+const WHEEL_STEP=0.24;   // rad: tetto dello scatto delle ruote per fotogramma (vedi il giro del traffico)
 const _trafficCars=[];
 let _carsOpenState=null;
 const ROUNDABOUTS=[];
@@ -7568,7 +7569,16 @@ function buildTraffic(){
         if(c.halt>1.2){ try{ SFX.carHorn(c.root.position.x,c.root.position.z); }catch(e){} }
       } else c.halt=0;
       c.s=(c.s+c.cv*TRAFFIC_SPEED*dt)%c.tot;
-      if(c.wh){ const W=c.wh; W.ang+=c.cv*TRAFFIC_SPEED*dt/W.wheels[0].r*W.sgn;      // v301: le ruote rotolano
+      /* v302 (Giacomo, 3 ott: «le ruote non girano piu'? forse devono girare
+         piu' veloci?»). Giravano, ma NON SI VEDEVA: a 7 m/s una ruota da 35 cm
+         fa ~20 rad/s, cioe' 20° a fotogramma a 60 fps e 40° a 30 fps, e i
+         cerchi hanno 10-12 razze (30-36°). Effetto stroboscopico, quello
+         delle ruote dei carri nei film: a ogni fotogramma la razza dopo
+         prende il posto di quella prima e la ruota sembra ferma o all'indietro.
+         Piu' veloce sarebbe peggio. Lo scatto per fotogramma ha un tetto
+         (WHEEL_STEP, meno di mezza razza): la ruota si vede girare in avanti,
+         un po' piu' lenta del vero, a qualunque frequenza. */
+      if(c.wh){ const W=c.wh; W.ang+=Math.min(WHEEL_STEP, c.cv*TRAFFIC_SPEED*dt/W.wheels[0].r)*W.sgn;      // v301: le ruote rotolano
         for(let q=0;q<W.wheels.length;q++){ const pv=W.wheels[q].piv;
           pv.rotationQuaternion=BABYLON.Quaternion.RotationAxis(W.axis,W.ang*(W.wheels[0].r/W.wheels[q].r)); } }
       i=0; while(i<c.seg.length-1 && c.L[i+1]<=c.s) i++;
