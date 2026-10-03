@@ -4554,8 +4554,8 @@ CUSTOM_FRAGMENT_UPDATE_ALBEDO:`#ifdef FACADEFX
      1 mattoni: corsi da 16 cm, mattoni da 42 cm sfalsati, malta chiara;
      2 bugnato: conci al piano terra (sotto i 4,2 m), intonaco sopra.
    Ogni concio/mattone ha un tono suo. Il colore del palazzo resta il suo:
-   si modula, non si sostituisce. I giunti si allargano di un pixel e si
-   spengono quando diventano piu' fini di un pixel (da lontano sfarfallerebbero).
+   si modula, non si sostituisce. Da lontano i giunti restano righe sottili
+   sfumate e i blocchi minuscoli passano al loro colore medio (vedi sotto).
    Da «Medium» in su (fCl): sui Chromebook di classe si vede. */
 if(fCl>0.5 && fKind>-0.5){
   vec3 rcP=vPositionW; vec3 rcN=normalize(vNormalW);
@@ -4564,26 +4564,47 @@ if(fCl>0.5 && fKind>-0.5){
     float rcU=dot(rcP.xz,rcT);
     vec3 rcV=vEyePosition.xyz-rcP; float rcD=length(rcV);
     float rcPix=rcD*0.0013/max(abs(dot(rcN,rcV/rcD)),0.25);          // metri per pixel, circa
-    float rcBrick=step(0.5,fKind)*step(fKind,1.5), rcRust=step(1.5,fKind);
-    float rcH=mix(0.62,0.16,rcBrick), rcLn=mix(1.25,0.42,rcBrick);
+    /* tipi: 0 conci, 1 mattoni, 2 bugnato (conci solo sotto 4,2 m),
+       3 ZOCCOLO: il piano terra dei GLB e' il materiale «door» (fascia
+       scura fino a 3,4 m): blocchi grandi di pietra con giunti profondi
+       fino a 3,6 m, sopra liscio (porte-finestre dei piani alti) */
+    float rcBrick=step(0.5,fKind)*step(fKind,1.5), rcRust=step(1.5,fKind)*step(fKind,2.5), rcPlinth=step(2.5,fKind);
+    /* bugnato (2): corsi orizzontali da 45 cm su tutta l'altezza, senza
+       giunti verticali (v3 ott: prima era solo sotto i 4,2 m, ma il piano
+       terra e' lo zoccolo e restava una fascia monca) */
+    float rcH=mix(mix(mix(0.62,0.16,rcBrick),0.45,rcRust),0.55,rcPlinth), rcLn=mix(mix(1.25,0.42,rcBrick),1.10,rcPlinth);
     float rcRow=floor(rcP.y/rcH), rcCu=rcU/rcLn+mod(rcRow,2.0)*0.5;
     vec2 rcId=vec2(floor(rcCu),rcRow);
     float rcFy=fract(rcP.y/rcH), rcFx=fract(rcCu);
     float rcDy=min(rcFy,1.0-rcFy)*rcH, rcDx=min(rcFx,1.0-rcFx)*rcLn;
-    float rcJw=mix(0.010,0.009,rcBrick);
-    float rcJ=max(1.0-smoothstep(rcJw,rcJw+rcPix,rcDy),1.0-smoothstep(rcJw,rcJw+rcPix,rcDx));
-    float rcFade=clamp(1.0-(rcPix-rcJw)/(rcJw*2.5),0.0,1.0);          // giunto sotto il pixel: si spegne
+    float rcJw=mix(mix(0.010,0.009,rcBrick),0.016,rcPlinth);
+    /* GIUNTI A OGNI DISTANZA (v3 ott, Giacomo: «si vede solo da vicino»).
+       Prima, sotto il pixel, il giunto si spegneva: da lontano il muro
+       tornava liscio e su una facciata lunga meta' era rivestita e meta' no.
+       Ora il giunto non diventa mai piu' sottile di ~0,7 px, ma la sua
+       intensita' scala con quanta parte del pixel copre davvero (come la
+       vedrebbe l'occhio): resta una riga sottile e sfumata, senza
+       sfarfallare. Quando i corsi stessi diventano piu' piccoli di ~3 px
+       (mattoni molto lontani) le righe confluirebbero in moire': li' si
+       passa al loro colore MEDIO, che e' quello che si vede davvero. */
+    float rcW=max(rcJw,rcPix*0.7), rcK=rcJw/rcW;
+    float rcJ=max(1.0-smoothstep(rcW,rcW+rcPix*0.6,rcDy),(1.0-smoothstep(rcW,rcW+rcPix*0.6,rcDx))*(1.0-rcRust))*rcK;
+    float rcAvg=clamp(2.0*rcJw/rcH+2.0*rcJw/rcLn*(1.0-rcRust),0.0,1.0);
+    float rcFar=smoothstep(rcH*0.22,rcH*0.45,rcPix);
+    rcJ=mix(rcJ,rcAvg,rcFar);
     float rcB=fzHash(rcId+vec2(fKind*13.1,fKind*7.3));
-    float rcTone=mix(0.93+0.13*rcB,0.84+0.26*rcB,rcBrick);
-    /* bugnato: sopra i 4,2 m niente conci, intonaco con un filo di rumore */
-    float rcOn=1.0-rcRust*step(4.2,rcP.y);
+    float rcTone=mix(mix(mix(0.93+0.13*rcB,0.84+0.26*rcB,rcBrick),0.96+0.07*rcB,rcRust),0.90+0.16*rcB,rcPlinth);
+    rcTone=mix(rcTone,mix(0.995,0.97,rcBrick),rcFar);                  // tono medio quando il blocco e' sotto i 3 px
+    /* zoccolo sopra 3,6 m: pietra liscia */
+    float rcOn=1.0-rcPlinth*step(3.6,rcP.y);
     rcJ*=rcOn; rcTone=mix(0.97+0.05*fzNoise(rcP.xz*1.7+rcP.y*1.3),rcTone,rcOn);
     /* smusso: il bordo alto del concio prende luce, quello basso e' in ombra */
-    float rcTop=(1.0-smoothstep(0.0,0.03+rcPix,(1.0-rcFy)*rcH))*rcOn*(1.0-rcBrick);
-    float rcBot=(1.0-smoothstep(0.0,0.03+rcPix,rcFy*rcH))*rcOn*(1.0-rcBrick);
-    vec3 rcMortar=mix(surfaceAlbedo*0.55,mix(surfaceAlbedo,vec3(0.50,0.49,0.46),0.75),rcBrick);
-    vec3 rcA=surfaceAlbedo*mix(1.0,rcTone,clamp(rcFade+0.35,0.0,1.0))*(1.0+0.06*rcTop*rcFade-0.08*rcBot*rcFade);
-    surfaceAlbedo=mix(rcA,rcMortar,rcJ*rcFade);
+    float rcNear=1.0-rcFar;
+    float rcTop=(1.0-smoothstep(0.0,0.03+rcPix,(1.0-rcFy)*rcH))*rcOn*(1.0-rcBrick)*rcNear;
+    float rcBot=(1.0-smoothstep(0.0,0.03+rcPix,rcFy*rcH))*rcOn*(1.0-rcBrick)*rcNear;
+    vec3 rcMortar=mix(surfaceAlbedo*mix(mix(0.55,0.72,rcRust),0.45,rcPlinth),mix(surfaceAlbedo,vec3(0.50,0.49,0.46),0.75),rcBrick);
+    vec3 rcA=surfaceAlbedo*rcTone*(1.0+0.06*rcTop-0.08*rcBot);
+    surfaceAlbedo=mix(rcA,rcMortar,clamp(rcJ,0.0,1.0));
   }
 }
 if(fQ>0.5){
@@ -4700,6 +4721,7 @@ if(gQ>0.5){
    il tipo si sceglie dal nome dell'edificio (stabile fra un avvio e l'altro):
    circa 40% pietra, 30% mattoni, 30% bugnato */
 function facadeKind(m){ const n=String(m&&m.name||"");
+  if(/^door/.test(n)) return 3;                 // piano terra dei GLB: zoccolo in pietra
   if(!/^_defaultMat/.test(n)) return -1;
   let h=7; for(let i=0;i<n.length;i++) h=(h*31+n.charCodeAt(i))>>>0;
   const r=(h%100)/100; return r<0.4?0:(r<0.7?1:2); }
