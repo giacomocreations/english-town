@@ -12826,10 +12826,79 @@ function buildPark(){
   buildFountainJets(PX,3.02,PZ);
   addSolid(PX-4,PX+4,PZ-4,PZ+4,"town");
   // TORRE DELL'OROLOGIO (Anno 1 Unit 5 Habits · the time / daily routine)
-  const tower=BABYLON.MeshBuilder.CreateBox("clk",{width:4,height:16,depth:4},scene);
-  tower.material=mat("clkm","#caa46a"); tower.position.set(PX-30,8,PZ-30); tower.parent=townRoot; tower.__occluder=true;
-  const roof=BABYLON.MeshBuilder.CreateCylinder("clkr",{diameterTop:0,diameterBottom:5.6,height:3,tessellation:4},scene);
-  roof.material=mat("clkrm","#7d4a35"); roof.position.set(PX-30,17.5,PZ-30); roof.rotation.y=Math.PI/4; roof.parent=townRoot;
+  /* v3 ott (Giacomo: «anche la clock tower e' da migliorare»). Era una
+     scatola color ocra con una piramide sopra. Ora una torre civica vera,
+     stesso ingombro a terra (4x4, addSolid invariato) e quadranti alla
+     stessa quota (12 m):
+       zoccolo in pietra · fusto in conci (stoneMat con i giunti) con
+       lesene d'angolo piu' chiare e cornici marcapiano · feritoie e
+       portone · piano dell'orologio un filo sporgente, con la cornice tonda
+       attorno a ogni quadrante · cella campanaria APERTA (quattro pilastri
+       e archi) con la campana dentro · cornicione, guglia in rame ossidato,
+       sfera e puntale.
+     Tutto procedurale, nessun GLB. I pezzi fanno ombra come prima. */
+  { const TX=PX-30, TZ=PZ-30;
+    const shaftM=stoneMat("clkm",2.2,18,true,[0.82,0.71,0.55]);      // nome invariato: conci color ocra
+    const trimM=stoneMat("clkTrimM",1,4,false,[0.80,0.76,0.68]);     // pietra chiara: lesene e cornici
+    const baseM=stoneMat("clkBaseM",3,2,true,[0.58,0.56,0.52]);      // zoccolo piu' scuro
+    const roofM=mat("clkrm","#4f7366"); roofM.specularColor=new BABYLON.Color3(0.10,0.12,0.11);   // rame ossidato
+    const darkM=mat("clkDarkM","#1f1d1b");
+    const woodM=mat("clkDoorM","#4a3020");
+    const goldM=mat("clkGoldM","#b8913a"); goldM.specularColor=new BABYLON.Color3(0.45,0.38,0.2); goldM.specularPower=48;
+    const bronzeM=mat("clkBellM","#7a5a2e"); bronzeM.specularColor=new BABYLON.Color3(0.35,0.28,0.16); bronzeM.specularPower=40;
+    const box=(n,w,h,d,x,y,z,m,occ)=>{ const b=BABYLON.MeshBuilder.CreateBox(n,{width:w,height:h,depth:d},scene);
+      b.material=m; b.position.set(TX+x,y,TZ+z); b.parent=townRoot; if(occ!==false) b.__occluder=true; return b; };
+    // zoccolo e fusto
+    box("clkBase",4.6,1.2,4.6,0,0.6,0,baseM);
+    const tower=box("clk",4,9.0,4,0,1.2+4.5,0,shaftM);                // 1,2 .. 10,2
+    // lesene d'angolo (sporgono 10 cm) e cornici marcapiano
+    [[1,1],[1,-1],[-1,1],[-1,-1]].forEach(c=>box("clkPil",0.55,9.0,0.55,c[0]*1.82,5.7,c[1]*1.82,trimM));
+    [1.25,5.6,10.2].forEach((y,i)=>box("clkBand",4.35+(i===2?0.15:0),i===2?0.35:0.22,4.35+(i===2?0.15:0),0,y,0,trimM));
+    // piano dell'orologio: 10,2 .. 13,8, un filo piu' largo
+    box("clkStage",4.4,3.6,4.4,0,12.0,0,shaftM);
+    box("clkBand2",4.7,0.3,4.7,0,13.9,0,trimM);
+    // feritoie sulle quattro facce (due quote) e portone a sud
+    const face4=(fn)=>[[0,-1,0],[0,1,Math.PI],[1,0,-Math.PI/2],[-1,0,Math.PI/2]].forEach(f=>fn(f[0],f[1],f[2]));
+    face4((fx,fz,ry)=>{ [3.6,7.8].forEach(y=>{ const p=BABYLON.MeshBuilder.CreatePlane("clkWin",{width:0.42,height:1.25},scene);
+        p.material=darkM; p.position.set(TX+fx*2.012,y,TZ+fz*2.012); p.rotation.y=ry; p.parent=townRoot; p.isPickable=false;
+        const s2=BABYLON.MeshBuilder.CreateBox("clkSill",{width:0.62,height:0.08,depth:0.14},scene);
+        s2.material=trimM; s2.position.set(TX+fx*2.04,y-0.66,TZ+fz*2.04); s2.rotation.y=ry; s2.parent=townRoot; }); });
+    { const dr=BABYLON.MeshBuilder.CreatePlane("clkDoor",{width:1.2,height:2.2},scene);
+      dr.material=woodM; dr.position.set(TX,1.1+0.02,TZ+2.31); dr.rotation.y=Math.PI; dr.parent=townRoot; dr.isPickable=false;
+      const ar=BABYLON.MeshBuilder.CreateBox("clkDoorF",{width:1.55,height:0.22,depth:0.16},scene);
+      ar.material=trimM; ar.position.set(TX,2.35,TZ+2.33); ar.parent=townRoot; }
+    // cornice tonda attorno ai quadranti (i quadranti stanno a 2,23 dal centro, vedi sotto)
+    face4((fx,fz,ry)=>{ const t=BABYLON.MeshBuilder.CreateTorus("clkRing",{diameter:3.08,thickness:0.16,tessellation:40},scene);
+      t.material=goldM; t.rotation.x=Math.PI/2; t.rotation.y=ry; t.rotation.z=0;
+      t.position.set(TX+fx*2.24,12,TZ+fz*2.24); t.parent=townRoot; t.isPickable=false;
+      // il toro nasce sul piano XZ: ruotato di 90 su X si mette in verticale; ry lo gira sulla faccia
+      t.rotationQuaternion=BABYLON.Quaternion.RotationYawPitchRoll(ry,Math.PI/2,0); });
+    // cella campanaria aperta: 14,05 .. 16,8
+    box("clkBelFl",4.2,0.2,4.2,0,14.15,0,trimM);
+    [[1,1],[1,-1],[-1,1],[-1,-1]].forEach(c=>box("clkBelP",0.75,2.6,0.75,c[0]*1.72,15.55,c[1]*1.72,shaftM));
+    face4((fx,fz,ry)=>{                                               // arco: architrave + due mensole curve
+      const lx=fz!==0?2.7:0.5, lz=fz!==0?0.5:2.7;
+      box("clkArch",lx,0.55,lz,fx*1.72,16.55,fz*1.72,shaftM);
+      [-1,1].forEach(sd=>{ const k=BABYLON.MeshBuilder.CreateCylinder("clkArchC",{diameter:0.7,height:0.5,tessellation:12,arc:0.25},scene);
+        k.material=shaftM; k.rotationQuaternion=BABYLON.Quaternion.RotationYawPitchRoll(ry+(sd<0?Math.PI/2:0),0,Math.PI/2);
+        k.position.set(TX+fx*1.72+(fz!==0?sd*0.95:0),16.1,TZ+fz*1.72+(fx!==0?sd*0.95:0)); k.parent=townRoot; k.isPickable=false; });
+      const bl=BABYLON.MeshBuilder.CreateBox("clkRail",{width:fz!==0?2.7:0.12,height:0.55,depth:fz!==0?0.12:2.7},scene);
+      bl.material=trimM; bl.position.set(TX+fx*1.72,14.5,TZ+fz*1.72); bl.parent=townRoot; });
+    // la campana (tornita) appesa a una trave
+    { const V3=(r,y)=>new BABYLON.Vector3(r,y,0);
+      const bell=BABYLON.MeshBuilder.CreateLathe("clkBell",{shape:[V3(0.0,0.95),V3(0.22,0.93),V3(0.30,0.80),V3(0.34,0.45),V3(0.42,0.18),V3(0.55,0.04),V3(0.57,0.0),V3(0.0,0.0)],
+        tessellation:28,sideOrientation:BABYLON.Mesh.DOUBLESIDE},scene);
+      bell.material=bronzeM; bell.position.set(TX,14.85,TZ); bell.parent=townRoot; bell.__occluder=true;
+      box("clkBeam",3.6,0.22,0.22,0,16.0,0,woodM); }
+    // cornicione e guglia
+    box("clkCorn",4.75,0.4,4.75,0,17.0,0,trimM);
+    const roof=BABYLON.MeshBuilder.CreateCylinder("clkr",{diameterTop:0,diameterBottom:5.4,height:5.0,tessellation:4},scene);
+    roof.material=roofM; roof.position.set(TX,17.2+2.5,TZ); roof.rotation.y=Math.PI/4; roof.parent=townRoot; roof.__occluder=true;
+    const ball=BABYLON.MeshBuilder.CreateSphere("clkBall",{diameter:0.45,segments:10},scene);
+    ball.material=goldM; ball.position.set(TX,22.35,TZ); ball.parent=townRoot;
+    const spk=BABYLON.MeshBuilder.CreateCylinder("clkSpike",{diameterTop:0,diameterBottom:0.09,height:1.1,tessellation:6},scene);
+    spk.material=goldM; spk.position.set(TX,23.1,TZ); spk.parent=townRoot;
+  }
   /* QUADRANTI: 4 facce (nord/sud/est/ovest) che condividono UNA sola
      DynamicTexture (256px, ridisegnata solo quando cambia il minuto).
      Convenzione di orientamento gia' validata con le bandiere
@@ -12840,6 +12909,10 @@ function buildPark(){
      Unit 5 «Habits» — e riprende a segnare l'ORA REALE quando la unit
      e' completata (vedi updateClockTower / U5 Habits piu' sotto). */
   clockDT=new BABYLON.DynamicTexture("clkdt",{width:256,height:256},scene,true);
+  /* v3 ott: drawClockFace pulisce gli angoli (clearRect) ma il materiale non
+     usava l'alpha, e attorno al quadrante tondo restava un quadrato nero.
+     hasAlpha -> alpha-test: il quadrante e' rotondo, dentro la cornice. */
+  clockDT.hasAlpha=true;
   clockFaceMat=new BABYLON.StandardMaterial("clkfm",scene);
   clockFaceMat.diffuseTexture=clockDT;
   clockFaceMat.emissiveColor=new BABYLON.Color3(0.45,0.45,0.45);
@@ -12852,14 +12925,14 @@ function buildPark(){
      economico. */
   clockFaceMat.disableLighting=true;
   clockFaceMat.emissiveTexture=clockDT;
-  [[PX-30,PZ-32.1,0],[PX-30,PZ-27.9,Math.PI],[PX-27.9,PZ-30,-Math.PI/2],[PX-32.1,PZ-30,Math.PI/2]]
+  [[PX-30,PZ-32.23,0],[PX-30,PZ-27.77,Math.PI],[PX-27.77,PZ-30,-Math.PI/2],[PX-32.23,PZ-30,Math.PI/2]]   // v3 ott: davanti al piano dell'orologio (4,4 m)
     .forEach((f,i)=>{ const face=BABYLON.MeshBuilder.CreatePlane("clkf"+i,{size:3},scene);
       face.material=clockFaceMat; face.position.set(f[0],12,f[1]); face.rotation.y=f[2];
       face.parent=townRoot; face.isPickable=false;
       if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(face); });
   drawClockFace(4,20,false);
   addSolid(PX-32,PX-28,PZ-32,PZ-28,"town");
-  landmarkSign(PX-30,20.5,PZ-30,"🕐","Clock Tower","Year 1 · Unit 5 Habits / The time");
+  landmarkSign(PX-30,24.6,PZ-30,"🕐","Clock Tower","Year 1 · Unit 5 Habits / The time");   // sopra il puntale (23,65)
   buildClockSquare(PX-30,PZ-30);   // targhe-routine, cartello-quest e NPC di Unit 5
   // alberi & panchine sparsi
   [[PX-30,PZ+30],[PX-26,PZ+10],[PX-26,PZ-10],[PX+34,PZ+10],[PX+34,PZ-10],[PX+30,PZ+50],[PX-20,PZ-50],[PX+38,PZ-44]]
