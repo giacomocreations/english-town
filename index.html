@@ -839,6 +839,13 @@ const RAIN_MIN=70, RAIN_VAR=180;      // durata di un rovescio, in secondi
 const RAIN_INERZIA=6.5;               // l'acqua arriva e se ne va piano, non a scatti
 const RAIN={ forza:0, target:0, orologio:0, prossima:0, override:null, dur:0, avviata:false,
              storm:false, stormOverride:false };   // v274: temporale (fulmini + tuoni)
+/* SUOLO BAGNATO (Giacomo, 3 ott: «mi piace l'effetto bagnato sulla cornice
+   della fontana, ma sui marciapiedi non lo vedo»). wet = quanto e' bagnata
+   la citta' (0..1): sale in fretta quando piove, scende PIANO quando smette
+   (le strade restano lucide dopo l'acquazzone, come davvero). I colori del
+   cielo li scrive chi dipinge il cielo: le pozzanghere riflettono lo stesso
+   cielo che si vede sopra, di giorno, sotto la pioggia e di notte. */
+const WETFX={ wet:0, rain:0, skyZ:[0.31,0.62,0.84], skyM:[0.61,0.80,0.90], skyH:[0.91,0.95,0.97] };
 /* v274 — TEMPORALE (Giacomo, 29 set: «aggiungere i fulmini fra le modalita'
    della pioggia, che scriva It's thundering / It's lightning con il tuono
    ogni tanto»). Non e' un'altra stagione: e' una VARIANTE del rovescio
@@ -2990,6 +2997,116 @@ function swBaseTex(){ if(_swBaseTx) return _swBaseTx;
   }
   tx.update();
   _swBaseTx=tx; return tx; }
+/* WetFXPlugin — il bagnato dei fondi (marciapiedi, piazze, strade, vialetti).
+   ⚠️ Si aggancia UNA volta, alla nascita del materiale, e il suo define
+   (WETFX) resta sempre acceso: asciutto/bagnato cambia solo uniform, quindi
+   la pioggia che arriva NON ricompila nulla (la trappola dei Chromebook,
+   vedi applyQuality). Con wWet=0 lo shader salta tutto con un if su un
+   uniform: da asciutto costa un confronto per pixel.
+   ⚠️ NIENTE campionamento della reflection probe, anche se sarebbe il
+   riflesso «vero»: i fondi sono DENTRO la probe (renderList), e leggere la
+   cube mentre la si disegna e' un feedback loop WebGL. Il riflesso usa i tre
+   colori con cui paintSky dipinge il cielo, che e' quello che si vede sopra.
+   Cosa fa, in ordine: scurisce il fondo (la pietra bagnata e' piu' scura),
+   lo rende lucido (riflesso del cielo di Fresnel + scintilla del sole), e
+   dove il rumore supera una soglia che scende col bagnato fa POZZANGHERE:
+   piu' scure, quasi a specchio, con gli anelli delle gocce come nella vasca
+   della fontana (stessa funzione wDrop). Su «Low» (wQ=0) solo scurito e
+   lucido: niente rumore e niente anelli. Sotto i tetti di RAIN_COPERTO
+   (veranda del diner, tettoia del cafe', terminal) resta asciutto. */
+class WetFXPlugin extends BABYLON.MaterialPluginBase{
+  constructor(material){ super(material,"WetFX",220,{WETFX:false}); this._enable(true); }
+  getClassName(){ return "WetFXPlugin"; }
+  prepareDefines(defines){ defines.WETFX=true; }
+  getUniforms(){ return {
+    ubo:[{name:"tWet",size:1,type:"float"},{name:"tRain",size:1,type:"float"},{name:"tTime",size:1,type:"float"},
+         {name:"tQ",size:1,type:"float"},{name:"tSunDir",size:3,type:"vec3"},{name:"tSunCol",size:3,type:"vec3"},
+         {name:"tSkyZ",size:3,type:"vec3"},{name:"tSkyM",size:3,type:"vec3"},{name:"tSkyH",size:3,type:"vec3"},
+         {name:"tCov0",size:4,type:"vec4"},{name:"tCov1",size:4,type:"vec4"},{name:"tCov2",size:4,type:"vec4"}],
+    fragment:"#ifdef WETFX\nuniform float tWet;uniform float tRain;uniform float tTime;uniform float tQ;uniform vec3 tSunDir;uniform vec3 tSunCol;uniform vec3 tSkyZ;uniform vec3 tSkyM;uniform vec3 tSkyH;uniform vec4 tCov0;uniform vec4 tCov1;uniform vec4 tCov2;\n#endif" }; }
+  bindForSubMesh(ubo){ const W=WETFX;
+    ubo.updateFloat("tWet",W.wet); ubo.updateFloat("tRain",W.rain);
+    ubo.updateFloat("tTime",(typeof WATERFX!=="undefined")?WATERFX.t:performance.now()/1000%3600);
+    ubo.updateFloat("tQ",(typeof qLevel!=="undefined"&&qLevel==="basso")?0:1);
+    let dx=0.4,dy=0.8,dz=-0.3,k=1;
+    try{ dx=-sun.direction.x; dy=-sun.direction.y; dz=-sun.direction.z; k=sun.intensity; }catch(e){}
+    ubo.updateFloat3("tSunDir",dx,dy,dz); ubo.updateFloat3("tSunCol",k,k*0.97,k*0.9);
+    ubo.updateFloat3("tSkyZ",W.skyZ[0],W.skyZ[1],W.skyZ[2]);
+    ubo.updateFloat3("tSkyM",W.skyM[0],W.skyM[1],W.skyM[2]);
+    ubo.updateFloat3("tSkyH",W.skyH[0],W.skyH[1],W.skyH[2]);
+    const cv=(i)=>{ const r=(typeof RAIN_COPERTO!=="undefined")?RAIN_COPERTO[i]:null;
+      return r?[r.x0,r.x1,r.z0,r.z1]:[1e5,-1e5,1e5,-1e5]; };
+    const c0=cv(0),c1=cv(1),c2=cv(2);
+    ubo.updateFloat4("tCov0",c0[0],c0[1],c0[2],c0[3]);
+    ubo.updateFloat4("tCov1",c1[0],c1[1],c1[2],c1[3]);
+    ubo.updateFloat4("tCov2",c2[0],c2[1],c2[2],c2[3]); }
+  getCustomCode(shaderType){ if(shaderType!=="fragment") return null;
+    return {
+CUSTOM_FRAGMENT_DEFINITIONS:`#ifdef WETFX
+float tHash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+vec2 tHash2(vec2 p){ return fract(sin(vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3))))*43758.5453); }
+float tNoise(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); f=f*f*(3.0-2.0*f);
+  return mix(mix(tHash(i),tHash(i+vec2(1.0,0.0)),f.x),mix(tHash(i+vec2(0.0,1.0)),tHash(i+vec2(1.0,1.0)),f.x),f.y); }
+float tIn(vec4 r,vec2 p){ return step(r.x,p.x)*step(p.x,r.y)*step(r.z,p.y)*step(p.y,r.w); }
+/* stessa goccia della vasca (wDrop): anello che si allarga in una cella */
+vec2 tDrop(vec2 p,float cell,float seed,float time,float dens){
+  vec2 q=p/cell+seed; vec2 id=floor(q); vec2 f=fract(q); vec2 h=tHash2(id+seed);
+  float ph=time*1.1+h.x*7.0; float t=fract(ph);
+  float on=step(tHash2(id+floor(ph)*1.37).x,dens);
+  vec2 d=f-(0.33+0.34*h.yx); float r=length(d);
+  float x=(r-t*0.32)/0.035; float e=exp(-x*x)*(1.0-t)*(1.0-t);
+  return (r>0.0001?d/r:vec2(0.0))*(-2.0*x*e)*on; }
+#endif`,
+CUSTOM_FRAGMENT_UPDATE_DIFFUSE:`#ifdef WETFX
+float tK=0.0; float tPud=0.0; vec3 tN=normalW;
+if(tWet>0.001 && normalW.y>0.7){
+  vec2 tP=vPositionW.xz;
+  float tCov=max(tIn(tCov0,tP),max(tIn(tCov1,tP),tIn(tCov2,tP)));
+  tK=tWet*(1.0-tCov);
+  if(tK>0.001 && tQ>0.5){
+    float tDist=length(vEyePosition.xyz-vPositionW);
+    /* pozzanghere: macchie di qualche metro, la soglia scende col bagnato
+       (prima le conche, poi sempre di piu'); bordo morbido 5 cm */
+    float tn=tNoise(tP*0.17)*0.62+tNoise(tP*0.53+7.3)*0.28+tNoise(tP*2.1+1.7)*0.10;
+    float tTh=mix(0.95,0.64,smoothstep(0.30,1.0,tK));
+    tPud=smoothstep(tTh,tTh+0.035,tn)*step(0.30,tK);
+    /* gocce: anelli nelle pozzanghere, accenni sul resto; si spengono da
+       lontano (oltre ~35 m sarebbero solo rumore che sfarfalla) */
+    float tFade=clamp(1.0-tDist/35.0,0.0,1.0);
+    if(tRain>0.02 && tFade>0.0){
+      vec2 tR=tDrop(tP,0.55,0.0,tTime,tRain)*0.6+tDrop(tP,0.38,4.1,tTime*1.17,tRain)*0.4;
+      tR*=tFade*mix(0.18,1.0,tPud);
+      tN=normalize(vec3(tR.x,1.0,tR.y));
+    }
+    /* intorno alla pozzanghera la pietra e' piu' scura (alone d'acqua) */
+    tK=min(1.0,tK+0.35*smoothstep(tTh-0.06,tTh,tn)*step(0.30,tK));
+  }
+  baseColor.rgb*=mix(1.0,0.66,tK)*mix(1.0,0.72,tPud);
+}
+#endif`,
+CUSTOM_FRAGMENT_BEFORE_FOG:`#ifdef WETFX
+if(tK>0.001){
+  vec3 tV=viewDirectionW; vec3 tRf=reflect(-tV,tN);
+  float tY=clamp(tRf.y,0.0,1.0);
+  vec3 tSky=mix(tSkyH,tSkyM,smoothstep(0.0,0.35,tY)); tSky=mix(tSky,tSkyZ,smoothstep(0.35,1.0,tY));
+  float tNV=clamp(dot(tN,tV),0.0,1.0);
+  float tFr=0.04+0.96*pow(1.0-tNV,4.0);
+  /* bagnato: velo lucido che cresce verso l'orizzonte; pozzanghera: specchio */
+  float tRefl=mix(min(0.55,0.10+tFr)*tK*0.75, mix(0.55,0.92,tFr), tPud);
+  color.rgb=mix(color.rgb,tSky,tRefl);
+  /* scintilla del sole (di notte: la luna, il sole del gioco resta acceso);
+     ⚠️ niente in ombra: aggShadow e' la media su tutte le luci, solo il sole
+     ha ombre, quindi si ricava la sua visibilita' dalla media */
+  float tSv=clamp(1.0-(1.0-aggShadow)*numLights*1.6,0.0,1.0);
+  vec3 tH=normalize(normalize(tSunDir)+tV);
+  float tSp=pow(max(dot(tN,tH),0.0),mix(90.0,700.0,tPud));
+  color.rgb+=tSunCol*tSp*mix(0.45,2.2,tPud)*tK*tSv;
+}
+#endif` }; }
+}
+function wetFX(m){ if(!m||m.__wetFX) return m;
+  try{ m.__wetFX=new WetFXPlugin(m); }catch(e){ console.warn("Bagnato non attivo:",e); }
+  return m; }
 function sidewalkMat(name,w,h,tileM){
   tileM=tileM||1.5; const rep=4*tileM;          // metri coperti da una ripetizione della texture
   const base=swBaseTex();
@@ -3005,7 +3122,7 @@ function sidewalkMat(name,w,h,tileM){
      difetto delle ombre tagliate: per schiarire ancora, agire sulla texture. */
   m.diffuseColor=new BABYLON.Color3(0.57,0.57,0.57);
   m.specularColor=new BABYLON.Color3(0.02,0.02,0.02);
-  return m;
+  return wetFX(m);
 }
 
 /* ACCIOTTOLATO DEI VIALETTI DEL PARCO — stessa tecnica delle lastre: canvas
@@ -3053,7 +3170,7 @@ function cobbleMat(){
   const m=new BABYLON.StandardMaterial("ppm",scene);   // nome invariato
   m.diffuseTexture=t; m.diffuseColor=new BABYLON.Color3(0.5,0.5,0.5);   // mai bianco: il clamp si mangia le ombre
   m.specularColor=new BABYLON.Color3(0.03,0.03,0.03);
-  return m; }
+  return wetFX(m); }
 
 /* ERBA DEL PARCO (25 set, richiesta di Giacomo) — stessa tecnica delle
    lastre e dei ciottoli: canvas disegnato una volta, seme fisso, disegno
@@ -4856,7 +4973,9 @@ function updateDayNight(dt){ if(!DAY.enabled) return;
     let tC=lerpHex("#4f9fd6","#1b2a4d",nightF), mC=lerpHex("#9ccbe6","#2c4060",nightF), bC=lerpHex("#e9f3f7","#5a6b86",nightF);
     if(rainF>0){ const rk=0.72*rainF;
       tC=lerpHex(tC,"#41525f",rk); mC=lerpHex(mC,"#5a6a76",rk); bC=lerpHex(bC,"#7d8791",rk); }
-    paintSky(tC,mC,bC); const fc=BABYLON.Color3.FromHexString(bC); scene.fogColor=fc; scene.clearColor=fc.toColor4(1);
+    paintSky(tC,mC,bC); const fc=BABYLON.Color3.FromHexString(bC);
+    try{ const h3=x=>{ const c=BABYLON.Color3.FromHexString(x); return [c.r,c.g,c.b]; };
+      WETFX.skyZ=h3(tC); WETFX.skyM=h3(mC); WETFX.skyH=h3(bC); }catch(e){} scene.fogColor=fc; scene.clearColor=fc.toColor4(1);
     hzDayNight(nightF,fc);   // v243: torri (scure di notte + foschia) e montagne intonate alla nebbia
     // nuvole: bianche di giorno -> grigio scuro di notte
     if(typeof cloudMat!=="undefined" && cloudMat){
@@ -5839,14 +5958,14 @@ function buildTown(){
   asph.material=sidewalkMat("asphm",320,300); asph.parent=townRoot;
   // strada di servizio — livelli Y separati per evitare z-fighting/sfarfallio
   function roadH(z,w,noSW){ const r=BABYLON.MeshBuilder.CreateGround("rh",{width:w||300,height:11},scene);
-    r.material=mat("roadm","#3c4248"); r.position.set(0,0.08,z); r.parent=townRoot;
+    r.material=wetFX(mat("roadm","#3c4248")); r.position.set(0,0.08,z); r.parent=townRoot;
     // marciapiedi larghi 5.5 su entrambi i lati (dal bordo strada z±5.5 fino a z±11)
     if(!noSW) [-8.25,8.25].forEach(dz=>{ const s=BABYLON.MeshBuilder.CreateGround("swh",{width:w||300,height:5.5},scene);
       s.material=sidewalkMat("swm",w||300,5.5); s.position.set(0,0.046,z+dz); s.parent=townRoot; s.__ground=true; });
     for(let i=-((w||300)/2)+4;i<((w||300)/2);i+=8){ const d=BABYLON.MeshBuilder.CreateGround("ln",{width:2.4,height:0.5},scene);
-      d.material=mat("lnm","#1d2a32","#d9c98f"); d.position.set(i,0.11,z); d.parent=townRoot; } }
+      d.material=wetFX(mat("lnm","#1d2a32","#d9c98f")); d.position.set(i,0.11,z); d.parent=townRoot; } }
   function roadV(x,h){ const r=BABYLON.MeshBuilder.CreateGround("rv",{width:11,height:h||300},scene);
-    r.material=mat("roadm2","#3c4248"); r.position.set(x,0.08,0); r.parent=townRoot;
+    r.material=wetFX(mat("roadm2","#3c4248")); r.position.set(x,0.08,0); r.parent=townRoot;
     // marciapiedi larghi 5.5 sui due lati (y=0.043 < 0.046 delle strisce H: niente z-fighting agli incroci)
     [-8.25,8.25].forEach(dx=>{ const s=BABYLON.MeshBuilder.CreateGround("swv",{width:5.5,height:h||300},scene);
       s.material=sidewalkMat("swm",5.5,h||300); s.position.set(x+dx,0.043,0); s.parent=townRoot; s.__ground=true; }); }
@@ -5878,7 +5997,7 @@ function buildTown(){
      alla griglia mondo da alignPavingUV): stesso colore, stesso motivo. */
   { const Z0=PARK_AVE_Z0, Z1=150;
     const r=BABYLON.MeshBuilder.CreateGround("rv",{width:11,height:Z1-Z0},scene);
-    r.material=mat("roadm2","#3c4248"); r.position.set(0,0.08,(Z0+Z1)/2); r.parent=townRoot;
+    r.material=wetFX(mat("roadm2","#3c4248")); r.position.set(0,0.08,(Z0+Z1)/2); r.parent=townRoot;
     [-8.25,8.25].forEach(dx=>{ const s=BABYLON.MeshBuilder.CreateGround("swv",{width:5.5,height:186},scene);
       s.material=sidewalkMat("swm",5.5,186); s.position.set(dx,0.043,57); s.parent=townRoot; s.__ground=true; });
     [[-30.5,-5.5],[5.5,Z0]].forEach(q=>{ const h=q[1]-q[0];
@@ -12123,12 +12242,23 @@ function buildFountainJets(x,y,z){
     FOUNT_PS.__ugello={x:x,y:y,z:z};          // serve al collaudo per rifare la balistica
   }catch(e){ console.warn("Getti fontana non attivi:",e); }
 }
+/* Il bagnato insegue la pioggia: si bagna in ~15 s, si asciuga in ~1,5 min.
+   Il bersaglio non e' la forza pari pari: anche una pioggerella, dopo un
+   po', lascia le strade lucide (0,30 = lucido senza pozzanghere). */
+function wetTick(dt){
+  const f=(typeof RAIN!=="undefined")?Math.max(0,Math.min(1,RAIN.forza)):0;
+  const tgt=f>0.04?Math.min(1,0.30+0.85*f):0;
+  const tau=tgt>WETFX.wet?15:90;
+  WETFX.wet+=(tgt-WETFX.wet)*(1-Math.exp(-dt/tau));
+  if(tgt===0 && WETFX.wet<0.004) WETFX.wet=0;
+  WETFX.rain=f; }
 /* ⚠️ I getti NON si accendono da applyQuality. Se un Chromebook ha gia'
    "alto" salvato in localStorage, applyQuality gira UNA volta all'avvio —
    prima che buildTown abbia costruito la fontana — e non tornerebbe mai piu':
    i getti resterebbero spenti tutto l'anno. Deciso qui, a ogni frame, si
    corregge da solo. Costa un confronto e una radice. */
 function acquaTick(dt){
+  wetTick(dt);
   WATERFX.t=(WATERFX.t+dt)%3600;                   // 1 h di ciclo: il float dello shader resta preciso
   WATERFX.rain=(typeof RAIN!=="undefined")?Math.max(0,Math.min(1,RAIN.forza)):0;
   WATERFX.jet+=((_jetOn?1:0)-WATERFX.jet)*Math.min(1,dt*1.5);   // onde e schiuma dei getti sfumano
