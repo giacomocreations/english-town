@@ -4843,6 +4843,7 @@ if(gQ>0.5){
    il tipo si sceglie dal nome dell'edificio (stabile fra un avvio e l'altro):
    circa 40% pietra, 30% mattoni, 30% bugnato */
 function facadeKind(m){ const n=String(m&&m.name||"");
+  if(m&&m.__facadeKind!=null) return m.__facadeKind;  // scelto da chi crea l'edificio (es. Central Station)
   /* v4 ott (Giacomo: «mancano le porte, si vedono i mattoni nella porta»;
      «i balconi non devono avere motivo mattoni»). Il materiale «door» dei
      GLB NON e' solo la fascia del piano terra: sono anche le PORTE e le
@@ -7783,7 +7784,7 @@ function talkToPed(w){
   if(ambientReady(npc,null)){ openAmbient(npc, null, c.icon, c.sub); return; }
   const g=npcGreet(npc); npcTouch(npc); npc.metPlayer=true;
   DialogueBox.open({ npc, icon:c.icon, sub:c.sub,
-    text:g.en+c.en, italian:g.it+c.it,
+    text:greetJoin(g.en,c.en), italian:greetJoin(g.it,c.it),
     buttons:[ {label:"\u2753 Ask me", cls:"primary", act:()=>openAskMenu(npc,c.icon,c.sub,null)},
       {label:"Leave", cls:"ghost", act:()=>{}} ] });
 }
@@ -8107,6 +8108,7 @@ function talkToRanger(npc,hailed){
       choices:[{label:"\u{1F642} OK", act:()=>{}}] });
     return;
   }
+  const metB=npcMet(npc);
   const g=npcGreet(npc); npcTouch(npc); npc.metPlayer=true;
   const oob=(RANGER_A.mode==="oob") || (typeof oobDist==="function" && oobDist(player.position.x,player.position.z)>0);
   const goal=rangerNextGoal();
@@ -8142,14 +8144,16 @@ function talkToRanger(npc,hailed){
   /* SECONDO rifiuto: il Ranger non insiste con le stesse parole, offre il
      passaggio come prima scelta (o accompagna subito se AUTO). */
   const en = oob ? "Hey! You're outside the town. It's easy to get lost out here!"
-           : goal ? (hailed ? "Hello! Are you lost? I'm the Town Ranger."
-                            : "Hello! I'm the Town Ranger. How can I help you?")
+           : goal ? (metB ? (hailed ? "Do you need some help?" : "How can I help you?")
+                    : (hailed ? "Hello! Are you lost? I'm the Town Ranger."
+                              : "Hello! I'm the Town Ranger. How can I help you?"))
                   : "Hello! You know this town better than me now \u2014 well done!";
   const it = oob ? "Sei uscito dai confini di QuestTown: il Ranger \u00e8 venuto a riportarti dentro."
-           : goal ? (hailed ? "Sei fermo da un po': il Ranger \u00e8 venuto a darti una mano."
-                            : "Il Ranger della citt\u00e0 pu\u00f2 indicarti la strada.")
+           : goal ? (metB ? "Il Ranger ti ha gi\u00e0 conosciuto: ti chiede solo se ti serve aiuto."
+                    : (hailed ? "Sei fermo da un po': il Ranger \u00e8 venuto a darti una mano."
+                              : "Il Ranger della citt\u00e0 pu\u00f2 indicarti la strada."))
                   : "Hai completato tutte le unit\u00e0 disponibili: per ora non c'\u00e8 pi\u00f9 nulla da sbloccare.";
-  DialogueBox.open({ npc, icon:"\u{1F9E5}", sub:"Town Ranger", text:g.en+en, italian:g.it+it, choices:ch });
+  DialogueBox.open({ npc, icon:"\u{1F9E5}", sub:"Town Ranger", text:greetJoin(g.en,en), italian:greetJoin(g.it,it), choices:ch });
 }
 function rangerRelease(){
   RANGER_A.active=false;
@@ -10099,7 +10103,7 @@ function updateCafePopulation(){
    giornata non deve raddoppiare perche' abbiamo aperto un secondo bar. */
 function talkToCafeNPC(npc,c){
   if(!c.menu && ambientReady(npc,null)){ openAmbient(npc,null,c.icon,c.sub); return; }
-  const first=!npc.metPlayer;
+  const first=!npcMet(npc);
   const g=npcGreet(npc); npcTouch(npc); npc.metPlayer=true;
   const ch=[];
   if(c.menu){
@@ -10115,8 +10119,8 @@ function talkToCafeNPC(npc,c){
   ch.push({ label:"\u2753 Ask me", act:function(){ openAskMenu(npc,c.icon,c.sub,null); } });
   ch.push({ label:"Goodbye", cls:"ghost", act:function(){} });
   DialogueBox.open({ npc, icon:c.icon, sub:c.sub,
-    text:g.en+((first||!c.again)?c.en:c.again),
-    italian:g.it+((first||!c.againIt)?c.it:c.againIt), choices:ch });
+    text:(first||!c.again)?greetJoin(g.en,c.en):c.again,
+    italian:(first||!c.againIt)?greetJoin(g.it,c.it):c.againIt, choices:ch });
 }
 
 /* Edicola procedurale: cassa + bancone + tettuccio + prima pagina disegnata
@@ -10709,9 +10713,9 @@ function talkToMayor(npc){
     act:()=>openAmbient(npc, null, "\u{1F3DB}\uFE0F", "The Mayor") });
   ch.push({ label:"Goodbye", cls:"ghost", act:()=>{} });
   DialogueBox.open({ npc, icon:"\u{1F3DB}\uFE0F", sub:"The Mayor \u2014 Town Hall",
-    text:g.en+(n?("You have "+n+" stamp"+(n>1?"s":"")+" on your card. Well done, citizen!")
+    text:greetJoin(g.en,"")+(n?("You have "+n+" stamp"+(n>1?"s":"")+" on your card. Well done, citizen!")
                 :"You have no stamps yet. Complete a unit and come back!"),
-    italian:g.it+(n?("Hai "+n+" timbr"+(n>1?"i":"o")+" sulla tessera. Bravo, cittadino!")
+    italian:greetJoin(g.it,"")+(n?("Hai "+n+" timbr"+(n>1?"i":"o")+" sulla tessera. Bravo, cittadino!")
                    :"Non hai ancora nessun timbro. Completa un'unit\u00e0 e torna da me!"),
     buttons: ch.map(c=>({ label:c.label, cls:c.cls||"", act:c.act })) });
 }
@@ -11260,10 +11264,39 @@ function buildStation(){
   root.getChildMeshes().forEach(mm=>{mm.__occluder=true; mm.__camBlock=true;});
   let b=bbox(root); root.position.y+=-b.min.y; b=bbox(root);
   addSolid(b.min.x,b.max.x,b.min.z,b.max.z,"town");
-  // pensilina + binari a est del piazzale
+  /* v4 ott (Giacomo: «la Central Station e' rimasta basic?»). Si': era
+     l'unico edificio creato FUORI dai cicli TOWN/FILLER, quindi era rimasta
+     senza tinta, rivestimento, tetto/zoccolo/tende/luci di notte e insegna.
+     Stesso trattamento degli altri palazzi: materiali clonati (il modello bE
+     e' condiviso con la scuola e tre palazzi di riempimento), tinta pietra
+     calda declinata per materiale, bugnato a corsi orizzontali come le
+     stazioni d'epoca, vetri gia' trattati da styleWindow. */
+  const ST_HEX="#c8b493";
+  root.getChildMeshes().forEach(mm=>{ const mt=mm.material; if(!mt) return;
+    if(/window|trim/i.test(mt.name||"")){ styleWindow(mt); return; }
+    const cl=mt.clone((mt.name||"bmat")+"__CentralStation");
+    if(cl){ mm.material=cl; const tc=bldPalette(mt.name,ST_HEX);
+      if("albedoColor" in cl && cl.albedoColor) cl.albedoColor=tc;
+      else if("diffuseColor" in cl && cl.diffuseColor) cl.diffuseColor=tc;
+      if(/^_defaultMat/.test(mt.name||"")) cl.__facadeKind=2; }
+    facadeFX(mm.material); });
+  // banchina + pensilina + binari a est del piazzale
   const platZ=S.z; const platX=S.x+9;
   const plat=BABYLON.MeshBuilder.CreateBox("plat",{width:6,height:0.6,depth:26},scene);
-  plat.material=mat("platm","#d7cfbe"); plat.position.set(platX,0.3,platZ); plat.parent=townRoot; plat.__occluder=true; plat.__ground=true;
+  /* v4 ott: era un blocco color crema a tinta unita. Ora calcestruzzo grigio,
+     linea gialla di sicurezza sul lato dei binari e pensilina in ferro
+     verde su quattro colonne (si passa fra una colonna e l'altra). */
+  plat.material=sidewalkMat("platm",6,26); plat.position.set(platX,0.3,platZ); plat.parent=townRoot; plat.__occluder=true; plat.__ground=true;
+  { const yl=BABYLON.MeshBuilder.CreateBox("platYl",{width:0.4,height:0.02,depth:25.6},scene);
+    yl.material=mat("platYlm","#e2b928"); yl.position.set(platX+2.6,0.61,platZ); yl.parent=townRoot; yl.isPickable=false;
+    const iron=mat("platIronm","#2f4a3f"); iron.specularColor=new BABYLON.Color3(0.12,0.12,0.12);
+    const roofC=BABYLON.MeshBuilder.CreateBox("platRoof",{width:4.6,height:0.14,depth:22},scene);
+    roofC.material=iron; roofC.position.set(platX,4.1,platZ); roofC.parent=townRoot; roofC.__occluder=true; roofC.isPickable=false;
+    const fas=BABYLON.MeshBuilder.CreateBox("platFascia",{width:4.7,height:0.35,depth:22.1},scene);
+    fas.material=mat("platFasm","#e6e0d2"); fas.position.set(platX,3.92,platZ); fas.parent=townRoot; fas.__occluder=true; fas.isPickable=false;
+    [-8.5,-2.8,2.8,8.5].forEach(dz=>{ const c=BABYLON.MeshBuilder.CreateCylinder("platCol",{diameter:0.22,height:3.5,tessellation:10},scene);
+      c.material=iron; c.position.set(platX,0.6+1.75,platZ+dz); c.parent=townRoot; c.__occluder=true; c.isPickable=false;
+      addSolid(platX-0.2,platX+0.2,platZ+dz-0.2,platZ+dz+0.2,"town"); }); }
   // BINARI: escono dalla stazione verso SUD (un solo lato), corrono su terreno aperto
   // lontano dagli edifici e SVANISCONO nella nebbia prima del fondale d'orizzonte
   // (le torri sono ora a r~246+, i binari arrivano a r~200). Per allungarli/accorciarli
@@ -11299,6 +11332,10 @@ function buildStation(){
     prompt:()=>Gate.unlocked("u2_5")?S.ic+" <b>"+S.t+"</b> \u00b7 press <b>E</b> to go in"
                                      :"\u{1F512} <b>"+S.t+"</b> \u00b7 not open yet",
     interact:()=>tryEnterUnit(QUESTS.u2_5)});
+  /* v4 ott: come i palazzi TOWN — tetto, zoccolo, tende, finestre accese di
+     notte (porta-quest lasciata libera) e insegna fisica sulla facciata */
+  dressBuilding(root,{ name:S.t, front:[0,dir], door:[stDX,doorZ], accent:_mixHex(ST_HEX,"#1c1a18",0.42).toHexString() });
+  facilitySign(root.position.x, Math.min(b.max.y*0.42,7.2), doorZ+dir*0.45, S.ic, S.t);
   lamp(S.x-12,S.z+12); lamp(S.x-12,S.z-12); tree(S.x-13,S.z); 
 }
 
@@ -17529,7 +17566,7 @@ function talkToLeo(npc){
       italian:"Ciao! Sono Leo, un amico di famiglia. "+line.it,
       buttons:[{label:"Hi Leo!", cls:"primary", act:()=>{}}] });
   } else {
-    DialogueBox.open({ npc, icon:"👋", sub:"Guest", text:line.en, italian:line.it,
+    DialogueBox.open({ npc, icon:"👋", sub:"Guest", text:againLine(line).en, italian:againLine(line).it,
       buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
   }
 }
@@ -20154,7 +20191,7 @@ function talkToSam(npc){
       italian:"Buongiorno! Sono Sam, il negoziante. "+line.it,
       buttons:[{label:"Hi Sam!", cls:"primary", act:()=>{}}] });
   } else {
-    DialogueBox.open({ npc, icon:"🛒", sub:"Shopkeeper", text:line.en, italian:line.it,
+    DialogueBox.open({ npc, icon:"🛒", sub:"Shopkeeper", text:againLine(line).en, italian:againLine(line).it,
       buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
   }
 }
@@ -20189,7 +20226,7 @@ function talkToMia(npc){
       italian:"Ciao! Sono Mia. Adoro questo negozio! "+line.it,
       buttons:[{label:"Hi Mia!", cls:"primary", act:()=>{}}] });
   } else {
-    DialogueBox.open({ npc, icon:"👋", sub:"Friend", text:line.en, italian:line.it,
+    DialogueBox.open({ npc, icon:"👋", sub:"Friend", text:againLine(line).en, italian:againLine(line).it,
       buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
   }
 }
@@ -20494,7 +20531,7 @@ function talkToAnna(npc){
       italian:"Buongiorno! Sono Anna. "+line.it,
       buttons:[{label:"Hi Anna!", cls:"primary", act:()=>{}}] });
   } else {
-    DialogueBox.open({ npc, icon:"🧺", sub:"Shop assistant", text:line.en, italian:line.it,
+    DialogueBox.open({ npc, icon:"🧺", sub:"Shop assistant", text:againLine(line).en, italian:againLine(line).it,
       buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
   }
 }
@@ -20521,7 +20558,7 @@ function talkToOscar(npc){
       italian:"Ciao! Sono Oscar. Adoro cucinare! "+line.it,
       buttons:[{label:"Hi Oscar!", cls:"primary", act:()=>{}}] });
   } else {
-    DialogueBox.open({ npc, icon:"🍳", sub:"Customer", text:line.en, italian:line.it,
+    DialogueBox.open({ npc, icon:"🍳", sub:"Customer", text:againLine(line).en, italian:againLine(line).it,
       buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
   }
 }
@@ -21157,7 +21194,7 @@ function talkToTom(npc){
       italian:"Ciao! Sono Tom, il bigliettaio. "+line.it,
       buttons:[{label:"Hi Tom!", cls:"primary", act:()=>{}}] });
   } else {
-    DialogueBox.open({ npc, icon:"🎫", sub:"Ticket clerk", text:line.en, italian:line.it,
+    DialogueBox.open({ npc, icon:"🎫", sub:"Ticket clerk", text:againLine(line).en, italian:againLine(line).it,
       buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
   }
 }
@@ -21179,7 +21216,7 @@ function talkToZoe(npc){
       text:"Hi! I'm Zoe. "+line.en, italian:"Ciao! Sono Zoe. "+line.it,
       buttons:[{label:"Hi Zoe!", cls:"primary", act:()=>{}}] });
   } else {
-    DialogueBox.open({ npc, icon:"👋", sub:"Traveller", text:line.en, italian:line.it,
+    DialogueBox.open({ npc, icon:"👋", sub:"Traveller", text:againLine(line).en, italian:againLine(line).it,
       buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
   }
 }
@@ -21515,7 +21552,7 @@ function talkToGrace(npc){
       italian:"Ciao! Sono Miss Grace, la maestra. "+line.it,
       buttons:[{label:"Hi Miss Grace!", cls:"primary", act:()=>{}}] });
   } else {
-    DialogueBox.open({ npc, icon:"🍎", sub:"Teacher", text:line.en, italian:line.it,
+    DialogueBox.open({ npc, icon:"🍎", sub:"Teacher", text:againLine(line).en, italian:againLine(line).it,
       buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
   }
 }
@@ -21532,7 +21569,7 @@ function talkToTim(npc){
   if(Quest.unit===UNIT0 && Quest.step && Quest.step.id==="func"){ runSchoolChat(npc); return; }
   if(!npc.metPlayer){ npc.metPlayer=true; greetTimFirstTime(npc); return; }
   const line=timStepLine();
-  DialogueBox.open({ npc, icon:"👋", sub:"Classmate", text:line.en, italian:line.it,
+  DialogueBox.open({ npc, icon:"👋", sub:"Classmate", text:againLine(line).en, italian:againLine(line).it,
     buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
 }
 /* Primo incontro con Tim: la domanda "Do you like school?" ha ORA due vere
@@ -22092,13 +22129,35 @@ function greetTimeOfDay(){
 }
 const _GREET_SHORT=["Hi again!","Back again?","Oh, hello again!","Hey!"];
 const _GREET_CONT =["So\u2026","One more:","Right, listen:","And now:"];
+/* v4 ott (Giacomo: «"Good afternoon! Nice to see you again. Hello! Are you
+   lost? I'm the Town Ranger." — non serve che saluti ogni volta»). Prima,
+   dopo 8 minuti, si ripartiva da capo: buongiorno + «nice to see you again»
+   (anche al PRIMO incontro) + il «Hello!» della battuta. Ora:
+     · primo incontro della sessione -> «Good afternoon!» e basta;
+     · gia' visto oggi -> «Hi again!» (o «So…» se e' passato meno di 45 s);
+   e greetJoin toglie il «Hello!/Hi!» in testa alla battuta quando il saluto
+   c'e' gia', cosi' non si saluta due volte di fila. */
 function npcGreet(npc){
   const last=_npcSeen[_npcKey(npc)], t=last?(Date.now()-last):Infinity;
   if(t<45000)  return { en:_GREET_CONT[(Math.random()*_GREET_CONT.length)|0]+" ", it:"" };
-  if(t<480000) return { en:_GREET_SHORT[(Math.random()*_GREET_SHORT.length)|0]+" ", it:"" };
+  if(last)     return { en:_GREET_SHORT[(Math.random()*_GREET_SHORT.length)|0]+" ", it:"" };
   const g=greetTimeOfDay();
-  return { en:g.en+"! Nice to see you again. ", it:g.it+"! " };
+  return { en:g.en+"! ", it:g.it+"! " };
 }
+function npcMet(npc){ return !!_npcSeen[_npcKey(npc)] || !!(npc&&npc.metPlayer); }
+function greetJoin(pre,line){ line=String(line||"");
+  if(!pre) return line;
+  const r=line.replace(/^(Hello|Hi there|Hi|Hey|Good (morning|afternoon|evening|day)|Ciao|Salve|Buongiorno|Buon pomeriggio|Buonasera)\s*[!,.]\s*/i,"");
+  return pre+(r!==line ? r.charAt(0).toUpperCase()+r.slice(1) : line); }
+/* chi si e' gia' presentato non ridice «Welcome to …!»: ripassando dal
+   negozio, «Welcome to the Corner Shop! Have a look around.» diventa
+   «Hello again! Have a look around.» */
+function againLine(line){ if(!line) return line;
+  const en=String(line.en||""), m=en.match(/^Welcome( to [^!.]*)?[!.]\s*/);
+  if(!m) return line;
+  const rest=en.slice(m[0].length);
+  return Object.assign({},line,{ en:"Hello again! "+(rest||"What can I do for you?"),
+    it:String(line.it||"").replace(/^Benvenut[^!.]*[!.]\s*/,"Ciao di nuovo! ") }); }
 
 /* ---- SCHEDE NPC: ogni personaggio ha un'identità COERENTE (le stesse
    risposte a distanza di settimane). genBio() la genera in modo
@@ -23365,7 +23424,7 @@ function openAmbient(npc,unitId,icon,who){
   if(r){
     const g=npcGreet(npc); npcTouch(npc);
     DialogueBox.open({ npc, icon, sub:(who||"")+" \u2014 una voce di paese",
-      text:g.en+r.en, italian:g.it+r.it,
+      text:greetJoin(g.en,r.en), italian:greetJoin(g.it,r.it),
       buttons:[ {label:"\u{1F440} Interesting!", cls:"primary",
                  act:()=>_ambientAsk(npc,item,icon,who,unitId,true)},
                 {label:"Leave", cls:"ghost", act:()=>{}} ] });
@@ -23394,8 +23453,8 @@ function _ambientAsk(npc,item,icon,who,homeUnit,noGreet){
   DialogueBox.open({ npc, icon,
     sub:(who||"")+(chatty?" \u2014 \u{1F4AC} chiacchierone del giorno \u00b7 \u2b50\u00d7"+STAR_RULES.chattyMul
                           :" \u2014 tienimi in allenamento!"),
-    text:g.en+item.q,
-    italian:g.it+item.it,
+    text:greetJoin(g.en,item.q),
+    italian:greetJoin(g.it,item.it),
     html:'<textarea id="uAmbientTA" rows="3" style="width:100%;box-sizing:border-box;font:inherit;'
       +'padding:8px;border-radius:10px;border:1px solid #ccd6da;resize:vertical;" '
       +'placeholder="Write your answer in English..."></textarea>'
@@ -24636,7 +24695,7 @@ function talkToDunn(npc){
       italian:"Ciao! Sono Mr. Dunn, l'impiegato dell'anagrafe. "+line.it,
       buttons:[{label:"Hi Mr. Dunn!", cls:"primary", act:()=>{}}] });
   } else {
-    DialogueBox.open({ npc, icon:"👪", sub:"Registrar", text:line.en, italian:line.it,
+    DialogueBox.open({ npc, icon:"👪", sub:"Registrar", text:againLine(line).en, italian:againLine(line).it,
       buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
   }
 }
@@ -24656,7 +24715,7 @@ function talkToIvy(npc){
   }
   if(!npc.metPlayer){ npc.metPlayer=true; greetIvyFirstTime(npc); return; }
   const line=ivyStepLine();
-  DialogueBox.open({ npc, icon:"👋", sub:"Resident", text:line.en, italian:line.it,
+  DialogueBox.open({ npc, icon:"👋", sub:"Resident", text:againLine(line).en, italian:againLine(line).it,
     buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
 }
 /* Primo incontro con Ivy: scelta reale (nessun bottone muto), stesso
@@ -25016,7 +25075,7 @@ function talkToReed(npc){
       text:"Hello! I'm Mr. Reed. "+line.en, italian:"Ciao! Sono Mr. Reed, del check-in. "+line.it,
       buttons:[{label:"Hi Mr. Reed!", cls:"primary", act:()=>{}}] });
   } else {
-    DialogueBox.open({ npc, icon:"\u2708\ufe0f", sub:"Check-in", text:line.en, italian:line.it,
+    DialogueBox.open({ npc, icon:"\u2708\ufe0f", sub:"Check-in", text:againLine(line).en, italian:againLine(line).it,
       buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
   }
 }
@@ -25032,7 +25091,7 @@ function talkToLena(npc){
   if(Quest.unit===UNIT1 && Quest.step && Quest.step.id==="func"){ runAirportChat(npc); return; }
   if(!npc.metPlayer){ npc.metPlayer=true; greetLenaFirstTime(npc); return; }
   const line=lenaStepLine();
-  DialogueBox.open({ npc, icon:"\u{1F44B}", sub:"Traveller", text:line.en, italian:line.it,
+  DialogueBox.open({ npc, icon:"\u{1F44B}", sub:"Traveller", text:againLine(line).en, italian:againLine(line).it,
     buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
 }
 /* Primo incontro con Lena: scelta reale (nessun bottone muto), stesso
@@ -25069,7 +25128,7 @@ function talkToCole(npc){
       text:"Good morning. I'm Officer Cole. "+line.en, italian:"Buongiorno. Sono Officer Cole. "+line.it,
       buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
   } else {
-    DialogueBox.open({ npc, icon:"\u{1F6C2}", sub:"Security", text:line.en, italian:line.it,
+    DialogueBox.open({ npc, icon:"\u{1F6C2}", sub:"Security", text:againLine(line).en, italian:againLine(line).it,
       buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
   }
 }
@@ -25577,14 +25636,16 @@ function _cafeDone(){ const P=CAFE_PICK;
 /* I due clienti non vendono niente: sono li' per essere parlati. Stessa
    porta degli altri NPC di citta' — ambient, domande, e basta. */
 function talkToCafeGuest(npc,icon,who){
+  const met=npcMet(npc);
   const g=npcGreet(npc); npcTouch(npc); npc.metPlayer=true;
+  const gr=(npc.id==="tc_greta");
   DialogueBox.open({ npc, icon:icon, sub:who,
-    text:g.en+((npc.id==="tc_greta")
-      ? "Hi! I'm Greta. My flight is in two hours, so I'm having a tea and watching the planes."
-      : "Hello! I'm Silas. I fly to Dublin tonight \u2014 but first, a coffee."),
-    italian:g.it+((npc.id==="tc_greta")
-      ? "Ciao! Sono Greta: il mio volo \u00e8 fra due ore, quindi prendo un t\u00e8 e guardo gli aerei."
-      : "Salve! Sono Silas: stasera volo a Dublino, ma prima un caff\u00e8."),
+    text:greetJoin(g.en, gr
+      ? (met?"":"Hi! I'm Greta. ")+"My flight is in two hours, so I'm having a tea and watching the planes."
+      : (met?"":"Hello! I'm Silas. ")+"I fly to Dublin tonight \u2014 but first, a coffee."),
+    italian:greetJoin(g.it, gr
+      ? (met?"":"Ciao! Sono Greta: ")+"il mio volo \u00e8 fra due ore, quindi prendo un t\u00e8 e guardo gli aerei."
+      : (met?"":"Salve! Sono Silas: ")+"stasera volo a Dublino, ma prima un caff\u00e8."),
     choices:[
       { label:"\u{1F4AC} Let's talk!"+(isChatty(npc)?" \u2b50\u00d7"+STAR_RULES.chattyMul:""),
         act:function(){ openAmbient(npc, null, icon, who); } },
@@ -25594,7 +25655,7 @@ function talkToCafeGuest(npc,icon,who){
 }
 function talkToTheo(npc){
   const anno=(function(){ try{ return studentYear(); }catch(e){ return 1; } })();
-  const first=!npc.metPlayer; npcTouch(npc); npc.metPlayer=true;
+  const first=!npcMet(npc); npcTouch(npc); npc.metPlayer=true;
   DialogueBox.open({ npc, icon:"\u2615", sub:"Barista \u2014 "+cafeLuogo(npc).nome,
     /* ⚠️ Diceva «the caf\u00e9 never closes», e non e' vero: il cast del terminal
        sta in TOWN_POP come tutti gli NPC di citta' e sparisce quando
@@ -25968,7 +26029,7 @@ function talkToBell(npc){
       italian:"Ciao! Sono Mr. Bell, l'orologiaio: l'orologio della torre e' fermo. "+line.it,
       buttons:[{label:"Hi Mr. Bell!", cls:"primary", act:()=>{}}] });
   } else {
-    DialogueBox.open({ npc, icon:"\u{1F550}", sub:"Clockmaker", text:line.en, italian:line.it,
+    DialogueBox.open({ npc, icon:"\u{1F550}", sub:"Clockmaker", text:againLine(line).en, italian:againLine(line).it,
       buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
   }
 }
@@ -25994,7 +26055,7 @@ function talkToRuby(npc){
       italian:"Ciao! Sono Ruby e vado a scuola qui in citta'. "+line.it,
       buttons:[{label:"Hi Ruby!", cls:"primary", act:()=>{}}] });
   } else {
-    DialogueBox.open({ npc, icon:"\u{1F392}", sub:"Student", text:line.en, italian:line.it,
+    DialogueBox.open({ npc, icon:"\u{1F392}", sub:"Student", text:againLine(line).en, italian:againLine(line).it,
       buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
   }
 }
@@ -26651,7 +26712,7 @@ function talkToCoach(npc){
       italian:"Ciao! Sono Coach Dan: devo formare la squadra della scuola e tu sei il mio assistente. "+line.it,
       buttons:[{label:"Ok Coach!", cls:"primary", act:()=>{}}] });
   } else {
-    DialogueBox.open({ npc, icon:"\u26bd", sub:"Coach", text:line.en, italian:line.it,
+    DialogueBox.open({ npc, icon:"\u26bd", sub:"Coach", text:againLine(line).en, italian:againLine(line).it,
       buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
   }
 }
@@ -27050,7 +27111,7 @@ function talkToNina(npc){
       italian:"Buongiorno! Sono Nina, la commessa. "+line.it,
       buttons:[{label:"Hi Nina!", cls:"primary", act:()=>{}}] });
   } else {
-    DialogueBox.open({ npc, icon:"\u{1f457}", sub:"Shop Assistant", text:line.en, italian:line.it,
+    DialogueBox.open({ npc, icon:"\u{1f457}", sub:"Shop Assistant", text:againLine(line).en, italian:againLine(line).it,
       buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
   }
 }
@@ -27075,7 +27136,7 @@ function talkToBen(npc){
       italian:"Ciao! Sono Ben, il fratello di Mia \u2014 grazie per il regalo di compleanno! "+line.it,
       buttons:[{label:"Hi Ben!", cls:"primary", act:()=>{}}] });
   } else {
-    DialogueBox.open({ npc, icon:"\u{1f9e2}", sub:"Customer", text:line.en, italian:line.it,
+    DialogueBox.open({ npc, icon:"\u{1f9e2}", sub:"Customer", text:againLine(line).en, italian:againLine(line).it,
       buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
   }
 }
@@ -27098,7 +27159,7 @@ function talkToHolly(npc){
       italian:"Ciao! Sono Holly, adoro fare shopping qui! "+line.it,
       buttons:[{label:"Hi Holly!", cls:"primary", act:()=>{}}] });
   } else {
-    DialogueBox.open({ npc, icon:"\u{1f455}", sub:"Customer", text:line.en, italian:line.it,
+    DialogueBox.open({ npc, icon:"\u{1f455}", sub:"Customer", text:againLine(line).en, italian:againLine(line).it,
       buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
   }
 }
@@ -28039,7 +28100,7 @@ function talkToRita(npc){
       italian:"Ciao! Sono Rita, il club \u00e8 mio: ieri sera c'\u00e8 stato un bel concerto. "+line.it,
       buttons:[{label:"Hi Rita!", cls:"primary", act:()=>{}}] });
     return; }
-  DialogueBox.open({ npc, icon:"\u{1F3B5}", sub:"Club owner", text:line.en, italian:line.it,
+  DialogueBox.open({ npc, icon:"\u{1F3B5}", sub:"Club owner", text:againLine(line).en, italian:againLine(line).it,
     buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
 }
 function mickStepLine(){
@@ -28069,7 +28130,7 @@ function talkToMick(npc){
       italian:"Ciao! Sono Mick, il roadie: porto tutto io, chitarre, batteria, cavi\u2026 "+line.it,
       buttons:[{label:"Hi Mick!", cls:"primary", act:()=>{}}] });
     return; }
-  DialogueBox.open({ npc, icon:"\u{1F69A}", sub:"Roadie", text:line.en, italian:line.it,
+  DialogueBox.open({ npc, icon:"\u{1F69A}", sub:"Roadie", text:againLine(line).en, italian:againLine(line).it,
     buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
 }
 function devStepLine(){
@@ -28097,7 +28158,7 @@ function talkToDev(npc){
       italian:"Ciao! Sono Dev, il fonico del club. "+line.it,
       buttons:[{label:"Hi Dev!", cls:"primary", act:()=>{}}] });
     return; }
-  DialogueBox.open({ npc, icon:"\u{1F39B}\uFE0F", sub:"Sound engineer", text:line.en, italian:line.it,
+  DialogueBox.open({ npc, icon:"\u{1F39B}\uFE0F", sub:"Sound engineer", text:againLine(line).en, italian:againLine(line).it,
     buttons:[{label:"Ok!", cls:"primary", act:()=>{}}] });
 }
 
@@ -30797,8 +30858,8 @@ function talkToGigNPC(npc,c){
   const S=GIG.on?GIG_SONGS[GIG.idx]:null;
   const g=npcGreet(npc); npcTouch(npc);
   DialogueBox.open({ npc, icon:"\u{1F3B6}", sub:c.sub,
-    text:g.en+(S?S.chat.en:"I love this place. There's music every night!"),
-    italian:g.it+(S?S.chat.it:"Adoro questo posto: c'\u00e8 musica tutte le sere!"),
+    text:greetJoin(g.en,S?S.chat.en:"I love this place. There's music every night!"),
+    italian:greetJoin(g.it,S?S.chat.it:"Adoro questo posto: c'\u00e8 musica tutte le sere!"),
     choices:[
       { label:"\u{1F4AC} Let's talk!"+(isChatty(npc)?" \u2b50\u00d7"+STAR_RULES.chattyMul:""),
         act:()=>openAmbient(npc,null,"\u{1F3B6}",c.sub) },
