@@ -57114,13 +57114,15 @@ const PRES_TTL   = 10000;   // ms senza ricevere nulla -> il compagno sparisce
 const PRES_LIBERA= 20000;   // ms di corpo inutilizzato prima di distruggerlo
 const PRES_CULL  = 45;      // stessa distanza di taglio dei pedoni
 const PRES_RIPROVA=60000;   // ms fra due riletture dell'interruttore, finche' e' spento
+const PRES_K_MAX = 160;     // v302: lunghezza massima del look (regole: k.length <= 160)
+const PRES_K_VECCHIO = 32;  // v302: il limite delle regole vecchie, ripiego automatico
 const PRES_H     = 1.65;    // altezza: i compagni sono ragazzi come il giocatore (AVATAR_HEIGHT)
 const Presenza=(function(){
   let acceso=false, motivo="non avviato", classe="", mio="", pubblica=true, parla=true;
   let ref=null, radice=null, timer=null, t0=0;
   let ultimoInvio=0, ultimoStato="", ultimaScelta=0;
   let mioM="", mioMt=0, mioSeq=0, ultimaFrase=0, ultimoId="";
-  let nInv=0, nRic=0, byteRic=0, nRifiutate=0, ultimoRifiuto="";
+  let nInv=0, nRic=0, byteRic=0, nRifiutate=0, ultimoRifiuto="", kMax=PRES_K_MAX;
   const peers=Object.create(null);
   const corpi=[];
 
@@ -57138,7 +57140,16 @@ const Presenza=(function(){
      look di default passava da 32 a 36 caratteri. I campi VUOTI IN CODA si
      tolgono: chi legge (_leggiLook, anche nei client vecchi) li tratta gia'
      come vuoti, quindi non cambia niente per nessuno e il default torna a 23. */
-  function _look(){ return _lookPieno().replace(/\|+$/,""); }
+  /* v302 — LE REGOLE (incollate da Giacomo, 3 ott) dicono k.length <= 32:
+     scritte col look di 5 campi, mentre il look completo arriva a ~145
+     caratteri. Le regole nuove alzano il limite a 160 (PRES_K_MAX). Finche'
+     non sono pubblicate, il primo rifiuto fa ripiegare su 32 (PRES_K_VECCHIO):
+     il look si taglia su un «|», cosi' i primi campi restano validi
+     (corpo, pelle, capelli, scarpe, vestito...) e i compagni si vedono lo
+     stesso, magari senza gli ultimi accessori. */
+  function _look(){ const s=_lookPieno().replace(/\|+$/,"");
+    if(s.length<=kMax) return s;
+    const i=s.lastIndexOf("|",kMax); return i>0?s.slice(0,i):s.slice(0,kMax); }
   function _lookPieno(){
     try{ const L=Look.state();
       /* v277: in coda il sotto e il suo colore. I client vecchi leggono solo i
@@ -57204,7 +57215,9 @@ const Presenza=(function(){
     /* v302: un rifiuto delle regole prima si vedeva solo come avviso di
        Firebase in console; ora si conta e finisce in ET.presenza(). */
     try{ ref.set(pac).catch(function(err){ nRifiutate++;
-      ultimoRifiuto=((err&&(err.code||err.message))||"rifiutata")+" (look "+pac.k.length+" caratteri, zona "+pac.a.length+")"; }); }catch(e){}
+      ultimoRifiuto=((err&&(err.code||err.message))||"rifiutata")+" (look "+pac.k.length+" caratteri, zona "+pac.a.length+")";
+      /* regole vecchie: si riprova subito col look accorciato */
+      if(pac.k.length>PRES_K_VECCHIO && kMax>PRES_K_VECCHIO){ kMax=PRES_K_VECCHIO; ultimoStato=""; } }); }catch(e){}
     return true;
   }
   /* ---- LETTURA ---------------------------------------------------------
@@ -57808,7 +57821,7 @@ const Presenza=(function(){
       compagni:Object.keys(peers).length, disegnati:disegnati, corpi:corpi.length,
       parla:parla,
       hz:Math.round(hz()*100)/100, inviate:nInv, ricevute:nRic,
-      rifiutate:nRifiutate, ultimoRifiuto:ultimoRifiuto||"(nessuno)", look:_look(),
+      rifiutate:nRifiutate, ultimoRifiuto:ultimoRifiuto||"(nessuno)", look:_look(), lookMax:kMax,
       kB_ricevuti:Math.round(byteRic/1024*10)/10,
       kB_al_minuto:Math.round(byteRic/1024/min*10)/10 };
   }
