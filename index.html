@@ -16570,6 +16570,12 @@ const DOCENTI=["PROF-COSSU"];
    (servono proprio su DUE dispositivi diversi): per toglierli basta
    svuotare COLLAUDO_H. */
 const COLLAUDO_H=["1bq6dkg.18p2aq7","1qres5l.1x5kg0q"];
+/* v302 (Giacomo, 3 ott: «assegna i codici alla 3C, cosi' posso provare …
+   lo scopo e' vedere se funziona in due persone»). I codici di collaudo non
+   sono nell'anagrafica, quindi non avevano classe e la presenza si fermava a
+   «nessuna classe valida». Senza classe dall'anagrafica prendono questa.
+   La presenza della 3C va comunque ACCESA dalla console docente. */
+const COLLAUDO_CLASSE="3C";
 function _collaudoH(c){ const s=String(c||"").trim().toUpperCase(); return _fnv("qt|"+s).toString(36)+"."+_fnv(s+"|qt#").toString(36); }
 function isCollaudo(c){ return !!c && COLLAUDO_H.indexOf(_collaudoH(c))>=0; }
 /* ⚠️ IL CODICE DOCENTE NON E' UN SEGRETO E NON PUO' ESSERLO. Sta in chiaro
@@ -16665,7 +16671,7 @@ const Student=(function(){
     Sync.ospite(false); Sync.ns(""); }
   function setDocente(v){ docOk=v; return v; }
   return { boot, setCode, setClass, setIdentita, entraOspite, logout, setDocente,
-           get code(){ return code; }, get cls(){ return cls; },
+           get code(){ return code; }, get cls(){ return cls || (isCollaudo(code)?COLLAUDO_CLASSE:""); },
            get nome(){ return nome; }, get ospite(){ return ospite; },
            get digitato(){ return digitato; },
            get teacher(){ return isTeacher(); } };
@@ -40291,6 +40297,14 @@ function punchMetroHoles(){
     const m=scene.getMeshByName(nm); if(!m) return;
     m.computeWorldMatrix(true);
     const bb=m.getBoundingInfo().boundingBox, e=bb.extendSizeWorld, c=bb.centerWorld;
+    /* v302 (Giacomo, 3 ott: «le scarpe sprofondano sul marciapiede davanti
+       al TechLab»). Il pezzo bucato scende di 1,45 m sotto terra (le pareti
+       del foro), quindi markGroundSurfaces, che gira DOPO, non lo
+       riconosceva piu' come pavimento: il piazzale del New District (nbApron,
+       a 5 cm) restava senza __ground e il giocatore ci camminava a quota 0,
+       coi piedi 5 cm dentro le lastre. Si decide qui, sull'originale piatto,
+       con lo stesso criterio di markGroundSurfaces. */
+    const eraPav=(m.__ground===true) || (e.y<0.25 && (e.x>1.5||e.z>1.5) && c.y<0.6);
     const mh=holes.filter(h=> c.x-e.x<h.maxx && c.x+e.x>h.minx && c.z-e.z<h.maxz && c.z+e.z>h.minz);
     if(!mh.length) return;
     try{
@@ -40304,7 +40318,7 @@ function punchMetroHoles(){
       tmp.forEach(t=>t.dispose());
       if(res && res.getTotalVertices && res.getTotalVertices()>0){
         res.parent=townRoot;                     // townRoot e' identita' -> coordinate corrette
-        res.__ground=m.__ground; res.__occluder=m.__occluder; res.__horizon=m.__horizon; res.isPickable=(m.isPickable!==false);
+        res.__ground=eraPav||m.__ground; res.__occluder=m.__occluder; res.__horizon=m.__horizon; res.isPickable=(m.isPickable!==false);
         if(res.material) res.material.backFaceCulling=false;  // il terreno bucato resta visibile
         m.dispose();                             // rimuovo l'originale solo se il taglio e' valido
       } else if(res){ res.dispose(); }           // taglio fallito -> tengo l'originale intatto
@@ -57647,6 +57661,9 @@ const Presenza=(function(){
       /* Il docente vede senza farsi vedere: sta quasi sempre al proiettore e
          il suo avatar in giro confonderebbe. ET.presenza(true) per comparire. */
       if(Student.teacher) pubblica=false;
+      /* v302: i codici di collaudo invece si mostrano: servono a provare la
+         presenza in due, e da invisibili non si vedrebbero fra loro. */
+      if(isCollaudo(Student.code)) pubblica=true;
       /* ⚠️ Interruttore SEPARATO da quello della presenza: quasi sempre
          quello che serve e' zittire senza far sparire nessuno. Assente
          significa acceso — non si fa fare a Giacomo due gesti quando uno
