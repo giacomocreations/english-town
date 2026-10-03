@@ -4426,7 +4426,134 @@ const nightLights=[];              // materiali che si accendono di notte
 let hzWinTex=null;                 // emissive-texture finestre skyline (level=0 giorno -> notte)
 const hzTowerMats=[];              // materiali torri skyline: {mat,tint} per day/night tinting
 const _winMats=new Set();
-function styleWindow(mt){ if(!mt||_winMats.has(mt)) return; _winMats.add(mt);
+/* ---- PALAZZI PIU' VERI (Giacomo, 3 ott: «sui grattacieli c'e' ancora
+   qualcosa di irrealistico»). Visto negli screenshot, i difetti erano di
+   SUPERFICIE, non di forma:
+   · facciate a colore pieno, identiche dal piede al tetto: plastica;
+   · vetri che riflettono TUTTI la stessa cosa — la sonda sta a (0,10,0) e
+     guarda il prato, quindi da sopra le finestre erano macchiate di verde —
+     e perfettamente piani, come rettangoli dipinti;
+   · il piede del palazzo pulito come il resto: l'edificio «galleggia».
+   Due plugin, agganciati UNA volta alla costruzione (define fisso, si
+   accendono con un uniform: niente ricompilazioni, vedi applyQuality).
+   Solo su «Alto» e «Max» (fQ): sugli altri livelli lo shader salta tutto
+   con un if su un uniform. Niente texture nuove: tutto in coordinate mondo.
+   ⚠️ Solo PBRMaterial: i punti di aggancio (surfaceAlbedo,
+   finalRadianceScaled) sono quelli dello shader PBR. */
+const FZ_GLSL=`float fzHash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+float fzNoise(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); f=f*f*(3.0-2.0*f);
+  return mix(mix(fzHash(i),fzHash(i+vec2(1.0,0.0)),f.x),mix(fzHash(i+vec2(0.0,1.0)),fzHash(i+vec2(1.0,1.0)),f.x),f.y); }`;
+function fzOn(){ return (typeof qAlmenoAlto==="function" && qAlmenoAlto())?1:0; }
+/* FACCIATE: sporco al piede (ultimi ~2,5 m), colature verticali sotto i
+   davanzali, macchie larghe e un filo di variazione calda/fredda. Coordinata
+   orizzontale = lungo la facciata (la tangente si ricava dalla normale),
+   cosi' le colature restano verticali su ogni lato del palazzo. */
+class FacadeFXPlugin extends BABYLON.MaterialPluginBase{
+  constructor(material){ super(material,"FacadeFX",230,{FACADEFX:false}); this._enable(true); }
+  getClassName(){ return "FacadeFXPlugin"; }
+  isCompatible(shaderLanguage){ return shaderLanguage===BABYLON.ShaderLanguage.GLSL; }
+  prepareDefines(defines){ defines.FACADEFX=true; }
+  getUniforms(){ return { ubo:[{name:"fQ",size:1,type:"float"}],
+    fragment:"#ifdef FACADEFX\nuniform float fQ;\n#endif" }; }
+  bindForSubMesh(ubo){ ubo.updateFloat("fQ",fzOn()); }
+  getCustomCode(shaderType){ if(shaderType!=="fragment") return null;
+    return {
+CUSTOM_FRAGMENT_DEFINITIONS:"#ifdef FACADEFX\n"+FZ_GLSL+"\n#endif",
+CUSTOM_FRAGMENT_UPDATE_ALBEDO:`#ifdef FACADEFX
+#ifdef NORMAL
+if(fQ>0.5){
+  vec3 fzP=vPositionW; vec3 fzN=normalize(vNormalW);   // normalW qui non esiste ancora (lo shader PBR la calcola dopo l albedo)
+  float fzVert=1.0-smoothstep(0.45,0.8,abs(fzN.y));
+  vec2 fzT=fzN.xz; float fzL=length(fzT); fzT=fzL>0.001?vec2(-fzT.y,fzT.x)/fzL:vec2(1.0,0.0);
+  float fzU=dot(fzP.xz,fzT);
+  float fzK=1.0;
+  /* piede: terra, schizzi, smog. Piu' scuro e un po' piu' caldo */
+  float fzFoot=1.0-smoothstep(0.0,2.6,fzP.y);
+  fzK*=1.0-0.38*fzFoot*fzVert;
+  /* colature: strisce sottili, lunghe, che sbiadiscono a caso */
+  float fzS=fzNoise(vec2(fzU*2.6,fzP.y*0.06));
+  fzS=smoothstep(0.58,0.95,fzS)*fzNoise(vec2(fzU*0.8+3.1,fzP.y*0.32));
+  fzK*=1.0-0.20*fzS*fzVert;
+  /* macchie larghe (pannelli, intonaco rifatto, sole) */
+  float fzM=fzNoise(vec2(fzU*0.11+fzP.y*0.025,fzP.y*0.085+(fzP.x+fzP.z)*0.031));
+  fzK*=0.90+0.16*fzM;
+  /* tetti e cornicioni: sporco a chiazze */
+  float fzRoof=smoothstep(0.6,0.9,fzN.y);
+  fzK*=1.0-0.20*fzRoof*fzNoise(fzP.xz*0.6);
+  surfaceAlbedo*=fzK*mix(vec3(1.0),vec3(1.035,1.0,0.955),fzM*0.8+fzFoot*0.5);
+}
+#endif
+#endif` }; }
+}
+/* VETRI: il riflesso non viene piu' dalla sonda (che vede il prato) ma da un
+   ambiente disegnato qui: strada scura sotto l'orizzonte, una skyline a
+   blocchi all'orizzonte, il cielo vero sopra (gli stessi tre colori di
+   paintSky, scritti in WETFX). I pannelli di una facciata vera non sono mai
+   perfettamente complanari: la normale ondeggia piano, e il riflesso si
+   spezza da finestra a finestra. Di fronte si vede DENTRO (interno scuro e
+   vario), di sbieco prevale il riflesso (Fresnel). L'emissive notturno delle
+   finestre (nightLights) si somma dopo, intatto. */
+class WindowFXPlugin extends BABYLON.MaterialPluginBase{
+  constructor(material){ super(material,"WindowFX",231,{WINDOWFX:false}); this._enable(true); }
+  getClassName(){ return "WindowFXPlugin"; }
+  isCompatible(shaderLanguage){ return shaderLanguage===BABYLON.ShaderLanguage.GLSL; }
+  prepareDefines(defines){ defines.WINDOWFX=true; }
+  getUniforms(){ return {
+    ubo:[{name:"gQ",size:1,type:"float"},{name:"gSkyZ",size:3,type:"vec3"},{name:"gSkyM",size:3,type:"vec3"},{name:"gSkyH",size:3,type:"vec3"}],
+    fragment:"#ifdef WINDOWFX\nuniform float gQ;uniform vec3 gSkyZ;uniform vec3 gSkyM;uniform vec3 gSkyH;\n#endif" }; }
+  bindForSubMesh(ubo){ const W=(typeof WETFX!=="undefined")?WETFX:null;
+    ubo.updateFloat("gQ",fzOn());
+    const z=W?W.skyZ:[0.31,0.62,0.84], m=W?W.skyM:[0.61,0.80,0.90], h=W?W.skyH:[0.91,0.95,0.97];
+    ubo.updateFloat3("gSkyZ",z[0],z[1],z[2]); ubo.updateFloat3("gSkyM",m[0],m[1],m[2]); ubo.updateFloat3("gSkyH",h[0],h[1],h[2]); }
+  getCustomCode(shaderType){ if(shaderType!=="fragment") return null;
+    return {
+CUSTOM_FRAGMENT_DEFINITIONS:"#ifdef WINDOWFX\n"+FZ_GLSL.replace(/fz/g,"gz")+"\n#endif",
+CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION:`#ifdef WINDOWFX
+#ifdef REFLECTION
+if(gQ>0.5){
+  vec3 gzP=vPositionW; vec3 gzV=normalize(vEyePosition.xyz-gzP);
+  vec2 gzT=normalW.xz; float gzL=length(gzT); gzT=gzL>0.001?vec2(-gzT.y,gzT.x)/gzL:vec2(1.0,0.0);
+  float gzU=dot(gzP.xz,gzT);
+  vec2 gzW=vec2(gzNoise(vec2(gzU*0.45,gzP.y*0.30)),gzNoise(vec2(gzU*0.45+5.1,gzP.y*0.30+2.7)))-0.5;
+  vec3 gzN=normalize(normalW+vec3(gzT.x,0.0,gzT.y)*gzW.x*0.045+vec3(0.0,1.0,0.0)*gzW.y*0.035);
+  vec3 gzR=reflect(-gzV,gzN);
+  float gzA=atan(gzR.z,gzR.x);
+  /* skyline riflessa: blocchi di altezza casuale, piu' fitti in basso */
+  float gzHb=0.03+0.26*pow(gzHash(vec2(floor(gzA*13.0),0.0)),1.6)+0.05*gzHash(vec2(floor(gzA*41.0),3.0));
+  vec3 gzSky=mix(gSkyH,gSkyM,smoothstep(0.0,0.35,gzR.y)); gzSky=mix(gzSky,gSkyZ,smoothstep(0.35,1.0,gzR.y));
+  vec3 gzBld=mix(gSkyH*0.62,vec3(0.40,0.42,0.46),0.45)*(0.85+0.3*gzHash(vec2(floor(gzA*13.0),7.0)));
+  vec3 gzGrd=vec3(0.30,0.31,0.32);
+  vec3 gzEnv=mix(gzBld,gzSky,smoothstep(gzHb-0.02,gzHb+0.02,gzR.y));
+  gzEnv=mix(gzGrd,gzEnv,smoothstep(-0.10,0.0,gzR.y));
+  gzEnv=toLinearSpace(gzEnv);
+  float gzNV=clamp(dot(gzN,gzV),0.0,1.0);
+  float gzF=mix(0.45,0.95,pow(1.0-gzNV,2.5));
+  finalRadianceScaled=gzEnv*gzF*vLightingIntensity.z*0.95;
+  /* interno: stanze piu' o meno buie, tende chiare qua e la' */
+  float gzIn=gzNoise(vec2(gzU*0.38+11.0,gzP.y*0.29));
+  vec3 gzInt=toLinearSpace(mix(vec3(0.26,0.28,0.31),vec3(0.52,0.48,0.42),smoothstep(0.55,0.9,gzIn)));
+  /* l'interno e' illuminato dal giorno: di notte (cielo scuro) si spegne */
+  float gzDay=smoothstep(0.35,0.9,dot(gSkyH,vec3(0.30,0.59,0.11)));
+  finalDiffuse=finalDiffuse*0.25+gzInt*(1.0-gzF)*mix(0.18,1.0,gzDay);
+  /* di notte non sono tutte accese uguali: stanze spente, accese, luce
+     calda o fredda. Variazione MORBIDA (rumore), non a celle: una cella che
+     taglia una finestra a meta' si vedrebbe come un difetto. */
+  float gzOn=gzNoise(vec2(gzU*0.23+31.0,gzP.y*0.21+4.0));
+  float gzTn=gzNoise(vec2(gzU*0.13+57.0,gzP.y*0.11));
+  finalEmissive*=mix(0.12,1.0,smoothstep(0.32,0.68,gzOn))*mix(vec3(1.0,0.86,0.66),vec3(0.85,0.92,1.0),smoothstep(0.6,0.9,gzTn));
+}
+#endif
+#endif` }; }
+}
+function facadeFX(m){ if(!m||m.__facadeFX||m.__windowFX) return m;
+  if(!(m.getClassName&&m.getClassName()==="PBRMaterial")) return m;
+  try{ m.__facadeFX=new FacadeFXPlugin(m); }catch(e){ console.warn("Facciate v2 non attive:",e); }
+  return m; }
+function windowFX(m){ if(!m||m.__windowFX) return m;
+  if(!(m.getClassName&&m.getClassName()==="PBRMaterial")) return m;
+  try{ m.__windowFX=new WindowFXPlugin(m); }catch(e){ console.warn("Vetri v2 non attivi:",e); }
+  return m; }
+function styleWindow(mt){ if(!mt||_winMats.has(mt)) return; _winMats.add(mt); windowFX(mt);
   try{
     // VETRO realistico: scuro e riflettente, non azzurro piatto da "adesivo".
     // La scena ha una reflection probe (scene.environmentTexture): con metallic
@@ -5916,7 +6043,11 @@ function _dressBuilding(root,o){
   /* ---- 4. FINESTRE DI NOTTE ---- */
   if(o.night!==false){
     const warm=[], cool=[];
-    comps(/window/i).forEach(b=>{ const dx=b[3]-b[0], dy=b[4]-b[1], dz=b[5]-b[2];
+    /* v3 ott: anche «trim». Sui due «sky» (Job Centre Tower, City Life
+       Plaza) i vetri dei piani alti sono un materiale a parte, «trim»: non
+       avevano lastre accese e restavano al 100% di emissive (sotto),
+       quindi di notte la torre sembrava accesa tutta, uguale. */
+    comps(/window|trim/i).forEach(b=>{ const dx=b[3]-b[0], dy=b[4]-b[1], dz=b[5]-b[2];
         if(dy<0.4) return;
         const onX=dx<dz;                                  // lastra nel piano x=cost (faccia est/ovest)
         const thin=onX?dx:dz, wide=onX?dz:dx; if(thin>0.35||wide<0.3) return;
@@ -5933,7 +6064,7 @@ function _dressBuilding(root,o){
       if(m){ m.material=mt; m.parent=F; m.isPickable=false; } };
     fuse(warm,K.warm); fuse(cool,K.cool);
     /* il vetro del modello si spegne quasi: resta un filo di luce, il resto lo fanno le lastre */
-    byMat(/window/i).forEach(g=>{ const mt=g.m.material; if(mt && mt.__nightEmissive && !mt.__nightFull){
+    byMat(/window|trim/i).forEach(g=>{ const mt=g.m.material; if(mt && mt.__nightEmissive && !mt.__nightFull){
       mt.__nightFull=mt.__nightEmissive.clone(); mt.__nightEmissive=mt.__nightFull.scale(0.14); } });
   }
   F.__dressFor=root; return F;
@@ -6059,6 +6190,7 @@ function buildTown(){
           if("albedoColor" in cl && cl.albedoColor){ cl.albedoColor=tc; }
           else if("diffuseColor" in cl && cl.diffuseColor){ cl.diffuseColor=tc; } }
       }
+      facadeFX(mm.material);
     });
     /* v224: il CINEMA ha un portico a colonne sul lato est. L'AABB intero
        del modello comprende la pensilina (fino a b2.max.x): sotto le colonne
@@ -6217,7 +6349,8 @@ function buildTown(){
       if(f.c){ const cl=mt.clone((mt.name||"bmat")+"__fl"+(_sgN++));
         if(cl){ mm.material=cl; const tc=bldPalette(mt.name,f.c);
           if("albedoColor" in cl && cl.albedoColor){ cl.albedoColor=tc; }
-          else if("diffuseColor" in cl && cl.diffuseColor){ cl.diffuseColor=tc; } } } });
+          else if("diffuseColor" in cl && cl.diffuseColor){ cl.diffuseColor=tc; } } }
+      facadeFX(mm.material); });
     addSolid(b2.min.x,b2.max.x,b2.min.z,b2.max.z,"town");
     dressBuilding(root,{ name:"filler"+f.x+"|"+f.z, front:null, awnings:false });
   });
