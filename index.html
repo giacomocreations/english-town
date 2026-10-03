@@ -4696,7 +4696,7 @@ if(fCl>0.5 && fKind>-0.5){
     vec2 rcId=vec2(floor(rcCu),rcRow);
     float rcFy=fract(rcP.y/rcH), rcFx=fract(rcCu);
     float rcDy=min(rcFy,1.0-rcFy)*rcH, rcDx=min(rcFx,1.0-rcFx)*rcLn;
-    float rcJw=mix(mix(0.010,0.009,rcBrick),0.016,rcPlinth);
+    float rcJw=mix(mix(0.006,0.009,rcBrick),0.016,rcPlinth);
     /* GIUNTI A OGNI DISTANZA (v3 ott, Giacomo: «si vede solo da vicino»).
        Prima, sotto il pixel, il giunto si spegneva: da lontano il muro
        tornava liscio e su una facciata lunga meta' era rivestita e meta' no.
@@ -4712,7 +4712,10 @@ if(fCl>0.5 && fKind>-0.5){
     float rcFar=smoothstep(rcH*0.22,rcH*0.45,rcPix);
     rcJ=mix(rcJ,rcAvg,rcFar);
     float rcB=fzHash(rcId+vec2(fKind*13.1,fKind*7.3));
-    float rcTone=mix(mix(mix(0.93+0.13*rcB,0.84+0.26*rcB,rcBrick),0.96+0.07*rcB,rcRust),0.90+0.16*rcB,rcPlinth);
+    /* v4 ott (Giacomo: «effetto castello medievale, troppo marcate le lastre
+       grandi»): conci e bugnato con meno stacco di tono fra blocco e blocco,
+       malta appena piu' scura del muro e smusso leggero; i mattoni restano. */
+    float rcTone=mix(mix(mix(0.972+0.05*rcB,0.84+0.26*rcB,rcBrick),0.98+0.035*rcB,rcRust),0.90+0.16*rcB,rcPlinth);
     rcTone=mix(rcTone,mix(0.995,0.97,rcBrick),rcFar);                  // tono medio quando il blocco e' sotto i 3 px
     /* zoccolo sopra 3,6 m: pietra liscia */
     float rcOn=1.0-rcPlinth*step(3.6,rcP.y);
@@ -4721,8 +4724,8 @@ if(fCl>0.5 && fKind>-0.5){
     float rcNear=1.0-rcFar;
     float rcTop=(1.0-smoothstep(0.0,0.03+rcPix,(1.0-rcFy)*rcH))*rcOn*(1.0-rcBrick)*rcNear;
     float rcBot=(1.0-smoothstep(0.0,0.03+rcPix,rcFy*rcH))*rcOn*(1.0-rcBrick)*rcNear;
-    vec3 rcMortar=mix(surfaceAlbedo*mix(mix(0.55,0.72,rcRust),0.45,rcPlinth),mix(surfaceAlbedo,vec3(0.50,0.49,0.46),0.75),rcBrick);
-    vec3 rcA=surfaceAlbedo*rcTone*(1.0+0.06*rcTop-0.08*rcBot);
+    vec3 rcMortar=mix(surfaceAlbedo*mix(mix(0.80,0.86,rcRust),0.45,rcPlinth),mix(surfaceAlbedo,vec3(0.50,0.49,0.46),0.75),rcBrick);
+    vec3 rcA=surfaceAlbedo*rcTone*(1.0+0.025*rcTop-0.03*rcBot);
     surfaceAlbedo=mix(rcA,rcMortar,clamp(rcJ,0.0,1.0));
   }
 }
@@ -4840,7 +4843,11 @@ if(gQ>0.5){
    il tipo si sceglie dal nome dell'edificio (stabile fra un avvio e l'altro):
    circa 40% pietra, 30% mattoni, 30% bugnato */
 function facadeKind(m){ const n=String(m&&m.name||"");
-  if(/^door/.test(n)) return 3;                 // piano terra dei GLB: zoccolo in pietra
+  /* v4 ott (Giacomo: «mancano le porte, si vedono i mattoni nella porta»;
+     «i balconi non devono avere motivo mattoni»). Il materiale «door» dei
+     GLB NON e' solo la fascia del piano terra: sono anche le PORTE e le
+     solette dei BALCONI. Lo zoccolo in pietra (tipo 3) ci disegnava sopra i
+     blocchi: niente rivestimento su «door», resta il suo colore pieno. */
   if(/^_crayfishdiffuse/.test(n)) return 0;     // ODEON (v3 ott): muri, colonne e cornici color pietra -> conci
   if(!/^_defaultMat/.test(n)) return -1;
   let h=7; for(let i=0;i<n.length;i++) h=(h*31+n.charCodeAt(i))>>>0;
@@ -5928,6 +5935,7 @@ function hzSkyline(NORTH,railGap){
     const d=new BABYLON.DynamicTexture(name+"D",{width:TW,height:TH},scene,true);
     const l=new BABYLON.DynamicTexture(name+"L",{width:TW,height:TH},scene,true);
     d.wrapU=d.wrapV=l.wrapU=l.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE;
+    d.anisotropicFilteringLevel=l.anisotropicFilteringLevel=8;   // v4 ott: facciate laterali viste di sbieco, finestre senza luccichio
     const x=d.getContext(), y=l.getContext();
     x.fillStyle="#ffffff"; x.fillRect(0,0,TW,TH); y.fillStyle="#000000"; y.fillRect(0,0,TW,TH);
     let r=style==="curtain"?91:17; const R=()=>{ r=(r*16807)%2147483647; return r/2147483647; };
@@ -5973,13 +5981,22 @@ function hzSkyline(NORTH,railGap){
   const rot=(x,z,ry,lx,lz)=>[x+lx*Math.cos(ry)+lz*Math.sin(ry), z-lx*Math.sin(ry)+lz*Math.cos(ry)];
   function solid(k,w,h,d,x,y0,z,ry){ const b=BABYLON.MeshBuilder.CreateBox("hzSkB",{width:w,height:h,depth:d,faceUV:[CU,CU,CU,CU,CU,CU]},scene);
     b.position.set(x,y0+h/2,z); b.rotation.y=ry; put(b,k); }
+  /* ⚠️ v4 ott (Giacomo: «i grattacieli in lontananza sfarfallano mentre
+     cammino»). Le facciate stavano 5 cm davanti al blocco ed erano larghe
+     quanto lui: su ogni spigolo restava una fessura di 5 cm da cui si vedeva
+     il blocco (chiaro), e a 250-330 m 5 cm sono un decimo di pixel -> righe
+     verticali che si accendevano e spegnevano a ogni passo. In piu' 5 cm a
+     quella distanza sono al limite della precisione dello z-buffer (in prima
+     persona, minZ 0,05, non bastano). Ora le facciate si toccano sugli
+     spigoli (larghe 10 cm in piu') e il blocco sta 50 cm DENTRO: si vede solo
+     dall'alto, dove lo copre il parapetto. */
   function volume(k,w,h,d,x,y0,z,ry){                          // corpo + 4 facciate a finestre
-    solid(k,w,h,d,x,y0,z,ry);
+    solid(k,Math.max(w-1.0,w*0.7),h,Math.max(d-1.0,d*0.7),x,y0,z,ry);
     const vT=Math.max(Math.round(h/3.2),2)/ROWS;
     [[w,0,d/2+0.05,0],[w,0,-d/2-0.05,Math.PI],[d,w/2+0.05,0,Math.PI/2],[d,-w/2-0.05,0,-Math.PI/2]].forEach(f=>{
       const uT=Math.max(Math.round(f[0]/3.0),2)/COLS, u0=Math.floor(rnd()*COLS)/COLS, v0=Math.floor(rnd()*ROWS)/ROWS;
       const uv=new V4(u0,v0,u0+uT,v0+vT);
-      const p=BABYLON.MeshBuilder.CreatePlane("hzSkF",{width:f[0],height:h,sideOrientation:BABYLON.Mesh.DOUBLESIDE,frontUVs:uv,backUVs:uv},scene);
+      const p=BABYLON.MeshBuilder.CreatePlane("hzSkF",{width:f[0]+0.1,height:h,sideOrientation:BABYLON.Mesh.DOUBLESIDE,frontUVs:uv,backUVs:uv},scene);
       const q=rot(x,z,ry,f[1],f[2]); p.position.set(q[0],y0+h/2,q[1]); p.rotation.y=ry+f[3]; put(p,k); }); }
   function parapet(tk,w,d,x,y,z,ry){ solid(tk,w+0.5,0.9,d+0.5,x,y,z,ry); }
   let tallest=null;
