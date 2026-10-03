@@ -2988,9 +2988,13 @@ function swBaseTex(){ if(_swBaseTx) return _swBaseTx;
     for(let k=0;k<260;k++){ const d=Math.round(R(-10,8));        // puntinatura del cemento
       c.fillStyle="rgba("+(v+d)+","+(v+d)+","+(v+d-2)+",0.55)";
       c.fillRect(x0+R(0,L-2),y0+R(0,L-2),R(1,2.2),R(1,2.2)); }
-    if(Math.random()<0.45){ const n=1+Math.floor(R(0,3));          // gomme da masticare schiacciate
-      for(let k=0;k<n;k++){ c.fillStyle="rgba(95,95,92,0.35)"; c.beginPath();
-        c.arc(x0+R(8,L-8),y0+R(8,L-8),R(1.6,3.2),0,Math.PI*2); c.fill(); } }
+    /* v3 ott (Giacomo: «le macchie di gocce sul marciapiede rimangono
+       sempre?»). Si': erano le «gomme da masticare», puntini scuri e TONDI,
+       0-3 per lastra, identici a gocce di pioggia, e restavano col sole.
+       Ora una gomma ogni tanto, piu' chiara, schiacciata e irregolare; le
+       gocce vere le disegna WetFX solo quando piove. */
+    if(Math.random()<0.18){ c.fillStyle="rgba(150,150,146,0.45)"; c.beginPath();
+      c.ellipse(x0+R(10,L-10),y0+R(10,L-10),R(2.0,3.4),R(1.2,2.2),R(0,3),0,Math.PI*2); c.fill(); }
     if(Math.random()<0.12){ const g=c.createRadialGradient(x0+L/2,y0+L/2,2,x0+L/2,y0+L/2,L*0.45); // macchia d'umido
       g.addColorStop(0,"rgba(120,118,112,0.12)"); g.addColorStop(1,"rgba(120,118,112,0)");
       c.fillStyle=g; c.fillRect(x0,y0,L,L); }
@@ -3074,6 +3078,19 @@ if(tPave>0.5 && tQ>0.5 && normalW.y>0.7){
   float tDirt=smoothstep(0.48,0.88,tMd);
   vec2 tF=fract(tPc); float tE=min(min(tF.x,1.0-tF.x),min(tF.y,1.0-tF.y));
   baseColor.rgb*=tTone*(1.0-0.16*tDirt)*(1.0-0.10*(1.0-smoothstep(0.0,0.09,tE)))*mix(vec3(1.0),vec3(1.02,1.0,0.96),tDirt);
+}
+/* GOCCE: all'inizio della pioggia (e mentre asciuga) il fondo non e' bagnato
+   uniforme ma a macchie di goccia scure, sempre piu' fitte, che poi si
+   fondono nel bagnato pieno. Mai col sole: tWet=0 -> niente. */
+if(tWet>0.003 && tQ>0.5 && normalW.y>0.7){
+  vec2 tGq=vPositionW.xz/0.16; vec2 tGi=floor(tGq); vec2 tGh=tHash2(tGi+vec2(17.0,5.0));
+  vec2 tGv=fract(tGq)-(0.25+0.5*tGh);
+  float tGd=length(tGv)*(0.85+0.3*tNoise(tGv*24.0+tGi));          // bordo irregolare, non un cerchio perfetto
+  float tGr=0.10+0.16*tHash(tGi+vec2(2.3,9.1));
+  float tGon=step(tGh.x,smoothstep(0.0,0.45,tWet))*(1.0-smoothstep(0.55,0.85,tWet));
+  float tCovG=0.0;
+  { vec2 tPg=vPositionW.xz; tCovG=max(tIn(tCov0,tPg),max(tIn(tCov1,tPg),tIn(tCov2,tPg))); }
+  baseColor.rgb*=1.0-0.20*tGon*(1.0-smoothstep(tGr*0.45,tGr,tGd))*(1.0-tCovG);
 }
 float tK=0.0; float tPud=0.0; vec3 tN=normalW;
 if(tWet>0.001 && normalW.y>0.7){
@@ -3433,7 +3450,7 @@ function _seedRand(str){ let h=1779033703^str.length;
     h^=h>>>16; return (h>>>0)/4294967296; }; }
 function floorTex(style,hex,hex2){ const key=style+"|"+hex+"|"+(hex2||"");
   if(_floorTx[key]) return _floorTx[key];
-  const SZ=256, rnd=_seedRand(key), R=(a,b)=>a+rnd()*(b-a);
+  const SZ=(style==="check")?512:256, SZ2=SZ, rnd=_seedRand(key), R=(a,b)=>a+rnd()*(b-a);   // check: 8x8 piastrelle, serve risoluzione
   const tx=new BABYLON.DynamicTexture("flTx_"+style+"_"+hex,{width:SZ,height:SZ},scene,true);
   const c=tx.getContext();
   const C1=BABYLON.Color3.FromHexString(hex), C2=BABYLON.Color3.FromHexString(hex2||hex);
@@ -3463,14 +3480,35 @@ function floorTex(style,hex,hex2){ const key=style+"|"+hex+"|"+(hex2||"");
           if(hor){ c.fillStyle=col(kk); c.fillRect(X,Y,w,h/2); c.fillStyle=col(kk*R(0.94,1.04)); c.fillRect(X,Y+h/2,w,h/2); }
           else  { c.fillStyle=col(kk); c.fillRect(X,Y,w/2,h); c.fillStyle=col(kk*R(0.94,1.04)); c.fillRect(X+w/2,Y,w/2,h); }
           c.strokeStyle=col(0.62); c.lineWidth=1.2; c.strokeRect(X+0.6,Y+0.6,w-1.2,h-1.2); } }); } }
-  else if(style==="check"){                 // scacchiera 4x4
-    const P=SZ/4;
-    for(let y=0;y<4;y++) for(let x=0;x<4;x++){ const cc=((x+y)&1)?C2:C1;
-      c.fillStyle=col(R(0.97,1.03),cc); c.fillRect(x*P,y*P,P,P);
-      for(let k=0;k<50;k++){ c.fillStyle=col(R(0.9,1.06),cc,0.5); c.fillRect(x*P+R(0,P-2),y*P+R(0,P-2),R(1,2),R(1,2)); } }
-    c.strokeStyle=col(0.72,C1.add(C2).scale(0.5)); c.lineWidth=2;
-    for(let i=0;i<=4;i++){ c.beginPath(); c.moveTo(i*P,0); c.lineTo(i*P,SZ); c.stroke();
-      c.beginPath(); c.moveTo(0,i*P); c.lineTo(SZ,i*P); c.stroke(); } }
+  else if(style==="check"){
+    /* v3 ott (Giacomo: «il pavimento del diner e' troppo finto»). Era una
+       scacchiera 4x4 perfetta, ripetuta ogni 4 piastrelle. Ora 8x8 su 512 px
+       (una ripetizione ogni 8: il motivo non si legge piu'): ogni piastrella
+       ha il suo tono, quelle chiare hanno venature leggere, quelle scure una
+       graniglia chiara; bordo smussato (luce in alto a sinistra), fuga vera,
+       qualche angolo scheggiato, segni di tacco e zone opache di passaggio. */
+    const N=8, P=SZ2/N, J=1.4;
+    c.fillStyle=col(0.70,C1.add(C2).scale(0.5)); c.fillRect(0,0,SZ2,SZ2);          // fuga
+    for(let y=0;y<N;y++) for(let x=0;x<N;x++){ const dark=((x+y)&1)===1, cc=dark?C2:C1;
+      const k=dark?R(0.88,1.12):R(0.95,1.03), X=x*P+J, Y=y*P+J, W=P-2*J;
+      c.fillStyle=col(k,cc); c.fillRect(X,Y,W,W);
+      if(!dark){ for(let v=0;v<2;v++){ c.save(); c.beginPath(); c.rect(X,Y,W,W); c.clip();
+          c.strokeStyle=col(k*R(0.80,0.90),cc,R(0.18,0.32)); c.lineWidth=R(0.6,1.4);
+          const sx=X+R(0,W), sy=Y+R(0,W); c.beginPath(); c.moveTo(sx,sy);
+          c.bezierCurveTo(sx+R(-40,40),sy+R(-40,40),sx+R(-40,40),sy+R(-40,40),sx+R(-60,60),sy+R(-60,60)); c.stroke(); c.restore(); } }
+      for(let q=0;q<90;q++){ c.fillStyle=dark?col(R(1.6,2.6),cc,0.35):col(R(0.88,1.04),cc,0.45);
+        c.fillRect(X+R(0,W-2),Y+R(0,W-2),R(0.8,1.8),R(0.8,1.8)); }
+      c.fillStyle="rgba(255,255,255,"+(dark?0.10:0.22)+")"; c.fillRect(X,Y,W,1.2); c.fillRect(X,Y,1.2,W);   // smusso alla luce
+      c.fillStyle="rgba(0,0,0,"+(dark?0.25:0.10)+")"; c.fillRect(X,Y+W-1.2,W,1.2); c.fillRect(X+W-1.2,Y,1.2,W);
+      if(rnd()<0.07){ const cx=rnd()<0.5?X:X+W, cy=rnd()<0.5?Y:Y+W, s2=R(3,6);            // angolo scheggiato
+        c.fillStyle=col(0.62,C1.add(C2).scale(0.5)); c.beginPath(); c.moveTo(cx,cy);
+        c.lineTo(cx+(cx===X?s2:-s2),cy); c.lineTo(cx,cy+(cy===Y?s2:-s2)); c.closePath(); c.fill(); } }
+    for(let q=0;q<14;q++){ const x=R(0,SZ2), y=R(0,SZ2);                                  // segni di tacco
+      c.strokeStyle="rgba(20,20,22,"+R(0.12,0.28)+")"; c.lineWidth=R(0.8,1.6); c.beginPath(); c.moveTo(x,y);
+      c.quadraticCurveTo(x+R(-8,8),y+R(-8,8),x+R(-14,14),y+R(-6,6)); c.stroke(); }
+    for(let q=0;q<10;q++){ const x=R(0,SZ2), y=R(0,SZ2), r=R(30,90);                       // zone opache di passaggio
+      const g=c.createRadialGradient(x,y,0,x,y,r); g.addColorStop(0,"rgba(120,116,108,0.10)"); g.addColorStop(1,"rgba(120,116,108,0)");
+      c.fillStyle=g; c.fillRect(x-r,y-r,2*r,2*r); } }
   else if(style==="tile"||style==="stone"||style==="raised"){
     const N=(style==="stone")?2:4, P=SZ/N, J=(style==="stone")?1:1.5;
     c.fillStyle=(style==="raised")?col(0.55):col(0.74); c.fillRect(0,0,SZ,SZ);
@@ -3540,7 +3578,7 @@ const FLOOR_STYLE={
   townhall:  {style:"herring",  hex:"#c69a6a", tile:2.4},
   clothes:   {style:"wood",     hex:"#dcc6a4", tile:2.4},
   beatclub:  {style:"tile",     hex:"#2e2636", tile:3.2, spec:0.25},
-  salon:     {style:"check",    hex:"#ece8e1", hex2:"#2b2b30", tile:2.4},
+  salon:     {style:"check",    hex:"#ece8e1", hex2:"#2b2b30", tile:4.8},   // v3 ott: la texture ora ha 8 piastrelle per lato (era 4)
   ecopoint:  {style:"tile",     hex:"#cbc5b8", tile:3.2, spec:0.16},   // v296: lastre di cemento chiaro (era graniglia verde)
   jobcentre: {style:"carpet",   hex:"#8b97a6", tile:2.0},
   techlab:   {style:"raised",   hex:"#b7c0c8", tile:2.4},
@@ -3550,7 +3588,7 @@ const FLOOR_STYLE={
 const HOME_FLOOR={
   "Living room": {style:"herring", hex:"#c49867", tile:2.0},
   "Bedroom":     {style:"wood",    hex:"#d6b98f", tile:2.4},
-  "Kitchen":     {style:"check",   hex:"#ebe6d8", hex2:"#8fae93", tile:1.6},
+  "Kitchen":     {style:"check",   hex:"#ebe6d8", hex2:"#8fae93", tile:3.2},
   "Bathroom":    {style:"hex",     hex:"#d3e4ec", tile:1.2},
 };
 
@@ -4722,6 +4760,7 @@ if(gQ>0.5){
    circa 40% pietra, 30% mattoni, 30% bugnato */
 function facadeKind(m){ const n=String(m&&m.name||"");
   if(/^door/.test(n)) return 3;                 // piano terra dei GLB: zoccolo in pietra
+  if(/^_crayfishdiffuse/.test(n)) return 0;     // ODEON (v3 ott): muri, colonne e cornici color pietra -> conci
   if(!/^_defaultMat/.test(n)) return -1;
   let h=7; for(let i=0;i<n.length;i++) h=(h*31+n.charCodeAt(i))>>>0;
   const r=(h%100)/100; return r<0.4?0:(r<0.7?1:2); }
@@ -8826,7 +8865,7 @@ function buildDiner(){
 
   /* ---- pavimento a scacchi (veranda + cucina) ---- */
   const fl=BABYLON.MeshBuilder.CreateGround("dnFloor",{width:15.2,height:16.8},scene);
-  fl.material=floorMat("dn_floorM",{style:"check",hex:"#f1efe8",hex2:"#1f2226",tile:1.2,spec:0.18},15.2,16.8);
+  fl.material=floorMat("dn_floorM",{style:"check",hex:"#f1efe8",hex2:"#1f2226",tile:2.4,spec:0.22},15.2,16.8);   // 8 piastrelle da 30 cm per ripetizione
   fl.position.set(0,0.012,32); fl.parent=root; fl.__ground=true; fl.receiveShadows=true;
 
   /* ---- CUCINA: blocco in fondo, facciata a z 37.2 ---- */
