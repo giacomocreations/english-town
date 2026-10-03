@@ -9155,6 +9155,7 @@ function buildDinerNPCs(){
     x:DINER.x+DINER_WAITER_HOME.x, y:gy, z:DINER_WAITER_HOME.z, face:Math.PI, snap:false, radius:2.6,
     interact:n=>talkToWaiter(n) });
   regTownPop(DINER.waiter);
+  if(!DINER.mirT) DINER.mirT=setInterval(()=>{ try{ dinerMirror(); }catch(e){} },700);   // v302
   /* i due clienti: tavolo in fondo a destra, uno per sedia */
   const T=DINER.tables[3], S=DINER.seats.filter(s=>s.t===T);
   const G=[ { id:"hank", name:"Hank", model:"npcMan2", tint:"yellow", h:1.80 }, { id:"june", name:"June", model:"npcWomanB", tint:"teal", h:1.66 } ];
@@ -9436,6 +9437,22 @@ function dinerWaiterTo(t,then){
   _dnWalk([()=>new BABYLON.Vector3(DINER.x,0,t.z-1.12),()=>_dnSpot(t)],0.35,()=>{
     const p=w.pos(); w.carrier.rotation.y=Math.atan2(player.position.x-p.x,player.position.z-p.z)+NPC_FACE_OFFSET;
     w.watch=true; if(DINER.seat) then(); else dinerWaiterHome(); });
+}
+/* v302 — RAY SERVE ANCHE IL COMPAGNO (vedi Presenza._camerierePos). Solo se
+   il TUO Ray e' libero: niente tavolo, niente conto in sospeso, nessuna
+   camminata sua in corso. Il tuo servizio vince sempre: appena ti siedi,
+   dinerWaiterTo annulla questa camminata (_dnWalk) e Ray viene da te. */
+function dinerMirror(){
+  const w=DINER.waiter; if(!w || !w.carrier || area!=="town") return;
+  if(DINER.seat || DINER.debt || (DINER.walking && !DINER.mir)){ DINER.mir=null; return; }
+  let L=[]; try{ L=Presenza.camerieri(); }catch(e){}
+  const m=L[0]||null, V=BABYLON.Vector3;
+  if(m){
+    if(DINER.mir && Math.hypot(DINER.mir.x-m.x,DINER.mir.z-m.z)<0.6) return;
+    DINER.mir={ x:m.x, z:m.z };
+    _dnWalk([()=>new V(DINER.x,0,w.pos().z),()=>new V(DINER.x,0,m.z),()=>new V(m.x,0,m.z)],0.3,()=>{
+      const p=w.pos(); w.carrier.rotation.y=Math.atan2(m.cx-p.x,m.cz-p.z)+NPC_FACE_OFFSET; w.baseYaw=w.carrier.rotation.y; w.watch=false; });
+  } else if(DINER.mir){ DINER.mir=null; dinerWaiterHome(); }
 }
 function dinerWaiterHome(then){
   const w=DINER.waiter; if(!w){ if(then) then(); return; }
@@ -57241,8 +57258,20 @@ const Presenza=(function(){
       let g="";
       if(typeof EAT!=="undefined" && EAT.busy && EAT.q && EAT.q.cur) g=(EAT.q.cur.what==="bite")?"b":"d";
       return { x:player.position.x, z:player.position.z, y:player.position.y, r:player.rotation.y,
-               k:"s"+Math.round(SIT.seatY*100)+"_"+Math.round(SIT.gy*100)+g }; } }catch(e){}
+               k:"s"+Math.round(SIT.seatY*100)+"_"+Math.round(SIT.gy*100)+g+_camerierePos() }; } }catch(e){}
     return null;
+  }
+  /* v302 (Giacomo, 3 ott: «il cameriere non si vede andare dal compagno se
+     ha ordinato, si vede fermo»). Ogni dispositivo ha il SUO Ray, che serve
+     il SUO giocatore. Chi e' seduto al diner e sta venendo servito manda
+     anche dove si trova il suo Ray (sesto campo di `p`, ",w<x>:<z>"); chi
+     guarda, se il proprio Ray in quel momento non serve lui, lo manda li'
+     (dinerMirror). */
+  function _camerierePos(){
+    try{ if(area!=="town" || typeof DINER==="undefined" || !DINER.seat || !DINER.waiter) return "";
+      const w=DINER.waiter.pos();
+      if(Math.hypot(w.x-(DINER.x+DINER_WAITER_HOME.x), w.z-DINER_WAITER_HOME.z)<1.0) return "";
+      return ",w"+w.x.toFixed(1)+":"+w.z.toFixed(1); }catch(e){ return ""; }
   }
   function _pos(){
     const s=_posa();
@@ -57255,8 +57284,10 @@ const Presenza=(function(){
     const x=parseFloat(p[0]), z=parseFloat(p[1]), y=parseFloat(p[2]), r=parseFloat(p[3]);
     if(!isFinite(x)||!isFinite(z)) return null;
     const m=/^s(-?\d{1,4})_(-?\d{1,4})([db]?)(c?)$/.exec(p[4]||"");
+    const w=/^w(-?\d{1,4}(?:\.\d)?):(-?\d{1,4}(?:\.\d)?)$/.exec(p[5]||"");
     return { x:x, z:z, y:(isFinite(y)?y:0), r:(isFinite(r)?r:0),
-             siede:m?{ seat:+m[1]/100, gy:+m[2]/100, eat:m[3]||"", c:!!m[4] }:null };
+             siede:m?{ seat:+m[1]/100, gy:+m[2]/100, eat:m[3]||"", c:!!m[4] }:null,
+             cameriere:w?{ x:+w[1], z:+w[2] }:null };
   }
   /* ---- FREQUENZA CHE SI ADATTA ALLA FOLLA -------------------------------
      Il costo cresce col quadrato dei giocatori: se la frequenza scende come
@@ -57322,6 +57353,7 @@ const Presenza=(function(){
     e.p0=q; e.p1=p; e.t0=ora; e.ricev=ora;
     e.zona=String(v.a||"town");
     e.siede=p.siede;                                   // v302: seduto / mangia / beve
+    e.cameriere=p.cameriere;                           // v302: dove sta il suo Ray (dinerMirror)
     /* ⚠️ Il numero di sequenza distingue una frase NUOVA da una che e'
        semplicemente ancora nel nodo: senza, ogni aggiornamento di posizione
        rifarebbe comparire la stessa nuvoletta. */
@@ -57741,6 +57773,12 @@ const Presenza=(function(){
     const w=b.hand.getAbsolutePosition(), f=S.f;
     g.position.set(w.x+f.x*0.05, w.y+0.03, w.z+f.z*0.05);
   }
+  /* i Ray dei compagni serviti al diner, in questa stessa zona (dinerMirror) */
+  function camerieri(){
+    const o=[]; for(const k in peers){ const e=peers[k]; if(e.zona!==area || !e.cameriere) continue;
+      const q=dove(e); o.push({ x:e.cameriere.x, z:e.cameriere.z, cx:q.x, cz:q.z }); }
+    return o;
+  }
   /* i compagni vicini, per non sedersi uno dentro l'altro (sgabelli del caffe') */
   function vicini(){
     const o=[]; for(const k in peers){ const e=peers[k]; if(e.zona!==area) continue;
@@ -57987,7 +58025,7 @@ const Presenza=(function(){
       kB_al_minuto:Math.round(byteRic/1024/min*10)/10 };
   }
   return { avvia:avvia, spegni:spegni, chiudi:chiudi, tick:tick, pin:pin, stato:stato,
-           vicini:vicini, get io(){ return mio; },
+           vicini:vicini, camerieri:camerieri, get io(){ return mio; },
            hz:hz, dove:dove,
            /* porte aperte per il collaudo: sono funzioni pure o quasi, e
               provarle dal di fuori evita di riprodurre l'algoritmo nel test
