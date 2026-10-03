@@ -903,30 +903,47 @@ function rainSeason(){
   const m=new Date().getMonth();
   return Math.max(0,Math.min(0.95,(RAIN_MESI[m]||0.2)*RAIN_SCALA));
 }
+/* v302 — LO STESSO CIELO PER TUTTI (Giacomo, 3 ott: «quando piove da una
+   parte, dall'altra c'e' altro tempo atmosferico», giocando in due). Il
+   calendario dei rovesci si tirava a sorte con Math.random su ogni
+   dispositivo. Ora si CALCOLA dall'ora vera: si parte dalla mezzanotte UTC
+   di oggi con un seme che dipende solo dal giorno (_seedRand) e si
+   srotolano rovescio / asciutto con le stesse regole di prima (frazione
+   stagionale, durate, intensita', temporale) fino a «adesso». Due
+   dispositivi con l'orologio giusto ottengono la stessa sequenza, chiunque
+   dei due abbia aperto il gioco per primo. La statistica non cambia: e' lo
+   stesso processo, solo con i dadi condivisi. Il tasto P del docente
+   (RAIN.override) resta locale, come prima. */
+let _rainP=null;
+function _rainPlan(now){
+  const d=new Date(now), day0=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate());
+  const f=Math.max(0.005,rainSeason());
+  if(!_rainP || _rainP.day0!==day0 || _rainP.f!==f){
+    const rnd=_seedRand("rain|"+day0+"|"+f);
+    _rainP={ day0, f, rnd, target:0, storm:false, dur:RAIN_MIN+rnd()*RAIN_VAR, end:day0 };
+    /* il primo tratto come rainInit: dentro un rovescio con probabilita' f,
+       a un punto a caso del tratto (mezzanotte non e' un momento speciale) */
+    const P=_rainP;
+    if(rnd()<f){ P.target=0.30+0.70*Math.pow(rnd(),1.5); P.storm=P.target>=STORM_FORZA && rnd()<STORM_P;
+      P.end=day0+rnd()*P.dur*1000; }
+    else P.end=day0+rnd()*P.dur*(1-f)/f*1000;
+  }
+  const P=_rainP;
+  for(let n=0; P.end<=now && n<5000; n++){
+    if(P.target>0){ P.target=0; P.storm=false; P.end+=P.dur*(1-f)/f*1000; }
+    else { const r=P.rnd; P.dur=RAIN_MIN+r()*RAIN_VAR;
+      P.target=0.30+0.70*Math.pow(r(),1.5); P.storm=P.target>=STORM_FORZA && r()<STORM_P;
+      P.end+=P.dur*1000; } }
+  return P;
+}
 function rainGust(dt){
   if(RAIN.override!==null){ RAIN.target=RAIN.override; RAIN.avviata=true; RAIN.storm=!!RAIN.stormOverride; }
   else {
-    /* L'estrazione avviene al primo giro utile, non al caricamento del file:
-       rainSeason() legge la data, e alla dichiarazione delle costanti non
-       c'e' ancora niente da leggere di sensato. */
-    if(!RAIN.avviata) rainInit();
-    RAIN.orologio+=dt;
-    if(RAIN.orologio>=RAIN.prossima){
-      if(RAIN.target>0){
-        /* finito il rovescio: l'asciutto dura quanto serve perche' il
-           rapporto dia la frazione stagionale. */
-        const f=Math.max(0.005,rainSeason());
-        RAIN.target=0; RAIN.storm=false;
-        RAIN.prossima=RAIN.orologio+RAIN.dur*(1-f)/f;
-      } else {
-        RAIN.dur=RAIN_MIN+Math.random()*RAIN_VAR;
-        /* Intensita': i rovesci deboli sono piu' comuni dei diluvi, come
-           il vento (stessa curva a potenza, stesso motivo). */
-        RAIN.target=0.30+0.70*Math.pow(Math.random(),1.5);
-        RAIN.storm=stormRoll();
-        RAIN.prossima=RAIN.orologio+RAIN.dur;
-      }
-    }
+    const P=_rainPlan(Date.now());
+    RAIN.target=P.target; RAIN.storm=P.storm;
+    /* appena aperto (o tornando dalla stagione forzata) la forza e' gia' a
+       regime: il rovescio non si «accende» davanti agli occhi */
+    if(!RAIN.avviata){ RAIN.forza=P.target; RAIN.avviata=true; }
   }
   RAIN.forza+=(RAIN.target-RAIN.forza)*(1-Math.exp(-dt/RAIN_INERZIA));
   if(RAIN.forza<0.004) RAIN.forza=0;                  // zero vero: spegne i nodi audio
@@ -4091,6 +4108,7 @@ function playerSit(fwd,seatY,groundY,arms){
   const r=sitPoseFor(avatarRoot,_legPins,fwd,seatY,groundY,arms); if(!r) return null;
   if(SIT.baseY===null) SIT.baseY=avatarRoot.position.y;
   SIT.pins=r.pins; SIT.drop=r.drop; SIT.on=true;
+  SIT.seatY=seatY; SIT.gy=groundY;               // v302: i compagni ti vedono seduto (Presenza._posa)
   avatarRoot.position.y=SIT.baseY-r.drop;
   return r.hip?new BABYLON.Vector3(r.hip.x-player.position.x,0,r.hip.z-player.position.z):new BABYLON.Vector3(0,0,0);
 }
@@ -25605,9 +25623,30 @@ function _cafeOffer(prompt){ const P=CAFE_PICK;
   P.inter=addInteract({ id:"cafePickup", area:"town", radius:3.2,
     pos:()=>P.node?P.node.getAbsolutePosition():new BABYLON.Vector3(0,-99,0),
     prompt:prompt, interact:cafeTake }); }
+/* v302 (Giacomo, 3 ott: «al cafe' se si siedono allo stesso momento per
+   ordinare, entrano uno dentro l'altro»). Lo sgabello si sceglieva solo da
+   dove eri tu. Ora, al momento di sedersi, se sul tuo c'e' gia' un compagno
+   seduto — o uno in piedi li' accanto che «vince» lo sgabello — si passa al
+   piu' vicino libero, e il vassoio ti segue. La precedenza va all'impronta
+   piu' piccola: e' la STESSA regola sui due dispositivi, quindi anche se vi
+   sedete nello stesso istante uno resta e l'altro si sposta, mai tutti e due. */
+function _cafeStoolLibero(P){
+  let V=[]; try{ V=Presenza.vicini(); }catch(e){}
+  if(!V.length) return P.stool;
+  const io=(function(){ try{ return Presenza.io||""; }catch(e){ return ""; } })();
+  const libero=i=>{ const x=P.spot.x+0.1, z=P.spot.z+CAFE_STOOLS[i];
+    return V.every(v=>{ const d=Math.hypot(v.x-x,v.z-z);
+      if(v.seduto && d<0.55) return false;
+      if(!v.seduto && d<0.9 && io && v.key<io) return false;
+      return true; }); };
+  const ord=CAFE_STOOLS.map((zs,i)=>i).sort((a,b)=>Math.abs(CAFE_STOOLS[a]-CAFE_STOOLS[P.stool])-Math.abs(CAFE_STOOLS[b]-CAFE_STOOLS[P.stool]));
+  for(const i of ord) if(libero(i)) return i;
+  return P.stool; }
 /* seduti sullo sgabello, girati verso il bancone (+x) */
 function _cafeSit(){ const P=CAFE_PICK; if(!P.spot) return false;
   if((typeof DINER!=="undefined" && DINER.seat) || (typeof BSIT!=="undefined" && BSIT.b)) return false;
+  { const s=_cafeStoolLibero(P);
+    if(s!==P.stool){ P.stool=s; if(P.node) P.node.position.z=P.spot.z+CAFE_TRAY_Z[s]; } }
   const S=_cafeStoolW(P), f=new BABYLON.Vector3(1,0,0), gy=(P.gy!=null)?P.gy:player.position.y;
   P.gy=gy; P.face=Math.PI/2;
   moveTarget=null; pendingInteract=null; try{ tapMark.setEnabled(false); }catch(e){}
@@ -32006,6 +32045,7 @@ function showSit(row,seat){
   showBuildStage();
   const p=showSeatPos(row,seat), sc=showScreenCenter();
   SHOW.seated=true; SHOW.idx=0; SHOW.asked=false; SHOW.miss=0;
+  SHOW.seatP=p;                                   // v302: la poltrona vera, per i compagni (Presenza._posa)
   SHOW.cam={ alpha:camera.alpha, beta:camera.beta, radius:camera.radius, fov:camera.fov,
              lo:camera.lowerBetaLimit, up:camera.upperBetaLimit, tgt:camera.target.clone() };
   /* ⚠️ L'avatar NON viene spostato sulla poltrona: i blocchi di sedie sono
@@ -32082,9 +32122,20 @@ function showClearStage(on){
     /* anche i cartellini GUI: non seguono la mesh e resterebbero appesi al
        buio (il loop che li aggiorna non gira mentre si e' seduti). */
     labels.forEach(l=>{ if(l.area==="cinema") l.ctrl.isVisible=false; });
+    /* v302 (Giacomo, 3 ott: «al cinema si vedono delle sedie in mezzo … delle
+       ombre di sedie»). Gli schienali (1,37 m dal restyling v261) sono piu'
+       alti degli occhi di chi siede (1,15): quelli delle file DAVANTI alla
+       tua tagliavano il fondo dello schermo con sagome scure. Al buio una
+       sala non li mostra: spariscono finche' sei seduto. */
+    SHOW.hiddenSeats=[];
+    const zMe=(SHOW.seatP?SHOW.seatP.z:showRowZ(SHOW_ROWS.length-1))-0.5;
+    if(typeof cinemaRoot!=="undefined" && cinemaRoot) cinemaRoot.getChildMeshes(false).forEach(m=>{
+      if(m.name==="cinSeat" && m.isEnabled() && m.position.z<zMe){ m.setEnabled(false); SHOW.hiddenSeats.push(m); } });
   }else{
     (SHOW.hidden||[]).forEach(n=>{ try{ if(n.carrier) n.carrier.setEnabled(true); }catch(e){} });
     SHOW.hidden=null;
+    (SHOW.hiddenSeats||[]).forEach(m=>{ try{ m.setEnabled(true); }catch(e){} });
+    SHOW.hiddenSeats=null;
   }
 }
 function showStand(silent){
@@ -57171,7 +57222,31 @@ const Presenza=(function(){
              eyes:p[16]||"", eyec:p[17]||"", nose:p[18]||"", mouth:p[19]||"" };
   }
   /* ---- posizione: x, z con un decimale (10 cm), y e imbardata ----------- */
+  /* v302 — SEDUTI, E CHE MANGIANO (Giacomo, 3 ott: «non si vede il
+     compagno mangiare o bere e non si vede seduto, si vede in piedi»; «al
+     cinema si vedono … in mezzo»). La posa viaggia come QUINTO campo di `p`
+     (le regole non ammettono campi nuovi, ma `p` arriva a 48 caratteri e i
+     client vecchi leggono solo i primi quattro):
+        s<seduta cm>_<pavimento cm>[d|b][c]
+     d = sta bevendo, b = sta mangiando (il gesto lo rifa' chi guarda, la
+     tazza o il boccone in mano); c = la posizione e' il CENTRO della
+     poltrona del cinema, perche' li' il tuo avatar resta nel corridoio
+     (vedi showSit) e senza questo il compagno ti vedeva in piedi in mezzo
+     alla sala. Da seduti la posizione ha due decimali: l'anca va sulla
+     seduta, e 10 cm di arrotondamento la mettevano sul bordo. */
+  function _posa(){
+    try{ if(typeof SHOW!=="undefined" && SHOW.seated && SHOW.seatP)
+      return { x:SHOW.seatP.x, z:SHOW.seatP.z, y:player.position.y, r:Math.PI, k:"s55_"+Math.round(player.position.y*100)+"c" }; }catch(e){}
+    try{ if(typeof SIT!=="undefined" && SIT.on && SIT.seatY!=null){
+      let g="";
+      if(typeof EAT!=="undefined" && EAT.busy && EAT.q && EAT.q.cur) g=(EAT.q.cur.what==="bite")?"b":"d";
+      return { x:player.position.x, z:player.position.z, y:player.position.y, r:player.rotation.y,
+               k:"s"+Math.round(SIT.seatY*100)+"_"+Math.round(SIT.gy*100)+g }; } }catch(e){}
+    return null;
+  }
   function _pos(){
+    const s=_posa();
+    if(s) return s.x.toFixed(2)+","+s.z.toFixed(2)+","+s.y.toFixed(2)+","+s.r.toFixed(2)+","+s.k;
     return player.position.x.toFixed(1)+","+player.position.z.toFixed(1)+","
           +player.position.y.toFixed(2)+","+player.rotation.y.toFixed(2);
   }
@@ -57179,7 +57254,9 @@ const Presenza=(function(){
     const p=String(t||"").split(",");
     const x=parseFloat(p[0]), z=parseFloat(p[1]), y=parseFloat(p[2]), r=parseFloat(p[3]);
     if(!isFinite(x)||!isFinite(z)) return null;
-    return { x:x, z:z, y:(isFinite(y)?y:0), r:(isFinite(r)?r:0) };
+    const m=/^s(-?\d{1,4})_(-?\d{1,4})([db]?)(c?)$/.exec(p[4]||"");
+    return { x:x, z:z, y:(isFinite(y)?y:0), r:(isFinite(r)?r:0),
+             siede:m?{ seat:+m[1]/100, gy:+m[2]/100, eat:m[3]||"", c:!!m[4] }:null };
   }
   /* ---- FREQUENZA CHE SI ADATTA ALLA FOLLA -------------------------------
      Il costo cresce col quadrato dei giocatori: se la frequenza scende come
@@ -57244,6 +57321,7 @@ const Presenza=(function(){
     e.vel=Math.hypot(p.x-q.x, p.z-q.z)/(e.dur/1000);
     e.p0=q; e.p1=p; e.t0=ora; e.ricev=ora;
     e.zona=String(v.a||"town");
+    e.siede=p.siede;                                   // v302: seduto / mangia / beve
     /* ⚠️ Il numero di sequenza distingue una frase NUOVA da una che e'
        semplicemente ancora nel nodo: senza, ogni aggiornamento di posizione
        rifarebbe comparire la stessa nuvoletta. */
@@ -57373,7 +57451,7 @@ const Presenza=(function(){
           const par=b2.getParent&&b2.getParent(); if(par&&!LEG_BONE_RE.test(par.name)) addBone(par); }); } });
     }
     const b={ rig:rig, id:id, carrier:carrier, holder:holder, meshes:meshes, anims:anims,
-      pins:pins, cur:null, anim:null, noPin:false, usato:false, libero:Date.now(), look:"",
+      pins:pins, pinsStand:pins, holderY0:holder.position.y, sit:null, cur:null, anim:null, noPin:false, usato:false, libero:Date.now(), look:"",
       play:function(nm){ const g=this.anims[nm]; if(!g||this.cur===g) return;
         for(const k in this.anims) this.anims[k].stop(); g.start(true); this.cur=g; } };
     /* targhetta: stesso sistema degli NPC, quindi sbiadisce con la distanza
@@ -57459,6 +57537,7 @@ const Presenza=(function(){
        condiviso con gli NPC. ⚠️ Tranne quelli del guardaroba (cappelli,
        giacche, tagli): quelli sono condivisi, vedi detachSharedDressMats. */
     try{ detachSharedDressMats(b.carrier); }catch(e){}
+    try{ if(b.prop) for(const k in b.prop) b.prop[k].dispose(false,false); }catch(e){}   // v302: tazza/boccone (materiali condivisi in _accM)
     try{ b.carrier.dispose(false,true); }catch(e){}
   }
   /* la chiave del compagno non e' memorizzata nell'oggetto: si ritrova. Con
@@ -57467,6 +57546,7 @@ const Presenza=(function(){
   function _chiaveDi(e){ for(const k in peers) if(peers[k]===e) return k; return ""; }
   function _rilascia(e){
     const b=e&&e.corpo; if(!b) return;
+    try{ _alza(b); }catch(err){}                        // v302: il prossimo compagno su questo corpo parte in piedi
     try{ if(b.label){ b.label.hidden=true; if(b.label.ctrl) b.label.ctrl.isVisible=false; } }catch(err){}
     try{ if(b.inter) b.inter.enabled=false; }catch(err){}
     b.usato=false; b.libero=Date.now(); b.anim=null;
@@ -57563,8 +57643,12 @@ const Presenza=(function(){
         b.label.area=e.zona;
         if(!vis && b.label.ctrl) b.label.ctrl.isVisible=false;
       }
-      if(!vis) continue;
+      if(!vis){ if(b.sit) _alza(b); continue; }
       if(b.inter) b.inter.area=e.zona;
+      /* v302: seduto (vedi _posa): posa sulle ossa come il giocatore, niente
+         Walk, niente giro verso di te; il gesto del mangiare lo rifa' qui */
+      if(e.siede && ((ora-e.t0)>=e.dur || e.vel<=0.35)){ _siedi(b,q,e.siede,ora); continue; }
+      if(b.sit) _alza(b);
       b.carrier.position.set(q.x, q.y, q.z);
       /* ⚠️ SI GIRA VERSO DI TE quando sei vicino, come fanno gli NPC
          (Giacomo, 2 set). Vale solo da fermo: se cammina deve guardare dove
@@ -57587,6 +57671,82 @@ const Presenza=(function(){
       if(vuole!==b.anim){ b.anim=vuole; b.noPin=(vuole!=="Idle"); b.play(vuole); }
     }
   }
+  /* ---- SEDUTI (v302) ----------------------------------------------------
+     La stessa sitPoseFor del giocatore e degli NPC, sulle pin in piedi del
+     corpo (pinsStand). Si ricalcola solo quando cambia la sedia; il gesto
+     del mangiare e' una fusione fra la posa a riposo e quella «alla bocca»
+     (EAT_ARMS), a ciclo locale: a 2 Hz di aggiornamenti non si potrebbe
+     trasmettere un braccio che sale e scende, e non serve — basta sapere
+     CHE sta mangiando. */
+  function _siedi(b,q,s,ora){
+    const V=BABYLON.Vector3, key=[q.x,q.z,q.y,q.r,s.seat,s.gy,s.c?1:0].join("|");
+    if(!b.sit || b.sit.key!==key){
+      if(b.sit) _alza(b);
+      b.play("Idle"); b.anim="Idle"; b.noPin=false;
+      b.carrier.position.set(q.x,q.y,q.z); b.carrier.rotation.y=q.r;
+      b.holder.position.y=b.holderY0; _applyPins(b.pinsStand); _sitRefresh(b.carrier);
+      const f=new V(Math.sin(q.r),0,Math.cos(q.r));
+      let r=null, r2=null;
+      try{ r=sitPoseFor(b.holder,b.pinsStand,f,s.seat,s.gy); }catch(err){}
+      if(!r){ b.sit={ key, f, off:new V(0,0,0), rest:null }; return; }
+      try{ if(typeof EAT_ARMS!=="undefined") r2=sitPoseFor(b.holder,b.pinsStand,f,s.seat,s.gy,EAT_ARMS); }catch(err){}
+      const off=new V(0,0,0);
+      /* al cinema arriva il CENTRO della poltrona: l'anca ci va sopra, poco dietro */
+      if(s.c && r.hip){ off.x=(q.x-f.x*0.06)-r.hip.x; off.z=(q.z-f.z*0.06)-r.hip.z; }
+      const sip=(r2 && r2.pins.length===r.pins.length)?r2.pins:null;
+      b.sit={ key, f, off, rest:r.pins, sip, drop:r.drop,
+              mix:sip?r.pins.map(function(k){ return { tn:k.tn, p:k.p.clone(), q:k.q.clone(), s:k.s.clone() }; }):null };
+      b.holder.position.y=b.holderY0-r.drop; b.pins=r.pins;
+    }
+    const S=b.sit;
+    b.carrier.position.set(q.x+S.off.x, q.y, q.z+S.off.z);
+    if(!S.rest) return;
+    /* il gesto: ogni 3,2 s il braccio sale alla bocca, resta, scende */
+    let t=0;
+    if(s.eat && S.sip){ const u=(ora%3200)/3200, sm=function(x){ return x*x*(3-2*x); };
+      t=u<0.25?0:(u<0.45?sm((u-0.25)/0.2):(u<0.65?1:(u<0.85?1-sm((u-0.65)/0.2):0))); }
+    if(t>0.001){ for(let i=0;i<S.mix.length;i++){
+        BABYLON.Quaternion.SlerpToRef(S.rest[i].q,S.sip[i].q,t,S.mix[i].q);
+        BABYLON.Vector3.LerpToRef(S.rest[i].p,S.sip[i].p,t,S.mix[i].p); }
+      b.pins=S.mix; }
+    else b.pins=S.rest;
+    S.eat=s.eat||"";
+  }
+  function _alza(b){
+    if(!b.sit) return;
+    b.sit=null; b.pins=b.pinsStand; b.holder.position.y=b.holderY0;
+    if(b.prop){ for(const k in b.prop) try{ b.prop[k].setEnabled(false); }catch(err){} }
+  }
+  /* la tazza o il boccone nella mano destra del compagno: si mette nel
+     mondo dopo le pin, alla posizione vera del polso (stessa idea del
+     giocatore, senza la presa precisa delle dita) */
+  function _inMano(b){
+    const S=b.sit, eat=S&&S.eat;
+    if(!b.prop) b.prop={};
+    for(const k in b.prop) b.prop[k].setEnabled(k===eat);
+    if(!eat) return;
+    if(!b.hand) b.hand=b.holder.getDescendants(false).find(function(d){ return /(^|_)(Wrist|Hand|Palm)\.R$/.test(d.name); })||null;
+    if(!b.hand) return;
+    let g=b.prop[eat];
+    if(!g){
+      if(eat==="d"){ g=BABYLON.MeshBuilder.CreateCylinder(b.id+"_cup",{diameterTop:0.075,diameterBottom:0.06,height:0.09,tessellation:14},scene);
+        g.material=_accMat("#f1ece2",0.3); }
+      else { g=BABYLON.MeshBuilder.CreateSphere(b.id+"_bite",{diameter:0.08,segments:8},scene);
+        g.scaling.y=0.6; g.material=_accMat("#c98a3e",0.1); }
+      g.isPickable=false; g.alwaysSelectAsActiveMesh=true; b.prop[eat]=g;
+      try{ _octDirty(); }catch(err){}
+    }
+    const ch=[]; for(let n=b.hand;n;n=n.parent) ch.unshift(n);
+    ch.forEach(function(n){ if(n.computeWorldMatrix) n.computeWorldMatrix(true); });
+    const w=b.hand.getAbsolutePosition(), f=S.f;
+    g.position.set(w.x+f.x*0.05, w.y+0.03, w.z+f.z*0.05);
+  }
+  /* i compagni vicini, per non sedersi uno dentro l'altro (sgabelli del caffe') */
+  function vicini(){
+    const o=[]; for(const k in peers){ const e=peers[k]; if(e.zona!==area) continue;
+      const q=dove(e); o.push({ key:k, x:q.x, z:q.z, seduto:!!e.siede }); }
+    return o;
+  }
   /* pin DOPO la valutazione degli AnimationGroup, come per NPC e giocatore */
   function pin(){
     if(!acceso) return;
@@ -57599,6 +57759,7 @@ const Presenza=(function(){
         if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion();
         k.tn.rotationQuaternion.copyFrom(k.q); k.tn.scaling.copyFrom(k.s);
       }
+      if(b.sit || b.prop) try{ _inMano(b); }catch(err){}
     }
   }
   /* ---- accensione ------------------------------------------------------- */
@@ -57780,15 +57941,15 @@ const Presenza=(function(){
     const scia=[]; const RIT=Math.max(2, Math.round((raggio||6)));
     provaT=setInterval(function(){
       scia.unshift({ x:player.position.x, z:player.position.z, y:player.position.y,
-                     r:player.rotation.y, a:area });
+                     r:player.rotation.y, a:area, p:_pos() });     // v302: p con la posa (seduti, mangiare)
       if(scia.length>(n*RIT+4)) scia.pop();
       for(let i=0;i<n;i++){
         const q=scia[Math.min(scia.length-1, (i+1)*RIT)] || scia[scia.length-1];
         if(!q) continue;
         const look=(i%2?"f|s5|h3|k1|red":"m|s2|h2|k2|teal");
         _campione({ key:"prova"+i, val:function(){
-          return { a:q.a, p:q.x.toFixed(1)+","+q.z.toFixed(1)+","+q.y.toFixed(2)
-                        +","+q.r.toFixed(2), k:look, t:Date.now() }; } });
+          return { a:q.a, p:q.p||(q.x.toFixed(1)+","+q.z.toFixed(1)+","+q.y.toFixed(2)
+                        +","+q.r.toFixed(2)), k:look, t:Date.now() }; } });
       }
     }, 400);
     return n;
@@ -57826,6 +57987,7 @@ const Presenza=(function(){
       kB_al_minuto:Math.round(byteRic/1024/min*10)/10 };
   }
   return { avvia:avvia, spegni:spegni, chiudi:chiudi, tick:tick, pin:pin, stato:stato,
+           vicini:vicini, get io(){ return mio; },
            hz:hz, dove:dove,
            /* porte aperte per il collaudo: sono funzioni pure o quasi, e
               provarle dal di fuori evita di riprodurre l'algoritmo nel test
