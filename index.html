@@ -25218,7 +25218,11 @@ function _cafeTrova(testo, voci){
 }
 const CAFE_TURNS=[
   { field:"Drink", key:"drink",
-    q:"Hi there! What can I get you?", it:"Ciao! Cosa ti porto?",
+    /* v4 ott (Giacomo: «Rosa mi ha salutato, io dico I'd like to order e
+       lei mi ridice "Hi there! What can I get you?"»). L'ordine parte SEMPRE
+       da un dialogo in cui il barista ha gia' salutato: qui niente saluto,
+       si risponde alla richiesta («Sure!», vedi cafeQ). */
+    q:"What would you like to drink?", it:"Cosa prendi da bere?",
     voci:function(){ return CAFE_CARD.drinks; },
     pool:["coffee","tea","chocolate","juice","orange","cappuccino","espresso",
           "please","can","could","have","like","want","a","an"],
@@ -25301,6 +25305,9 @@ function cafeTotale(o){
   return s;
 }
 let _CAFE=null;
+/* domanda del turno: al primo turno il barista risponde a «I'd like to order» */
+function cafeQ(o,t){ return (o.idx===0?"Sure! ":"")+t.q; }
+function cafeQit(o,t){ return (o.idx===0?"Certo! ":"")+t.it; }
 function startCafeOrder(npc){
   _CAFE=cafeInit(npc);
   runCafeOrder();
@@ -25331,14 +25338,14 @@ function runCafeOrder(){
     const ch=t.ready.map(function(fr){
       return { label:fr, act:function(){ cafePassa(fr, false); } }; });
     ch.push({ label:"\u{1F4CB} Menu", act:function(){ cafeMostraMenu(function(){ runCafeOrder(); }); } });
-    DialogueBox.open({ npc, icon:"\u2615", sub:sub, text:t.q, italian:t.it,
+    DialogueBox.open({ npc, icon:"\u2615", sub:sub, text:cafeQ(o,t), italian:cafeQit(o,t),
       html: cafeSlipHtml(o), choices:ch,
       buttons:[{ label:"Leave", cls:"ghost", act:function(){ _CAFE=null; } }] });
     return;
   }
   /* ---- ANNO 2-3: si scrive ---- */
   o.tent=0;
-  DialogueBox.open({ npc, icon:"\u2615", sub:sub, text:t.q, italian:t.it,
+  DialogueBox.open({ npc, icon:"\u2615", sub:sub, text:cafeQ(o,t), italian:cafeQit(o,t),
     html: cafeSlipHtml(o)
       +'<textarea id="uCafeTA" rows="2" style="width:100%;box-sizing:border-box;font:inherit;'
       +'margin-top:8px;padding:8px;border-radius:10px;border:1px solid #ccd6da;resize:vertical;" '
