@@ -57120,7 +57120,7 @@ const Presenza=(function(){
   let ref=null, radice=null, timer=null, t0=0;
   let ultimoInvio=0, ultimoStato="", ultimaScelta=0;
   let mioM="", mioMt=0, mioSeq=0, ultimaFrase=0, ultimoId="";
-  let nInv=0, nRic=0, byteRic=0;
+  let nInv=0, nRic=0, byteRic=0, nRifiutate=0, ultimoRifiuto="";
   const peers=Object.create(null);
   const corpi=[];
 
@@ -57131,7 +57131,15 @@ const Presenza=(function(){
     return ("0000000"+(Math.abs(h)>>>0).toString(36)).slice(-7);
   }
   /* ---- aspetto: cinque campi in una stringa ---------------------------- */
-  function _look(){
+  /* v302 (Giacomo, 3 ott: in console «set at /presence/3C/… failed:
+     permission_denied», per tutti, alunni compresi). Le regole del progetto
+     presenza (.validate su «forma e dimensione», scritte quando il look era
+     di 5 campi) tengono corta la stringa: con i 4 campi del viso anche il
+     look di default passava da 32 a 36 caratteri. I campi VUOTI IN CODA si
+     tolgono: chi legge (_leggiLook, anche nei client vecchi) li tratta gia'
+     come vuoti, quindi non cambia niente per nessuno e il default torna a 23. */
+  function _look(){ return _lookPieno().replace(/\|+$/,""); }
+  function _lookPieno(){
     try{ const L=Look.state();
       /* v277: in coda il sotto e il suo colore. I client vecchi leggono solo i
          primi cinque campi e ignorano il resto: nessuno si rompe. */
@@ -57193,7 +57201,10 @@ const Presenza=(function(){
        collega mezz'ora dopo si vedrebbe arrivare in faccia un «Hi!» vecchio
        come se fosse appena stato detto. */
     if(mioM && ora-mioMt<TALK_VITA) pac.m=mioM; else mioM="";
-    try{ ref.set(pac); }catch(e){}
+    /* v302: un rifiuto delle regole prima si vedeva solo come avviso di
+       Firebase in console; ora si conta e finisce in ET.presenza(). */
+    try{ ref.set(pac).catch(function(err){ nRifiutate++;
+      ultimoRifiuto=((err&&(err.code||err.message))||"rifiutata")+" (look "+pac.k.length+" caratteri, zona "+pac.a.length+")"; }); }catch(e){}
     return true;
   }
   /* ---- LETTURA ---------------------------------------------------------
@@ -57797,6 +57808,7 @@ const Presenza=(function(){
       compagni:Object.keys(peers).length, disegnati:disegnati, corpi:corpi.length,
       parla:parla,
       hz:Math.round(hz()*100)/100, inviate:nInv, ricevute:nRic,
+      rifiutate:nRifiutate, ultimoRifiuto:ultimoRifiuto||"(nessuno)", look:_look(),
       kB_ricevuti:Math.round(byteRic/1024*10)/10,
       kB_al_minuto:Math.round(byteRic/1024/min*10)/10 };
   }
