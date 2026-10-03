@@ -4451,10 +4451,17 @@ function rebuildOctree(){
 }
 scene.onBeforeRenderObservable.add(()=>{ if(_octN>=0 && scene.meshes.length!==_octN) rebuildOctree(); });
 
-// selettore qualità (Basso/Medio/Alto) + auto-rilevamento via FPS
-const QLEVELS=["basso","medio","alto"]; let qLevel="medio";
+// selettore qualità (Basso/Medio/Alto/Max) + auto-rilevamento via FPS
+const QLEVELS=["basso","medio","alto","max"]; let qLevel="medio";
 /* v288: i nomi interni restano italiani (sono chiavi salvate); a schermo inglese */
-function qLabelEn(q){ return ({ basso:"Low", medio:"Medium", alto:"High" })[q]||q; }
+function qLabelEn(q){ return ({ basso:"Low", medio:"Medium", alto:"High", max:"Max" })[q]||q; }
+/* «Max» (Giacomo, 3 ott: «un'opzione oltre High per i computer piu' potenti»)
+   e' «Alto» con in piu' la nitidezza: tutto quello che vale per Alto vale
+   anche per Max, quindi i controlli «e' almeno Alto?» passano da qui.
+   ⚠️ MAI SCELTO DA SOLO: il rilevamento automatico arriva al massimo ad Alto,
+   a Max si arriva solo col pulsante ⚙︎. Su uno schermo Retina/4K disegna
+   fino a 4 volte i pixel: su un PC normale scatterebbe. */
+function qAlmenoAlto(q){ q=q||qLevel; return q==="alto"||q==="max"; }
 /* ⚠️ MISURATO SU UN ACER CON INTEL UHD (30 ago): 2,5 fps su «Alto», e passando
    a «Basso» i fotogrammi CROLLAVANO a 0,4 prima di risalire. Non era Basso a
    pesare: spegnere le ombre cambia i define degli shader e obbliga Babylon a
@@ -4469,16 +4476,63 @@ let _ombreDecise=false;
    fosse applyQuality a decidere, una macchina veloce resterebbe senza ombre
    per sempre solo perche' il PRIMO livello provato non era «alto». */
 function decidiOmbre(q){ if(_ombreDecise) return; _ombreDecise=true;
-  sun.shadowEnabled=(q==="alto"); }
+  sun.shadowEnabled=qAlmenoAlto(q); }
+/* Su Max lo schermo si disegna alla sua risoluzione VERA: l'engine nasce senza
+   adaptToDeviceRatio, quindi su un Retina (devicePixelRatio 2) gli altri
+   livelli disegnano a meta' risoluzione e il browser ingrandisce. Tetto a 2:
+   i telefoni a 3x non mostrerebbero differenze e pagherebbero 9 volte i pixel. */
+function qScala(q){ if(q==="basso") return 1.3;
+  if(q==="max") return 1/Math.min(2,Math.max(1,window.devicePixelRatio||1));
+  return 1.0; }
+/* Filtro anisotropico: le texture nascono a 8, su Max salgono a 16 (strade e
+   marciapiedi visti di sbieco restano nitidi piu' lontano). E' un parametro
+   del campionatore, non un define: nessuna ricompilazione. Si ricorda il
+   valore originale per tornare indietro esatti. */
+function qAnisotropia(max){
+  try{ scene.textures.forEach(t=>{ if(!t||t.anisotropicFilteringLevel===undefined) return;
+    if(max){ if(t.anisotropicFilteringLevel===8){ t.__af0=8; t.anisotropicFilteringLevel=16; } }
+    else if(t.__af0){ t.anisotropicFilteringLevel=t.__af0; delete t.__af0; } }); }catch(e){} }
+/* le texture che arrivano DOPO (GLB caricati a gioco avviato) su Max si
+   alzano appena entrate in scena. Con un giro di ritardo: il codice che le
+   crea scrive il suo «=8» DOPO il costruttore, cioe' dopo questo avviso. */
+try{ scene.onNewTextureAddedObservable.add(t=>{ setTimeout(()=>{
+  if(qLevel==="max"&&t&&t.anisotropicFilteringLevel===8){ t.__af0=8; t.anisotropicFilteringLevel=16; } },0); }); }catch(e){}
+/* Sonda dei riflessi (vetri, metalli): 96 px, su Max 256. La sonda si disegna
+   UNA volta e poi solo quando cambia la lista dei palazzi, quindi la
+   risoluzione piu' alta costa al momento del cambio, non a ogni fotogramma.
+   Dopo il resize va ridisegnata e va ricalcolata l'irradianza (vedi _probeSH). */
+/* ⚠️ LE TARGHETTE (nomi degli NPC, insegne: GUI a schermo intero) misurano
+   in pixel DI RENDER. Su Max i pixel di render raddoppiano, e senza questa
+   riga i nomi uscivano a meta' grandezza (visto nel collaudo: «Hank» e
+   «June» minuscoli). renderScale riporta la loro texture alla scala di
+   Alto: stessa grandezza e stessa nitidezza di prima, il resto in alta.
+   (adjustToEngineHardwareScalingLevel di Babylon farebbe una texture da
+   4000 px per una manciata di etichette: no.) */
+function qGui(){ try{ if(typeof adt!=="undefined"&&adt){
+  const r=(qLevel==="max")?engine.getHardwareScalingLevel():1;
+  if(adt.renderScale!==r) adt.renderScale=r; } }catch(e){} }
+function qSonda(px){
+  try{ const ct=probe.cubeTexture; if(!ct||ct.getSize().width===px) return;
+    ct.resize(px); ct.refreshRate=BABYLON.RenderTargetTexture.REFRESHRATE_RENDER_ONCE; _probeSH=3;
+  }catch(e){ console.warn("sonda Max:",e); } }
 function applyQuality(q,ricorda){ if(QLEVELS.indexOf(q)<0) q="medio"; qLevel=q;
-  engine.setHardwareScalingLevel(q==="basso"?1.3:1.0);
+  engine.setHardwareScalingLevel(qScala(q)); qGui();
   pipe.bloomEnabled=(q!=="basso"); pipe.sharpenEnabled=(q!=="basso");
-  pipe.depthOfFieldEnabled=(q==="alto");
+  pipe.depthOfFieldEnabled=qAlmenoAlto(q);
+  /* Solo Max: antialiasing vero (MSAA 4 campioni, come lo specchio di casa)
+     oltre all'FXAA, sfocatura di campo piu' fine, riflessi e texture piu'
+     nitidi. Nessuna di queste tocca i define dei materiali. I setter si
+     toccano solo se il valore cambia: la sfocatura ricostruisce la pipeline. */
+  const max=(q==="max");
+  try{ const sm=max?4:1; if(pipe.samples!==sm) pipe.samples=sm; }catch(e){}
+  try{ const bl=max?BABYLON.DepthOfFieldEffectBlurLevel.High:BABYLON.DepthOfFieldEffectBlurLevel.Medium;
+       if(pipe.depthOfFieldBlurLevel!==bl) pipe.depthOfFieldBlurLevel=bl; }catch(e){}
+  qAnisotropia(max); qSonda(max?256:96);
   /* ⚠️ intensity=0 NASCONDE il risultato ma il GlowLayer disegna lo stesso la
      sua texture a ogni frame: misurati 26,7 ms su 160, cioe' il 17% del tempo
      buttato per un effetto invisibile. isEnabled=false lo ferma davvero
      (+21% di fotogrammi nella prova in aula). */
-  glowL.isEnabled=(q==="alto"); glowL.intensity=0.65;
+  glowL.isEnabled=qAlmenoAlto(q); glowL.intensity=0.65;
   try{ if(CLUB_FX.in){ CLUB_FX.glow=glowL.isEnabled; glowL.isEnabled=false; } }catch(e){}   // v262: dentro il Beat Club il glow resta spento
   const lab=document.getElementById("qlab"); if(lab) lab.textContent=qLabelEn(q);
   /* ⚠️ SI RICORDA SOLO LA SCELTA ESPLICITA (pulsante ⚙︎). Prima veniva salvato
@@ -4787,7 +4841,7 @@ function updateDayNight(dt){ if(!DAY.enabled) return;
     const _fd=_fin?(m.__finOn?1:FIN.dim):1;
     m.emissiveColor.set(e.r*nightF*_fd,e.g*nightF*_fd,e.b*nightF*_fd); }
   if(hzWinTex){ hzWinTex.level=nightF*3.0; if(hzWinTex.__twin) hzWinTex.__twin.level=hzWinTex.level; }   // finestre skyline: bloom caldo di notte
-  if(glowL.isEnabled) glowL.intensity=0.4+0.4*nightF;   // acceso solo su «Alto»: vedi applyQuality
+  if(glowL.isEnabled) glowL.intensity=0.4+0.4*nightF;   // acceso solo su «Alto» e «Max»: vedi applyQuality
   /* \u26a0\ufe0f IL CANCELLO DELLA RIDIPINTURA guarda ANCHE la pioggia. Senza, il
      cielo si sarebbe ridipinto solo al variare di nightF: di giorno nightF
      sta fermo a zero, quindi l'acquazzone avrebbe abbassato le luci senza
@@ -4821,7 +4875,7 @@ function updateDayNight(dt){ if(!DAY.enabled) return;
 
 /* ---- CARTELLI GUI (testo 2D: non si specchia MAI) ---- */
 let adt=null; const labels=[];
-function ensureUI(){ if(!adt && BABYLON.GUI) adt=BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("ui",true,scene); return adt; }
+function ensureUI(){ if(!adt && BABYLON.GUI) { adt=BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("ui",true,scene); qGui(); } return adt; }
 function guiLabel(anchor,title,sub,active,areaName){
   if(!ensureUI()){ make3DLabel(anchor,title,sub,active); return; }   // ripiego 3D se GUI non c'è
   const G=BABYLON.GUI;
@@ -12083,7 +12137,7 @@ function acquaTick(dt){
     a.tx.vOffset=(a.tx.vOffset+dt*a.sv)%1; }
   if(!FOUNT_PS) return;
   let on=false;
-  try{ on = (qLevel==="alto") && area==="town" && FOUNT_XZ &&
+  try{ on = qAlmenoAlto() && area==="town" && FOUNT_XZ &&
             Math.hypot(player.position.x-FOUNT_XZ.x, player.position.z-FOUNT_XZ.z)<45;
   }catch(e){ on=false; }
   if(on!==_jetOn){ _jetOn=on;
@@ -30363,7 +30417,7 @@ function clubPostFx(){
   if(inside){ CLUB_FX.glow=glowL.isEnabled; CLUB_FX.fStop=pipe.depthOfField.fStop;
     CLUB_FX.bThr=pipe.bloomThreshold; CLUB_FX.bW=pipe.bloomWeight;
     glowL.isEnabled=false; pipe.depthOfField.fStop=22; pipe.bloomThreshold=0.95; pipe.bloomWeight=0.15; }
-  else { glowL.isEnabled=CLUB_FX.glow && qLevel==="alto"; pipe.depthOfField.fStop=CLUB_FX.fStop;
+  else { glowL.isEnabled=CLUB_FX.glow && qAlmenoAlto(); pipe.depthOfField.fStop=CLUB_FX.fStop;
     pipe.bloomThreshold=CLUB_FX.bThr; pipe.bloomWeight=CLUB_FX.bW; }
 }
 scene.onBeforeRenderObservable.add(clubPostFx);   // osservatore proprio: gira anche con login/mappa aperti
@@ -37313,7 +37367,7 @@ function povSet(on,silent){
     camera.radius=S.radius; camWish=S.radius; _camApplied=-1;
     camera.inertialAlphaOffset=0; camera.inertialBetaOffset=0; camera.inertialRadiusOffset=0;
     camera.layerMask=0x0FFFFFFF; _povHead(false);
-    if(pipe) pipe.depthOfFieldEnabled=(typeof qLevel==="undefined" || qLevel==="alto");
+    if(pipe) pipe.depthOfFieldEnabled=(typeof qLevel==="undefined" || qAlmenoAlto());
     POV.save=null;
   }
   const bt=document.getElementById("povBtn");
@@ -39369,7 +39423,7 @@ function attachTreeWind(){
    una pioggia che illumina mentre il cielo si scurisce e' esattamente il
    contrario di quello che si vede fuori (stessa trappola gia' incontrata
    col disco dei cristalli, ma al rovescio). */
-const RAIN_N={ basso:260, medio:620, alto:1100 };
+const RAIN_N={ basso:260, medio:620, alto:1100, max:1100 };
 let rainPS=null, rainEmit=null, rainLast=-1, rainSaidAt=0, rainWasOn=false;
 function rainBuild(){
   if(rainPS) return;
@@ -56691,7 +56745,11 @@ ET.frasi=function(){
 ET.presenzaSpegni=function(){ Presenza.spegni(); return "\u{1F465} presenza spenta su questa finestra"; };
 
 engine.runRenderLoop(()=>scene.render());
-window.addEventListener("resize",()=>engine.resize());
+window.addEventListener("resize",()=>{
+  /* su Max la scala segue lo schermo: spostando la finestra da un monitor
+     normale a un Retina cambia devicePixelRatio */
+  try{ if(qLevel==="max"){ engine.setHardwareScalingLevel(qScala("max")); qGui(); } }catch(e){}
+  engine.resize(); });
 begin();
 </script>
 </body>
