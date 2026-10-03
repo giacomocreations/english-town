@@ -8865,7 +8865,7 @@ function buildDiner(){
 
   /* ---- pavimento a scacchi (veranda + cucina) ---- */
   const fl=BABYLON.MeshBuilder.CreateGround("dnFloor",{width:15.2,height:16.8},scene);
-  fl.material=floorMat("dn_floorM",{style:"check",hex:"#f1efe8",hex2:"#1f2226",tile:2.4,spec:0.22},15.2,16.8);   // 8 piastrelle da 30 cm per ripetizione
+  fl.material=dinerFloorMat(15.2,16.8);
   fl.position.set(0,0.012,32); fl.parent=root; fl.__ground=true; fl.receiveShadows=true;
 
   /* ---- CUCINA: blocco in fondo, facciata a z 37.2 ---- */
@@ -9020,6 +9020,71 @@ function buildDinerNPCs(){
     setTimeout(()=>{ try{ npcSit(n,s); }catch(e){ console.warn("[diner] sit",e); } },0);
   });
 }
+/* PAVIMENTO DEL DINER v2 (Giacomo, 3 ott: «troppo finto»; e poi «non vedo
+   differenze»: venature e scheggiature su piastrelle da 30 cm a distanza di
+   gioco non si leggono). Cosa lo rendeva finto, a colpo d'occhio:
+   · NERO e BIANCO puri, contrasto da adesivo -> crema e antracite, e ogni
+     piastrella col SUO tono (qualcuna ingiallita, qualcuna piu' consumata);
+   · tutto UGUALE ovunque -> una texture sola per tutto il pavimento (100 px/m,
+     nessuna ripetizione) con il SENTIERO consumato dall'ingresso al bancone
+     e ai tavoli (opaco, il contrasto si abbassa: e' quello che fanno i
+     passi), sporco che si accumula lungo i muri e negli angoli, qualche
+     macchia di caffe', segni di tacco;
+   · OPACO -> un riflesso leggero di Fresnel (piu' forte di sbieco) e un
+     punto luce piu' stretto: un pavimento da diner e' cerato.
+   Coordinate: pavimento 15,2 x 16,8 centrato in (0,32) del diner; sul canvas
+   x = (x+7,6)*100, y = (40,4-z)*100 (in alto la cucina, in basso l'ingresso). */
+function dinerFloorMat(W,H){
+  const PPM=100, CW=Math.round(W*PPM), CH=Math.round(H*PPM), T=30;              // piastrella 30 cm = 30 px
+  const rnd=_seedRand("diner-floor"), R=(a,b)=>a+rnd()*(b-a);
+  const tx=new BABYLON.DynamicTexture("dnFloorTx",{width:CW,height:CH},scene,true), c=tx.getContext();
+  const X=x=>(x+W/2)*PPM, Y=z=>(32+H/2-z)*PPM;
+  c.fillStyle="rgb(126,121,112)"; c.fillRect(0,0,CW,CH);                        // fuga
+  for(let ty=0;ty*T<CH;ty++) for(let tx2=0;tx2*T<CW;tx2++){
+    const dark=((tx2+ty)&1)===1, x0=tx2*T+1, y0=ty*T+1, L=T-2;
+    let r,g,b;
+    if(dark){ const k=R(0.78,1.25); r=40*k; g=42*k; b=46*k; }
+    else { const k=R(0.90,1.03), y2=rnd()<0.08?R(0.92,0.97):1; r=234*k; g=227*k*y2; b=212*k*y2*y2; }
+    c.fillStyle="rgb("+Math.round(r)+","+Math.round(g)+","+Math.round(b)+")"; c.fillRect(x0,y0,L,L);
+    for(let q=0;q<10;q++){ const d=R(-14,14); c.fillStyle="rgba("+Math.round(r+d)+","+Math.round(g+d)+","+Math.round(b+d)+",0.5)";
+      c.fillRect(x0+R(0,L-2),y0+R(0,L-2),R(1,2.5),R(1,2.5)); }
+    c.fillStyle="rgba(255,255,255,"+(dark?0.07:0.18)+")"; c.fillRect(x0,y0,L,1); c.fillRect(x0,y0,1,L);
+    c.fillStyle="rgba(0,0,0,"+(dark?0.22:0.08)+")"; c.fillRect(x0,y0+L-1,L,1); c.fillRect(x0+L-1,y0,1,L); }
+  /* sentiero dei passi: linee larghe e morbide, grigie (scuriscono il bianco
+     e schiariscono il nero = contrasto consumato) */
+  const walk=(pts,w,a)=>{ c.save(); c.lineCap="round"; c.lineJoin="round"; c.filter="blur("+Math.round(w*0.35)+"px)";
+    c.strokeStyle="rgba(128,124,116,"+a+")"; c.lineWidth=w; c.beginPath();
+    pts.forEach((p,i)=>{ const px=X(p[0]), py=Y(p[1]); i?c.lineTo(px,py):c.moveTo(px,py); }); c.stroke(); c.restore(); };
+  walk([[0,23.7],[0.2,27.0],[0.3,31.0],[0.6,35.4]],150,0.30);                  // ingresso -> bancone
+  walk([[-2.6,35.6],[3.8,35.6]],120,0.24);                                       // davanti agli sgabelli
+  [[-3.3,27.4],[3.3,27.4],[-3.3,31.8],[3.3,31.8]].forEach(t=>{                   // corsia verso ogni tavolo (e il cameriere)
+    walk([[0.2,t[1]],[t[0]*0.55,t[1]]],90,0.20);
+    walk([[t[0]-0.85,t[1]],[t[0]+0.85,t[1]]],70,0.14); });
+  walk([[-2.3,34.95],[-1.4,31.8],[-0.6,27.4]],80,0.14);                           // giro del cameriere
+  /* sporco lungo i muri e negli angoli */
+  const edge=(x0,y0,x1,y1,dx,dy)=>{ const g=c.createLinearGradient(x0,y0,x0+dx,y0+dy);
+    g.addColorStop(0,"rgba(70,62,50,0.30)"); g.addColorStop(1,"rgba(70,62,50,0)"); c.fillStyle=g; c.fillRect(Math.min(x0,x1),Math.min(y0,y1),Math.abs(x1-x0)||Math.abs(dx),Math.abs(y1-y0)||Math.abs(dy)); };
+  edge(0,0,CW,0,0,45); edge(0,CH,CW,CH,0,-45); edge(0,0,0,CH,45,0); edge(CW,0,CW,CH,-45,0);
+  /* macchie di caffe' e d'acqua, segni di tacco */
+  for(let q=0;q<10;q++){ const x=R(0,CW), y=R(0,CH), rr=R(6,22);
+    const g=c.createRadialGradient(x,y,0,x,y,rr); g.addColorStop(0,"rgba(92,64,34,0.22)"); g.addColorStop(0.8,"rgba(92,64,34,0.12)"); g.addColorStop(1,"rgba(92,64,34,0)");
+    c.fillStyle=g; c.beginPath(); c.ellipse(x,y,rr,rr*R(0.6,1),R(0,3),0,6.283); c.fill(); }
+  for(let q=0;q<70;q++){ const x=R(0,CW), y=R(0,CH);
+    c.strokeStyle="rgba(18,18,20,"+R(0.10,0.26)+")"; c.lineWidth=R(1,2.2); c.beginPath(); c.moveTo(x,y);
+    c.quadraticCurveTo(x+R(-10,10),y+R(-10,10),x+R(-18,18),y+R(-8,8)); c.stroke(); }
+  tx.update(); tx.anisotropicFilteringLevel=8;
+  const m=new BABYLON.StandardMaterial("dn_floorM",scene);                       // nome invariato
+  m.diffuseTexture=tx; m.diffuseColor=new BABYLON.Color3(0.6,0.6,0.6);          // regola delle ombre (vedi floorMat)
+  m.specularColor=new BABYLON.Color3(0.30,0.30,0.30); m.specularPower=110;      // cera: punto luce stretto
+  /* riflesso di Fresnel dalla sonda: debole di fronte, piu' forte di sbieco.
+     ⚠️ .level della sonda NON si tocca (condiviso): l'intensita' la danno i
+     colori di Fresnel. Il materiale esce dalla renderList della sonda da solo
+     (probeSafe: chi la legge non ci si disegna dentro, niente feedback loop). */
+  if(scene.environmentTexture){ m.reflectionTexture=scene.environmentTexture;
+    const fr=new BABYLON.FresnelParameters(); fr.bias=0.05; fr.power=3.0;
+    fr.leftColor=new BABYLON.Color3(0.14,0.14,0.13); fr.rightColor=new BABYLON.Color3(0.02,0.02,0.02);   // 0,30 tingeva di blu le scure
+    m.reflectionFresnelParameters=fr; }
+  return m; }
 /* un NPC si siede: stessa posa del giocatore, sulle sue pin */
 function npcSit(n,s){
   const f=new BABYLON.Vector3(Math.sin(s.face),0,Math.cos(s.face));
