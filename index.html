@@ -38276,7 +38276,10 @@ function _povHeadList(){
   (avatarMeshes||[]).forEach(m=>{ if(/Casual_Head/.test(m.name)) L.push(m); });
   const H=(avatarMeshes||[]).find(m=>/Casual_Head/.test(m.name)&&m.skeleton);
   if(H){ if(H.__cut&&H.__cut.meshes) H.__cut.meshes.forEach(m=>L.push(m));
-    if(H.__acc) ["head","face"].forEach(k=>{ const a=H.__acc[k]; if(a&&a.meshes) a.meshes.forEach(m=>L.push(m)); }); }
+    if(H.__acc) ["head","face"].forEach(k=>{ const a=H.__acc[k]; if(a&&a.meshes) a.meshes.forEach(m=>L.push(m)); });
+    /* v302: anche occhi e bocca disegnati (dressFace): fuori dalla testa
+       restavano sospesi davanti alla camera in prima persona */
+    if(H.__face&&H.__face.meshes) H.__face.meshes.forEach(m=>L.push(m)); }
   return L;
 }
 /* mode: 0 = tutto visibile, 1 = senza testa (occhi), 2 = niente corpo
