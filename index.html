@@ -2951,7 +2951,7 @@ function mat(name,hex,emis){ const m=new BABYLON.StandardMaterial(name,scene);
 /* MARCIAPIEDE "NEW YORK" A LASTRE — texture procedurale (0 KB di asset: e'
    un canvas disegnato UNA volta a runtime). Lastre quadrate di cemento chiaro
    da ~1,5 m (i "flags" da 5 piedi dei marciapiedi di NYC) con giunti sottili,
-   leggera variazione di tono, puntinatura e qualche macchia di gomma.
+   grana del cemento, bordo lisciato, spazzolatura, crepe e macchie (v4 ott, sotto).
 
    ⚠️ PERCHE' LE OMBRE SPARIVANO SULLE PIANELLE (causa trovata il 25 set,
    riprodotta in una scena minima con le stesse luci e lo stesso shadowGen):
@@ -2974,31 +2974,90 @@ function mat(name,hex,emis){ const m=new BABYLON.StandardMaterial(name,scene);
    righe in lontananza. tileM = lato reale di una lastra in metri. */
 let _swBaseTx=null;
 function swBaseTex(){ if(_swBaseTx) return _swBaseTx;
-  const GN=4, PX=128, SZ=GN*PX, J=1.5;          // 4x4 lastre -> 512x512; giunto 2*J = 3 px (~3,5 cm)
+  /* v4 ott (Giacomo: «texture realistica anche nei marciapiedi»). Prima: un
+     grigio pieno per lastra + puntini. Ora 1024 px (~170 px/m) disegnati pixel
+     per pixel come l'asfalto, con quello che fa riconoscere una lastra di NYC:
+     · grana del cemento a tre scale + inerti che affiorano (puntini chiari/scuri);
+     · BORDO LISCIATO di ~6 cm lungo ogni giunto (il passaggio del ferretto),
+       piu' liscio e un filo piu' chiaro, chiuso dalla riga del ferro;
+     · interno SPAZZOLATO: striature fini e lunghe (la scopa sul cemento fresco);
+     · giunto irregolare con lo spigolo arrotondato in ombra e sporco dentro;
+     · qualche crepa, spigoli scheggiati, gomme schiacciate, macchie di
+       ruggine/olio e l'impronta di una foglia.
+     Seme fisso: stesso disegno a ogni avvio. Il rumore e' PERIODICO sul lato
+     della texture (nessuna cucitura); crepe e schegge restano dentro la loro
+     lastra. Media dei toni come prima (lastre ~240, giunto piu' scuro): con
+     diffuseColor 0,57 la regola delle ombre resta rispettata. */
+  const GN=4, PX=256, SZ=GN*PX;                 // 4x4 lastre da 1,5 m -> 1024x1024
+  const rnd=_seedRand("sidewalk-v2"), R=(a,b)=>a+rnd()*(b-a);
   const tx=new BABYLON.DynamicTexture("swBaseTx",{width:SZ,height:SZ},scene,true);
   const c=tx.getContext();
-  /* v241 (Giacomo, 25 set: «marciapiedi di un grigio più chiaro»): giunti
-     schiariti e lastre GRIGIO NEUTRO invece che calde (prima v,v-1,v-5 dava
-     un beige sporco); il resto della schiarita sta in diffuseColor, sotto. */
-  c.fillStyle="rgb(168,170,170)"; c.fillRect(0,0,SZ,SZ);          // colore del giunto
-  const R=(a,b)=>a+Math.random()*(b-a);
-  for(let gy=0;gy<GN;gy++) for(let gx=0;gx<GN;gx++){
-    const x0=gx*PX+J, y0=gy*PX+J, L=PX-2*J, v=Math.round(R(236,250));
-    c.fillStyle="rgb("+v+","+v+","+(v-2)+")"; c.fillRect(x0,y0,L,L);
-    for(let k=0;k<260;k++){ const d=Math.round(R(-10,8));        // puntinatura del cemento
-      c.fillStyle="rgba("+(v+d)+","+(v+d)+","+(v+d-2)+",0.55)";
-      c.fillRect(x0+R(0,L-2),y0+R(0,L-2),R(1,2.2),R(1,2.2)); }
-    /* v3 ott (Giacomo: «le macchie di gocce sul marciapiede rimangono
-       sempre?»). Si': erano le «gomme da masticare», puntini scuri e TONDI,
-       0-3 per lastra, identici a gocce di pioggia, e restavano col sole.
-       Ora una gomma ogni tanto, piu' chiara, schiacciata e irregolare; le
-       gocce vere le disegna WetFX solo quando piove. */
-    if(Math.random()<0.18){ c.fillStyle="rgba(150,150,146,0.45)"; c.beginPath();
-      c.ellipse(x0+R(10,L-10),y0+R(10,L-10),R(2.0,3.4),R(1.2,2.2),R(0,3),0,Math.PI*2); c.fill(); }
-    if(Math.random()<0.12){ const g=c.createRadialGradient(x0+L/2,y0+L/2,2,x0+L/2,y0+L/2,L*0.45); // macchia d'umido
-      g.addColorStop(0,"rgba(120,118,112,0.12)"); g.addColorStop(1,"rgba(120,118,112,0)");
-      c.fillStyle=g; c.fillRect(x0,y0,L,L); }
-  }
+  /* rumore di valore periodico: celle cx*cy px (anisotrope per le striature) */
+  const lat=(cx,cy)=>{ const nx=SZ/cx, ny=SZ/cy, g=new Float32Array(nx*ny); for(let i=0;i<g.length;i++) g[i]=rnd(); return {cx,cy,nx,ny,g}; };
+  const vn=(L,x,y)=>{ const fx=x/L.cx, fy=y/L.cy, ix=Math.floor(fx), iy=Math.floor(fy);
+    let u=fx-ix, w=fy-iy; u=u*u*(3-2*u); w=w*w*(3-2*w);
+    const x0=ix%L.nx, y0=iy%L.ny, x1=(x0+1)%L.nx, y1=(y0+1)%L.ny, g=L.g;
+    const a=g[y0*L.nx+x0], b=g[y0*L.nx+x1], p=g[y1*L.nx+x0], q=g[y1*L.nx+x1];
+    const t0=a+(b-a)*u; return t0+((p+(q-p)*u)-t0)*w; };
+  const N128=lat(128,128), N32=lat(32,32), N8=lat(8,8), N3=lat(4,4), NJ=lat(32,32);
+  const NB1=lat(64,2), NB2=lat(128,4);            // spazzolatura: lunga in x, fitta in y
+  const F=[]; for(let i=0;i<GN*GN;i++){ const nw=rnd()<0.08;                // qualche lastra rifatta: piu' liscia e fredda
+    F.push({v:R(236,248)+(nw?1:0), g:1+R(-0.005,0.004), b:nw?R(0.995,1.005):R(0.972,0.99),
+      rough:nw?0.75:R(0.95,1.3), broom:nw?R(2,3):R(3,5.5)}); }
+  const img=c.createImageData(SZ,SZ), d=img.data;
+  for(let y=0;y<SZ;y++){ const gy=(y/PX)|0, ly=y-gy*PX+0.5;
+    for(let x=0;x<SZ;x++){ const gx=(x/PX)|0, lx=x-gx*PX+0.5, f=F[gy*GN+gx];
+      const e=Math.min(lx,PX-lx,ly,PX-ly)+(vn(NJ,x,y)-0.5)*1.4;             // distanza dal giunto, bordo irregolare
+      const gr=(vn(N128,x,y)-0.5)*11+(vn(N32,x,y)-0.5)*9+(vn(N8,x,y)-0.5)*5+(vn(N3,x,y)-0.5)*4+(rnd()-0.5)*7;
+      let v, tg=f.g, tb=f.b;
+      if(e<2.3){ const dn=vn(N32,x+311,y+97);                                 // giunto: sporco, a tratti verdastro
+        v=156+(vn(N8,x,y)-0.5)*12+(rnd()-0.5)*10-dn*16; const gm=Math.max(0,Math.min(1,(dn-0.55)*4)); tg=1+0.02*gm; tb=1-0.035*gm; }
+      else if(e<4.2){ v=(f.v+gr*0.6)*(0.86+0.05*(e-2.3)); }                   // spigolo arrotondato in ombra
+      else if(e<11){ v=f.v+2.5+gr*0.5*f.rough; if(e>9.6) v-=5; }             // bordo lisciato + riga del ferro
+      else { v=f.v+gr*f.rough+(vn(NB1,x,y)-0.5)*f.broom*1.6+(vn(NB2,x,y)-0.5)*f.broom;
+        const r=rnd(); if(r<0.014) v-=R(6,14); else if(r<0.026) v+=R(4,8); }    // inerti affioranti (pochi e tenui: non devono sembrare gocce)
+      const k=(y*SZ+x)*4; d[k]=v; d[k+1]=v*tg; d[k+2]=v*tb; d[k+3]=255; } }
+  c.putImageData(img,0,0);
+  const inFlag=(i,fn)=>{ const x0=(i%GN)*PX, y0=((i/GN)|0)*PX; c.save(); c.beginPath(); c.rect(x0+3,y0+3,PX-6,PX-6); c.clip(); fn(x0,y0); c.restore(); };
+  /* crepe: partono da un giunto e attraversano la lastra, con qualche ramo */
+  const crack=(x,y,a,n,wd)=>{ const P=[[x,y]];
+    for(let i=0;i<n;i++){ a+=R(-0.45,0.45); x+=Math.cos(a)*R(6,12); y+=Math.sin(a)*R(6,12); P.push([x,y]);
+      if(rnd()<0.07&&wd>0.9) crack(x,y,a+R(-1.2,1.2),(n*0.35)|0,wd*0.7); }
+    const line=(ox,oy,col,w)=>{ c.strokeStyle=col; c.lineWidth=w; c.beginPath(); c.moveTo(P[0][0]+ox,P[0][1]+oy); for(const p of P) c.lineTo(p[0]+ox,p[1]+oy); c.stroke(); };
+    line(0.8,0.9,"rgba(255,255,255,0.22)",wd);                               // labbro illuminato
+    line(0,0,"rgba(78,78,76,"+R(0.55,0.75)+")",wd); };
+  [2,7,9,14].forEach(i=>inFlag(i,(x0,y0)=>{ const s=(rnd()*4)|0, t=R(30,PX-30);
+    const P=[[x0+t,y0+3,1.57],[x0+PX-3,y0+t,3.14],[x0+t,y0+PX-3,-1.57],[x0+3,y0+t,0]][s];
+    crack(P[0],P[1],P[2]+R(-0.5,0.5),(R(12,30))|0,R(1.0,1.5)); }));
+  /* spigoli scheggiati: cemento rotto piu' scuro e ruvido all'angolo della lastra */
+  [0,5,10,12,15].forEach(i=>{ const x0=(i%GN)*PX, y0=((i/GN)|0)*PX, q=(rnd()*4)|0;
+    const cx=x0+(q&1?PX-3:3), cy=y0+(q&2?PX-3:3), r=R(9,18), sx=q&1?-1:1, sy=q&2?-1:1;
+    c.save(); c.beginPath(); c.rect(x0+1,y0+1,PX-2,PX-2); c.clip();
+    c.fillStyle="rgba(150,148,142,0.55)"; c.beginPath(); c.moveTo(cx,cy);
+    for(let k=0;k<=6;k++){ const a=k/6*1.5708, rr=r*R(0.6,1.1); c.lineTo(cx+sx*Math.cos(a)*rr,cy+sy*Math.sin(a)*rr); }
+    c.closePath(); c.fill();
+    for(let k=0;k<40;k++){ const v=Math.round(R(110,190)); c.fillStyle="rgba("+v+","+v+","+(v-4)+",0.6)";
+      c.fillRect(cx+sx*R(0,r*0.8),cy+sy*R(0,r*0.8),R(1,2.5),R(1,2.5)); }
+    c.restore(); });
+  /* disegno periodico per macchie che possono stare ovunque */
+  const W=(x,y,fn)=>{ for(let ox=-SZ;ox<=SZ;ox+=SZ) for(let oy=-SZ;oy<=SZ;oy+=SZ) fn(x+ox,y+oy); };
+  const blot=(x,y,r,col,a)=>W(x,y,(X,Y)=>{ const g=c.createRadialGradient(X,Y,0,X,Y,r);
+    g.addColorStop(0,"rgba("+col+","+a+")"); g.addColorStop(0.7,"rgba("+col+","+(a*0.6)+")"); g.addColorStop(1,"rgba("+col+",0)");
+    c.fillStyle=g; c.beginPath(); c.ellipse(X,Y,r,r*R(0.55,0.95),R(0,3.14),0,6.283); c.fill(); });
+  blot(R(0,SZ),R(0,SZ),R(20,34),"150,110,70",0.07);                         // ruggine (un vaso, un cartello)
+  blot(R(0,SZ),R(0,SZ),R(26,44),"84,84,86",0.10);                           // olio / unto
+  blot(R(0,SZ),R(0,SZ),R(40,70),"120,118,108",0.07);                        // acqua asciugata
+  /* gomme da masticare: poche, schiacciate, irregolari, appena piu' scure
+     (NON tonde e scure: sembravano gocce di pioggia, vedi WetFX) */
+  for(let k=0;k<7;k++){ const x=R(0,SZ), y=R(0,SZ), r=R(2.5,4.2);
+    W(x,y,(X,Y)=>{ c.fillStyle="rgba(140,140,136,0.40)"; c.beginPath();
+      for(let j=0;j<7;j++){ const a=j/7*6.283, rr=r*R(0.6,1.15); c.lineTo(X+Math.cos(a)*rr*1.4,Y+Math.sin(a)*rr); }
+      c.closePath(); c.fill(); }); }
+  /* impronta di una foglia rimasta nel cemento bagnato */
+  { const x=R(0,SZ), y=R(0,SZ), a=R(0,6.283), L=R(14,20);
+    W(x,y,(X,Y)=>{ c.save(); c.translate(X,Y); c.rotate(a); c.fillStyle="rgba(122,104,80,0.13)";
+      c.beginPath(); c.moveTo(-L,0); c.quadraticCurveTo(0,-L*0.55,L,0); c.quadraticCurveTo(0,L*0.55,-L,0); c.fill();
+      c.strokeStyle="rgba(122,104,80,0.16)"; c.lineWidth=1; c.beginPath(); c.moveTo(-L*1.3,0); c.lineTo(L,0); c.stroke(); c.restore(); }); }
   tx.update();
   _swBaseTx=tx; return tx; }
 /* WetFXPlugin — il bagnato dei fondi (marciapiedi, piazze, strade, vialetti).
