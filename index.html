@@ -10241,8 +10241,8 @@ function talkToNewsagent(npc){
   npc=npc||NEWSAGENT; if(!npc) return;
   try{ npcTouch(npc); npc.metPlayer=true; }catch(e){}
   DialogueBox.open({ npc, icon:"\u{1F4F0}", sub:"Newsagent \u2014 High Street",
-    text:"Good morning! Newspapers, magazines\u2026 The QuestTown Gazette is out today.",
-    italian:"Buongiorno! Giornali, riviste\u2026 Oggi \u00e8 uscita la QuestTown Gazette.",
+    text:todG().en+" Newspapers, magazines\u2026 The QuestTown Gazette is out today.",
+    italian:todG().it+" Giornali, riviste\u2026 Oggi \u00e8 uscita la QuestTown Gazette.",
     buttons:[
       { label:"\u{1F4F0} Can I have a newspaper, please?", cls:"primary", act:()=>buyGazette(npc) },
       { label:"\u{1F4AC} Let's talk!"+(isChatty(npc)?" \u2b50\u00d7"+STAR_RULES.chattyMul:""),
@@ -10722,9 +10722,9 @@ function talkToMayor(npc){
 function mayorGiveCard(npc){
   Card.give();
   DialogueBox.open({ npc, icon:"\u{1F3DB}\uFE0F", sub:"The Mayor \u2014 Town Hall",
-    text:"Good morning! I am the Mayor of QuestTown. Every citizen needs a Citizen Card. "
+    text:todG().en+" I am the Mayor of QuestTown. Every citizen needs a Citizen Card. "
         +"This one is yours. Complete a unit and I put a stamp on it!",
-    italian:"Buongiorno! Sono il Sindaco di QuestTown. Ogni cittadino ha una Citizen Card. "
+    italian:todG().it+" Sono il Sindaco di QuestTown. Ogni cittadino ha una Citizen Card. "
         +"Questa \u00e8 la tua: completa un'unit\u00e0 e ci metto un timbro!",
     buttons:[ { label:"\u{1FAAA} Look at my card", cls:"primary", act:()=>openDiary("card") },
               { label:"\u{1F4DC} The Architect?", act:()=>mayorTale(npc) },
@@ -20187,8 +20187,8 @@ function talkToSam(npc){
   const line=samStepLine();
   if(!npc.metPlayer){ npc.metPlayer=true;
     DialogueBox.open({ npc, icon:"🛒", sub:"Shopkeeper",
-      text:"Good morning! I'm Sam, the shopkeeper. "+line.en,
-      italian:"Buongiorno! Sono Sam, il negoziante. "+line.it,
+      text:todG().en+" I'm Sam, the shopkeeper. "+line.en,
+      italian:todG().it+" Sono Sam, il negoziante. "+line.it,
       buttons:[{label:"Hi Sam!", cls:"primary", act:()=>{}}] });
   } else {
     DialogueBox.open({ npc, icon:"🛒", sub:"Shopkeeper", text:againLine(line).en, italian:againLine(line).it,
@@ -20268,7 +20268,7 @@ function runShopping(npc){
   const distractors = isPl ? ["a","much","Has",lastSing]
                            : ["any",(u4Article(en)==="a"?"an":"a"),"Has","some"];
   DialogueBox.open({ npc, icon:"🛒", sub:"Grammatica — have got ("+(sk.idx+1)+"/"+sk.list.length+")",
-    text: sk.idx===0 ? "Good morning! What can I do for you?" : "Anything else?",
+    text: sk.idx===0 ? todG().en+" What can I do for you?" : "Anything else?",
     italian:"Chiedi con le tessere: “Have you got …?” — la lista è nell'obiettivo in alto.",
     tiles:{ tokens, distractors, checkLabel:"✔ Chiedi",
       onCheck:(w)=>{ const ok=w.join(" ")===tokens.join(" ");
@@ -20527,8 +20527,8 @@ function talkToAnna(npc){
   const line=annaStepLine();
   if(!npc.metPlayer){ npc.metPlayer=true;
     DialogueBox.open({ npc, icon:"🧺", sub:"Shop assistant",
-      text:"Good morning! I'm Anna, welcome to the Market. "+_noWelcome(line.en),
-      italian:"Buongiorno! Sono Anna. "+line.it,
+      text:todG().en+" I'm Anna, welcome to the Market. "+_noWelcome(line.en),
+      italian:todG().it+" Sono Anna. "+line.it,
       buttons:[{label:"Hi Anna!", cls:"primary", act:()=>{}}] });
   } else {
     DialogueBox.open({ npc, icon:"🧺", sub:"Shop assistant", text:againLine(line).en, italian:againLine(line).it,
@@ -20600,7 +20600,7 @@ function runMarket(npc){
   const distractors = (e.mode==="plur") ? ["Does","got","a", mkSing(e.item)]
                                         : ["Does","got","a","some"];
   DialogueBox.open({ npc, icon:"🧺", sub:"Grammatica — present simple ("+(mk.idx+1)+"/"+mk.list.length+")",
-    text: mk.idx===0 ? "Good morning! What can I do for you?" : "Anything else?",
+    text: mk.idx===0 ? todG().en+" What can I do for you?" : "Anything else?",
     italian:"Chiedi con le tessere: “Do you have any …?” — la lista è nell'obiettivo in alto.",
     tiles:{ tokens, distractors, checkLabel:"✔ Chiedi",
       onCheck:(w)=>{ const ok=w.join(" ")===tokens.join(" ");
@@ -22144,6 +22144,11 @@ function npcGreet(npc){
   const g=greetTimeOfDay();
   return { en:g.en+"! ", it:g.it+"! " };
 }
+/* saluto secondo l'ora, gia' con il punto esclamativo: {en:"Good afternoon!", it:"Buon pomeriggio!"}.
+   v4 ott (Giacomo): Sam, Anna, Nina, il Sindaco, l'edicolante, Nora e le
+   commesse dei giochi di ruolo dicevano «Good morning!» scritto fisso,
+   anche alle sei di sera. */
+function todG(){ const g=greetTimeOfDay(); return { en:g.en+"!", it:g.it+"!" }; }
 function npcMet(npc){ return !!_npcSeen[_npcKey(npc)] || !!(npc&&npc.metPlayer); }
 function greetJoin(pre,line){ line=String(line||"");
   if(!pre) return line;
@@ -27107,8 +27112,8 @@ function talkToNina(npc){
   const line=ninaStepLine();
   if(!npc.metPlayer){ npc.metPlayer=true;
     DialogueBox.open({ npc, icon:"\u{1f457}", sub:"Shop Assistant",
-      text:"Good morning! I'm Nina, the shop assistant. "+line.en,
-      italian:"Buongiorno! Sono Nina, la commessa. "+line.it,
+      text:todG().en+" I'm Nina, the shop assistant. "+line.en,
+      italian:todG().it+" Sono Nina, la commessa. "+line.it,
       buttons:[{label:"Hi Nina!", cls:"primary", act:()=>{}}] });
   } else {
     DialogueBox.open({ npc, icon:"\u{1f457}", sub:"Shop Assistant", text:againLine(line).en, italian:againLine(line).it,
@@ -27245,7 +27250,7 @@ function runClothesShop(npc){
     const tokens=["I'm","looking","for",art].concat(u4Words(it.en,"."));
     const distractors=["look","at",(art==="a"?"an":"a"),"searching"];
     DialogueBox.open({ npc, icon:"\u{1f457}", sub:"Funzioni \u2014 shopping (1/3)",
-      text:"Good morning! Can I help you?",
+      text:todG().en+" Can I help you?",
       italian:"Rispondi con le tessere: \u201cI'm looking for \u2026\u201d (cerchi: "+it.it+").",
       tiles:{ tokens, distractors, checkLabel:"\u2714 Chiedi",
         onCheck:(w)=>{ const ok=w.join(" ")===tokens.join(" ");
@@ -34310,7 +34315,7 @@ function buildWeatherNPCs(){
     tint:{ Purple:"#2f6b4a", LightBlue:"#31414d" } }); regTownPop(KAI);
 }
 function noraStepLine(){
-  if(Quest.unit!==UNIT_WEATHER) return { en:"Good morning! I write down the weather here every day.", it:"" };
+  if(Quest.unit!==UNIT_WEATHER) return { en:todG().en+" I write down the weather here every day.", it:"" };
   switch(Quest.step&&Quest.step.id){
     case "lex":    return { en:"Listen to me and walk to the right sign!",
                             it:"Ascolta l'indizio e cammina fino al cartello giusto." };
