@@ -41166,7 +41166,12 @@ function welcomeStudent(){
      ragazza + cappellino + sciarpa, in scena c'era il ragazzo nudo). */
   try{ syncLook(); }catch(e){}
   if(Student.teacher){ toast("\u{1F469}\u200D\u{1F3EB} Modalit\u00e0 docente \u2014 "+Gate.label());
-    verificaDocente(); return; }
+    verificaDocente();
+    /* v302 (Giacomo: «fatto, ma non si vedono»). Il ramo docente usciva qui,
+       PRIMA di Presenza.avvia(): i codici di collaudo, che sono docente, non
+       si collegavano mai. Loro la presenza la avviano (classe COLLAUDO_CLASSE). */
+    if(isCollaudo(Student.code)) try{ Presenza.avvia(); }catch(e){}
+    return; }
   if(Student.ospite){ toast("\u{1F440} Ospite \u2014 i progressi non verranno salvati"); return; }
   /* il NOME, non il codice: e' l'unica cosa che permette a un ragazzo di
      accorgersi che sta giocando nei panni del compagno di prima. */
