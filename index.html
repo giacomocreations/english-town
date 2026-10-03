@@ -3118,9 +3118,21 @@ vec2 tDrop(vec2 p,float cell,float seed,float time,float dens){
   vec2 q=p/cell+seed; vec2 id=floor(q); vec2 f=fract(q); vec2 h=tHash2(id+seed);
   float ph=time*1.1+h.x*7.0; float t=fract(ph);
   float on=step(tHash2(id+floor(ph)*1.37).x,dens);
-  vec2 d=f-(0.33+0.34*h.yx); float r=length(d);
+  vec2 d=f-(0.25+0.5*h.yx); float r=length(d);
   float x=(r-t*0.32)/0.035; float e=exp(-x*x)*(1.0-t)*(1.0-t);
   return (r>0.0001?d/r:vec2(0.0))*(-2.0*x*e)*on; }
+mat2 tRot(float a){ float c=cos(a); float s=sin(a); return mat2(c,-s,s,c); }
+/* macchia di goccia: al massimo una per cella, su un reticolo di passo cell
+   RUOTATO di ang (tre reticoli storti e di passo diverso, sommati, non
+   mostrano piu' righe ne' colonne); densita' dens < 1: mai tutte le celle */
+float tSpot(vec2 p,float cell,float ang,float seed,float dens){
+  vec2 q=tRot(ang)*p/cell+seed; vec2 id=floor(q); vec2 h=tHash2(id+vec2(seed*1.7,11.3));
+  if(h.x>dens) return 0.0;
+  vec2 v=fract(q)-(0.26+0.48*tHash2(id+vec2(3.7,seed)));
+  v.x*=0.8+0.45*h.y;                                              // un po' ovale
+  float r=0.06+0.18*h.y*h.y;                                      // tante piccole, poche grandi
+  float d=length(v)*(0.8+0.45*tNoise(v*18.0+id));                 // bordo frastagliato
+  return (1.0-smoothstep(r*0.4,r,d))*(0.5+0.5*tHash(id+vec2(9.1,seed))); }
 #endif`,
 CUSTOM_FRAGMENT_UPDATE_DIFFUSE:`#ifdef WETFX
 /* MARCIAPIEDI MENO UNIFORMI (Giacomo, 3 ott). La texture e' una sola,
@@ -3142,14 +3154,24 @@ if(tPave>0.5 && tQ>0.5 && normalW.y>0.7){
    uniforme ma a macchie di goccia scure, sempre piu' fitte, che poi si
    fondono nel bagnato pieno. Mai col sole: tWet=0 -> niente. */
 if(tWet>0.003 && tQ>0.5 && normalW.y>0.7){
-  vec2 tGq=vPositionW.xz/0.16; vec2 tGi=floor(tGq); vec2 tGh=tHash2(tGi+vec2(17.0,5.0));
-  vec2 tGv=fract(tGq)-(0.25+0.5*tGh);
-  float tGd=length(tGv)*(0.85+0.3*tNoise(tGv*24.0+tGi));          // bordo irregolare, non un cerchio perfetto
-  float tGr=0.10+0.16*tHash(tGi+vec2(2.3,9.1));
-  float tGon=step(tGh.x,smoothstep(0.0,0.45,tWet))*(1.0-smoothstep(0.55,0.85,tWet));
-  float tCovG=0.0;
-  { vec2 tPg=vPositionW.xz; tCovG=max(tIn(tCov0,tPg),max(tIn(tCov1,tPg),tIn(tCov2,tPg))); }
-  baseColor.rgb*=1.0-0.20*tGon*(1.0-smoothstep(tGr*0.45,tGr,tGd))*(1.0-tCovG);
+  /* v4 ott (Giacomo: «le gocce fanno troppo griglia»): era UN reticolo da
+     16 cm allineato al mondo, una goccia per cella spostata di mezza cella al
+     massimo e, col bagnato, quasi tutte accese -> righe e colonne. Ora tre
+     reticoli ruotati (13, 21 e 34 cm), goccia ovunque nella cella, mai piu'
+     del ~55% delle celle accese, e la pioggia cade a chiazze (rumore largo).
+     Da lontano (oltre ~25 m) le macchie si fondono nel loro scurito medio:
+     puntini da 2 px sfarfallerebbero. */
+  vec2 tPg=vPositionW.xz;
+  float tGon=smoothstep(0.0,0.45,tWet)*(1.0-smoothstep(0.55,0.85,tWet));
+  float tGden=tGon*(0.45+0.55*tNoise(tPg*0.7+3.3));
+  float tGfar=clamp(1.0-length(vEyePosition.xyz-vPositionW)/25.0,0.0,1.0);
+  float tGs=0.0;
+  if(tGfar>0.0){
+    tGs=max(tSpot(tPg,0.13,0.52,1.0,tGden*0.55),max(tSpot(tPg,0.21,-0.87,7.0,tGden*0.45),tSpot(tPg,0.34,1.31,13.0,tGden*0.30)));
+  }
+  tGs=mix(0.10*tGden,tGs,tGfar);
+  float tCovG=max(tIn(tCov0,tPg),max(tIn(tCov1,tPg),tIn(tCov2,tPg)));
+  baseColor.rgb*=1.0-0.22*tGs*(1.0-tCovG);
 }
 float tK=0.0; float tPud=0.0; vec3 tN=normalW;
 if(tWet>0.001 && normalW.y>0.7){
@@ -3167,7 +3189,7 @@ if(tWet>0.001 && normalW.y>0.7){
        lontano (oltre ~35 m sarebbero solo rumore che sfarfalla) */
     float tFade=clamp(1.0-tDist/35.0,0.0,1.0);
     if(tRain>0.02 && tFade>0.0){
-      vec2 tR=tDrop(tP,0.55,0.0,tTime,tRain)*0.6+tDrop(tP,0.38,4.1,tTime*1.17,tRain)*0.4;
+      vec2 tR=tRot(-0.61)*tDrop(tRot(0.61)*tP,0.55,0.0,tTime,tRain)*0.6+tRot(1.13)*tDrop(tRot(-1.13)*tP,0.38,4.1,tTime*1.17,tRain)*0.4;   // reticoli ruotati: niente righe
       tR*=tFade*mix(0.18,1.0,tPud);
       tN=normalize(vec3(tR.x,1.0,tR.y));
     }
@@ -6366,18 +6388,28 @@ function buildTown(){
      fondo, pad, strisce e piazzali sono un'unica pavimentazione continua. */
   asph.material=sidewalkMat("asphm",320,300); asph.parent=townRoot;
   // strada di servizio — livelli Y separati per evitare z-fighting/sfarfallio
+  /* SW_UNDER (v4 ott, Giacomo: «sfarfallio del bordo del marciapiede vicino
+     all'asfalto»). La carreggiata (0,08) e il marciapiede (0,043/0,046) si
+     toccavano esattamente sul bordo, senza una faccia verticale: dal
+     marciapiede, nel gradino di 3,5 cm si vedeva cio' che sta SOTTO, cioe' il
+     fondo a quota 0 (dove fino a oggi c'era anche la strada dell'aeroporto
+     complanare, vedi buildAirport) -> una riga di 1-3 px che sfarfallava a
+     ogni movimento. Ora ogni striscia di marciapiede prosegue 40 cm SOTTO
+     l'asfalto: nel gradino si vede la stessa lastra (UV allineate al mondo),
+     cioe' niente. */
+  const SW_UNDER=0.4;
   function roadH(z,w,noSW){ const r=BABYLON.MeshBuilder.CreateGround("rh",{width:w||300,height:11},scene);
     r.material=roadMat("roadm"); r.position.set(0,0.08,z); r.parent=townRoot;
     // marciapiedi larghi 5.5 su entrambi i lati (dal bordo strada z±5.5 fino a z±11)
-    if(!noSW) [-8.25,8.25].forEach(dz=>{ const s=BABYLON.MeshBuilder.CreateGround("swh",{width:w||300,height:5.5},scene);
-      s.material=sidewalkMat("swm",w||300,5.5); s.position.set(0,0.046,z+dz); s.parent=townRoot; s.__ground=true; });
+    if(!noSW) [-8.25,8.25].forEach(dz=>{ const s=BABYLON.MeshBuilder.CreateGround("swh",{width:w||300,height:5.5+SW_UNDER},scene);
+      s.material=sidewalkMat("swm",w||300,5.5); s.position.set(0,0.046,z+dz-Math.sign(dz)*SW_UNDER/2); s.parent=townRoot; s.__ground=true; });
     for(let i=-((w||300)/2)+4;i<((w||300)/2);i+=8){ const d=BABYLON.MeshBuilder.CreateGround("ln",{width:2.4,height:0.5},scene);
       d.material=wetFX(mat("lnm","#1d2a32","#d9c98f")); d.position.set(i,0.11,z); d.parent=townRoot; } }
   function roadV(x,h){ const r=BABYLON.MeshBuilder.CreateGround("rv",{width:11,height:h||300},scene);
     r.material=roadMat("roadm2"); r.position.set(x,0.08,0); r.parent=townRoot;
     // marciapiedi larghi 5.5 sui due lati (y=0.043 < 0.046 delle strisce H: niente z-fighting agli incroci)
-    [-8.25,8.25].forEach(dx=>{ const s=BABYLON.MeshBuilder.CreateGround("swv",{width:5.5,height:h||300},scene);
-      s.material=sidewalkMat("swm",5.5,h||300); s.position.set(x+dx,0.043,0); s.parent=townRoot; s.__ground=true; }); }
+    [-8.25,8.25].forEach(dx=>{ const s=BABYLON.MeshBuilder.CreateGround("swv",{width:5.5+SW_UNDER,height:h||300},scene);
+      s.material=sidewalkMat("swm",5.5,h||300); s.position.set(x+dx-Math.sign(dx)*SW_UNDER/2,0.043,0); s.parent=townRoot; s.__ground=true; }); }
   // PIAZZALE PAVIMENTATO del NEW DISTRICT (Anno 3): tutta la fila di palazzi
   // (Job Centre Tower, City Hospital, City Life Plaza, TechLab, Climate & Fire)
   // appoggia qui; la carreggiata del Modern Boulevard scorre DAVANTI alle
@@ -6407,9 +6439,9 @@ function buildTown(){
   { const Z0=PARK_AVE_Z0, Z1=150;
     const r=BABYLON.MeshBuilder.CreateGround("rv",{width:11,height:Z1-Z0},scene);
     r.material=roadMat("roadm2"); r.position.set(0,0.08,(Z0+Z1)/2); r.parent=townRoot;
-    [-8.25,8.25].forEach(dx=>{ const s=BABYLON.MeshBuilder.CreateGround("swv",{width:5.5,height:186},scene);
-      s.material=sidewalkMat("swm",5.5,186); s.position.set(dx,0.043,57); s.parent=townRoot; s.__ground=true; });
-    [[-30.5,-5.5],[5.5,Z0]].forEach(q=>{ const h=q[1]-q[0];
+    [-8.25,8.25].forEach(dx=>{ const s=BABYLON.MeshBuilder.CreateGround("swv",{width:5.5+SW_UNDER,height:186},scene);
+      s.material=sidewalkMat("swm",5.5,186); s.position.set(dx-Math.sign(dx)*SW_UNDER/2,0.043,57); s.parent=townRoot; s.__ground=true; });
+    [[-30.5-SW_UNDER,-5.5+SW_UNDER],[5.5-SW_UNDER,Z0+SW_UNDER]].forEach(q=>{ const h=q[1]-q[0];
       const s=BABYLON.MeshBuilder.CreateGround("swp",{width:11,height:h},scene);
       s.material=sidewalkMat("swm",11,h); s.position.set(0,0.043,(q[0]+q[1])/2); s.parent=townRoot; s.__ground=true; }); }
   roadV(-72);      // verso la stazione (ovest)
@@ -11276,7 +11308,11 @@ function buildAirport(){
   // ACCORCIATA a est (termina a x=38, davanti al terminal): il vecchio tratto
   // che moriva sulla promenade di Central Park è ora ESPLANADE pedonale (v. sotto)
   const road=BABYLON.MeshBuilder.CreateGround("aprd",{width:116,height:18},scene);
-  road.material=roadMat("aprdm");   // v3 ott: stesso asfalto delle altre strade road.position.set(-20,0.086,zRoad); road.parent=townRoot;
+  road.material=roadMat("aprdm");   // v3 ott: stesso asfalto delle altre strade
+  /* ⚠️ v4 ott: questa riga era finita DENTRO il commento qui sopra: la strada
+     restava a (0,0,0), complanare col fondo «asph» in mezzo alla citta'
+     (z-fighting asfalto/lastre) e all'aeroporto mancava. */
+  road.position.set(-20,0.086,zRoad); road.parent=townRoot;
   for(let x=-74;x<=30;x+=8){ const d=BABYLON.MeshBuilder.CreateGround("aprdl",{width:3.6,height:0.6},scene);
     d.material=mat("aprdlm","#1d2a32","#e8d99a"); d.position.set(RX+x,0.116,zRoad); d.parent=townRoot; }
   [-7.6,7.6].forEach(dz=>{ const e=BABYLON.MeshBuilder.CreateGround("aprde",{width:116,height:0.45},scene);
