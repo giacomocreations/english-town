@@ -3107,6 +3107,63 @@ if(tK>0.001){
 function wetFX(m){ if(!m||m.__wetFX) return m;
   try{ m.__wetFX=new WetFXPlugin(m); }catch(e){ console.warn("Bagnato non attivo:",e); }
   return m; }
+/* ASFALTO (Giacomo, 3 ott: «troppo uniforme, dagli un tocco di realismo»).
+   Era un grigio pieno (#3c4248). Ora una texture disegnata una volta (0 KB):
+   grana dell'aggregato, inerti chiari, chiazze morbide piu' chiare e piu'
+   scure, crepe ramificate, rattoppi rettangolari col bordo sigillato,
+   macchie d'olio. Una ripetizione = ASPH_REP metri.
+   ⚠️ INCROCI: le carreggiate H e V stanno alla STESSA quota (0,08) e si
+   sovrappongono. Col grigio pieno lo z-fighting non si vedeva; con una
+   texture sfarfallerebbe. Per questo le UV si allineano al MONDO
+   (alignWorldUV, la stessa tecnica dei marciapiedi): dove due strade si
+   sovrappongono mostrano lo stesso pixel, e lo z-fighting resta invisibile.
+   Niente usura direzionale (corsie) nella texture per lo stesso motivo.
+   Regola delle ombre: texture chiara + diffuseColor 0,5. */
+const ASPH_REP=16;
+let _asphTx=null;
+function asphTex(){ if(_asphTx) return _asphTx;
+  const SZ=1024, rnd=_seedRand("asphalt"), R=(a,b)=>a+rnd()*(b-a), PXM=SZ/ASPH_REP;
+  const tx=new BABYLON.DynamicTexture("asphTx",{width:SZ,height:SZ},scene,true);
+  const c=tx.getContext();
+  const W=(x,y,f)=>{ for(let ox=-SZ;ox<=SZ;ox+=SZ) for(let oy=-SZ;oy<=SZ;oy+=SZ) f(x+ox,y+oy); };   // disegno periodico
+  /* grana: rumore per pixel su un grigio medio-chiaro */
+  const img=c.createImageData(SZ,SZ), d=img.data;
+  for(let i=0;i<SZ*SZ;i++){ const v=124+(rnd()-0.5)*26, k=i*4;
+    d[k]=v; d[k+1]=v+3; d[k+2]=v+8; d[k+3]=255; }
+  c.putImageData(img,0,0);
+  /* chiazze larghe: asfalto piu' vecchio (chiaro) e piu' nuovo/unto (scuro) */
+  for(let k=0;k<70;k++){ const x=R(0,SZ), y=R(0,SZ), r=R(1.2,4.5)*PXM, dk=rnd()<0.55;
+    const col=dk?"70,74,80":"170,172,174", a=R(0.10,0.22);
+    W(x,y,(X,Y)=>{ const g=c.createRadialGradient(X,Y,0,X,Y,r);
+      g.addColorStop(0,"rgba("+col+","+a+")"); g.addColorStop(1,"rgba("+col+",0)");
+      c.fillStyle=g; c.fillRect(X-r,Y-r,2*r,2*r); }); }
+  /* inerti: puntini chiari e scuri */
+  for(let k=0;k<26000;k++){ const v=rnd()<0.6?Math.round(R(160,200)):Math.round(R(60,90));
+    c.fillStyle="rgba("+v+","+v+","+(v+4)+","+R(0.35,0.8)+")"; c.fillRect(R(0,SZ),R(0,SZ),R(1,2.2),R(1,2.2)); }
+  /* rattoppi: rettangoli di asfalto piu' nuovo, bordo sigillato piu' scuro */
+  for(let k=0;k<3;k++){ const w=R(1.4,3.4)*PXM, h=R(1.0,2.6)*PXM, x=R(0,SZ), y=R(0,SZ), v=Math.round(R(92,108));
+    W(x,y,(X,Y)=>{ c.fillStyle="rgba("+v+","+(v+3)+","+(v+8)+",0.55)"; c.fillRect(X,Y,w,h);
+      c.strokeStyle="rgba(40,42,46,0.55)"; c.lineWidth=R(2,3.5); c.strokeRect(X,Y,w,h); }); }
+  /* crepe: passeggiate a caso con qualche ramo */
+  const crack=(x,y,a,len,wd)=>{ c.lineWidth=wd; c.strokeStyle="rgba(38,40,44,"+R(0.45,0.7)+")";
+    const pts=[[x,y]]; for(let i=0;i<len;i++){ a+=R(-0.6,0.6); x+=Math.cos(a)*R(5,11); y+=Math.sin(a)*R(5,11); pts.push([x,y]);
+      if(rnd()<0.08 && wd>0.8) crack(x,y,a+R(-1.4,1.4),Math.round(len*0.4),wd*0.7); }
+    W(0,0,(ox,oy)=>{ c.beginPath(); c.moveTo(pts[0][0]+ox,pts[0][1]+oy); for(const q of pts) c.lineTo(q[0]+ox,q[1]+oy); c.stroke(); }); };
+  for(let k=0;k<9;k++) crack(R(0,SZ),R(0,SZ),R(0,6.283),Math.round(R(12,34)),R(1.0,1.8));
+  /* macchie d'olio */
+  for(let k=0;k<8;k++){ const x=R(0,SZ), y=R(0,SZ), rx=R(0.25,0.7)*PXM, ry=rx*R(0.5,0.9);
+    W(x,y,(X,Y)=>{ const g=c.createRadialGradient(X,Y,0,X,Y,rx);
+      g.addColorStop(0,"rgba(30,30,34,0.30)"); g.addColorStop(1,"rgba(30,30,34,0)");
+      c.fillStyle=g; c.beginPath(); c.ellipse(X,Y,rx,ry,R(0,3),0,6.283); c.fill(); }); }
+  tx.update(); tx.wrapU=tx.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE;
+  _asphTx=tx; return tx; }
+function roadMat(name){
+  const t=new BABYLON.Texture(null,scene,{internalTexture:asphTex().getInternalTexture()});
+  t.wrapU=t.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE; t.anisotropicFilteringLevel=8;
+  const m=new BABYLON.StandardMaterial(name,scene); m.diffuseTexture=t;
+  m.diffuseColor=new BABYLON.Color3(0.50,0.50,0.50);      // 0,5 x ~0,49 = il #3c4248 di prima, in media
+  m.specularColor=new BABYLON.Color3(0.03,0.03,0.03);
+  return wetFX(m); }
 function sidewalkMat(name,w,h,tileM){
   tileM=tileM||1.5; const rep=4*tileM;          // metri coperti da una ripetizione della texture
   const base=swBaseTex();
@@ -3281,8 +3338,11 @@ function grassMat(name,w,h,opts){ opts=opts||{};
    rifatte con la CSG da punchMetroHoles). Per i box (cornici metro) conta la
    faccia superiore. Si saltano solo le mesh ruotate di angoli non retti. */
 function alignPavingUV(){
-  if(!_swBaseTx) return;
-  const base=_swBaseTx.getInternalTexture(), REP=4*1.5;   // come sidewalkMat (4 lastre da 1,5 m)
+  if(_swBaseTx) alignWorldUV(_swBaseTx,4*1.5);             // come sidewalkMat (4 lastre da 1,5 m)
+  if(_asphTx) alignWorldUV(_asphTx,ASPH_REP);              // asfalto: stessa tecnica, agli incroci le due strade coincidono
+}
+function alignWorldUV(baseTx,REP){
+  const base=baseTx.getInternalTexture();
   const used=new Map();                                    // materiale -> trasformazione gia' assegnata
   const V=BABYLON.Vector3;
   scene.meshes.forEach(m=>{
@@ -4453,9 +4513,10 @@ class FacadeFXPlugin extends BABYLON.MaterialPluginBase{
   getClassName(){ return "FacadeFXPlugin"; }
   isCompatible(shaderLanguage){ return shaderLanguage===BABYLON.ShaderLanguage.GLSL; }
   prepareDefines(defines){ defines.FACADEFX=true; }
-  getUniforms(){ return { ubo:[{name:"fQ",size:1,type:"float"}],
-    fragment:"#ifdef FACADEFX\nuniform float fQ;\n#endif" }; }
-  bindForSubMesh(ubo){ ubo.updateFloat("fQ",fzOn()); }
+  getUniforms(){ return { ubo:[{name:"fQ",size:1,type:"float"},{name:"fWet",size:1,type:"float"}],
+    fragment:"#ifdef FACADEFX\nuniform float fQ;uniform float fWet;\n#endif" }; }
+  bindForSubMesh(ubo){ ubo.updateFloat("fQ",fzOn());
+    ubo.updateFloat("fWet",(typeof WETFX!=="undefined")?WETFX.wet:0); }
   getCustomCode(shaderType){ if(shaderType!=="fragment") return null;
     return {
 CUSTOM_FRAGMENT_DEFINITIONS:"#ifdef FACADEFX\n"+FZ_GLSL+"\n#endif",
@@ -4493,7 +4554,12 @@ if(fQ>0.5){
   float fzZone=smoothstep(0.22,0.62,fzNoise(vec2(fzU*0.14+3.3,fzP.y*0.045)));
   float fzGrain=0.55+0.45*fzNoise(vec2(fzUw*11.0,fzP.y*1.7));
   float fzS=fzLine*fzEnv*fzZone*fzGrain*clamp(1.4-fzD/110.0,0.0,1.0);
-  fzK*=1.0-0.42*fzS*fzVert;
+  /* v3 ott (Giacomo): da asciutto le colature si intuiscono appena; con la
+     pioggia (WETFX.wet: sale in ~15 s, scende in ~1,5 min) si scuriscono
+     via via, e la facciata intera si fa un filo piu' scura, come
+     l'intonaco bagnato. */
+  fzK*=1.0-mix(0.16,0.55,fWet)*fzS*fzVert;
+  fzK*=1.0-0.10*fWet*fzVert;
   /* macchie larghe (pannelli, intonaco rifatto, sole) */
   float fzM=fzNoise(vec2(fzU*0.11+fzP.y*0.025,fzP.y*0.085+(fzP.x+fzP.z)*0.031));
   fzK*=0.90+0.16*fzM;
@@ -6110,14 +6176,14 @@ function buildTown(){
   asph.material=sidewalkMat("asphm",320,300); asph.parent=townRoot;
   // strada di servizio — livelli Y separati per evitare z-fighting/sfarfallio
   function roadH(z,w,noSW){ const r=BABYLON.MeshBuilder.CreateGround("rh",{width:w||300,height:11},scene);
-    r.material=wetFX(mat("roadm","#3c4248")); r.position.set(0,0.08,z); r.parent=townRoot;
+    r.material=roadMat("roadm"); r.position.set(0,0.08,z); r.parent=townRoot;
     // marciapiedi larghi 5.5 su entrambi i lati (dal bordo strada z±5.5 fino a z±11)
     if(!noSW) [-8.25,8.25].forEach(dz=>{ const s=BABYLON.MeshBuilder.CreateGround("swh",{width:w||300,height:5.5},scene);
       s.material=sidewalkMat("swm",w||300,5.5); s.position.set(0,0.046,z+dz); s.parent=townRoot; s.__ground=true; });
     for(let i=-((w||300)/2)+4;i<((w||300)/2);i+=8){ const d=BABYLON.MeshBuilder.CreateGround("ln",{width:2.4,height:0.5},scene);
       d.material=wetFX(mat("lnm","#1d2a32","#d9c98f")); d.position.set(i,0.11,z); d.parent=townRoot; } }
   function roadV(x,h){ const r=BABYLON.MeshBuilder.CreateGround("rv",{width:11,height:h||300},scene);
-    r.material=wetFX(mat("roadm2","#3c4248")); r.position.set(x,0.08,0); r.parent=townRoot;
+    r.material=roadMat("roadm2"); r.position.set(x,0.08,0); r.parent=townRoot;
     // marciapiedi larghi 5.5 sui due lati (y=0.043 < 0.046 delle strisce H: niente z-fighting agli incroci)
     [-8.25,8.25].forEach(dx=>{ const s=BABYLON.MeshBuilder.CreateGround("swv",{width:5.5,height:h||300},scene);
       s.material=sidewalkMat("swm",5.5,h||300); s.position.set(x+dx,0.043,0); s.parent=townRoot; s.__ground=true; }); }
@@ -6149,7 +6215,7 @@ function buildTown(){
      alla griglia mondo da alignPavingUV): stesso colore, stesso motivo. */
   { const Z0=PARK_AVE_Z0, Z1=150;
     const r=BABYLON.MeshBuilder.CreateGround("rv",{width:11,height:Z1-Z0},scene);
-    r.material=wetFX(mat("roadm2","#3c4248")); r.position.set(0,0.08,(Z0+Z1)/2); r.parent=townRoot;
+    r.material=roadMat("roadm2"); r.position.set(0,0.08,(Z0+Z1)/2); r.parent=townRoot;
     [-8.25,8.25].forEach(dx=>{ const s=BABYLON.MeshBuilder.CreateGround("swv",{width:5.5,height:186},scene);
       s.material=sidewalkMat("swm",5.5,186); s.position.set(dx,0.043,57); s.parent=townRoot; s.__ground=true; });
     [[-30.5,-5.5],[5.5,Z0]].forEach(q=>{ const h=q[1]-q[0];
@@ -6561,7 +6627,45 @@ function buildLife(){
       if(k==="cumulus" && Math.random()<0.45)
         cloud(cx+(Math.random()<0.5?-1:1)*(22+Math.random()*10), 33+Math.random()*5, cz+(Math.random()-0.5)*20, 1.4+Math.random()*0.8, "puffs");
     } })();
+  buildRainClouds();
 }
+/* NUVOLE DI PIOGGIA (Giacomo, 3 ott: «quando piove molto deve essere
+   nuvoloso, piu' piove piu' nuvole; via via che smette si diradano e torna
+   come quando e' sereno»). Il cielo sereno resta quello sopra; queste sono
+   in PIU': strati larghi e cumuli grossi, piu' bassi, anche sopra il centro
+   (dove il cielo sereno ha il suo «buco»). Ognuna ha una soglia: compare
+   quando la pioggia la supera e sfuma quando scende, quindi con la
+   pioggerella ne arrivano poche e col diluvio coprono il cielo. Le soglie
+   sono rimescolate, cosi' le nuvole nuove non arrivano tutte da un lato.
+   Stessi materiali delle altre: si scuriscono con la pioggia e la notte
+   gia' da soli (vedi il blocco del cielo). Niente proxy-ombra: con 26
+   nuvole in piu' la citta' sarebbe un mosaico di macchie, e sotto la
+   pioggia il sole e' gia' velato. */
+const RAIN_CLOUDS=[];
+function buildRainClouds(){
+  const N=26, R=Math.random, thr=[];
+  for(let i=0;i<N;i++) thr.push(0.05+0.62*(i/(N-1)));
+  for(let i=N-1;i>0;i--){ const j=(R()*(i+1))|0; const t=thr[i]; thr[i]=thr[j]; thr[j]=t; }
+  for(let i=0;i<N;i++){
+    const a=R()*Math.PI*2, d=Math.sqrt(R())*175;
+    const k=R()<0.6?"strato":"cumulus";
+    const c=cloud(Math.cos(a)*d, k==="strato"?34+R()*8:30+R()*6, Math.sin(a)*d,
+      k==="strato"?2.8+R()*1.4:2.8+R()*1.0, k);
+    c.getChildMeshes(false).forEach(m=>{ if(m.name==="csh"){ m.__occluder=false; m.dispose(); } });
+    c.getChildMeshes(false).forEach(m=>{ m.__v0=m.visibility; });
+    c.__rainThr=thr[i]; c.__rainF=0; c.setEnabled(false);
+    RAIN_CLOUDS.push(c); } }
+function rainCloudsTick(dt){
+  if(!RAIN_CLOUDS.length) return;
+  const f=(typeof RAIN!=="undefined")?RAIN.forza:0;
+  for(const c of RAIN_CLOUDS){
+    const t=c.__rainThr, tgt=Math.max(0,Math.min(1,(f-t)/0.14));
+    const nf=c.__rainF+(tgt-c.__rainF)*(1-Math.exp(-dt/5));     // 5 s: arrivano e se ne vanno piano
+    if(Math.abs(nf-c.__rainF)<0.004 && !(tgt===0 && nf>0 && nf<0.01)) continue;
+    c.__rainF=(tgt===0 && nf<0.01)?0:nf;
+    if(c.__rainF<=0){ if(c.isEnabled()) c.setEnabled(false); continue; }
+    if(!c.isEnabled()) c.setEnabled(true);
+    c.getChildMeshes(false).forEach(m=>{ m.visibility=(m.__v0||1)*c.__rainF; }); } }
 
 /* =====================================================================
    PROPS AMBIENTALI — Pass v2, Step 2 (panchine, fioriere, siepi, auto,
@@ -12212,8 +12316,15 @@ function waterFX(material,cfg){ try{ material.__waterFX=new WaterFXPlugin(materi
    diametro). Fondale chiaro sotto l'acqua bassa, sabbia BAGNATA scura al
    pelo dell'acqua, asciutta verso il prato. Regola delle ombre: texture
    chiara + diffuseColor 0,5. */
-function lakeBankMat(rWater,rBank){
-  const SZ=512, rnd=_seedRand("lake-bank"), R=(a,b)=>a+rnd()*(b-a), k=rWater/rBank, cx=SZ/2;
+/* v3 ott (Giacomo: «il bordo col prato e' troppo netto, irreale»): il disco
+   ora e' piu' largo della sabbia (rOuter) e oltre la sabbia vera (rBank)
+   la texture SFUMA in trasparenza sul prato, con un bordo irregolare
+   (rumore sull'angolo e sul raggio), ciuffi d'erba che entrano nella sabbia
+   e lingue di sabbia che entrano nel prato; nella fascia di passaggio la
+   sabbia si scurisce un poco, mescolata alla terra. */
+function lakeBankMat(rWater,rBank,rOuter){
+  rOuter=rOuter||rBank;
+  const SZ=1024, rnd=_seedRand("lake-bank"), R=(a,b)=>a+rnd()*(b-a), k=rWater/rOuter, kb=rBank/rOuter, cx=SZ/2;
   const tx=new BABYLON.DynamicTexture("lakeBankTx",{width:SZ,height:SZ},scene,true);
   const c=tx.getContext(), g=c.createRadialGradient(cx,cx,0,cx,cx,SZ/2);
   g.addColorStop(0,"rgb(190,178,138)");               // fondale (visto attraverso l'acqua)
@@ -12221,17 +12332,42 @@ function lakeBankMat(rWater,rBank){
   g.addColorStop(k-0.02,"rgb(164,144,108)");          // bagnasciuga (stretto)
   g.addColorStop(k+0.012,"rgb(170,150,112)");
   g.addColorStop(k+0.035,"rgb(228,212,172)");         // sabbia asciutta
-  g.addColorStop(1,"rgb(234,220,182)");
+  g.addColorStop(Math.min(0.99,kb),"rgb(226,210,170)");
+  g.addColorStop(1,"rgb(176,166,124)");               // fascia di passaggio: sabbia e terra
   c.fillStyle=g; c.fillRect(0,0,SZ,SZ);
-  for(let i=0;i<9000;i++){ const v=R(-26,20);          // granelli
+  for(let i=0;i<36000;i++){ const v=R(-26,20);         // granelli
     c.fillStyle="rgba("+Math.round(190+v)+","+Math.round(172+v)+","+Math.round(130+v)+",0.45)";
     c.fillRect(R(0,SZ),R(0,SZ),R(0.8,1.8),R(0.8,1.8)); }
   for(let i=0;i<90;i++){ const a=R(0,6.283), r=R(k*0.55,0.99)*SZ/2;   // sassolini
     c.fillStyle="rgba("+Math.round(R(120,170))+","+Math.round(R(115,160))+","+Math.round(R(105,145))+",0.8)";
     c.beginPath(); c.ellipse(cx+Math.cos(a)*r,cx+Math.sin(a)*r,R(1.2,2.8),R(1,2),R(0,3),0,6.283); c.fill(); }
-  tx.update();
+  /* bordo: alpha per pixel. 1 dentro la sabbia, 0 fuori, con una soglia che
+     ondeggia (rumore a due scale sull'angolo) e una grana fine che sfrangia
+     il passaggio in ciuffi invece di una sfumatura liscia */
+  if(rOuter>rBank){
+    const hash=(x,y)=>{ const t=Math.sin(x*127.1+y*311.7)*43758.5453; return t-Math.floor(t); };
+    const vn=(x,y)=>{ const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy,u=fx*fx*(3-2*fx),v=fy*fy*(3-2*fy);
+      const a=hash(ix,iy),b=hash(ix+1,iy),c2=hash(ix,iy+1),e=hash(ix+1,iy+1);
+      return a+(b-a)*u+(c2-a)*v+(a-b-c2+e)*u*v; };
+    const id=c.getImageData(0,0,SZ,SZ), d=id.data, half=SZ/2, mpp=rOuter/half;   // metri per pixel
+    for(let py=0;py<SZ;py++) for(let px=0;px<SZ;px++){
+      const dx=px-half, dy=py-half, rm=Math.sqrt(dx*dx+dy*dy)*mpp;
+      if(rm<rBank-0.6) continue;
+      const i=(py*SZ+px)*4;
+      if(rm>=rOuter){ d[i+3]=0; continue; }
+      const wx=dx*mpp, wy=dy*mpp;
+      /* soglia del bordo (m): a meta' fra sabbia e disco, +-0,9 m */
+      const edge=(rBank+rOuter)*0.5-0.35+(vn(wx*0.35,wy*0.35)-0.5)*1.5+(vn(wx*1.3+7,wy*1.3+3)-0.5)*0.5;
+      const fine=(vn(wx*7.0,wy*7.0)-0.5)*0.45;                     // ciuffi
+      let a=(edge-rm+fine)/0.45; a=Math.max(0,Math.min(1,a)); a=a*a*(3-2*a);
+      a*=Math.max(0,Math.min(1,(rOuter-rm)/0.25));                  // mai fino al bordo del disco
+      d[i+3]=Math.round(a*255); }
+    c.putImageData(id,0,0);
+  }
+  tx.update(); tx.hasAlpha=(rOuter>rBank);
   const m=new BABYLON.StandardMaterial("lakeBankm",scene);   // nome invariato
   m.diffuseTexture=tx; tx.anisotropicFilteringLevel=8;
+  if(rOuter>rBank){ m.useAlphaFromDiffuseTexture=true; m.transparencyMode=BABYLON.Material.MATERIAL_ALPHABLEND; }
   m.diffuseColor=new BABYLON.Color3(0.5,0.5,0.5);           // mai bianco: il clamp si mangia le ombre
   m.specularColor=new BABYLON.Color3(0.02,0.02,0.02);
   return m; }
@@ -12396,6 +12532,64 @@ function buildFountainJets(x,y,z){
     FOUNT_PS.__ugello={x:x,y:y,z:z};          // serve al collaudo per rifare la balistica
   }catch(e){ console.warn("Getti fontana non attivi:",e); }
 }
+/* IMPRONTE SULLA SABBIA (Giacomo, 3 ott: «camminando lascia impronte»).
+   Un pool di 40 decalcomanie (piani rasoterra con un'orma disegnata), una
+   ogni passo (0,62 m) alternando destra e sinistra, ruotate nella direzione
+   di marcia. Restano ~45 s, gli ultimi 12 sfumano, poi la piu' vecchia si
+   ricicla. Solo sulla sabbia vera (fra il pelo dell'acqua e LKr+1,7, dove
+   la sabbia non sfuma ancora nel prato). Il pool nasce al primo passo sulla
+   sabbia: chi non ci va non paga nulla. */
+let LAKE_SAND=null;
+const SANDP={ list:[], next:0, last:null, acc:0, side:1, mat:null };
+function _sandPrintMat(){ if(SANDP.mat) return SANDP.mat;
+  const W=64, H=128, dt=new BABYLON.DynamicTexture("sandPrintTx",{width:W,height:H},scene,true), c=dt.getContext();
+  c.clearRect(0,0,W,H);
+  /* una suola intera (non due ovali staccati: da lontano si leggevano come
+     due puntini): pianta larga, arco stretto, tallone tondo */
+  const sole=(fill,blur,g)=>{ c.save(); c.filter="blur("+blur+"px)"; c.fillStyle=fill;
+    c.beginPath();
+    c.moveTo(W*0.50,H*0.05+g);
+    c.bezierCurveTo(W*(0.86-g/W),H*0.06+g, W*(0.88-g/W),H*0.36, W*(0.70-g/W),H*0.52);   // fianco esterno della pianta
+    c.bezierCurveTo(W*(0.62-g/W),H*0.60, W*(0.70-g/W),H*0.74, W*(0.68-g/W),H*0.84);     // arco -> tallone
+    c.bezierCurveTo(W*0.64,H*0.97-g, W*0.30,H*0.97-g, W*(0.28+g/W),H*0.84);             // tallone
+    c.bezierCurveTo(W*(0.26+g/W),H*0.70, W*(0.20+g/W),H*0.48, W*(0.16+g/W),H*0.34);     // arco interno
+    c.bezierCurveTo(W*(0.12+g/W),H*0.14, W*0.28,H*0.05+g, W*0.50,H*0.05+g);
+    c.fill(); c.restore(); };
+  sole("rgba(255,246,222,0.45)",4,0);              // orlo di sabbia spinta fuori, piu' chiaro
+  sole("rgba(96,78,52,0.75)",2.5,4);               // l'impronta, in ombra
+  dt.update(); dt.hasAlpha=true;
+  const m=new BABYLON.StandardMaterial("sandPrintM",scene);
+  m.diffuseTexture=dt; m.useAlphaFromDiffuseTexture=true; m.diffuseColor=new BABYLON.Color3(0.62,0.6,0.56);
+  m.specularColor=new BABYLON.Color3(0,0,0); m.backFaceCulling=false;
+  SANDP.mat=m; return m; }
+function _sandPrintPool(){ if(SANDP.list.length) return;
+  const m=_sandPrintMat();
+  for(let i=0;i<40;i++){ const g=BABYLON.MeshBuilder.CreateGround("sandPrint",{width:0.15,height:0.32},scene);
+    g.material=m; g.isPickable=false; g.receiveShadows=false; g.alphaIndex=2; g.__dyn=true;
+    if(typeof townRoot!=="undefined"&&townRoot) g.parent=townRoot;
+    if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(g);
+    g.setEnabled(false); SANDP.list.push({ m:g, t:0 }); } }
+function sandPrintsTick(dt){
+  if(!LAKE_SAND || typeof player==="undefined" || !player) return;
+  if(SANDP.list.length) for(const q of SANDP.list){ if(q.t>0){ q.t-=dt;
+    if(q.t<=0){ q.t=0; q.m.setEnabled(false); } else q.m.visibility=Math.min(1,q.t/12)*0.8; } }
+  if(typeof area!=="undefined" && area!=="town"){ SANDP.last=null; return; }
+  const P=player.position;
+  if(!SANDP.last){ SANDP.last={ x:P.x, z:P.z }; return; }
+  const dx=P.x-SANDP.last.x, dz=P.z-SANDP.last.z, d=Math.hypot(dx,dz);
+  if(d<0.0005) return;
+  SANDP.last.x=P.x; SANDP.last.z=P.z;
+  if(d>2){ SANDP.acc=0; return; }                    // teletrasporto (taxi, cambio area)
+  const L=LAKE_SAND, r=Math.hypot(P.x-L.x,P.z-L.z);
+  if(r<L.r0+0.15 || r>L.r1 || P.y>L.y+0.8){ SANDP.acc=0; return; }
+  SANDP.acc+=d; if(SANDP.acc<0.62) return; SANDP.acc=0;
+  _sandPrintPool();
+  const h=Math.atan2(dx,dz); SANDP.side=-SANDP.side;
+  const q=SANDP.list[SANDP.next]; SANDP.next=(SANDP.next+1)%SANDP.list.length;
+  const ox=Math.cos(h)*0.10*SANDP.side, oz=-Math.sin(h)*0.10*SANDP.side;   // di lato rispetto alla marcia
+  q.m.position.set(P.x+ox, L.y+0.012, P.z+oz);
+  q.m.rotation.y=h; q.m.scaling.x=SANDP.side;        // piede sinistro = destro specchiato
+  q.m.visibility=0.8; q.t=45; q.m.setEnabled(true); }
 /* Il bagnato insegue la pioggia: si bagna in ~15 s, si asciuga in ~1,5 min.
    Il bersaglio non e' la forza pari pari: anche una pioggerella, dopo un
    po', lascia le strade lucide (0,30 = lucido senza pozzanghere). */
@@ -12413,6 +12607,8 @@ function wetTick(dt){
    corregge da solo. Costa un confronto e una radice. */
 function acquaTick(dt){
   wetTick(dt);
+  try{ rainCloudsTick(dt); }catch(e){}
+  try{ sandPrintsTick(dt); }catch(e){}
   WATERFX.t=(WATERFX.t+dt)%3600;                   // 1 h di ciclo: il float dello shader resta preciso
   WATERFX.rain=(typeof RAIN!=="undefined")?Math.max(0,Math.min(1,RAIN.forza)):0;
   WATERFX.jet+=((_jetOn?1:0)-WATERFX.jet)*Math.min(1,dt*1.5);   // onde e schiuma dei getti sfumano
@@ -12505,10 +12701,14 @@ function buildPark(){
   // LAGO (Anno 2 Unit 3 Weather/geografia · Anno 3 Unit 3 Survival)
   const LKx=PX+14, LKz=PZ-34, LKr=16;
   // riva sabbiosa: disco piu' largo appena sopra il prato -> bordo naturale, non un "adesivo" piatto
-  const bank=BABYLON.MeshBuilder.CreateDisc("lakeBank",{radius:LKr+1.7,tessellation:44},scene);
+  /* v3 ott: disco piu' largo (LKr+3,6): la sabbia vera resta fino a LKr+1,7
+     (vialetti e campo la misurano li'), oltre sfuma nel prato. alphaIndex
+     basso: si disegna PRIMA delle altre trasparenze (l'acqua ci sta sopra). */
+  const bank=BABYLON.MeshBuilder.CreateDisc("lakeBank",{radius:LKr+3.6,tessellation:72},scene);
   bank.rotation.x=Math.PI/2; bank.position.set(LKx,0.145,LKz);
-  bank.material=lakeBankMat(LKr,LKr+1.7);   // sabbia disegnata (era #7a6b4c a tinta unita)
-  bank.parent=townRoot; bank.isPickable=false; bank.__ground=true;
+  bank.material=lakeBankMat(LKr,LKr+1.7,LKr+3.6);   // sabbia disegnata (era #7a6b4c a tinta unita)
+  bank.parent=townRoot; bank.isPickable=false; bank.__ground=true; bank.alphaIndex=1;
+  LAKE_SAND={ x:LKx, z:LKz, r0:LKr, r1:LKr+1.7, y:0.145 };
   // acqua: disco semitrasparente che riflette il cielo (probe) con fresnel -> sembra acqua vera
   const lake=BABYLON.MeshBuilder.CreateDisc("lake",{radius:LKr,tessellation:44},scene);
   lake.rotation.x=Math.PI/2; lake.position.set(LKx,0.24,LKz);
@@ -20826,7 +21026,14 @@ const SCHOOL_PUPILS=[
   { id:"pupil_lily", name:"Lily", model:"avatarW", h:1.50, desk:{x:-1.15,z:1.7} },
   { id:"pupil_ben",  name:"Ben",  model:"avatar",  h:1.52, desk:{x: 1.15,z:5.0} },
 ];
-const SCHOOL_FREE_DESKS=SCHOOL_DESKS.filter(d=>!SCHOOL_PUPILS.some(p=>p.desk.x===d.x&&p.desk.z===d.z));
+/* v3 ott (Giacomo: «Tim a scuola e' ancora in piedi, fai che sia seduto»):
+   anche Tim ha il suo banco, l'ultimo a sinistra, accanto al corridoio
+   ovest (x -2.5, quello di Miss Grace): ci si arriva comodi per parlargli.
+   Restano 6 banchi per 7 oggetti: uno ne ospita DUE, uno per lato (gli
+   oggetti stanno gia' a ±0.17 dal centro, vedi schoolShuffleDesks). */
+const SCHOOL_TIM_DESK={ x:-1.15, z:5.0 };
+const SCHOOL_FREE_DESKS=SCHOOL_DESKS.filter(d=>!SCHOOL_PUPILS.some(p=>p.desk.x===d.x&&p.desk.z===d.z)
+  && !(d.x===SCHOOL_TIM_DESK.x && d.z===SCHOOL_TIM_DESK.z));
 function schoolShuffleDesks(){
   const I=(typeof INTERIORS!=="undefined")?INTERIORS[UNIT0.area]:null; if(!I||!UNIT0.items) return false;
   const C=I.center;
@@ -20834,10 +21041,12 @@ function schoolShuffleDesks(){
   const must=desk.filter(it=>it.en==="exercise book");
   const rest=shuffle(desk.filter(it=>it.en!=="exercise book"));
   const on=must.concat(rest.slice(0,6)), off=rest.slice(6);
-  const spots=shuffle(SCHOOL_FREE_DESKS).slice(0,on.length);
+  const free=shuffle(SCHOOL_FREE_DESKS), sides=[];
   let nuovi=false;
-  on.forEach((it,i)=>{ const d=spots[i];
-    const x=d.x+(Math.random()<0.5?-0.17:0.17)+(Math.random()-0.5)*0.06;
+  on.forEach((it,i)=>{ const k=i%free.length, d=free[k];
+    /* primo giro: lato a caso; secondo giro sullo stesso banco: l'altro lato */
+    const sd=(i<free.length)?(sides[k]=(Math.random()<0.5?-1:1)):-sides[k];
+    const x=d.x+sd*0.17+(Math.random()-0.5)*0.06;
     const z=d.z-0.04+(Math.random()-0.5)*0.10;
     it.__off=false;
     if(it.mesh){ it.mesh.setEnabled(true); it.mesh.position.set(C.x+x,0.645,C.z+z);
@@ -20861,8 +21070,17 @@ function buildSchoolNPCs(){
   /* v301: Tim e' un ragazzo come gli altri: il rig del giocatore (non un
      adulto a sorteggio) e, essendo un compagno di classe, niente cappello
      ne' occhiali in aula (npcLookFor: opt.school) */
+  const TD=SCHOOL_TIM_DESK;
   TIM=spawnNPC({ id:"tim", name:"Tim", sub:"Classmate", area:UNIT0.area, model:"avatar", keepModel:true,
-    x:C.x-0.2, z:C.z+3.4, face:Math.PI, tint:"yellow", height:1.55, interact:talkToTim });
+    x:C.x+TD.x, z:C.z+TD.z+0.42, face:Math.PI, tint:"yellow", height:1.55, snap:false, watch:false, radius:2.2,
+    interact:talkToTim });
+  /* seduto come Lily e Ben (stessa sedia, stessa quota); watch:false come i
+     clienti del diner: girarsi verso il giocatore spezzerebbe la posa */
+  if(TIM){ TIM.watch=false;
+    const tryT=k=>{ if(TIM.__seated) return; let ok=false;
+      try{ ok=!!(TIM.pins&&TIM.pins.length) && npcSitAt(TIM,C.x+TD.x,C.z+TD.z+0.42,Math.PI,0.4225,0,0.04); }catch(e){ console.warn("[school] Tim sit",e); }
+      if(!ok && k<40) setTimeout(()=>tryT(k+1),100); };
+    setTimeout(()=>tryT(0),0); }
   SCHOOL_PUPILS.forEach(p=>{ try{
     const n=spawnNPC({ id:p.id, name:p.name, sub:"Pupil", area:UNIT0.area, model:p.model, keepModel:true,
       x:C.x+p.desk.x, z:C.z+p.desk.z+0.42, face:Math.PI, height:p.h, snap:false, watch:false });
