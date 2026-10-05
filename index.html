@@ -4653,6 +4653,31 @@ pipe.sharpenEnabled=true; pipe.sharpen.edgeAmount=0.28; pipe.sharpen.colorAmount
 pipe.depthOfFieldEnabled=true;
 pipe.depthOfFieldBlurLevel=BABYLON.DepthOfFieldEffectBlurLevel.Medium;
 pipe.depthOfField.fStop=1.6; pipe.depthOfField.focalLength=58; pipe.depthOfField.focusDistance=20000;
+/* ⚠️ OGNI INTERRUTTORE DELLA PIPELINE COSTAVA 3,5 SECONDI (misurato il 5 ott
+   su un PC veloce; su un Acer vecchio o un tablet economico 4-8 volte tanto:
+   «si ferma su Woman_B» e gli scatti del primo minuto erano questo).
+   Babylon a ogni ricostruzione (bloom, FXAA, nitidezza, profondita' di campo,
+   campioni) butta via il post-process dell'image processing — che rimette
+   applyByPostProcess=false — e lo ricrea — che lo rimette a true. Ogni cambio
+   avvisa TUTTI i 1625 materiali, e ognuno scorre TUTTE le ~4300 mesh per
+   segnarsi da ricontrollare: due giri da 7 milioni per un valore che alla
+   fine e' identico a prima. Qui gli avvisi si trattengono durante la
+   ricostruzione e se ne manda UNO solo se la configurazione e' cambiata
+   davvero (non succede mai, ma se succedesse i materiali lo saprebbero).
+   Se una versione futura di Babylon rinomina _buildPipeline, il ritocco
+   semplicemente non si aggancia: torna lento, non si rompe. */
+function qSenzaAvvisi(f){
+  const ipc=scene.imageProcessingConfiguration, ob=ipc&&ipc.onUpdateParameters;
+  if(!ob||typeof ob.notifyObservers!=="function") return f();
+  const firma=()=>[ipc.applyByPostProcess,ipc.isEnabled,ipc.toneMappingEnabled,ipc.toneMappingType,
+    ipc.vignetteEnabled,ipc.colorCurvesEnabled,ipc.colorGradingEnabled,ipc.ditheringEnabled].join();
+  const f0=firma(), orig=ob.notifyObservers; let n=0;
+  ob.notifyObservers=function(){ n++; return true; };
+  try{ return f(); }
+  finally{ ob.notifyObservers=orig; if(n&&firma()!==f0) ob.notifyObservers(ipc); } }
+try{ const bp=pipe._buildPipeline;
+  if(typeof bp==="function") pipe._buildPipeline=function(){ return qSenzaAvvisi(()=>bp.apply(pipe,arguments)); };
+}catch(e){ console.warn("pipeline: ritocco avvisi non agganciato",e); }
 
 // glow per lampioni/insegne (cielo escluso)
 const glowL=new BABYLON.GlowLayer("glow", scene, {mainTextureFixedSize:512, blurKernelSize:24});
@@ -5042,6 +5067,88 @@ function rebuildOctree(){
   }catch(e){ console.warn("octree non attivo:",e); }
 }
 scene.onBeforeRenderObservable.add(()=>{ if(_octN>=0 && scene.meshes.length!==_octN) rebuildOctree(); });
+
+/* =====================================================================
+   PERSONAGGI FUORI QUADRO: NIENTE OSSA, NIENTE DISEGNO (5 ott: «sul vecchio
+   Acer e sul tablet economico resta lento anche abbassando la risoluzione»).
+   Le mesh dei personaggi sono «sempre attive» (spawnNPC): con lo skinning il
+   loro riquadro e' quello della posa di riposo e Babylon le tagliava a
+   sproposito. Prezzo misurato: TUTTI i 37 personaggi (83 scheletri, 355 mesh)
+   calcolati e disegnati a ogni frame, anche all'aeroporto o alle spalle della
+   camera — 13,7 ms per frame solo per scegliere cosa disegnare su un PC
+   veloce, quattro-otto volte tanto su un Acer. Non dipende dai pixel: ecco
+   perche' cambiare risoluzione non cambiava niente.
+   Qui il taglio lo facciamo noi, con una sfera GENEROSA attorno al carrier
+   (piu' larga se ci sono le ombre: un personaggio appena fuori quadro puo'
+   proiettare l'ombra dentro). Fuori dalla sfera inquadrata o oltre la
+   distanza del livello, layerMask=0: Babylon salta corpo, vestiti e
+   scheletro. Nessun altro codice tocca il layerMask dei personaggi (il POV
+   lo usa solo sulla testa del giocatore).
+   Gira dentro la valutazione delle mesh, coi piani della camera che sta
+   disegnando in quel momento: vale anche per la macchina fotografica delle
+   cartoline. Via d'uscita in aula: ET.taglioPersonaggi(false). */
+const PG_DIST={ basso:70, medio:110, alto:1e9, max:1e9 };
+let _pgOn=true, _pgN=-1; const _pgMesh=new Map(), _pgC=new BABYLON.Vector3();
+function _pgMostra(ms,vis){ for(let i=0;i<ms.length;i++){ const m=ms[i];
+  if(vis){ if(m.__pgMask!==undefined){ m.layerMask=m.__pgMask; m.__pgMask=undefined; } }
+  else if(m.__pgMask===undefined){ m.__pgMask=m.layerMask; m.layerMask=0; } } }
+function taglioPersonaggi(){
+  let L; try{ L=NPCS; }catch(e){ return; }
+  if(scene.meshes.length!==_pgN){ _pgN=scene.meshes.length; _pgMesh.clear(); }
+  const cam=scene.activeCamera, pl=scene.frustumPlanes; if(!cam||!pl) return;
+  const cp=cam.globalPosition, dMax=_pgOn?(PG_DIST[qLevel]||1e9):1e9, r=(sun.shadowEnabled?5:2.5);
+  for(let i=0;i<L.length;i++){ const n=L[i]; if(!n||!n.carrier||!n.holder) continue;
+    let ms=_pgMesh.get(n); if(!ms){ ms=n.holder.getChildMeshes(false); _pgMesh.set(n,ms); }
+    let vis=true;
+    if(_pgOn){ n.carrier.getAbsolutePosition().addToRef(BABYLON.Vector3.UpReadOnly,_pgC);
+      if(BABYLON.Vector3.Distance(_pgC,cp)>dMax+r) vis=false;
+      else for(let k=0;k<pl.length;k++){ if(pl[k].dotCoordinate(_pgC)< -r){ vis=false; break; } } }
+    _pgMostra(ms,vis); } }
+scene.onBeforeActiveMeshesEvaluationObservable.add(()=>{ try{ taglioPersonaggi(); }catch(e){} });
+
+/* =====================================================================
+   RAGGI VELOCI (5 ott) — il ciclo di gioco lancia tre raggi a OGNI frame
+   (terreno sotto i piedi, muro dietro la camera, palazzi da sfumare fra
+   camera e avatar). scene.multiPickWithRay scorre tutte le ~4300 mesh e, per
+   ognuna che passa il filtro, inverte la sua matrice PRIMA di sapere se il
+   raggio le passa vicino: 1184 palazzi = 1184 inversioni per un raggio di
+   pochi metri. Misurato: 1,8 ms per frame su un PC veloce, 4-8 volte tanto
+   sull'Acer.
+   pickRaggio(ray, flag, multi) da' lo stesso risultato (stessi pickedPoint,
+   distance, pickedMesh: e' la stessa mesh.intersects che usa Babylon), ma:
+   · cerca solo fra le mesh col flag (lista ricalcolata quando cambia il
+     numero di mesh, e comunque ogni 2 s se un flag viene messo dopo);
+   · scarta con pochi conti chi ha la sfera d'ingombro lontana dal raggio;
+   · solo i pochi rimasti pagano inversione e test sui triangoli.
+   Il flag si ricontrolla a ogni chiamata: toglierlo vale subito. */
+const _pvListe=new Map(); let _pvN=-1, _pvT=0;
+const _pvInv=new BABYLON.Matrix(), _pvRay=new BABYLON.Ray(BABYLON.Vector3.Zero(),BABYLON.Vector3.Up(),1);
+function _pvLista(flag){ const now=performance.now();
+  if(scene.meshes.length!==_pvN || now-_pvT>2000){ _pvN=scene.meshes.length; _pvT=now; _pvListe.clear(); }
+  let l=_pvListe.get(flag); if(!l){ l=scene.meshes.filter(m=>m[flag]===true); _pvListe.set(flag,l); } return l; }
+function _pvCerca(ray,L,ok,multi){
+  const o=ray.origin, d=ray.direction;
+  const dl=d.length()||1, len=ray.length*dl, dx=d.x/dl, dy=d.y/dl, dz=d.z/dl;
+  const out=multi?[]:null; let best=null;
+  for(let i=0;i<L.length;i++){ const m=L[i];
+    if(!ok(m) || m.isDisposed() || !m.subMeshes) continue;
+    const w=m.computeWorldMatrix();
+    if(!m.hasThinInstances){ const bs=m.getBoundingInfo().boundingSphere, c=bs.centerWorld;
+      const cx=c.x-o.x, cy=c.y-o.y, cz=c.z-o.z; let t=cx*dx+cy*dy+cz*dz; t=t<0?0:(t>len?len:t);
+      const ex=cx-dx*t, ey=cy-dy*t, ez=cz-dz*t, r=bs.radiusWorld*1.01+0.01;
+      if(ex*ex+ey*ey+ez*ez>r*r) continue;
+      w.invertToRef(_pvInv); BABYLON.Ray.TransformToRef(ray,_pvInv,_pvRay);
+      const pi=m.intersects(_pvRay,false,undefined,false,w);
+      if(!pi||!pi.hit) continue;
+      if(multi) out.push(pi); else if(!best||pi.distance<best.distance) best=pi; }
+    else {   // istanze sottili: le gestisce solo la pick della scena
+      if(multi){ const h=scene.multiPickWithRay(ray,x=>x===m); if(h) h.forEach(p=>out.push(p)); }
+      else { const h=scene.pickWithRay(ray,x=>x===m); if(h&&h.hit&&(!best||h.distance<best.distance)) best=h; } } }
+  return multi?out:(best||new BABYLON.PickingInfo()); }
+function pickRaggio(ray,flag,multi){ return _pvCerca(ray,_pvLista(flag),m=>m[flag]===true,multi); }
+/* stessa cosa con un filtro qualsiasi (stesso contratto di scene.(multi)PickWithRay):
+   niente lista in cache, ma il prefiltro sulla sfera resta, ed e' quello che conta */
+function pickVeloce(ray,pred,multi){ return _pvCerca(ray,scene.meshes,pred,multi); }
 
 // selettore qualità (Basso/Medio/Alto/Max) + auto-rilevamento via FPS
 const QLEVELS=["basso","medio","alto","max"]; let qLevel="medio";
@@ -7381,8 +7488,8 @@ function pedOnCarriageway(){
   if(!on){
     try{
       const ROAD=/^(roadm|lnm|cwm)/;
-      const h=scene.multiPickWithRay(new BABYLON.Ray(new BABYLON.Vector3(px,3,pz),new BABYLON.Vector3(0,-1,0),6),
-        m=>m.isEnabled() && !!m.material && (m.__ground===true || ROAD.test(m.material.name)));
+      const h=pickVeloce(new BABYLON.Ray(new BABYLON.Vector3(px,3,pz),new BABYLON.Vector3(0,-1,0),6),
+        m=>m.isEnabled() && !!m.material && (m.__ground===true || ROAD.test(m.material.name)),true);
       let top=null; if(h) for(const q of h){ const y=q.pickedPoint.y; if(y<=1.2 && (!top||y>top.y)) top={ y, n:q.pickedMesh.material.name }; }
       on=!!(top && ROAD.test(top.n));
     }catch(e){ on=true; }               // nel dubbio si frena, come prima
@@ -7881,8 +7988,8 @@ function _pedGroundY(x,z){
   /* il piazzale del New District (nbApron) NON e' marcato __ground come il
      resto delle pavimentazioni: senza aggiungerlo a mano il raycast non lo
      vede e Doctor Ross camminerebbe a y=0, 5 cm DENTRO il piazzale. */
-  const hits=scene.multiPickWithRay(new BABYLON.Ray(_gTmp,DOWN,18),
-    m=>m.__ground===true || m.name.indexOf("nbApron")===0);
+  const hits=pickVeloce(new BABYLON.Ray(_gTmp,DOWN,18),
+    m=>m.__ground===true || m.name.indexOf("nbApron")===0,true);
   let y=0,f=false;
   if(hits) for(const h of hits){ const hy=h.pickedPoint.y;
     if(hy<=1.1 && (!f||hy>y)){ y=hy; f=true; } }
@@ -8167,8 +8274,8 @@ function escortSpot(goal){
       const x=goal.x+Math.sin(ang)*r, z=goal.z+Math.cos(ang)*r;
       if(blocked(x,z)||blocked(x+0.7,z)||blocked(x-0.7,z)||blocked(x,z+0.7)||blocked(x,z-0.7)) continue;
       _gTmp.set(x,14,z);
-      const h=scene.multiPickWithRay(new BABYLON.Ray(_gTmp,DOWN,26),
-        m=>m.__ground===true||m.name.indexOf("nbApron")===0);
+      const h=pickVeloce(new BABYLON.Ray(_gTmp,DOWN,26),
+        m=>m.__ground===true||m.name.indexOf("nbApron")===0,true);
       let b=null; if(h) for(const q of h){ const y=q.pickedPoint.y;
         if(y<=1.2&&(!b||y>b.y)) b={y,mat:q.pickedMesh.material?q.pickedMesh.material.name:""}; }
       if(!b||BAD.test(b.mat)) continue;
@@ -8320,8 +8427,8 @@ function rangerTrafficIntervene(){
    se il terreno c'e' davvero, per non far comparire il Ranger nel vuoto. */
 function _rangerGroundY(x,z){
   _gTmp.set(x,12,z);
-  const hits=scene.multiPickWithRay(new BABYLON.Ray(_gTmp,DOWN,24),
-    m=>m.__ground===true || m.name.indexOf("nbApron")===0);
+  const hits=pickVeloce(new BABYLON.Ray(_gTmp,DOWN,24),
+    m=>m.__ground===true || m.name.indexOf("nbApron")===0,true);
   let y=0,f=false;
   if(hits) for(const h of hits){ const hy=h.pickedPoint.y;
     if(hy<=1.2 && (!f||hy>y)){ y=hy; f=true; } }
@@ -10941,7 +11048,7 @@ function buildBounds(){
         if(q<d){ d=q; if(d<=32) break; } }
       if(d>32) continue;
       _gTmp.set(x,14,z);
-      const h=scene.multiPickWithRay(new BABYLON.Ray(_gTmp,DOWN,26),pickG);
+      const h=pickVeloce(new BABYLON.Ray(_gTmp,DOWN,26),pickG,true);
       let b=null; if(h) for(const q of h){ const y=q.pickedPoint.y;
         if(y<=1.2&&(!b||y>b.y)) b={y,mat:q.pickedMesh.material?q.pickedMesh.material.name:""}; }
       if(b && !WILD.test(b.mat)) g[i]=1;
@@ -14845,7 +14952,7 @@ function spawnNPC(cfg){
   // superfici rialzate — stesso sintomo del bug piedi gia' visto sul player.
   if(cfg.snap!==false){
     _gTmp.set(carrier.position.x, (cfg.y||0)+8, carrier.position.z);
-    const gHits=scene.multiPickWithRay(new BABYLON.Ray(_gTmp, DOWN, 18), m=>m.__ground===true);
+    const gHits=pickRaggio(new BABYLON.Ray(_gTmp, DOWN, 18), "__ground", true);
     let gy=cfg.y||0, gFound=false;
     if(gHits) for(const h of gHits){ const hy=h.pickedPoint.y;
       if(hy<=(cfg.y||0)+1.1 && (!gFound||hy>gy)){ gy=hy; gFound=true; } }
@@ -20146,8 +20253,8 @@ function npcWalkSeq(npc,targets,arrive,onDone,areaName,onAbort,opts){
     if(outdoor){
       if((++gf%3)===0){
         _gTmp.set(p.x,p.y+8,p.z);
-        const gh=scene.multiPickWithRay(new BABYLON.Ray(_gTmp,DOWN,18),
-          m=>m.__ground===true||m.name.indexOf("nbApron")===0);
+        const gh=pickVeloce(new BABYLON.Ray(_gTmp,DOWN,18),
+          m=>m.__ground===true||m.name.indexOf("nbApron")===0,true);
         let ty=0,f=false;
         if(gh) for(const h of gh){ const hy=h.pickedPoint.y;
           if(hy<=p.y+1.1 && (!f||hy>ty)){ ty=hy; f=true; } }
@@ -38804,7 +38911,7 @@ scene.registerBeforeRender(()=>{
   // CINEMA: l\u0027avatar segue il dislivello (sale sulle gradinate, non sprofonda)
   if(area==="cinema"){
     _gTmp.set(player.position.x, player.position.y+8, player.position.z);
-    const hits=scene.multiPickWithRay(new BABYLON.Ray(_gTmp, DOWN, 18), m=>m.__cinFloor===true);
+    const hits=pickRaggio(new BABYLON.Ray(_gTmp, DOWN, 18), "__cinFloor", true);
     let ty=0, found=false;                              // 0 = pavimento della sala
     if(hits) for(const h of hits){ const hy=h.pickedPoint.y;
       // accetta SOLO superfici calpestabili (gradino \u2264 1.1): i muri/soffitto restano esclusi,
@@ -38816,7 +38923,7 @@ scene.registerBeforeRender(()=>{
     // l'avatar segue la quota cosi' i piedi non sprofondano sotto il manto. Dove non c'e'
     // superficie __ground (asfalto a 0) il bersaglio resta 0 e l'avatar torna a terra.
     _gTmp.set(player.position.x, player.position.y+8, player.position.z);
-    const hits=scene.multiPickWithRay(new BABYLON.Ray(_gTmp, DOWN, 18), m=>m.__ground===true);
+    const hits=pickRaggio(new BABYLON.Ray(_gTmp, DOWN, 18), "__ground", true);
     let ty=0, found=false;
     if(hits) for(const h of hits){ const hy=h.pickedPoint.y;
       if(hy<=player.position.y+1.1 && (!found||hy>ty)){ ty=hy; found=true; } }
@@ -38850,7 +38957,7 @@ scene.registerBeforeRender(()=>{
     const camDir=camera.position.subtract(camera.target); const camDist=camDir.length();
     if(camDist>0.5){ camDir.scaleInPlace(1/camDist);
       const camRay=new BABYLON.Ray(camera.target,camDir,camWish+1.0);
-      const camHit=scene.pickWithRay(camRay,mm=>mm.__camBlock===true);
+      const camHit=pickRaggio(camRay,"__camBlock",false);
       if(camHit && camHit.hit) cap=Math.min(cap,camHit.distance-0.6); }
     cap=Math.max(camera.lowerRadiusLimit,cap);
     /* 3) interpolazione ASIMMETRICA con isteresi di 0.15: rientro rapido (non
@@ -38877,7 +38984,7 @@ scene.registerBeforeRender(()=>{
   const dir=camera.target.subtract(camera.position); const dist=dir.length();
   if(dist>1.2 && !POV.on){ dir.scaleInPlace(1/dist);
     const ray=new BABYLON.Ray(camera.position,dir,dist-1.0);
-    const hits=scene.multiPickWithRay(ray,mm=>mm.__occluder===true);
+    const hits=pickRaggio(ray,"__occluder",true);
     if(hits) for(const h of hits){ const m=h.pickedMesh; if(m){ m.visibility=0.22; faded.push(m); } } }
   updateProximity(); updateLabelProximity();
   if(typeof updateNPCs==="function") updateNPCs();
@@ -42389,14 +42496,22 @@ async function begin(){
   if(typeof BABYLON==="undefined"){ bootError("Le librerie 3D non si sono caricate. Ricarica la pagina (serve internet)."); return; }
   if(!glbReady()){ bootError("Il modulo .glb non si è caricato. Ricarica la pagina (serve internet)."); return; }
   try{ await loadAll(); }catch(e){ console.warn(e); showDropMode(); return; }
+  await bootCostruisco();
   finishBoot();
 }
+/* finishBoot costruisce TUTTA la citta' in un colpo solo, senza mai lasciare
+   respirare la pagina: sul vecchio Acer e sul tablet sono decine di secondi
+   in cui a schermo restava «Carico Woman_B.glb …» (l'ultimo modello della
+   lista) e sembrava bloccato li'. Si scrive cosa sta succedendo davvero e
+   si lascia al browser UN frame per disegnarlo, prima di partire. */
+function bootCostruisco(){ setBoot(100,"Costruisco la citt\u00e0\u2026 (sui computer lenti pu\u00f2 volerci un po')");
+  return new Promise(r=>requestAnimationFrame(()=>setTimeout(r,30))); }
 function readAll(reader){ return new Promise(res=>{ let a=[]; const rd=()=>reader.readEntries(es=>{ if(!es.length) res(a); else { a=a.concat(es); rd(); } }); rd(); }); }
 async function walk(entry,path,out){ if(entry.isFile){ const f=await new Promise(r=>entry.file(r)); f.__rel=path+entry.name; out.push(f); }
   else if(entry.isDirectory){ const es=await readAll(entry.createReader()); for(const e of es) await walk(e,path+entry.name+"/",out); } }
 async function intake(files){ fileMap={}; files.forEach(f=>{ if(f&&f.name) fileMap[normName(f.name)]=f; });
   document.getElementById("boot-drop").style.display="none"; document.getElementById("boot-ring").textContent="🏙️"; document.getElementById("boot-msg").textContent="Carico i modelli…";
-  try{ await loadAll(); finishBoot(); }
+  try{ await loadAll(); await bootCostruisco(); finishBoot(); }
   catch(e){ console.error(e); document.getElementById("boot-msg").innerHTML="⚠️ "+((e&&e.message)||String(e));
     document.getElementById("boot-ring").textContent="⚠️"; document.getElementById("boot-drop").style.display="block"; } }
 ["dragenter","dragover"].forEach(ev=>window.addEventListener(ev,e=>{ e.preventDefault(); document.body.classList.add("dragging"); }));
@@ -58385,6 +58500,11 @@ ET.frasi=function(){
     return { gruppo:f.g, inglese:f.place?f.en.replace("{P}","\u2026"):f.en, italiano:f.it }; }));
   console.log("Luoghi nominabili adesso ("+L.length+"): "+L.map(function(p){ return p.t; }).join(" \u00b7 "));
   return PHRASES.length+" frasi, "+L.length+" luoghi";
+};
+ET.taglioPersonaggi=function(on){
+  if(on===false||on===true){ _pgOn=on; toast("Taglio personaggi "+(on?"acceso":"spento")); }
+  let n=0, nasc=0; try{ NPCS.forEach(x=>{ n++; const m=x.holder&&x.holder.getChildMeshes(false)[0]; if(m&&m.layerMask===0) nasc++; }); }catch(e){}
+  return { attivo:_pgOn, personaggi:n, nascosti:nasc, distanza:PG_DIST[qLevel] };
 };
 ET.presenzaSpegni=function(){ Presenza.spegni(); return "\u{1F465} presenza spenta su questa finestra"; };
 
