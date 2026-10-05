@@ -339,6 +339,17 @@
   #qbtn{position:fixed;z-index:15;top:14px;right:14px;background:rgba(251,247,236,.94);border:none;border-radius:12px;
     padding:8px 12px;font:inherit;font-weight:800;font-size:12px;color:var(--ink);cursor:pointer;
     box-shadow:0 4px 14px rgba(20,30,40,.18);}
+  #qpanel{position:fixed;z-index:16;top:52px;right:14px;width:300px;max-width:calc(100vw - 28px);box-sizing:border-box;
+    background:rgba(251,247,236,.97);color:var(--ink);border-radius:14px;padding:10px 12px 12px;
+    box-shadow:0 8px 26px rgba(20,30,40,.28);display:none;font-size:12px;}
+  #qpanel.on{display:block;}
+  #qpanel .qp-h{font-weight:800;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#5d6b72;margin:4px 2px 6px;}
+  #qpanel .qp-row{display:flex;gap:5px;margin-bottom:8px;}
+  #qpanel .qp-row button{flex:1 1 0;min-width:0;min-height:36px;padding:6px 1px;border:none;border-radius:9px;
+    background:rgba(29,42,50,.08);color:var(--ink);font:inherit;font-weight:800;font-size:12px;cursor:pointer;touch-action:manipulation;}
+  #qpanel .qp-row button.on{background:var(--ink);color:var(--paper);}
+  #qpanel .qp-note{color:#5d6b72;font-size:11.5px;margin:0 2px 4px;}
+  #qpanel .qp-info{color:#5d6b72;font-size:11px;font-variant-numeric:tabular-nums;margin:0 2px;}
   #boot{position:fixed;inset:0;z-index:30;background:#1d2a32;color:var(--paper);display:grid;place-items:center;text-align:center;padding:24px;}
   #boot .card{max-width:460px;}
   #boot h1{font-size:26px;margin:0 0 6px;}
@@ -617,7 +628,13 @@
   <div class="qc-arrow" id="qc-arrow">&#x2B06;&#xFE0F;</div>
   <div class="qc-dist" id="qc-dist">&#x2013;</div>
 </div>
-<button id="qbtn" title="Graphics quality (tap to change)">⚙︎ <span id="qlab">Medium</span></button>
+<button id="qbtn" title="Graphics settings">⚙︎ <span id="qlab">Medium</span></button>
+<div id="qpanel" role="dialog" aria-label="Graphics settings">
+  <div class="qp-h">Quality</div><div class="qp-row" id="qp-lv"></div>
+  <div class="qp-h">Resolution</div><div class="qp-row" id="qp-rs"></div>
+  <div class="qp-note">Slow or choppy? Lower the resolution first.</div>
+  <div class="qp-info" id="qp-info"></div>
+</div>
 <button id="au-btn" title="Music volume (tap to change)">🔊</button>
 <button id="nb-btn" title="My notebook">📓</button>
 <button id="fs-btn" title="Full screen">⛶</button>
@@ -5056,9 +5073,27 @@ function decidiOmbre(q){ if(_ombreDecise) return; _ombreDecise=true;
    adaptToDeviceRatio, quindi su un Retina (devicePixelRatio 2) gli altri
    livelli disegnano a meta' risoluzione e il browser ingrandisce. Tetto a 2:
    i telefoni a 3x non mostrerebbero differenze e pagherebbero 9 volte i pixel. */
+function qDprMax(){ return Math.min(2,Math.max(1,window.devicePixelRatio||1)); }
 function qScala(q){ if(q==="basso") return 1.3;
-  if(q==="max") return 1/Math.min(2,Math.max(1,window.devicePixelRatio||1));
+  if(q==="max") return 1/qDprMax();
   return 1.0; }
+/* ---- RISOLUZIONE SEPARATA DAL LIVELLO (Giacomo, 5 ott: «su un tablet
+   economico dove Roblox gira normale, il gioco su LOW scattava») ----
+   Il livello decide GLI EFFETTI, la risoluzione decide QUANTI PIXEL si
+   disegnano: sono due manopole diverse. Su «Auto» la risoluzione e' quella
+   del livello (qScala, come prima); altrimenti e' una percentuale dei pixel
+   VERI dello schermo (tetto 2x come Max): 100% = nitidezza di Max, 50% su
+   un tablet Retina = quella di Medium, 35-25% = per i tablet che arrancano.
+   Si cambia al volo: e' solo setHardwareScalingLevel, nessuna ricompilazione.
+   Si ricorda in et_res, preferenza della macchina come et_quality. */
+const RLEVELS=["auto","100","75","50","35","25"]; let rLevel="auto";
+try{ const r=localStorage.getItem("et_res"); if(RLEVELS.indexOf(r)>=0) rLevel=r; }catch(e){}
+function rLabelEn(r){ return r==="auto"?"Auto":r+"%"; }
+function qScalaEff(){ if(rLevel==="auto") return qScala(qLevel);
+  return 1/(qDprMax()*(+rLevel)/100); }
+function applyRes(r,ricorda){ if(RLEVELS.indexOf(r)<0) r="auto"; rLevel=r;
+  engine.setHardwareScalingLevel(qScalaEff()); qGui(); qEtichetta();
+  if(ricorda===true){ try{ if(r==="auto") localStorage.removeItem("et_res"); else localStorage.setItem("et_res",r); }catch(e){} } }
 /* Filtro anisotropico: le texture nascono a 8, su Max salgono a 16 (strade e
    marciapiedi visti di sbieco restano nitidi piu' lontano). E' un parametro
    del campionatore, non un define: nessuna ricompilazione. Si ricorda il
@@ -5082,17 +5117,24 @@ try{ scene.onNewTextureAddedObservable.add(t=>{ setTimeout(()=>{
    «June» minuscoli). renderScale riporta la loro texture alla scala di
    Alto: stessa grandezza e stessa nitidezza di prima, il resto in alta.
    (adjustToEngineHardwareScalingLevel di Babylon farebbe una texture da
-   4000 px per una manciata di etichette: no.) */
+   4000 px per una manciata di etichette: no.)
+   Con la risoluzione scelta a mano la scala puo' andare ovunque: sotto 1 si
+   fa come Max, fino a 1,3 si lascia com'era su Low, oltre (35%, 25%) si
+   riporta alla grandezza di Low invece di far diventare i nomi giganti. */
 function qGui(){ try{ if(typeof adt!=="undefined"&&adt){
-  const r=(qLevel==="max")?engine.getHardwareScalingLevel():1;
+  const s=engine.getHardwareScalingLevel(); const r=s<1?s:(s>1.3?s/1.3:1);
   if(adt.renderScale!==r) adt.renderScale=r; } }catch(e){} }
 function qSonda(px){
   try{ const ct=probe.cubeTexture; if(!ct||ct.getSize().width===px) return;
     ct.resize(px); ct.refreshRate=BABYLON.RenderTargetTexture.REFRESHRATE_RENDER_ONCE; _probeSH=3;
   }catch(e){ console.warn("sonda Max:",e); } }
 function applyQuality(q,ricorda){ if(QLEVELS.indexOf(q)<0) q="medio"; qLevel=q;
-  engine.setHardwareScalingLevel(qScala(q)); qGui();
+  engine.setHardwareScalingLevel(qScalaEff()); qGui();
   pipe.bloomEnabled=(q!=="basso"); pipe.sharpenEnabled=(q!=="basso");
+  /* Low senza FXAA: un passaggio a schermo intero in meno a ogni frame, che
+     sui tablet economici (GPU Mali/PowerVR, poca banda) e' quello che pesa.
+     E' un post-process: si ricostruisce la pipeline, i materiali no. */
+  pipe.fxaaEnabled=(q!=="basso");
   pipe.depthOfFieldEnabled=qAlmenoAlto(q);
   /* Solo Max: antialiasing vero (MSAA 4 campioni, come lo specchio di casa)
      oltre all'FXAA, sfocatura di campo piu' fine, riflessi e texture piu'
@@ -5109,15 +5151,30 @@ function applyQuality(q,ricorda){ if(QLEVELS.indexOf(q)<0) q="medio"; qLevel=q;
      (+21% di fotogrammi nella prova in aula). */
   glowL.isEnabled=qAlmenoAlto(q); glowL.intensity=0.65;
   try{ if(CLUB_FX.in){ CLUB_FX.glow=glowL.isEnabled; glowL.isEnabled=false; } }catch(e){}   // v262: dentro il Beat Club il glow resta spento
-  const lab=document.getElementById("qlab"); if(lab) lab.textContent=qLabelEn(q);
+  qEtichetta();
   /* ⚠️ SI RICORDA SOLO LA SCELTA ESPLICITA (pulsante ⚙︎). Prima veniva salvato
      anche il verdetto automatico, e siccome un valore salvato disattiva il
      rilevamento, il primo errore diventava definitivo: su ogni Chromebook il
      verdetto sbagliato del primo giorno sarebbe rimasto per tutto l'anno.
      L'automatismo si rivaluta a ogni avvio: costa nulla e non resta incastrato. */
   if(ricorda===true){ try{ localStorage.setItem("et_quality",q); }catch(e){} } }
-function cycleQuality(){ const i=(QLEVELS.indexOf(qLevel)+1)%QLEVELS.length;
-  applyQuality(QLEVELS[i],true); decidiOmbre(QLEVELS[i]); toast("Quality: "+qLabelEn(QLEVELS[i])); }
+function sceltaQuality(q){ _qUtente=true;
+  applyQuality(q,true); decidiOmbre(q); toast("Quality: "+qLabelEn(q)); }
+function cycleQuality(){ sceltaQuality(QLEVELS[(QLEVELS.indexOf(qLevel)+1)%QLEVELS.length]); }
+/* pulsante ⚙︎ + pannello: «⚙︎ Low», o «⚙︎ Low · 50%» se la risoluzione e'
+   scelta a mano (cosi' si vede subito che non e' quella del livello) */
+function qEtichetta(){
+  const lab=document.getElementById("qlab");
+  if(lab) lab.textContent=qLabelEn(qLevel)+(rLevel==="auto"?"":" \u00b7 "+rLabelEn(rLevel));
+  document.querySelectorAll("#qpanel [data-q]").forEach(b=>b.classList.toggle("on",b.dataset.q===qLevel));
+  document.querySelectorAll("#qpanel [data-r]").forEach(b=>b.classList.toggle("on",b.dataset.r===rLevel));
+  qInfo();
+  try{ if(window.ET_PWA&&ET_PWA.posizionaPastiglia) ET_PWA.posizionaPastiglia(); }catch(e){} }
+/* riga in fondo al pannello: pixel disegnati davvero e fps. Serve a chi
+   prova su un tablet nuovo per capire a colpo d'occhio se un passo in
+   giu' di risoluzione basta. Si aggiorna solo a pannello aperto. */
+function qInfo(){ const el=document.getElementById("qp-info"); if(!el) return;
+  try{ el.textContent=engine.getRenderWidth()+"\u00d7"+engine.getRenderHeight()+" px \u00b7 "+Math.round(engine.getFps())+" fps"; }catch(e){} }
 
 /* ============================================================================
    RILEVAMENTO AUTOMATICO DELLA QUALITA'
@@ -5172,8 +5229,33 @@ function scheduleAutoQuality(){ let stored=null; try{ stored=localStorage.getIte
     },60000);
   });
 }
-let _qUtente=false;   // vero appena lo studente tocca il pulsante ⚙︎: da li' comanda lui
-(function(){ const b=document.getElementById("qbtn"); if(b) b.onclick=function(){ _qUtente=true; cycleQuality(); }; })();
+let _qUtente=false;   // vero appena lo studente sceglie un livello nel pannello ⚙︎: da li' comanda lui
+/* PANNELLO ⚙︎ (Giacomo, 5 ott: «rendi Low Medium High Max selezionabili
+   direttamente»): prima il pulsante girava in tondo Low→Medium→High→Max, e
+   per tornare da Medium a Low si passava da High e Max — proprio i livelli
+   che su un tablet debole bloccano tutto. Ora si tocca il livello che si
+   vuole. Sotto, la risoluzione (vedi RLEVELS). */
+(function(){ const b=document.getElementById("qbtn"), p=document.getElementById("qpanel");
+  if(!b||!p) return;
+  const lv=document.getElementById("qp-lv"), rs=document.getElementById("qp-rs");
+  QLEVELS.forEach(q=>{ const x=document.createElement("button"); x.type="button"; x.dataset.q=q;
+    x.textContent=qLabelEn(q); x.onclick=()=>{ if(q!==qLevel) sceltaQuality(q); }; lv.appendChild(x); });
+  RLEVELS.forEach(r=>{ const x=document.createElement("button"); x.type="button"; x.dataset.r=r;
+    x.textContent=rLabelEn(r); x.onclick=()=>{ if(r===rLevel) return; applyRes(r,true);
+      toast("Resolution: "+rLabelEn(r)+" ("+engine.getRenderWidth()+"\u00d7"+engine.getRenderHeight()+")"); };
+    rs.appendChild(x); });
+  let tInfo=0;
+  const chiudi=()=>{ p.classList.remove("on"); clearInterval(tInfo); tInfo=0; };
+  b.onclick=()=>{ if(p.classList.contains("on")){ chiudi(); return; }
+    p.classList.add("on"); qEtichetta(); tInfo=setInterval(qInfo,500); };
+  /* si chiude toccando fuori (in cattura: la canvas si tiene i suoi eventi) */
+  document.addEventListener("pointerdown",e=>{ if(!p.classList.contains("on")) return;
+    if(p.contains(e.target)||b.contains(e.target)) return; chiudi(); },true);
+  document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&p.classList.contains("on")) chiudi(); });
+  /* la risoluzione scelta a mano vale da subito, gia' durante il caricamento:
+     sul tablet che arranca e' proprio li' che serve */
+  try{ if(rLevel!=="auto") engine.setHardwareScalingLevel(qScalaEff()); }catch(e){}
+  qEtichetta(); })();
 
 /* ---- SCHERMO INTERO (Giacomo, 3 set) ----------------------------------
    Sui Chromebook F11 c'e' gia', ma sui tablet no: li' la barra del browser
@@ -16525,7 +16607,7 @@ const Cloud=(function(){
    Tutte le chiavi di gioco sono namespacizzate col CODICE PERSONALE dello
    studente: su un Chromebook condiviso due alunni non si sovrascrivono piu'
    (prima et_progress era unico per DISPOSITIVO). Restano NON namespacizzate
-   le preferenze della macchina (et_view, et_quality) e l'identita' stessa.
+   le preferenze della macchina (et_view, et_quality, et_res) e l'identita' stessa.
    ===================================================================== */
 const Sync=(function(){
   let ns="", vol=null;      // vol != null  =>  OSPITE: si scrive in RAM, non su disco
@@ -42024,7 +42106,7 @@ const ET={
     const suf="::"+c, locali=[];
     try{ for(let i=localStorage.length-1;i>=0;i--){ const k=localStorage.key(i);
       if(!k||k.indexOf("et_")!==0) continue;
-      if(k==="et_view"||k==="et_quality"||k==="et_student_code") continue;
+      if(k==="et_view"||k==="et_quality"||k==="et_res"||k==="et_student_code") continue;
       if(k.length<=suf.length || k.slice(-suf.length)!==suf) continue;
       localStorage.removeItem(k); locali.push(k); } }catch(e){}
     return Cloud.scrivi(ET_PROGRESS+c, null, 8000).then(function(w){
@@ -42085,7 +42167,7 @@ const ET={
     const suf="::"+ns;
     try{ for(let i=localStorage.length-1;i>=0;i--){ const k=localStorage.key(i);
       if(!k||k.indexOf("et_")!==0) continue;
-      if(k==="et_view"||k==="et_quality"||k==="et_student_code") continue;
+      if(k==="et_view"||k==="et_quality"||k==="et_res"||k==="et_student_code") continue;
       /* \u26a0\ufe0f suffisso ESATTO, non indexOf: con indexOf il codice "AB" avrebbe
          cancellato anche le chiavi "::ABC" di un compagno. */
       if(k.length<=suf.length || k.slice(-suf.length)!==suf) continue;
@@ -42273,7 +42355,7 @@ const ET={
     const cand=[];
     try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i);
       if(!k||k.indexOf("et_")!==0) continue;
-      if(k==="et_view"||k==="et_quality") continue;      // preferenze della macchina
+      if(k==="et_view"||k==="et_quality"||k==="et_res") continue;      // preferenze della macchina
       cand.push(k); } }catch(e){}
     /* ll_student_code e' di StudentApp, non del gioco: non si tocca. Ma se c'e'
        va detto, perche' al ricaricamento Student.boot() lo ripesca e si rientra
@@ -58308,9 +58390,10 @@ ET.presenzaSpegni=function(){ Presenza.spegni(); return "\u{1F465} presenza spen
 
 engine.runRenderLoop(()=>scene.render());
 window.addEventListener("resize",()=>{
-  /* su Max la scala segue lo schermo: spostando la finestra da un monitor
-     normale a un Retina cambia devicePixelRatio */
-  try{ if(qLevel==="max"){ engine.setHardwareScalingLevel(qScala("max")); qGui(); } }catch(e){}
+  /* su Max (e con la risoluzione scelta a mano) la scala segue lo schermo:
+     spostando la finestra da un monitor normale a un Retina cambia
+     devicePixelRatio */
+  try{ if(qLevel==="max"||rLevel!=="auto"){ engine.setHardwareScalingLevel(qScalaEff()); qGui(); } }catch(e){}
   engine.resize(); });
 begin();
 </script>
