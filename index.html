@@ -54421,12 +54421,15 @@ function dressBottom(meshes,rig,b,legsHex,skinHex){
     /* ragazzo: la gamba sotto il pantaloncino e' la mesh "pelle" delle gambe */
     meshes.forEach(m=>{ if(!/Casual_Legs/.test(m.name)||!m.material) return;
       if(!/^Skin/.test(m.material.name||"")) return;
-      _botSetCol(m.material, b.id==="trousers" ? legsHex : skinHex); });
+      if(b.id==="trousers") _botSetCol(m.material,legsHex); else _skinPaint(m.material,skinHex); });
     return; }
   const L=meshes.find(m=>/Casual_Legs/.test(m.name)&&m.skeleton); if(!L) return;
   if(!L.__botMats){ const pants=L.material, skin=pants.clone((pants.name||"legs")+"_botSkin");
     L.__botMats={ pants, skin }; }
-  const M=L.__botMats; _botSetCol(M.pants,legsHex); _botSetCol(M.skin, b.tights||skinHex);
+  const M=L.__botMats; _botSetCol(M.pants,legsHex);
+  /* v303: la gamba nuda come il resto della pelle; le calze restano stoffa */
+  if(b.tights){ _botSetCol(M.skin,b.tights); if(M.skin.emissiveColor) M.skin.emissiveColor=BABYLON.Color3.Black(); }
+  else _skinPaint(M.skin,skinHex);
   const prep=_botPrepLegs(L);
   let k=0; if(b.cut>0){ while(k<prep.n && prep.fr[k]<b.cut) k++; }
   if(k<=0){ L.subMeshes=[]; new BABYLON.SubMesh(0,0,prep.nv,0,prep.n*3,L); L.material=M.pants; }
@@ -55242,7 +55245,8 @@ const LOOK_EYES=[
   { id:"almond", en:"Almond eyes" },
   { id:"big",    en:"Big eyes" },
   { id:"narrow", en:"Narrow eyes" },
-  { id:"happy",  en:"Smiling eyes" },
+  { id:"up",     en:"Upturned eyes" },
+  { id:"down",   en:"Downturned eyes" },
 ];
 const LOOK_EYEC=[
   { id:"",      en:"Original",   hex:"#2a1d16" },
@@ -55260,13 +55264,17 @@ const LOOK_NOSES=[
   { id:"wide",   en:"Wide nose" },
   { id:"long",   en:"Long nose" },
 ];
+/* v303 (Giacomo, 6 ott: «niente sorpresa o altro, solo tipi di bocca»):
+   solo FORME di labbra, tutte chiuse e neutre. Niente espressioni: il viso
+   e' «com'e' fatto», non «come si sente». Stessa regola sugli occhi: niente
+   occhi chiusi o sorridenti, solo forme diverse (l'iride si vede sempre). */
 const LOOK_MOUTHS=[
   { id:"",      en:"Original" },
-  { id:"smile", en:"Smile" },
-  { id:"grin",  en:"Big smile" },
+  { id:"thin",  en:"Thin lips" },
+  { id:"full",  en:"Full lips" },
+  { id:"wide",  en:"Wide mouth" },
   { id:"small", en:"Small mouth" },
-  { id:"smirk", en:"Half smile" },
-  { id:"open",  en:"Surprised" },
+  { id:"heart", en:"Heart-shaped lips" },
 ];
 function lookFaceOpt(list,id){ return list.find(x=>x.id===(id||""))||list[0]; }
 /* le misure della faccia, una volta per testa (H.__faceM). Si misura sulle
@@ -55341,10 +55349,36 @@ function _faceLine(g,F,path,hw,off,mat){
     pts.push([p[0]-ty*w,p[1]+tx*w],[p[0]+ty*w,p[1]-tx*w]); }
   for(let i=0;i<n-1;i++){ const a=2*i; tris.push([a,a+2,a+3],[a,a+3,a+1]); }
   return _faceDecal(g,F,pts,tris,off,mat); }
-const FACE_DARK="#1c1410", FACE_WHITE="#f2efe8", FACE_LIP="#4a1f1d";
-/* ⚠️ la riga della bocca sulla pelle piu' scura (s6) col bordeaux scuro
-   spariva: li' si fa piu' chiara e rosata della pelle, cosi' si legge. */
-function _faceLip(F){ return (F.skin && _hexLum(F.skin)<0.36) ? "#a0574f" : FACE_LIP; }
+const FACE_DARK="#1c1410", FACE_WHITE="#f2efe8";
+/* v303 — LA PELLE (Giacomo, 6 ott: «skin 1-2-3 non corrispondono alla
+   tonalita' scelta, anche occhi e naso non sono uniformi col resto»).
+   Il materiale «Skin» dei GLB e' PBR con metallic 0,4: un metallo non ha
+   colore diffuso, RIFLETTE il cielo. Risultato visto a schermo: le pelli
+   chiare diventavano grigio-verdi, s1/s2/s3 quasi uguali, e sulla fascia
+   occhi-naso (le facce piatte rivolte in alto) una striscia del riflesso
+   azzurro-verde che la faceva sembrare di un'altra tinta. In piu' l'hex
+   sRGB finiva tale e quale nell'albedo (che e' lineare): piu' slavato.
+   Ora: metallic 0, ruvida come la pelle, albedo con gamma 1,6 e un fondo di
+   emissive al 25%. Gamma 2,2 pieno (lineare «giusto») schiacciava i toni
+   scuri: s5 e s6 venivano quasi neri. Misurato a schermo sulla guancia di
+   giorno: s1 #ceb7a0 · s3 #a6784a · s6 #2d190c, sei toni distinti, ognuno
+   vicino al suo campione. Vale per pelle, gambe nude e labbra. */
+function _skinCol(hex){ const c=BABYLON.Color3.FromHexString(hex);
+  return new BABYLON.Color3(Math.pow(c.r,1.6),Math.pow(c.g,1.6),Math.pow(c.b,1.6)); }
+function _skinPaint(mt,hex){ if(!mt||!hex) return;
+  if(mt.albedoColor){ const c=_skinCol(hex); mt.albedoColor=c; mt.metallic=0; mt.roughness=0.7;
+    mt.emissiveColor=c.scale(0.25); }
+  else if(mt.diffuseColor) mt.diffuseColor=BABYLON.Color3.FromHexString(hex); }
+/* le labbra: dal colore della pelle, un po' piu' scure e rosate; sulle
+   pelli scure un filo piu' chiare e calde, se no spariscono. */
+function _lipHex(skin){ const c=BABYLON.Color3.FromHexString(skin||"#d3a172"), L=_hexLum(skin||"#d3a172");
+  const k=L<0.36?1.04:0.84, m=L<0.36?0.3:0.4, r=[0.74,0.30,0.33];
+  return new BABYLON.Color3(c.r*k*(1-m)+r[0]*m, c.g*k*(1-m)+r[1]*m, c.b*k*(1-m)+r[2]*m).toHexString(); }
+/* materiale del viso «di pelle» (labbra): PBR come la pelle vera, cosi'
+   prende la stessa luce e non si stacca come un adesivo */
+function _faceSkinMat(hex){ const k="faceSkin|"+hex; if(_accM[k]) return _accM[k];
+  const m=new BABYLON.PBRMaterial("faceS"+(_lpN++),scene); _skinPaint(m,hex); m.roughness=0.6;
+  m.backFaceCulling=false; m.twoSidedLighting=true; return (_accM[k]=m); }
 /* un occhio «vero»: bianco, iride, pupilla e riflesso. e = misure
    dell'occhio originale, o = { w,h,n,rot,dy, ir (raggio iride / altezza) } */
 function _faceEye(g,F,e,col,o){
@@ -55369,36 +55403,37 @@ const FACE_EYES={
   almond(g,F,col){ F.eyes.forEach(e=>_faceEye(g,F,e,col,{ w:1.25, h:0.72, n:1.6, rot:0.14, ir:0.85 })); },
   /* grandi: il bordo alto resta dov'era (sopra ci sono le sopracciglia), cresce verso il basso */
   big(g,F,col){ F.eyes.forEach(e=>_faceEye(g,F,e,col,{ w:1.15, h:1.25, n:2.2, dy:-e.h*0.13, ir:0.7 })); },
-  narrow(g,F,col){ F.eyes.forEach(e=>_faceEye(g,F,e,col,{ w:1.2, h:0.5, n:2.4, ir:0.95, lid:true })); },
-  /* sorridenti: due archi all'insu', il colore non si vede (occhi chiusi) */
-  happy(g,F){ const D=_faceMat(FACE_DARK);
-    F.eyes.forEach(e=>{ const rx=e.w*0.55, path=[];
-      for(let i=0;i<=12;i++){ const t=-1+2*i/12; path.push([e.x+t*rx, e.y-e.h*0.12+e.h*0.42*(1-t*t)]); }
-      _faceLine(g,F,path,0.0021,0.0015,D); }); },
+  narrow(g,F,col){ F.eyes.forEach(e=>_faceEye(g,F,e,col,{ w:1.2, h:0.58, n:2.4, ir:0.92, lid:true })); },
+  /* v303: niente piu' occhi chiusi/sorridenti: solo forme, l'iride si vede
+     sempre. rot>0 alza l'angolo ESTERNO (e.s gira il verso per lato). */
+  up(g,F,col){ F.eyes.forEach(e=>_faceEye(g,F,e,col,{ w:1.2, h:0.74, n:1.6, rot:0.42, ir:0.82 })); },
+  down(g,F,col){ F.eyes.forEach(e=>_faceEye(g,F,e,col,{ w:1.15, h:0.8, n:1.7, rot:-0.4, dy:-e.h*0.04, ir:0.8 })); },
 };
+/* v303 — LE BOCCHE: due labbra piene (decalcomanie a striscia, piu'
+   sottili agli angoli) del colore della pelle scurito e rosato, e la riga
+   scura in mezzo. Tutte chiuse e neutre: cambia la FORMA, non l'espressione.
+   o = { w: mezza larghezza, up/lo: spessore labbro sopra/sotto,
+         bow: quanto e' marcato l'arco di Cupido (0 = niente) } */
+function _faceLips(g,F,o){
+  const y=F.my, N=20, lip=_lipHex(F.skin), up=_faceSkinMat(_hexMul(lip,0.9)), lo=_faceSkinMat(lip);
+  const prof=t=>Math.pow(Math.max(0,1-t*t),0.55);
+  /* il bordo alto del labbro di sopra: due gobbe e la conca al centro */
+  const topU=t=>y+o.up*prof(t)*(1-(o.bow||0)*Math.exp(-(t/0.16)*(t/0.16)))*(1+(o.bow||0)*0.35*Math.exp(-((Math.abs(t)-0.3)/0.2)*((Math.abs(t)-0.3)/0.2)));
+  const strip=(f0,f1,mat,off)=>{ const pts=[], tris=[];
+    for(let i=0;i<=N;i++){ const t=-1+2*i/N; pts.push([t*o.w,f0(t)],[t*o.w,f1(t)]); }
+    for(let i=0;i<N;i++){ const k=2*i; tris.push([k,k+2,k+3],[k,k+3,k+1]); }
+    _faceDecal(g,F,pts,tris,off,mat); };
+  strip(t=>y,topU,up,0.0012);
+  strip(t=>y-o.lo*prof(t)*(1-0.12*t*t),t=>y,lo,0.0012);
+  /* la riga fra le labbra, appena piu' larga della bocca */
+  const path=[]; for(let i=0;i<=16;i++){ const t=-1+2*i/16; path.push([t*o.w*1.03, y-0.0002*(1-t*t)]); }
+  _faceLine(g,F,path,0.0005,0.0019,_faceSkinMat(_hexMul(lip,0.55))); }
 const FACE_MOUTHS={
-  smile(g,F){ const y=F.my, w=0.0145, path=[];
-    for(let i=0;i<=14;i++){ const t=-1+2*i/14; path.push([t*w, y+0.0055*t*t]); }
-    _faceLine(g,F,path,0.0016,0.0012,_faceMat(_faceLip(F))); },
-  small(g,F){ const y=F.my+0.001, w=0.0075, path=[];
-    for(let i=0;i<=8;i++){ const t=-1+2*i/8; path.push([t*w, y+0.0018*t*t]); }
-    _faceLine(g,F,path,0.0016,0.0012,_faceMat(_faceLip(F))); },
-  smirk(g,F){ const y=F.my, path=[];
-    for(let i=0;i<=14;i++){ const t=-1+2*i/14, x=-0.011+(t+1)/2*0.025, k=Math.max(0,x/0.014); path.push([x, y+0.0058*k*k-0.0004*(1-k)]); }
-    _faceLine(g,F,path,0.0016,0.0012,_faceMat(_faceLip(F))); },
-  /* sorriso aperto: una D scura, i denti nella parte alta */
-  grin(g,F){ const y=F.my+0.0035, w=0.0155, d=0.0105;
-    const top=x=>y+0.0035*(x/w)*(x/w), D=_faceMat("#3a1416"), T=_faceMat("#f3efe6","#3a3833");
-    const shape=(off,mat,clip)=>{ const NA=26, pts=[[0,y-d*0.45]], tris=[];
-      for(let i=0;i<NA;i++){ const a=i/NA*Math.PI*2, ca=Math.cos(a), sa=Math.sin(a), x=ca*w;
-        let yy=sa>0?top(x):top(x)+sa*d*(1-0.3*ca*ca); if(clip!==undefined) yy=Math.max(yy,top(x)-clip); pts.push([x,yy]); }
-      for(let i=0;i<NA;i++) tris.push([0,1+i,1+(i+1)%NA]); return _faceDecal(g,F,pts,tris,off,mat); };
-    shape(0.0012,D); shape(0.0019,T,0.0032);
-    const path=[]; for(let i=0;i<=14;i++){ const t=-1+2*i/14; path.push([t*w*1.04, top(t*w)+0.0004]); }
-    _faceLine(g,F,path,0.0009,0.0024,_faceMat(_faceLip(F))); },
-  open(g,F){ _faceBlob(g,F,0,F.my-0.0015,0.0056,0.0068,2,0,0.0012,_faceMat("#3a1416"));
-    const path=[]; for(let i=0;i<=20;i++){ const a=i/20*Math.PI*2; path.push([Math.cos(a)*0.0062,F.my-0.0015+Math.sin(a)*0.0074]); }
-    _faceLine(g,F,path,0.0008,0.0018,_faceMat(_faceLip(F))); },
+  thin(g,F){  _faceLips(g,F,{ w:0.0145, up:0.0013, lo:0.0018, bow:0.3 }); },
+  full(g,F){  _faceLips(g,F,{ w:0.0150, up:0.0036, lo:0.0047, bow:0.35 }); },
+  wide(g,F){  _faceLips(g,F,{ w:0.0195, up:0.0022, lo:0.0028, bow:0.25 }); },
+  small(g,F){ _faceLips(g,F,{ w:0.0090, up:0.0024, lo:0.0031, bow:0.3 }); },
+  heart(g,F){ _faceLips(g,F,{ w:0.0125, up:0.0034, lo:0.0038, bow:0.75 }); },
 };
 /* il naso: k = { z: quanto sporge (1 = com'e'), x: quanto e' largo,
    up: punta in su (m), long: punta in giu' (m) } */
@@ -55444,8 +55479,8 @@ function dressFace(meshes,face,holder){
   const H=meshes.find(m=>/Casual_Head/.test(m.name)&&m.skeleton); if(!H) return false;
   const f=face||{}, eyes=FACE_EYES[f.eyes]?f.eyes:"", eyec=LOOK_EYEC.find(x=>x.id===f.eyec)?(f.eyec||""):"",
         mouth=FACE_MOUTHS[f.mouth]?f.mouth:"", nose=FACE_NOSES[f.nose]?f.nose:"";
-  const lipDark=!!(f.skin && _hexLum(f.skin)<0.36);
-  const key=[eyes,eyec,mouth,nose,(mouth&&lipDark)?"d":""].join("|"), cur=H.__face;
+  /* v303: le labbra prendono il colore dalla pelle: con la bocca la chiave cambia con lei */
+  const key=[eyes,eyec,mouth,nose,mouth?(f.skin||""):""].join("|"), cur=H.__face;
   if(cur && cur.key===key) return false;
   if(cur){ cur.meshes.forEach(m=>{ try{ m.dispose(false,false); }catch(e){}
     if(holder){ const k=holder.indexOf(m); if(k>=0) holder.splice(k,1); } }); H.__face=null; }
@@ -55941,7 +55976,9 @@ const Look=(function(){
              hatc:s.hatc||"", facec:s.facec||"", neckc:s.neckc||"",       // v279: il loro colore
              cut:s.cut||"",                                               // v279: il taglio ("" = quello del modello)
              coat:s.coat||"", coatc:s.coatc||"",                         // v280: giacca e suo colore
-             eyes:s.eyes||"", eyec:s.eyec||"", nose:s.nose||"", mouth:s.mouth||"" }; }   // v302: il viso
+             /* v303: occhi/bocche tolti (happy, smile, grin, smirk, open) -> «Original» */
+             eyes:(LOOK_EYES.some(x=>x.id===s.eyes)?s.eyes:""), eyec:s.eyec||"", nose:s.nose||"",
+             mouth:(LOOK_MOUTHS.some(x=>x.id===s.mouth)?s.mouth:"") }; }   // v302: il viso
   function save(s){ Sync.set(K,s); return s; }
   function rig(){ return state().rig; }
   function skin(){ return state().skin; }
@@ -56735,6 +56772,7 @@ function applyPlayerFit(id){
        tinta esatta la faccia sembra disegnata con un pennarello solo. */
     let c=BABYLON.Color3.FromHexString(TINTA[slot]);
     if(slot==="hair" && /^Eyebrows/.test(cur.name)) c=c.scale(0.62);
+    if(slot==="skin"){ _skinPaint(mt,TINTA.skin); return; }   // v303: vedi _skinPaint
     if(slot==="shoes"){
       /* ⚠️ Si conservano le due correzioni del 30 ago, quelle per cui le
          scarpe non sparivano piu' sull'asfalto: la SUOLA resta piu' chiara
@@ -57076,12 +57114,12 @@ function buildTeca(){
       h+='<div class="tc-sub">'+title+'</div><div class="gem-fits">';
       list.forEach(function(o){ const on=((cur||"")===o.id);
         h+=_tcCard('data-face="'+part+':'+o.id+'"',on,false,
-          '<span class="gem-sw tc-face" style="background:'+_skx+'">'+_tcFaceIc(part,o.id,_eyx)+'</span>',
+          '<span class="gem-sw tc-face" style="background:'+_skx+'">'+_tcFaceIc(part,o.id,_eyx,_skx)+'</span>',
           o.en,on?"that's you":"tap to choose").replace('class="gem-fit','class="gem-fit tc-fc'); });
       h+='</div>'; };
     h+='<div class="dy-sec">Your face · <span style="font-weight:400">free</span></div>';
     _fc("eyes",LOOK_EYES,_L.eyes,"Eyes");
-    h+='<div class="tc-sub">Eye colour'+(_L.eyes==="happy"?' <span style="font-weight:400">· you can\'t see it with smiling eyes</span>':'')+'</div><div class="tc-cols">';
+    h+='<div class="tc-sub">Eye colour</div><div class="tc-cols">';
     LOOK_EYEC.forEach(function(k){ h+=_tcCol('data-face="eyec:'+k.id+'"',(_L.eyec||"")===k.id,false,k.hex,k.en,""); });
     h+='</div>';
     _fc("nose",LOOK_NOSES,_L.nose,"Nose");
@@ -57198,22 +57236,27 @@ function buildTeca(){
   wire("data-face",   v=>{ const p=v.split(":"); return setPlayerFace(p[0],p[1]); });
 }
 /* v302 — i disegnini del viso nei campioni della Teca (viewBox 20x20) */
-function _tcFaceIc(part,id,eye){
-  const D="#1c1410", L="#4a1f1d", W="#f6f3ec", s='<svg viewBox="0 0 20 20">', e='</svg>';
+function _tcFaceIc(part,id,eye,skin){
+  const D="#1c1410", W="#f6f3ec", s='<svg viewBox="0 0 20 20">', e='</svg>';
   const eyes=function(f){ return f(6)+f(14); };
   if(part==="eyes"){
     if(id==="round")  return s+eyes(function(x){ return '<circle cx="'+x+'" cy="10" r="3.4" fill="'+W+'"/><circle cx="'+x+'" cy="10" r="2.1" fill="'+eye+'"/><circle cx="'+x+'" cy="10" r="1" fill="'+D+'"/>'; })+e;
     if(id==="almond") return s+eyes(function(x){ const k=(x<10?-1:1); return '<path d="M'+(x-4)+' '+(10+k*0.3*-1)+' Q'+x+' 6.6 '+(x+4)+' '+(10-k*0.3*-1)+' Q'+x+' 13 '+(x-4)+' '+(10+k*0.3*-1)+'Z" fill="'+W+'"/><circle cx="'+x+'" cy="10" r="1.9" fill="'+eye+'"/><circle cx="'+x+'" cy="10" r=".9" fill="'+D+'"/>'; })+e;
     if(id==="big")    return s+eyes(function(x){ return '<ellipse cx="'+x+'" cy="10.4" rx="3.6" ry="4.4" fill="'+W+'"/><circle cx="'+x+'" cy="10.8" r="2.6" fill="'+eye+'"/><circle cx="'+x+'" cy="10.8" r="1.2" fill="'+D+'"/><circle cx="'+(x-0.9)+'" cy="9.6" r=".6" fill="#fff"/>'; })+e;
-    if(id==="narrow") return s+eyes(function(x){ return '<ellipse cx="'+x+'" cy="10" rx="3.8" ry="1.6" fill="'+W+'"/><circle cx="'+x+'" cy="10" r="1.5" fill="'+eye+'"/><path d="M'+(x-3.9)+' 9.6 Q'+x+' 7.9 '+(x+3.9)+' 9.6" stroke="'+D+'" stroke-width=".9" fill="none"/>'; })+e;
-    if(id==="happy")  return s+eyes(function(x){ return '<path d="M'+(x-3.2)+' 11.2 Q'+x+' 6.4 '+(x+3.2)+' 11.2" stroke="'+D+'" stroke-width="1.3" fill="none" stroke-linecap="round"/>'; })+e;
+    if(id==="narrow") return s+eyes(function(x){ return '<ellipse cx="'+x+'" cy="10" rx="3.8" ry="1.8" fill="'+W+'"/><circle cx="'+x+'" cy="10" r="1.6" fill="'+eye+'"/><path d="M'+(x-3.9)+' 9.4 Q'+x+' 7.7 '+(x+3.9)+' 9.4" stroke="'+D+'" stroke-width=".9" fill="none"/>'; })+e;
+    /* v303: inclinati, l'angolo ESTERNO in su o in giu' (a sinistra nel disegno l'occhio destro) */
+    if(id==="up"||id==="down"){ const a=(id==="up"?1:-1)*17;
+      return s+eyes(function(x){ const r=(x<10?a:-a);
+        return '<g transform="rotate('+r+' '+x+' 10)"><path d="M'+(x-3.9)+' 10 Q'+x+' 6.8 '+(x+3.9)+' 10 Q'+x+' 12.8 '+(x-3.9)+' 10Z" fill="'+W+'"/></g><circle cx="'+x+'" cy="10" r="1.8" fill="'+eye+'"/><circle cx="'+x+'" cy="10" r=".85" fill="'+D+'"/>'; })+e; }
     return s+eyes(function(x){ return '<rect x="'+(x-2)+'" y="8" width="4" height="4" fill="'+D+'"/>'; })+e; }
   if(part==="mouth"){
-    if(id==="smile") return s+'<path d="M5 9 Q10 15 15 9" stroke="'+L+'" stroke-width="1.5" fill="none" stroke-linecap="round"/>'+e;
-    if(id==="grin")  return s+'<path d="M4.5 8 Q10 9.4 15.5 8 Q15 16 10 16 Q5 16 4.5 8Z" fill="#3a1416"/><path d="M5 8.3 Q10 9.6 15 8.3 L14.8 10.4 Q10 11.2 5.2 10.4Z" fill="#f3efe6"/>'+e;
-    if(id==="small") return s+'<path d="M7.6 10 Q10 11.6 12.4 10" stroke="'+L+'" stroke-width="1.5" fill="none" stroke-linecap="round"/>'+e;
-    if(id==="smirk") return s+'<path d="M5.5 11 Q10 11.6 15 8" stroke="'+L+'" stroke-width="1.5" fill="none" stroke-linecap="round"/>'+e;
-    if(id==="open")  return s+'<ellipse cx="10" cy="10.6" rx="2.6" ry="3.2" fill="#3a1416" stroke="'+L+'" stroke-width=".7"/>'+e;
+    /* v303: le labbra disegnate col loro colore (dalla pelle), tutte chiuse */
+    const ML={ thin:[5.2,0.9,1.2,0.3], full:[5.2,2.4,3.1,0.35], wide:[6.8,1.5,1.9,0.25], small:[3.2,1.6,2.1,0.3], heart:[4.4,2.4,2.5,0.75] }[id];
+    if(ML){ const w=ML[0], u=ML[1], l=ML[2], bw=ML[3], lip=_lipHex(skin), up=_hexMul(lip,0.9), ln=_hexMul(lip,0.45), y=10.6;
+      const cU=y-u, cB=y-u*(1-bw*0.9);
+      return s+'<path d="M'+(10-w)+' '+y+' C'+(10-w*0.7)+' '+(cU+0.2)+' '+(10-w*0.35)+' '+cU+' 10 '+cB+' C'+(10+w*0.35)+' '+cU+' '+(10+w*0.7)+' '+(cU+0.2)+' '+(10+w)+' '+y+'Z" fill="'+up+'"/>'
+        +'<path d="M'+(10-w)+' '+y+' C'+(10-w*0.6)+' '+(y+l*1.25)+' '+(10+w*0.6)+' '+(y+l*1.25)+' '+(10+w)+' '+y+'Z" fill="'+lip+'"/>'
+        +'<path d="M'+(10-w*1.03)+' '+y+' H'+(10+w*1.03)+'" stroke="'+ln+'" stroke-width=".7" stroke-linecap="round"/>'+e; }
     return s+'<path d="M6 10.5 H14" stroke="rgba(0,0,0,.18)" stroke-width="1.2" stroke-dasharray="1.5 1.5"/>'+e; }
   /* naso: di fronte, la riga del ponte e le narici */
   const n={ "":[3.2,7,12.6], small:[2.4,8.6,12], button:[3,8,11.4], wide:[4.8,7,12.6], long:[3,4.6,14.2] }[id]||[3.2,7,12.6];
@@ -57853,6 +57896,7 @@ const Presenza=(function(){
       }
       let c=BABYLON.Color3.FromHexString(T[slot]);
       if(slot==="hair" && /Eyebrows/.test(mt.name)) c=c.scale(0.62);
+      if(slot==="skin"){ _skinPaint(mt,T.skin); return; }      // v303
       const kd=(LOOK_SHOES.find(function(x){return x.id===L.shoes;})||{}).kind;
       if(slot==="shoes" && /White/i.test(mt.name))
         c=(kd==="boots") ? BABYLON.Color3.FromHexString("#2b2522")
