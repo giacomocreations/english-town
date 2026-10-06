@@ -4675,8 +4675,18 @@ function qSenzaAvvisi(f){
   ob.notifyObservers=function(){ n++; return true; };
   try{ return f(); }
   finally{ ob.notifyObservers=orig; if(n&&firma()!==f0) ob.notifyObservers(ipc); } }
+/* ⚠️ IL DEPTH RENDERER RESTAVA ACCESO (6 ott). La pipeline nasce con la
+   profondita' di campo accesa e crea il DepthRenderer, che ridisegna TUTTA
+   la scena una seconda volta a ogni frame; spegnendo la profondita' di campo
+   (Low, Medium) Babylon smette di usarlo ma NON lo spegne. Misurato su Low,
+   verso il parco: 471 chiamate di disegno su 994 erano sue, per niente.
+   Dopo ogni ricostruzione, se la profondita' di campo e' spenta, si spegne
+   anche lui; quando si riaccende, la pipeline lo ricrea da se'. Nessun
+   altro codice del gioco usa la mappa di profondita'. */
+function qDepthSpento(){ try{ if(!pipe.depthOfFieldEnabled && scene._depthRenderer && scene._depthRenderer[camera.id])
+  scene.disableDepthRenderer(camera); }catch(e){} }
 try{ const bp=pipe._buildPipeline;
-  if(typeof bp==="function") pipe._buildPipeline=function(){ return qSenzaAvvisi(()=>bp.apply(pipe,arguments)); };
+  if(typeof bp==="function") pipe._buildPipeline=function(){ const r=qSenzaAvvisi(()=>bp.apply(pipe,arguments)); qDepthSpento(); return r; };
 }catch(e){ console.warn("pipeline: ritocco avvisi non agganciato",e); }
 
 // glow per lampioni/insegne (cielo escluso)
@@ -5107,6 +5117,85 @@ function taglioPersonaggi(){
 scene.onBeforeActiveMeshesEvaluationObservable.add(()=>{ try{ taglioPersonaggi(); }catch(e){} });
 
 /* =====================================================================
+   OGGETTI PICCOLI E LONTANI (6 ott: «verso il parco va piu' lento che verso
+   la Central Station; su Max ~12 fps fra i palazzi»). Misurato: verso il
+   parco 1065 disegni sulla sola scena, e 572 erano oggetti che a quella
+   distanza coprono pochi pixel (vasi e arredi del giardino, lampioni, rocce,
+   alberi in fondo, quasi sempre gia' dentro la nebbia). Ogni oggetto e' una
+   copia del suo GLB, quindi ognuno costa una chiamata di disegno a se'.
+   Si salta chi ha raggio/distanza sotto una soglia per livello (Low 0,012 =
+   un oggetto da 1 m di raggio sparisce oltre ~80 m, dove la nebbia comincia;
+   Max 0,0015 = solo le briciole oltre la nebbia). E' il selettore di LOD di Babylon: restituire
+   null vuol dire «non disegnare», e vale anche per la mappa delle ombre (che
+   sceglie con la camera principale). Restano SEMPRE: personaggi (hanno il
+   loro taglio), cielo, orizzonte, tutto cio' che e' «sempre attivo» o
+   __noCull, e qualunque cosa se la camera non e' quella di gioco (le
+   cartoline della macchina fotografica escono complete).
+   Via d'uscita in aula: ET.taglioDistanza(false). */
+const CULL_K={ basso:0.012, medio:0.006, alto:0.003, max:0.0015 };
+let _cullK=0.006, _cullOn=true;
+scene.customLODSelector=function(m,cam){
+  const k=_cullOn?_cullK:0;
+  if(k>0 && cam===camera && !m.alwaysSelectAsActiveMesh && m.__noCull!==true && !m.infiniteDistance && m.__horizon!==true){
+    const bi=m.getBoundingInfo(), bs=bi&&bi.boundingSphere;
+    if(bs){ const c=bs.centerWorld, p=cam.globalPosition, lim=bs.radiusWorld/k;
+      const dx=c.x-p.x, dy=c.y-p.y, dz=c.z-p.z;
+      if(dx*dx+dy*dy+dz*dz>lim*lim) return null; } }
+  return m.getLOD(cam); };
+
+/* =====================================================================
+   OMBRE ATTORNO AL GIOCATORE (6 ott). Il riquadro del sole copriva tutta la
+   citta' (±170 m) e la mappa ridisegnava a OGNI frame tutti i 1773 oggetti
+   che fanno ombra, anche quelli a 300 m: 1576 chiamate di disegno solo per
+   le ombre, su High e Max. Babylon non scarta per conto suo chi sta fuori
+   dal riquadro (la lista va disegnata intera).
+   Ora il riquadro (±80 m) segue il giocatore e si disegnano solo gli oggetti
+   la cui sfera cade dentro il riquadro VISTO DAL SOLE (un palazzo appena
+   fuori, ma che proietta l'ombra dentro, resta). Stessa mappa da 4096 su
+   160 m invece di 340: ombre anche piu' nitide.
+   ⚠️ Il «nuoto» delle ombre (motivo per cui il riquadro era fisso, vedi
+   autoUpdateExtends piu' su) non torna: la posizione del sole si sposta
+   solo a passi interi di texel, nel piano della luce, quindi ogni texel
+   cade sempre sullo stesso pezzo di mondo.
+   Via d'uscita: ET.ombreSeguono(false) rimette il riquadro fisso. */
+const OMBRA_S=80, OMBRA_D=160;
+/* in piu': un oggetto piccolo e lontano dalla camera non ha bisogno della
+   sua ombra (una panchina a 40 m: due pixel grigi). Soglia raggio/distanza
+   per livello; i palazzi non ci arrivano mai. */
+const OMBRA_K={ basso:0.02, medio:0.02, alto:0.02, max:0.012 };
+let _oOn=true, _oA=0, _oB=0;
+const _oX=new BABYLON.Vector3(), _oY=new BABYLON.Vector3(), _oZ=new BABYLON.Vector3(), _oList=[];
+function ombraSegui(){
+  if(!_oOn || !sun.shadowEnabled) return;
+  let p; try{ p=player.position; }catch(e){ return; } if(!p) return;
+  _oZ.copyFrom(sun.direction).normalize();
+  BABYLON.Vector3.CrossToRef(BABYLON.Vector3.UpReadOnly,_oZ,_oX); _oX.normalize();
+  BABYLON.Vector3.CrossToRef(_oZ,_oX,_oY); _oY.normalize();
+  const tx=(2*OMBRA_S)/(shadowGen.getShadowMap().getSize().width||4096);
+  _oA=Math.round(BABYLON.Vector3.Dot(p,_oX)/tx)*tx; _oB=Math.round(BABYLON.Vector3.Dot(p,_oY)/tx)*tx;
+  const c=BABYLON.Vector3.Dot(p,_oZ)-OMBRA_D;
+  sun.position.set(_oX.x*_oA+_oY.x*_oB+_oZ.x*c, _oX.y*_oA+_oY.y*_oB+_oZ.y*c, _oX.z*_oA+_oY.z*_oB+_oZ.z*c);
+  if(sun.orthoRight!==OMBRA_S){ sun.orthoLeft=-OMBRA_S; sun.orthoRight=OMBRA_S; sun.orthoTop=OMBRA_S; sun.orthoBottom=-OMBRA_S; } }
+function ombraFissa(){ sun.position.set(70,120,-50); sun.orthoLeft=-170; sun.orthoRight=170; sun.orthoTop=170; sun.orthoBottom=-170; }
+scene.onBeforeRenderObservable.add(()=>{ try{ ombraSegui(); }catch(e){} });
+try{ shadowGen.getShadowMap().getCustomRenderList=function(layer,list,n){
+  if(!_oOn) return null;
+  const out=_oList; out.length=0; const S=OMBRA_S;
+  const cp=camera.globalPosition, k=_cullOn?(OMBRA_K[qLevel]||0):0;
+  for(let i=0;i<n;i++){ const m=list[i]; if(!m) continue;
+    /* personaggi nascosti dal loro taglio (layerMask 0): con una lista
+       propria Babylon non guarda il layerMask, e avrebbero fatto ombra lo
+       stesso — con lo scheletro calcolato apposta */
+    if(m.layerMask===0) continue;
+    const bs=m.getBoundingInfo().boundingSphere, c=bs.centerWorld, r=bs.radiusWorld+0.5;
+    const a=c.x*_oX.x+c.y*_oX.y+c.z*_oX.z-_oA, b=c.x*_oY.x+c.y*_oY.y+c.z*_oY.z-_oB;
+    if(!(a>-S-r && a<S+r && b>-S-r && b<S+r)) continue;
+    if(k>0 && !m.skeleton){ const lim=bs.radiusWorld/k, dx=c.x-cp.x, dy=c.y-cp.y, dz=c.z-cp.z;
+      if(dx*dx+dy*dy+dz*dz>lim*lim) continue; }
+    out.push(m); }
+  return out; }; }catch(e){ console.warn("ombre attorno al giocatore non agganciate",e); }
+
+/* =====================================================================
    RAGGI VELOCI (5 ott) — il ciclo di gioco lancia tre raggi a OGNI frame
    (terreno sotto i piedi, muro dietro la camera, palazzi da sfumare fra
    camera e avatar). scene.multiPickWithRay scorre tutte le ~4300 mesh e, per
@@ -5257,6 +5346,10 @@ function applyQuality(q,ricorda){ if(QLEVELS.indexOf(q)<0) q="medio"; qLevel=q;
      buttato per un effetto invisibile. isEnabled=false lo ferma davvero
      (+21% di fotogrammi nella prova in aula). */
   glowL.isEnabled=qAlmenoAlto(q); glowL.intensity=0.65;
+  /* il bagliore e' un alone sfocato a 512 px: ridisegnarlo un frame si' e
+     uno no non si vede, e dimezza le ~900 chiamate che costava (6 ott) */
+  try{ if(glowL._mainTexture) glowL._mainTexture.refreshRate=2; }catch(e){}
+  try{ _cullK=CULL_K[q]||0; }catch(e){}
   try{ if(CLUB_FX.in){ CLUB_FX.glow=glowL.isEnabled; glowL.isEnabled=false; } }catch(e){}   // v262: dentro il Beat Club il glow resta spento
   qEtichetta();
   /* ⚠️ SI RICORDA SOLO LA SCELTA ESPLICITA (pulsante ⚙︎). Prima veniva salvato
@@ -58511,6 +58604,12 @@ ET.taglioPersonaggi=function(on){
   let n=0, nasc=0; try{ NPCS.forEach(x=>{ n++; const m=x.holder&&x.holder.getChildMeshes(false)[0]; if(m&&m.layerMask===0) nasc++; }); }catch(e){}
   return { attivo:_pgOn, personaggi:n, nascosti:nasc, distanza:PG_DIST[qLevel] };
 };
+ET.taglioDistanza=function(on){
+  if(on===false||on===true){ _cullOn=on; toast("Taglio per distanza "+(on?"acceso":"spento")); }
+  return { attivo:_cullOn, soglia:_cullK, livello:qLevel }; };
+ET.ombreSeguono=function(on){
+  if(on===false||on===true){ _oOn=on; if(!on) ombraFissa(); toast("Ombre attorno al giocatore "+(on?"accese":"spente")); }
+  return { attivo:_oOn, riquadro:OMBRA_S*2+" m", ombre:sun.shadowEnabled }; };
 ET.presenzaSpegni=function(){ Presenza.spegni(); return "\u{1F465} presenza spenta su questa finestra"; };
 
 engine.runRenderLoop(()=>scene.render());
