@@ -42495,23 +42495,28 @@ window.ET=ET;
 async function begin(){
   if(typeof BABYLON==="undefined"){ bootError("Le librerie 3D non si sono caricate. Ricarica la pagina (serve internet)."); return; }
   if(!glbReady()){ bootError("Il modulo .glb non si è caricato. Ricarica la pagina (serve internet)."); return; }
-  try{ await loadAll(); }catch(e){ console.warn(e); showDropMode(); return; }
-  await bootCostruisco();
+  let failed=[];
+  try{ failed=await loadAll(); }catch(e){ console.warn(e); showDropMode(); return; }
+  await bootCostruisco(failed);
   finishBoot();
 }
 /* finishBoot costruisce TUTTA la citta' in un colpo solo, senza mai lasciare
    respirare la pagina: sul vecchio Acer e sul tablet sono decine di secondi
    in cui a schermo restava «Carico Woman_B.glb …» (l'ultimo modello della
    lista) e sembrava bloccato li'. Si scrive cosa sta succedendo davvero e
-   si lascia al browser UN frame per disegnarlo, prima di partire. */
-function bootCostruisco(){ setBoot(100,"Costruisco la citt\u00e0\u2026 (sui computer lenti pu\u00f2 volerci un po')");
+   si lascia al browser UN frame per disegnarlo, prima di partire.
+   L'eventuale «N modelli sostituiti con segnaposto» di loadAll resta in
+   coda al messaggio: prima veniva sovrascritto e non lo vedeva nessuno. */
+function bootCostruisco(failed){ const n=(failed&&failed.length)||0;
+  setBoot(100,"Costruisco la citt\u00e0\u2026 (sui computer lenti pu\u00f2 volerci un po')"
+    +(n?" \u00b7 "+n+" modello/i sostituito/i con segnaposto":""));
   return new Promise(r=>requestAnimationFrame(()=>setTimeout(r,30))); }
 function readAll(reader){ return new Promise(res=>{ let a=[]; const rd=()=>reader.readEntries(es=>{ if(!es.length) res(a); else { a=a.concat(es); rd(); } }); rd(); }); }
 async function walk(entry,path,out){ if(entry.isFile){ const f=await new Promise(r=>entry.file(r)); f.__rel=path+entry.name; out.push(f); }
   else if(entry.isDirectory){ const es=await readAll(entry.createReader()); for(const e of es) await walk(e,path+entry.name+"/",out); } }
 async function intake(files){ fileMap={}; files.forEach(f=>{ if(f&&f.name) fileMap[normName(f.name)]=f; });
   document.getElementById("boot-drop").style.display="none"; document.getElementById("boot-ring").textContent="🏙️"; document.getElementById("boot-msg").textContent="Carico i modelli…";
-  try{ await loadAll(); await bootCostruisco(); finishBoot(); }
+  try{ const failed=await loadAll(); await bootCostruisco(failed); finishBoot(); }
   catch(e){ console.error(e); document.getElementById("boot-msg").innerHTML="⚠️ "+((e&&e.message)||String(e));
     document.getElementById("boot-ring").textContent="⚠️"; document.getElementById("boot-drop").style.display="block"; } }
 ["dragenter","dragover"].forEach(ev=>window.addEventListener(ev,e=>{ e.preventDefault(); document.body.classList.add("dragging"); }));
