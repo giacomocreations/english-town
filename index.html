@@ -222,6 +222,8 @@
     box-shadow:0 6px 18px rgba(20,30,40,.2);font-size:13px;}
   #badge .ey{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--plum);font-weight:700;}
   #badge b{font-size:14px;}
+  #fpsv{letter-spacing:.02em;text-transform:none;font-variant-numeric:tabular-nums;font-weight:800;}
+  #fpsv.ok{color:#2e7d46;} #fpsv.mid{color:#b07a12;} #fpsv.bad{color:var(--signal);}
   /* ---- QUEST HUD + OVERLAY ---- */
   #quest-hud{top:62px;left:14px;max-width:264px;background:rgba(251,247,236,.95);border-radius:12px;
     padding:9px 13px;box-shadow:0 6px 18px rgba(20,30,40,.2);display:none;}
@@ -618,7 +620,7 @@
 </head>
 <body>
 <canvas id="game" tabindex="0"></canvas>
-<div id="badge" class="hud"><div class="ey">QuestTown</div><b id="area-name">Town</b></div>
+<div id="badge" class="hud"><div class="ey">QuestTown<span id="fpsv"></span></div><b id="area-name">Town</b></div>
 <div id="quest-hud" class="hud">
   <div class="qh-top"><span id="qh-icon">📋</span><b id="qh-strand">…</b><span id="qh-prog" class="qh-prog">1/6</span></div>
   <div id="qh-obj">…</div>
@@ -632,7 +634,8 @@
 <div id="qpanel" role="dialog" aria-label="Graphics settings">
   <div class="qp-h">Quality</div><div class="qp-row" id="qp-lv"></div>
   <div class="qp-h">Resolution</div><div class="qp-row" id="qp-rs"></div>
-  <div class="qp-note">Slow or choppy? Lower the resolution first.</div>
+  <div class="qp-h">FPS counter</div><div class="qp-row" id="qp-fps"></div>
+  <div class="qp-note">Slow or choppy? Try Low first, then a lower resolution.</div>
   <div class="qp-info" id="qp-info"></div>
 </div>
 <button id="au-btn" title="Music volume (tap to change)">🔊</button>
@@ -5452,6 +5455,22 @@ let _qUtente=false;   // vero appena lo studente sceglie un livello nel pannello
   document.addEventListener("pointerdown",e=>{ if(!p.classList.contains("on")) return;
     if(p.contains(e.target)||b.contains(e.target)) return; chiudi(); },true);
   document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&p.classList.contains("on")) chiudi(); });
+  /* CONTATORE FPS SEMPRE A VISTA (Giacomo, 6 ott: «metti gli fps sempre
+     visibili cosi' mi rendo conto»): accanto a «QuestTown», in alto a
+     sinistra. Verde da 30 in su, giallo 20-29, rosso sotto 20. Si nasconde
+     dal pannello (riga «FPS counter»); la scelta resta sul dispositivo, in
+     et_fps, come qualita' e risoluzione. Si aggiorna due volte al secondo:
+     il numero di Babylon e' gia' una media, piu' spesso balla e basta. */
+  const fv=document.getElementById("fpsv"), fr=document.getElementById("qp-fps");
+  let fpsOn=true; try{ fpsOn=localStorage.getItem("et_fps")!=="0"; }catch(e){}
+  const fpsTick=()=>{ if(!fv) return;
+    if(!fpsOn){ if(fv.textContent) fv.textContent=""; return; }
+    const f=Math.round(engine.getFps()); fv.textContent=" \u00b7 "+f+" fps";
+    fv.className=f>=30?"ok":(f>=20?"mid":"bad"); };
+  const fpsBtn=()=>{ if(fr) fr.querySelectorAll("button").forEach(x=>x.classList.toggle("on",(x.dataset.f==="1")===fpsOn)); };
+  if(fr) [["1","Show"],["0","Hide"]].forEach(([v,t])=>{ const x=document.createElement("button"); x.type="button"; x.dataset.f=v; x.textContent=t;
+    x.onclick=()=>{ fpsOn=(v==="1"); try{ localStorage.setItem("et_fps",v); }catch(e){} fpsBtn(); fpsTick(); }; fr.appendChild(x); });
+  fpsBtn(); setInterval(fpsTick,500);
   /* la risoluzione scelta a mano vale da subito, gia' durante il caricamento:
      sul tablet che arranca e' proprio li' che serve */
   try{ if(rLevel!=="auto") engine.setHardwareScalingLevel(qScalaEff()); }catch(e){}
@@ -16807,7 +16826,7 @@ const Cloud=(function(){
    Tutte le chiavi di gioco sono namespacizzate col CODICE PERSONALE dello
    studente: su un Chromebook condiviso due alunni non si sovrascrivono piu'
    (prima et_progress era unico per DISPOSITIVO). Restano NON namespacizzate
-   le preferenze della macchina (et_view, et_quality, et_res) e l'identita' stessa.
+   le preferenze della macchina (et_view, et_quality, et_res, et_fps) e l'identita' stessa.
    ===================================================================== */
 const Sync=(function(){
   let ns="", vol=null;      // vol != null  =>  OSPITE: si scrive in RAM, non su disco
@@ -42306,7 +42325,7 @@ const ET={
     const suf="::"+c, locali=[];
     try{ for(let i=localStorage.length-1;i>=0;i--){ const k=localStorage.key(i);
       if(!k||k.indexOf("et_")!==0) continue;
-      if(k==="et_view"||k==="et_quality"||k==="et_res"||k==="et_student_code") continue;
+      if(k==="et_view"||k==="et_quality"||k==="et_res"||k==="et_fps"||k==="et_student_code") continue;
       if(k.length<=suf.length || k.slice(-suf.length)!==suf) continue;
       localStorage.removeItem(k); locali.push(k); } }catch(e){}
     return Cloud.scrivi(ET_PROGRESS+c, null, 8000).then(function(w){
@@ -42367,7 +42386,7 @@ const ET={
     const suf="::"+ns;
     try{ for(let i=localStorage.length-1;i>=0;i--){ const k=localStorage.key(i);
       if(!k||k.indexOf("et_")!==0) continue;
-      if(k==="et_view"||k==="et_quality"||k==="et_res"||k==="et_student_code") continue;
+      if(k==="et_view"||k==="et_quality"||k==="et_res"||k==="et_fps"||k==="et_student_code") continue;
       /* \u26a0\ufe0f suffisso ESATTO, non indexOf: con indexOf il codice "AB" avrebbe
          cancellato anche le chiavi "::ABC" di un compagno. */
       if(k.length<=suf.length || k.slice(-suf.length)!==suf) continue;
@@ -42555,7 +42574,7 @@ const ET={
     const cand=[];
     try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i);
       if(!k||k.indexOf("et_")!==0) continue;
-      if(k==="et_view"||k==="et_quality"||k==="et_res") continue;      // preferenze della macchina
+      if(k==="et_view"||k==="et_quality"||k==="et_res"||k==="et_fps") continue;      // preferenze della macchina
       cand.push(k); } }catch(e){}
     /* ll_student_code e' di StudentApp, non del gioco: non si tocca. Ma se c'e'
        va detto, perche' al ricaricamento Student.boot() lo ripesca e si rientra
