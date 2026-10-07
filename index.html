@@ -1710,7 +1710,10 @@ const UNIT_TRAVEL={ id:"u2_5", area:"station", areaName:"Central Station",
   title:"Unit 5 — Travel", size:10, tint:"#cdd6da", wallH:5.2,
   enterToast:"Sei entrato nella Central Station",
   onEnter:()=>setTimeout(buildStationNPCs,0),   // stesso pattern anti-TTS di buildEmma
+  wallHex:"#efe4cc",        // v304: intonaco crema sopra lo zoccolo (vedi tDecor)
   props:[
+    /* v304: il decoro d'epoca dell'atrio, senza ingombri */
+    { prop:"tDecor", x:0, z:0, solid:false, shadow:false },
     /* biglietteria (bancone Desk + cassa) sul muro OVEST */
     { key:"f_table",   x:-7.6, z:0.0,  yaw:Math.PI/2, fit:2.6 },
     { prop:"cashDesk", x:-7.5, z:-2.4, yaw:Math.PI/2 },
@@ -5805,8 +5808,12 @@ function updateDayNight(dt){ if(!DAY.enabled) return;
        verrebbero riscritte a ogni frame da questa stessa riga. */
     const _fd=_fin?(m.__finOn?1:FIN.dim):1;
     m.emissiveColor.set(e.r*nightF*_fd,e.g*nightF*_fd,e.b*nightF*_fd); }
-  if(hzWinTex){ hzWinTex.level=nightF*3.0; if(hzWinTex.__twin) hzWinTex.__twin.level=hzWinTex.level; }   // finestre skyline: bloom caldo di notte
-  if(glowL.isEnabled) glowL.intensity=0.4+0.4*nightF;   // acceso solo su «Alto» e «Max»: vedi applyQuality
+  if(hzWinTex){ hzWinTex.level=nightF*2.2; if(hzWinTex.__twin) hzWinTex.__twin.level=hzWinTex.level; }   // finestre skyline: bloom caldo di notte
+  /* v304 (Giacomo, 7 ott: «diminuire glow notturno»): di notte arrivava a
+     0,8 e finestre, lampioni e perfino le strisce pedonali si sfocavano in
+     aloni bianchi. Ora 0,35 di giorno e 0,5 di notte; le finestre lontane
+     dello skyline da 3,0 a 2,2. */
+  if(glowL.isEnabled) glowL.intensity=0.35+0.15*nightF;   // acceso solo su «Alto» e «Max»: vedi applyQuality
   /* \u26a0\ufe0f IL CANCELLO DELLA RIDIPINTURA guarda ANCHE la pioggia. Senza, il
      cielo si sarebbe ridipinto solo al variare di nightF: di giorno nightF
      sta fermo a zero, quindi l'acquazzone avrebbe abbassato le luci senza
@@ -12011,14 +12018,7 @@ function buildStation(){
   plat.material=sidewalkMat("platm",6,26); plat.position.set(platX,0.3,platZ); plat.parent=townRoot; plat.__occluder=true; plat.__ground=true;
   { const yl=BABYLON.MeshBuilder.CreateBox("platYl",{width:0.4,height:0.02,depth:25.6},scene);
     yl.material=mat("platYlm","#e2b928"); yl.position.set(platX+2.6,0.61,platZ); yl.parent=townRoot; yl.isPickable=false;
-    const iron=mat("platIronm","#2f4a3f"); iron.specularColor=new BABYLON.Color3(0.12,0.12,0.12);
-    const roofC=BABYLON.MeshBuilder.CreateBox("platRoof",{width:4.6,height:0.14,depth:22},scene);
-    roofC.material=iron; roofC.position.set(platX,4.1,platZ); roofC.parent=townRoot; roofC.__occluder=true; roofC.isPickable=false;
-    const fas=BABYLON.MeshBuilder.CreateBox("platFascia",{width:4.7,height:0.35,depth:22.1},scene);
-    fas.material=mat("platFasm","#e6e0d2"); fas.position.set(platX,3.92,platZ); fas.parent=townRoot; fas.__occluder=true; fas.isPickable=false;
-    [-8.5,-2.8,2.8,8.5].forEach(dz=>{ const c=BABYLON.MeshBuilder.CreateCylinder("platCol",{diameter:0.22,height:3.5,tessellation:10},scene);
-      c.material=iron; c.position.set(platX,0.6+1.75,platZ+dz); c.parent=townRoot; c.__occluder=true; c.isPickable=false;
-      addSolid(platX-0.2,platX+0.2,platZ+dz-0.2,platZ+dz+0.2,"town"); }); }
+    stationShed(platX,platZ); }
   // BINARI: escono dalla stazione verso SUD (un solo lato), corrono su terreno aperto
   // lontano dagli edifici e SVANISCONO nella nebbia prima del fondale d'orizzonte
   // (le torri sono ora a r~246+, i binari arrivano a r~200). Per allungarli/accorciarli
@@ -12059,6 +12059,99 @@ function buildStation(){
   dressBuilding(root,{ name:S.t, front:[0,dir], door:[stDX,doorZ], accent:_mixHex(ST_HEX,"#1c1a18",0.42).toHexString() });
   facilitySign(root.position.x, Math.min(b.max.y*0.42,7.2), doorZ+dir*0.45, S.ic, S.t);
   lamp(S.x-12,S.z+12); lamp(S.x-12,S.z-12); tree(S.x-13,S.z); 
+  stationFront(root,b,stDX,doorZ);      // v304: pensilina, orologio, scritta sul tetto
+}
+/* =====================================================================
+   v304 — LA CENTRAL STATION SEMBRA UNA STAZIONE (Giacomo, 7 ott:
+   «migliorare central station graficamente»). Il modello e' una torre
+   stretta (6,8 x 14 m) che da sola si legge come un condominio: le danno
+   carattere le cose che ha ogni stazione vera.
+   · stationShed: la grande VOLTA di ferro e vetro sopra banchina e binari
+     (al posto della tettoia piatta), archi a sesto ribassato ogni 3,7 m su
+     colonne di ghisa, vetrata a vela fra un arco e l'altro, arcarecci;
+   · stationFront: la pensilina in ferro e vetro sull'ingresso, l'orologio
+     da stazione su palo nel piazzale e la scritta CENTRAL STATION sul tetto.
+   Solidi solo dove c'e' davvero qualcosa a terra (colonne e palo). ===== */
+function stationShed(platX,platZ){
+  const V=BABYLON.Vector3, iron=mat("shedIronm","#2f4a3f"); iron.specularColor=new BABYLON.Color3(0.15,0.15,0.15);
+  const xa=platX-3.25, xb=platX+8.2, xc=(xa+xb)/2, half=(xb-xa)/2, ys=4.6, rise=3.6, z0=platZ-11.1, z1=platZ+11.1;
+  const at=t=>new V(xc-Math.cos(t)*half, ys+Math.sin(t)*rise, 0);      // t 0..PI, da ovest a est
+  const r=new BABYLON.TransformNode("stShed",scene); r.parent=townRoot;
+  const NR=7, ribs=[], bars=[];
+  for(let i=0;i<NR;i++){ const z=z0+(z1-z0)*i/(NR-1), P=[];
+    for(let k=0;k<=20;k++){ const p=at(k/20*Math.PI); p.z=z; P.push(p); }
+    ribs.push(BABYLON.MeshBuilder.CreateTube("shedRib",{path:P,radius:0.11,tessellation:8},scene));
+    /* tirante e i due pennacchi decorativi alle reni */
+    ribs.push(BABYLON.MeshBuilder.CreateTube("shedTie",{path:[new V(xa,ys,z),new V(xb,ys,z)],radius:0.035,tessellation:6},scene));
+    [0.22,Math.PI-0.22].forEach(t=>{ const p=at(t); p.z=z; ribs.push(BABYLON.MeshBuilder.CreateTube("shedStr",{path:[new V(t<1?xa:xb,ys,z),p],radius:0.05,tessellation:6},scene)); });
+    /* colonne di ghisa con base e capitello */
+    [xa,xb].forEach(x=>{ const c=BABYLON.MeshBuilder.CreateCylinder("shedCol",{diameter:0.26,height:ys,tessellation:12},scene);
+      c.position.set(x,ys/2,z); ribs.push(c);
+      const cb=BABYLON.MeshBuilder.CreateBox("shedColB",{width:0.5,height:0.5,depth:0.5},scene); cb.position.set(x,0.25,z); ribs.push(cb);
+      const cc=BABYLON.MeshBuilder.CreateCylinder("shedColC",{diameterTop:0.55,diameterBottom:0.26,height:0.35,tessellation:12},scene); cc.position.set(x,ys-0.15,z); ribs.push(cc);
+      addSolid(x-0.2,x+0.2,z-0.2,z+0.2,"town"); }); }
+  /* arcarecci lungo z, ogni due segmenti dell'arco */
+  for(let k=1;k<20;k+=2){ const p=at(k/20*Math.PI);
+    bars.push(BABYLON.MeshBuilder.CreateBox("shedPur",{width:0.07,height:0.07,depth:z1-z0},scene)); bars[bars.length-1].position.set(p.x,p.y+0.06,(z0+z1)/2); }
+  const R=BABYLON.Mesh.MergeMeshes(ribs.concat(bars),true,true); if(R){ R.material=iron; R.parent=r; R.__occluder=true; R.isPickable=false; }
+  /* la vetrata: una superficie sola sopra gli archi, a due facce, appena azzurra */
+  const pos=[], idx=[], N=24;
+  for(let k=0;k<=N;k++){ const p=at(k/N*Math.PI); pos.push(p.x,p.y+0.1,z0, p.x,p.y+0.1,z1); }
+  for(let k=0;k<N;k++){ const a=2*k; idx.push(a,a+1,a+3, a,a+3,a+2); }
+  const nr=[]; BABYLON.VertexData.ComputeNormals(pos,idx,nr);
+  const vd=new BABYLON.VertexData(); vd.positions=pos; vd.indices=idx; vd.normals=nr;
+  const gl=new BABYLON.Mesh("shedGlass",scene); vd.applyToMesh(gl); gl.parent=r; gl.isPickable=false;
+  const gm=new BABYLON.StandardMaterial("shedGlassm",scene); gm.diffuseColor=new BABYLON.Color3(0.58,0.76,0.80);
+  gm.specularColor=new BABYLON.Color3(0.7,0.8,0.85); gm.specularPower=90; gm.alpha=0.42; gm.backFaceCulling=false;
+  gl.material=gm;
+  if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(gl);
+}
+function stationFront(root,b,dx,doorZ){
+  const V=BABYLON.Vector3, iron=mat("shedIronm","#2f4a3f");
+  const r=new BABYLON.TransformNode("stFront",scene); r.parent=townRoot;
+  /* pensilina sull'ingresso: telaio in ferro, vetro, due colonnine, due mensole */
+  const cw=Math.min(6.2,(b.max.x-b.min.x)-0.4), cd=3.0, cy=3.5, parts=[];
+  const bx=(w,h,d,x,y,z)=>{ const m=BABYLON.MeshBuilder.CreateBox("stFr",{width:w,height:h,depth:d},scene); m.position.set(x,y,z); parts.push(m); return m; };
+  bx(cw,0.16,0.12,dx,cy,doorZ+cd);                                    // trave frontale
+  [-1,1].forEach(s=>{ bx(0.1,0.12,cd,dx+s*cw/2,cy,doorZ+cd/2);
+    const c=BABYLON.MeshBuilder.CreateCylinder("stFrC",{diameter:0.14,height:cy,tessellation:10},scene); c.position.set(dx+s*(cw/2-0.15),cy/2,doorZ+cd-0.15); parts.push(c);
+    addSolid(dx+s*(cw/2-0.15)-0.12,dx+s*(cw/2-0.15)+0.12,doorZ+cd-0.27,doorZ+cd-0.03,"town");
+    parts.push(BABYLON.MeshBuilder.CreateTube("stFrB",{path:[new V(dx+s*(cw/2-0.4),cy-1.0,doorZ+0.05),new V(dx+s*(cw/2-0.4),cy-0.05,doorZ+1.4)],radius:0.04,tessellation:6},scene)); });
+  for(let i=0;i<=6;i++) bx(0.05,0.08,cd,dx-cw/2+cw*i/6,cy+0.02,doorZ+cd/2);
+  /* frangia traforata sul bordo (il «merletto» delle pensiline d'epoca) */
+  for(let i=0;i<=20;i++){ const m=BABYLON.MeshBuilder.CreateCylinder("stFrL",{diameterTop:0.12,diameterBottom:0,height:0.22,tessellation:4},scene);
+    m.position.set(dx-cw/2+cw*i/20,cy-0.19,doorZ+cd+0.03); parts.push(m); }
+  const M=BABYLON.Mesh.MergeMeshes(parts,true,true); if(M){ M.material=iron; M.parent=r; M.__occluder=true; M.isPickable=false; }
+  const g=BABYLON.MeshBuilder.CreateBox("stFrG",{width:cw,height:0.03,depth:cd},scene); g.position.set(dx,cy+0.08,doorZ+cd/2); g.parent=r; g.isPickable=false;
+  const gm=new BABYLON.StandardMaterial("stFrGm",scene); gm.diffuseColor=new BABYLON.Color3(0.72,0.86,0.9); gm.alpha=0.4; gm.specularColor=new BABYLON.Color3(0.6,0.7,0.8); g.material=gm;
+  /* l'orologio da stazione su palo, a due facce */
+  const kx=dx+cw/2+2.4, kz=doorZ+4.2;
+  const post=BABYLON.MeshBuilder.CreateCylinder("stClkP",{diameterTop:0.12,diameterBottom:0.22,height:3.3,tessellation:12},scene);
+  post.material=iron; post.position.set(kx,1.65,kz); post.parent=r; post.__occluder=true; post.isPickable=false;
+  addSolid(kx-0.18,kx+0.18,kz-0.18,kz+0.18,"town");
+  const dt=new BABYLON.DynamicTexture("stClkT",{width:256,height:256},scene,true), c=dt.getContext();
+  c.clearRect(0,0,256,256); c.fillStyle="#2f4a3f"; c.beginPath(); c.arc(128,128,127,0,6.283); c.fill();
+  c.fillStyle="#f8f5ec"; c.beginPath(); c.arc(128,128,112,0,6.283); c.fill();
+  c.fillStyle="#1a1d1b"; for(let i=0;i<60;i++){ const a=i/60*6.283, L=i%5?6:16, w=i%5?2:6;
+    c.save(); c.translate(128,128); c.rotate(a); c.fillRect(-w/2,-106,w,L); c.restore(); }
+  c.lineCap="butt"; c.strokeStyle="#1a1d1b"; c.lineWidth=11; c.beginPath(); c.moveTo(128,140); c.lineTo(128+Math.cos(-2.4)*60,128+Math.sin(-2.4)*60); c.stroke();
+  c.lineWidth=7; c.beginPath(); c.moveTo(128,128); c.lineTo(128+Math.cos(-0.5)*92,128+Math.sin(-0.5)*92); c.stroke();
+  c.strokeStyle="#c8231e"; c.lineWidth=3; c.beginPath(); c.moveTo(128,128); c.lineTo(128+Math.cos(1.2)*95,128+Math.sin(1.2)*95); c.stroke();
+  c.fillStyle="#c8231e"; c.beginPath(); c.arc(128+Math.cos(1.2)*70,128+Math.sin(1.2)*70,7,0,6.283); c.fill();
+  dt.hasAlpha=true; dt.update();
+  const cm=new BABYLON.StandardMaterial("stClkM",scene); cm.diffuseTexture=dt; cm.useAlphaFromDiffuseTexture=true;
+  cm.emissiveColor=new BABYLON.Color3(0.4,0.4,0.38); cm.specularColor=new BABYLON.Color3(0.2,0.2,0.2);
+  [1,-1].forEach(s=>{ const f=BABYLON.MeshBuilder.CreatePlane("stClkF",{width:0.95,height:0.95},scene); f.material=cm; f.parent=r; f.isPickable=false;
+    f.position.set(kx,3.65,kz+s*0.07); if(s>0) f.rotation.y=Math.PI; });
+  const ring=BABYLON.MeshBuilder.CreateCylinder("stClkR",{diameter:0.98,height:0.12,tessellation:28},scene);
+  ring.material=iron; ring.rotation.x=Math.PI/2; ring.position.set(kx,3.65,kz); ring.parent=r; ring.isPickable=false;
+  /* la scritta sul tetto, su due montanti */
+  const sy=b.max.y+0.9, sz=doorZ-0.9;
+  twoSidedSign(1024,150,6.4,root.position.x,sy,sz,0.75,0.04,(c2,W,H)=>{
+    c2.fillStyle="#1f3a30"; c2.fillRect(0,0,W,H); c2.strokeStyle="#d4ae4e"; c2.lineWidth=8; c2.strokeRect(8,8,W-16,H-16);
+    c2.fillStyle="#f3e2b0"; c2.font="bold 84px Georgia,serif"; c2.textAlign="center"; c2.textBaseline="middle"; c2.fillText("CENTRAL  STATION",W/2,H/2+4); });
+  [-2.4,2.4].forEach(ox=>{ const m=BABYLON.MeshBuilder.CreateBox("stRoofP",{width:0.14,height:1.0,depth:0.14},scene);
+    m.material=iron; m.position.set(root.position.x+ox,b.max.y+0.1,sz); m.parent=r; m.isPickable=false; });
 }
 
 /* =====================================================================
@@ -13397,9 +13490,16 @@ function waterFX(material,cfg){ try{ material.__waterFX=new WaterFXPlugin(materi
    (rumore sull'angolo e sul raggio), ciuffi d'erba che entrano nella sabbia
    e lingue di sabbia che entrano nel prato; nella fascia di passaggio la
    sabbia si scurisce un poco, mescolata alla terra. */
+/* v304 (Giacomo, 7 ott: «sabbia vicino al lago piu' nitida come texture»):
+   1024 px su un disco di 39 m erano 3,8 cm per pixel, e i granelli (1-2 px)
+   sparivano nel filtro: da vicino era una macchia sfocata. Ora 2048 (1,9 cm
+   per pixel), granelli quattro volte piu' fitti e in due toni (chiari e
+   scuri, piu' contrastati), le increspature del vento sulla sabbia asciutta
+   e il filo d'acqua sul bagnasciuga; filtro anisotropo al massimo, perche'
+   la riva si guarda sempre di sbieco. */
 function lakeBankMat(rWater,rBank,rOuter){
   rOuter=rOuter||rBank;
-  const SZ=1024, rnd=_seedRand("lake-bank"), R=(a,b)=>a+rnd()*(b-a), k=rWater/rOuter, kb=rBank/rOuter, cx=SZ/2;
+  const SZ=2048, rnd=_seedRand("lake-bank"), R=(a,b)=>a+rnd()*(b-a), k=rWater/rOuter, kb=rBank/rOuter, cx=SZ/2;
   const tx=new BABYLON.DynamicTexture("lakeBankTx",{width:SZ,height:SZ},scene,true);
   const c=tx.getContext(), g=c.createRadialGradient(cx,cx,0,cx,cx,SZ/2);
   g.addColorStop(0,"rgb(190,178,138)");               // fondale (visto attraverso l'acqua)
@@ -13410,12 +13510,29 @@ function lakeBankMat(rWater,rBank,rOuter){
   g.addColorStop(Math.min(0.99,kb),"rgb(226,210,170)");
   g.addColorStop(1,"rgb(176,166,124)");               // fascia di passaggio: sabbia e terra
   c.fillStyle=g; c.fillRect(0,0,SZ,SZ);
-  for(let i=0;i<36000;i++){ const v=R(-26,20);         // granelli
-    c.fillStyle="rgba("+Math.round(190+v)+","+Math.round(172+v)+","+Math.round(130+v)+",0.45)";
-    c.fillRect(R(0,SZ),R(0,SZ),R(0.8,1.8),R(0.8,1.8)); }
-  for(let i=0;i<90;i++){ const a=R(0,6.283), r=R(k*0.55,0.99)*SZ/2;   // sassolini
-    c.fillStyle="rgba("+Math.round(R(120,170))+","+Math.round(R(115,160))+","+Math.round(R(105,145))+",0.8)";
-    c.beginPath(); c.ellipse(cx+Math.cos(a)*r,cx+Math.sin(a)*r,R(1.2,2.8),R(1,2),R(0,3),0,6.283); c.fill(); }
+  /* increspature del vento sulla sabbia asciutta: archetti quasi paralleli
+     alla riva, una cresta chiara e il suo fianco in ombra */
+  for(let i=0;i<2600;i++){ const a=R(0,6.283), rr=R(k+0.05,Math.min(0.985,kb+0.02))*SZ/2, L=R(0.008,0.022), w=R(0.6,1.4);
+    const px=cx+Math.cos(a)*rr, py=cx+Math.sin(a)*rr, wob=R(-0.6,0.6);
+    c.lineCap="round";
+    c.strokeStyle="rgba(150,130,96,"+R(0.18,0.32).toFixed(2)+")"; c.lineWidth=w*1.6;
+    c.beginPath(); c.arc(cx,cx,rr+1.6,a-L,a+L); c.stroke();
+    c.strokeStyle="rgba(246,236,204,"+R(0.30,0.5).toFixed(2)+")"; c.lineWidth=w;
+    c.beginPath(); c.arc(cx+wob,cx-wob,rr,a-L,a+L); c.stroke(); }
+  for(let i=0;i<160000;i++){ const v=R(-34,26), dark=rnd()<0.42;   // granelli: chiari e scuri
+    c.fillStyle=dark?"rgba("+Math.round(150+v)+","+Math.round(132+v)+","+Math.round(98+v)+",0.55)"
+                    :"rgba("+Math.round(214+v)+","+Math.round(198+v)+","+Math.round(156+v)+",0.55)";
+    const sz=R(0.9,2.2); c.fillRect(R(0,SZ),R(0,SZ),sz,sz*R(0.7,1.3)); }
+  for(let i=0;i<420;i++){ const a=R(0,6.283), r=R(k*0.55,0.99)*SZ/2;   // sassolini, con l'ombra
+    const x=cx+Math.cos(a)*r, y=cx+Math.sin(a)*r, ra=R(1.4,3.4), rb=ra*R(0.6,0.9), ro=R(0,3), g0=R(140,190);
+    c.fillStyle="rgba(70,60,45,0.25)"; c.beginPath(); c.ellipse(x+1.2,y+1.2,ra,rb,ro,0,6.283); c.fill();
+    c.fillStyle="rgba("+Math.round(g0)+","+Math.round(g0-R(4,14))+","+Math.round(g0-R(12,30))+",0.9)";
+    c.beginPath(); c.ellipse(x,y,ra,rb,ro,0,6.283); c.fill();
+    c.fillStyle="rgba(255,250,235,0.35)"; c.beginPath(); c.ellipse(x-ra*0.3,y-rb*0.3,ra*0.35,rb*0.3,ro,0,6.283); c.fill(); }
+  /* il filo dell'acqua sul bagnasciuga: una linea chiara un po' mossa */
+  [[k-0.003,0.3,1.6]].forEach(L=>{ c.strokeStyle="rgba(236,230,212,"+L[1]+")"; c.lineWidth=L[2]; c.beginPath();
+    for(let j=0;j<=720;j++){ const a=j/720*6.283, rr=(L[0]+0.0025*Math.sin(a*23)+0.0015*Math.sin(a*61+1))*SZ/2;
+      j?c.lineTo(cx+Math.cos(a)*rr,cx+Math.sin(a)*rr):c.moveTo(cx+Math.cos(a)*rr,cx+Math.sin(a)*rr); } c.stroke(); });
   /* bordo: alpha per pixel. 1 dentro la sabbia, 0 fuori, con una soglia che
      ondeggia (rumore a due scale sull'angolo) e una grana fine che sfrangia
      il passaggio in ciuffi invece di una sfumatura liscia */
@@ -13441,7 +13558,7 @@ function lakeBankMat(rWater,rBank,rOuter){
   }
   tx.update(); tx.hasAlpha=(rOuter>rBank);
   const m=new BABYLON.StandardMaterial("lakeBankm",scene);   // nome invariato
-  m.diffuseTexture=tx; tx.anisotropicFilteringLevel=8;
+  m.diffuseTexture=tx; tx.anisotropicFilteringLevel=16;
   if(rOuter>rBank){ m.useAlphaFromDiffuseTexture=true; m.transparencyMode=BABYLON.Material.MATERIAL_ALPHABLEND; }
   m.diffuseColor=new BABYLON.Color3(0.5,0.5,0.5);           // mai bianco: il clamp si mangia le ombre
   m.specularColor=new BABYLON.Color3(0.02,0.02,0.02);
@@ -13807,13 +13924,22 @@ function buildPark(){
   deepM.specularColor=new BABYLON.Color3(0.4,0.5,0.6); deepM.alpha=0.9;
   deep.material=deepM; deep.parent=townRoot; deep.isPickable=false;
   deep.isVisible=false;   // v238: la profondita' la fa WaterFXPlugin, senza il bordo netto del disco
-  // NON CALPESTABILE: riempio il disco con strisce AABB (midpoint, 26 bande) -> sigilla
-  // l'interno (non si attraversa) senza bloccare il prato attorno.
-  { const Rc=LKr-1, NB=26;
+  // NON CALPESTABILE: riempio il disco con strisce AABB -> sigilla l'interno
+  // (non si attraversa) senza bloccare il prato attorno.
+  /* v304 (Giacomo, 7 ott: «l'avatar puo' andare troppo avanti e sembra che
+     cammini sulle acque»). Il disco solido aveva raggio LKr-1 e 26 bande
+     larghe quanto il cerchio a META' banda: fra una banda e l'altra, verso
+     i fianchi, restavano tacche di oltre un metro, e col metro di margine si
+     arrivava a quasi due metri dentro l'acqua. Ora raggio LKr-0,55 (col
+     raggio del giocatore i piedi si fermano sul bagnasciuga, appena dentro
+     il pelo dell'acqua) e 64 bande larghe quanto il cerchio sul loro lato
+     PIU' VICINO al centro: niente tacche, al massimo qualche centimetro di
+     spigolo sporge sulla sabbia bagnata. */
+  { const Rc=LKr-0.55, NB=64;
     for(let i=0;i<NB;i++){ const z0=LKz-Rc+2*Rc*i/NB, z1=LKz-Rc+2*Rc*(i+1)/NB;
-      const dz=Math.abs((z0+z1)/2-LKz);
+      const dz=(z0<=LKz&&z1>=LKz)?0:Math.min(Math.abs(z0-LKz),Math.abs(z1-LKz));
       const hw=Math.sqrt(Math.max(Rc*Rc-dz*dz,0));
-      if(hw>0.4) addSolid(LKx-hw,LKx+hw,z0,z1,"town"); } }
+      if(hw>0.2) addSolid(LKx-hw,LKx+hw,z0,z1,"town"); } }
   landmarkSign(PX+14,5,PZ-34,"🌦️","Lake & Hills","Year 2 U3 Weather · Year 3 U3 Survival");
   /* ⚠️ il vecchio interact del lago aveva raggio 18 e, centrato a
      (PX+14, PZ-18), copriva l'intera Weather Station: qualunque cartello o
@@ -33905,6 +34031,102 @@ function salonPlane(root,w,h,py,dt,emis){
 }
 /* tabellone partenze auto-illuminato (Central Station, atrio). Il testo e'
    su piano unico rivolto a +z locale (verso la sala): cornice DIETRO. */
+/* =====================================================================
+   v304 — L'ATRIO DELLA CENTRAL STATION (Giacomo, 7 ott: «migliorare
+   central station graficamente»). Era una scatola: muri lisci, pavimento a
+   lastre, cartelli su paletti. Ora ha il carattere di una stazione d'epoca:
+   · zoccolo di piastrelle verdi lucide con la fascia di bordo, e sopra
+     intonaco crema con una cornice scura in cima ai muri;
+   · lesene di pietra con base e capitello, a ritmo regolare;
+   · finestroni ad arco in alto sui muri est e ovest (vetri chiari,
+     montanti e raggiera in ferro verde);
+   · il grande orologio da stazione sopra l'uscita, applique a globo sulle
+     lesene e un medaglione a rosa dei venti al centro del pavimento.
+   Tutto a parete o a terra (niente ingombri: solid:false, __noDoorBlock),
+   lontano da poster, cartelli e tabellone. Fuso per materiale. ===== */
+LEXPROPS.tDecor=function(id,o){ o=o||{};
+  const r=new BABYLON.TransformNode(id,scene); r.__noDoorBlock=true;
+  const SX=10, S=10, WH=5.2, DG=1.4;                       // DG = mezzo varco libero della porta (muro sud)
+  const tile=hm7Mat("#2f6a52",0.55,70), tileD=hm7Mat("#1f4a39",0.4,50), stone=hm7Mat("#e7dcc4",0.08,20),
+        cap=hm7Mat("#d6c8a8",0.1,20), iron=hm7Mat("#26443a",0.4,40);
+  /* ⚠️ A PARETE SOLO PIANI A UNA FACCIA, girati verso l'interno come i muri
+     (stessa rotazione di wallIn): con la camera fuori dal muro — capita
+     spesso, e' alle spalle del giocatore — i muri spariscono e spariscono
+     anche questi. Delle scatole si vedrebbero le facce posteriori, sospese
+     davanti alla stanza. */
+  const WALLS=[ { ry:Math.PI, at:(u,d)=>[u,-S+d] }, { ry:0, at:(u,d)=>[u,S-d] },
+                { ry:-Math.PI/2, at:(u,d)=>[-SX+d,u] }, { ry:Math.PI/2, at:(u,d)=>[SX-d,u] } ];
+  const wp=(Wl,u,w,h,y,d,m)=>{ const p=BABYLON.MeshBuilder.CreatePlane("tWp",{width:w,height:h},scene), q=Wl.at(u,d);
+    p.material=m; p.parent=r; p.position.set(q[0],y,q[1]); p.rotation.y=Wl.ry; p.isPickable=false; return p; };
+  /* zoccolo di piastrelle + fascia + battiscopa, e cornice scura in cima */
+  const band=(Wl,u,w)=>{ wp(Wl,u,w,1.1,0.57,0.012,tile); wp(Wl,u,w,0.08,1.14,0.016,tileD); wp(Wl,u,w,0.12,0.07,0.016,tileD);
+    wp(Wl,u,w,0.22,WH-0.12,0.012,iron); wp(Wl,u,w,0.05,WH-0.26,0.016,cap); };
+  band(WALLS[0],0,SX*2); band(WALLS[2],0,S*2); band(WALLS[3],0,S*2);
+  band(WALLS[1],-(SX+DG)/2,SX-DG); band(WALLS[1],(SX+DG)/2,SX-DG);
+  wp(WALLS[1],0,DG*2,0.22,WH-0.12,0.012,iron); wp(WALLS[1],0,DG*2,0.05,WH-0.26,0.016,cap);
+  /* lesene: base, fusto, capitello */
+  const pil=(x,z,ry)=>{ hm7Box(r,0.62,0.34,0.2,cap,x,0.17,z,ry); hm7Box(r,0.5,WH-0.9,0.14,stone,x,(WH-0.9)/2+0.3,z,ry);
+    hm7Box(r,0.66,0.22,0.22,cap,x,WH-0.6,z,ry); hm7Box(r,0.56,0.08,0.18,cap,x,WH-0.75,z,ry); };
+  [-6.9,6.9].forEach(t=>{ pil(t,-S+0.07,0); pil(t,S-0.07,0); pil(-SX+0.07,t,Math.PI/2); pil(SX-0.07,t,Math.PI/2); });
+  [[-SX+0.3,-S+0.3],[SX-0.3,-S+0.3],[-SX+0.3,S-0.3],[SX-0.3,S-0.3]].forEach(q=>{ hm7Box(r,0.6,WH-0.5,0.6,stone,q[0],(WH-0.5)/2,q[1]); });
+  /* finestroni ad arco (est e ovest), fra le lesene: vetro a una faccia,
+     ghiera di pietra e raggiera in ferro sottili */
+  const glass=hm7Mat("#cfe6f2",0.9,90,"#7fa9c4");
+  const arch=(Wl,u)=>{ const W=2.6, y0=2.95, y1=4.25, R=W/2, q=Wl.at(u,0.02);
+    const g=new BABYLON.TransformNode("tArch",scene); g.parent=r; g.position.set(q[0],0,q[1]); g.rotation.y=Wl.ry;
+    const V=BABYLON.Vector3;
+    const pg=BABYLON.MeshBuilder.CreatePlane("tArchG",{width:W,height:y1-y0},scene); pg.material=glass; pg.parent=g; pg.position.set(0,(y0+y1)/2,0);
+    const d=BABYLON.MeshBuilder.CreateDisc("tArchG",{radius:R,tessellation:28,arc:0.5},scene); d.material=glass; d.parent=g; d.position.set(0,y1,0);
+    const arc=(rad,th,m,z)=>{ const P=[]; for(let i=0;i<=24;i++){ const a=i/24*Math.PI; P.push(new V(Math.cos(a)*rad,y1+Math.sin(a)*rad,z)); }
+      const t=BABYLON.MeshBuilder.CreateTube("tArchR",{path:P,radius:th,tessellation:8},scene); t.material=m; t.parent=g; return t; };
+    arc(R+0.06,0.06,stone,-0.03); arc(R*0.45,0.025,iron,-0.02);
+    hm7Box(g,W+0.24,0.1,0.12,cap,0,y0-0.05,-0.05);                                    // davanzale
+    [-0.65,0,0.65].forEach(mx=>hm7Box(g,0.05,y1-y0,0.04,iron,mx,(y0+y1)/2,-0.02));
+    hm7Box(g,W,0.05,0.04,iron,0,(y0+y1)/2+0.15,-0.02);
+    for(let k=1;k<6;k++){ const a=k/6*Math.PI, bb=hm7Box(g,0.035,R,0.035,iron,Math.cos(a)*R/2,y1+Math.sin(a)*R/2,-0.02); bb.rotation.z=a-Math.PI/2; }
+    [-1,1].forEach(sg=>hm7Box(g,0.12,y1-y0,0.08,stone,sg*(W/2+0.06),(y0+y1)/2,-0.04)); };
+  [-3.45,3.45].forEach(t=>{ arch(WALLS[2],t); arch(WALLS[3],t); });
+  /* il grande orologio sopra l'uscita */
+  { const dt=new BABYLON.DynamicTexture("tClock"+(_lpN++),{width:256,height:256},scene,true), c=dt.getContext();
+    c.clearRect(0,0,256,256); c.fillStyle="#26443a"; c.beginPath(); c.arc(128,128,127,0,6.283); c.fill();
+    c.strokeStyle="#d4ae4e"; c.lineWidth=6; c.beginPath(); c.arc(128,128,120,0,6.283); c.stroke();
+    c.fillStyle="#f6f1e4"; c.beginPath(); c.arc(128,128,114,0,6.283); c.fill();
+    c.strokeStyle="#1d2a24"; c.lineWidth=4; c.beginPath(); c.arc(128,128,108,0,6.283); c.stroke();
+    c.fillStyle="#1d2a24"; c.font="bold 21px Georgia,serif"; c.textAlign="center"; c.textBaseline="middle";
+    const RN=["XII","I","II","III","IV","V","VI","VII","VIII","IX","X","XI"];
+    for(let i=0;i<12;i++){ const a=i/12*6.283-Math.PI/2; c.fillText(RN[i],128+Math.cos(a)*86,128+Math.sin(a)*86);
+      c.fillRect(128+Math.cos(a)*112-2,128+Math.sin(a)*112-2,4,4); }
+    c.lineCap="round"; c.lineWidth=9; c.beginPath(); c.moveTo(128,128); c.lineTo(128+Math.cos(-2.2)*58,128+Math.sin(-2.2)*58); c.stroke();
+    c.lineWidth=6; c.beginPath(); c.moveTo(128,128); c.lineTo(128+Math.cos(-0.35)*86,128+Math.sin(-0.35)*86); c.stroke();
+    c.fillStyle="#b3241f"; c.beginPath(); c.arc(128,128,7,0,6.283); c.fill(); dt.hasAlpha=true; dt.update();
+    const m=new BABYLON.StandardMaterial("tClockM"+(_lpN++),scene); m.diffuseTexture=dt; m.useAlphaFromDiffuseTexture=true;
+    m.emissiveColor=new BABYLON.Color3(0.35,0.35,0.33); m.specularColor=new BABYLON.Color3(0.2,0.2,0.2);
+    /* quadrante a una faccia: cassa verde, ghiera d'oro e bordo sono tutti
+       nella texture, cosi' dal lato del muro non resta niente di sospeso */
+    const f=BABYLON.MeshBuilder.CreatePlane("tClockF",{width:1.3,height:1.3},scene); f.material=m; f.parent=r; f.position.set(0,3.75,S-0.03); f.__keep=true;
+    }
+  /* applique a globo sulle lesene */
+  const glob=hm7Mat("#fff3d6",0,1,"#ffe2a0");
+  const sconce=(x,z,nx,nz)=>{ hm7Box(r,0.08,0.08,0.34,iron,x+nx*0.17,3.0,z+nz*0.17,Math.atan2(nx,nz));
+    const b=hm7Sph(r,0.24,0.24,0.24,glob,x+nx*0.38,2.92,z+nz*0.38,12); b.__keep=true; };
+  [-6.9,6.9].forEach(t=>{ sconce(t,-S+0.14,0,1); sconce(-SX+0.14,t,1,0); sconce(SX-0.14,t,-1,0); sconce(t,S-0.14,0,-1); });
+  /* il medaglione al centro del pavimento: rosa dei venti in pietre colorate */
+  { const SZ=512, dt=new BABYLON.DynamicTexture("tRose"+(_lpN++),{width:SZ,height:SZ},scene,true), c=dt.getContext(), h=SZ/2;
+    c.clearRect(0,0,SZ,SZ);
+    c.fillStyle="#3a5a4c"; c.beginPath(); c.arc(h,h,h-4,0,6.283); c.fill();
+    c.fillStyle="#e3d6b8"; c.beginPath(); c.arc(h,h,h-26,0,6.283); c.fill();
+    c.strokeStyle="#3a5a4c"; c.lineWidth=5; c.beginPath(); c.arc(h,h,h-48,0,6.283); c.stroke();
+    const star=(n,R,ri,col,rot)=>{ c.fillStyle=col; c.beginPath(); for(let i=0;i<n*2;i++){ const a=i/(n*2)*6.283+rot-Math.PI/2, rr=i%2?ri:R;
+        c.lineTo(h+Math.cos(a)*rr,h+Math.sin(a)*rr); } c.closePath(); c.fill(); };
+    star(8,h-60,h*0.22,"#b98a4a",Math.PI/8); star(4,h-52,h*0.14,"#2f4a40",0); star(4,h*0.45,h*0.1,"#c9a24a",Math.PI/4);
+    c.fillStyle="#e3d6b8"; c.beginPath(); c.arc(h,h,h*0.08,0,6.283); c.fill();
+    c.fillStyle="#2f4a40"; c.font="bold 34px Georgia,serif"; c.textAlign="center"; c.textBaseline="middle";
+    [["N",0],["E",1],["S",2],["W",3]].forEach(q=>{ const a=q[1]*Math.PI/2-Math.PI/2; c.fillText(q[0],h+Math.cos(a)*(h-37),h+Math.sin(a)*(h-37)); });
+    dt.hasAlpha=true; dt.update();
+    const m=new BABYLON.StandardMaterial("tRoseM"+(_lpN++),scene); m.diffuseTexture=dt; m.useAlphaFromDiffuseTexture=true;
+    m.diffuseColor=new BABYLON.Color3(0.78,0.78,0.78); m.specularColor=new BABYLON.Color3(0.15,0.15,0.15);
+    const g=BABYLON.MeshBuilder.CreateGround("tRose",{width:3.6,height:3.6},scene); g.material=m; g.parent=r; g.position.y=0.026; g.isPickable=false; g.__keep=true; }
+  return etMergeByMat(r); };
 LEXPROPS.departuresBoard=function(id,o){ o=o||{};
   const r=new BABYLON.TransformNode(id,scene);
   const W=1024, H=560, w=o.w||4.8, h=w*H/W, py=(o.py!=null?o.py:3.5);
