@@ -10435,6 +10435,12 @@ const CAFE_NPC=[];
 const CAFE_CAST=[
   { id:"rosa", name:"Rosa", sub:"Barista", model:"avatarW", height:1.66,
     icon:"\u2615", lx:2.9, lz:0.0, face:-Math.PI/2, menu:true, radius:4.0,
+    /* v305 (Giacomo, 7 ott: «quando ti avvicini al bancone dai priorita' a
+       Rosa e scrivi che e' la barista»). Dal bancone, verso i tavolini, la E
+       andava a Nadia (piu' vicina di Rosa, che sta dietro il piano): chi
+       arriva al bancone vuole ordinare. prio -1 = scelta per prima ovunque
+       sia a portata; Nadia e Mr. Finch restano raggiungibili con Q / ◀ ▶. */
+    prio:-1, role:"the barista",
     /* lx 2.9 e non 2.6: a 2.6 il busto compenetrava il PIANO del bancone
        (cft, bordo a 2.5) — verificato con il test di sovrapposizione AABB.
        2.9 la mette nel corridoio di servizio, fra piano e retrobanco (3.4). */
@@ -10461,9 +10467,11 @@ function buildCafeNPCs(){
     const npc=spawnNPC({ id:c.id, name:c.name, sub:c.sub, area:"town",
       model:c.model, height:c.height, snap:false, radius:c.radius||3.0, tint:c.tint,
       x:x, z:z, face:c.face,
-      prompt:c.icon+" Press <b>E</b> to talk to <b>"+c.name+"</b>",
+      prompt:c.icon+" Press <b>E</b> to talk to <b>"+c.name+"</b>"+(c.role?", "+c.role:""),
       interact:function(n){ talkToCafeNPC(n,c); } });
     if(!npc) return;
+    if(npc.inter){ if(c.prio!=null) npc.inter.prio=c.prio;
+      if(c.role) npc.inter.label=c.name+" ("+c.role.replace(/^the /,"")+")"; }
     npc.carrier.position.y=(typeof _pedGroundY==="function")?_pedGroundY(x,z):0;
     npc.__kid=!!c.kid;
     CAFE_NPC.push(npc);
