@@ -9959,7 +9959,7 @@ function _dinerSubmit(key,poi){
      favore: senza «please» (o «thanks / thank you», che vale per «No,
      thanks» e per il conto) l'ordine passa lo stesso — mai un muro — ma
      conta come sbaglio (cafeOrderRetry invece di cafeOrder) e si dice
-     perche'. Al caffe' resta com'era: li' «a coffee» basta. */
+     perche'. Stessa regola al caffe' (submitCafe). */
   const cortese=/\b(please|thanks|thank\s*you|thank)\b/i.test(ta.value);
   const male=(!scelta)||!!ev.form||(ev.pert&&ev.pert.checked&&!ev.pert.ok)||!cortese;
   const nota=ev.form?(ev.form.recast?_escHtml(ev.form.recast):ev.form.it):"";
@@ -26005,7 +26005,7 @@ function cafeMostraMenu(poi){
 }
 /* Registra la scelta e passa al turno dopo. `male` = c'e' stato un recast o
    un fuori tema in questo ordine: non blocca, ma l'ordine varra' meta'. */
-function cafePassa(testo, male){
+function cafePassa(testo, male, ms){
   const o=_CAFE; if(!o) return;
   const t=CAFE_TURNS[o.idx];
   let v=t.nulla?_cafeTrova(testo,[t.nulla]):null;
@@ -26019,12 +26019,13 @@ function cafePassa(testo, male){
   o.slip[t.key]=v; o.bozza=null;
   if(male) o.sbagli++;
   o.idx++;
-  setTimeout(runCafeOrder, 260);
+  setTimeout(runCafeOrder, ms||260);
 }
 function submitCafe(){
   const o=_CAFE; if(!o) return;
   const ta=document.getElementById("uCafeTA"), fb=document.getElementById("uCafeFb");
   if(!ta||!fb) return;
+  if(ta.__passed) return;                          // v305: gia' preso (si sta leggendo il «please»)
   const t=CAFE_TURNS[o.idx];
   /* ⚠️ Prima di tutto il resto, come nell'ambient: la frase non deve nemmeno
      essere valutata. */
@@ -26038,7 +26039,8 @@ function submitCafe(){
     return;
   }
   /* riconosce l'ordine? Le voci del menu contano piu' della pertinenza
-     generica: «a coffee» va bene anche senza «please». */
+     generica: «a coffee» viene riconosciuto anche senza «please» (ma vedi
+     sotto: senza, non vale pieno). */
   const scelta=(t.nulla?_cafeTrova(ta.value,[t.nulla]):null)||_cafeTrova(ta.value, t.voci());
   if(!scelta && o.tent<1){
     o.tent++;
@@ -26062,15 +26064,24 @@ function submitCafe(){
      fatto che `form` esista E' la segnalazione. Scritto male la prima
      volta (ev.form.bad): essendo sempre undefined faceva risultare pulito
      qualunque ordine, il recast si vedeva ma l'ordine valeva pieno. */
-  const male=(!scelta) || !!ev.form || (ev.pert && ev.pert.checked && !ev.pert.ok);
+  /* v305 (Giacomo, 7 ott: «si', metti il please anche al caffe'»): come al
+     diner, senza «please» (o «thanks / thank you») l'ordine passa ma conta
+     come sbaglio (cafeOrderRetry) e si dice perche'. */
+  const cortese=/\b(please|thanks|thank\s*you|thank)\b/i.test(ta.value);
+  const male=(!scelta) || !!ev.form || (ev.pert && ev.pert.checked && !ev.pert.ok) || !cortese;
   /* recast se c'e' («he goes…»), se no la spiegazione italiana
      della regola — che contiene <b> nostri, quindi NON va sfuggita. */
   const nota = ev.form ? (ev.form.recast ? _escHtml(ev.form.recast) : ev.form.it) : "";
+  const esPl=((t.ready||[]).find(r=>/please/i.test(r))||"A coffee, please.");
   ta.__passed=true;
   fb.innerHTML='<div style="font-weight:800;color:#1c7a4a;">\u{1F7E2} '
     +(scelta?("\u2713 "+_escHtml(scelta.en)):"\u2713 OK")+'</div>'
-    +(nota?('<div style="opacity:.78;font-size:.93em;margin-top:4px;">\u{1F4A1} '+nota+'</div>'):"");
-  cafePassa(ta.value, !!male);
+    +(nota?('<div style="opacity:.78;font-size:.93em;margin-top:4px;">\u{1F4A1} '+nota+'</div>'):"")
+    +(cortese?"":('<div style="font-weight:800;color:#a05a2c;margin-top:6px;">\u{1F7E1} Don\'t forget to say <i>please</i>!</div>'
+      +'<div style="opacity:.78;font-size:.93em;margin-top:2px;">'+_trSpan("Don't forget to say please!",
+        "Al bancone si chiede sempre <b>per favore</b>: «"+_escHtml(esPl)+"». L'ordine passa, ma senza <i>please</i> vale meno.")+'</div>'));
+  /* senza «please» la nota resta a schermo il tempo di leggerla */
+  cafePassa(ta.value, !!male, cortese?260:2600);
 }
 /* =====================================================================
    v293 — L'ORDINAZIONE ARRIVA SUL BANCONE (Giacomo, 30 set: «dopo che
