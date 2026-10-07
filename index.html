@@ -378,7 +378,12 @@
     background:rgba(251,247,236,.22);border:2px solid rgba(251,247,236,.5);color:var(--ink,#2b2320);
     font-weight:800;font-size:22px;display:none;box-shadow:0 6px 16px rgba(0,0,0,.25);touch-action:manipulation;padding:0;}
   #povBtn.on{background:var(--sun);}
-  @media (pointer:coarse){#stick,#actBtn,#runBtn,#povBtn{display:block;}}
+  @media (pointer:coarse){#stick,#actBtn,#runBtn,#povBtn{display:block;}
+    /* v304 (Giacomo, 7 ott: «su tablet la bussola e' nascosta dalla E»): in
+       basso a destra ci sono E (fino a 114 px) e la prima persona (fino a
+       180 px), entrambi sopra la bussola (z 15 contro 10). Su touch la
+       bussola sale sopra la colonna dei tasti. */
+    #quest-compass{bottom:192px;right:20px;}}
   /* il long-press sulla scena serve a RUOTARE la visuale: non deve piu'
      offrire "copia immagine" e il resto del menu di sistema. */
   #game{touch-action:none;-webkit-touch-callout:none;user-select:none;-webkit-user-select:none;}
@@ -8580,11 +8585,19 @@ function rangerTrafficDone(){
   if(!RANGER) return;
   npcTouch(RANGER);
   const goal=rangerNextGoal()||rangerHomeGoal();
+  /* v304 (Giacomo, 7 ott: «non c'e' bisogno che clicchi sorry, ti porta via
+     dopo che la frase e' apparsa per almeno 2 secondi»): niente bottone. La
+     frase resta a schermo almeno 2 s; se la voce la sta ancora leggendo si
+     aspetta che finisca (al massimo 8 s, per una voce che non chiude mai),
+     poi il Ranger accompagna da solo. */
   DialogueBox.open({ npc:RANGER, icon:"\u{1F9E5}", sub:"Town Ranger",
     text:"Hey! What are you doing? You can't stop in the middle of the road!",
     italian:"Non puoi fermarti in mezzo alla strada \u2014 il Ranger ti riporta alla tua unit\u00e0.",
-    buttons:[{ label:"\u{1F614} Sorry...", cls:"primary",
-      act:()=>{ if(goal) rangerEscort(goal,true); } }] });
+    buttons:[] });
+  const t0=performance.now();
+  (function go(){ const dt=performance.now()-t0;
+    if(dt<2000 || (dt<8000 && typeof TTS!=="undefined" && TTS._busy)){ setTimeout(go,150); return; }
+    if(goal) rangerEscort(goal,true); else DialogueBox.close(); })();
 }
 function rangerTrafficIntervene(){
   if(!RANGER || RANGER_A.active) return;
@@ -31489,7 +31502,10 @@ function rainForceCycle(){
      l'orologio interno riparte da un rovescio in corso e il docente vede
      piovere anche in agosto. */
   if(RAIN.override===null){ RAIN.avviata=false; RAIN.orologio=0; RAIN.prossima=0; }
-  const m=["Temporale: it's thundering and lightning!","It's pouring!","It's drizzling.","Asciutto",
+  /* v304 (Giacomo, 7 ott: «asciutto per la pioggia e' in italiano!!»): le
+     quattro voci del tempo sono inglese da imparare; resta in italiano solo
+     l'ultima, che e' un'istruzione per il docente. */
+  const m=["Storm: it's thundering and lightning!","It's pouring!","It's drizzling.","It's dry. It isn't raining.",
            "Stagione reale ("+Math.round(rainSeason()*100)+"% del tempo)"];
   toast((_rainCycleI===0?"\u26C8\uFE0F ":"\u{1F327}\uFE0F ")+m[_rainCycleI]);
   if(_rainCycleI===0) STORM.next=1.2;          // il primo lampo subito, per chi collauda
@@ -54928,11 +54944,17 @@ const LOOK_ACC=[
   { id:"medallion", slot:"neck", en:"Medallion necklace", ic:"\u{1F3C5}", col:"#2f64b0", req:{ stars:1500 } },
   { id:"royal",     slot:"neck", en:"Royal medallion",    ic:"\u{1F451}", col:"#b3263a", req:{ stars:2500 } },
   { id:"scarf",     slot:"neck", en:"Scarf",          ic:"\u{1F9E3}", col:"#b3352e", req:{ quest:"u2_3", stars:600 } },
+  /* v304: slot borsa — tre borse a tracolla, dalla piu' semplice alla piu'
+     preziosa, come le tre collane (vedi BAGS e _accBag) */
+  { id:"canvasbag", slot:"bag",  en:"Canvas bag",     ic:"\u{1F45C}", col:"#5d7a5a", req:{ stars:800 } },
+  { id:"leatherbag",slot:"bag",  en:"Leather bag",    ic:"\u{1F45D}", col:"#7a4526", req:{ stars:1600 } },
+  { id:"designerbag",slot:"bag", en:"Designer bag",   ic:"\u{1F45B}", col:"#7a1f3d", req:{ stars:2600 } },
 ];
 /* k = campo di Look con l'accessorio, kc = campo con il suo colore */
 const ACC_SLOTS=[ { id:"head", k:"hat",  kc:"hatc",  en:"Hats and headphones" },
                   { id:"face", k:"face", kc:"facec", en:"Glasses" },
-                  { id:"neck", k:"neck", kc:"neckc", en:"Necklaces and scarves" } ];
+                  { id:"neck", k:"neck", kc:"neckc", en:"Necklaces and scarves" },
+                  { id:"bag",  k:"bag",  kc:"bagc",  en:"Bags" } ];
 function lookAcc(id){ return LOOK_ACC.find(a=>a.id===id)||null; }
 /* v279 — IL COLORE DEGLI ACCESSORI (Giacomo, 29 set: «devi poter scegliere il
    colore degli accessori»). Uno per slot, non per accessorio: si cambia
@@ -55605,8 +55627,8 @@ function _accSkin(m,H,M,boneIdx,opt){
   out.skeleton=H.skeleton; out.numBoneInfluencers=opt.wfn?4:1; out.material=m.material; if(Cv) out.hasVertexAlpha=!!m.hasVertexAlpha;
   out.isPickable=false; out.alwaysSelectAsActiveMesh=true;
   return out; }
-/* veste gli accessori di un corpo: acc = { head:id, face:id, neck:id,
-   headc:colore, facec:colore, neckc:colore }.
+/* veste gli accessori di un corpo: acc = { head:id, face:id, neck:id, bag:id,
+   headc:colore, facec:colore, neckc:colore, bagc:colore }.
    holder (facoltativo) = elenco a cui aggiungere le mesh nuove (ombre).
    ⚠️ cappelli e cuffie si misurano sul TAGLIO in testa (H.__cut.env), non sui
    capelli del modello: col buzz cut un cappello misurato sul ciuffo
@@ -55620,10 +55642,15 @@ function dressAcc(meshes,acc,holder){
   ACC_SLOTS.forEach(S=>{
     const want=(acc&&acc[S.id])||"", cur=H.__acc[S.id], a=lookAcc(want);
     const C=a?accColor(a,acc&&acc[S.id+"c"]):null;
-    const key=want+"|"+(C?C.hex+(C.metal?"m":""):"")+"|"+(S.id==="head"?cutK:(S.id==="neck"?coatK:""));
+    const key=want+"|"+(C?C.hex+(C.metal?"m":""):"")+"|"+(S.id==="head"?cutK:((S.id==="neck"||S.id==="bag")?coatK:""));
     if(cur && cur.key===key) return;
     if(cur){ cur.meshes.forEach(m=>{ try{ m.dispose(false,false); }catch(e){}
       if(holder){ const k=holder.indexOf(m); if(k>=0) holder.splice(k,1); } }); H.__acc[S.id]=null; }
+    /* v304: la borsa si costruisce nello spazio del busto (vedi _accBag) */
+    if(S.id==="bag"){ if(!want) return; let out=[];
+      try{ out=_accBag(meshes,H,want,C)||[]; }catch(e){ console.warn("bag",want,e); }
+      if(holder) out.forEach(m=>holder.push(m));
+      H.__acc[S.id]={ id:want, key, meshes:out }; _octDirty(); return; }
     if(!want || !ACC_BUILD[want]) return;
     const M0=H.__accM || (H.__accM=_accMeasure(meshes)); if(!M0) return;
     const M=(env && S.id==="head")?Object.assign({},M0,env):Object.assign({},M0);
@@ -55644,6 +55671,225 @@ function dressAcc(meshes,acc,holder){
     g.dispose(false,false);
     if(holder) out.forEach(m=>holder.push(m));
     H.__acc[S.id]={ id:want, key, meshes:out }; _octDirty(); });
+}
+/* =====================================================================
+   v304 — LE BORSE A TRACOLLA (Giacomo, 7 ott: «aggiungere borse, 3 diverse
+   in ordine di qualita', tipo catena» — come le tre collane).
+   · Canvas bag: tela, patta semplice con un bottone a pressione,
+     tracolla di fettuccia;
+   · Leather bag: cuoio, patta con le cuciture in rilievo, due cinghiette
+     con le fibbie, anelli in metallo dove si aggancia la tracolla;
+   · Designer bag: trapuntata a rombi, chiusura dorata con la pietra, e la
+     tracolla e' una CATENA dorata a maglie vere.
+   La tracolla passa sulla spalla sinistra (+x), scende in diagonale davanti
+   e dietro fino al fianco destro; la borsa sta sul davanti del fianco
+   destro, appoggiata su quello che c'e' sotto (felpa o giacca: la giacca
+   si veste prima, vedi applyLook).
+   ⚠️ SI COSTRUISCE COME LA CERNIERA DELLA GIACCA, NON COME LA COLLANA:
+   pesata sullo scheletro della testa si staccherebbe dal busto (vedi la
+   nota in dressCoat). Si disegna nel sistema della testa (x, y su dagli
+   occhi, z avanti, in metri: comodo per misurare) e ogni vertice torna
+   nello spazio del busto con la trasformazione del vertice di busto piu'
+   vicino, di cui prende anche i pesi. Il corpo della borsa usa UN solo
+   vertice (e' rigida, non si piega); la tracolla il piu' vicino punto per
+   punto, cosi' segue spalla, petto e schiena.
+   Il colore scelto va su tela/cuoio; Gold e Silver cambiano il metallo.
+   ===================================================================== */
+const BAGS={
+  canvasbag:  { W:0.150, H:0.118, D:0.034, sw:0.024, st:0.0040, chain:false, flap:0.62, n:5,  spec:0.04 },
+  leatherbag: { W:0.158, H:0.124, D:0.042, sw:0.019, st:0.0045, chain:false, flap:0.70, n:7,  spec:0.30, metal:"#c9a24a" },
+  designerbag:{ W:0.164, H:0.116, D:0.048, sw:0,     st:0,      chain:true,  flap:0.60, n:12, spec:0.22, metal:"#d6ae3c" },
+};
+function _accBag(meshes,H,id,C){
+  const K=BAGS[id], a0=lookAcc(id); if(!K||!a0) return [];
+  const M=H.__accM||(H.__accM=_accMeasure(meshes)); if(!M) return [];
+  const B0=meshes.find(m=>/Casual_Body/.test(m.name)&&m.skeleton&&m.getTotalVertices()>0); if(!B0) return [];
+  const sk=B0.skeleton, V3=BABYLON.Vector3, VB=BABYLON.VertexBuffer;
+  const loc=h=>{ const d=h.subtract(M.E); return new V3(V3.Dot(d,M.R)/M.s, V3.Dot(d,M.U)/M.s, V3.Dot(d,M.F)/M.s); };
+  /* nuvola (tronco, gambe in alto, giacca) su cui appoggiarsi: niente
+     braccia e mani, che pendono di lato e cambiano posa a ogni passo.
+     Ancore = vertici del busto pesati sulle ossa del tronco. */
+  const TRUNK=/^(Body|Hips|Abdomen|Torso|Chest|Neck|Shoulder\.[LR])$/, LEG=/^(UpperLeg\.[LR]|Hips|Body)$/;
+  const CL=[], AN=[];
+  meshes.filter(m=>/Casual_(Body|Legs)/.test(m.name)&&m.skeleton&&m.getTotalVertices()>0).forEach(m=>{
+    const cv=_toHeadRaw(H,m), p=m.getVerticesData(VB.PositionKind), mi=m.getVerticesData(VB.MatricesIndicesKind), mw=m.getVerticesData(VB.MatricesWeightsKind);
+    if(!p||!mi||!mw) return; const bs=m.skeleton.bones, legs=/Legs/.test(m.name), anc=!legs&&m.skeleton===sk, LV=[];
+    for(let v=0;v<p.length/3;v++){ LV.push(null);
+      let b=-1,w=-1; for(let k=0;k<4;k++) if(mw[4*v+k]>w){ w=mw[4*v+k]; b=mi[4*v+k]; }
+      const bn=(bs[b]&&bs[b].name)||""; if(!(legs?LEG:TRUNK).test(bn)) continue;
+      const l=loc(cv(p[3*v],p[3*v+1],p[3*v+2],v)); if(l.y>0) continue; CL.push(l); LV[v]=l;
+      if(anc) AN.push({ l, v, cv, p:[p[3*v],p[3*v+1],p[3*v+2]], mi:[mi[4*v],mi[4*v+1],mi[4*v+2],mi[4*v+3]], mw:[mw[4*v],mw[4*v+1],mw[4*v+2],mw[4*v+3]] }); }
+    /* il busto e' low-poly: fra un anello di vertici e l'altro ci sono
+       anche 5 cm di faccia piatta. Si aggiungono punti SULLE facce
+       (baricentro e meta' dei lati), se no i raggi passano nei buchi. */
+    const ind=m.getIndices()||[];
+    for(let t=0;t<ind.length;t+=3){ const A=LV[ind[t]], B=LV[ind[t+1]], Cc=LV[ind[t+2]]; if(!A||!B||!Cc) continue;
+      CL.push(A.add(B).add(Cc).scale(1/3), A.add(B).scale(0.5), B.add(Cc).scale(0.5), Cc.add(A).scale(0.5)); } });
+  if(AN.length<20) return [];
+  /* mezza larghezza del tronco per fasce di 2 cm: la giacca entra solo
+     fin li' (le maniche no, come le braccia) */
+  let yH=9; AN.forEach(a=>{ if(a.l.y<yH) yH=a.l.y; });
+  const HW={}; AN.forEach(a=>{ const k=Math.floor(a.l.y/0.02); HW[k]=Math.max(HW[k]||0,Math.abs(a.l.x)); });
+  const hwAt=y=>{ const k=Math.floor(y/0.02); return Math.max(HW[k]||0,HW[k-1]||0,HW[k+1]||0)||0.12; };
+  (M.__coatPL||[]).forEach(l=>{ if(Math.abs(l.x)<=hwAt(l.y)+0.02) CL.push(l); });
+  /* raggio sulla nuvola: dal punto A lungo d, quanto si esce al massimo */
+  const ray=(A,d,rad,def)=>{ let t=null; const r2=rad*rad;
+    for(let i=0;i<CL.length;i++){ const p=CL[i], ax=p.x-A.x, ay=p.y-A.y, az=p.z-A.z, u=ax*d.x+ay*d.y+az*d.z; if(u<=0) continue;
+      const qx=ax-d.x*u, qy=ay-d.y*u, qz=az-d.z*u; if(qx*qx+qy*qy+qz*qz>r2) continue; if(t===null||u>t) t=u; }
+    return t===null?def:t; };
+  const nz=M.nz, yN=M.neckY, Lt=Math.max(0.3,yN-yH);
+  /* ---- la borsa: davanti al fianco destro, segue la curva del fianco ---- */
+  const W=K.W, Hb=K.H, D=K.D, yT=yH+0.37*Lt, yc=yT-Hb/2, hwR=hwAt(yT), bx=-(hwR*0.52+0.006);
+  const zAt=(x,y)=>nz+ray(new V3(x,y,nz),new V3(0,0,1),0.02,0.11);
+  const S=[]; for(let k=0;k<=4;k++) for(let j=0;j<=3;j++){ const x=bx+W*(k/4-0.5), y=yc+Hb*(j/3-0.5); S.push(new V3(x,y,zAt(x,y))); }
+  let zL=-9, zR=-9; S.forEach(p=>{ if(p.x>bx+W*0.4) zL=Math.max(zL,p.z); if(p.x<bx-W*0.4) zR=Math.max(zR,p.z); });
+  const beta=Math.max(-0.6,Math.min(0.6,Math.atan2(zL-zR,W)));
+  const ex=new V3(Math.cos(beta),0,Math.sin(beta)), ey=new V3(0,1,0), ez=new V3(-Math.sin(beta),0,Math.cos(beta));
+  const O=new V3(bx,yc,nz); let dep=0; S.forEach(p=>{ dep=Math.max(dep,V3.Dot(p.subtract(O),ez)); });
+  const Cn=O.add(ez.scale(dep+0.005+D/2));
+  const gR=new BABYLON.TransformNode("accBag",scene); gR.position.copyFrom(Cn);
+  gR.rotationQuaternion=BABYLON.Quaternion.RotationQuaternionFromAxis(ex,ey,ez);
+  const gS=new BABYLON.TransformNode("accBagS",scene);
+  const bodyHex=C.metal?a0.col:C.hex, metHex=C.metal?C.hex:(K.metal||"#3a3632");
+  /* un filo di luce propria: il davanti della borsa e' verticale e col sole
+     alto restava una macchia scura */
+  const main=_accMat(bodyHex,K.spec,_hexMul(bodyHex,0.28)), dark=_accMat(_hexMul(bodyHex,0.78),K.spec,_hexMul(bodyHex,0.2));
+  const met=K.metal||C.metal?_accMat(metHex,0.85,_hexMul(metHex,0.2)):_accMat(metHex,0.5);
+  const put=(m,mt,x,y,z,par)=>{ m.material=mt; m.parent=par||gR; m.position.set(x||0,y||0,z||0); return m; };
+  /* corpo e patta: lo stesso prisma a superellisse delle lenti (_accLens) */
+  put(_accLens(W,Hb,D,K.n,0),main,0,0,0);
+  const fH=Hb*K.flap, fY=Hb/2-fH/2+0.002, fZ=D/2+0.0035;
+  put(_accLens(W+0.004,fH,0.006,K.n,0),id==="canvasbag"?dark:main,0,fY,fZ-0.002);
+  /* la patta fa il giro sopra: una fascia sul bordo alto */
+  put(_accLens(W+0.004,0.010,D+0.008,K.n,0),id==="canvasbag"?dark:main,0,Hb/2-0.002,0.001);
+  const fBot=fY-fH/2;
+  /* gli attacchi della tracolla, ai due angoli in alto */
+  const att=[];
+  [1,-1].forEach(sg=>{ const x=sg*(W/2-0.016), y=Hb/2+0.007;
+    const r=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:K.chain?0.013:0.016,thickness:K.chain?0.0032:0.0028,tessellation:12},scene);
+    r.rotation.y=Math.PI/2; put(r,(K.metal||C.metal)?met:dark,x,y,0);
+    att.push(V3.TransformCoordinates(new V3(x,y+0.004,0),BABYLON.Matrix.Compose(new V3(1,1,1),gR.rotationQuaternion,Cn))); });
+  if(id==="canvasbag"){
+    /* bottone a pressione e la tasca davanti, cucita */
+    const b=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.013,height:0.004,tessellation:16},scene); b.rotation.x=Math.PI/2; put(b,met,0,fBot+0.012,fZ+0.002);
+    put(_accLens(W*0.62,Hb*0.30,0.004,5,0),dark,0,-Hb/2+Hb*0.21,D/2+0.001);
+  } else if(id==="leatherbag"){
+    /* cuciture lungo il bordo della patta, in rilievo e piu' chiare */
+    const sc=_accMat(_hexMul(bodyHex,1.6),0.1), m=0.007, x0=W/2-m, y0=fY+fH/2-0.004, y1=fBot+m;
+    const pth=[new V3(-x0,y0,fZ+0.0012),new V3(-x0,y1,fZ+0.0012),new V3(x0,y1,fZ+0.0012),new V3(x0,y0,fZ+0.0012)];
+    put(BABYLON.MeshBuilder.CreateTube("acc",{path:pth,radius:0.0009,tessellation:4},scene),sc,0,0,0);
+    /* due cinghiette con la fibbia che scendono oltre la patta */
+    [-1,1].forEach(sg=>{ const x=sg*W*0.24;
+      put(BABYLON.MeshBuilder.CreateBox("acc",{width:0.014,height:fH*0.85,depth:0.003},scene),dark,x,fBot+fH*0.38,fZ+0.0025);
+      const fb=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:0.018,thickness:0.0024,tessellation:12},scene);
+      fb.rotation.x=Math.PI/2; fb.scaling.z=0.75; put(fb,met,x,fBot+0.004,fZ+0.004);
+      put(BABYLON.MeshBuilder.CreateBox("acc",{width:0.0016,height:0.012,depth:0.002},scene),met,x,fBot+0.004,fZ+0.005); });
+  } else {
+    /* trapuntatura a rombi: cordoncini in rilievo a 45°, tagliati sul
+       rettangolo (patta e corpo sotto la patta, ognuno sul suo piano) */
+    const pip=_accMat(_hexMul(bodyHex,0.62),K.spec,_hexMul(bodyHex,0.12));
+    const quilt=(X0,X1,Y0,Y1,z,step)=>{ for(const sg of [1,-1]) for(let c=-(X1-X0+Y1-Y0);c<=(X1-X0+Y1-Y0);c+=step){
+        /* retta y = sg*x + c, dentro il rettangolo */
+        const pts=[]; const add=(x,y)=>{ if(x>=X0-1e-6&&x<=X1+1e-6&&y>=Y0-1e-6&&y<=Y1+1e-6) pts.push(new V3(x,y,z)); };
+        add(X0,sg*X0+c); add(X1,sg*X1+c); add(sg*(Y0-c),Y0); add(sg*(Y1-c),Y1);
+        if(pts.length<2) continue; pts.sort((a,b)=>a.x-b.x); const a=pts[0], b=pts[pts.length-1], L=V3.Distance(a,b); if(L<0.006) continue;
+        const t=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.0024,height:L,tessellation:5},scene);
+        t.rotation.z=-Math.atan2(b.x-a.x,b.y-a.y); put(t,pip,(a.x+b.x)/2,(a.y+b.y)/2,z); } };
+    quilt(-W/2+0.008,W/2-0.008,fBot+0.006,fY+fH/2-0.006,fZ+0.0012,0.034);
+    quilt(-W/2+0.010,W/2-0.010,-Hb/2+0.010,fBot-0.004,D/2-0.0005,0.034);
+    /* la chiusura: placchetta dorata con la pietra al centro */
+    put(_accLens(0.034,0.022,0.004,6,0),met,0,fBot+0.004,fZ+0.003);
+    const rg=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:0.016,thickness:0.0026,tessellation:16},scene); rg.rotation.x=Math.PI/2; put(rg,met,0,fBot+0.004,fZ+0.0055);
+    const gem=BABYLON.MeshBuilder.CreateIcoSphere("acc",{radius:0.0055,subdivisions:1,flat:true},scene); gem.scaling.z=0.6;
+    put(gem,_accMat("#e9eef5",0.95,"#4a525c"),0,fBot+0.004,fZ+0.006);
+  }
+  /* ---- la tracolla ----
+     davanti: dall'attacco sinistro della borsa alla spalla sinistra; sopra
+     la spalla; dietro in diagonale fino al fianco destro; attorno al fianco
+     fino all'attacco destro. Ogni punto e' un raggio sulla nuvola (dir =
+     verso fuori), cosi' poggia su felpa o giacca qualunque sia il corpo. */
+  let xS=0.06; CL.forEach(p=>{ if(p.y>yN-0.07&&p.x>0) xS=Math.max(xS,p.x); }); xS*=0.5;
+  /* sopra una giacca un po' piu' fuori: della giacca si conosce un vertice su tre */
+  const off=(K.chain?0.006:0.004+K.st/2)+((M.__coatPL&&M.__coatPL.length)?0.004:0), yA=yN-0.09, path=[];
+  const push=(A,d,t)=>{ path.push({ P:A.add(d.scale(t)), d }); };
+  /* t attorno a un attacco: la tracolla scende dall'anello sul corpo dolcemente */
+  const ease=(tr,tAtt,u)=>{ const s=Math.min(1,u/0.32), e=s*s*(3-2*s); return Math.max(tr,tAtt*(1-e)+tr*e); };
+  const FA=att[0], FR=att[1], NF=18, NB=18, NA=16, NSd=16;
+  let prev=0.1;
+  for(let i=0;i<=NF;i++){ const u=i/NF, x=FA.x+(xS-FA.x)*u, y=FA.y+(yA-FA.y)*u, A=new V3(x,y,nz), d=new V3(0,0,1);
+    prev=ray(A,d,0.02,prev); push(A,d,ease(prev+off,FA.z-nz,u)); }
+  const AS=new V3(xS,yA,nz);
+  for(let i=1;i<NA;i++){ const th=i/NA*Math.PI, d=new V3(0,Math.sin(th),Math.cos(th)); prev=ray(AS,d,0.02,prev); push(AS,d,prev+off); }
+  const xB=-hwAt(FR.y)*0.55;
+  for(let i=0;i<=NB;i++){ const u=i/NB, x=xS+(xB-xS)*u, y=yA+(FR.y-yA)*u, A=new V3(x,y,nz), d=new V3(0,0,-1);
+    prev=ray(A,d,0.02,prev); push(A,d,prev+off); }
+  const PB=path[path.length-1].P, a0s=Math.atan2(PB.x,PB.z-nz), a1s=Math.atan2(FR.x,FR.z-nz), tFR=Math.hypot(FR.x,FR.z-nz);
+  let a1=a1s; while(a1<a0s) a1+=Math.PI*2;            // dal dietro, passando per il fianco destro, al davanti
+  for(let i=1;i<=NSd;i++){ const u=i/NSd, a=a0s+(a1-a0s)*u, y=PB.y+(FR.y-PB.y)*u, A=new V3(0,y,nz), d=new V3(Math.sin(a),0,Math.cos(a));
+    prev=ray(A,d,0.02,prev); push(A,d,ease(prev+off,tFR,1-u)); }
+  /* lisciata: mai verso dentro rispetto al punto sul corpo, estremi fermi */
+  const P0=path.map(q=>q.P.clone());
+  for(let k=0;k<5;k++){ const P2=path.map((q,i)=>(i===0||i===path.length-1)?q.P:path[i-1].P.add(q.P).add(path[i+1].P).scale(1/3));
+    path.forEach((q,i)=>{ const dv=P2[i].subtract(P0[i]), inw=V3.Dot(dv,q.d); q.P=inw<0?P2[i].subtract(q.d.scale(inw)):P2[i]; }); }
+  const pts=path.map(q=>q.P);
+  if(K.chain){
+    const gold=met; let carry=0, k=0;
+    for(let i=1;i<pts.length;i++){ const seg=pts[i].subtract(pts[i-1]), L=seg.length(); if(L<1e-9) continue;
+      const tn=seg.scale(1/L); let d=(i===1)?0:0.0105-carry;
+      while(d<=L){ const p=pts[i-1].add(tn.scale(d)), nd=path[i].d, n=nd.subtract(tn.scale(V3.Dot(nd,tn))).normalize(), b=V3.Cross(tn,n).normalize();
+        const y=(k%2)?n:b, z=V3.Cross(tn,y).normalize();
+        const l=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:0.0118,thickness:0.0031,tessellation:6},scene);
+        l.scaling.x=1.35; l.rotationQuaternion=BABYLON.Quaternion.RotationQuaternionFromAxis(tn,y,z);
+        put(l,gold,p.x,p.y,p.z,gS); d+=0.0105; k++; }
+      carry=L-(d-0.0105); }
+  } else {
+    /* fettuccia/cinghia: sezione ellittica piatta, larga lungo il corpo */
+    const NS=8, P=[], I=[], n=pts.length;
+    pts.forEach((p,i)=>{ const tn=pts[Math.min(n-1,i+1)].subtract(pts[Math.max(0,i-1)]).normalize(), nd=path[i].d;
+      const nn=nd.subtract(tn.scale(V3.Dot(nd,tn))).normalize(), s=V3.Cross(tn,nn).normalize();
+      for(let k=0;k<NS;k++){ const t=k/NS*2*Math.PI; P.push(p.add(s.scale(Math.cos(t)*K.sw/2)).add(nn.scale(Math.sin(t)*K.st/2))); } });
+    for(let i=0;i<n-1;i++) for(let k=0;k<NS;k++){ const a=i*NS+k, b=(i+1)*NS+k, c=i*NS+(k+1)%NS, d=(i+1)*NS+(k+1)%NS; I.push(a,b,d, a,d,c); }
+    const pos=[]; P.forEach(p=>pos.push(p.x,p.y,p.z)); const vd=new BABYLON.VertexData(); vd.positions=pos; vd.indices=I;
+    const m=new BABYLON.Mesh("acc",scene); vd.applyToMesh(m,false); put(m,id==="leatherbag"?main:dark,0,0,0,gS);
+  }
+  /* ---- dal sistema della testa allo spazio del busto ---- */
+  const jac=a=>{ if(a.J) return a.J; const e=M.s, p=a.p, f=(x,y,z)=>loc(a.cv(x,y,z,a.v)), o=a.l;
+    const cx=f(p[0]+e,p[1],p[2]).subtract(o).scale(1/e), cy=f(p[0],p[1]+e,p[2]).subtract(o).scale(1/e), cz=f(p[0],p[1],p[2]+e).subtract(o).scale(1/e);
+    const m=BABYLON.Matrix.FromValues(cx.x,cx.y,cx.z,0, cy.x,cy.y,cy.z,0, cz.x,cz.y,cz.z,0, 0,0,0,1);
+    return (a.J={ inv:m.clone().invert(), det:m.determinant() }); };
+  const near=q=>{ let b=null, bd=1e9; for(let i=0;i<AN.length;i++){ const l=AN[i].l, dx=l.x-q.x, dy=l.y-q.y, dz=l.z-q.z, d=dx*dx+dy*dy+dz*dz; if(d<bd){ bd=d; b=AN[i]; } } return b; };
+  const rigidA=near(O.add(ez.scale(dep))), RW={ a:rigidA, mi:rigidA.mi, mw:rigidA.mw };
+  /* tracolla: ogni punto prende l'ancora sotto di se', ma i PESI si lisciano
+     lungo la tracolla (finestra di 7 punti): presi vertice per vertice,
+     correndo la tracolla faceva lo zig-zag sul petto */
+  const PA=path.map(q=>near(q.P.subtract(q.d.scale(off))));
+  const PW=PA.map((a,i)=>{ const acc={}; let n=0;
+    for(let j=Math.max(0,i-3);j<=Math.min(PA.length-1,i+3);j++){ n++; for(let k=0;k<4;k++) if(PA[j].mw[k]>0) acc[PA[j].mi[k]]=(acc[PA[j].mi[k]]||0)+PA[j].mw[k]; }
+    const top=Object.keys(acc).map(b=>[+b,acc[b]/n]).sort((x,y)=>y[1]-x[1]).slice(0,4), tot=top.reduce((t,x)=>t+x[1],0)||1;
+    const mi=[0,0,0,0], mw=[0,0,0,0]; top.forEach((x,k)=>{ mi[k]=x[0]; mw[k]=x[1]/tot; }); return { a, mi, mw }; });
+  const onPath=q=>{ let b=0, bd=1e9; for(let i=0;i<pts.length;i++){ const d=V3.DistanceSquared(pts[i],q); if(d<bd){ bd=d; b=i; } } return PW[b]; };
+  const upd=n=>{ n.computeWorldMatrix(true); n.getChildren().forEach(upd); }; upd(gR); upd(gS);
+  const out=[];
+  [[gR,()=>RW],[gS,onPath]].forEach(G=>{
+    const by=new Map();
+    G[0].getChildMeshes().forEach(m=>{ if(!m.getTotalVertices()) return; if(!by.has(m.material)) by.set(m.material,[]); by.get(m.material).push(m); });
+    by.forEach((L,mat)=>{ const P=[], I=[], MI=[], MW=[]; let det=1;
+      L.forEach(m=>{ const Wm=m.getWorldMatrix(), pos=m.getVerticesData(VB.PositionKind), ind=m.getIndices(), b0=P.length/3;
+        for(let i=0;i<pos.length;i+=3){ const q=V3.TransformCoordinates(new V3(pos[i],pos[i+1],pos[i+2]),Wm), w=G[1](q), a=w.a, J=jac(a);
+          const r=V3.TransformNormal(q.subtract(a.l),J.inv); det=J.det;
+          P.push(a.p[0]+r.x,a.p[1]+r.y,a.p[2]+r.z); for(let k=0;k<4;k++){ MI.push(w.mi[k]); MW.push(w.mw[k]); } }
+        for(let t=0;t<ind.length;t++) I.push(ind[t]+b0); });
+      if(det<0) for(let t=0;t<I.length;t+=3){ const x=I[t+1]; I[t+1]=I[t+2]; I[t+2]=x; }
+      const N=[]; BABYLON.VertexData.ComputeNormals(P,I,N);
+      const vd=new BABYLON.VertexData(); vd.positions=P; vd.indices=I; vd.normals=N;
+      const m=new BABYLON.Mesh("acc",scene); vd.applyToMesh(m,false);
+      m.setVerticesData(VB.MatricesIndicesKind,MI,false,4); m.setVerticesData(VB.MatricesWeightsKind,MW,false,4);
+      m.parent=B0.parent; m.position.copyFrom(B0.position); m.rotation.copyFrom(B0.rotation);
+      if(B0.rotationQuaternion) m.rotationQuaternion=B0.rotationQuaternion.clone(); m.scaling.copyFrom(B0.scaling);
+      m.skeleton=sk; m.numBoneInfluencers=4; m.material=mat;
+      m.isPickable=false; m.alwaysSelectAsActiveMesh=true; m.__noTint=true; out.push(m); }); });
+  gR.dispose(false,false); gS.dispose(false,false);
+  return out;
 }
 /* ⚠️ MESH NUOVE = OCTREE DA RIFARE. Babylon disegna solo quello che l'octree
    restituisce, e il guardiano in rebuildOctree scatta solo se cambia il
@@ -56440,6 +56686,7 @@ const Look=(function(){
              bottom:s.bottom||"", bcol:s.bcol||"auto",                   // v277: il sotto
              hat:s.hat||"", face:s.face||"", neck:s.neck||"",             // v278: accessori
              hatc:s.hatc||"", facec:s.facec||"", neckc:s.neckc||"",       // v279: il loro colore
+             bag:s.bag||"", bagc:s.bagc||"",                              // v304: la borsa
              cut:s.cut||"",                                               // v279: il taglio ("" = quello del modello)
              coat:s.coat||"", coatc:s.coatc||"",                         // v280: giacca e suo colore
              /* v303: occhi/bocche tolti (happy, smile, grin, smirk, open) -> «Original» */
@@ -56467,7 +56714,7 @@ const Look=(function(){
     const s=state(); s[part]=id||""; save(s); return id; }
   function hairOpen(h){ return lookProf() || h.cost<=0 || Gems.count()>=h.cost; }
   function reset(){ save({rig:"m",skin:"s3",hair:"h1",shoes:"k1",fit:"purple",bottom:"",bcol:"auto",hat:"",face:"",neck:"",
-                          hatc:"",facec:"",neckc:"",cut:"",coat:"",coatc:"",eyes:"",eyec:"",nose:"",mouth:""}); }
+                          hatc:"",facec:"",neckc:"",bag:"",bagc:"",cut:"",coat:"",coatc:"",eyes:"",eyec:"",nose:"",mouth:""}); }
   return { state, rig, skin, hair, shoes, fit, setRig, setSkin, setHair,
            setShoes, setFit, setBottom, setBcol, setAcc, setAccCol, setCut, setCoat, setCoatCol, setFace, hairOpen, reset };
 })();
@@ -57286,8 +57533,8 @@ function applyPlayerFit(id){
   try{ if(dressHair(avatarMeshes, (_L.rig==="f"?"f":"m"), _L.cut, _hr, avatarMeshes)) _ombre=true; }
   catch(e){ console.warn("dressHair:",e); }
   try{ const n0=avatarMeshes.length;
-    dressAcc(avatarMeshes, { head:_L.hat, face:_L.face, neck:_L.neck,
-                             headc:_L.hatc, facec:_L.facec, neckc:_L.neckc }, avatarMeshes);
+    dressAcc(avatarMeshes, { head:_L.hat, face:_L.face, neck:_L.neck, bag:_L.bag,
+                             headc:_L.hatc, facec:_L.facec, neckc:_L.neckc, bagc:_L.bagc }, avatarMeshes);
     if(avatarMeshes.length!==n0) _ombre=true; }
   catch(e){ console.warn("dressAcc:",e); }
   /* v302: il viso (occhi, colore, naso, bocca) */
@@ -57639,7 +57886,7 @@ function buildTeca(){
   else if(_tecaTab==="acc"){
     /* uno per slot, «None» sempre libero e per primo; sotto l'accessorio che
        porti, la riga dei suoi colori */
-    const SIC={ head:"\u{1F9E2}", face:"\u{1F576}️", neck:"\u{1F9E3}" };
+    const SIC={ head:"\u{1F9E2}", face:"\u{1F576}️", neck:"\u{1F9E3}", bag:"\u{1F45C}" };
     ACC_SLOTS.forEach(function(S){
       const cur=_L[S.k]||"", a=lookAcc(cur);
       h+='<div class="dy-sec">'+SIC[S.id]+' '+_escHtml(S.en)+'</div><div class="gem-fits">';
@@ -58049,7 +58296,8 @@ const Presenza=(function(){
             +"|"+(L.hat||"")+"|"+(L.face||"")+"|"+(L.neck||"")                           // v278: accessori
             +"|"+(L.cut||"")+"|"+(L.hatc||"")+"|"+(L.facec||"")+"|"+(L.neckc||"")        // v279: taglio e colori
             +"|"+(L.coat||"")+"|"+(L.coatc||"")                                           // v280: giacca
-            +"|"+(L.eyes||"")+"|"+(L.eyec||"")+"|"+(L.nose||"")+"|"+(L.mouth||""); }       // v302: il viso
+            +"|"+(L.eyes||"")+"|"+(L.eyec||"")+"|"+(L.nose||"")+"|"+(L.mouth||"")          // v302: il viso
+            +"|"+(L.bag||"")+"|"+(L.bagc||""); }                                         // v304: la borsa
     catch(e){ return "m|s3|h1|k1|purple"; }
   }
   function _leggiLook(k){
@@ -58059,7 +58307,8 @@ const Presenza=(function(){
              bottom:p[5]||"", bcol:p[6]||"auto", hat:p[7]||"", face:p[8]||"", neck:p[9]||"",
              cut:p[10]||"", hatc:p[11]||"", facec:p[12]||"", neckc:p[13]||"",
              coat:p[14]||"", coatc:p[15]||"",
-             eyes:p[16]||"", eyec:p[17]||"", nose:p[18]||"", mouth:p[19]||"" };
+             eyes:p[16]||"", eyec:p[17]||"", nose:p[18]||"", mouth:p[19]||"",
+             bag:p[20]||"", bagc:p[21]||"" };
   }
   /* ---- posizione: x, z con un decimale (10 cm), y e imbardata ----------- */
   /* v302 — SEDUTI, E CHE MANGIANO (Giacomo, 3 ott: «non si vede il
@@ -58375,8 +58624,8 @@ const Presenza=(function(){
          dressShoes(b.meshes, ks.kind, T.shoes); }catch(e){}                                      // v301
     try{ dressCoat(b.meshes, L.coat, L.coatc); }catch(e){}                                       // v280
     try{ dressHair(b.meshes, L.rig, L.cut, T.hair); }catch(e){}                                  // v279
-    try{ dressAcc(b.meshes, { head:L.hat, face:L.face, neck:L.neck,
-                              headc:L.hatc, facec:L.facec, neckc:L.neckc }); }catch(e){}       // v278
+    try{ dressAcc(b.meshes, { head:L.hat, face:L.face, neck:L.neck, bag:L.bag,
+                              headc:L.hatc, facec:L.facec, neckc:L.neckc, bagc:L.bagc }); }catch(e){}       // v278, v304
     try{ dressFace(b.meshes, { eyes:L.eyes, eyec:L.eyec, nose:L.nose, mouth:L.mouth, skin:T.skin }); }catch(e){}      // v302
     b.look=look;
   }
