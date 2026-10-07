@@ -32352,6 +32352,17 @@ function danceStop(){
   const g=avatarAnims["Wave"]; if(g){ try{ g.speedRatio=1; }catch(e){} }
   playAvatarAnim(IDLE_ANIM);
 }
+/* il battito del brano (lo stesso orologio del pubblico, gigTick); se la
+   musica non scorre (autoplay negato) si balla sull'orologio del gioco.
+   v304: lo usano anche i compagni che ballano (Presenza._balla). */
+function danceBeat(){
+  const S=(typeof GIG_SONGS!=="undefined"&&GIG_SONGS[GIG.idx])||{}, bpm=S.bpm||110;
+  const at=AUDIO.time(); return { beat:(at>0?at:performance.now()/1000)*bpm/60, bpm }; }
+/* il braccio a tempo: fotogramma della clip «Wave» dal battito */
+function danceWaveFrame(g,B){
+  const clip=(g.to-g.from)/60, spb=60/B.bpm, per=(clip/spb>=3)?4:2;
+  const u=(B.beat/per)-Math.floor(B.beat/per);
+  try{ g.speedRatio=0; g.goToFrame(g.from+u*(g.to-g.from)); }catch(e){} }
 function danceTick(){
   if(!PDANCE.inter) danceInit();
   const can=GIG.on && area===UNIT_MUSIC.area;
@@ -32361,20 +32372,12 @@ function danceTick(){
     if(near!==PDANCE.near){ PDANCE.near=near; PDANCE.inter.prio=near?-1:5; } }
   if(!PDANCE.on) return;
   if(!can || !avatarRoot){ danceStop(); return; }
-  const S=GIG_SONGS[GIG.idx]||{}, bpm=S.bpm||110;
-  /* lo stesso orologio del pubblico (gigTick); se la musica non scorre
-     (autoplay negato) si balla sull'orologio del gioco */
-  const at=AUDIO.time(), beat=(at>0?at:performance.now()/1000)*bpm/60;
+  const B=danceBeat(), beat=B.beat;
   avatarRoot.position.y=PDANCE.baseY+Math.abs(Math.sin((beat+PDANCE.phase)*Math.PI))*0.085;
   player.rotation.y=PDANCE.face+Math.sin(beat*Math.PI)*0.13;
   PDANCE.anim="Wave";
-  /* il braccio a tempo: fotogramma della clip dal battito */
   const g=avatarAnims["Wave"];
-  if(g && _avAnimCur===g){
-    const clip=(g.to-g.from)/60, spb=60/bpm, per=(clip/spb>=3)?4:2;
-    const u=(beat/per)-Math.floor(beat/per);
-    try{ g.speedRatio=0; g.goToFrame(g.from+u*(g.to-g.from)); }catch(e){}
-  }
+  if(g && _avAnimCur===g) danceWaveFrame(g,B);
 }
 function gigTick(){
   danceTick();
@@ -56120,28 +56123,52 @@ const FACE_EYES={
 /* v303 — LE BOCCHE: due labbra piene (decalcomanie a striscia, piu'
    sottili agli angoli) del colore della pelle scurito e rosato, e la riga
    scura in mezzo. Tutte chiuse e neutre: cambia la FORMA, non l'espressione.
+   v304 (Giacomo, 7 ott: «le bocche sono troppo piccole, vanno rese un po'
+   piu' grandi e disegnate meglio, con piu' dettagli»): ~1,6 volte piu'
+   larghe e ~1,8 piu' spesse, e disegnate a strati:
+   · un'ombra morbida della pelle sotto il labbro di sotto (il volume);
+   · labbro di sopra piu' scuro, con l'arco di Cupido e un bordo chiaro
+     sopra l'arco; labbro di sotto piu' chiaro, con il riflesso in mezzo;
+   · la riga fra le labbra piu' spessa al centro, con gli angoli che si
+     chiudono in due puntini appena piu' scuri.
    o = { w: mezza larghezza, up/lo: spessore labbro sopra/sotto,
-         bow: quanto e' marcato l'arco di Cupido (0 = niente) } */
+         bow: quanto e' marcato l'arco di Cupido (0 = niente),
+         lw: larghezza del labbro di sotto rispetto a quello di sopra } */
 function _faceLips(g,F,o){
-  const y=F.my, N=20, lip=_lipHex(F.skin), up=_faceSkinMat(_hexMul(lip,0.9)), lo=_faceSkinMat(lip);
+  const y=F.my, N=24, lip=_lipHex(F.skin), skin=F.skin||"#d3a172", lw=o.lw||1;
+  const upM=_faceSkinMat(_hexMul(lip,0.86)), loM=_faceSkinMat(lip);
   const prof=t=>Math.pow(Math.max(0,1-t*t),0.55);
+  const bow=o.bow||0, gs=t=>Math.exp(-(t/0.16)*(t/0.16)), hump=t=>Math.exp(-((Math.abs(t)-0.3)/0.2)*((Math.abs(t)-0.3)/0.2));
   /* il bordo alto del labbro di sopra: due gobbe e la conca al centro */
-  const topU=t=>y+o.up*prof(t)*(1-(o.bow||0)*Math.exp(-(t/0.16)*(t/0.16)))*(1+(o.bow||0)*0.35*Math.exp(-((Math.abs(t)-0.3)/0.2)*((Math.abs(t)-0.3)/0.2)));
-  const strip=(f0,f1,mat,off)=>{ const pts=[], tris=[];
-    for(let i=0;i<=N;i++){ const t=-1+2*i/N; pts.push([t*o.w,f0(t)],[t*o.w,f1(t)]); }
-    for(let i=0;i<N;i++){ const k=2*i; tris.push([k,k+2,k+3],[k,k+3,k+1]); }
+  const topU=t=>y+o.up*prof(t)*(1-bow*gs(t))*(1+bow*0.35*hump(t));
+  /* la riga in mezzo: dritta, appena piu' bassa al centro */
+  const mid=t=>y-0.00035*(1-t*t);
+  const botL=t=>{ const u=t/lw; return Math.abs(u)>=1?mid(t):mid(t)-o.lo*prof(u)*(1-0.10*u*u); };
+  const strip=(f0,f1,mat,off,W,n)=>{ const pts=[], tris=[], M=n||N;
+    for(let i=0;i<=M;i++){ const t=-1+2*i/M; pts.push([t*W,f0(t)],[t*W,f1(t)]); }
+    for(let i=0;i<M;i++){ const k=2*i; tris.push([k,k+2,k+3],[k,k+3,k+1]); }
     _faceDecal(g,F,pts,tris,off,mat); };
-  strip(t=>y,topU,up,0.0012);
-  strip(t=>y-o.lo*prof(t)*(1-0.12*t*t),t=>y,lo,0.0012);
-  /* la riga fra le labbra, appena piu' larga della bocca */
-  const path=[]; for(let i=0;i<=16;i++){ const t=-1+2*i/16; path.push([t*o.w*1.03, y-0.0002*(1-t*t)]); }
-  _faceLine(g,F,path,0.0005,0.0019,_faceSkinMat(_hexMul(lip,0.55))); }
+  /* ombra sotto il labbro di sotto: pelle un filo piu' scura, sfuma ai lati */
+  const sh=_faceSkinMat(_hexMul(skin,0.9));
+  strip(t=>botL(t*0.62)-o.lo*0.55*prof(t),t=>botL(t*0.62)+0.0002,sh,0.0007,o.w,N);
+  /* bordo chiaro sopra l'arco (la linea del labbro) */
+  _faceLine(g,F,Array.from({length:17},(_,i)=>{ const t=-0.7+1.4*i/16; return [t*o.w,topU(t)+0.0005]; }),0.00045,0.0009,_faceSkinMat(_hexMul(skin,1.08)));
+  /* le due labbra */
+  strip(mid,topU,upM,0.0013,o.w);
+  strip(botL,mid,loM,0.0013,o.w);
+  /* il riflesso sul labbro di sotto */
+  _faceBlob(g,F,0,mid(0)-o.lo*0.42,o.w*lw*0.30,o.lo*0.20,2,0,0.0019,_faceSkinMat(_hexMul(lip,1.22)));
+  /* la riga fra le labbra, piu' spessa al centro, e gli angoli */
+  const line=_faceSkinMat(_hexMul(lip,0.5)), path=[];
+  for(let i=0;i<=20;i++){ const t=-1+2*i/20; path.push([t*o.w*1.02, mid(t)]); }
+  _faceLine(g,F,path,0.0007,0.0022,line);
+  [-1,1].forEach(sg=>_faceBlob(g,F,sg*o.w*1.01,mid(1),0.0008,0.0006,2,0,0.0021,_faceSkinMat(_hexMul(lip,0.62)))); }
 const FACE_MOUTHS={
-  thin(g,F){  _faceLips(g,F,{ w:0.0145, up:0.0013, lo:0.0018, bow:0.3 }); },
-  full(g,F){  _faceLips(g,F,{ w:0.0150, up:0.0036, lo:0.0047, bow:0.35 }); },
-  wide(g,F){  _faceLips(g,F,{ w:0.0195, up:0.0022, lo:0.0028, bow:0.25 }); },
-  small(g,F){ _faceLips(g,F,{ w:0.0090, up:0.0024, lo:0.0031, bow:0.3 }); },
-  heart(g,F){ _faceLips(g,F,{ w:0.0125, up:0.0034, lo:0.0038, bow:0.75 }); },
+  thin(g,F){  _faceLips(g,F,{ w:0.0235, up:0.0029, lo:0.0038, bow:0.30 }); },
+  full(g,F){  _faceLips(g,F,{ w:0.0241, up:0.0060, lo:0.0078, bow:0.38 }); },
+  wide(g,F){  _faceLips(g,F,{ w:0.0308, up:0.0038, lo:0.0048, bow:0.25 }); },
+  small(g,F){ _faceLips(g,F,{ w:0.0157, up:0.0041, lo:0.0054, bow:0.32 }); },
+  heart(g,F){ _faceLips(g,F,{ w:0.0207, up:0.0057, lo:0.0067, bow:0.80, lw:0.8 }); },
 };
 /* il naso: k = { z: quanto sporge (1 = com'e'), x: quanto e' largo,
    up: punta in su (m), long: punta in giu' (m) } */
@@ -58335,7 +58362,15 @@ const Presenza=(function(){
      (vedi showSit) e senza questo il compagno ti vedeva in piedi in mezzo
      alla sala. Da seduti la posizione ha due decimali: l'anca va sulla
      seduta, e 10 cm di arrotondamento la mettevano sul bordo. */
+  /* v304 (Giacomo, 7 ott: «quando balla, se c'e' un compagno vicino non lo
+     vede ballare!»): chi balla al concerto manda «d<fase>» come quinto
+     campo, con l'imbardata VERSO IL PALCO (non quella che ondeggia: cambiando
+     a ogni invio farebbe traffico per niente). Il salto, l'ondeggiare e il
+     braccio a tempo li rifa' chi guarda, sul battito del suo brano. */
   function _posa(){
+    try{ if(typeof PDANCE!=="undefined" && PDANCE.on)
+      return { x:player.position.x, z:player.position.z, y:player.position.y, r:PDANCE.face,
+               k:"d"+Math.round(((PDANCE.phase%2)+2)%2*100) }; }catch(e){}
     try{ if(typeof SHOW!=="undefined" && SHOW.seated && SHOW.seatP)
       return { x:SHOW.seatP.x, z:SHOW.seatP.z, y:player.position.y, r:Math.PI, k:"s55_"+Math.round(player.position.y*100)+"c" }; }catch(e){}
     try{ if(typeof SIT!=="undefined" && SIT.on && SIT.seatY!=null){
@@ -58369,7 +58404,9 @@ const Presenza=(function(){
     if(!isFinite(x)||!isFinite(z)) return null;
     const m=/^s(-?\d{1,4})_(-?\d{1,4})([db]?)(c?)$/.exec(p[4]||"");
     const w=/^w(-?\d{1,4}(?:\.\d)?):(-?\d{1,4}(?:\.\d)?)$/.exec(p[5]||"");
+    const d=/^d(\d{1,3})$/.exec(p[4]||"");            // v304: balla (fase in centesimi di battito)
     return { x:x, z:z, y:(isFinite(y)?y:0), r:(isFinite(r)?r:0),
+             balla:d?{ ph:+d[1]/100 }:null,
              siede:m?{ seat:+m[1]/100, gy:+m[2]/100, eat:m[3]||"", c:!!m[4] }:null,
              cameriere:w?{ x:+w[1], z:+w[2] }:null };
   }
@@ -58437,6 +58474,7 @@ const Presenza=(function(){
     e.p0=q; e.p1=p; e.t0=ora; e.ricev=ora;
     e.zona=String(v.a||"town");
     e.siede=p.siede;                                   // v302: seduto / mangia / beve
+    e.balla=p.balla;                                   // v304: balla al concerto
     e.cameriere=p.cameriere;                           // v302: dove sta il suo Ray (dinerMirror)
     /* ⚠️ Il numero di sequenza distingue una frase NUOVA da una che e'
        semplicemente ancora nel nodo: senza, ogni aggiornamento di posizione
@@ -58664,6 +58702,7 @@ const Presenza=(function(){
   function _rilascia(e){
     const b=e&&e.corpo; if(!b) return;
     try{ _alza(b); }catch(err){}                        // v302: il prossimo compagno su questo corpo parte in piedi
+    try{ if(b.ballo) _fermaBallo(b); }catch(err){}      // v304: e non salta
     try{ if(b.label){ b.label.hidden=true; if(b.label.ctrl) b.label.ctrl.isVisible=false; } }catch(err){}
     try{ if(b.inter) b.inter.enabled=false; }catch(err){}
     b.usato=false; b.libero=Date.now(); b.anim=null;
@@ -58760,12 +58799,14 @@ const Presenza=(function(){
         b.label.area=e.zona;
         if(!vis && b.label.ctrl) b.label.ctrl.isVisible=false;
       }
-      if(!vis){ if(b.sit) _alza(b); continue; }
+      if(!vis){ if(b.sit) _alza(b); if(b.ballo) _fermaBallo(b); continue; }
       if(b.inter) b.inter.area=e.zona;
       /* v302: seduto (vedi _posa): posa sulle ossa come il giocatore, niente
          Walk, niente giro verso di te; il gesto del mangiare lo rifa' qui */
       if(e.siede && ((ora-e.t0)>=e.dur || e.vel<=0.35)){ _siedi(b,q,e.siede,ora); continue; }
       if(b.sit) _alza(b);
+      if(e.balla && ((ora-e.t0)>=e.dur || e.vel<=0.35)){ _balla(b,q,e.balla); continue; }
+      if(b.ballo) _fermaBallo(b);
       b.carrier.position.set(q.x, q.y, q.z);
       /* ⚠️ SI GIRA VERSO DI TE quando sei vicino, come fanno gli NPC
          (Giacomo, 2 set). Vale solo da fermo: se cammina deve guardare dove
@@ -58828,6 +58869,24 @@ const Presenza=(function(){
       b.pins=S.mix; }
     else b.pins=S.rest;
     S.eat=s.eat||"";
+  }
+  /* ---- BALLA (v304) ----------------------------------------------------
+     Come il giocatore in danceTick: salta sul battito, ondeggia attorno
+     alla direzione del palco, il braccio della clip «Wave» a tempo; le
+     gambe restano sulle pin in piedi. */
+  function _balla(b,q,d){
+    const B=danceBeat();
+    b.carrier.position.set(q.x, q.y, q.z);
+    b.carrier.rotation.y=q.r+Math.sin(B.beat*Math.PI)*0.13;
+    b.holder.position.y=b.holderY0+Math.abs(Math.sin((B.beat+d.ph)*Math.PI))*0.085;
+    const nm=b.anims.Wave?"Wave":"Idle";
+    if(b.anim!==nm){ b.anim=nm; b.noPin=false; b.play(nm); }
+    b.ballo=true;
+    const g=b.anims.Wave; if(g && b.cur===g) danceWaveFrame(g,B);
+  }
+  function _fermaBallo(b){
+    b.ballo=false; b.holder.position.y=b.holderY0; b.anim=null;
+    if(b.anims.Wave){ try{ b.anims.Wave.speedRatio=1; }catch(err){} }
   }
   function _alza(b){
     if(!b.sit) return;
