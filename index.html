@@ -4459,7 +4459,21 @@ function eatRun(steps,fwd,onDone){
       if(c.D) g.position.copyFrom(grip().add(c.D.scale(1-e))); else V.LerpToRef(g.__home,grip(),e,g.position);
       if(u>=1){ phase="hold"; t0=now; Q.k++; try{ c.apply&&c.apply(); }catch(e2){} } return; }
     if(phase==="hold"){ eatArm(1); if(tilt) eatTilt(g,f,tilt); g.position.copyFrom(grip());
-      if(now-t0>650){ phase="down"; t0=now; } return; }
+      if(now-t0>650){ const nx=Q.steps[Q.k]; phase=(nx && nx.g===g)?"lower":"down"; t0=now; } return; }
+    /* v305 (Giacomo, 7 ott: «se prende una cosa sola non ha senso che vada
+       avanti e indietro col corpo: continua a bere, magari in due sorsi»).
+       Se il gesto dopo e' sullo STESSO oggetto, non lo si riappoggia: la
+       mano scende un poco (verso la posa a riposo, busto dritto, la tazza
+       resta in mano e si raddrizza a meta'), una pausa, e torna alla bocca. */
+    const MID=0.58;
+    if(phase==="lower"){ let u=(now-t0)/520; if(u>1) u=1; const k=1-(1-MID)*sm(u);
+      eatBlend(EAT.rest,EAT.sip,k,1); if(tilt) eatTilt(g,f,tilt*k*k); g.position.copyFrom(grip());
+      if(u>=1){ phase="pause"; t0=now; } return; }
+    if(phase==="pause"){ eatBlend(EAT.rest,EAT.sip,MID,1); if(tilt) eatTilt(g,f,tilt*MID*MID); g.position.copyFrom(grip());
+      if(now-t0>(c.what==="bite"?900:650)){ const nx=Q.steps[Q.k]; nx.R=c.R; nx.D=c.D; Q.cur=nx; phase="up2"; t0=now; } return; }
+    if(phase==="up2"){ let u=(now-t0)/480; if(u>1) u=1; const k=MID+(1-MID)*sm(u);
+      eatBlend(EAT.rest,EAT.sip,k,1); if(tilt) eatTilt(g,f,tilt*k*k); g.position.copyFrom(grip());
+      if(u>=1){ phase="hold"; t0=now; Q.k++; try{ c.apply&&c.apply(); }catch(e2){} } return; }
     if(phase==="down"){ let u=(now-t0)/600; if(u>1) u=1; const e=sm(u);
       if(R) eatBlend(R,EAT.sip,1-e,1); else eatArm(1-e);
       if(tilt) eatTilt(g,f,tilt*(1-e));
@@ -10146,6 +10160,8 @@ function _dinerEat(set,keys){
     const liq=(key==="drink")?food.filter(m=>m.material && /^dn_c_/.test(m.material.name)):[];
     groups[key]={ g, liq, n:(key==="drink"?4:3), done:0 }; });
   const order=[]; const ks=Object.keys(groups);
+  /* v305: una cosa sola (il dolce da solo) si finisce in due volte, senza riappoggiarla */
+  if(ks.length===1) groups[ks[0]].n=2;
   for(let r=0;r<4;r++) ks.forEach(k=>{ if(r<groups[k].n) order.push(k); });
   const steps=order.map(k=>{ const G=groups[k]; return { g:G.g, what:(k==="drink"?"sip":"bite"), apply:()=>{ G.done++;
       const f=Math.max(0.05,1-G.done/G.n);
@@ -26039,7 +26055,8 @@ function cafeServe(npc,o){
     /* bevanda e piatto affiancati lungo il bancone, davanti a chi siede */
     n.position.set(spot.x+CAFE_TRAY_X, spot.y+1.18, spot.z+CAFE_TRAY_Z[bi]); P.node=n;
     P.parts=_cafeBuildOrder(o,n); P.st="ready";
-    const nS=4, nB=P.parts.food?3:0, steps=[];
+    /* v305: solo da bere -> due sorsi di fila, la tazza resta in mano (eatRun) */
+    const nS=P.parts.food?4:2, nB=P.parts.food?3:0, steps=[];
     for(let i=0;i<Math.max(nS,nB);i++){ if(i<nS) steps.push("sip"); if(i<nB) steps.push("bite"); }
     P.seq={ steps, k:0, nS, nB, cnt:{sip:0,bite:0} };
     try{ toast("☕ "+(npc.name||"The barista")+": “Here you are! Have a seat.”"); }catch(e){}
