@@ -26290,7 +26290,12 @@ function cafeServe(npc,o){
   },1400); }
 function _cafeOffer(prompt){ const P=CAFE_PICK;
   if(P.inter){ try{ removeInteract(P.inter); }catch(e){} }
-  P.inter=addInteract({ id:"cafePickup", area:"town", radius:3.2,
+  /* v306 (Giacomo, 7 ott: «una volta che e' presente l'ordine deve essere la
+     prima scelta, invece di avere di nuovo "Press E to talk to Rosa"»).
+     Rosa ha prio -1 (v305): l'ordine pronto deve passarle davanti, da
+     dovunque si stia al bancone — prima bisognava indietreggiare finche'
+     Rosa usciva di portata. Raggio piu' largo per lo stesso motivo. */
+  P.inter=addInteract({ id:"cafePickup", area:"town", radius:3.8, prio:-2, label:"your order",
     pos:()=>P.node?P.node.getAbsolutePosition():new BABYLON.Vector3(0,-99,0),
     prompt:prompt, interact:cafeTake }); }
 /* v302 (Giacomo, 3 ott: «al cafe' se si siedono allo stesso momento per
