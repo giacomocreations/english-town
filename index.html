@@ -1009,6 +1009,36 @@ function rainCovered(x,z){
     if(x>=r.x0 && x<=r.x1 && z>=r.z0 && z<=r.z1) return r.id; }
   return null;
 }
+/* v305 (Giacomo, 7 ott: «rumore passi su pozzanghere»). Le pozzanghere
+   non sono oggetti: le disegna lo shader dei fondi (WetFXPlugin) dove un
+   rumore sul piano x,z supera una soglia che scende col bagnato. Qui si
+   rifa' LO STESSO conto (stesso hash, stesso rumore, stessa soglia) nel
+   punto dei piedi, cosi' lo splash si sente dove la pozzanghera si vede.
+   Solo sui fondi che il bagnato ce l'hanno: asfalto (nessuna mesh __ground
+   sotto, _gSotto=null) o una mesh col plugin; sul prato niente. Su «Low»
+   lo shader non fa pozzanghere, e quindi niente splash. */
+let _gSotto=null;
+/* stesso hash dello shader (tHashP), passo per passo in float a 32 bit */
+const _wF=Math.fround, _wC=_wF(0.1031), _wD=_wF(33.33);
+function _wFr(v){ v=_wF(v); return _wF(v-Math.floor(v)); }
+function _wHash(x,y){ const a=_wFr(_wF(x)*_wC), b=_wFr(_wF(y)*_wC), c=a;
+  const d=_wF(_wF(_wF(a*_wF(b+_wD))+_wF(b*_wF(c+_wD)))+_wF(c*_wF(a+_wD)));
+  const A=_wF(a+d), B=_wF(b+d), C=_wF(c+d); return _wFr(_wF(A+B)*C); }
+function _wNoise(x,y){ const ix=Math.floor(x), iy=Math.floor(y); let fx=x-ix, fy=y-iy;
+  fx=fx*fx*(3-2*fx); fy=fy*fy*(3-2*fy);
+  const a=_wHash(ix,iy), b=_wHash(ix+1,iy), c=_wHash(ix,iy+1), d=_wHash(ix+1,iy+1);
+  return (a+(b-a)*fx)+((c+(d-c)*fx)-(a+(b-a)*fx))*fy; }
+function puddleUnderPlayer(){
+  try{
+    if(typeof area!=="undefined" && area!=="town") return false;
+    if(typeof qLevel!=="undefined" && qLevel==="basso") return false;
+    const k=(typeof WETFX!=="undefined")?WETFX.wet:0; if(k<0.30) return false;
+    const x=player.position.x, z=player.position.z; if(rainCovered(x,z)) return false;
+    if(_gSotto && !(_gSotto.material && _gSotto.material.__wetFX)) return false;
+    const tn=_wNoise(x*0.17,z*0.17)*0.62+_wNoise(x*0.53+7.3,z*0.53+7.3)*0.28+_wNoise(x*2.1+1.7,z*2.1+1.7)*0.10;
+    const u=Math.max(0,Math.min(1,(k-0.30)/0.70)), th=0.95+(0.64-0.95)*u*u*(3-2*u);
+    return tn>th+0.012;
+  }catch(e){ return false; } }
 /* Quanto la pioggia si SENTE qui: dentro casa, sottoterra e sotto un tetto
    dell'open world, niente. */
 function rainHere(){
@@ -3154,6 +3184,14 @@ float tHash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
 vec2 tHash2(vec2 p){ return fract(sin(vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3))))*43758.5453); }
 float tNoise(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); f=f*f*(3.0-2.0*f);
   return mix(mix(tHash(i),tHash(i+vec2(1.0,0.0)),f.x),mix(tHash(i+vec2(0.0,1.0)),tHash(i+vec2(1.0,1.0)),f.x),f.y); }
+/* v305: rumore delle POZZANGHERE senza sin(): fract(sin(x)*43758) cambia da
+   una scheda video all'altra (ogni GPU fa il suo sin), e il gioco deve sapere
+   in JS dove sono le pozzanghere per far sentire lo splash (puddleUnderPlayer).
+   Questo hash (Dave Hoskins, «hash without sine») e' solo somme, prodotti e
+   fract su numeri piccoli: esce uguale su ogni GPU e in JS con Math.fround. */
+float tHashP(vec2 p){ vec3 p3=fract(vec3(p.xyx)*0.1031); p3+=dot(p3,p3.yzx+33.33); return fract((p3.x+p3.y)*p3.z); }
+float tNoiseP(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); f=f*f*(3.0-2.0*f);
+  return mix(mix(tHashP(i),tHashP(i+vec2(1.0,0.0)),f.x),mix(tHashP(i+vec2(0.0,1.0)),tHashP(i+vec2(1.0,1.0)),f.x),f.y); }
 float tIn(vec4 r,vec2 p){ return step(r.x,p.x)*step(p.x,r.y)*step(r.z,p.y)*step(p.y,r.w); }
 /* stessa goccia della vasca (wDrop): anello che si allarga in una cella */
 vec2 tDrop(vec2 p,float cell,float seed,float time,float dens){
@@ -3224,7 +3262,7 @@ if(tWet>0.001 && normalW.y>0.7){
     float tDist=length(vEyePosition.xyz-vPositionW);
     /* pozzanghere: macchie di qualche metro, la soglia scende col bagnato
        (prima le conche, poi sempre di piu'); bordo morbido 5 cm */
-    float tn=tNoise(tP*0.17)*0.62+tNoise(tP*0.53+7.3)*0.28+tNoise(tP*2.1+1.7)*0.10;
+    float tn=tNoiseP(tP*0.17)*0.62+tNoiseP(tP*0.53+7.3)*0.28+tNoiseP(tP*2.1+1.7)*0.10;   // v305: vedi tHashP
     float tTh=mix(0.95,0.64,smoothstep(0.30,1.0,tK));
     tPud=smoothstep(tTh,tTh+0.035,tn)*step(0.30,tK);
     /* gocce: anelli nelle pozzanghere, accenni sul resto; si spengono da
@@ -30022,7 +30060,32 @@ const SFX=(function(){
     if(dist>stride*3) dist=stride;      // guardia contro salti di posizione
     if(dist<stride) return;
     dist-=stride;
-    step(area!=="town", !!run);
+    if(area==="town" && typeof puddleUnderPlayer==="function" && puddleUnderPlayer()) splash(!!run);
+    else step(area!=="town", !!run);
+  }
+  /* SPLASH (v305) — il piede che entra nell'acqua: uno schiaffo d'acqua
+     (rumore in passa-banda alto, attacco secco, coda piu' lunga del passo)
+     e due-tre goccioline che ricadono (brevi fischi che scendono di
+     frequenza). Come il passo, cambia un po' ogni volta. */
+  function splash(run){
+    const c=ready(); if(!c) return;
+    const g0=lvl(); if(g0<=0) return;
+    const t=c.currentTime;
+    const src=c.createBufferSource(); src.buffer=noise; src.playbackRate.value=0.9+Math.random()*0.3;
+    const bp=c.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=1500*(0.85+Math.random()*0.3); bp.Q.value=0.9;
+    const lp=c.createBiquadFilter(); lp.type="lowpass"; lp.frequency.setValueAtTime(5200,t); lp.frequency.exponentialRampToValueAtTime(1400,t+0.16);
+    const g=c.createGain(), peak=0.16*(run?1.3:1)*g0*(0.85+Math.random()*0.3);
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(peak,t+0.008);
+    g.gain.exponentialRampToValueAtTime(peak*0.35,t+0.05); g.gain.exponentialRampToValueAtTime(0.0001,t+0.2);
+    src.connect(bp); bp.connect(lp); lp.connect(g); g.connect(master);
+    src.start(t,Math.random()*0.8); src.stop(t+0.24);
+    const n=2+(Math.random()<0.5?1:0);
+    for(let i=0;i<n;i++){ const t0=t+0.05+Math.random()*0.13, f0=1400+Math.random()*1600;
+      const o=c.createOscillator(); o.type="sine";
+      o.frequency.setValueAtTime(f0,t0); o.frequency.exponentialRampToValueAtTime(f0*0.55,t0+0.035);
+      const og=c.createGain(); og.gain.setValueAtTime(0.0001,t0);
+      og.gain.exponentialRampToValueAtTime(0.035*g0*(run?1.2:1),t0+0.004); og.gain.exponentialRampToValueAtTime(0.0001,t0+0.04);
+      o.connect(og); og.connect(master); o.start(t0); o.stop(t0+0.05); }
   }
 
   /* CLACSON — due onde quadre a 440 e 554 Hz, cioe' una terza maggiore:
@@ -39045,9 +39108,10 @@ scene.registerBeforeRender(()=>{
     // superficie __ground (asfalto a 0) il bersaglio resta 0 e l'avatar torna a terra.
     _gTmp.set(player.position.x, player.position.y+8, player.position.z);
     const hits=pickRaggio(new BABYLON.Ray(_gTmp, DOWN, 18), "__ground", true);
-    let ty=0, found=false;
+    let ty=0, found=false, gm=null;
     if(hits) for(const h of hits){ const hy=h.pickedPoint.y;
-      if(hy<=player.position.y+1.1 && (!found||hy>ty)){ ty=hy; found=true; } }
+      if(hy<=player.position.y+1.1 && (!found||hy>ty)){ ty=hy; found=true; gm=h.pickedMesh; } }
+    _gSotto=gm;                            // v305: su cosa si cammina (pozzanghere, vedi puddleUnderPlayer)
     player.position.y += (ty-player.position.y)*0.45;
   }
   // camera dietro le spalle SOLO andando avanti (W/stick su): strafe (A/D) e retro (S) NON ruotano la camera
