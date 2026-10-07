@@ -55623,28 +55623,48 @@ const ACC_BUILD={
     [[0,e,line],[e,Hh-e,main],[Hh-e,Hh,line]].forEach(L=>{ const m=strip(L[0],L[1],TH,TH,radial); m.material=L[2]; m.parent=g; });
     const b=strip(0,0,0,TH,dn); b.material=line; b.parent=g;
     const t=strip(Hh,Hh,TH,0,up); t.material=line; t.parent=g; },
-  /* archetto e gusci del colore scelto, cuscinetti sempre scuri */
+  /* archetto e gusci del colore scelto, cuscinetti sempre scuri.
+     v304 (Giacomo, 7 ott: «le cuffie sono troppo larghe, sia boy che girl,
+     mettile aderenti alle orecchie»): i gusci stavano a 1,08 volte la
+     larghezza MASSIMA di testa e capelli sopra gli occhi, cioe' a un paio di
+     centimetri dalla testa. Misurato: all'altezza delle orecchie la PELLE
+     sta a 8,1-8,5 cm dal centro, i capelli del modello (basette del
+     ragazzo, caschetto della ragazza) a 10-10,5. Ora il cuscinetto poggia
+     sulla pelle, cioe' sull'orecchio, lato per lato, poco sotto gli occhi;
+     i capelli che sporgono finiscono DENTRO il guscio (che e' pieno) e
+     restano visibili solo attorno, come sotto cuffie vere. L'archetto sopra
+     la testa resta fuori dai capelli e scende dritto al guscio. */
   headphones(g,M,C){ const zc=(M.front+M.back)/2-0.01, k=_accC(C,0.35), pad=_accMat("#1a1c20",0.1),
       plate=_accMat(_hexLum(C.hex)<0.2?"#3fa7c9":_hexMul(C.hex,0.7),0.3);
+    const yE=-0.024, CUSH=0.016;
+    /* il fianco della testa (la pelle) alla quota del padiglione, per lato */
+    const side=sg=>{ let x=0; (M.SPL||[]).forEach(l=>{
+        if(l.x*sg<=0 || Math.abs(l.y-yE)>0.03 || Math.abs(l.z-zc)>0.035) return; x=Math.max(x,Math.abs(l.x)); });
+      return x>0.05?x:M.skHW; };
+    const sx={ "-1":side(-1)+0.002, "1":side(1)+0.002 };
     /* v292: l'archetto passa SOPRA i capelli (i ricci lo inghiottivano): per
        ogni punto dell'arco, fuori dai capelli che stanno sul suo piano */
     const HP=(M.HS||M.HRL||[]).filter(l=>Math.abs(l.z-zc)<0.045);
-    const rx0=M.halfW*1.08, ry0=M.top+0.02, NB=16, RR=[];
-    for(let i=0;i<=NB;i++){ const t=Math.PI*i/NB, dx=-Math.cos(t), dy=Math.sin(t);
+    const ry0=M.top+0.02, NB=20, RR=[];
+    for(let i=0;i<=NB;i++){ const t=Math.PI*i/NB, dx=-Math.cos(t), dy=Math.sin(t), rx0=(dx<0?sx["-1"]:sx["1"])+CUSH+0.004;
       let r=1/Math.sqrt(Math.pow(dx/rx0,2)+Math.pow(dy/ry0,2));
-      HP.forEach(l=>{ const rl=Math.hypot(l.x,l.y); if(rl<1e-4) return; const c=(l.x*dx+l.y*dy)/rl; if(c>0.98) r=Math.max(r,rl+0.02); });
+      /* fuori dai capelli solo dove l'arco sta sopra la testa: in basso,
+         vicino ai padiglioni, la fascia stringe come quelle vere */
+      if(dy>0.5) HP.forEach(l=>{ const rl=Math.hypot(l.x,l.y); if(rl<1e-4) return; const c=(l.x*dx+l.y*dy)/rl; if(c>0.98) r=Math.max(r,rl+0.012); });
       RR.push(r); }
-    for(let k2=0;k2<2;k2++){ const R2=RR.map((r,i)=>Math.max(r,((RR[i-1]||r)+r+(RR[i+1]||r))/3)); for(let i=0;i<=NB;i++) RR[i]=R2[i]; }
-    const rx=Math.max(rx0,RR[0],RR[NB]);
-    const pts=[]; for(let i=0;i<=NB;i++){ const t=Math.PI*i/NB; let x=-Math.cos(t)*RR[i], y=Math.sin(t)*RR[i];
-      if(i===0||i===NB) x=Math.sign(x)*rx; pts.push(new BABYLON.Vector3(x, y, zc)); }
-    const band=BABYLON.MeshBuilder.CreateTube("acc",{path:pts,radius:0.013,tessellation:8},scene); band.material=k; band.parent=g;
-    [-1,1].forEach(s=>{ const cush=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.08,height:0.016,tessellation:18},scene);
-      cush.material=pad; cush.rotation.z=Math.PI/2; cush.position.set(s*(rx-0.006),-0.01,zc); cush.parent=g;
-      const cup=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.088,height:0.034,tessellation:18},scene);
-      cup.material=k; cup.rotation.z=Math.PI/2; cup.position.set(s*(rx+0.014),-0.01,zc); cup.parent=g;
-      const cap=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.058,height:0.006,tessellation:18},scene);
-      cap.material=plate; cap.rotation.z=Math.PI/2; cap.position.set(s*(rx+0.032),-0.01,zc); cap.parent=g; }); },
+    for(let k2=0;k2<3;k2++){ const R2=RR.map((r,i)=>(i===0||i===NB)?r:Math.max(r,((RR[i-1]||r)+r+(RR[i+1]||r))/3)); for(let i=0;i<=NB;i++) RR[i]=R2[i]; }
+    const pts=[]; for(let i=0;i<=NB;i++){ const t=Math.PI*i/NB; pts.push(new BABYLON.Vector3(-Math.cos(t)*RR[i], Math.sin(t)*RR[i], zc)); }
+    /* gli estremi scendono dritti al centro del guscio */
+    [[-1,0],[1,NB]].forEach(q=>{ const s=q[0], x=s*(sx[s]+CUSH+0.006), e=new BABYLON.Vector3(x,yE+0.03,zc), c=new BABYLON.Vector3(x,yE,zc);
+      if(q[1]===0) pts.unshift(c,e); else pts.push(e,c); });
+    const band=BABYLON.MeshBuilder.CreateTube("acc",{path:pts,radius:0.011,tessellation:8},scene); band.material=k; band.parent=g;
+    [-1,1].forEach(s=>{ const x0=s*sx[s];
+      const cush=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.078,height:CUSH,tessellation:18},scene);
+      cush.material=pad; cush.rotation.z=Math.PI/2; cush.position.set(x0+s*CUSH/2,yE,zc); cush.parent=g;
+      const cup=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.084,height:0.026,tessellation:18},scene);
+      cup.material=k; cup.rotation.z=Math.PI/2; cup.position.set(x0+s*(CUSH+0.013),yE,zc); cup.parent=g;
+      const cap=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.056,height:0.006,tessellation:18},scene);
+      cap.material=plate; cap.rotation.z=Math.PI/2; cap.position.set(x0+s*(CUSH+0.028),yE,zc); cap.parent=g; }); },
   /* v292: il cappello da escursionista avvolge la testa come gli altri (i
      ricci lo bucavano): calotta a cima piatta, fascia piu' scura, tesa che
      segue il bordo della calotta e scende un poco */
