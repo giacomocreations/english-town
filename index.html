@@ -9497,6 +9497,15 @@ function buildDiner(){
    degli sgabelli copriva la strada e Ray impiegava un minuto a tornare */
 const DINER_HIP_BACK=0.05;   // l'anca dietro il centro della seduta (m)
 const DINER_WAITER_HOME={ x:-2.3, z:34.95 };   // accanto al vassoio sul bancone
+/* v305 — LA SECONDA CAMERIERA (Giacomo, 7 ott: «mettere due camerieri cosi'
+   possono servire piu' persone se ci sono piu' alunni collegati»). Ogni
+   dispositivo ha il SUO Ray, che serve il SUO giocatore; i compagni serviti
+   si vedevano solo se il tuo Ray era libero, e uno alla volta: con te seduto
+   Ray mollava il compagno e lui restava al tavolo senza nessuno. Lucy fa
+   solo questo: va dove sta il cameriere del primo compagno servito
+   (Presenza.camerieri). Ray, quando e' libero, copre il secondo. */
+const DINER_WAITER2_HOME={ x:2.3, z:34.95 };
+const DINER2={ npc:null, walking:null, pending:null, mir:null };
 function buildDinerNPCs(){
   const gy=DINER.gy;
   DINER.waiter=spawnNPC({ id:"ray", name:"Ray", sub:"Waiter", area:"town", model:"avatar", dress:false,
@@ -9504,6 +9513,11 @@ function buildDinerNPCs(){
     x:DINER.x+DINER_WAITER_HOME.x, y:gy, z:DINER_WAITER_HOME.z, face:Math.PI, snap:false, radius:2.6,
     interact:n=>talkToWaiter(n) });
   regTownPop(DINER.waiter);
+  DINER2.npc=spawnNPC({ id:"lucy", name:"Lucy", sub:"Waitress", area:"town", model:"npcWomanB", keepModel:true, dress:false,
+    tint:"red", height:1.68,
+    x:DINER.x+DINER_WAITER2_HOME.x, y:gy, z:DINER_WAITER2_HOME.z, face:Math.PI, snap:false, radius:2.6,
+    interact:n=>talkToWaiter(n) });
+  if(DINER2.npc) regTownPop(DINER2.npc);
   if(!DINER.mirT) DINER.mirT=setInterval(()=>{ try{ dinerMirror(); }catch(e){} },700);   // v302
   /* i due clienti: tavolo in fondo a destra, uno per sedia */
   const T=DINER.tables[3], S=DINER.seats.filter(s=>s.t===T);
@@ -9792,10 +9806,13 @@ function dinerWaiterTo(t,then){
    camminata sua in corso. Il tuo servizio vince sempre: appena ti siedi,
    dinerWaiterTo annulla questa camminata (_dnWalk) e Ray viene da te. */
 function dinerMirror(){
-  const w=DINER.waiter; if(!w || !w.carrier || area!=="town") return;
-  if(DINER.seat || DINER.debt || (DINER.walking && !DINER.mir)){ DINER.mir=null; return; }
+  if(area!=="town") return;
   let L=[]; try{ L=Presenza.camerieri(); }catch(e){}
-  const m=L[0]||null, V=BABYLON.Vector3;
+  const lucy=!!(DINER2.npc && DINER2.npc.carrier);
+  try{ if(lucy) _dn2Mirror(L[0]||null); }catch(e){ console.warn("[diner] Lucy",e); }
+  const w=DINER.waiter; if(!w || !w.carrier) return;
+  if(DINER.seat || DINER.debt || (DINER.walking && !DINER.mir)){ DINER.mir=null; return; }
+  const m=(lucy?L[1]:L[0])||null, V=BABYLON.Vector3;
   if(m){
     if(DINER.mir && Math.hypot(DINER.mir.x-m.x,DINER.mir.z-m.z)<0.6) return;
     DINER.mir={ x:m.x, z:m.z };
@@ -9803,6 +9820,30 @@ function dinerMirror(){
       const p=w.pos(); w.carrier.rotation.y=Math.atan2(m.cx-p.x,m.cz-p.z)+NPC_FACE_OFFSET; w.baseYaw=w.carrier.rotation.y; w.watch=false; });
   } else if(DINER.mir){ DINER.mir=null; dinerWaiterHome(); }
 }
+/* Lucy cammina come Ray (stessa regola: una camminata alla volta, la nuova
+   annulla la vecchia), ma con il suo stato: non tocca mai DINER.walking. */
+function _dn2Walk(targets,arrive,done){
+  const job={ targets, arrive, done, cancel:false };
+  if(DINER2.walking){ DINER2.pending=job; DINER2.walking.cancel=true; return; }
+  _dn2Start(job); }
+function _dn2Start(job){
+  const w=DINER2.npc; DINER2.walking=job;
+  const T=job.targets.map(fn=>()=>job.cancel?w.pos():fn());
+  const fin=ok=>{ if(DINER2.walking===job) DINER2.walking=null;
+    if(DINER2.pending){ const nx=DINER2.pending; DINER2.pending=null; _dn2Start(nx); return; }
+    if(ok && !job.cancel && job.done) job.done(); };
+  npcWalkSeq(w,T,job.arrive,()=>fin(true),"town",()=>fin(false),{ detour:true, speed:2.3 }); }
+function _dn2Mirror(m){
+  const w=DINER2.npc, V=BABYLON.Vector3;
+  if(m){
+    if(DINER2.mir && Math.hypot(DINER2.mir.x-m.x,DINER2.mir.z-m.z)<0.6) return;
+    DINER2.mir={ x:m.x, z:m.z };
+    _dn2Walk([()=>new V(DINER.x,0,w.pos().z),()=>new V(DINER.x,0,m.z),()=>new V(m.x,0,m.z)],0.3,()=>{
+      const p=w.pos(); w.carrier.rotation.y=Math.atan2(m.cx-p.x,m.cz-p.z)+NPC_FACE_OFFSET; w.baseYaw=w.carrier.rotation.y; w.watch=false; });
+  } else if(DINER2.mir){ DINER2.mir=null;
+    const p=w.pos(), T=new V(DINER.x+DINER_WAITER2_HOME.x,0,DINER_WAITER2_HOME.z);
+    _dn2Walk([()=>new V(DINER.x,0,p.z),()=>new V(DINER.x,0,DINER_WAITER2_HOME.z),()=>T],0.3,()=>{
+      w.carrier.rotation.y=Math.PI; w.baseYaw=Math.PI; w.watch=true; }); } }
 function dinerWaiterHome(then){
   const w=DINER.waiter; if(!w){ if(then) then(); return; }
   const p=w.pos(), T=new BABYLON.Vector3(DINER.x+DINER_WAITER_HOME.x,0,DINER_WAITER_HOME.z);
