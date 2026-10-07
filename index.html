@@ -55467,9 +55467,17 @@ function _faceNose(skin,M,F,id){
       P[i]=r.x; P[i+1]=r.y; P[i+2]=r.z; moved[i/3]=1; }
     /* normali nuove solo sui triangoli toccati: il resto della testa resta
        identico (facce piatte del modello comprese) */
-    const I=skin.getIndices(), Nn=[]; BABYLON.VertexData.ComputeNormals(P,I,Nn);
+    const I=skin.getIndices(), Nn=[], N0=skin.__noseN0; BABYLON.VertexData.ComputeNormals(P,I,Nn);
+    /* ⚠️ v303 (Giacomo, 6 ott: «la parte naso-occhi appare piu' chiara del
+       resto della faccia»): ComputeNormals ragiona col verso dei triangoli di
+       Babylon, ma quelli del GLB arrivano col verso girato (il loader ribalta
+       la z sulla radice). Le normali ricalcolate puntavano DENTRO la testa:
+       tutta la fascia toccata dal naso, dalla punta fino agli occhi, prendeva
+       la luce al contrario e usciva piu' chiara del resto della faccia. Ogni
+       normale nuova si gira dalla stessa parte di quella originale. */
     for(let t=0;t<I.length;t+=3){ if(!(moved[I[t]]||moved[I[t+1]]||moved[I[t+2]])) continue;
-      for(let q=0;q<3;q++){ const v=I[t+q]*3; N[v]=Nn[v]; N[v+1]=Nn[v+1]; N[v+2]=Nn[v+2]; } } }
+      for(let q=0;q<3;q++){ const v=I[t+q]*3, sg=(Nn[v]*N0[v]+Nn[v+1]*N0[v+1]+Nn[v+2]*N0[v+2]<0)?-1:1;
+        N[v]=sg*Nn[v]; N[v+1]=sg*Nn[v+1]; N[v+2]=sg*Nn[v+2]; } } }
   skin.setVerticesData(VB.PositionKind,P,true); skin.setVerticesData(VB.NormalKind,N,true);
   return true; }
 /* veste il viso: face = { eyes, eyec, mouth, nose, skin (hex) }. Come dressAcc: si
