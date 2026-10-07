@@ -2042,9 +2042,16 @@ const UNIT5={ id:"u5", area:"town", openWorld:true,
    ===================================================================== */
 const UNIT7={ id:"u7", area:"town", openWorld:true,
   title:"Unit 7 — Sport",
+  /* v304: gli attrezzi in campo cambiano a ogni giro (vedi u7Shuffle): si
+     rimescola entrando nello step di lessico; gli sport trovati restano
+     per l'opinione con Alex (u7OpinionSport) */
+  pool:()=>{ if(!U7_EQ) return UNIT7.items||[];
+    if(Quest.unit===UNIT7 && Quest.step && Quest.step.id==="lex" && U7_EQ.st!==Quest.state){ U7_EQ.st=Quest.state; u7Shuffle(); }
+    return U7_EQ.shown; },
+  onFound:t=>{ UNIT7.__found=t.map(e=>e.en); },
   steps:[
-  { id:"lex",   strand:"lessico",    type:"findFurniture", count:3, art:"",
-    intro:"<b>Coach Dan</b> ha lasciato l'attrezzatura sparsa sul campo: trova gli sport che ti chiede (tocca l'attrezzo giusto).",
+  { id:"lex",   strand:"lessico",    type:"findFurniture", count:4, art:"",
+    intro:"<b>Coach Dan</b> ha lasciato l'attrezzatura sparsa attorno al campo (ogni volta diversa!): trova i <b>quattro sport</b> che ti chiede (tocca l'attrezzo giusto).",
     introObjEn:"Find the sports on the list around the pitch.", introObj:"Trova gli sport richiesti sul campo.",
     target:()=>new BABYLON.Vector3(112,0,32) },
   { id:"gram",  strand:"grammatica", type:"abilityInterview",
@@ -2068,7 +2075,8 @@ const UNIT7={ id:"u7", area:"town", openWorld:true,
       patterns:[{re:/\bcan('?t| not)?\b/i, label:"Usa can e can't"},
                 {re:/\b(very well|quite well|well|badly|fast)\b/i, label:"Usa un avverbio di modo (well, very well, quite well, badly)"}],
       vocab:{ pool:["football","basketball","tennis","swim","swimming","run","running","ride","bike","cycling",
-        "play","volleyball","dance","sing","think","opinion","great","boring","difficult","fun","team"], min:2 },
+        "play","volleyball","dance","sing","think","opinion","great","boring","difficult","fun","team",
+        "rugby","cricket","hockey","karate","gymnastics","athletics","skateboarding","skate","skiing","ski"], min:2 },   // v304
       passBand:"yellow" },
     intro:"A bordo campo c'e' una <b>lavagnetta</b>: scrivi la tua <b>scheda sportiva</b> (4+ frasi).",
     introObjEn:"Write your sports card.", introObj:"Scrivi la tua scheda sportiva.",
@@ -21511,7 +21519,8 @@ const MECH={
       const target=targets[st.idx];
       if(entry===target){ st.wrong=0; toast("✓ Right! "+NM(entry));
         st.idx++;
-        if(st.idx>=n){ Quest.complete("🔎 Lessico completato!"); return; }
+        if(st.idx>=n){ try{ if(Quest.unit&&Quest.unit.onFound) Quest.unit.onFound(targets); }catch(e){}
+          Quest.complete("🔎 Lessico completato!"); return; }
         showObj();
       } else {
         st.wrong++;
@@ -21528,7 +21537,7 @@ const MECH={
          lessico il nome inglese e' proprio la risposta da indovinare, mostrarlo
          nel selettore svuoterebbe l'esercizio. */
       Quest.questInteract({ id:"furn_"+entry.en, area:Quest.unit.area, radius:3.2, furn:entry,
-        pos:()=>entry.pos, meshes:[entry.mesh], label:(entry.it||"?"),
+        pos:()=>entry.pos, meshes:[entry.mesh], label:(entry.lbl||entry.it||"?"),
         prompt:'Press <b>E</b> to identify', interact:()=>onTap(entry) });
     });
     showObj();
@@ -27366,6 +27375,144 @@ function u7Cones(x,z){ const r=new BABYLON.TransformNode("u7cones",scene); r.par
     hm7Shadow(r,0.55,0.55,dx,z,0.048,0.8); });
   return r; }
 
+/* =====================================================================
+   v304 — PIU' SPORT SUL CAMPO, SCELTI A CASO (Giacomo, 7 ott: «bisogna
+   ammettere altri attrezzi che rappresentano gli sport, che appaiono
+   casualmente, quindi non sono sempre gli stessi … il lessico li' e'
+   sempre lo stesso ed e' anche facilissimo»). Gli sport sono quelli del
+   libro (Sports and free time, Word bank 7): athletics, cricket,
+   gymnastics, hockey, karate, rugby, skateboarding, skiing, swimming,
+   volleyball, piu' i cinque di prima. Tutto procedurale (0 KB).
+   · pallone (sul campo) e canestro (col suo solido e il mezzo campetto)
+     restano fissi; degli altri tredici ne escono OTTO a ogni giro, su
+     posti a caso fra quindici (U7_EQ_SLOTS, verificati sulla mappa dei
+     solidi: liberi da alberi, rocce e panchine);
+   · mai running (i conetti) e athletics (gli ostacoli) nello stesso giro:
+     due attrezzi «da corsa» insieme sarebbero ambigui;
+   · si rimescola all'inizio dello step di lessico (UNIT7.pool) e i
+     bersagli diventano QUATTRO su dieci visibili;
+   · nel selettore l'attrezzo non dice piu' il suo nome italiano: rugby,
+     cricket, hockey e karate in italiano si scrivono uguali, e l'etichetta
+     dava la risposta. Si riconosce l'attrezzo, che e' l'esercizio.
+   ===================================================================== */
+function u7Wrap(x,z){ const r=new BABYLON.TransformNode("u7eq",scene); r.parent=townRoot; r.position.set(x,0,z); return r; }
+/* pallone a spicchi colorati (pallavolo): bande in una texture sferica */
+function u7VolleyTex(){ const dt=new BABYLON.DynamicTexture("u7vbT",{width:256,height:128},scene,true), c=dt.getContext();
+  const cols=["#f2d23a","#2f5fb8","#f6f4ee"]; for(let i=0;i<6;i++){ c.fillStyle=cols[i%3]; c.fillRect(0,i*128/6,256,128/6+1); }
+  c.strokeStyle="#8a8a86"; c.lineWidth=1.5; for(let i=0;i<6;i++){ c.beginPath(); c.moveTo(i*42.7,0); c.lineTo(i*42.7+20,128); c.stroke(); }
+  dt.update(); return dt; }
+function u7Volley(x,z){ const r=u7Wrap(x,z), wm=sfWhite(), pole=hm7Mat("#3d454c",0.5,40);
+  const W=2.6, H=1.75;
+  [-W/2,W/2].forEach(px=>{ hm7Cyl(r,0.07,0.07,H+0.15,pole,px,(H+0.15)/2,0,12); hm7Cyl(r,0.36,0.36,0.06,pole,px,0.03,0,16); });
+  sfQuad(r,[[-W/2,H-0.75,0],[W/2,H-0.75,0],[W/2,H,0],[-W/2,H,0]]);
+  hm7Box(r,W,0.06,0.02,wm,0,H-0.02,0); hm7Box(r,W,0.03,0.02,wm,0,H-0.76,0);          // fascia alta e bassa
+  const b=BABYLON.MeshBuilder.CreateSphere("u7vb",{diameter:0.24,segments:16},scene);
+  const bm=new BABYLON.StandardMaterial("u7vbm",scene); bm.diffuseTexture=u7VolleyTex(); bm.specularColor=new BABYLON.Color3(0.3,0.3,0.3);
+  b.material=bm; b.position.set(0.55,0.12,0.7); b.rotation.set(0.5,0.3,0.9); b.parent=r;
+  return r; }
+function u7Rugby(x,z){ const r=u7Wrap(x,z), w=hm7Mat("#efe9dc",0.3,30), red=hm7Mat("#c8352a",0.3,30);
+  const g=new BABYLON.TransformNode("u7rg",scene); g.parent=r; g.position.set(0,0.27,0); g.rotation.set(-0.5,0.6,0);
+  hm7Sph(g,0.19,0.19,0.30,w,0,0,0,16);
+  [-0.08,0.08].forEach(zz=>hm7Tor(g,0.194*Math.sqrt(1-(zz/0.15)*(zz/0.15)),0.012,red,0,0,zz,Math.PI/2));
+  hm7Box(g,0.012,0.006,0.11,hm7Mat("#f8f6f0",0.2,20),0,0.095,0);                     // cucitura
+  for(let k=-2;k<=2;k++) hm7Box(g,0.03,0.006,0.006,hm7Mat("#f8f6f0",0.2,20),0,0.097,k*0.02);
+  hm7Cyl(r,0.07,0.16,0.14,hm7Mat("#f07a1e",0.3,30),0,0.07,0,16);                     // il tee
+  return r; }
+function u7Cricket(x,z){ const r=u7Wrap(x,z), wood=hm7Mat("#d8b47a",0.2,20), dark=hm7Mat("#2a2622",0.2,20);
+  /* il wicket: tre paletti con le due traversine sopra */
+  [-0.11,0,0.11].forEach(px=>hm7Cyl(r,0.035,0.035,0.71,wood,px,0.355,-0.3,10));
+  [-0.055,0.055].forEach(px=>hm7Box(r,0.11,0.025,0.025,wood,px,0.722,-0.3));
+  /* la mazza, distesa: pala piatta e manico col grip */
+  const g=new BABYLON.TransformNode("u7cb",scene); g.parent=r; g.position.set(0.15,0.03,0.25); g.rotation.set(Math.PI/2,0.9,0);
+  hm7Box(g,0.11,0.55,0.04,wood,0,0,0); hm7Box(g,0.07,0.5,0.025,hm7Mat("#c99e62",0.2,20),0,0,0.02);
+  hm7Cyl(g,0.035,0.035,0.30,dark,0,0.42,0,10);
+  const ball=hm7Sph(r,0.072,0.072,0.072,hm7Mat("#b3241f",0.5,50),-0.35,0.036,0.2,12);
+  hm7Tor(r,0.07,0.004,hm7Mat("#f2ece0",0.2,20),-0.35,0.036,0.2,0,0,Math.PI/2);
+  return r; }
+function u7Hockey(x,z){ const r=u7Wrap(x,z), sh=hm7Mat("#2b2f36",0.4,40), tape=hm7Mat("#d8d4c8",0.2,20), blade=hm7Mat("#e0592a",0.3,30);
+  /* due mazze a J distese a terra, incrociate: asta col nastro in cima e
+     la pala ricurva in fondo, un unico tubo che piega */
+  [[0.55,0.15,0.035],[-0.5,-0.1,0.07]].forEach(q=>{ const g=new BABYLON.TransformNode("u7hk",scene); g.parent=r; g.position.set(q[1],0,0); g.rotation.y=q[0];
+    const y=q[2];
+    hm7Tube(g,[[0,y,0.5],[0,y,-0.3]],0.016,sh);
+    hm7Tube(g,[[0,y,0.5],[0,y,0.32]],0.019,tape);
+    hm7Tube(g,[[0,y,-0.3],[0,y,-0.36],[0.025,y,-0.42],[0.07,y,-0.455],[0.13,y,-0.46],[0.17,y,-0.445]],0.024,blade); });
+  hm7Sph(r,0.075,0.075,0.075,hm7Mat("#f4f4ee",0.4,40),0.4,0.038,0.35,12);
+  return r; }
+function u7Skate(x,z){ const r=u7Wrap(x,z), deck=hm7Mat("#c23b6b",0.3,30), grip=hm7Mat("#1d1f22",0.1,10), met=hm7Mat("#a8adb3",0.7,60), wh=hm7Mat("#f1e6b8",0.3,30);
+  const g=new BABYLON.TransformNode("u7sk",scene); g.parent=r; g.position.set(-0.4,0,0.1); g.rotation.y=0.4;
+  hm7Box(g,0.56,0.02,0.21,deck,0,0.105,0); hm7Box(g,0.56,0.004,0.2,grip,0,0.117,0);
+  [-1,1].forEach(s=>{ const k=hm7Box(g,0.14,0.02,0.21,deck,s*0.34,0.125,0); k.rotation.z=s*0.3;
+    hm7Box(g,0.05,0.03,0.17,met,s*0.2,0.08,0);
+    [-1,1].forEach(t=>hm7Cyl(g,0.055,0.055,0.035,wh,s*0.2,0.0275,t*0.085,14,Math.PI/2)); });
+  /* la rampetta (kicker) */
+  const ramp=new BABYLON.TransformNode("u7rp",scene); ramp.parent=r; ramp.position.set(0.6,0,-0.1);
+  const p=hm7Box(ramp,0.9,0.03,0.8,hm7Mat("#8a6a44",0.2,20),0,0.17,0); p.rotation.z=0.38;
+  hm7Box(ramp,0.03,0.33,0.8,hm7Mat("#6f5434",0.2,20),0.42,0.165,0);
+  hm7Box(ramp,0.06,0.02,0.82,met,0.43,0.34,0);
+  return r; }
+function u7Ski(x,z){ const r=u7Wrap(x,z), sk=hm7Mat("#d23a2e",0.5,50), wht=hm7Mat("#f2f0ea",0.3,30), pole=hm7Mat("#3a4148",0.6,50);
+  const g=new BABYLON.TransformNode("u7ski",scene); g.parent=r; g.rotation.y=0.25;
+  [-0.07,0.07].forEach(px=>{ hm7Box(g,0.075,0.02,1.55,sk,px,0.012,0); const tip=hm7Box(g,0.075,0.02,0.16,sk,px,0.04,0.83); tip.rotation.x=-0.5;
+    hm7Box(g,0.08,0.035,0.2,wht,px,0.035,-0.05); });                                   // attacchi
+  [[-0.3,0.5],[0.3,-0.4]].forEach((q,i)=>{ const p=new BABYLON.TransformNode("u7sp",scene); p.parent=r; p.position.set(q[0]*0.6,0.03+i*0.02,0); p.rotation.set(Math.PI/2,q[1],0);
+    hm7Cyl(p,0.018,0.018,1.15,pole,0,0,0,8); hm7Tor(p,0.09,0.01,pole,0,-0.5,0); hm7Cyl(p,0.04,0.04,0.14,hm7Mat("#1b1d20",0.2,20),0,0.5,0,8); });
+  return r; }
+function u7Swim(x,z){ const r=u7Wrap(x,z), wh=hm7Mat("#f4f2ec",0.4,40), red=hm7Mat("#d63a2c",0.4,40);
+  /* il salvagente: bianco a quattro spicchi rossi */
+  const ring=new BABYLON.TransformNode("u7sw",scene); ring.parent=r; ring.position.set(-0.35,0.07,0);
+  hm7Tor(ring,0.62,0.14,wh,0,0,0);
+  for(let k=0;k<4;k++){ const a=k*Math.PI/2+Math.PI/4, s=hm7Box(ring,0.16,0.15,0.13,red,Math.cos(a)*0.31,0,Math.sin(a)*0.31); s.rotation.y=-a; }
+  /* la tavoletta, la cuffia e gli occhialini */
+  const kb=hm7Box(r,0.32,0.035,0.44,hm7Mat("#2f8fd8",0.3,30),0.42,0.02,0.05); kb.rotation.y=0.3;
+  hm7Sph(r,0.2,0.13,0.22,hm7Mat("#f0c22e",0.5,50),0.32,0.045,-0.38,12);
+  [-0.035,0.035].forEach(dx=>hm7Tor(r,0.05,0.012,hm7Mat("#1d6fb8",0.6,60),0.65+dx,0.012,-0.2));
+  hm7Box(r,0.012,0.006,0.14,hm7Mat("#1b1d22",0.2,20),0.65,0.008,-0.13);
+  return r; }
+function u7Karate(x,z){ const r=u7Wrap(x,z), wh=hm7Mat("#f6f4ee",0.15,20), blk=hm7Mat("#18191c",0.2,20);
+  hm7Box(r,1.5,0.05,1.5,hm7Mat("#6f9a4a",0.1,10),0,0.025,0); hm7Box(r,1.52,0.052,0.05,hm7Mat("#2c3a24",0.1,10),0,0.026,0.74);
+  hm7Box(r,1.52,0.052,0.05,hm7Mat("#2c3a24",0.1,10),0,0.026,-0.74);
+  /* la divisa bianca piegata, con la cintura nera annodata sopra */
+  hm7Box(r,0.46,0.12,0.36,wh,0,0.11,0); hm7Box(r,0.44,0.05,0.34,hm7Mat("#e9e6de",0.15,20),0,0.195,0);
+  hm7Box(r,0.47,0.026,0.06,blk,0,0.232,0.02); hm7Box(r,0.06,0.03,0.08,blk,0,0.24,0.02);
+  [-1,1].forEach(s=>{ const t=hm7Box(r,0.05,0.012,0.22,blk,s*0.05,0.24,0.14); t.rotation.y=s*0.35; });
+  return r; }
+function u7Gym(x,z){ const r=u7Wrap(x,z), mat=hm7Mat("#3561a8",0.1,10), wood=hm7Mat("#d9b47c",0.3,30), leg=hm7Mat("#3d454c",0.5,40);
+  hm7Box(r,2.6,0.08,1.2,mat,0,0.04,0); hm7Box(r,0.02,0.081,1.2,hm7Mat("#284a82",0.1,10),0,0.041,0);
+  hm7Box(r,2.2,0.10,0.10,wood,0,0.62,0);                                               // la trave
+  [-0.8,0.8].forEach(px=>{ hm7Cyl(r,0.06,0.06,0.52,leg,px,0.34,0,10); hm7Box(r,0.08,0.04,0.55,leg,px,0.1,0); });
+  return r; }
+function u7Hurdles(x,z){ const r=u7Wrap(x,z), wh=sfWhite(), blk=hm7Mat("#1d1f22",0.3,30), leg=hm7Mat("#9aa0a6",0.6,40);
+  [-0.6,0.7].forEach(dz=>{ const W=1.0, H=0.76;
+    [-W/2,W/2].forEach(px=>{ hm7Cyl(r,0.035,0.035,H,leg,px,H/2,dz,8); hm7Box(r,0.05,0.04,0.55,leg,px,0.02,dz-0.2); });
+    for(let k=0;k<5;k++) hm7Box(r,W/5,0.11,0.025,k%2?blk:wh,-W/2+W/10+k*W/5,H-0.04,dz); });
+  /* il blocco di partenza */
+  hm7Box(r,0.08,0.05,0.6,leg,0.9,0.025,0); [-1,1].forEach(s=>{ const p=hm7Box(r,0.14,0.12,0.03,hm7Mat("#c8352a",0.3,30),0.9+s*0.08,0.08,s*0.12-0.05); p.rotation.x=-0.6; });
+  return r; }
+/* i posti fuori dal campo (dx,dz dal centro del campo): fila davanti alle
+   rocce (z +13,5 / +18), e due per lato oltre le porte */
+const U7_EQ_SLOTS=[[-6,13.5],[-2.5,13.8],[1.5,13.5],[5.5,15.2],[9.5,13.5],[13,13.6],[17,14.5],
+                   [-4.5,18],[3.5,18],[11,18],[17.5,18.5],[-19.5,5],[-19.5,-4],[19.5,7],[19.5,-6]];
+const U7_EQ_SHOW=8;          // quanti dei tredici «mobili» a ogni giro
+let U7_EQ=null;              // { all:[item], fixed:[item], round:{} }
+function u7Shuffle(){
+  if(!U7_EQ) return;
+  const mob=U7_EQ.all.filter(e=>!e.fixed), out=[];
+  const bag=mob.slice().sort(()=>Math.random()-0.5);
+  for(const e of bag){ if(out.length>=U7_EQ_SHOW) break;
+    if((e.en==="running"&&out.some(o=>o.en==="athletics"))||(e.en==="athletics"&&out.some(o=>o.en==="running"))) continue;
+    out.push(e); }
+  const slots=U7_EQ_SLOTS.slice().sort(()=>Math.random()-0.5);
+  mob.forEach(e=>e.mesh.setEnabled(false));
+  out.forEach((e,i)=>{ const s=slots[i], x=U7_EQ.cx+s[0], z=U7_EQ.cz+s[1];
+    e.mesh.position.x=x; e.mesh.position.z=z; e.mesh.position.y=U7_EQ.gY(x,z);
+    e.mesh.rotation.y=(e.rot0||0)+(Math.random()-0.5)*0.9;
+    e.pos.set(x,0,z); e.mesh.setEnabled(true); });
+  U7_EQ.shown=U7_EQ.all.filter(e=>e.fixed).concat(out);
+  try{ _octDirty(); }catch(er){}
+  try{ if(typeof refreshShadowCasters==="function") refreshShadowCasters(); }catch(er){}
+}
+
 /* ---- BACHECA: le tre schede si compilano durante l'intervista e restano
    consultabili nello step di listening (icona + spunta/croce, mai la frase
    scritta: il testo lo deve produrre lo studente). ---- */
@@ -27429,9 +27576,21 @@ function buildSportsZone(cx,cz){
        (bordo del parco a z ~58), cioe' oltre la linea di fondo z cz+10:
        una fila larga fra z cz+13 e cz+16, a 7-8 m l'uno dall'altro. */
     { en:"basketball", it:"pallacanestro",emoji:"\u{1F3C0}", x:cx-10.5, z:cz+15.5, off:true, rot:Math.PI, build:()=>u7Hoop(cx-10.5,cz+15.5) },
-    { en:"running",    it:"corsa",        emoji:"\u{1F3C3}", x:cx-2.5,  z:cz+13.8, off:true, build:()=>u7Cones(cx-2.5,cz+13.8) },
-    { en:"tennis",     it:"tennis",       emoji:"\u{1F3BE}", x:cx+5.5,  z:cz+15.2, off:true, build:()=>u7Racket(cx+5.5,cz+15.2) },
-    { en:"cycling",    it:"ciclismo",     emoji:"\u{1F6B4}", x:cx+13.0, z:cz+13.6, off:true, build:()=>u7Bike(cx+13.0,cz+13.6,0.5) },
+    /* v304: da qui in giu' gli attrezzi «mobili»: posto e presenza li decide
+       u7Shuffle a ogni giro (vedi U7_EQ_SLOTS). La x,z qui e' solo il primo posto. */
+    { en:"running",    it:"corsa",        emoji:"\u{1F3C3}", x:cx-2.5,  z:cz+13.8, off:true, mob:true, build:()=>u7Cones(cx-2.5,cz+13.8) },
+    { en:"tennis",     it:"tennis",       emoji:"\u{1F3BE}", x:cx+5.5,  z:cz+15.2, off:true, mob:true, build:()=>u7Racket(cx+5.5,cz+15.2) },
+    { en:"cycling",    it:"ciclismo",     emoji:"\u{1F6B4}", x:cx+13.0, z:cz+13.6, off:true, mob:true, rot:0.5, build:()=>u7Bike(cx+13.0,cz+13.6,0.5) },
+    { en:"volleyball", it:"pallavolo",    emoji:"\u{1F3D0}", x:cx-6,    z:cz+13.5, off:true, mob:true, build:()=>u7Volley(cx-6,cz+13.5) },
+    { en:"rugby",      it:"rugby",        emoji:"\u{1F3C9}", x:cx+1.5,  z:cz+13.5, off:true, mob:true, build:()=>u7Rugby(cx+1.5,cz+13.5) },
+    { en:"cricket",    it:"cricket",      emoji:"\u{1F3CF}", x:cx+9.5,  z:cz+13.5, off:true, mob:true, build:()=>u7Cricket(cx+9.5,cz+13.5) },
+    { en:"hockey",     it:"hockey",       emoji:"\u{1F3D1}", x:cx+17,   z:cz+14.5, off:true, mob:true, build:()=>u7Hockey(cx+17,cz+14.5) },
+    { en:"skateboarding",it:"skateboard", emoji:"\u{1F6F9}", x:cx-4.5,  z:cz+18,   off:true, mob:true, build:()=>u7Skate(cx-4.5,cz+18) },
+    { en:"skiing",     it:"sci",          emoji:"\u26f7\ufe0f", x:cx+3.5, z:cz+18,  off:true, mob:true, build:()=>u7Ski(cx+3.5,cz+18) },
+    { en:"swimming",   it:"nuoto",        emoji:"\u{1F3CA}", x:cx+11,   z:cz+18,   off:true, mob:true, build:()=>u7Swim(cx+11,cz+18) },
+    { en:"karate",     it:"karate",       emoji:"\u{1F94B}", x:cx+17.5, z:cz+18.5, off:true, mob:true, build:()=>u7Karate(cx+17.5,cz+18.5) },
+    { en:"gymnastics", it:"ginnastica",   emoji:"\u{1F938}", x:cx-19.5, z:cz+5,    off:true, mob:true, rot:Math.PI/2, build:()=>u7Gym(cx-19.5,cz+5) },
+    { en:"athletics",  it:"atletica",     emoji:"\u{1F3C3}", x:cx-19.5, z:cz-4,    off:true, mob:true, build:()=>u7Hurdles(cx-19.5,cz-4) },
   ];
   /* quota del prato sotto un punto (raggio sulle superfici __ground) */
   const gY=(x,z)=>{ const h=scene.pickWithRay(new BABYLON.Ray(new BABYLON.Vector3(x,6,z),new BABYLON.Vector3(0,-1,0),12),
@@ -27445,9 +27604,12 @@ function buildSportsZone(cx,cz){
        sull'erba si legge come sospesa a mezz'aria (segnalato a schermo).
        Il manto `pitch` ha gia' __ground=true, quindi riceve. */
     node.getChildMeshes().forEach(m=>{ if(m.getTotalVertices&&m.getTotalVertices()>0 && m.name!=="h7sh") m.__occluder=true; });
-    if(e.en!=="basketball" && e.en!=="running") try{ contactShadowFor(node,(e.off?node.position.y+0.02:SF_SHY),0.8,0.12); }catch(er){}   // v267
-    return { en:e.en, it:e.it, emoji:e.emoji, room:"the Sports Field", mesh:node,
-             pos:new BABYLON.Vector3(e.x,0,e.z), solid:false }; });
+    if(!/^(basketball|running|karate|gymnastics)$/.test(e.en)) try{ contactShadowFor(node,(e.off?node.position.y+0.02:SF_SHY),0.8,0.12); }catch(er){}   // v267
+    return { en:e.en, it:e.it, emoji:e.emoji, room:"the Sports Field", mesh:node, lbl:"?",
+             pos:new BABYLON.Vector3(e.x,0,e.z), solid:false, fixed:!e.mob, rot0:(e.rot!=null?e.rot:0) }; });
+  /* v304: dieci sport visibili a ogni giro, rimescolati a ogni step di lessico */
+  U7_EQ={ all:UNIT7.items, cx, cz, gY, st:null, shown:UNIT7.items };
+  u7Shuffle();
   if(typeof refreshShadowCasters==="function") refreshShadowCasters();
   // bacheca (schede) e tabellone (formazione finale), all'ingresso del campo
   u7BoardDT=new BABYLON.DynamicTexture("u7bdt",{width:512,height:300},scene,true); u7DrawBoard();
@@ -27483,7 +27645,7 @@ function buildSportNPCs(){
 function coachLine(){
   if(Quest.unit!==UNIT7) return { en:"A good team needs players who can do different things!", it:"" };
   switch(Quest.step&&Quest.step.id){
-    case "lex":    return { en:"Find the equipment on the pitch \u2014 I asked for three sports!", it:"Trova gli attrezzi degli sport richiesti." };
+    case "lex":    return { en:"Find the equipment around the pitch \u2014 I asked for four sports!", it:"Trova gli attrezzi dei quattro sport richiesti." };
     case "gram":   return { en:"Interview my three athletes and fill the team sheet!", it:"Intervista i tre atleti e compila il TEAM SHEET." };
     case "func":   return { en:"Go and talk to Alex \u2014 he loves talking about sport!", it:"Vai da Alex a scambiare opinioni." };
     case "listen": return { en:"Listen to me and find the player I'm describing!", it:"Ascolta e trova l'atleta descritto." };
@@ -27608,19 +27770,35 @@ function recordAthlete(a){
 
 /* ---- FUNZIONI: opinionSwap (opinione VERA + le due formule del libro) ---- */
 const U7_OPINIONS=["great","boring","difficult","fun"];
+/* v304 — LA PRIMA OPINIONE E' SU UNO SPORT CHE HAI TROVATO TU nello step
+   di lessico (UNIT7.__found), non sempre sul calcio: gli attrezzi cambiano
+   a ogni giro e anche la domanda di Alex cambia con loro. Il basket resta
+   la seconda domanda: Alex ne parla perche' NON lo sa giocare, ed e' scritto
+   cosi' sulla sua scheda (U7_ATHLETES) e nel listening — cambiarlo
+   romperebbe la coerenza. Dopo un ricaricamento (lista persa) si pesca fra
+   gli sport visibili in campo; mai basketball, che e' gia' la seconda. */
+function u7OpinionSport(){
+  const ok=e=>e && e!=="basketball";
+  const f=(UNIT7.__found||[]).filter(ok);
+  if(f.length) return f[Math.floor(Math.random()*f.length)];
+  const v=((U7_EQ&&U7_EQ.shown)||[]).map(e=>e.en).filter(ok);
+  return v.length?v[Math.floor(Math.random()*v.length)]:"football"; }
+function u7SportIcon(sp){ const e=(UNIT7.items||[]).find(x=>x.en===sp); return (e&&e.emoji)||"\u26bd"; }
+function u7Cap(w){ return w.charAt(0).toUpperCase()+w.slice(1); }
 function u7OpinionHTML(card){
   const row=(k,v)=>'<div style="display:flex;gap:8px;padding:2px 0;'+(v?'':'opacity:.42;')+'">'
     +'<b style="min-width:104px;">'+k+'</b><span>'+(v?_escHtml(v):"\u2014 \u2014 \u2014")+'</span></div>';
   return '<div style="border:1px solid #ccd6da;border-radius:12px;padding:10px 12px;background:#fdf3e7;">'
     +'<div style="font-weight:800;letter-spacing:.6px;margin-bottom:6px;">\u{1F5E3}\uFE0F MY OPINIONS</div>'
-    +row("Football",card.football||"")+row("Basketball",card.basket||"")+'</div>';
+    +row(u7Cap(card.sport||"football"),card.football||"")+row("Basketball",card.basket||"")+'</div>';
 }
 function runOpinionSwap(a){
   const st=Quest.state; st.op = st.op || { idx:0, tries:0, card:{} };
   const op=st.op, npc=U7_NPC[a.id];
+  if(!op.card.sport) op.card.sport=u7OpinionSport();
   if(op.idx===0){
-    DialogueBox.open({ npc, icon:"\u26bd", sub:"Funzioni \u2014 opinioni (1/3)",
-      text:"What do you think of football?",
+    DialogueBox.open({ npc, icon:u7SportIcon(op.card.sport), sub:"Funzioni \u2014 opinioni (1/3)",
+      text:"What do you think of "+op.card.sport+"?",
       italian:"Scegli la TUA opinione vera: la useremo nella frase.",
       html:u7OpinionHTML(op.card),
       choices:U7_OPINIONS.map(o=>({ label:"It's "+o, act:()=>u7BuildOpinion(a,o) })) });
@@ -27631,9 +27809,9 @@ function runOpinionSwap(a){
   u7OpinionDone(a);
 }
 function u7BuildOpinion(a,o){
-  const tokens=["I","think","it's",o+"."];
-  DialogueBox.open({ npc:U7_NPC[a.id], icon:"\u26bd", sub:"Funzioni \u2014 componi (1/3)",
-    text:"So, what do you think of football?",
+  const tokens=["I","think","it's",o+"."], sp=Quest.state.op.card.sport||"football", ic=u7SportIcon(sp);
+  DialogueBox.open({ npc:U7_NPC[a.id], icon:ic, sub:"Funzioni \u2014 componi (1/3)",
+    text:"So, what do you think of "+sp+"?",
     italian:"Componi la risposta con le tessere: I think it's\u2026",
     html:u7OpinionHTML(Quest.state.op.card),
     tiles:{ tokens:tokens.slice(), distractors:["thinks","is","opinion"], checkLabel:"\u2714 Rispondi",
@@ -27642,8 +27820,11 @@ function u7BuildOpinion(a,o){
         op.tries++; let msg="Riprova!"; if(op.tries>=2) msg+="  \u{1F4A1} I think it's + aggettivo (it's = it is).";
         return {ok:false,msg}; },
       onSuccess:()=>{ const op=Quest.state.op; op.card.football="I think it's "+o; op.idx=1; op.tries=0;
-        DialogueBox.open({ npc:U7_NPC[a.id], icon:"\u26bd", sub:"Alex risponde",
-          text: o==="boring" ? "Boring?! Football is my favourite sport!" : "Me too! Football is fantastic.",
+        /* Alex sa giocare a calcio benissimo (la sua scheda): il calcio e' il
+           suo preferito; degli altri sport dice solo che gli piacciono */
+        DialogueBox.open({ npc:U7_NPC[a.id], icon:ic, sub:"Alex risponde",
+          text: sp==="football" ? (o==="boring" ? "Boring?! Football is my favourite sport!" : "Me too! Football is fantastic.")
+                                : (o==="boring" ? "Boring?! I really like "+sp+"!" : "Me too! I really like "+sp+"."),
           italian:"Ora tocca a te FARE la domanda ad Alex.",
           html:u7OpinionHTML(op.card),
           buttons:[{label:"Next", cls:"primary", act:()=>runOpinionSwap(a)}] }); } },
