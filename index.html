@@ -9529,8 +9529,12 @@ function buildDinerNPCs(){
     x:DINER.x+DINER_WAITER_HOME.x, y:gy, z:DINER_WAITER_HOME.z, face:Math.PI, snap:false, radius:2.6,
     interact:n=>talkToWaiter(n) });
   regTownPop(DINER.waiter);
+  /* v306 (Giacomo: «Lucy deve essere vestita di bianco, come l'altro
+     cameriere»). Su Woman_B il vestito e' «LimeGreen» (busto e gambe) e
+     «Red» sono scarpe e capelli: bianco il vestito, scuri scarpe e capelli.
+     (Con la tinta di Ray, Purple->Red, diventavano bianchi i capelli.) */
   DINER2.npc=spawnNPC({ id:"lucy", name:"Lucy", sub:"Waitress", area:"town", model:"npcWomanB", keepModel:true, dress:false,
-    tint:"red", height:1.68,
+    tint:{ LimeGreen:"#f4f1ea", Red:"#2a221c" }, height:1.68,
     x:DINER.x+DINER_WAITER2_HOME.x, y:gy, z:DINER_WAITER2_HOME.z, face:Math.PI, snap:false, radius:2.6,
     interact:n=>talkToWaiter(n) });
   if(DINER2.npc) regTownPop(DINER2.npc);
