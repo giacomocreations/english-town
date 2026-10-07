@@ -4653,9 +4653,21 @@ pipe.imageProcessing.toneMappingType=BABYLON.ImageProcessingConfiguration.TONEMA
 pipe.imageProcessing.exposure=1.08; pipe.imageProcessing.contrast=1.10;
 pipe.imageProcessing.vignetteEnabled=true; pipe.imageProcessing.vignetteWeight=2.0;
 pipe.sharpenEnabled=true; pipe.sharpen.edgeAmount=0.28; pipe.sharpen.colorAmount=1.0;
-pipe.depthOfFieldEnabled=true;
-pipe.depthOfFieldBlurLevel=BABYLON.DepthOfFieldEffectBlurLevel.Medium;
-pipe.depthOfField.fStop=1.6; pipe.depthOfField.focalLength=58; pipe.depthOfField.focusDistance=20000;
+/* v304 — PROFONDITA' DI CAMPO TOLTA (Giacomo, 7 ott: «su High e molto su
+   Max c'e' un effetto sfocatura in lontananza, non mi piace, mi sembra che
+   riduca la qualita'»). Era un obiettivo fotografico tutto aperto (fStop
+   1,6, fuoco a 20 m): la citta' oltre la piazza si impastava, proprio sui
+   livelli «belli», e i cartelli lontani — che qui si devono LEGGERE — non
+   si leggevano. Costava anche caro: il DepthRenderer ridisegna TUTTA la
+   scena una seconda volta a ogni frame (471 chiamate di disegno su 994,
+   misurate verso il parco), piu' i passaggi di sfocatura a schermo intero,
+   e il costo e' lo stesso anche con una sfocatura appena accennata.
+   ⚠️ Spenta GIA' QUI, prima che la pipeline si costruisca: accesa anche un
+   solo istante, Babylon crea il DepthRenderer (vedi qDepthSpento). Nessun
+   livello la riaccende piu'; i ritocchi della focale sparsi nel codice
+   (prima persona, Beat Club) sono protetti da depthOfFieldEnabled e restano
+   inerti. */
+pipe.depthOfFieldEnabled=false;
 /* ⚠️ OGNI INTERRUTTORE DELLA PIPELINE COSTAVA 3,5 SECONDI (misurato il 5 ott
    su un PC veloce; su un Acer vecchio o un tablet economico 4-8 volte tanto:
    «si ferma su Woman_B» e gli scatti del primo minuto erano questo).
@@ -5334,15 +5346,13 @@ function applyQuality(q,ricorda){ if(QLEVELS.indexOf(q)<0) q="medio"; qLevel=q;
      sui tablet economici (GPU Mali/PowerVR, poca banda) e' quello che pesa.
      E' un post-process: si ricostruisce la pipeline, i materiali no. */
   pipe.fxaaEnabled=(q!=="basso");
-  pipe.depthOfFieldEnabled=qAlmenoAlto(q);
+  pipe.depthOfFieldEnabled=false;     // v304: tolta su tutti i livelli (vedi la nascita di pipe)
   /* Solo Max: antialiasing vero (MSAA 4 campioni, come lo specchio di casa)
      oltre all'FXAA, sfocatura di campo piu' fine, riflessi e texture piu'
      nitidi. Nessuna di queste tocca i define dei materiali. I setter si
      toccano solo se il valore cambia: la sfocatura ricostruisce la pipeline. */
   const max=(q==="max");
   try{ const sm=max?4:1; if(pipe.samples!==sm) pipe.samples=sm; }catch(e){}
-  try{ const bl=max?BABYLON.DepthOfFieldEffectBlurLevel.High:BABYLON.DepthOfFieldEffectBlurLevel.Medium;
-       if(pipe.depthOfFieldBlurLevel!==bl) pipe.depthOfFieldBlurLevel=bl; }catch(e){}
   qAnisotropia(max); qSonda(max?256:96);
   /* ⚠️ intensity=0 NASCONDE il risultato ma il GlowLayer disegna lo stesso la
      sua texture a ogni frame: misurati 26,7 ms su 160, cioe' il 17% del tempo
@@ -38726,7 +38736,6 @@ function povSet(on,silent){
     camera.radius=S.radius; camWish=S.radius; _camApplied=-1;
     camera.inertialAlphaOffset=0; camera.inertialBetaOffset=0; camera.inertialRadiusOffset=0;
     camera.layerMask=0x0FFFFFFF; _povHead(false);
-    if(pipe) pipe.depthOfFieldEnabled=(typeof qLevel==="undefined" || qAlmenoAlto());
     POV.save=null;
   }
   const bt=document.getElementById("povBtn");
