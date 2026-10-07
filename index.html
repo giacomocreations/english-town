@@ -10011,6 +10011,9 @@ function _dinerDessert(v){
 }
 function _dinerServeDessert(){
   dinerEmptyTray(); if(!DINER.seat) return;
+  /* v305: col dolce si sparecchia il piatto e il contorno (il bicchiere resta):
+     prima il dolce finiva posato sopra la ciotola del contorno */
+  DINER.food.forEach(st=>{ try{ st.getChildMeshes(false).forEach(m=>{ if(m.__key==="main"||m.__key==="side") m.dispose(false,false); }); }catch(e){} });
   _dinerServe(["dessert"]); DINER.st="eating2";
   DialogueBox.open({ npc:DINER.waiter, icon:"\u{1F354}", sub:DINER.name, text:"There you go. Just call me when you want the bill!",
     italian:"Ecco qua. Chiamami quando vuoi il conto (premi E).", buttons:[{ label:"OK!", cls:"primary", act:()=>{} }] });
@@ -10093,42 +10096,177 @@ function dinerBillCall(){ const s=DINER.seat; if(!s) return;
 function _dinerClearFood(){ DINER.food.forEach(m=>{ try{ m.dispose(false,false); }catch(e){} }); DINER.food=[]; }
 /* il cibo si costruisce in un GRUPPO con l'origine sul piano d'appoggio:
    lo stesso gruppo sta sul vassoio di Ray (v289) e poi sul tavolo */
+/* =====================================================================
+   v305 — CIBO E BEVANDE PIU' VERI (Giacomo, 7 ott: «la roba che mangia e
+   beve in ristorante e cafe' da migliorare graficamente»). Prima erano
+   cilindri e sfere a tinta unita, lucidi come plastica: il croissant una
+   palla, i pancake dischi arancioni, il dolce posato sopra il contorno.
+   Ora, sempre procedurale e 0 KB:
+   · UNA texture di «grana» (macchie morbide e puntini, 128 px, disegnata
+     una volta) moltiplicata sul colore di ogni cibo: crosta, impanatura,
+     pane non sono piu' plastica. Opachi; lucido solo cio' che lo e'
+     davvero (sciroppo, formaggio fuso, ciliegia, bibite).
+   · forme da tornio (CreateLathe) per piatti col bordo, ciotole, bicchieri,
+     tazze e panini; spicchi veri (cilindro con arc) per le torte; i pezzi
+     piccoli e numerosi (sesamo, patatine, maccheroni, zucchero a velo)
+     fusi in UNA mesh per materiale (_fdKit.many): una chiamata di disegno.
+   ⚠️ Il diner riconosce cosa si mangia dal NOME del materiale (dn_c_*):
+   i commestibili passano da E(), piatti, bicchieri, ossa e cannucce no
+   (restano in tavola). Al caffe' contano i gruppi (R.drink, R.bite).
+   ===================================================================== */
+let _fdGrainT=null;
+function _fdGrain(){ if(_fdGrainT) return _fdGrainT;
+  const dt=new BABYLON.DynamicTexture("fdGrain",{width:128,height:128},scene,true), c=dt.getContext();
+  c.fillStyle="#ffffff"; c.fillRect(0,0,128,128);
+  for(let i=0;i<70;i++){ const x=Math.random()*128, y=Math.random()*128, r=4+Math.random()*12, a=0.03+Math.random()*0.07;
+    const g=c.createRadialGradient(x,y,0,x,y,r); g.addColorStop(0,"rgba(95,60,28,"+a+")"); g.addColorStop(1,"rgba(95,60,28,0)");
+    c.fillStyle=g; c.fillRect(x-r,y-r,2*r,2*r); }
+  for(let i=0;i<900;i++){ c.fillStyle=(Math.random()<0.5)?"rgba(70,45,20,"+(0.05+Math.random()*0.11)+")":"rgba(255,250,235,"+(0.08+Math.random()*0.14)+")";
+    c.fillRect(Math.random()*128,Math.random()*128,1+Math.random()*1.5,1+Math.random()*1.5); }
+  dt.update(); dt.wrapU=dt.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE; dt.uScale=dt.vScale=2; return (_fdGrainT=dt); }
+const _fdM={}; let _fdN=0;
+/* o = { grain:false, gloss, pow, em (emissive, frazione del colore), alpha } */
+function _fdMat(pre,hex,o){ o=o||{}; const key=pre+hex+JSON.stringify(o); if(_fdM[key]) return _fdM[key];
+  const m=new BABYLON.StandardMaterial(pre+hex.replace("#","")+"_"+(_fdN++),scene), c=BABYLON.Color3.FromHexString(hex);
+  m.diffuseColor=c; if(o.grain!==false) m.diffuseTexture=_fdGrain();
+  const sp=(o.gloss!=null)?o.gloss:0.05; m.specularColor=new BABYLON.Color3(sp,sp,sp); m.specularPower=o.pow||24;
+  m.emissiveColor=c.scale(o.em!=null?o.em:0.05);
+  if(o.alpha!=null){ m.alpha=o.alpha; m.backFaceCulling=false; }
+  return (_fdM[key]=m); }
+function _fdKit(add){ const V=BABYLON.Vector3, MB=BABYLON.MeshBuilder, K={};
+  K.lathe=(prof,px,py,pz,mt,tess)=>{ const m=MB.CreateLathe("fd",{shape:prof.map(q=>new V(q[0],q[1],0)),tessellation:tess||24,
+    sideOrientation:BABYLON.Mesh.DOUBLESIDE},scene); m.position.set(px,py,pz); return add(m,mt); };
+  K.cyl=(o2,px,py,pz,mt)=>{ o2.tessellation=o2.tessellation||18; const m=MB.CreateCylinder("fd",o2,scene); m.position.set(px,py,pz); return add(m,mt); };
+  K.sph=(d,px,py,pz,mt,seg)=>{ const m=MB.CreateSphere("fd",{diameter:d,segments:seg||10},scene); m.position.set(px,py,pz); return add(m,mt); };
+  K.box=(w,h,d,px,py,pz,mt)=>{ const m=MB.CreateBox("fd",{width:w,height:h,depth:d},scene); m.position.set(px,py,pz); return add(m,mt); };
+  K.tor=(d,t,px,py,pz,mt,tess)=>{ const m=MB.CreateTorus("fd",{diameter:d,thickness:t,tessellation:tess||16},scene); m.position.set(px,py,pz); return add(m,mt); };
+  K.caps=(r,h,px,py,pz,mt)=>{ const m=MB.CreateCapsule("fd",{radius:r,height:h,tessellation:12,subdivisions:2},scene); m.position.set(px,py,pz); return add(m,mt); };
+  /* tanti pezzi piccoli -> una mesh (creati senza genitore, coordinate del gruppo) */
+  K.many=(n,make,mt)=>{ const L=[]; for(let i=0;i<n;i++){ const m=make(i,MB); if(m) L.push(m); } if(!L.length) return null;
+    const mm=BABYLON.Mesh.MergeMeshes(L,true,true); return mm?add(mm,mt):null; };
+  /* lo spicchio di torta (cilindro con arc) centrato in (px,pz) */
+  K.slice=(d,h,py,px,pz,mt,arc)=>{ const m=MB.CreateCylinder("fd",{diameter:d,height:h,arc:arc||0.17,enclose:true,tessellation:30},scene);
+    add(m,mt); m.position.set(0,py,0); m.refreshBoundingInfo(); const c=m.getBoundingInfo().boundingBox.center;
+    m.position.x=px-c.x; m.position.z=pz-c.z; return m; };
+  return K; }
+/* pseudo-casuale deterministico per i pezzetti (stessa forma a ogni servizio) */
+function _fdR(i,k){ const x=Math.sin(i*12.9898+k*78.233)*43758.5453; return x-Math.floor(x); }
 function _dinerFoodSet(keys,parent,ox,oy,oz){
   const o=DINER.o; if(!o) return null;
   const M=_dinerMats(), set=new BABYLON.TransformNode("dnFood",scene); set.parent=parent; set.position.set(ox,oy,oz);
-  const y=0, cx=0, cz=0;
   const add=(m,k)=>{ m.material=(typeof k==="string")?M[k]:k; m.parent=set; m.isPickable=false; return m; };
-  const colM=(hex)=>{ const k="dn_c_"+hex; return scene.getMaterialByName(k)||mat(k,hex); };
-  const C=(o2,px,py,pz,k)=>{ o2.tessellation=o2.tessellation||16; const m=BABYLON.MeshBuilder.CreateCylinder("dnf",o2,scene); m.position.set(px,py,pz); return add(m,k); };
-  const S=(d,px,py,pz,k)=>{ const m=BABYLON.MeshBuilder.CreateSphere("dnf",{diameter:d,segments:8},scene); m.position.set(px,py,pz); return add(m,k); };
-  const B=(w,h,d,px,py,pz,k)=>{ const m=BABYLON.MeshBuilder.CreateBox("dnf",{width:w,height:h,depth:d},scene); m.position.set(px,py,pz); return add(m,k); };
+  /* E = si mangia (dn_c_*, vedi _dinerEat), N = resta in tavola */
+  const E=(hex,op)=>_fdMat("dn_c_",hex,op), N=(hex,op)=>_fdMat("dn_n_",hex,Object.assign({grain:false,em:0.08},op||{}));
+  const K=_fdKit(add), R=_fdR, PI=Math.PI;
+  const plate=(d,px,pz)=>K.lathe([[0,0],[d*0.36,0],[d*0.42,0.006],[d*0.5,0.016],[d*0.49,0.019],[d*0.41,0.011],[d*0.3,0.006],[0,0.006]],px,0,pz,"white",28);
+  const bowl=(d,h,px,pz)=>K.lathe([[0,0],[d*0.3,0],[d*0.42,h*0.35],[d*0.5,h],[d*0.47,h],[d*0.39,h*0.38],[d*0.27,0.006],[0,0.006]],px,0,pz,"white",24);
+  const cream=E("#fbf7ee",{grain:false,gloss:0.15,em:0.18}), cherry=E("#c4142b",{grain:false,gloss:0.6,pow:64});
+  /* nel bicchiere la panna e la ciliegia NON sono dn_c_: _dinerEat abbassa i
+     dn_c_ del bicchiere come un liquido, e la panna sprofonderebbe */
+  const creamN=N("#fbf7ee",{em:0.18,gloss:0.15}), cherryN=N("#c4142b",{gloss:0.6,pow:64});
+  const swirl=(px,py,pz,r,mt)=>{ mt=mt||cream; [[1,0.30],[0.76,0.27],[0.5,0.24]].forEach((q,i)=>K.tor(r*2*q[0],r*q[1]*1.6,px,py+i*r*0.42,pz,mt,18));
+    K.sph(r*0.7,px,py+r*1.15,pz,mt); };
+  const dish=(keys.indexOf("main")<0);                       // il dolce arriva da solo: al posto del piatto
   keys.forEach(key=>{ const v=o.slip[key]; if(!v || v.en==="—") return;
     const k0=set.getChildMeshes(true).length;
-    if(key==="drink"){ const gx=cx+0.05, gz=cz+0.22;
-      if(v.ic==="shake"){ C({diameterTop:0.1,diameterBottom:0.07,height:0.2},gx,y+0.1,gz,"glass"); C({diameterTop:0.1,diameterBottom:0.08,height:0.14},gx,y+0.08,gz,colM(v.c));
-        S(0.1,gx,y+0.21,gz,"white").scaling.y=0.6; S(0.03,gx,y+0.25,gz,"red"); const st=C({diameter:0.01,height:0.2},gx+0.02,y+0.28,gz,"red"); st.rotation.z=0.25; }
-      else { C({diameter:0.08,height:0.15},gx,y+0.075,gz,"glass"); if(v.p>0||true) C({diameter:0.07,height:0.12},gx,y+0.06,gz,colM(v.c)); } }
-    if(key==="main"){ C({diameter:0.3,height:0.015,tessellation:24},cx,y+0.008,cz,"white");
-      if(v.ic==="burger"){ C({diameter:0.13,height:0.03},cx,y+0.03,cz,colM("#d99a45")); C({diameter:0.135,height:0.025},cx,y+0.057,cz,colM(v.c));
-        C({diameter:0.14,height:0.008},cx,y+0.073,cz,colM("#f2c14e")); C({diameter:0.14,height:0.006},cx,y+0.08,cz,colM("#5f9a4a"));
-        const tp=S(0.135,cx,y+0.09,cz,colM("#d99a45")); tp.scaling.y=0.55; }
-      else if(v.ic==="hotdog"){ const b=C({diameter:0.06,height:0.2},cx,y+0.04,cz,colM("#d99a45")); b.rotation.z=Math.PI/2; b.scaling.z=1.4;
-        const sg=C({diameter:0.04,height:0.22},cx,y+0.07,cz,colM(v.c)); sg.rotation.z=Math.PI/2;
-        const mu=C({diameter:0.012,height:0.18},cx,y+0.092,cz,colM("#f2c14e")); mu.rotation.z=Math.PI/2; }
-      else if(v.ic==="pancakes"){ for(let i=0;i<4;i++) C({diameter:0.16-i*0.005,height:0.022},cx,y+0.02+i*0.023,cz,colM(v.c));
-        C({diameter:0.05,height:0.012},cx,y+0.115,cz,colM("#f7e7b0")); C({diameter:0.14,height:0.005},cx,y+0.105,cz,colM("#8a4a1a")); }
-      else if(v.ic==="chicken"){ [[-0.05,0],[0.05,0.03],[0,-0.05]].forEach(q=>{ const d=S(0.09,cx+q[0],y+0.045,cz+q[1],colM(v.c)); d.scaling.set(1.3,0.7,0.9); }); }
-      else { C({diameter:0.2,height:0.04},cx,y+0.03,cz,"white"); C({diameter:0.18,height:0.03},cx,y+0.045,cz,colM(v.c)); } }
-    if(key==="side"){ const sx=cx-0.02, sz=cz-0.22;
-      if(v.ic==="fries"){ B(0.1,0.08,0.07,sx,y+0.04,sz,"red"); for(let i=0;i<7;i++) B(0.012,0.1,0.012,sx-0.035+i*0.012,y+0.1,sz+((i%2)?0.01:-0.01),colM(v.c)); }
-      else if(v.ic==="rings"){ C({diameter:0.18,height:0.012},sx,y+0.006,sz,"white");
-        for(let i=0;i<3;i++){ const r=BABYLON.MeshBuilder.CreateTorus("dnf",{diameter:0.08,thickness:0.025,tessellation:14},scene); r.position.set(sx-0.04+i*0.04,y+0.02+i*0.012,sz); add(r,colM(v.c)); } }
-      else { C({diameterTop:0.14,diameterBottom:0.08,height:0.06},sx,y+0.03,sz,"white"); S(0.12,sx,y+0.06,sz,colM(v.c)).scaling.y=0.45; } }
-    if(key==="dessert"){ const ex=cx+0.12, ez=cz-0.2;
-      C({diameter:0.16,height:0.012,tessellation:20},ex,y+0.006,ez,"white");
-      if(v.ic==="sundae"){ C({diameterTop:0.1,diameterBottom:0.04,height:0.1},ex,y+0.06,ez,"glass"); S(0.08,ex,y+0.12,ez,colM(v.c)); S(0.025,ex,y+0.17,ez,"red"); }
-      else if(v.ic==="brownie"){ B(0.08,0.04,0.06,ex,y+0.032,ez,colM(v.c)); }
-      else { const p=C({diameter:0.12,height:0.035,tessellation:3},ex,y+0.03,ez,colM(v.c)); p.rotation.y=0.3; } }
+    if(key==="drink"){ const gx=0.05, gz=0.22;
+      if(v.ic==="shake"){
+        /* coppa a tulipano col piede, frappe', panna a spirale, ciliegia, cannuccia a righe */
+        K.lathe([[0,0],[0.028,0],[0.026,0.006],[0.009,0.012],[0.008,0.034],[0.03,0.06],[0.046,0.17],[0.043,0.17],[0.028,0.063],[0,0.04]],gx,0,gz,"glass",26);
+        K.cyl({diameterTop:0.084,diameterBottom:0.05,height:0.125},gx,0.104,gz,E(v.c,{grain:false,gloss:0.2,em:0.16}));
+        swirl(gx,0.172,gz,0.034,creamN); K.sph(0.022,gx+0.004,0.222,gz,cherryN);
+        const st=K.cyl({diameter:0.009,height:0.24,tessellation:8},gx+0.022,0.205,gz,N("#e8485a")); st.rotation.z=0.24;
+      } else {
+        const water=/water/i.test(v.en);
+        K.lathe([[0,0],[0.032,0],[0.039,0.15],[0.036,0.15],[0.03,0.008],[0,0.008]],gx,0,gz,"glass",24);
+        K.cyl({diameterTop:0.068,diameterBottom:0.058,height:0.12},gx,0.068,gz,
+          E(v.c,{grain:false,gloss:0.5,pow:64,em:water?0.25:0.2,alpha:water?0.55:undefined}));
+        /* fetta sul bordo e cannuccia */
+        const fr=/lemon/i.test(v.en)?"#f5d33a":(/orange/i.test(v.en)?"#f39a1e":null);
+        if(fr){ const w=K.cyl({diameter:0.052,height:0.006,tessellation:18},gx+0.036,0.147,gz,N(fr,{grain:true,em:0.15})); w.rotation.z=PI/2-0.2; }
+        if(!water){ const st=K.cyl({diameter:0.008,height:0.2,tessellation:8},gx-0.012,0.15,gz+0.006,N(/cola/i.test(v.en)?"#e8485a":"#f7f5ef")); st.rotation.x=-0.2; }
+      } }
+    if(key==="main"){ plate(0.28,0,0); const y0=0.008;
+      if(v.ic==="burger"){ const bun=E("#c98a45"), veg=/veggie/i.test(v.en);
+        K.lathe([[0,0],[0.058,0],[0.064,0.008],[0.062,0.02],[0,0.02]],0,y0,0,bun);                            // pane sotto
+        K.lathe([[0,0],[0.064,0],[0.068,0.011],[0.064,0.022],[0,0.022]],0,y0+0.02,0,E(veg?"#8a7a3a":v.c));     // polpetta
+        if(!veg){ const ch=K.box(0.118,0.004,0.118,0,y0+0.044,0,E("#f2b02e",{gloss:0.3,em:0.18})); ch.rotation.y=PI/4; }
+        K.cyl({diameter:0.11,height:0.007},0,y0+0.047,0,E("#d8432f",{gloss:0.3}));                                // pomodoro
+        const le=K.cyl({diameter:0.152,height:0.005,tessellation:9},0,y0+0.052,0,E("#6aa84f")); le.rotation.y=0.3;  // insalata
+        const top=y0+0.055;
+        K.lathe([[0,0],[0.064,0],[0.066,0.012],[0.058,0.032],[0.042,0.046],[0.02,0.054],[0,0.056]],0,top,0,E("#b8702c",{gloss:0.18}));
+        K.many(16,(i,MB)=>{ const a=i*2.4+0.3, r=0.012+0.038*R(i,1), h=0.056*Math.sqrt(Math.max(0,1-(r/0.066)*(r/0.066)));
+          const m=MB.CreateSphere("s",{diameter:0.008,segments:3},scene); m.scaling.set(1,0.45,0.6); m.rotation.y=a;
+          m.position.set(Math.cos(a)*r,top+h+0.001,Math.sin(a)*r); return m; },E("#f6ecd0",{em:0.2}));
+      }
+      else if(v.ic==="hotdog"){ const bun=E("#c98a45");
+        [-1,1].forEach(sg=>{ const b=K.caps(0.026,0.21,0,y0+0.024,sg*0.02,bun); b.rotation.z=PI/2; b.scaling.z=0.85; });
+        const sa=K.caps(0.017,0.23,0,y0+0.04,0,E(v.c,{gloss:0.25})); sa.rotation.z=PI/2;
+        K.many(6,(i,MB)=>{ const m=MB.CreateCylinder("m",{diameter:0.006,height:0.034,tessellation:6},scene);
+          m.rotation.z=PI/2; m.rotation.y=(i%2?0.9:-0.9); m.position.set(-0.08+i*0.032,y0+0.058,0); return m; },E("#f2c14e",{grain:false,gloss:0.4,em:0.2}));
+      }
+      else if(v.ic==="pancakes"){ const pc=E("#c98d45");
+        for(let i=0;i<3;i++) K.lathe([[0,0],[0.07,0],[0.078,0.007],[0.074,0.016],[0,0.017]],0,y0+i*0.017,0,pc,24);
+        const sy=E("#5e2a0c",{grain:false,gloss:0.8,pow:80,em:0.04});
+        K.cyl({diameter:0.13,height:0.003,tessellation:24},0,y0+0.052,0,sy);
+        K.many(4,(i,MB)=>{ const a=i*1.7+0.5, m=MB.CreateCapsule("d",{radius:0.0045,height:0.022,tessellation:6},scene);
+          m.position.set(Math.cos(a)*0.0755,y0+0.044,Math.sin(a)*0.0755); return m; },sy);
+        const bu=K.box(0.03,0.016,0.03,0.005,y0+0.061,0,E("#fbe7a1",{gloss:0.3,em:0.2})); bu.rotation.y=0.4;
+      }
+      else if(v.ic==="chicken"){ const crust=E("#a8642a"), bone=N("#f3ead7");
+        for(let i=0;i<3;i++){ const a=i*2.1+0.4, cs=Math.cos(a), sn=Math.sin(a);
+          const d=K.sph(0.075,cs*0.035,y0+0.026,sn*0.035,crust,12); d.scaling.set(1.35,0.72,0.85); d.rotation.y=-a;
+          const b=K.cyl({diameter:0.013,height:0.05,tessellation:8},cs*0.098,y0+0.022,sn*0.098,bone); b.rotation.z=PI/2; b.rotation.y=-a;
+          [-1,1].forEach(sg=>K.sph(0.017,cs*0.124-sn*sg*0.006,y0+0.022,sn*0.124+cs*sg*0.006,bone,6)); }
+        const lw=K.slice(0.06,0.02,y0+0.01,-0.085,0.06,N("#f5d33a",{grain:true,em:0.15}),0.25); lw.rotation.x=0.2;   // spicchio di limone
+      }
+      else { bowl(0.19,0.05,0,0);                                                                       // mac and cheese
+        K.cyl({diameter:0.165,height:0.006,tessellation:24},0,0.042,0,E("#e9b13c"));
+        K.many(24,(i,MB)=>{ const a=i*2.4, r=0.068*Math.sqrt(R(i,2)), m=MB.CreateTorus("p",{diameter:0.02,thickness:0.008,tessellation:8},scene);
+          m.position.set(Math.cos(a)*r,0.047+R(i,3)*0.006,Math.sin(a)*r); m.rotation.set(R(i,4)*3,R(i,5)*3,R(i,6)*3); return m; },E("#f5c84a",{gloss:0.25,em:0.15}));
+      } }
+    if(key==="side"){ const sx=-0.03, sz=-0.235;
+      if(v.ic==="fries"){
+        const ca=K.cyl({diameterTop:0.1,diameterBottom:0.074,height:0.075,tessellation:4},sx,0.0375,sz,N("#c8323a",{gloss:0.2})); ca.rotation.y=PI/4;
+        K.many(15,(i,MB)=>{ const h=0.09+R(i,1)*0.035, m=MB.CreateBox("f",{width:0.011,height:h,depth:0.011},scene);
+          m.position.set(sx+(R(i,2)-0.5)*0.05,0.06+h*0.3,sz+(R(i,3)-0.5)*0.04); m.rotation.set((R(i,4)-0.5)*0.5,R(i,5)*3,(R(i,6)-0.5)*0.5); return m; },E("#f0c24a",{em:0.16}));
+      }
+      else if(v.ic==="rings"){ plate(0.17,sx,sz);
+        for(let i=0;i<3;i++){ const r=K.tor(0.075,0.024,sx-0.03+i*0.03,0.022+i*0.014,sz+(i-1)*0.012,E("#d39a48"),14); r.rotation.x=0.22*(i-1); r.rotation.z=0.15*(1-i); } }
+      else if(/coleslaw/i.test(v.en)){ bowl(0.12,0.04,sx,sz);
+        const md=K.sph(0.1,sx,0.03,sz,E("#efe6c8",{gloss:0.2,em:0.16})); md.scaling.y=0.42;
+        [["#e8862c",1],["#7a3d6e",2]].forEach(q=>K.many(10,(i,MB)=>{ const a=i*2.4+q[1], r=0.04*Math.sqrt(R(i,q[1]));
+          const m=MB.CreateBox("c",{width:0.012,height:0.003,depth:0.004},scene); m.rotation.y=a*1.3;
+          m.position.set(sx+Math.cos(a)*r,0.03+0.02*(1-(r/0.05)*(r/0.05)),sz+Math.sin(a)*r); return m; },E(q[0]))); }
+      else { bowl(0.15,0.05,sx,sz);                                                                     // insalata
+        [["#6aa84f",7],["#8cc06a",8]].forEach(q=>K.many(7,(i,MB)=>{ const m=MB.CreateSphere("l",{diameter:0.052,segments:4},scene);
+          m.scaling.set(1,0.25,0.75); m.rotation.set((R(i,q[1])-0.5)*0.8,R(i,q[1]+1)*6,(R(i,q[1]+2)-0.5)*0.8);
+          const a=i*2.3+q[1], r=0.035*R(i,q[1]+3); m.position.set(sx+Math.cos(a)*r,0.042+R(i,q[1]+4)*0.016,sz+Math.sin(a)*r); return m; },E(q[0])));
+        for(let i=0;i<3;i++){ const a=i*2.1; K.sph(0.022,sx+Math.cos(a)*0.03,0.058,sz+Math.sin(a)*0.03,E("#d8432f",{grain:false,gloss:0.5,em:0.14})); }
+        for(let i=0;i<3;i++){ const a=i*2.1+1; const c=K.cyl({diameter:0.028,height:0.005,tessellation:12},sx+Math.cos(a)*0.028,0.06,sz+Math.sin(a)*0.028,E("#cfe3a0")); c.rotation.x=0.4; } }
+    }
+    if(key==="dessert"){ const ex=dish?0:0.13, ez=dish?0:-0.22;
+      plate(0.17,ex,ez);
+      if(v.ic==="sundae"){
+        K.lathe([[0,0],[0.03,0],[0.03,0.006],[0.008,0.012],[0.007,0.05],[0.045,0.075],[0.05,0.11],[0.047,0.11],[0.042,0.078],[0,0.06]],ex,0.006,ez,"glass",24);
+        K.sph(0.07,ex,0.11,ez,E("#f6ead2",{gloss:0.15,em:0.18})); K.sph(0.058,ex+0.018,0.14,ez-0.01,E(v.c&&v.c!=="#f4e6d0"?v.c:"#f2a7b5",{gloss:0.15,em:0.18}));
+        const dr=K.tor(0.06,0.006,ex+0.006,0.152,ez-0.004,E("#3a1d0e",{grain:false,gloss:0.6}),20); dr.rotation.x=0.25;
+        swirl(ex+0.004,0.16,ez-0.004,0.024); K.sph(0.022,ex+0.006,0.2,ez-0.004,cherry);
+        const wf=K.box(0.012,0.065,0.032,ex-0.03,0.165,ez+0.01,E("#e0b46a")); wf.rotation.z=0.45;
+      }
+      else if(v.ic==="brownie"){
+        const b=K.box(0.085,0.04,0.065,ex,0.026,ez,E("#4a2a17")); b.rotation.y=0.4;
+        const t=K.box(0.088,0.006,0.068,ex,0.048,ez,E("#5c3620",{gloss:0.12})); t.rotation.y=0.4;
+        K.many(36,(i,MB)=>{ const lx=(R(i,1)-0.5)*0.075, lz=(R(i,2)-0.5)*0.058, c=Math.cos(0.4), s2=Math.sin(0.4);
+          const m=MB.CreateBox("z",{width:0.005,height:0.002,depth:0.005},scene); m.position.set(ex+lx*c+lz*s2,0.052,ez-lx*s2+lz*c); return m; },E("#fbfaf6",{grain:false,em:0.3}));
+        const dl=K.sph(0.04,ex+0.05,0.026,ez+0.035,cream); dl.scaling.y=0.6;
+      }
+      else {                                                                                        // apple pie, a spicchio
+        K.slice(0.18,0.009,0.012,ex,ez,E("#c4843c"));
+        K.slice(0.172,0.022,0.0275,ex,ez,E("#d9b06a"));
+        K.slice(0.18,0.009,0.043,ex,ez,E("#b06e2c",{gloss:0.15}));
+        K.sph(0.045,ex+0.055,0.03,ez-0.03,E("#fbf3e0",{gloss:0.2,em:0.2}));                          // pallina di gelato
+      } }
     set.getChildMeshes(true).slice(k0).forEach(m=>{ m.__key=key; });      // v297: di quale portata e' (per mangiarla)
   });
   try{ _octDirty(); }catch(e){}
@@ -10155,7 +10293,12 @@ function _dinerEat(set,keys){
   keys.forEach(key=>{
     const ms=set.getChildMeshes(true).filter(m=>m.__key===key); if(!ms.length) return;
     const food=(key==="drink")?ms:ms.filter(m=>m.material && /^dn_c_/.test(m.material.name)); if(!food.length) return;
-    const c=new BABYLON.Vector3(0,0,0); food.forEach(m=>c.addInPlace(m.position)); c.scaleInPlace(1/food.length);
+    /* v305: il centro dal riquadro delle mesh, non dalla loro origine: i pezzi
+       fusi (patatine, sesamo, maccheroni) hanno l'origine al centro del tavolo */
+    set.computeWorldMatrix(true); const inv=set.getWorldMatrix().clone().invert(), c=new BABYLON.Vector3(0,0,0);
+    food.forEach(m=>{ m.computeWorldMatrix(true); m.refreshBoundingInfo();
+      c.addInPlace(BABYLON.Vector3.TransformCoordinates(m.getBoundingInfo().boundingBox.centerWorld,inv)); });
+    c.scaleInPlace(1/food.length);
     const g=new BABYLON.TransformNode("dnEat_"+key,scene); g.parent=set; g.position.copyFrom(c);
     set.computeWorldMatrix(true); g.computeWorldMatrix(true);
     food.forEach(m=>m.setParent(g));
@@ -25954,8 +26097,8 @@ function _cafePickMats(){ if(_cpM) return _cpM;
   const K={};
   K.cup=mat("cp_cup","#f6f3ec"); K.cup.specularColor=new BABYLON.Color3(0.3,0.3,0.3);
   K.tray=mat("cp_tray","#3b2618"); K.plate=K.cup;
-  K.coffee=mat("cp_coffee","#4a2c17"); K.crema=mat("cp_crema","#b07a45");
-  K.tea=mat("cp_tea","#9a5422"); K.choc=mat("cp_choc","#5a3320"); K.cream=mat("cp_cream","#fbf6ea");
+  K.coffee=mat("cp_coffee","#3a200f"); K.crema=mat("cp_crema","#7a4a26");   // v305: piu' scuri, sotto la luce del bancone uscivano arancioni
+  K.tea=mat("cp_tea","#6a3412"); K.choc=mat("cp_choc","#5a3320"); K.cream=mat("cp_cream","#fbf6ea");
   K.juice=mat("cp_juice","#f39a1e","#3a2000");
   K.glass=new BABYLON.StandardMaterial("cp_glass",scene); K.glass.diffuseColor=new BABYLON.Color3(0.85,0.93,0.97);
   K.glass.alpha=0.32; K.glass.specularColor=new BABYLON.Color3(0.8,0.8,0.8); K.glass.backFaceCulling=false;
@@ -25976,49 +26119,79 @@ function cafeClear(){ const P=CAFE_PICK;
 /* il vassoio con l'ordine; origine sul piano del vassoio */
 function _cafeBuildOrder(o,parent){
   const K=_cafePickMats(), R={ drink:null, level:null, food:null, bits:[] };
-  const add=(m,k,par)=>{ m.material=K[k]; m.parent=par; m.isPickable=false; return m; };
+  const add=(m,k,par)=>{ m.material=(typeof k==="string")?K[k]:k; m.parent=par; m.isPickable=false; return m; };
   const cyl=(o2,px,py,pz,k,par)=>{ o2.tessellation=o2.tessellation||18; const m=BABYLON.MeshBuilder.CreateCylinder("cpo",o2,scene); m.position.set(px,py,pz); return add(m,k,par); };
-  const sph=(d,px,py,pz,k,par)=>{ const m=BABYLON.MeshBuilder.CreateSphere("cpo",{diameter:d,segments:8},scene); m.position.set(px,py,pz); return add(m,k,par); };
   const box=(w,h,d,px,py,pz,k,par)=>{ const m=BABYLON.MeshBuilder.CreateBox("cpo",{width:w,height:h,depth:d},scene); m.position.set(px,py,pz); return add(m,k,par); };
+  /* v305: forme e materiali del kit del cibo (_fdKit, _fdMat), un kit per gruppo */
+  const kit=par=>_fdKit((m,k)=>add(m,k,par)), F=(hex,op)=>_fdMat("cp_f_",hex,op), Rn=_fdR, PI=Math.PI;
   box(0.28,0.018,0.44,0,0.009,0,"tray",parent);
   box(0.11,0.004,0.11,-0.08,0.02,-0.15,"napkin",parent).rotation.y=0.3;
   const dk=(o.slip.drink&&o.slip.drink.en)||"Coffee", big=(o.slip.size&&o.slip.size.en==="Large");
   const S=big?1.22:1;
   /* la bevanda e' un gruppo a parte: e' lei che sale alla bocca */
   const D=new BABYLON.TransformNode("cpDrink",scene); D.parent=parent; D.position.set(0.02,0.018,0.1); R.drink=D;
+  const KD=kit(D), KP=kit(parent);
   if(/juice/i.test(dk)){
-    const H=0.13*S; cyl({diameterTop:0.075*S,diameterBottom:0.062*S,height:H},0,H/2,0,"glass",D);
-    const L=cyl({diameterTop:0.068*S,diameterBottom:0.058*S,height:H*0.82},0,H*0.41+0.004,0,"juice",D); L.__h=H*0.82; L.__y0=0.004; R.level=L;
+    const H=0.13*S;
+    KD.lathe([[0,0],[0.031*S,0],[0.0375*S,H],[0.0345*S,H],[0.028*S,0.007],[0,0.007]],0,0,0,"glass",24);
+    const L=cyl({diameterTop:0.066*S,diameterBottom:0.056*S,height:H*0.82},0,H*0.41+0.007,0,F("#f39a1e",{grain:false,gloss:0.5,pow:64,em:0.22}),D); L.__h=H*0.82; L.__y0=0.007; R.level=L;
     const st=cyl({diameter:0.007,height:0.18*S,tessellation:6},0.012,H*0.75,0,"cream",D); st.rotation.z=0.22;   // cannuccia: resta
+    const w=KD.cyl({diameter:0.05*S,height:0.006,tessellation:18},-0.036*S,H-0.004,0,F("#f39a1e",{em:0.16})); w.rotation.z=PI/2+0.2;   // fetta d'arancia
   } else {
-    const mug=/chocolate/i.test(dk), H=(mug?0.10:0.07)*S, dT=(mug?0.085:0.09)*S, dB=(mug?0.08:0.065)*S;
+    const mug=/chocolate/i.test(dk), tea=/tea/i.test(dk), H=(mug?0.10:0.07)*S, rT=(mug?0.0425:0.045)*S, rB=(mug?0.04:0.0325)*S;
     /* il piattino resta sul vassoio: alla bocca va la tazza (v297) */
-    if(!mug) cyl({diameter:0.15*S,height:0.01,tessellation:24},D.position.x,D.position.y+0.005,D.position.z,"plate",parent);
-    const base=mug?0:0.01;
-    cyl({diameterTop:dT,diameterBottom:dB,height:H},0,base+H/2,0,"cup",D);
+    if(!mug) KP.lathe([[0,0],[0.05*S,0],[0.066*S,0.006],[0.075*S,0.012],[0.073*S,0.013],[0.06*S,0.009],[0.035*S,0.005],[0,0.005]],D.position.x,D.position.y,D.position.z,"plate",28);
+    const base=mug?0:0.006;
+    /* tazza da tornio: fondo arrotondato, pareti sottili, bordo */
+    KD.lathe([[0,0],[rB*0.8,0],[rB,0.006],[rT*0.97,H*0.7],[rT,H],[rT-0.003,H],[rT*0.92,H*0.6],[rB-0.004,0.01],[0,0.01]],0,base,0,"cup",mug?20:24);
     const hd=BABYLON.MeshBuilder.CreateTorus("cpo",{diameter:0.045*S,thickness:0.011*S,tessellation:12},scene);
-    hd.rotation.x=Math.PI/2; hd.position.set(dT/2+0.012*S,base+H*0.55,0); add(hd,"cup",D);
-    const lk=mug?"choc":(/tea/i.test(dk)?"tea":"coffee");
-    const Lh=H*0.86, L=cyl({diameter:dT*0.9,height:Lh},0,base+0.003+Lh/2,0,lk,D); L.__h=Lh; L.__y0=base+0.003; R.level=L;
-    if(mug){ const c=sph(dT*0.72,0,base+H+0.004,0,"cream",D); c.scaling.y=0.45; R.bits.push(c); }
-    else if(lk==="coffee"){ const c=cyl({diameter:dT*0.55,height:0.002},0,base+Lh+0.004,0,"crema",D); R.bits.push(c); }
+    hd.rotation.x=PI/2; hd.position.set(rT+0.012*S,base+H*0.55,0); add(hd,"cup",D);
+    const lk=mug?"choc":(tea?"tea":"coffee");
+    const Lh=H*0.8, L=cyl({diameterTop:(rT-0.004)*2,diameterBottom:(rB-0.004)*2,height:Lh},0,base+0.01+Lh/2,0,lk,D); L.__h=Lh; L.__y0=base+0.01; R.level=L;
+    if(mug){ /* panna a spirale e cacao in polvere (se ne vanno al primo sorso) */
+      const cr=F("#fbf6ea",{grain:false,gloss:0.15,em:0.18}), top=base+H;
+      [[1,0.3],[0.74,0.27],[0.48,0.24]].forEach((q,i)=>R.bits.push(KD.tor(0.062*S*q[0],0.03*S*q[1]*1.6,0,top+0.004+i*0.011*S,0,cr,18)));
+      R.bits.push(KD.sph(0.02*S,0,top+0.04*S,0,cr));
+      const cc=KD.many(14,(i,MB)=>{ const a=i*2.4, r=0.026*S*Math.sqrt(Rn(i,1)), m=MB.CreateBox("k",{width:0.003,height:0.002,depth:0.003},scene);
+        m.position.set(Math.cos(a)*r,top+0.016+0.012*(1-r/(0.03*S)),Math.sin(a)*r); return m; },F("#4a2412",{grain:false}));
+      if(cc) R.bits.push(cc); }
+    else if(lk==="coffee"){ /* crema col cuore del latte */
+      R.bits.push(cyl({diameter:(rT-0.006)*2,height:0.002},0,base+0.01+Lh+0.002,0,"crema",D));
+      const hm=F("#e8d3b5",{grain:false,em:0.08});
+      [-1,1].forEach(sg=>R.bits.push(cyl({diameter:0.018*S,height:0.002,tessellation:14},sg*0.006*S,base+0.01+Lh+0.0035,0.004*S,hm,D)));
+      const tp=cyl({diameter:0.024*S,height:0.002,tessellation:3},0,base+0.01+Lh+0.0035,-0.004*S,hm,D); tp.rotation.y=-PI/2; R.bits.push(tp); }
+    else { /* la bustina del te': filo sul bordo e cartellino fuori dalla tazza */
+      const tg=F("#f2e6c4",{grain:false,em:0.2});
+      const fi=cyl({diameter:0.0018,height:H*0.95,tessellation:4},-rT-0.002,base+H*0.55,0.012,tg,D); fi.rotation.z=0.06;
+      box(0.004,0.028,0.022,-rT-0.006,base+H*0.12,0.012,F("#c8323a",{grain:false}),D); }
   }
   /* il cibo, se c'e' */
   const fd=o.slip.food && o.slip.food.en!=="—" ? o.slip.food.en : "";
   if(fd){
-    const F=new BABYLON.TransformNode("cpFood",scene); F.parent=parent; F.position.set(0.0,0.018,-0.1); R.food=F;
-    cyl({diameter:0.19,height:0.012,tessellation:24},0,0.006,0,"plate",F);
-    const G=new BABYLON.TransformNode("cpBite",scene); G.parent=F; G.position.y=0.012; R.bite=G;
-    if(/croissant/i.test(fd)){ const c=sph(0.15,0,0.03,0,"pastry",G); c.scaling.set(1,0.42,0.55); c.rotation.y=0.5;
-      [-1,1].forEach(sg=>{ const t=sph(0.06,sg*0.06,0.02,sg*0.02,"pastry",G); t.scaling.set(1,0.6,0.7); }); }
+    const Fo=new BABYLON.TransformNode("cpFood",scene); Fo.parent=parent; Fo.position.set(0.0,0.018,-0.1); R.food=Fo;
+    kit(Fo).lathe([[0,0],[0.07,0],[0.082,0.006],[0.095,0.014],[0.093,0.016],[0.08,0.01],[0.06,0.005],[0,0.005]],0,0,0,"plate",28);
+    const G=new BABYLON.TransformNode("cpBite",scene); G.parent=Fo; G.position.y=0.008; R.bite=G;
+    const KG=kit(G);
+    if(/croissant/i.test(fd)){ /* mezzaluna: sette segmenti lungo un arco, piu' piccoli verso le punte */
+      const pa=F("#b9772f",{gloss:0.12});
+      for(let i=0;i<7;i++){ const t=(i-3)/3, a=t*1.15, r=0.055, sz=1-0.55*t*t;
+        const m=KG.sph(0.052*sz,Math.sin(a)*r,0.019*sz+0.004,Math.cos(a)*r-0.04,pa,10); m.scaling.set(1.05,0.62,0.75); m.rotation.y=a; } }
     else if(/sandwich/i.test(fd)){ [0,1].forEach(i=>{ const q=new BABYLON.TransformNode("cpSw",scene); q.parent=G;
-        q.position.set(i?0.035:-0.03,0,i?-0.02:0.02); q.rotation.y=i?2.6:0.4;
-        cyl({diameter:0.12,height:0.012,tessellation:3},0,0.008,0,"bread",q); cyl({diameter:0.118,height:0.008,tessellation:3},0,0.018,0,"cheese",q);
-        cyl({diameter:0.12,height:0.012,tessellation:3},0,0.028,0,"bread",q); }); }
-    else if(/muffin/i.test(fd)){ cyl({diameterTop:0.085,diameterBottom:0.065,height:0.055},0,0.028,0,"muffinC",G);
-      const t=sph(0.095,0,0.06,0,"muffinT",G); t.scaling.y=0.6; }
-    else { const w=cyl({diameter:0.15,height:0.04,tessellation:3},0,0.02,0,"pastry",G); w.rotation.y=0.3;
-      const f=cyl({diameter:0.13,height:0.006,tessellation:3},0,0.041,0,"apple",G); f.rotation.y=0.3; }
+        q.position.set(i?0.035:-0.03,0,i?-0.02:0.02); q.rotation.y=i?2.6:0.4; const KQ=kit(q);
+        KQ.cyl({diameter:0.12,height:0.012,tessellation:3},0,0.006,0,F("#d8b47a"));
+        KQ.cyl({diameter:0.126,height:0.004,tessellation:3},0,0.014,0,F("#6aa84f"));                    // insalata, sporge
+        KQ.cyl({diameter:0.118,height:0.006,tessellation:3},0,0.019,0,F("#e8a0a0",{em:0.15}));          // prosciutto
+        KQ.cyl({diameter:0.12,height:0.004,tessellation:3},0,0.024,0,F("#f2c230",{gloss:0.25,em:0.16})); // formaggio
+        KQ.cyl({diameter:0.12,height:0.012,tessellation:3},0,0.032,0,F("#d8b47a")); }); }
+    else if(/muffin/i.test(fd)){ /* pirottino a pieghe e cupola con le gocce di cioccolato */
+      KG.cyl({diameterTop:0.085,diameterBottom:0.064,height:0.052,tessellation:22},0,0.026,0,F("#e6d2b0",{grain:false,em:0.14}));
+      KG.many(22,(i,MB)=>{ const a=i/22*2*PI, m=MB.CreateBox("r",{width:0.003,height:0.05,depth:0.004},scene);
+        m.position.set(Math.cos(a)*0.0375,0.026,Math.sin(a)*0.0375); m.rotation.y=-a; m.rotation.z=Math.cos(a)*0.2; m.rotation.x=-Math.sin(a)*0.2; return m; },F("#cdb48c",{grain:false}));
+      KG.lathe([[0,0],[0.047,0],[0.05,0.012],[0.042,0.03],[0.024,0.042],[0,0.046]],0,0.048,0,F("#4a2a17",{gloss:0.08}));
+      KG.many(12,(i,MB)=>{ const a=i*2.4, r=0.04*Math.sqrt(Rn(i,1)), h=0.046*Math.sqrt(Math.max(0,1-(r/0.05)*(r/0.05)));
+        const m=MB.CreateBox("c",{width:0.007,height:0.006,depth:0.007},scene); m.position.set(Math.cos(a)*r,0.049+h,Math.sin(a)*r); m.rotation.y=a; return m; },F("#24120a",{grain:false,gloss:0.3})); }
+    else { /* apple pie a spicchio */
+      KG.slice(0.15,0.008,0.004,0,0,F("#c4843c")); KG.slice(0.144,0.02,0.018,0,0,F("#d9b06a")); KG.slice(0.15,0.008,0.032,0,0,F("#b06e2c",{gloss:0.15})); }
   }
   try{ _octDirty(); }catch(e){}
   return R; }
