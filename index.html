@@ -9424,6 +9424,23 @@ function buildDiner(){
   rail(-7.4,-1.6,23.7,23.7); rail(1.6,7.4,23.7,23.7); rail(-7.4,-7.4,23.7,KZ0-0.1); rail(7.4,7.4,23.7,KZ0-0.1);
   /* due vasi ai lati dell'ingresso */
   [-2.1,2.1].forEach(px=>{ cy("pot",{diameterTop:0.55,diameterBottom:0.4,height:0.5},px,0.25,24.2); sp("leaf",0.7,px,0.75,24.2,6); sp("leaf",0.5,px+0.12,1.02,24.25,6); solid(px-0.3,px+0.3,23.9,24.5); });
+  /* salsiere dei tavoli: pezzi raccolti per materiale e fusi alla fine (_dnCondMerge) */
+  const CG={}, addC=(m,mt)=>{ (CG[mt.name]||(CG[mt.name]={ mt, list:[] })).list.push(m); m.isPickable=false; return m; };
+  const CK=_fdKit(addC), CM=(hex,op)=>_fdMat("dn_t_",hex,Object.assign({grain:false,em:0.08},op||{}));
+  const _dnCondiments=(cx,ty,cz)=>{
+    const bottle=(x,body,cap)=>{ CK.lathe([[0,0],[0.025,0],[0.029,0.008],[0.03,0.1],[0.027,0.122],[0.017,0.136],[0,0.136]],x,ty,cz,body,18);
+      CK.lathe([[0,0],[0.017,0],[0.017,0.016],[0.007,0.03],[0.003,0.043],[0,0.043]],x,ty+0.134,cz,cap,14); };
+    bottle(cx-0.1,CM("#c0182a",{gloss:0.5,pow:64}),CM("#f3f0e8",{gloss:0.3}));                       // ketchup
+    bottle(cx-0.035,CM("#e8b81e",{gloss:0.5,pow:64}),CM("#c8323a",{gloss:0.3}));                      // senape
+    [[0.025,"#f7f7f2"],[0.062,"#3a3430"]].forEach(q=>{ const x=cx+q[0];                                // sale e pepe
+      CK.lathe([[0,0],[0.016,0],[0.018,0.052],[0,0.052]],x,ty,cz,M.glass,14);
+      CK.cyl({diameterTop:0.03,diameterBottom:0.028,height:0.03,tessellation:12},x,ty+0.017,cz,CM(q[1]));
+      CK.lathe([[0,0],[0.0185,0],[0.0175,0.01],[0.011,0.019],[0,0.021]],x,ty+0.051,cz,M.chrome,14); });
+    const nx=cx+0.13;                                                                                   // portatovaglioli
+    CK.box(0.11,0.012,0.06,nx,ty+0.006,cz,M.chrome);
+    [-1,1].forEach(sg=>CK.box(0.11,0.075,0.004,nx,ty+0.045,cz+sg*0.022,M.chrome));
+    CK.box(0.1,0.066,0.038,nx,ty+0.045,cz,CM("#ffffff",{em:0.2}));
+  };
   /* ---- TAVOLI e SEDIE ---- */
   const TABLES=[[-3.3,27.4],[3.3,27.4],[-3.3,31.8],[3.3,31.8]];
   TABLES.forEach((t,ti)=>{
@@ -9431,9 +9448,14 @@ function buildDiner(){
     cy("aqua",{diameter:0.95,height:0.05,tessellation:28},tx,0.76,tz);
     cy("chrome",{diameter:0.99,height:0.035,tessellation:28},tx,0.735,tz);
     cy("chrome",{diameter:0.08,height:0.72},tx,0.37,tz); cy("chrome",{diameter:0.5,height:0.03},tx,0.02,tz);
-    /* salsiere: ketchup e senape, portatovaglioli */
-    cy("red",{diameter:0.06,height:0.16,tessellation:10},tx-0.08,0.87,tz+0.06); cy("yellow",{diameter:0.06,height:0.16,tessellation:10},tx+0.02,0.87,tz+0.06);
-    bx("chrome",0.12,0.1,0.06, tx+0.14,0.84,tz+0.06);
+    /* v306 (Giacomo, 7 ott: «un piattino finisce in mezzo alla roba gia'
+       presente sul tavolo, che e' da migliorare: sono molto grezzi»). Le
+       salsiere stavano al centro, proprio dove arrivano i piatti di chi
+       siede (il cibo sta a 20 cm dal centro, verso la sedia). Ora sono in
+       fila sul bordo in fondo del tavolo, fra le due sedie, e sono oggetti
+       veri: flaconi di ketchup e senape col tappo a beccuccio, sale e pepe
+       in vetro col tappo cromato, portatovaglioli con i tovaglioli. */
+    _dnCondiments(tx,0.785,tz-0.37);
     solid(tx-0.5,tx+0.5,tz-0.5,tz+0.5);
     DINER.tables.push({ i:ti, x:X+tx, z:tz, top:gy+0.785 });
     [-1,1].forEach(sd=>{
@@ -9448,6 +9470,8 @@ function buildDiner(){
         face:Math.atan2(-sd,0), standX:X+cx, standZ:cz-0.8, taken:null });
     });
   });
+  for(const k in CG){ const g=CG[k]; try{ const mm=BABYLON.Mesh.MergeMeshes(g.list,true,true);
+      if(mm){ mm.name="dnCond"; mm.material=g.mt; mm.parent=root; } }catch(e){ console.warn("[diner] salsiere",e); } }
   _mergeGroups(G,root);
   root.getChildMeshes().forEach(m=>{ m.isPickable=(m===fl); m.receiveShadows=true; });
   /* ---- INSEGNA AL NEON sul tetto della cucina (legge chi arriva da Home) ---- */
