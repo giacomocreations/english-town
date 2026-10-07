@@ -55716,6 +55716,14 @@ function lookCut(rig,id){ const L=lookCutsFor(rig); return L.find(c=>c.id===id)|
 function _hn(k){ const x=Math.sin(k*12.9898+4.1414)*43758.5453; return x-Math.floor(x)-0.5; }
 /* attaccatura: quota y (0 = occhi) in funzione dell'azimut a (0 davanti, ±PI dietro) */
 const HAIRLINE=[[0,0.075],[0.28,0.066],[0.42,0.032],[0.52,0.002],[0.68,-0.045],[1,-0.092]];
+/* v305 (Giacomo, 7 ott: «long hair, buzz cut, bun, pony tail lasciano troppa
+   fronte e tempie laterali scoperte»). Con HAIRLINE l'attaccatura stava a
+   7,5 cm sopra gli occhi e sulle tempie risaliva subito: una fronte enorme e
+   le tempie nude fino a meta' testa, visto a schermo accanto ai capelli del
+   modello (che arrivano quasi alle sopracciglia). Questa e' un'attaccatura
+   «vera»: fronte di ~4,5 cm, tempie coperte, basette fin quasi all'orecchio. */
+const HAIRLINE_LOW=[[0,0.046],[0.14,0.045],[0.26,0.038],[0.38,0.020],[0.48,-0.006],[0.58,-0.032],[0.72,-0.062],[1,-0.092]];
+const _hairLow=a=>_hairLine(a,HAIRLINE_LOW);
 function _hairLine(a,K){ K=K||HAIRLINE; const t=Math.min(1,Math.abs(a)/Math.PI);
   for(let i=1;i<K.length;i++) if(t<=K[i][0]){ const u=(t-K[i-1][0])/(K[i][0]-K[i-1][0]), s=u*u*(3-2*u);
     return K[i-1][1]+(K[i][1]-K[i-1][1])*s; }
@@ -55849,13 +55857,13 @@ const HAIR_BUILD={
       grid.push(col); }
     for(let i=0;i<NU;i++) for(let j=0;j<NV;j++){ const A=grid[i][j],B=grid[i+1][j],C=grid[i][j+1],D=grid[i+1][j+1]; T.push([A,B,D],[A,D,C]); }
     const cur=_hairMesh(P,T,c=>new V(c.x,0,c.z-S.zc)); cur.material=Mt.hair2; cur.__two=true; cur.__w=true; cur.parent=g; },
-  buzz(g,M,S,Mt){ const m=_hairShell(S,{ th:0.0045, noise:0.0012, line:a=>_hairLine(a)-0.004 }); m.material=Mt.hair; m.parent=g; },
+  buzz(g,M,S,Mt){ const m=_hairShell(S,{ th:0.0045, noise:0.0012, line:a=>_hairLow(a)-0.002 }); m.material=Mt.hair; m.parent=g; },
   /* corto della ragazza: frangetta sfrangiata sulla fronte, nuca corta */
   pixie(g,M,S,Mt){ const K=[[0,0.03],[0.18,0.04],[0.34,0.045],[0.5,0.0],[0.68,-0.05],[1,-0.10]];
     const m=_hairShell(S,{ th:0.016, noise:0.007, line:a=>_hairLine(a,K),
       jag:(a,i)=>(Math.abs(a)<0.42*Math.PI?(i%2?0.012:-0.004):(i%2?0.006:0)) });
     m.material=Mt.hair; m.parent=g; },
-  ponytail(g,M,S,Mt,rig){ const m=_hairShell(S,{ th:0.008, noise:0.002 }); m.material=Mt.hair; m.parent=g;
+  ponytail(g,M,S,Mt,rig){ const m=_hairShell(S,{ th:0.008, noise:0.002, line:_hairLow }); m.material=Mt.hair; m.parent=g;
     const V=BABYLON.Vector3, y=(rig==="f"?0.0:-0.01), P0=S.pt(Math.PI,S.elAt(Math.PI,y),0.006);
     const tie=BABYLON.MeshBuilder.CreateTorus("hcut",{diameter:0.036,thickness:0.013,tessellation:16},scene);
     tie.material=Mt.tie; tie.rotation.x=Math.PI/2-0.35; tie.position.copyFrom(P0.add(new V(0,-0.002,-0.012))); tie.parent=g;
@@ -55863,7 +55871,7 @@ const HAIR_BUILD={
       P0.add(new V(0,-0.12*L,-0.05)), P0.add(new V(0,-0.19*L,-0.036)), P0.add(new V(0,-0.235*L,-0.026))];
     pts.forEach(p=>{ const bz=_hairBackZ(M,p.y); if(bz!=null) p.z=Math.min(p.z,bz-0.03); });
     const t=_hairTail(pts,[0.02,0.026,0.031,0.027,0.018,0.005]); t.material=Mt.hair; t.parent=g; t.__w=true; },
-  bun(g,M,S,Mt){ const m=_hairShell(S,{ th:0.008, noise:0.002 }); m.material=Mt.hair; m.parent=g;
+  bun(g,M,S,Mt){ const m=_hairShell(S,{ th:0.008, noise:0.002, line:_hairLow }); m.material=Mt.hair; m.parent=g;
     const el=1.0, P=S.pt(Math.PI,el,0.008), d=P.subtract(S.C).normalize();
     const b=BABYLON.MeshBuilder.CreateIcoSphere("hcut",{radius:0.046,subdivisions:2,flat:true},scene);
     b.scaling.set(1,0.82,1); b.position.copyFrom(P.add(d.scale(0.034))); b.rotation.x=-0.6; b.material=Mt.hair; b.parent=g;
@@ -55886,12 +55894,12 @@ const HAIR_BUILD={
   /* lunghi: calotta con la riga in mezzo + un telo che scende sulle spalle
      e sulla schiena, aperto davanti alla faccia, con l'orlo sfrangiato */
   long(g,M,S,Mt){ const V=BABYLON.Vector3;
-    const m=_hairShell(S,{ th:0.011, noise:0.003 }); m.material=Mt.hair; m.parent=g;
+    const m=_hairShell(S,{ th:0.011, noise:0.003, line:_hairLow }); m.material=Mt.hair; m.parent=g;
     /* il corpo in coordinate cilindriche attorno all'asse della testa */
     const rBody=_bodyRad(M,S.zc);
     const a0=0.40*Math.PI, NU=30, NV=11, P=[], T=[], grid=[];
     for(let i=0;i<=NU;i++){ const u=i/NU, a=a0+u*(2*Math.PI-2*a0), aa=(a>Math.PI?a-2*Math.PI:a), t=Math.abs(aa)/Math.PI;
-      const top=S.pt(aa,S.elAt(aa,_hairLine(aa)),0.011), rTop=Math.hypot(top.x,top.z-S.zc);
+      const top=S.pt(aa,S.elAt(aa,_hairLow(aa)),0.011), rTop=Math.hypot(top.x,top.z-S.zc);
       const f=Math.max(0,Math.min(1,(t-0.4)/0.6)), yEnd=-0.20-0.13*f*f*(3-2*f)+((i%2)?0.02:0)+_hn(i*3.1)*0.01;
       const col=[];
       for(let j=0;j<=NV;j++){ const v=j/NV, y=top.y+(yEnd-top.y)*v;
