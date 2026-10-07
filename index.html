@@ -9873,10 +9873,12 @@ function dinerWaiterHome(then){
 /* L'ORDINE: un turno alla volta (stesso impianto del caffe')           */
 /* ------------------------------------------------------------------ */
 function _dnItemRow(t,v){ return '<div style="display:flex;justify-content:space-between;padding:2px 0;"><span>'+t+': '+_escHtml(v.en)+'</span><span style="opacity:.75">'+(v.p?'£'+v.p.toFixed(2):'')+'</span></div>'; }
-function dinerTotal(o){ let s=0; ["drink","main","side","dessert"].forEach(k=>{ const v=o.slip[k]; if(v) s+=(v.p||0); }); return s; }
+function dinerTotal(o){ let s=0; ["drink","main","side","dessert"].forEach(k=>{ const v=o.slip[k]; if(v) s+=(v.p||0); });
+  (o.extra||[]).forEach(v=>{ s+=(v.p||0); }); return s; }
 function dinerSlipHtml(o,final){
   const rows=["drink","main","side","dessert"].filter(k=>o.slip[k] && o.slip[k].p>=0 && o.slip[k].en!=="—")
-    .map(k=>_dnItemRow(DINER_TURNS[k].field,o.slip[k])).join("");
+    .map(k=>_dnItemRow(DINER_TURNS[k].field,o.slip[k])).join("")
+    +(o.extra||[]).map(v=>_dnItemRow("Extra",v)).join("");
   return '<div style="background:#f7f5ef;border:1px solid #d9cfc0;border-radius:10px;padding:10px 14px;margin-top:8px;">'
     +'<div style="font-weight:800;margin-bottom:6px;">\u{1F9FE} '+(final?"Your bill":"Your order")+'</div>'
     +(rows||'<div style="opacity:.6">…</div>')
@@ -9947,6 +9949,21 @@ function _dinerSubmit(key,poi){
     fb.innerHTML='<div style="font-weight:800;color:#a05a2c;">\u{1F7E1} Say a full sentence!</div>'
       +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">'+_trSpan("Say a full sentence!","Una parola sola non basta: "+t.hint+".")+'</div>';
     return; }
+  /* v306 (Giacomo, 7 ott: «quando ho chiesto il conto il cameriere mi ha
+     chiesto "anything else?"; ho chiesto una lemonade e mi ha portato il
+     conto: un cortocircuito»). La domanda del conto e' «Is everything OK?
+     Can I get you anything else?»: se si risponde con una voce del menu (e
+     senza chiedere il conto) Ray la porta, la mette sullo scontrino, e il
+     conto lo si chiede dopo come sempre. */
+  if(key==="bill" && !/\b(bill|check|cheque|pay)\b/i.test(ta.value)){
+    const tutto=[].concat(DINER_MENU.drinks,DINER_MENU.mains,DINER_MENU.sides,DINER_MENU.desserts), ex=_cafeTrova(ta.value,tutto);
+    if(ex){ const cortese=/\b(please|thanks|thank\s*you|thank)\b/i.test(ta.value);
+      if(!cortese || ev.form) o.sbagli++;
+      ta.__passed=true;
+      fb.innerHTML='<div style="font-weight:800;color:#1c7a4a;">\u{1F7E2} ✓ '+_escHtml(ex.en)+'</div>'
+        +(cortese?"":'<div style="font-weight:800;color:#a05a2c;margin-top:6px;">\u{1F7E1} Don\'t forget to say <i>please</i>!</div>');
+      setTimeout(()=>{ if(DINER.seat) dinerExtra(ex); },cortese?260:2600);
+      return; } }
   const scelta=(t.nulla?_cafeTrova(ta.value,[t.nulla]):null)||_cafeTrova(ta.value,t.voci());
   if(!scelta && o.tent<1){ o.tent++;
     const enMsg=(key==="bill"||key==="pay")?"Sorry, could you say that again?":"Sorry, that's not on the menu! Have a look.";
@@ -10018,6 +10035,27 @@ function _dinerServeDessert(){
   DialogueBox.open({ npc:DINER.waiter, icon:"\u{1F354}", sub:DINER.name, text:"There you go. Just call me when you want the bill!",
     italian:"Ecco qua. Chiamami quando vuoi il conto (premi E).", buttons:[{ label:"OK!", cls:"primary", act:()=>{} }] });
   dinerWaiterHome();
+}
+/* v306: qualcosa in piu' chiesto al momento del conto. Ray lo va a prendere,
+   ritira dal tavolo il piatto/bicchiere vecchio dello stesso tipo e lo
+   serve; poi si torna a «chiamami per il conto». */
+function dinerExtra(v){
+  const o=DINER.o, s=DINER.seat, w=DINER.waiter; if(!o||!s) return;
+  const cat=["drinks","mains","sides","desserts"].find(c=>DINER_MENU[c].indexOf(v)>=0)||"drinks";
+  const key={ drinks:"drink", mains:"main", sides:"side", desserts:"dessert" }[cat];
+  (o.extra=o.extra||[]).push(v);
+  DINER.st="extra";
+  DialogueBox.open({ npc:w, icon:"\u{1F354}", sub:DINER.name, text:"Sure! One "+v.en.toLowerCase()+", coming right up!",
+    italian:"Certo! Arriva subito.", html:dinerSlipHtml(o,false), buttons:[{ label:"Thanks!", cls:"primary", act:()=>{} }] });
+  dinerWaiterHome(()=>dinerLater(1800,()=>{
+    o.__srv={}; o.__srv[key]=v; dinerCarry([key]); o.__srv=null;
+    dinerWaiterTo(s.t,()=>{ dinerEmptyTray(); if(!DINER.seat) return;
+      DINER.food.forEach(st=>{ try{ st.getChildMeshes(false).forEach(m=>{ if(m.__key===key) m.dispose(false,false); }); }catch(e){} });
+      o.__srv={}; o.__srv[key]=v; _dinerServe([key]); o.__srv=null;
+      DINER.st="eating2";
+      DialogueBox.open({ npc:w, icon:"\u{1F354}", sub:DINER.name, text:"Here you are! Just call me when you want the bill.",
+        italian:"Ecco qua! Chiamami quando vuoi il conto (premi E).", buttons:[{ label:"Thanks!", cls:"primary", act:()=>{} }] });
+      dinerWaiterHome(); }); }));
 }
 /* ---- il conto e il pagamento ---- */
 function dinerBill(){
@@ -10167,7 +10205,7 @@ function _dinerFoodSet(keys,parent,ox,oy,oz){
   const swirl=(px,py,pz,r,mt)=>{ mt=mt||cream; [[1,0.30],[0.76,0.27],[0.5,0.24]].forEach((q,i)=>K.tor(r*2*q[0],r*q[1]*1.6,px,py+i*r*0.42,pz,mt,18));
     K.sph(r*0.7,px,py+r*1.15,pz,mt); };
   const dish=(keys.indexOf("main")<0);                       // il dolce arriva da solo: al posto del piatto
-  keys.forEach(key=>{ const v=o.slip[key]; if(!v || v.en==="—") return;
+  keys.forEach(key=>{ const v=(o.__srv&&o.__srv[key])||o.slip[key]; if(!v || v.en==="—") return;
     const k0=set.getChildMeshes(true).length;
     if(key==="drink"){ const gx=0.05, gz=0.22;
       if(v.ic==="shake"){
