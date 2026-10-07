@@ -4170,13 +4170,25 @@ function playerSit(fwd,seatY,groundY,arms){
   if(!avatarRoot || !_legPins) return null;
   const r=sitPoseFor(avatarRoot,_legPins,fwd,seatY,groundY,arms); if(!r) return null;
   if(SIT.baseY===null) SIT.baseY=avatarRoot.position.y;
+  /* v304: com'erano le ossa in piedi, per rimetterle alzandosi (vedi playerStand) */
+  if(!SIT.on) SIT.prev=r.pins.map(k=>({ tn:k.tn, p:k.tn.position.clone(), s:k.tn.scaling.clone(),
+    q:k.tn.rotationQuaternion?k.tn.rotationQuaternion.clone():BABYLON.Quaternion.FromEulerVector(k.tn.rotation) }));
   SIT.pins=r.pins; SIT.drop=r.drop; SIT.on=true;
   SIT.seatY=seatY; SIT.gy=groundY;               // v302: i compagni ti vedono seduto (Presenza._posa)
   avatarRoot.position.y=SIT.baseY-r.drop;
   return r.hip?new BABYLON.Vector3(r.hip.x-player.position.x,0,r.hip.z-player.position.z):new BABYLON.Vector3(0,0,0);
 }
+/* v304 (Giacomo, 7 ott: «dopo che mi sono alzato ero ancora piegato in
+   avanti»). Fra le ossa della posa seduta ci sono Abdomen, Torso, spalle e
+   polsi, che l'Idle NON anima (misurato: 10 delle 20 ossa non hanno tracce
+   nell'animazione) e le pin in piedi non toccano (solo gambe e bacino).
+   Restavano quindi nell'ultima posa applicata: se ci si alzava mentre il
+   busto era piegato verso il piatto (eatReachPose), si restava piegati
+   finche' una seduta senza gesto non le riportava dritte. Alzandosi le
+   ossa tornano esattamente com'erano prima di sedersi. */
 function playerStand(){
   if(!SIT.on) return; SIT.on=false; SIT.pins=null;
+  if(SIT.prev){ try{ _applyPins(SIT.prev); }catch(e){} SIT.prev=null; }
   if(avatarRoot && SIT.baseY!==null) avatarRoot.position.y=SIT.baseY;
   SIT.baseY=null;
 }
@@ -4599,7 +4611,7 @@ function rebuildAvatar(){
   for(const k in _gemFitMats){ try{ _gemFitMats[k].dispose(); }catch(e){} delete _gemFitMats[k]; }
   for(const k in avatarAnims){ try{ avatarAnims[k].dispose(); }catch(e){} delete avatarAnims[k]; }
   _avAnimCur=null; _legPins=null; _pinLegs=false;
-  const _eraSeduto=SIT.on; SIT.on=false; SIT.pins=null; SIT.baseY=null;
+  const _eraSeduto=SIT.on; SIT.on=false; SIT.pins=null; SIT.baseY=null; SIT.prev=null;
   buildAvatar();
   if(_eraSeduto) try{ dinerResit(); benchResit(); cafeResit(); }catch(e){}
   try{ applyLook(); }catch(e){}
