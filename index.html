@@ -9911,18 +9911,19 @@ function dinerAsk(key,poi,qOverride,itOverride){
       ...((key!=="bill"&&key!=="pay")?[{ label:"\u{1F4CB} Menu", act:()=>dinerShowMenu(again) }]:[]), leave ] });
   _ordBozza(o,key,"dnTA");                        // v298: la frase scritta sopravvive al menu
 }
-function _dinerTake(key,testo,male,poi){
+function _dinerTake(key,testo,male,poi,ms){
   const o=DINER.o; if(!o) return;
   const t=DINER_TURNS[key];
   let v=t.nulla?_cafeTrova(testo,[t.nulla]):null;
   if(!v) v=_cafeTrova(testo,t.voci());
   if(!v) v=t.voci()[0];
   o.slip[key]=v; o.bozza=null; if(male) o.sbagli++;
-  setTimeout(()=>{ if(DINER.seat||DINER.debt) poi(v); },260);
+  setTimeout(()=>{ if(DINER.seat||DINER.debt) poi(v); },ms||260);
 }
 function _dinerSubmit(key,poi){
   const o=DINER.o; if(!o) return;
   const ta=document.getElementById("dnTA"), fb=document.getElementById("dnFb"); if(!ta||!fb) return;
+  if(ta.__passed) return;                          // v305: gia' preso (si sta leggendo il «please»)
   const t=DINER_TURNS[key];
   if(linguaccia(ta.value)){ fb.innerHTML=linguacciaHtml(); return; }
   const ev=ambEval(ta.value,{ q:t.q||"Can I help you?", it:t.it, expect:{ pool:t.pool, hint:t.hint } });
@@ -9937,11 +9938,24 @@ function _dinerSubmit(key,poi){
       +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">'+_trSpan(enMsg,t.hint.charAt(0).toUpperCase()+t.hint.slice(1)+".")+'</div>';
     try{ speechSynthesis.resume(); TTS.say(enMsg,{gender:"m"}); }catch(e){}
     return; }
-  const male=(!scelta)||!!ev.form||(ev.pert&&ev.pert.checked&&!ev.pert.ok);
+  /* v305 (Giacomo, 7 ott: «quando ordini al diner e non metti please, non
+     da' punteggio pieno e viene segnalato»). Al tavolo si chiede per
+     favore: senza «please» (o «thanks / thank you», che vale per «No,
+     thanks» e per il conto) l'ordine passa lo stesso — mai un muro — ma
+     conta come sbaglio (cafeOrderRetry invece di cafeOrder) e si dice
+     perche'. Al caffe' resta com'era: li' «a coffee» basta. */
+  const cortese=/\b(please|thanks|thank\s*you|thank)\b/i.test(ta.value);
+  const male=(!scelta)||!!ev.form||(ev.pert&&ev.pert.checked&&!ev.pert.ok)||!cortese;
   const nota=ev.form?(ev.form.recast?_escHtml(ev.form.recast):ev.form.it):"";
+  const esPl=(t.ready.find(r=>/please/i.test(r))||"A lemonade, please.");
   fb.innerHTML='<div style="font-weight:800;color:#1c7a4a;">\u{1F7E2} '+(scelta?("✓ "+_escHtml(scelta.en)):"✓ OK")+'</div>'
-    +(nota?('<div style="opacity:.78;font-size:.93em;margin-top:4px;">\u{1F4A1} '+nota+'</div>'):"");
-  _dinerTake(key,ta.value,!!male,poi);
+    +(nota?('<div style="opacity:.78;font-size:.93em;margin-top:4px;">\u{1F4A1} '+nota+'</div>'):"")
+    +(cortese?"":('<div style="font-weight:800;color:#a05a2c;margin-top:6px;">\u{1F7E1} Don\'t forget to say <i>please</i>!</div>'
+      +'<div style="opacity:.78;font-size:.93em;margin-top:2px;">'+_trSpan("Don't forget to say please!",
+        "Al cameriere si chiede sempre <b>per favore</b>: «"+_escHtml(esPl)+"». L'ordine passa, ma senza <i>please</i> vale meno.")+'</div>'));
+  ta.__passed=true;
+  /* senza «please» la nota resta a schermo il tempo di leggerla */
+  _dinerTake(key,ta.value,!!male,poi,cortese?260:2600);
 }
 /* ---- in cucina e ritorno col piatto ---- */
 function dinerKitchen(){
