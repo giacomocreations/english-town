@@ -4430,6 +4430,8 @@ function eatStop(){ if(EAT.obs){ scene.onBeforeRenderObservable.remove(EAT.obs);
    SOLO quando e' nella mano: lo scarto fra dove sta e dove la mano lo
    stringe (c.D, pochi cm) si consuma durante la salita e si ricostruisce
    durante la discesa, cosi' parte e torna esattamente al suo posto. */
+/* v305: il suono del sorso / del morso, nel momento in cui arriva alla bocca */
+function _eatSound(what){ try{ if(typeof SFX==="undefined") return; if(what==="sip") SFX.sip(); else SFX.chew(); }catch(e){} }
 function eatRun(steps,fwd,onDone){
   eatStop(); if(!steps.length){ if(onDone) onDone(); return; }
   EAT.busy=true; EAT.q={ steps, k:0, cur:null };
@@ -4457,7 +4459,7 @@ function eatRun(steps,fwd,onDone){
       if(R) eatBlend(R,EAT.sip,e,1); else eatArm(e);
       if(tilt) eatTilt(g,f,tilt*e*e);
       if(c.D) g.position.copyFrom(grip().add(c.D.scale(1-e))); else V.LerpToRef(g.__home,grip(),e,g.position);
-      if(u>=1){ phase="hold"; t0=now; Q.k++; try{ c.apply&&c.apply(); }catch(e2){} } return; }
+      if(u>=1){ phase="hold"; t0=now; Q.k++; try{ c.apply&&c.apply(); }catch(e2){} _eatSound(c.what); } return; }
     if(phase==="hold"){ eatArm(1); if(tilt) eatTilt(g,f,tilt); g.position.copyFrom(grip());
       if(now-t0>650){ const nx=Q.steps[Q.k]; phase=(nx && nx.g===g)?"lower":"down"; t0=now; } return; }
     /* v305 (Giacomo, 7 ott: «se prende una cosa sola non ha senso che vada
@@ -4473,7 +4475,7 @@ function eatRun(steps,fwd,onDone){
       if(now-t0>(c.what==="bite"?900:650)){ const nx=Q.steps[Q.k]; nx.R=c.R; nx.D=c.D; Q.cur=nx; phase="up2"; t0=now; } return; }
     if(phase==="up2"){ let u=(now-t0)/480; if(u>1) u=1; const k=MID+(1-MID)*sm(u);
       eatBlend(EAT.rest,EAT.sip,k,1); if(tilt) eatTilt(g,f,tilt*k*k); g.position.copyFrom(grip());
-      if(u>=1){ phase="hold"; t0=now; Q.k++; try{ c.apply&&c.apply(); }catch(e2){} } return; }
+      if(u>=1){ phase="hold"; t0=now; Q.k++; try{ c.apply&&c.apply(); }catch(e2){} _eatSound(c.what); } return; }
     if(phase==="down"){ let u=(now-t0)/600; if(u>1) u=1; const e=sm(u);
       if(R) eatBlend(R,EAT.sip,1-e,1); else eatArm(1-e);
       if(tilt) eatTilt(g,f,tilt*(1-e));
@@ -31151,8 +31153,48 @@ const SFX=(function(){
     return bellTick();
   }
 
+  /* v305 (Giacomo, 7 ott: «quando mangia, suono di masticare; beve, suono
+     di bere»). Come i passi: rumore filtrato, niente file.
+     SORSO — un risucchio corto (rumore in passa-banda che sale, l'aria e il
+     liquido sul bordo) e poi la deglutizione: un «glub» grave che scende.
+     MORSO — tre o quattro masticate: ognuna un colpo sordo (seno grave)
+     piu' un filo di rumore medio, a ritmo un po' irregolare. Volumi bassi:
+     si sente chi mangia accanto a te, non la sala. */
+  function sip(){
+    const c=ready(); if(!c) return; const g0=lvl(); if(g0<=0) return;
+    const t=c.currentTime;
+    const src=c.createBufferSource(); src.buffer=noise; src.playbackRate.value=0.7+Math.random()*0.2;
+    const bp=c.createBiquadFilter(); bp.type="bandpass"; bp.Q.value=2.2;
+    bp.frequency.setValueAtTime(700,t); bp.frequency.exponentialRampToValueAtTime(1500,t+0.22);
+    const g=c.createGain(), pk=0.05*g0;
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(pk,t+0.05);
+    g.gain.setValueAtTime(pk,t+0.16); g.gain.exponentialRampToValueAtTime(0.0001,t+0.26);
+    src.connect(bp); bp.connect(g); g.connect(master); src.start(t,Math.random()*0.7); src.stop(t+0.3);
+    const t1=t+0.36+Math.random()*0.05, o=c.createOscillator(); o.type="sine";
+    o.frequency.setValueAtTime(230,t1); o.frequency.exponentialRampToValueAtTime(95,t1+0.09);
+    const og=c.createGain(); og.gain.setValueAtTime(0.0001,t1);
+    og.gain.exponentialRampToValueAtTime(0.14*g0,t1+0.012); og.gain.exponentialRampToValueAtTime(0.0001,t1+0.11);
+    o.connect(og); og.connect(master); o.start(t1); o.stop(t1+0.13);
+  }
+  function chew(){
+    const c=ready(); if(!c) return; const g0=lvl(); if(g0<=0) return;
+    const n=3+(Math.random()<0.5?1:0); let t=c.currentTime+0.05;
+    for(let i=0;i<n;i++){
+      const o=c.createOscillator(); o.type="sine"; o.frequency.setValueAtTime(140+Math.random()*30,t);
+      o.frequency.exponentialRampToValueAtTime(80,t+0.07);
+      const og=c.createGain(); og.gain.setValueAtTime(0.0001,t);
+      og.gain.exponentialRampToValueAtTime(0.09*g0,t+0.01); og.gain.exponentialRampToValueAtTime(0.0001,t+0.09);
+      o.connect(og); og.connect(master); o.start(t); o.stop(t+0.1);
+      const src=c.createBufferSource(); src.buffer=noise; src.playbackRate.value=0.8+Math.random()*0.4;
+      const bp=c.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=800+Math.random()*500; bp.Q.value=1.4;
+      const g=c.createGain(), pk=0.04*g0*(0.8+Math.random()*0.4);
+      g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(pk,t+0.012); g.gain.exponentialRampToValueAtTime(0.0001,t+0.08);
+      src.connect(bp); bp.connect(g); g.connect(master); src.start(t,Math.random()*0.8); src.stop(t+0.1);
+      t+=0.2+Math.random()*0.07;
+    }
+  }
   return { wake, step, walked, carHorn, carPass, setCarPass, correct, wrong, panOf,
-           shout, voiceState,
+           shout, voiceState, sip, chew,
            gemChime, gemFit, thunder,
            bell, bellHear, shutter, tick, waterLevel, fountLevel, clubLevel, cricketLevel, windLevel,
            rainLevel:rainAudioLevel,
