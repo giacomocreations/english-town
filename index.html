@@ -34072,7 +34072,13 @@ LEXPROPS.tDecor=function(id,o){ o=o||{};
   /* finestroni ad arco (est e ovest), fra le lesene: vetro a una faccia,
      ghiera di pietra e raggiera in ferro sottili */
   const glass=hm7Mat("#cfe6f2",0.9,90,"#7fa9c4");
-  const arch=(Wl,u)=>{ const W=2.6, y0=2.95, y1=4.25, R=W/2, q=Wl.at(u,0.02);
+  /* v305 (Giacomo, 8 ott: «le vetrate sono troppo alte e sbordano sul
+     soffitto»): col vetro da 2,6 m e l'imposta a 4,25 la chiave dell'arco
+     arrivava a 5,6 m, oltre i muri (5,2) e la cornice. Ora larga 2,2 e piu'
+     bassa: la ghiera finisce a 4,77, sotto la cornice (4,92); il davanzale
+     resta sopra i poster del muro ovest (il piu' alto finisce a 2,73,
+     ma a z=0, fra le due finestre; TICKETS finisce a 2,0). */
+  const arch=(Wl,u)=>{ const W=2.2, y0=2.4, y1=3.55, R=W/2, q=Wl.at(u,0.02);
     const g=new BABYLON.TransformNode("tArch",scene); g.parent=r; g.position.set(q[0],0,q[1]); g.rotation.y=Wl.ry;
     const V=BABYLON.Vector3;
     const pg=BABYLON.MeshBuilder.CreatePlane("tArchG",{width:W,height:y1-y0},scene); pg.material=glass; pg.parent=g; pg.position.set(0,(y0+y1)/2,0);
@@ -34081,7 +34087,7 @@ LEXPROPS.tDecor=function(id,o){ o=o||{};
       const t=BABYLON.MeshBuilder.CreateTube("tArchR",{path:P,radius:th,tessellation:8},scene); t.material=m; t.parent=g; return t; };
     arc(R+0.06,0.06,stone,-0.03); arc(R*0.45,0.025,iron,-0.02);
     hm7Box(g,W+0.24,0.1,0.12,cap,0,y0-0.05,-0.05);                                    // davanzale
-    [-0.65,0,0.65].forEach(mx=>hm7Box(g,0.05,y1-y0,0.04,iron,mx,(y0+y1)/2,-0.02));
+    [-0.55,0,0.55].forEach(mx=>hm7Box(g,0.05,y1-y0,0.04,iron,mx,(y0+y1)/2,-0.02));
     hm7Box(g,W,0.05,0.04,iron,0,(y0+y1)/2+0.15,-0.02);
     for(let k=1;k<6;k++){ const a=k/6*Math.PI, bb=hm7Box(g,0.035,R,0.035,iron,Math.cos(a)*R/2,y1+Math.sin(a)*R/2,-0.02); bb.rotation.z=a-Math.PI/2; }
     [-1,1].forEach(sg=>hm7Box(g,0.12,y1-y0,0.08,stone,sg*(W/2+0.06),(y0+y1)/2,-0.04)); };
