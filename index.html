@@ -42022,6 +42022,8 @@ function fondiGems(a,b){
   const out=fondiMax(a,b);
   out.seen=fondiMax(a.seen||{}, b.seen||{});
   out.got =fondiMax(a.got ||{}, b.got ||{});
+  /* v306: le fasi di verbi e aggettivi (vedi gemStage) */
+  ["pres","miss","rep","last"].forEach(function(k){ out[k]=fondiMax(a[k]||{}, b[k]||{}); });
   let somma=0;
   Object.keys(out.got).forEach(function(k){ const v=Number(out.got[k]); if(isFinite(v)) somma+=v; });
   out.tot=Math.max(somma, Number(a.tot)||0, Number(b.tot)||0);
@@ -53610,9 +53612,11 @@ MECH.stormNight=function(s){
    SI MOSTRA. In prima nessuno puo' "indovinare" `went`: non c'e' nulla da
    cui dedurlo, e sbagliando dieci volte quello che si fissa e' la forma
    sbagliata (*goed). Quindi al primo incontro con un item il cristallo si
-   APRE e basta — tre forme, voce, raccogli. Dalla seconda volta in poi
-   QUELLO STESSO item viene chiesto a tre tessere. L'esposizione precede
-   sempre il richiamo; non e' un effetto sperato, e' un meccanismo.
+   APRE e basta — tre forme, voce, raccogli. v306: le presentazioni sono
+   DUE, poi il verbo lo si SCRIVE (il comparativo si scrive o si sceglie),
+   e la scheda torna dopo un errore o dopo un mese che non lo si incontra
+   (vedi gemStage). L'esposizione precede sempre il richiamo; non e' un
+   effetto sperato, e' un meccanismo.
 
    ⚠️ Sbagliando non c'e' nessuna ✗: recast (`go → went`), il cristallo si
    dissolve e RICOMPARE ALTROVE con lo STESSO item entro un minuto. Non e'
@@ -57238,7 +57242,13 @@ const Gems=(function(){
   const K="et_gems";
   function state(){
     const s=Sync.get(K,{})||{};
-    return { tot:s.tot||0, seen:s.seen||{}, got:s.got||{}, fit:s.fit||"purple" };
+    return { tot:s.tot||0, seen:s.seen||{}, got:s.got||{}, fit:s.fit||"purple",
+             /* v306: presentazioni per lemma, errori e ripresentazioni per
+                chiave, giorno dell'ultimo incontro per lemma (vedi gemStage).
+                Tutti contatori che CRESCONO soltanto: in cloud et_gems si
+                fonde col massimo, e un contatore che torna indietro
+                verrebbe rimesso avanti dall'altro dispositivo. */
+             pres:s.pres||{}, miss:s.miss||{}, rep:s.rep||{}, last:s.last||{} };
   }
   function save(s){ Sync.set(K,s); return s; }
   function markSeen(key){ const s=state(); s.seen[key]=(s.seen[key]||0)+1; save(s); return s.seen[key]; }
@@ -57248,6 +57258,13 @@ const Gems=(function(){
     save(s);
     return { tot:s.tot, n:s.got[key] };
   }
+  /* `prima` = le presentazioni contate PRIMA di segnare l'incontro di oggi
+     (gemStage): dopo markSeen il ripiego sulle chiavi viste conterebbe
+     anche questa, e la prima scheda varrebbe due. */
+  function markPres(lem,prima){ const s=state(); s.pres[lem]=Math.max(s.pres[lem]||0,(prima||0)+1); save(s); return s.pres[lem]; }
+  function markMiss(key){ const s=state(); s.miss[key]=(s.miss[key]||0)+1; save(s); }
+  function markRep(key){ const s=state(); s.rep[key]=Math.max(s.rep[key]||0, s.miss[key]||0); save(s); }
+  function markLast(lem){ const s=state(); s.last[lem]=gemToday(); save(s); }
   function count(){ return state().tot; }
   function seenKeys(){ return state().seen; }
   function gotKeys(){ return state().got; }
@@ -57260,14 +57277,16 @@ const Gems=(function(){
      Se un ripristino rimettesse tutti dentro il corpo predefinito, sarebbe
      esattamente il messaggio che abbiamo deciso di non dare. I capelli oltre
      il gratis tornano al castano da soli, perché il prezzo non è più pagato. */
-  function reset(){ Sync.set(K,{tot:0,seen:{},got:{},fit:"purple"});
+  function reset(){ Sync.set(K,{tot:0,seen:{},got:{},fit:"purple",pres:{},miss:{},rep:{},last:{}});
+    try{ gemDueClear(); }catch(e){}
     try{ const h=LOOK_HAIR.find(x=>x.id===Look.hair());
          if(h && h.cost>0) Look.setHair("h1");
          const k=LOOK_SHOES.find(x=>x.id===Look.shoes());
          if(k && k.cost>0) Look.setShoes("k1");
          Look.setFit("purple"); }catch(e){}
     try{ applyLook(); }catch(e){} }
-  return { state, markSeen, markGot, count, seenKeys, gotKeys, fit, setFit, fitOpen, reset };
+  return { state, markSeen, markGot, markPres, markMiss, markRep, markLast,
+           count, seenKeys, gotKeys, fit, setFit, fitOpen, reset };
 })();
 
 /* ---- ITEM --------------------------------------------------------------
@@ -57304,7 +57323,9 @@ function gemItem(key){
         if(cand!==ask && wrong.indexOf(cand)<0){ wrong.push(cand); break; }
       }
     }
-    return { key, kind:k, word:v[0], answer:ask, wrong,
+    /* v306: forme accettate scrivendo, oltre a quella insegnata */
+    const also=(k==="v2"&&v[0]==="get")?["gotten"]:[];
+    return { key, kind:k, word:v[0], answer:ask, wrong, also,
              full:v[0]+" \u2014 "+v[1]+" \u2014 "+v[2], it:v[3],
              why:"Verbo irregolare: il passato <b>non</b> si fa con -ed, si impara a memoria." };
   }
@@ -57316,7 +57337,8 @@ function gemItem(key){
      lungo, o more/most su uno corto. E' l'altro errore vero. */
   const bad = (a[1]==="m") ? (k==="c" ? w+"er" : w+"est")
                            : (k==="c" ? "more "+w : "most "+w);
-  return { key, kind:k, word:w, answer:ask, wrong:[bad,other],
+  const also=(w==="far")?(k==="c"?["farther"]:["farthest"]):[];
+  return { key, kind:k, word:w, answer:ask, wrong:[bad,other], also,
            full:w+" \u2014 "+f.comp+" \u2014 "+f.sup, it:a[2], why:f.why };
 }
 function gemFormKeys(){
@@ -57359,22 +57381,37 @@ function gemPickFrom(all,busy){
    di pescare a caso, cosi' il prossimo cristallo che ha bisogno di un item
    nuovo diventa proprio quella parola. Il lessico non passa mai di qui: da
    patch 206 chiede sempre, non ha una fase "mostra" da rinforzare. ==== */
-let _gemDue=[];
+/* v306 (Giacomo, 8 ott: «se esci ... non deve essere cancellato»): la coda
+   viveva solo in memoria, e chiudendo il gioco fra la presentazione e il
+   suo richiamo il richiamo spariva. Ora si salva (solo su questo
+   dispositivo: e' una coda di sessione, non un progresso da fondere).
+   ⚠️ Si rilegge a ogni uso, non si tiene in una variabile: i cristalli
+   nascono anche prima del login, e una copia letta allora sarebbe quella
+   dell'ospite, non dello studente che entra dopo. */
+const GEM_DUE_K="et_gem_due";
+function gemDueLoad(){ try{ const a=Sync.get(GEM_DUE_K,[]); return Array.isArray(a)?a.filter(function(d){ return d&&d.key; }):[]; }catch(e){ return []; } }
+function gemDueSave(q){ try{ Sync.set(GEM_DUE_K,q); }catch(e){} }
+function gemDueClear(){ gemDueSave([]); }
 function gemDueArm(key){
-  if(_gemDue.some(function(d){ return d.key===key; })) return;   // gia' in coda
-  _gemDue.push({ key:key, left:2 });
+  const q=gemDueLoad();
+  if(q.some(function(d){ return d.key===key; })) return;   // gia' in coda
+  q.push({ key:key, left:2 }); gemDueSave(q);
 }
 function gemDueTick(){
-  for(let i=0;i<_gemDue.length;i++) _gemDue[i].left--;
+  const q=gemDueLoad(); if(!q.length) return;
+  for(let i=0;i<q.length;i++) q[i].left--;
+  gemDueSave(q);
 }
 /* Il primo pronto (left<=0) che non e' gia' vivo su un altro cristallo in
    citta': se lo fosse si aspetta il giro dopo, la richiesta non si perde. */
 function gemDueTake(busy){
-  for(let i=0;i<_gemDue.length;i++){
-    const d=_gemDue[i];
+  const q=gemDueLoad();
+  for(let i=0;i<q.length;i++){
+    const d=q[i];
     if(d.left>0) continue;
     if(busy.indexOf(d.key)>=0) continue;
-    _gemDue.splice(i,1);
+    q.splice(i,1); gemDueSave(q);
+    if(!gemItem(d.key)){ i--; continue; }   // voce tolta dalle tabelle: un cristallo spento no
     return d.key;
   }
   return null;
@@ -57513,8 +57550,15 @@ function updateGemsVisibility(){
 function gemOpen(g){
   if(!g.item) return;
   const it=g.item, kd=GEM_KINDS[it.kind];
+  /* v306: un cristallo ricomparso dopo un errore porta lo STESSO oggetto
+     item: i segni dell'incontro precedente (seconda occasione gia' usata,
+     errore gia' contato) non devono passare a questo. */
+  delete it.__near; delete it.__missed;
   gemDueTick();                          // ogni apertura fa avvicinare la coda di rinforzo
-  const n=Gems.markSeen(it.key);
+  /* v306: la fase si decide PRIMA di segnare la chiave come vista: chi non
+     ha ancora il conteggio delle presentazioni lo ricava proprio da `seen` */
+  const st=(it.kind==="lex")?null:gemStage(it);
+  Gems.markSeen(it.key);
   /* \u26a0\ufe0f LESSICO: MAI LA SCHEDA DI PRESENTAZIONE (Giacomo, 12 set) \u2014
      "saltiamo la fase degli esempi, direttamente devono indovinare". Si
      indovina da subito, anche il primo incontro con la parola: learn by
@@ -57524,27 +57568,131 @@ function gemOpen(g){
   if(it.kind==="lex"){ gemLexAsk(g,it,kd); return; }
   /* \u26a0\ufe0f la si arma DOPO il tick di questa stessa apertura, non prima:
      conta da qui in poi, altrimenti il primo tick sarebbe gia' il suo. */
-  if(n<=1){ gemShow(g,it,kd); gemDueArm(it.key); } else gemAsk(g,it,kd);
+  Gems.markLast(gemLemma(it.key));
+  if(st.show){
+    if(st.why==="miss") Gems.markRep(it.key);
+    const np=Gems.markPres(gemLemma(it.key),st.pres);
+    gemShow(g,it,kd,st.why,np); gemDueArm(it.key); return;
+  }
+  /* verbi: si scrive, sempre. Comparativi e superlativi: si scrive o si
+     sceglie, a caso (Giacomo: «idem per il comparativo, oppure sceglielo») */
+  if(it.kind==="v1"||it.kind==="v2"||Math.random()<0.5) gemFormWrite(g,it,kd,null);
+  else gemAsk(g,it,kd,false);
 }
-function gemShow(g,it,kd){
+/* ============================================================================
+   v306 — LE FASI DI VERBI E AGGETTIVI (Giacomo, 8 ott 2026: «dopo due o tre
+   volte che incontri un verbo e te lo presenta nelle sue tre forme, devi
+   essere tu a scriverlo. Idem per il comparativo, oppure sceglielo». E:
+   «non deve essere cancellato e l'alunno non lo vede piu', ma si puo'
+   ripresentare anche altre volte»).
+   · Le presentazioni si contano per LEMMA, non per chiave: «go» e' un verbo
+     solo anche se lo si chiede due volte (past e participio), e la scheda
+     mostra comunque tutte e tre le forme. Idem «big» per comparativo e
+     superlativo.
+   · GEM_SHOWS presentazioni, poi si chiede: il verbo lo si SCRIVE, il
+     comparativo/superlativo lo si scrive o lo si sceglie.
+   · La scheda TORNA: dopo un errore (il prossimo incontro di quella chiave
+     e' di nuovo la presentazione, poi di nuovo la domanda), e quando il
+     lemma non si incontra da GEM_REFRESH_DAYS giorni — e' il caso di chi
+     passa in seconda dopo l'estate. Anche chi ha giocato PRIMA di questa
+     versione (nessun giorno registrato) la rivede una volta.
+   ===================================================================== */
+const GEM_SHOWS=2;
+const GEM_REFRESH_DAYS=30;
+function gemToday(){ return Math.floor(Date.now()/86400000); }
+function gemLemma(key){
+  const p=key.indexOf(":"), k=key.slice(0,p), w=key.slice(p+1);
+  if(k==="v1"||k==="v2") return "v:"+w;
+  if(k==="c"||k==="s") return "a:"+w;
+  return key;
+}
+/* Presentazioni gia' fatte. Chi giocava prima della v306 non ha il campo:
+   allora valgono le chiavi del lemma gia' viste, perche' fin qui la prima
+   volta di ogni chiave era proprio la scheda. */
+function gemPresCount(s,lem){
+  if(s.pres && s.pres[lem]!=null) return s.pres[lem];
+  const w=lem.slice(2), keys=lem.charAt(0)==="v" ? ["v1:"+w,"v2:"+w] : ["c:"+w,"s:"+w];
+  let n=0; keys.forEach(function(k){ if(s.seen && s.seen[k]) n++; });
+  return Math.min(n,GEM_SHOWS);
+}
+/* Si decide PRIMA di segnare l'incontro di oggi (markLast). */
+function gemStage(it){
+  const s=Gems.state(), lem=gemLemma(it.key), pres=gemPresCount(s,lem);
+  if(pres<GEM_SHOWS) return { show:true, why:pres?"again":"new", pres };
+  if((s.miss[it.key]||0)>(s.rep[it.key]||0)) return { show:true, why:"miss", pres };
+  const last=s.last[lem];
+  if(last==null || gemToday()-last>=GEM_REFRESH_DAYS) return { show:true, why:"refresh", pres };
+  return { show:false, pres };
+}
+function gemShow(g,it,kd,why,np){
+  const verb=(it.kind==="v1"||it.kind==="v2");
+  const sub={ again:"Ancora una volta \u2014 guardalo bene", miss:"Ripassiamolo insieme",
+              refresh:"Te lo ricordi? Rivediamolo" }[why] || "Nuovo \u2014 guardalo bene";
+  const next=(np||0)<GEM_SHOWS
+    ? "Lo rivedrai ancora una volta, poi "+(verb?"dovrai <b>scriverlo tu</b>.":"te lo chiedo io.")
+    : "La prossima volta che trovi questo cristallo, "+(verb?"lo <b>scrivi tu</b>.":"te lo chiedo io.");
   DialogueBox.open({
-    name:kd.ic+" "+kd.nome, sub:"Nuovo \u2014 guardalo bene",
+    name:kd.ic+" "+kd.nome, sub:sub,
     text:it.full,
     html:'<div class="gem-it">'+_escHtml(it.word)+' = <b>'+_escHtml(it.it)+'</b></div>'
         +'<div class="gem-why">'+it.why+'</div>'
-        +'<div class="gem-note">La prossima volta che trovi questo cristallo, '
-        +'te lo chiedo io.</div>',
+        +'<div class="gem-note">'+next+'</div>',
     buttons:[{ label:"\u{1F48E} Take it", cls:"primary", act:()=>gemTake(g,it,true) }]
   });
 }
-function gemAsk(g,it,kd){
+/* Scrittura della forma: stessa scheda del lessico (gemLexWrite), stesse
+   regole — Invio da tastiera, una sola seconda occasione se manca una
+   lettera, e un errore vero non e' un muro: si scende alle tre tessere
+   sulla stessa domanda. Ma l'errore resta segnato, e la prossima volta
+   quella chiave si ripresenta con le tre forme. */
+function gemFormWrite(g,it,kd,near){
+  DialogueBox.open({
+    name:kd.ic+" "+kd.nome, sub:near?"Ci sei quasi":"Scrivilo tu",
+    html:'<div class="gem-q">'+_escHtml(it.word)+' \u2192 <b>?</b></div>'
+        +'<div class="gem-qs">Write the <b>'+kd.q+'</b> of \u00ab'+_escHtml(it.word)+'\u00bb.</div>'
+        +'<div class="gem-it">'+_escHtml(it.word)+' = '+_escHtml(it.it)+'</div>'
+        +(near?'<div class="gem-near">Hai scritto \u00ab'+_escHtml(near)
+               +'\u00bb \u2014 controlla le lettere.</div>':"")
+        +'<input id="gem-write" class="gem-input" type="text" autocomplete="off" '
+        +'autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="\u2026">',
+    buttons:[{ label:"Check", cls:"primary", keepOpen:true, act:function(){
+      const el=document.getElementById("gem-write");
+      gemFormJudge(g,it,kd,el?el.value:""); } }]
+  });
+  const _in=document.getElementById("gem-write");
+  if(_in) _in.onkeydown=function(e){ if(e.key==="Enter"||e.keyCode===13){
+    e.preventDefault(); gemFormJudge(g,it,kd,_in.value); } };
+  setTimeout(function(){
+    const el=document.getElementById("gem-write");
+    if(el && !(navigator.maxTouchPoints>0)) el.focus();
+  },60);
+}
+function gemFormJudge(g,it,kd,val){
+  const a=gemLexNorm(val), ok=[it.answer].concat(it.also||[]).map(gemLexNorm);
+  if(!a) return;                                   // campo vuoto: non e' un tentativo
+  if(ok.indexOf(a)>=0){ DialogueBox.close(); gemTake(g,it,false); return; }
+  /* «Ci sei quasi» solo per un dito storto: una lettera sulle parole corte,
+     due sulle lunghe. E MAI per la forma regolare inventata (*goed,
+     *buyed): quello non e' un refuso, e' proprio l'errore da correggere. */
+  const t=ok[0], reg=(it.kind==="v1"||it.kind==="v2")?gemLexNorm(gemRegular(it.word)):"";
+  const scambio=a.length===t.length && a.split("").sort().join("")===t.split("").sort().join("");   // «goen»
+  if(a!==reg && (scambio || gemLexDist(a,t)<=(t.length>6?2:1)) && t.length>3 && !it.__near){
+    it.__near=true; DialogueBox.close(); gemFormWrite(g,it,kd,val); return;
+  }
+  gemMarkMiss(it);
+  DialogueBox.close(); gemAsk(g,it,kd,true);
+}
+/* un errore per incontro, anche se si sbaglia sia scrivendo che scegliendo */
+function gemMarkMiss(it){ if(it.__missed) return; it.__missed=true; try{ Gems.markMiss(it.key); }catch(e){} }
+function gemAsk(g,it,kd,downgraded){
   const opts=[it.answer].concat(it.wrong).slice(0,3);
   for(let i=opts.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=opts[i]; opts[i]=opts[j]; opts[j]=t; }
   DialogueBox.open({
-    name:kd.ic+" "+kd.nome, sub:"Rispondi e prendi il cristallo",
+    name:kd.ic+" "+kd.nome, sub:downgraded?"Allora scegli fra tre":"Rispondi e prendi il cristallo",
     html:'<div class="gem-q">'+_escHtml(it.word)+' \u2192 <b>?</b></div>'
         +'<div class="gem-qs">What is the <b>'+kd.q+'</b> of \u00ab'+_escHtml(it.word)+'\u00bb?</div>'
-        +'<div class="gem-it">'+_escHtml(it.word)+' = '+_escHtml(it.it)+'</div>',
+        +'<div class="gem-it">'+_escHtml(it.word)+' = '+_escHtml(it.it)+'</div>'
+        +(downgraded?'<div class="gem-near">Non era quella \u2014 prova cos\u00ec.</div>':""),
     choices:opts.map(o=>({ label:o, keepOpen:true,
       act:()=>{ DialogueBox.close(); if(o===it.answer) gemTake(g,it,false); else gemMiss(g,it,o); } }))
   });
@@ -57600,6 +57748,7 @@ function gemTake(g,it,discovered){
    recast e basta, e lo stesso item torna fra un minuto da un'altra parte. */
 function gemMiss(g,it,chosen){
   const kd=GEM_KINDS[it.kind];
+  if(it.kind!=="lex") gemMarkMiss(it);    // v306: la prossima volta si ripresenta con le tre forme
   gemHide(g, GEM_RESPAWN, true);          // stesso item, spot nuovo
   /* niente jingle: non ha raccolto niente, e un suono di premio dopo un
      errore e' esattamente il segnale sbagliato. La voce resta, ed e' il
@@ -57617,7 +57766,8 @@ function gemMiss(g,it,chosen){
     html:'<div class="gem-recast">Non <s>'+_escHtml(chosen)+'</s> \u2014 <b>'+_escHtml(it.answer)+'</b></div>'
         +'<div class="gem-why">'+it.why+'</div>'
         +'<div class="gem-note">Il cristallo \u00e8 tornato in citt\u00e0, da un\u2019altra parte. '
-        +'Quando lo ritrovi, sai gi\u00e0 la risposta.</div>',
+        +(it.kind==="lex" ? 'Quando lo ritrovi, sai gi\u00e0 la risposta.'
+                          : 'Quando lo ritrovi, prima te lo rifaccio vedere con le tre forme.')+'</div>',
     buttons:[{ label:"Got it", cls:"primary", act:()=>{} }]
   });
 }
