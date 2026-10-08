@@ -228,6 +228,8 @@
   #quest-hud{top:62px;left:14px;max-width:264px;background:rgba(251,247,236,.95);border-radius:12px;
     padding:9px 13px;box-shadow:0 6px 18px rgba(20,30,40,.2);display:none;}
   #quest-hud .qh-top{display:flex;align-items:center;gap:7px;margin-bottom:3px;}
+  #quest-hud .qh-help{margin-left:auto;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;border:1px solid rgba(0,0,0,.15);
+    background:#fff;color:var(--ink);font:inherit;font-size:11px;font-weight:800;cursor:pointer;pointer-events:auto;}
   #quest-hud #qh-icon{font-size:16px;}
   #quest-hud #qh-strand{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--plum);}
   #quest-hud .qh-prog{margin-left:auto;font-size:11px;font-weight:800;color:#fff;background:var(--signal);
@@ -529,6 +531,14 @@
     padding:11px 12px;font-size:17px;font-weight:700;text-align:center;
     color:var(--ink);background:#fff;border:2px solid #cdd6dc;border-radius:10px;}
   .gem-input:focus{outline:none;border-color:#a77ce8;}
+  /* v306 — microfono accanto ai campi di scrittura (vedi Mic) */
+  .mic-row{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:4px 0 0;}
+  .mic-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;
+    border:2px solid #cdd6dc;background:#fff;color:var(--ink);font:inherit;font-size:13px;font-weight:800;cursor:pointer;}
+  .mic-btn:hover{border-color:#e0673a;}
+  .mic-btn.on{background:#e0673a;border-color:#e0673a;color:#fff;animation:micPulse 1.1s ease-in-out infinite;}
+  .mic-hint{font-size:12px;color:#7a868c;}
+  @keyframes micPulse{0%,100%{box-shadow:0 0 0 0 rgba(224,103,58,.45);}50%{box-shadow:0 0 0 7px rgba(224,103,58,0);}}
   .gem-near{margin-top:8px;font-size:13px;color:#b5751f;text-align:center;font-weight:700;}
   .gem-recast{margin-top:8px;font-size:16px;font-weight:800;color:var(--ink);text-align:center;}
   .gem-recast s{color:#a8b0b5;font-weight:600;}
@@ -627,7 +637,7 @@
 <canvas id="game" tabindex="0"></canvas>
 <div id="badge" class="hud"><div class="ey">QuestTown<span id="fpsv"></span></div><b id="area-name">Town</b></div>
 <div id="quest-hud" class="hud">
-  <div class="qh-top"><span id="qh-icon">📋</span><b id="qh-strand">…</b><span id="qh-prog" class="qh-prog">1/6</span></div>
+  <div class="qh-top"><span id="qh-icon">📋</span><b id="qh-strand">…</b><span id="qh-prog" class="qh-prog">1/6</span><button id="qh-help" class="qh-help" type="button" title="Stuck? Ask Miss Grace for a lesson" style="display:none">🏫 Help</button></div>
   <div id="qh-obj">…</div>
 </div>
 <div id="quest-modal"><div id="qm-card"></div></div>
@@ -1582,7 +1592,8 @@ const UNIT0={ id:"u0", area:"school", areaName:"Town School",
   title:"Starter — Town School", size:9, sizeX:3.8, tint:"#e8e0cf",
   ceilHex:"#f3efe6", ceilEm:"#a8a49c",      // v301 (Giacomo: «metti un soffitto alla classe»)
   enterToast:"Sei entrato alla Town School",
-  onEnter:()=>{ schoolShuffleDesks(); setTimeout(buildSchoolNPCs,0); },   // stesso pattern anti-TTS di buildEmma
+  onEnter:()=>{ schoolShuffleDesks(); setTimeout(buildSchoolNPCs,0);    // stesso pattern anti-TTS di buildEmma
+    setTimeout(()=>{ try{ lessonOnSchoolEnter(); }catch(e){ console.warn("[lesson]",e); } },0); },   // v306
   /* v252: il lessico pesca SOLO dagli oggetti oggi sui banchi */
   pool:()=>(UNIT0.items||[]).filter(it=>!it.__off),
   onTeacherRestart:()=>schoolShuffleDesks(),
@@ -1692,6 +1703,13 @@ const UNIT0={ id:"u0", area:"school", areaName:"Town School",
     introObjEn:"Introduce yourself to Miss Grace.", introObj:"Presentati a Miss Grace." },
 ]};
 
+/* v306: lavagna e poster dei muri lunghi tenuti da parte per le lezioni */
+UNIT0.props.forEach(function(pr){
+  if(pr.prop==="board") pr.onBuilt=function(n){ LESSON.board=n; };
+  else if((pr.prop==="vocabChart"||pr.prop==="poster") && Math.abs(Math.abs(pr.x||0)-3.70)<0.01)
+    pr.onBuilt=function(n){ LESSON.posters=LESSON.posters.filter(function(P){ return !P.node.isDisposed(); });
+      LESSON.posters.push({ node:n, pr:{ w:pr.w, h:pr.h, py:(pr.py!=null?pr.py:(pr.prop==="poster"?1.55:1.7)) } }); };
+});
 /* =====================================================================
    ANNO 2 · UNIT 5 «Travel» (Central Station). Programma 2E:
    lessico mezzi di trasporto (SB pp.76-77) + phrasal verbs di viaggio
@@ -4187,6 +4205,7 @@ function playerSit(fwd,seatY,groundY,arms){
   SIT.pins=r.pins; SIT.drop=r.drop; SIT.on=true;
   SIT.seatY=seatY; SIT.gy=groundY;               // v302: i compagni ti vedono seduto (Presenza._posa)
   avatarRoot.position.y=SIT.baseY-r.drop;
+  try{ accBagDown(avatarMeshes, r.hip||player.position, fwd, groundY); }catch(e){}   // v306
   return r.hip?new BABYLON.Vector3(r.hip.x-player.position.x,0,r.hip.z-player.position.z):new BABYLON.Vector3(0,0,0);
 }
 /* v304 (Giacomo, 7 ott: «dopo che mi sono alzato ero ancora piegato in
@@ -4199,6 +4218,7 @@ function playerSit(fwd,seatY,groundY,arms){
    ossa tornano esattamente com'erano prima di sedersi. */
 function playerStand(){
   if(!SIT.on) return; SIT.on=false; SIT.pins=null;
+  try{ accBagUp(avatarMeshes); }catch(e){}                                           // v306
   if(SIT.prev){ try{ _applyPins(SIT.prev); }catch(e){} SIT.prev=null; }
   if(avatarRoot && SIT.baseY!==null) avatarRoot.position.y=SIT.baseY;
   SIT.baseY=null;
@@ -17792,7 +17812,9 @@ const QModal=(function(){
 /* ---- HUD quest ---- */
 const qhud={ box:document.getElementById("quest-hud"), icon:document.getElementById("qh-icon"),
   strand:document.getElementById("qh-strand"), prog:document.getElementById("qh-prog"), obj:document.getElementById("qh-obj") };
-function questHudShow(v){ qhud.box.style.display=v?"block":"none"; }
+function questHudShow(v){ qhud.box.style.display=v?"block":"none"; try{ lessonHudUpdate(); }catch(e){} }
+/* v306: «🏫 Help» = chiedi una lezione di ripasso a Miss Grace */
+(function(){ const b=document.getElementById("qh-help"); if(b) b.onclick=function(e){ e.stopPropagation(); try{ lessonHelp(); }catch(err){} }; })();
 /* ============================================================================
    CONSEGNA BILINGUE (set 2026, chiesto da Giacomo: «anche in prima usiamo
    l'inglese nella consegna: find book, non trova book»).
@@ -17841,6 +17863,7 @@ function questHudSet(strand,objHtml,i,total){
   qhud.last=[strand,objHtml,i,total];                     // v252: per questHudRefresh()
   qhud.icon.textContent=m.ic; qhud.strand.textContent=strandLabel(strand);
   qhud.prog.textContent=(i+1)+"/"+total; qhud.obj.innerHTML=hudObjHtml(objHtml);
+  try{ lessonHudUpdate(); }catch(e){}
 }
 /* v252 — ridisegna la riga dell'HUD con la regola d'anno ATTUALE. Serve
    quando il docente cambia simulazione (1a/2a/3a): prima l'HUD restava con
@@ -17892,6 +17915,9 @@ const Quest={
     if(this.i>=this.unit.steps.length){ this.finish(); return; }
     this.loadStep(); },
   loadStep(){ const s=this.step=this.unit.steps[this.i]; this.state={};
+    /* v306: l'ultima quest in corso, per la lezione di ripasso a scuola
+       (lo Starter no: parte da solo a ogni ingresso nella scuola) */
+    try{ if(this.unit.id!=="u0") Sync.set("et_last_quest",{ id:this.unit.id, i:this.i, t:Date.now() }); }catch(e){}
     const m=STRAND_META[s.strand]||{ic:"📋",label:s.strand};
     questHudSet(s.strand, (s.introObjEn?HOBJ(s.introObjEn,s.introObj):(s.introObj||"…")),
       this.i, this.total);
@@ -22371,7 +22397,7 @@ function buildSchoolNPCs(){
       x:C.x+p.desk.x, z:C.z+p.desk.z+0.42, face:Math.PI, height:p.h, snap:false, watch:false });
     /* le pin delle gambe arrivano qualche fotogramma dopo lo spawn: si
        ritenta finche' ci sono (al massimo ~4 s) */
-    if(n){ n.watch=false;
+    if(n){ n.watch=false; LESSON.pupils[p.id]=n;                      // v306: per le lezioni
       const tryS=k=>{ if(n.__seated) return; let ok=false;
         try{ ok=!!(n.pins&&n.pins.length) && npcSitAt(n,C.x+p.desk.x,C.z+p.desk.z+0.42,Math.PI,0.4225,0,0.04); }catch(e){ console.warn("[school] sit",e); }
         if(!ok && k<40) setTimeout(()=>tryS(k+1),100); };
@@ -22397,6 +22423,14 @@ function graceStepLine(){
   return { en:"Can I help you?", it:"" };
 }
 function talkToGrace(npc){
+  /* v306: la lezione di ripasso. Si propone una volta per ingresso (o subito
+     se l'hai chiesta dall'HUD); lo Starter solo a quest gia' avviata, se no
+     al primo ingresso in assoluto la maestra proporrebbe un ripasso di
+     qualcosa che non hai ancora visto. */
+  if(!LESSON.on){ const lid=lessonUnitId();
+    let ok=!!lid && (LESSON.wanted===lid || !LESSON.offered);
+    if(ok && lid==="u0" && LESSON.wanted!=="u0"){ let st=0; try{ st=Progress.get("u0").step||0; }catch(e){} ok=st>=2; }
+    if(ok){ LESSON.offered=true; lessonOffer(npc,lid); return; } }
   if(ambientReady(npc,UNIT0)){ openAmbient(npc,UNIT0.id,"🍎","Teacher"); return; }
   if(Quest.unit===UNIT0 && Quest.step){
     if(Quest.step.id==="gram"){ runSchoolGrammar(npc); return; }
@@ -22450,6 +22484,534 @@ function greetTimFirstTime(npc){
     ] });
 }
 
+/* =====================================================================
+   v306 — LEZIONI DI RIPASSO ALLA TOWN SCHOOL (Giacomo, 8 ott 2026:
+   «aggiungere lezioni a scuola legate all'ultima quest che si sta
+   svolgendo. Se si e' bloccati in una quest si puo' chiedere di fare una
+   lezione a scuola. Cambiano i poster, che ora riguardano la unit School
+   Starter, e andando a scuola l'insegnante ti fa una lezione per farti
+   ripassare: ti siedi con i compagni e partecipi a una lezione
+   interattiva, in inglese»).
+   Per ogni unit: g = argomento di grammatica, rule/ruleIt = la regola
+   (l'italiano segue la politica per anno di DialogueBox), ex = esempi
+   alla lavagna, quiz = [frase col buco, giusta, sbagliata, sbagliata],
+   fn = la funzione comunicativa, phr = [battuta, risposta giusta,
+   sbagliata, sbagliata].
+   ⚠️ PERIMETRO GRAMMATICALE: ogni lezione usa solo la grammatica della sua
+   unit e di quelle prima (come le quest: niente will in u3_1, niente
+   should prima di u3_5, niente present perfect prima di u3_3).
+   ===================================================================== */
+const LESSONS={
+  u0:{ g:"this / that / these / those · a / an",
+    rule:"THIS and THESE are for things near you. THAT and THOSE are for things far from you. Use A before a consonant sound and AN before a vowel sound.",
+    ruleIt:"this/these = vicino a te, that/those = lontano. A davanti a suono di consonante, AN davanti a suono di vocale.",
+    ex:["This is my pen.","Those are your books.","It's an exercise book."],
+    quiz:[["___ is my pencil. (here, in my hand)","This","These","Those"],
+          ["___ are Tim's books. (over there)","Those","That","This"],
+          ["It's ___ orange pencil case.","an","a","the"]],
+    fn:"Spelling and colours",
+    phr:[["How do you spell your name?","M-A-R-C-O.","I'm fine, thanks.","It's blue."],
+         ["What colour is your bag?","It's red.","It's a bag.","Yes, it is."]] },
+  u1:{ g:"the verb to be · question words",
+    rule:"Use AM with I, IS with he, she and it, ARE with you, we and they. To ask questions use question words: Where are you from? How old are you?",
+    ruleIt:"am con I, is con he/she/it, are con you/we/they. Domande con le question words: where, how old, what...",
+    ex:["I'm from Italy.","She is Spanish.","Where are you from?"],
+    quiz:[["They ___ from Japan.","are","is","am"],
+          ["___ is your passport? — It's in my bag.","Where","What","Who"],
+          ["He's from France. He's ___.","French","France","Frenchy"]],
+    fn:"Introducing yourself",
+    phr:[["Where are you from?","I'm from Italy.","I'm twelve.","My name is Luca."],
+         ["Nice to meet you!","Nice to meet you too!","I'm from Rome.","Goodbye!"]] },
+  u2:{ g:"possessive 's · question words",
+    rule:"Use 's to say who something belongs to: Ivy's baby, my mum's car. Question words: who, what, when, how old.",
+    ruleIt:"Il genitivo 's dice di chi e' qualcosa: Ivy's baby = la bambina di Ivy. Domande con who, what, when, how old.",
+    ex:["This is Tom's sister.","When is your birthday? — It's on the 3rd of May.","How old is your brother?"],
+    quiz:[["Anna is my ___ wife. (mio fratello)","brother's","brothers","brother"],
+          ["___ is your mother? — She's forty.","How old","Who","Where"],
+          ["My birthday is on the ___ of June. (3)","third","three","threeth"]],
+    fn:"Talking about your family",
+    phr:[["Have you got any brothers or sisters?","Yes, I've got one sister.","Yes, I am.","She's twelve."],
+         ["Who is this in the photo?","It's my grandmother.","It's my house.","She's fine."]] },
+  u3:{ g:"there is / there are · prepositions of place",
+    rule:"THERE IS + one thing, THERE ARE + two or more things. Questions: Is there...? Are there...? Prepositions: in, on, under, next to, behind, in front of.",
+    ruleIt:"there is + una cosa, there are + due o piu'. Domanda: Is there...? Are there...? Preposizioni: in, on, under, next to, behind, in front of.",
+    ex:["There is a sofa in the living room.","There are two beds in my bedroom.","The lamp is next to the bed."],
+    quiz:[["___ three chairs in the kitchen.","There are","There is","Is there"],
+          ["___ a fridge in your kitchen? — Yes, there is.","Is there","Are there","There is"],
+          ["The cat is ___ the bed. (sotto)","under","on","in"]],
+    fn:"Asking where things are",
+    phr:[["Where is the remote control?","It's on the sofa.","There is a sofa.","Yes, it is."],
+         ["Is there a garden?","No, there isn't.","No, there aren't.","Yes, I am."]] },
+  u4:{ g:"have got · plurals",
+    rule:"I, you, we, they HAVE GOT. He, she, it HAS GOT. Questions: Have you got...? Has she got...? Plurals: watch → watches, family → families, man → men.",
+    ruleIt:"have got con I/you/we/they, has got con he/she/it. Plurali: -es dopo ch/sh/s/x, y → ies, e alcuni irregolari (man → men).",
+    ex:["I've got a new phone.","Has she got a bike? — No, she hasn't.","I've got two watches."],
+    quiz:[["She ___ a skateboard.","has got","have got","haves got"],
+          ["___ you got a torch? — Yes, I have.","Have","Has","Do"],
+          ["one watch, two ___","watches","watchs","watch"]],
+    fn:"Making suggestions",
+    phr:[["Let's buy Ben a ball for his birthday!","Good idea!","Yes, I have.","It's mine."],
+         ["Why don't we go to the Corner Shop?","OK, let's go!","Because I like it.","It's a shop."]] },
+  u5:{ g:"present simple · at / in / on",
+    rule:"With he, she and it the verb takes -S: he gets up, she watches TV. Use AT with times (at 7 o'clock), IN with parts of the day (in the morning), ON with days (on Monday).",
+    ruleIt:"Con he/she/it il verbo prende la -s. at + ora, in + parte del giorno (in the morning), on + giorno (on Monday).",
+    ex:["She gets up at seven.","He goes to school on Monday.","I always have breakfast in the morning."],
+    quiz:[["My brother ___ TV every evening.","watches","watch","watchs"],
+          ["School starts ___ eight o'clock.","at","on","in"],
+          ["We play football ___ Saturday.","on","at","in"]],
+    fn:"Talking about your routine",
+    phr:[["What time do you get up?","I get up at seven.","I get up on seven.","Yes, I do."],
+         ["How often do you play video games?","Twice a week.","At five o'clock.","In the kitchen."]] },
+  u6:{ g:"some / any · how much / how many",
+    rule:"Use SOME in positive sentences and ANY in questions and negatives. HOW MANY + things you can count (apples). HOW MUCH + things you can't count (milk).",
+    ruleIt:"some nelle frasi positive, any in domande e negative. How many + cose che si contano, how much + cose che non si contano.",
+    ex:["There are some apples on the table.","Have you got any milk? — Yes, we have.","How many eggs do you need?"],
+    quiz:[["I haven't got ___ bread.","any","some","a"],
+          ["Do you have ___ bananas?","any","some","much"],
+          ["How ___ water do you drink every day?","much","many","often"]],
+    fn:"Shopping for food",
+    phr:[["Can I help you?","Yes, I'd like some cheese, please.","Yes, you can.","I like cheese."],
+         ["How often do you eat pizza?","Once a week.","Some pizza.","Yes, I eat."]] },
+  u7:{ g:"can / can't · adverbs of manner",
+    rule:"CAN + verb for abilities: I can swim. Questions: Can you ski? — Yes, I can. / No, I can't. Adverbs say HOW you do something: quick → quickly, good → well.",
+    ruleIt:"can + verbo per le capacita'. Risposte brevi: Yes, I can / No, I can't. Gli avverbi di modo dicono COME: quickly, slowly, well.",
+    ex:["I can play tennis, but I can't ski.","Can she swim? — Yes, she can.","He runs very fast."],
+    quiz:[["___ you play basketball? — Yes, I can.","Can","Do","Are"],
+          ["She sings very ___. (bene)","well","good","goodly"],
+          ["I can't ___. I'm afraid of water!","swim","swimming","to swim"]],
+    fn:"Giving opinions",
+    phr:[["What do you think of rugby?","I think it's exciting.","I can play rugby.","Yes, I think."],
+         ["In my opinion, football is boring.","Really? I love it!","I'm twelve.","Can you?"]] },
+  u8:{ g:"present continuous",
+    rule:"BE + verb-ING for things happening now: She is wearing a red dress. Negative: He isn't wearing a hat. Question: Is he wearing jeans?",
+    ruleIt:"be + verbo in -ing per quello che succede adesso (o che si indossa adesso). Negativa: isn't / aren't. Domanda: Is he wearing...?",
+    ex:["She's wearing a blue jacket.","He isn't wearing a tie.","Are they wearing trainers?"],
+    quiz:[["Look! Ben ___ a green cap.","is wearing","wears","are wearing"],
+          ["___ Holly wearing a scarf? — Yes, she is.","Is","Does","Are"],
+          ["They ___ wearing coats today.","aren't","isn't","don't"]],
+    fn:"Shopping for clothes",
+    phr:[["Can I help you?","Yes, I'm looking for a T-shirt.","Yes, I'm wearing a T-shirt.","It's ten pounds."],
+         ["Here you are. Anything else?","How much is it?","It's medium.","It's red."]] },
+  u2_1:{ g:"present simple or present continuous",
+    rule:"Present simple for habits (every day, usually). Present continuous for things happening now (now, at the moment) and for plans (this afternoon).",
+    ruleIt:"Present simple per le abitudini, present continuous per adesso e per i programmi gia' fissati.",
+    ex:["Tess works at the salon every day.","Right now she is cutting a girl's hair.","Omar is coming at four o'clock."],
+    quiz:[["Look! The hairdresser ___ my hair now.","is cutting","cuts","cut"],
+          ["She ___ her hair every morning.","brushes","is brushing","brush"],
+          ["What ___ you doing this afternoon?","are","do","is"]],
+    fn:"Describing people",
+    phr:[["What does she look like?","She's tall with long curly hair.","She likes music.","She's fine, thanks."],
+         ["Has he got a beard?","Yes, he has. It's short and black.","Yes, he is.","No, he hasn't got."]] },
+  u2_2:{ g:"was / were · there was / there were",
+    rule:"The past of BE: I, he, she, it WAS; you, we, they WERE. THERE WAS + one thing, THERE WERE + two or more.",
+    ruleIt:"Passato di be: was con I/he/she/it, were con you/we/they. there was + una cosa, there were + piu' cose.",
+    ex:["The concert was amazing.","There were a lot of people.","Was the singer good? — Yes, she was."],
+    quiz:[["There ___ two drummers on stage.","were","was","are"],
+          ["The audience ___ very excited.","was","were","be"],
+          ["___ you at the concert last night?","Were","Was","Did"]],
+    fn:"Talking about feelings",
+    phr:[["How does this song make you feel?","It makes me feel happy.","It's a song.","I feel it."],
+         ["Were you nervous before the gig?","Yes, I was!","Yes, I were.","Yes, I did."]] },
+  u2_3:{ g:"past simple",
+    rule:"Regular verbs add -ED: play → played. Irregular verbs change: go → went, see → saw. Negative: didn't + verb. Question: Did you...?",
+    ruleIt:"Verbi regolari + -ed, gli irregolari cambiano forma. Negativa con didn't + verbo base, domanda con Did...?",
+    ex:["Last summer we went to the lake.","It rained a lot.","Did you swim? — No, I didn't."],
+    quiz:[["Yesterday I ___ to the beach.","went","go","goed"],
+          ["We ___ see the mountains. It was foggy.","didn't","don't","wasn't"],
+          ["___ you have a good holiday?","Did","Were","Do"]],
+    fn:"Talking about holidays and the weather",
+    phr:[["What was the weather like?","It was sunny and hot.","It is sunny.","I like the weather."],
+         ["Where did you go on holiday?","I went to Sardinia.","I go to Sardinia.","Yes, I did."]] },
+  u2_4:{ g:"past simple questions",
+    rule:"DID + subject + verb: Did you like the film? With question words: When did you start? Why did you choose this story? With BE: Was it scary?",
+    ruleIt:"Domande al passato: Did + soggetto + verbo base. Con le question words: When did...? Why did...? Con be: Was it...?",
+    ex:["When did you make the film?","Did the actors enjoy it?","Was the ending happy?"],
+    quiz:[["___ did you film it? — In London.","Where","When","Who"],
+          ["Did you ___ the trailer?","see","saw","seen"],
+          ["I ___ like the ending. It was sad.","didn't","don't","wasn't"]],
+    fn:"Giving your opinion about a film",
+    phr:[["Did you like the film?","Yes, it was really funny!","Yes, I like.","It's a cinema."],
+         ["What kind of films do you like?","I like science fiction.","I liked it.","At the cinema."]] },
+  u2_5:{ g:"comparatives and superlatives",
+    rule:"Short adjectives: fast → faster → the fastest. Long adjectives: comfortable → more comfortable → the most comfortable. AS ... AS = the same.",
+    ruleIt:"Aggettivi corti: -er / the -est. Aggettivi lunghi: more / the most. as ... as = uguale.",
+    ex:["The train is faster than the bus.","The plane is the fastest.","The ferry is as slow as the coach."],
+    quiz:[["A taxi is ___ than a bus.","more expensive","expensiver","most expensive"],
+          ["The plane is ___ of all.","the fastest","the faster","fastest than"],
+          ["The tram is as cheap ___ the bus.","as","than","like"]],
+    fn:"Buying a train ticket",
+    phr:[["Good morning. Can I help you?","A return ticket to London, please.","I go to London.","It's on platform 2."],
+         ["Single or return?","Return, please.","Yes, please.","At ten o'clock."]] },
+  u2_6:{ g:"much / many · a lot of · a few / a little",
+    rule:"MANY + countable plurals (many bottles). MUCH + uncountables (much water), mostly in questions and negatives. A LOT OF for both. A FEW bottles, A LITTLE sugar.",
+    ruleIt:"many + numerabili, much + non numerabili (in domande e negative). a lot of va con tutti e due. a few + numerabili, a little + non numerabili.",
+    ex:["There are a lot of cans in the bin.","There isn't much milk left.","We've got a few apples."],
+    quiz:[["How ___ bottles are there?","many","much","a little"],
+          ["There's only ___ sugar left.","a little","a few","many"],
+          ["We haven't got ___ rice.","much","many","a few"]],
+    fn:"Ordering food",
+    phr:[["What would you like?","I'd like a bowl of soup, please.","I like soup.","Yes, I would."],
+         ["Anything else?","No, thank you.","Yes, I am.","A lot of."]] },
+  u2_7:{ g:"have to · don't have to · must / mustn't",
+    rule:"HAVE TO and MUST: it's necessary. DON'T HAVE TO: it isn't necessary. MUSTN'T: it isn't allowed.",
+    ruleIt:"have to / must = e' necessario. don't have to = non e' necessario. mustn't = e' vietato.",
+    ex:["I have to tidy my room.","You don't have to do the washing-up today.","You mustn't touch the oven!"],
+    quiz:[["She ___ walk the dog every evening.","has to","have to","must to"],
+          ["It's Sunday: we ___ get up early.","don't have to","mustn't","doesn't have to"],
+          ["You ___ play with matches!","mustn't","don't have to","must"]],
+    fn:"Asking for permission",
+    phr:[["You want to watch TV. What do you say to Mum?","Can I watch TV, please?","I watch TV.","You must watch TV."],
+         ["Could you help me with the dishes?","Sure, no problem!","Yes, I could.","I'm help."]] },
+  u2_8:{ g:"past continuous",
+    rule:"WAS / WERE + verb-ING for an action in progress at a moment in the past: At four o'clock I was reading.",
+    ruleIt:"was/were + verbo in -ing per un'azione in corso in un momento del passato.",
+    ex:["At four o'clock Sara was walking her dog.","We were having lunch.","What were you doing at four? — I was shopping."],
+    quiz:[["At four o'clock I ___ a book.","was reading","were reading","read"],
+          ["They ___ waiting for the bus.","were","was","did"],
+          ["What ___ you doing at 4 pm yesterday?","were","did","was"]],
+    fn:"Giving directions",
+    phr:[["Excuse me, where's the museum?","Go straight on and turn left.","It's a museum.","Yes, it is."],
+         ["Is the bank far from here?","No, it's next to the post office.","Yes, it's a bank.","Turn the bank."]] },
+  u3_1:{ g:"be going to",
+    rule:"BE GOING TO + verb for plans and intentions: I'm going to be a vet. Negative: I'm not going to... Question: Are you going to...? — Yes, I am. / No, I'm not.",
+    ruleIt:"be going to + verbo per progetti e intenzioni. Negativa: I'm not going to... Domanda: Are you going to...?",
+    ex:["I'm going to study medicine.","She isn't going to work this summer.","Are you going to apply for the job? — Yes, I am."],
+    quiz:[["My sister ___ going to be a pilot.","is","are","be"],
+          ["___ they going to work at the fair? — No, they aren't.","Are","Is","Do"],
+          ["I'm going ___ a summer job.","to get","get","getting"]],
+    fn:"Making arrangements and invitations",
+    phr:[["Would you like to come to the fair on Saturday?","I'd love to! What time?","Yes, I like.","I'm going to the fair yesterday."],
+         ["Are you free on Friday afternoon?","Sorry, I'm busy. How about Saturday?","Yes, I'm Friday.","I'm going to free."]] },
+  u3_2:{ g:"will · may / might",
+    rule:"WILL for things you are sure about in the future: Robots will cook for us. MAY or MIGHT when you are not sure: We might live on Mars.",
+    ruleIt:"will quando sei sicuro del futuro, may/might quando non sei sicuro.",
+    ex:["In 2050 cars will drive themselves.","We may have flying taxis.","People might not use phones."],
+    quiz:[["I'm sure computers ___ get faster.","will","might","are"],
+          ["I'm not sure, but it ___ rain tomorrow.","might","will","is"],
+          ["___ robots do our homework in the future?","Will","Do","Are"]],
+    fn:"Giving instructions",
+    phr:[["How do I turn on the robot?","First, press the green button.","I turn it on.","It's a robot."],
+         ["What do I do next?","Then type your password.","Next is a password.","I do next."]] },
+  u3_3:{ g:"present perfect: ever / never · been / gone",
+    rule:"HAVE / HAS + past participle for experiences: I have climbed a mountain. Have you ever...? — Yes, I have. / No, I haven't. BEEN = you went and came back. GONE = you went and you are still there.",
+    ruleIt:"have/has + participio per le esperienze. Have you ever...? = hai mai...? been = sei andato e tornato, gone = sei andato e sei ancora li'.",
+    ex:["Have you ever slept in a tent?","I've never seen a bear.","Vik has gone to the river. He isn't here."],
+    quiz:[["Have you ever ___ in a cave?","been","went","go"],
+          ["She ___ never climbed a mountain.","has","have","is"],
+          ["Tom isn't here. He has ___ to the lake.","gone","been","go"]],
+    fn:"Agreeing and disagreeing",
+    phr:[["Let's walk to the waterfall tomorrow!","That's a great idea!","I've walked yesterday.","Yes, I have."],
+         ["I think the trail is too difficult.","I don't agree. It's easy!","Yes, I have.","I've been difficult."]] },
+  u3_4:{ g:"present perfect: just · already · yet",
+    rule:"JUST = a very short time ago. ALREADY = before now, sooner than expected. YET = in questions and negatives, at the end: Have you finished yet? I haven't finished yet.",
+    ruleIt:"just = appena, already = gia', yet = in domande (gia'?) e negative (non ancora), in fondo alla frase.",
+    ex:["The firefighters have just arrived.","I've already checked the alarm.","Has the rain stopped yet? — No, not yet."],
+    quiz:[["We've ___ cleaned the hoses. Look, they're still wet!","just","yet","ever"],
+          ["Have you called the volunteers ___?","yet","already","just"],
+          ["I've ___ done it. I did it this morning.","already","yet","never"]],
+    fn:"Apologising",
+    phr:[["Sorry I'm late. The bus was late.","Don't worry, it's OK.","I'm late too, sorry you.","Yes, I am."],
+         ["I'm really sorry, I forgot your helmet.","That's all right, but don't forget again!","Sorry for you.","You're welcome."]] },
+  u3_5:{ g:"should / shouldn't · If I were you, I'd...",
+    rule:"SHOULD + verb to give advice: You should drink water. SHOULDN'T = it isn't a good idea. IF I WERE YOU, I'D... is another way to give advice.",
+    ruleIt:"should + verbo per dare un consiglio, shouldn't = non e' una buona idea. If I were you, I'd... = se fossi in te...",
+    ex:["You should see a doctor.","You shouldn't go to school with a temperature.","If I were you, I'd stay in bed."],
+    quiz:[["You've got a cold. You ___ stay warm.","should","shouldn't","would"],
+          ["You ___ eat so many sweets. They're bad for your teeth.","shouldn't","should","wouldn't"],
+          ["If I ___ you, I'd take a pill.","were","was","am"]],
+    fn:"Asking for and giving advice",
+    phr:[["I've got a terrible headache. What should I do?","You should lie down and rest.","I've got a headache too.","You should to rest."],
+         ["I can't sleep at night.","If I were you, I'd turn off the phone.","If I was you, I sleep.","I can't too."]] },
+};
+/* ---- quale unit ripassare ------------------------------------------------
+   L'ultima quest toccata e non ancora finita (Quest.loadStep la segna in
+   et_last_quest, Starter escluso: entrando a scuola parte sempre lo
+   Starter e cancellerebbe la quest vera). Se non c'e', lo Starter stesso
+   finche' non e' completato. */
+/* le unit del curricolo, lette quando servono (alcune sono dichiarate piu'
+   avanti nel file) */
+const LESSON_UNITS=[()=>UNIT0,()=>UNIT1,()=>UNIT2,()=>UNIT3,()=>UNIT4,()=>UNIT5,()=>UNIT6,()=>UNIT7,()=>UNIT8,()=>UNIT_STYLE,()=>UNIT_MUSIC,()=>UNIT_WEATHER,()=>UNIT_SCREENS,()=>UNIT_TRAVEL,()=>UNIT_ECO,()=>UNIT_HOME7,()=>UNIT_CITY,()=>UNIT_JOBS,()=>UNIT_TECH,()=>UNIT_SURVIVAL,()=>UNIT_CLIMATE,()=>UNIT_ER];
+function lessonUnitObj(id){
+  for(let i=0;i<LESSON_UNITS.length;i++){ let u=null; try{ u=LESSON_UNITS[i](); }catch(e){}
+    if(u && u.id===id) return u; }
+  return null;
+}
+function lessonDone(id){ try{ return !!Progress.get(id).done; }catch(e){ return false; } }
+function lessonUnitId(){
+  const q=Sync.get("et_last_quest",null);
+  if(q && q.id && LESSONS[q.id] && !lessonDone(q.id) && lessonUnitObj(q.id)) return q.id;
+  if(!lessonDone("u0")) return "u0";
+  return null;
+}
+function lessonTitle(id){ const s=Gate.info(id);
+  return s ? ((s.n===0?"the Starter":"Unit "+s.n)+" — "+s.t) : id; }
+/* il compito a cui si torna: l'obiettivo dello step dove ci si e' fermati */
+function lessonNextTask(id){
+  const q=Sync.get("et_last_quest",null), u=lessonUnitObj(id); if(!u) return null;
+  let i=(q && q.id===id && q.i!=null) ? q.i : 0;
+  try{ i=Math.max(i, Progress.get(id).step||0); }catch(e){}
+  const s=u.steps && u.steps[Math.min(i,u.steps.length-1)]; if(!s) return null;
+  return { where:u.areaName||"", en:s.introObjEn||"", it:s.introObj||"" };
+}
+
+const LESSON={ on:false, seated:false, id:null, score:0, total:0, offered:false, wanted:null,
+  theme:null, posters:[], board:null, boardDefault:null, pupils:{} };
+
+/* ---- la lavagna ----------------------------------------------------------- */
+function _lessonBoardTex(){
+  const n=LESSON.board; if(!n) return null;
+  const pl=n.getChildMeshes().find(m=>m.material && m.material.diffuseTexture && m.material.diffuseTexture.getContext);
+  return pl ? pl.material.diffuseTexture : null;
+}
+function _wrap(c,text,maxW){
+  const words=String(text).split(" "), out=[]; let line="";
+  words.forEach(w=>{ const t=line?line+" "+w:w; if(c.measureText(t).width>maxW && line){ out.push(line); line=w; } else line=t; });
+  if(line) out.push(line); return out;
+}
+function lessonBoard(title,lines){
+  const dt=_lessonBoardTex(); if(!dt) return;
+  const c=dt.getContext(), sz=dt.getSize(), W=sz.width, H=sz.height;
+  c.fillStyle="#2e5b46"; c.fillRect(0,0,W,H);
+  c.textAlign="left"; c.textBaseline="top";
+  c.fillStyle="#f3df8a"; c.font="bold "+Math.round(H*0.11)+"px 'Comic Sans MS',cursive,sans-serif";
+  let y=H*0.06; _wrap(c,title,W*0.9).slice(0,2).forEach(l=>{ c.fillText(l,W*0.05,y); y+=H*0.12; });
+  y+=H*0.03;
+  c.fillStyle="rgba(255,255,255,0.93)";
+  let fs=Math.round(H*0.085); c.font=fs+"px 'Comic Sans MS',cursive,sans-serif";
+  const all=[]; (lines||[]).forEach(t=>_wrap(c,t,W*0.9).forEach(l=>all.push(l)));
+  while(all.length*fs*1.25>H-y-H*0.04 && fs>10){ fs-=2; c.font=fs+"px 'Comic Sans MS',cursive,sans-serif";
+    all.length=0; (lines||[]).forEach(t=>_wrap(c,t,W*0.9).forEach(l=>all.push(l))); }
+  all.forEach(l=>{ c.fillText(l,W*0.05,y); y+=fs*1.25; });
+  dt.update();
+}
+function lessonBoardReset(){
+  const dt=_lessonBoardTex(); if(!dt) return;
+  const c=dt.getContext(), sz=dt.getSize(), W=sz.width, H=sz.height;
+  c.fillStyle="#2e5b46"; c.fillRect(0,0,W,H);
+  c.textAlign="left"; c.textBaseline="middle"; c.fillStyle="rgba(255,255,255,0.92)";
+  c.font=Math.round(H*0.22)+"px 'Comic Sans MS',cursive,sans-serif";
+  c.fillText("Aa  Bb  Cc", W*0.06, H*0.32); c.fillText("1 2 3", W*0.06, H*0.62);
+  c.font=Math.round(H*0.12)+"px sans-serif"; c.fillText("Welcome!", W*0.06, H*0.86);
+  dt.update();
+}
+
+/* ---- i poster della unit ----------------------------------------------------
+   I poster dello Starter (muri lunghi dell'aula) si spengono e al loro posto,
+   stesso punto e stessa misura, escono quelli della unit da ripassare:
+   titolo, parole (due), grammatica, esempi, frasi utili, parole extra. */
+function _posterText(o){
+  return function(c,W,H){
+    const lw=Math.max(6,W*0.012), band=Math.round(H*0.17);
+    c.fillStyle=o.band||"#3a6a8a"; c.fillRect(lw+2,lw+2,W-2*lw-4,band);
+    c.fillStyle="#ffffff"; c.textAlign="center"; c.textBaseline="middle";
+    let f=Math.round(band*0.55); c.font="bold "+f+"px sans-serif";
+    while(f>12 && c.measureText(o.title).width>W*0.9){ f-=2; c.font="bold "+f+"px sans-serif"; }
+    c.fillText(o.title, W/2, lw+2+band/2);
+    const top=lw+band+H*0.05, maxW=W*0.86;
+    if(o.big){ c.fillStyle=o.ink||"#2b2318"; let fs=Math.round(H*0.16);
+      c.font="bold "+fs+"px sans-serif";
+      while(fs>14 && c.measureText(o.big).width>maxW){ fs-=2; c.font="bold "+fs+"px sans-serif"; }
+      c.fillText(o.big, W/2, top+H*0.18);
+      if(o.sub){ c.font=Math.round(H*0.07)+"px sans-serif"; c.fillStyle="#5a534a";
+        _wrap(c,o.sub,maxW).slice(0,3).forEach((l,i)=>c.fillText(l,W/2,top+H*0.36+i*H*0.09)); }
+      return; }
+    if(o.words){ const cols=2, rows=Math.ceil(o.words.length/cols), cw=(W-2*lw)/cols, ch=(H-top-lw-8)/rows;
+      o.words.forEach((w,i)=>{ const cx=lw+cw*(i%cols)+cw/2, cy=top+ch*Math.floor(i/cols)+ch/2;
+        c.fillStyle=o.ink||"#2b2318"; c.textAlign="center"; c.textBaseline="middle";
+        if(w.pic){ c.font=Math.round(ch*0.45)+"px sans-serif"; c.fillText(w.pic,cx,cy-ch*0.14); }
+        let fs=Math.round(ch*(w.pic?0.24:0.32)); c.font="bold "+fs+"px sans-serif";
+        while(fs>10 && c.measureText(w.en).width>cw*0.9){ fs-=1; c.font="bold "+fs+"px sans-serif"; }
+        c.fillText(w.en,cx,w.pic?cy+ch*0.28:cy); });
+      return; }
+    c.textAlign="left"; c.textBaseline="top"; c.fillStyle=o.ink||"#2b2318";
+    let fs=Math.round(H*0.075), ls=[];
+    const lay=()=>{ c.font=fs+"px sans-serif"; ls=[]; (o.lines||[]).forEach(t=>{ _wrap(c,t,maxW).forEach(l=>ls.push(l)); ls.push(""); }); };
+    lay(); while(ls.length*fs*1.2>H-top-lw && fs>10){ fs-=2; lay(); }
+    let y=top; ls.forEach(l=>{ c.fillText(l,W*0.07,y); y+=fs*1.2; });
+  };
+}
+function lessonThemeApply(id){
+  if(LESSON.theme===id) return;
+  lessonThemeClear();
+  const L=LESSONS[id], s=Gate.info(id); if(!L||!s||!LESSON.posters.length) return;
+  const words=(GEM_LEX[id]||[]).filter(w=>w[4]!=="x").map(w=>({ en:w[0], pic:w[2]||"" }));
+  const extra=(GEM_LEX[id]||[]).filter(w=>w[4]==="x").map(w=>({ en:w[0], pic:w[2]||"" }));
+  const pw=shuffle(words.filter(w=>w.pic)).concat(shuffle(words.filter(w=>!w.pic)));
+  const cards=[
+    { title:"TODAY'S LESSON", band:"#e07b2a", big:(s.ic||"")+" "+(s.n===0?"Starter":"Unit "+s.n), sub:s.t+" · "+L.g },
+    { title:"WORDS", band:"#3a6a8a", words:pw.slice(0,6) },
+    { title:"GRAMMAR", band:"#7d5a8c", lines:[L.g.toUpperCase(), L.rule] },
+    { title:"EXAMPLES", band:"#5a8a5a", lines:L.ex },
+    { title:"USEFUL PHRASES · "+L.fn.toUpperCase(), band:"#b3352e", lines:L.phr.map(p=>"— "+p[0]+"  — "+p[1]) },
+    { title:"MORE WORDS", band:"#3a6a8a", words:pw.slice(6,12) },
+    { title:"⭐ EXTRA WORDS", band:"#c8a45a", words:extra.slice(0,6) },
+  ];
+  LESSON.posters.forEach((P,i)=>{
+    const card=cards[i%cards.length];
+    try{
+      const n=LEXPROPS.vocabChart("lessonPoster"+i,{ w:P.pr.w, h:P.pr.h, py:P.pr.py, bg:"#fbf6ea", draw:_posterText(card) });
+      n.parent=P.node.parent; n.position.copyFrom(P.node.position); n.rotation.copyFrom(P.node.rotation);
+      P.node.setEnabled(false); P.theme=n;
+    }catch(e){ console.warn("[lesson] poster",e); }
+  });
+  LESSON.theme=id;
+  try{ _octDirty(); }catch(e){}
+}
+function lessonThemeClear(){
+  LESSON.posters.forEach(P=>{ if(P.theme){ try{ P.theme.dispose(false,true); }catch(e){} P.theme=null; }
+    try{ P.node.setEnabled(true); }catch(e){} });
+  LESSON.theme=null;
+}
+/* entrando a scuola: i poster seguono la quest in corso (lo Starter tiene i suoi) */
+function lessonOnSchoolEnter(){
+  LESSON.offered=false;
+  const id=lessonUnitId();
+  if(id && id!=="u0") lessonThemeApply(id); else lessonThemeClear();
+  if(id && (id!=="u0" || LESSON.wanted==="u0"))
+    setTimeout(()=>toast("\u{1F34E} Miss Grace can give you a lesson on "+lessonTitle(id)+": go and talk to her!"),1600);
+}
+
+/* ---- il posto a sedere ------------------------------------------------------ */
+const LESSON_DESK={ x:0, z:1.7 };              // fila di mezzo, accanto a Lily
+function lessonSit(){
+  const I=INTERIORS[UNIT0.area]; if(!I) return false; const C=I.center, V=BABYLON.Vector3;
+  try{ standUpAll(); }catch(e){}
+  const f=new V(0,0,-1), S=new V(C.x+LESSON_DESK.x, 0, C.z+LESSON_DESK.z+0.42);
+  moveTarget=null; pendingInteract=null; try{ tapMark.setEnabled(false); }catch(e){}
+  player.position.set(S.x,0,S.z); player.rotation.y=Math.PI; player.computeWorldMatrix(true);
+  try{ playAvatarAnim(IDLE_ANIM); }catch(e){}
+  const off=playerSit(f,0.4225,0);
+  if(off){ player.position.x=S.x-f.x*0.04-off.x; player.position.z=S.z-f.z*0.04-off.z; }
+  try{ camera.alpha=-player.rotation.y-Math.PI/2; camera.inertialAlphaOffset=0; }catch(e){}
+  LESSON.seated=true;
+  return true;
+}
+function lessonStand(silent){
+  if(!LESSON.seated) return; LESSON.seated=false;
+  try{ playerStand(); }catch(e){}
+  if(LESSON.on) lessonEnd(true);
+  if(!silent) toast("\u{1F44B} You stand up.");
+}
+
+/* ---- la lezione ------------------------------------------------------------- */
+function _lessonPupil(id){ return LESSON.pupils[id]||{ name:id==="pupil_lily"?"Lily":(id==="pupil_ben"?"Ben":"Tim"), gender:id==="pupil_lily"?"f":"m" }; }
+function _say(who,text,it,next,label){
+  DialogueBox.open({ npc:who, icon:who===GRACE?"\u{1F34E}":"\u{1F64B}", sub:who===GRACE?"Teacher":"Classmate",
+    text, italian:it||undefined,
+    buttons:[{ label:label||"OK", cls:"primary", act:()=>{ if(LESSON.on && next) next(); } }] });
+}
+/* domanda al giocatore: tre risposte, recast se sbaglia, poi avanti */
+function _ask(text,it,html,answer,wrong,full,next){
+  const opts=shuffle([answer].concat(wrong.slice(0,2)));
+  LESSON.total++;
+  DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Your turn!", text, italian:it||undefined, html:html||undefined,
+    choices:opts.map(o=>({ label:o, act:()=>{
+      if(!LESSON.on) return;
+      const ok=(o===answer); if(ok) LESSON.score++;
+      const praise=["Well done!","Excellent!","That's right!","Very good!","Perfect!"][Math.floor(Math.random()*5)];
+      DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:ok?"✅ Correct":"Not quite",
+        text:ok?(praise+" "+(full||answer)):("Not quite. The answer is: "+(full||answer)),
+        html:ok?undefined:'<div class="gem-recast">Non <s>'+_escHtml(o)+'</s> — <b>'+_escHtml(answer)+'</b></div>',
+        buttons:[{ label:"Next", cls:"primary", act:()=>{ if(LESSON.on) next(); } }] }); } }))
+  });
+}
+function lessonOffer(npc,id){
+  const it=(id==="u0")?"Vuoi ripassare lo Starter con Miss Grace?":"Vuoi una lezione di ripasso sulla unit che stai facendo?";
+  DialogueBox.open({ npc, icon:"\u{1F34E}", sub:"Teacher",
+    text:"Hello! Would you like a revision lesson on "+lessonTitle(id)+"? We can sit down and practise together with the class.",
+    italian:it,
+    choices:[
+      { label:"\u{1F4DA} Yes, please!", act:()=>lessonStart(id) },
+      { label:"No, thanks.", act:()=>{ try{ talkToGrace(npc); }catch(e){} } } ] });
+}
+function lessonStart(id){
+  const L=LESSONS[id]; if(!L || !GRACE) return;
+  LESSON.on=true; LESSON.id=id; LESSON.score=0; LESSON.total=0; LESSON.wanted=null;
+  if(id!=="u0") lessonThemeApply(id);
+  lessonSit();
+  const me=(Student.nome||"").split(" ")[0]||"";
+  const toYou=me?(", "+me):"";                                   // senza nome: «your turn!», non «your turn, you»
+  const lily=_lessonPupil("pupil_lily"), ben=_lessonPupil("pupil_ben"), tim=TIM||_lessonPupil("tim");
+  const title=lessonTitle(id);
+  /* le parole: tre della unit (non extra), con l'emoji o con la frase */
+  const pool=shuffle((GEM_LEX[id]||[]).filter(w=>w[4]!=="x" && (w[2]||w[3])));
+  const W=pool.slice(0,3);
+  const alts=w=>shuffle((GEM_LEX[id]||[]).filter(x=>x[0]!==w[0] && x[4]!=="x")).slice(0,2).map(x=>x[0]);
+  const qWord=(w)=>{
+    if(w[3]) return { text:"Which word completes the sentence?", html:'<div class="gem-cloze">'+_escHtml(w[3]).replace("___","<b>_____</b>")+'</div>' };
+    return { text:"What's this in English?", html:'<div class="gem-pic">'+w[2]+'</div>' };
+  };
+  const steps=[];
+  steps.push(()=>{ lessonBoard(title,["Words","Grammar: "+L.g,"Useful phrases: "+L.fn]);
+    _say(GRACE,"Good morning, class! Sit down, please. Today we're going to revise "+title+". Look at the board!",
+      "Buongiorno! Oggi ripassiamo "+title+": guarda la lavagna.",next,"Good morning, Miss Grace!"); });
+  /* 1 — PAROLE: Lily fa la prima, poi tocca a te */
+  if(W.length){ const w0=W[0];
+    steps.push(()=>{ lessonBoard("Words",W.map(w=>(w[2]?w[2]+" ":"")+w[0]+" = "+w[1]));
+      _say(GRACE,"Let's start with some words. Lily, how do you say «"+w0[1]+"» in English?","Prima le parole: Lily risponde per prima.",next); });
+    steps.push(()=>_say(lily,"It's «"+w0[0]+"»!","",next));
+    steps.push(()=>_say(GRACE,"Very good, Lily! Now it's your turn"+toYou+".","Ora tocca a te!",next));
+    W.slice(1).forEach(w=>steps.push(()=>{ lessonBoard("Words",W.map(x=>x[0]===w[0]?"?":x[0]));
+      const q=qWord(w); _ask(q.text,"Scegli la parola giusta ("+w[1]+").",q.html,w[0],alts(w),w[3]?w[3].replace("___",w[0]):w[0],next); }));
+  }
+  /* 2 — GRAMMATICA: la regola, gli esempi, Ben fa il primo, tu gli altri due */
+  steps.push(()=>{ lessonBoard(L.g,L.ex);
+    _say(GRACE,"Now, grammar: "+L.g+". "+L.rule,L.ruleIt,next,"I see!"); });
+  steps.push(()=>_say(GRACE,"Look at the examples on the board: "+L.ex.join(" "),"Leggi gli esempi alla lavagna.",next));
+  const q0=L.quiz[0];
+  steps.push(()=>{ lessonBoard(L.g,[q0[0]]); _say(GRACE,"Ben, can you complete this one? "+q0[0].replace("___","...").replace(/\s*\([^)]*\)\s*$/,""),"Ben prova per primo.",next); });
+  steps.push(()=>_say(ben,q0[0].replace("___",q0[1]).replace(/\s*\([^)]*\)\s*$/,""),"",next));
+  steps.push(()=>_say(GRACE,"Excellent, Ben! Now you try"+toYou+".","Ora prova tu.",next));
+  L.quiz.slice(1).forEach(q=>steps.push(()=>{ lessonBoard(L.g,[q[0]]);
+    _ask("Complete the sentence.","Completa la frase.",'<div class="gem-cloze">'+_escHtml(q[0]).replace("___","<b>_____</b>")+'</div>',
+      q[1],[q[2],q[3]],q[0].replace("___",q[1]).replace(/\s*\([^)]*\)\s*$/,""),next); }));
+  /* 3 — FUNZIONE: Tim fa la battuta, tu rispondi */
+  steps.push(()=>{ lessonBoard(L.fn,L.phr.map(p=>"— "+p[0]));
+    _say(GRACE,"Great! Now let's practise: "+L.fn.toLowerCase()+". Tim, help me, please!","Ora un dialogo: Tim ti fa una domanda.",next); });
+  L.phr.forEach((p,i)=>{
+    steps.push(()=>_say(i===0?tim:GRACE,p[0],"",next,"..."));
+    steps.push(()=>_ask("What do you answer?","Scegli la risposta giusta.",'<div class="gem-q">«'+_escHtml(p[0])+'»</div>',p[1],[p[2],p[3]],p[1],next));
+  });
+  /* 4 — CHIUSURA: com'e' andata, e da dove si riparte */
+  steps.push(()=>{
+    const n=LESSON.score, t=LESSON.total, task=lessonNextTask(id);
+    const stars=Math.max(2,n*2);
+    try{ Stars.award(null,stars,"lezione"); }catch(e){}
+    lessonBoard("Well done, class!",[n+" / "+t+" correct","Homework: "+(task&&task.en?task.en:"practise at home!")]);
+    const msg=(n===t?"Fantastic! You got everything right. ":(n>=t-1?"Very good work today! ":"Good effort! Don't worry, practice makes perfect. "))
+      +(task&&task.en?"Now go back to "+(task.where||"your quest")+". Your next task: "+task.en:"See you next time!");
+    _say(GRACE,msg,(task&&task.it?"Ora torna alla quest. Il prossimo compito: "+task.it:"Alla prossima!"),()=>lessonEnd(false),"Thank you, Miss Grace!");
+  });
+  let k=0; function next(){ if(!LESSON.on) return; const f=steps[k++]; if(f) f(); else lessonEnd(false); }
+  setTimeout(next,450);
+}
+function lessonEnd(quiet){
+  if(!LESSON.on) return;
+  LESSON.on=false; LESSON.id=null;
+  if(quiet){ try{ DialogueBox.close(); }catch(e){} }      // interrotta alzandosi: via anche la domanda aperta
+  lessonBoardReset();
+  if(LESSON.seated){ LESSON.seated=false; try{ playerStand(); }catch(e){} }
+  if(!quiet) toast("\u{1F3EB} Class dismissed! Good luck with your quest.");
+}
+
+/* ---- «sono bloccato»: il pulsante nell'HUD della quest -------------------- */
+function lessonHelp(){
+  const u=Quest.unit; if(!u) return;
+  LESSON.wanted=u.id;
+  const title=lessonTitle(u.id), inTown=(typeof area!=="undefined" && area==="town");
+  DialogueBox.open({ icon:"\u{1F3EB}", name:"Town School", sub:"Need some help?",
+    text:"Stuck? Go to the Town School: Miss Grace will give you a lesson on "+title+". Your progress is saved.",
+    italian:"Sei bloccato? Alla Town School Miss Grace ti fa una lezione di ripasso su questa unit. I tuoi progressi restano salvati: poi torni qui e continui.",
+    buttons: inTown
+      ? [{ label:"\u{1F695} Take me to school", cls:"primary", act:()=>{ try{ taxiTo({ name:"Town School", ic:"\u{1F3EB}", x:26, z:9 }); }catch(e){} } },
+         { label:"Not now", act:()=>{} }]
+      : [{ label:"OK", cls:"primary", act:()=>{} }] });
+}
+function lessonHudUpdate(){
+  const b=document.getElementById("qh-help"); if(!b) return;
+  const u=(typeof Quest!=="undefined")?Quest.unit:null;
+  b.style.display=(u && u.id!=="u0" && LESSONS[u.id])?"inline-flex":"none";
+}
 /* =====================================================================
    ALLENAMENTO CONTINUO — sistema GENERICO riusabile da ogni unita'.
    Quando la questline di una unit e' completata, i suoi NPC permanenti
@@ -39796,6 +40358,7 @@ function move(nx,nz,spd){
   if(typeof DINER!=="undefined" && DINER.seat) return false;   // v288: seduti al diner non si cammina (E per alzarsi)
   if(typeof BSIT!=="undefined" && BSIT.b) benchStand(true);     // v291: dalla panchina il primo passo ti rimette in piedi
   if(typeof CAFE_PICK!=="undefined" && CAFE_PICK.seated) cafeLeaveSeat();
+  if(typeof LESSON!=="undefined" && LESSON.seated) lessonStand(false);   // v306: alzarsi chiude la lezione
   if(typeof SUBSIT!=="undefined" && SUBSIT.on) subBenchStand(true);   // v297: panchina della metro   // v295: al caffe' il primo passo ti alza dallo sgabello (tazza e cibo sul vassoio)
   spd=spd||PLAYER_SPEED;
   const ox=player.position.x, oz=player.position.z;
@@ -40004,6 +40567,92 @@ scene.registerBeforeRender(()=>{
 });
 
 let toastT;
+/* =====================================================================
+   v306 — IL MICROFONO NEI CAMPI DI SCRITTURA (Giacomo, 8 ott: «implementare
+   uso del microfono per le parti dove puoi scrivere»).
+   Accanto a ogni campo dove si scrive in inglese compare «🎤 Speak»: si
+   parla, e la trascrizione (riconoscimento vocale del browser, inglese) va
+   nel campo. NON consegna niente da sola: il testo resta li', si puo'
+   correggere a tastiera e si conferma col bottone di sempre — la
+   correzione resta quella scritta.
+   · Quali campi: tutte le <textarea> (sono tutte produzioni in inglese),
+     la risposta dei cristalli (#gem-write) e il titolo del meteo
+     (#wxFinT). MAI il codice di accesso ne' i campi del docente.
+   · Dove il browser non ha il riconoscimento (Firefox) il bottone non
+     compare: niente promesse che non si mantengono.
+   · Mentre ascolta, la voce del gioco si zittisce: se no trascriverebbe se
+     stesso.
+   · Nelle textarea la frase si AGGIUNGE in coda (si detta una frase alla
+     volta); nel campo di una parola sola SOSTITUISCE.
+   ===================================================================== */
+const Mic=(function(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  let rec=null, cur=null;
+  function ok(el){
+    if(!el || el.__mic) return false;
+    if(el.tagName==="TEXTAREA") return true;
+    return el.tagName==="INPUT" && (el.id==="gem-write" || el.id==="wxFinT" || el.dataset.mic==="1");
+  }
+  function stop(){ try{ if(rec) rec.stop(); }catch(e){} }
+  function setBtn(b,on){ if(!b) return; b.classList.toggle("on",on);
+    b.textContent=on?"⏹ Stop":"\u{1F3A4} Speak"; }
+  function start(el,btn){
+    if(cur){ const same=cur.el===el; stop(); if(same) return; }
+    try{ speechSynthesis.cancel(); }catch(e){}
+    const r=new SR(); rec=r; cur={ el, btn };
+    r.lang="en-GB"; r.interimResults=true; r.continuous=false; r.maxAlternatives=1;
+    const area=el.tagName==="TEXTAREA";
+    const base=area ? el.value.replace(/\s+$/,"") : "";
+    r.onresult=function(ev){
+      let t=""; for(let i=0;i<ev.results.length;i++) t+=ev.results[i][0].transcript;
+      t=t.trim(); if(!t) return;
+      if(area){
+        /* in coda, con la maiuscola e il punto se la frase ne e' senza */
+        let f=t.charAt(0).toUpperCase()+t.slice(1);
+        const fin=ev.results[ev.results.length-1].isFinal;
+        if(fin && !/[.!?]$/.test(f)) f+=".";
+        el.value=(base?base+" ":"")+f;
+      } else el.value=t;
+      try{ el.dispatchEvent(new Event("input",{bubbles:true})); }catch(e){}
+    };
+    r.onerror=function(ev){
+      const e=ev&&ev.error;
+      if(e==="not-allowed"||e==="service-not-allowed")
+        toast("\u{1F3A4} Il microfono è bloccato: consentilo dall'icona accanto all'indirizzo.");
+      else if(e==="no-speech") toast("\u{1F3A4} Non ho sentito niente: riprova, parla vicino al microfono.");
+      else if(e==="network") toast("\u{1F3A4} Il riconoscimento vocale ha bisogno di internet.");
+    };
+    r.onend=function(){ if(rec===r){ rec=null; const c=cur; cur=null; if(c) setBtn(c.btn,false);
+      try{ el.focus(); }catch(e){} } };
+    try{ r.start(); setBtn(btn,true); }
+    catch(e){ rec=null; cur=null; setBtn(btn,false); }
+  }
+  function attach(el){
+    if(!SR || !ok(el) || !el.parentNode) return; el.__mic=true;
+    const row=document.createElement("div"); row.className="mic-row";
+    const hint=document.createElement("span"); hint.className="mic-hint"; hint.textContent="o parla in inglese";
+    const b=document.createElement("button"); b.type="button"; b.className="mic-btn";
+    setBtn(b,false);
+    b.addEventListener("click",function(e){ e.preventDefault(); e.stopPropagation(); start(el,b); });
+    row.appendChild(hint); row.appendChild(b);
+    el.parentNode.insertBefore(row,el.nextSibling);
+  }
+  function scan(root){
+    if(!SR || !root || !root.querySelectorAll) return;
+    if(root.tagName==="TEXTAREA"||root.tagName==="INPUT") attach(root);
+    root.querySelectorAll("textarea,input").forEach(attach);
+  }
+  /* i campi nascono dentro le finestre di dialogo, in momenti diversi: un
+     osservatore solo per tutto il documento */
+  if(SR){
+    try{ new MutationObserver(function(ms){
+      ms.forEach(function(m){ m.addedNodes.forEach(function(n){ if(n.nodeType===1) scan(n); }); });
+      if(cur && !document.body.contains(cur.el)) stop();
+    }).observe(document.body,{childList:true,subtree:true}); }catch(e){}
+    setTimeout(function(){ scan(document.body); },0);
+  }
+  return { available:!!SR, stop, scan };
+})();
 function toast(m){ const e=document.getElementById("toast"); e.textContent=m; e.classList.add("show");
   clearTimeout(toastT); toastT=setTimeout(()=>e.classList.remove("show"),2400); }
 
@@ -40418,6 +41067,7 @@ function standUpAll(){
   try{ if(typeof DINER!=="undefined" && DINER.seat) dinerStand(true); }catch(e){}
   try{ if(typeof BSIT!=="undefined" && BSIT.b) benchStand(true); }catch(e){}
   try{ if(typeof SUBSIT!=="undefined" && SUBSIT.on) subBenchStand(true); }catch(e){}
+  try{ if(typeof LESSON!=="undefined" && LESSON.seated) lessonStand(true); }catch(e){}   // v306
   try{ if(typeof SIT!=="undefined" && SIT.on) playerStand(); }catch(e){} }
 /* IL TAXI TI LASCIA DOVE COMPARE IL «PRESS E» (Giacomo, 1 ott: al campo
    sportivo si sbucava a 9 m dal cartello e il messaggio per cominciare la
@@ -56297,13 +56947,14 @@ function dressAcc(meshes,acc,holder){
     const C=a?accColor(a,acc&&acc[S.id+"c"]):null;
     const key=want+"|"+(C?C.hex+(C.metal?"m":""):"")+"|"+(S.id==="head"?cutK:((S.id==="neck"||S.id==="bag")?coatK:""));
     if(cur && cur.key===key) return;
+    if(cur && cur.down){ try{ cur.down.dispose(false,false); }catch(e){} cur.down=null; }   // v306: la borsa posata
     if(cur){ cur.meshes.forEach(m=>{ try{ m.dispose(false,false); }catch(e){}
       if(holder){ const k=holder.indexOf(m); if(k>=0) holder.splice(k,1); } }); H.__acc[S.id]=null; }
     /* v304: la borsa si costruisce nello spazio del busto (vedi _accBag) */
     if(S.id==="bag"){ if(!want) return; let out=[];
       try{ out=_accBag(meshes,H,want,C)||[]; }catch(e){ console.warn("bag",want,e); }
       if(holder) out.forEach(m=>holder.push(m));
-      H.__acc[S.id]={ id:want, key, meshes:out }; _octDirty(); return; }
+      H.__acc[S.id]={ id:want, key, meshes:out, C }; _octDirty(); return; }
     if(!want || !ACC_BUILD[want]) return;
     const M0=H.__accM || (H.__accM=_accMeasure(meshes)); if(!M0) return;
     const M=(env && S.id==="head")?Object.assign({},M0,env):Object.assign({},M0);
@@ -56354,6 +57005,112 @@ const BAGS={
   leatherbag: { W:0.158, H:0.124, D:0.042, sw:0.019, st:0.0045, chain:false, flap:0.70, n:7,  spec:0.30, metal:"#c9a24a" },
   designerbag:{ W:0.164, H:0.116, D:0.048, sw:0,     st:0,      chain:true,  flap:0.60, n:12, spec:0.22, metal:"#d6ae3c" },
 };
+/* v306: il CORPO della borsa (prisma, patta, attacchi e dettagli del
+   modello) in coordinate della borsa, figlio di gR: lo usano la borsa
+   indossata (_accBag) e quella appoggiata per terra quando ci si siede
+   (accBagSetDown). `ring` = dove si aggancia la tracolla, in locale. */
+function _accBagBody(gR,id,K,a0,C){
+  const V3=BABYLON.Vector3, W=K.W, Hb=K.H, D=K.D;
+  const bodyHex=C.metal?a0.col:C.hex, metHex=C.metal?C.hex:(K.metal||"#3a3632");
+  /* un filo di luce propria: il davanti della borsa e' verticale e col sole
+     alto restava una macchia scura */
+  const main=_accMat(bodyHex,K.spec,_hexMul(bodyHex,0.28)), dark=_accMat(_hexMul(bodyHex,0.78),K.spec,_hexMul(bodyHex,0.2));
+  const met=K.metal||C.metal?_accMat(metHex,0.85,_hexMul(metHex,0.2)):_accMat(metHex,0.5);
+  const put=(m,mt,x,y,z,par)=>{ m.material=mt; m.parent=par||gR; m.position.set(x||0,y||0,z||0); return m; };
+  /* corpo e patta: lo stesso prisma a superellisse delle lenti (_accLens) */
+  put(_accLens(W,Hb,D,K.n,0),main,0,0,0);
+  const fH=Hb*K.flap, fY=Hb/2-fH/2+0.002, fZ=D/2+0.0035;
+  put(_accLens(W+0.004,fH,0.006,K.n,0),id==="canvasbag"?dark:main,0,fY,fZ-0.002);
+  /* la patta fa il giro sopra: una fascia sul bordo alto */
+  put(_accLens(W+0.004,0.010,D+0.008,K.n,0),id==="canvasbag"?dark:main,0,Hb/2-0.002,0.001);
+  const fBot=fY-fH/2;
+  /* gli attacchi della tracolla, ai due angoli in alto */
+  const ring=[];
+  [1,-1].forEach(sg=>{ const x=sg*(W/2-0.016), y=Hb/2+0.007;
+    const r=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:K.chain?0.013:0.016,thickness:K.chain?0.0032:0.0028,tessellation:12},scene);
+    r.rotation.y=Math.PI/2; put(r,(K.metal||C.metal)?met:dark,x,y,0);
+    ring.push(new V3(x,y+0.004,0)); });
+  if(id==="canvasbag"){
+    /* bottone a pressione e la tasca davanti, cucita */
+    const b=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.013,height:0.004,tessellation:16},scene); b.rotation.x=Math.PI/2; put(b,met,0,fBot+0.012,fZ+0.002);
+    put(_accLens(W*0.62,Hb*0.30,0.004,5,0),dark,0,-Hb/2+Hb*0.21,D/2+0.001);
+  } else if(id==="leatherbag"){
+    /* cuciture lungo il bordo della patta, in rilievo e piu' chiare */
+    const sc=_accMat(_hexMul(bodyHex,1.6),0.1), m=0.007, x0=W/2-m, y0=fY+fH/2-0.004, y1=fBot+m;
+    const pth=[new V3(-x0,y0,fZ+0.0012),new V3(-x0,y1,fZ+0.0012),new V3(x0,y1,fZ+0.0012),new V3(x0,y0,fZ+0.0012)];
+    put(BABYLON.MeshBuilder.CreateTube("acc",{path:pth,radius:0.0009,tessellation:4},scene),sc,0,0,0);
+    /* due cinghiette con la fibbia che scendono oltre la patta */
+    [-1,1].forEach(sg=>{ const x=sg*W*0.24;
+      put(BABYLON.MeshBuilder.CreateBox("acc",{width:0.014,height:fH*0.85,depth:0.003},scene),dark,x,fBot+fH*0.38,fZ+0.0025);
+      const fb=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:0.018,thickness:0.0024,tessellation:12},scene);
+      fb.rotation.x=Math.PI/2; fb.scaling.z=0.75; put(fb,met,x,fBot+0.004,fZ+0.004);
+      put(BABYLON.MeshBuilder.CreateBox("acc",{width:0.0016,height:0.012,depth:0.002},scene),met,x,fBot+0.004,fZ+0.005); });
+  } else {
+    /* trapuntatura a rombi: cordoncini in rilievo a 45°, tagliati sul
+       rettangolo (patta e corpo sotto la patta, ognuno sul suo piano) */
+    const pip=_accMat(_hexMul(bodyHex,0.62),K.spec,_hexMul(bodyHex,0.12));
+    const quilt=(X0,X1,Y0,Y1,z,step)=>{ for(const sg of [1,-1]) for(let c=-(X1-X0+Y1-Y0);c<=(X1-X0+Y1-Y0);c+=step){
+        /* retta y = sg*x + c, dentro il rettangolo */
+        const pts=[]; const add=(x,y)=>{ if(x>=X0-1e-6&&x<=X1+1e-6&&y>=Y0-1e-6&&y<=Y1+1e-6) pts.push(new V3(x,y,z)); };
+        add(X0,sg*X0+c); add(X1,sg*X1+c); add(sg*(Y0-c),Y0); add(sg*(Y1-c),Y1);
+        if(pts.length<2) continue; pts.sort((a,b)=>a.x-b.x); const a=pts[0], b=pts[pts.length-1], L=V3.Distance(a,b); if(L<0.006) continue;
+        const t=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.0024,height:L,tessellation:5},scene);
+        t.rotation.z=-Math.atan2(b.x-a.x,b.y-a.y); put(t,pip,(a.x+b.x)/2,(a.y+b.y)/2,z); } };
+    quilt(-W/2+0.008,W/2-0.008,fBot+0.006,fY+fH/2-0.006,fZ+0.0012,0.034);
+    quilt(-W/2+0.010,W/2-0.010,-Hb/2+0.010,fBot-0.004,D/2-0.0005,0.034);
+    /* la chiusura: placchetta dorata con la pietra al centro */
+    put(_accLens(0.034,0.022,0.004,6,0),met,0,fBot+0.004,fZ+0.003);
+    const rg=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:0.016,thickness:0.0026,tessellation:16},scene); rg.rotation.x=Math.PI/2; put(rg,met,0,fBot+0.004,fZ+0.0055);
+    const gem=BABYLON.MeshBuilder.CreateIcoSphere("acc",{radius:0.0055,subdivisions:1,flat:true},scene); gem.scaling.z=0.6;
+    put(gem,_accMat("#e9eef5",0.95,"#4a525c"),0,fBot+0.004,fZ+0.006);
+  }
+  return { main, dark, met, ring };
+}
+/* =====================================================================
+   v306 — LA BORSA SI APPOGGIA PER TERRA QUANDO CI SI SIEDE (Giacomo, 8 ott:
+   «quando ti siedi con borsa, ci passa la mano sinistra attraverso»).
+   Misurato da seduti (ragazzo e ragazza, borsa di cuoio e Designer): con
+   le mani appoggiate sulle cosce la borsa sulla pancia viene attraversata
+   fino a 3,7 cm, e il fondo entra nelle cosce. Nessuna posizione sul corpo
+   resta libera in tutti e due i casi (sul fianco la prende l'avambraccio,
+   piu' in alto la ragazza la tocca ancora). Quindi si fa come si fa
+   davvero: sedendosi la borsa si posa per terra, accanto alla sedia sul
+   lato destro, e alzandosi la si riprende. Vale per il giocatore
+   (playerSit/playerStand) e per i compagni seduti (Presenza).
+   ===================================================================== */
+function _accBagRec(meshes){
+  const H=(meshes||[]).find(m=>/Casual_Head/.test(m.name)&&m.skeleton);
+  const B=H&&H.__acc&&H.__acc.bag;
+  return (B&&B.id&&B.meshes&&B.meshes.length)?B:null;
+}
+function accBagUp(meshes){
+  const B=_accBagRec(meshes); if(!B) return;
+  if(B.down){ try{ B.down.dispose(false,false); }catch(e){} B.down=null; }
+  B.meshes.forEach(m=>{ try{ m.setEnabled(true); }catch(e){} });
+  try{ _octDirty(); }catch(e){}
+}
+function accBagDown(meshes,hip,f,gy){
+  const B=_accBagRec(meshes); if(!B||!hip||!f) return null;
+  const K=BAGS[B.id], a0=lookAcc(B.id); if(!K||!a0||!B.C) return null;
+  if(B.down){ try{ B.down.dispose(false,false); }catch(e){} B.down=null; }
+  const V3=BABYLON.Vector3, g=new BABYLON.TransformNode("accBagDown",scene);
+  /* ⚠️ i materiali di _accMat sono in CACHE e condivisi con la borsa
+     indossata: si butta via sempre con dispose(false,false), mai coi
+     materiali, o la borsa addosso torna bianca */
+  try{ _accBagBody(g,B.id,K,a0,B.C); }catch(e){ g.dispose(false,false); return null; }
+  /* in piedi sul fondo, a 34 cm dall'anca sul lato destro e un filo in
+     avanti, girata di tre quarti: fuori dalla sedia, dentro la sua ombra */
+  const fl=new V3(f.x,0,f.z).normalize(), right=new V3(fl.z,0,-fl.x);
+  const p=hip.add(right.scale(0.34)).add(fl.scale(0.04));
+  g.position.set(p.x,(gy||0)+K.H/2+0.002,p.z);
+  g.rotation.y=Math.atan2(fl.x,fl.z)+Math.PI*0.62;
+  g.rotation.z=0.06;                      // appena appoggiata, non sull'attenti
+  g.getChildMeshes().forEach(m=>{ m.isPickable=false; });
+  B.meshes.forEach(m=>{ try{ m.setEnabled(false); }catch(e){} });
+  B.down=g;
+  try{ _octDirty(); }catch(e){}
+  return g;
+}
 function _accBag(meshes,H,id,C){
   const K=BAGS[id], a0=lookAcc(id); if(!K||!a0) return [];
   const M=H.__accM||(H.__accM=_accMeasure(meshes)); if(!M) return [];
@@ -56418,59 +57175,9 @@ function _accBag(meshes,H,id,C){
   const gR=new BABYLON.TransformNode("accBag",scene); gR.position.copyFrom(Cn);
   gR.rotationQuaternion=BABYLON.Quaternion.RotationQuaternionFromAxis(ex,ey,ez);
   const gS=new BABYLON.TransformNode("accBagS",scene);
-  const bodyHex=C.metal?a0.col:C.hex, metHex=C.metal?C.hex:(K.metal||"#3a3632");
-  /* un filo di luce propria: il davanti della borsa e' verticale e col sole
-     alto restava una macchia scura */
-  const main=_accMat(bodyHex,K.spec,_hexMul(bodyHex,0.28)), dark=_accMat(_hexMul(bodyHex,0.78),K.spec,_hexMul(bodyHex,0.2));
-  const met=K.metal||C.metal?_accMat(metHex,0.85,_hexMul(metHex,0.2)):_accMat(metHex,0.5);
+  const BB=_accBagBody(gR,id,K,a0,C), main=BB.main, dark=BB.dark, met=BB.met;
   const put=(m,mt,x,y,z,par)=>{ m.material=mt; m.parent=par||gR; m.position.set(x||0,y||0,z||0); return m; };
-  /* corpo e patta: lo stesso prisma a superellisse delle lenti (_accLens) */
-  put(_accLens(W,Hb,D,K.n,0),main,0,0,0);
-  const fH=Hb*K.flap, fY=Hb/2-fH/2+0.002, fZ=D/2+0.0035;
-  put(_accLens(W+0.004,fH,0.006,K.n,0),id==="canvasbag"?dark:main,0,fY,fZ-0.002);
-  /* la patta fa il giro sopra: una fascia sul bordo alto */
-  put(_accLens(W+0.004,0.010,D+0.008,K.n,0),id==="canvasbag"?dark:main,0,Hb/2-0.002,0.001);
-  const fBot=fY-fH/2;
-  /* gli attacchi della tracolla, ai due angoli in alto */
-  const att=[];
-  [1,-1].forEach(sg=>{ const x=sg*(W/2-0.016), y=Hb/2+0.007;
-    const r=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:K.chain?0.013:0.016,thickness:K.chain?0.0032:0.0028,tessellation:12},scene);
-    r.rotation.y=Math.PI/2; put(r,(K.metal||C.metal)?met:dark,x,y,0);
-    att.push(V3.TransformCoordinates(new V3(x,y+0.004,0),BABYLON.Matrix.Compose(new V3(1,1,1),gR.rotationQuaternion,Cn))); });
-  if(id==="canvasbag"){
-    /* bottone a pressione e la tasca davanti, cucita */
-    const b=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.013,height:0.004,tessellation:16},scene); b.rotation.x=Math.PI/2; put(b,met,0,fBot+0.012,fZ+0.002);
-    put(_accLens(W*0.62,Hb*0.30,0.004,5,0),dark,0,-Hb/2+Hb*0.21,D/2+0.001);
-  } else if(id==="leatherbag"){
-    /* cuciture lungo il bordo della patta, in rilievo e piu' chiare */
-    const sc=_accMat(_hexMul(bodyHex,1.6),0.1), m=0.007, x0=W/2-m, y0=fY+fH/2-0.004, y1=fBot+m;
-    const pth=[new V3(-x0,y0,fZ+0.0012),new V3(-x0,y1,fZ+0.0012),new V3(x0,y1,fZ+0.0012),new V3(x0,y0,fZ+0.0012)];
-    put(BABYLON.MeshBuilder.CreateTube("acc",{path:pth,radius:0.0009,tessellation:4},scene),sc,0,0,0);
-    /* due cinghiette con la fibbia che scendono oltre la patta */
-    [-1,1].forEach(sg=>{ const x=sg*W*0.24;
-      put(BABYLON.MeshBuilder.CreateBox("acc",{width:0.014,height:fH*0.85,depth:0.003},scene),dark,x,fBot+fH*0.38,fZ+0.0025);
-      const fb=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:0.018,thickness:0.0024,tessellation:12},scene);
-      fb.rotation.x=Math.PI/2; fb.scaling.z=0.75; put(fb,met,x,fBot+0.004,fZ+0.004);
-      put(BABYLON.MeshBuilder.CreateBox("acc",{width:0.0016,height:0.012,depth:0.002},scene),met,x,fBot+0.004,fZ+0.005); });
-  } else {
-    /* trapuntatura a rombi: cordoncini in rilievo a 45°, tagliati sul
-       rettangolo (patta e corpo sotto la patta, ognuno sul suo piano) */
-    const pip=_accMat(_hexMul(bodyHex,0.62),K.spec,_hexMul(bodyHex,0.12));
-    const quilt=(X0,X1,Y0,Y1,z,step)=>{ for(const sg of [1,-1]) for(let c=-(X1-X0+Y1-Y0);c<=(X1-X0+Y1-Y0);c+=step){
-        /* retta y = sg*x + c, dentro il rettangolo */
-        const pts=[]; const add=(x,y)=>{ if(x>=X0-1e-6&&x<=X1+1e-6&&y>=Y0-1e-6&&y<=Y1+1e-6) pts.push(new V3(x,y,z)); };
-        add(X0,sg*X0+c); add(X1,sg*X1+c); add(sg*(Y0-c),Y0); add(sg*(Y1-c),Y1);
-        if(pts.length<2) continue; pts.sort((a,b)=>a.x-b.x); const a=pts[0], b=pts[pts.length-1], L=V3.Distance(a,b); if(L<0.006) continue;
-        const t=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.0024,height:L,tessellation:5},scene);
-        t.rotation.z=-Math.atan2(b.x-a.x,b.y-a.y); put(t,pip,(a.x+b.x)/2,(a.y+b.y)/2,z); } };
-    quilt(-W/2+0.008,W/2-0.008,fBot+0.006,fY+fH/2-0.006,fZ+0.0012,0.034);
-    quilt(-W/2+0.010,W/2-0.010,-Hb/2+0.010,fBot-0.004,D/2-0.0005,0.034);
-    /* la chiusura: placchetta dorata con la pietra al centro */
-    put(_accLens(0.034,0.022,0.004,6,0),met,0,fBot+0.004,fZ+0.003);
-    const rg=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:0.016,thickness:0.0026,tessellation:16},scene); rg.rotation.x=Math.PI/2; put(rg,met,0,fBot+0.004,fZ+0.0055);
-    const gem=BABYLON.MeshBuilder.CreateIcoSphere("acc",{radius:0.0055,subdivisions:1,flat:true},scene); gem.scaling.z=0.6;
-    put(gem,_accMat("#e9eef5",0.95,"#4a525c"),0,fBot+0.004,fZ+0.006);
-  }
+  const att=BB.ring.map(q=>V3.TransformCoordinates(q,BABYLON.Matrix.Compose(new V3(1,1,1),gR.rotationQuaternion,Cn)));
   /* ---- la tracolla ----
      davanti: dall'attacco sinistro della borsa alla spalla sinistra; sopra
      la spalla; dietro in diagonale fino al fianco destro; attorno al fianco
@@ -59670,6 +60377,7 @@ const Presenza=(function(){
       b.sit={ key, f, off, rest:r.pins, sip, drop:r.drop,
               mix:sip?r.pins.map(function(k){ return { tn:k.tn, p:k.p.clone(), q:k.q.clone(), s:k.s.clone() }; }):null };
       b.holder.position.y=b.holderY0-r.drop; b.pins=r.pins;
+      if(r.hip) try{ accBagDown(b.meshes, r.hip.add(off), f, s.gy); }catch(err){}      // v306
     }
     const S=b.sit;
     b.carrier.position.set(q.x+S.off.x, q.y, q.z+S.off.z);
@@ -59706,6 +60414,7 @@ const Presenza=(function(){
   function _alza(b){
     if(!b.sit) return;
     b.sit=null; b.pins=b.pinsStand; b.holder.position.y=b.holderY0;
+    try{ accBagUp(b.meshes); }catch(err){}                                               // v306
     if(b.prop){ for(const k in b.prop) try{ b.prop[k].setEnabled(false); }catch(err){} }
   }
   /* la tazza o il boccone nella mano destra del compagno: si mette nel
