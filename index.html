@@ -15320,7 +15320,9 @@ const TTS={
       try{
         speechSynthesis.cancel();                 // stop di qualsiasi lettura precedente
         speechSynthesis.resume();                 // bug noto Chrome: puo' restare "in pausa" e muto
-        const u=new SpeechSynthesisUtterance(text);
+        /* v306: «got / gotten», «further / farther»: lo slash fra spazi si
+           legge «or», non «slash» */
+        const u=new SpeechSynthesisUtterance(String(text).replace(/\s\/\s/g," or "));
         /* Voce per genere. Se il sistema ha una voce inglese esplicitamente
            femminile/maschile la usiamo; se ne ha UNA SOLA in tutto (capita
            su Chromebook piu' spartani), il personaggio resta comunque
@@ -53613,8 +53615,8 @@ MECH.stormNight=function(s){
    cui dedurlo, e sbagliando dieci volte quello che si fissa e' la forma
    sbagliata (*goed). Quindi al primo incontro con un item il cristallo si
    APRE e basta — tre forme, voce, raccogli. v306: le presentazioni sono
-   DUE, poi il verbo lo si SCRIVE (il comparativo si scrive o si sceglie),
-   e la scheda torna dopo un errore o dopo un mese che non lo si incontra
+   TRE, poi il verbo lo si SCRIVE (il comparativo si scrive o si sceglie),
+   e la scheda torna dopo un errore o dopo 20 giorni che non lo si incontra
    (vedi gemStage). L'esposizione precede sempre il richiamo; non e' un
    effetto sperato, e' un meccanismo.
 
@@ -54582,6 +54584,209 @@ const GEM_LEX={
     ["injury","infortunio","","The ___ kept him out for a month."]
   ]
 };
+
+/* v306 — PAROLE EXTRA (Giacomo, 8 ott 2026: «il lessico delle gemme deve
+   essere quello delle unit che hanno svolto, piu' parole extra che possono
+   imparare anche se non sono nella unit»). Stesso formato di GEM_LEX, stesso
+   tema della unit, ma FUORI dal libro: entrano nel pool quando si apre la
+   loro unit (stesso gate), si mescolano alle altre con la loro quota
+   naturale (~6 su 35-45) e sul cristallo si presentano come «Extra».
+   Si accodano a GEM_LEX con un quinto campo "x", cosi' distrattori, frasi
+   col buco e deduplica funzionano da soli. ⚠️ Una parola gia' presente in
+   una qualsiasi unit, o fra verbi e aggettivi dei cristalli, viene SCARTATA
+   (con un avviso in console): un'extra non deve mai fare da doppione. */
+const GEM_LEX_EXTRA={
+  u0:[
+    ["scissors","forbici","✂","I cut the paper with ___."],
+    ["glue","colla","","I stick the photo in my notebook with ___."],
+    ["sharpener","temperamatite","","My pencil is broken: where is my ___?"],
+    ["playground","cortile","","The children play in the ___ at break."],
+    ["break time","intervallo","","We eat a snack at ___."],
+    ["headteacher","preside","","The ___ is the boss of the school."]
+  ],
+  u1:[
+    ["Portugal","Portogallo","","Lisbon is in ___."],
+    ["Mexico","Messico","","Mexico City is in ___."],
+    ["Russia","Russia","","Moscow is in ___."],
+    ["the USA","gli Stati Uniti","","New York is in ___."],
+    ["flag","bandiera","","The Italian ___ is green, white and red."],
+    ["capital","capitale","","Rome is the ___ of Italy."]
+  ],
+  u2:[
+    ["niece","nipote (femmina, di zii)","","My sister's daughter is my ___."],
+    ["nephew","nipote (maschio, di zii)","","My brother's son is my ___."],
+    ["only child","figlio unico","","I haven't got brothers or sisters: I'm an ___."],
+    ["pet","animale domestico","","Our ___ is a cat called Tom."],
+    ["age","età","","What's your ___? I'm twelve."],
+    ["great-grandmother","bisnonna","","My grandmother's mother is my ___."]
+  ],
+  u3:[
+    ["attic","soffitta","","Old toys are in the ___, under the roof."],
+    ["cellar","cantina","","We keep old bikes in the ___, under the house."],
+    ["balcony","balcone","","My flat has got a ___ with flowers."],
+    ["flat","appartamento","","We live in a ___ on the third floor."],
+    ["hall","ingresso","","Leave your shoes in the ___, near the door."],
+    ["dining room","sala da pranzo","","We have dinner in the ___."]
+  ],
+  u4:[
+    ["keyring","portachiavi","","My keys are on a red ___."],
+    ["sunglasses","occhiali da sole","\u{1F576}","It's sunny: where are my ___?"],
+    ["stickers","adesivi","","I collect football ___."],
+    ["board game","gioco da tavolo","","We play a ___ on Sunday evening."],
+    ["pocket money","paghetta","","I get five pounds ___ every week."],
+    ["badge","spilla","","I've got a funny ___ on my jacket."]
+  ],
+  u5:[
+    ["alarm clock","sveglia","⏰","My ___ rings at seven."],
+    ["catch the bus","prendere l'autobus","","I ___ at half past seven."],
+    ["have a nap","fare un pisolino","","After lunch my grandad likes to ___."],
+    ["midnight","mezzanotte","","Twelve o'clock at night is ___."],
+    ["midday","mezzogiorno","","Twelve o'clock in the day is ___."],
+    ["weekend","fine settimana","","On the ___ I don't go to school."]
+  ],
+  u6:[
+    ["peach","pesca","\u{1F351}","A ___ is a soft, sweet summer fruit."],
+    ["pear","pera","\u{1F350}","I eat a ___ every day after lunch."],
+    ["cherry","ciliegia","\u{1F352}","A ___ is small, round and red."],
+    ["honey","miele","\u{1F36F}","Bees make ___."],
+    ["flour","farina","","You make bread with ___ and water."],
+    ["pepper","pepe","","Can you pass me the salt and ___, please?"]
+  ],
+  u7:[
+    ["climbing","arrampicata","","___ is my favourite sport: I love mountains."],
+    ["horse riding","equitazione","","I go ___ at my uncle's farm."],
+    ["skating","pattinaggio","","In winter we go ___ on the ice."],
+    ["trophy","trofeo","\u{1F3C6}","The winners get a big gold ___."],
+    ["stadium","stadio","","We watch the match at the ___."],
+    ["half-time","intervallo (della partita)","","The players drink water at ___."]
+  ],
+  u8:[
+    ["sandals","sandali","\u{1F461}","In summer I wear ___."],
+    ["hoodie","felpa col cappuccio","","It's cold: put on your ___."],
+    ["tracksuit","tuta","","I wear a ___ for PE."],
+    ["handbag","borsetta","\u{1F45C}","My mum's ___ is black."],
+    ["cash","contanti","","Can I pay in ___?"],
+    ["discount","sconto","","There's a 20% ___ on jeans today."]
+  ],
+  u2_1:[
+    ["eyebrows","sopracciglia","","She has got dark ___ above her eyes."],
+    ["eyelashes","ciglia","","Her ___ are long and black."],
+    ["chin","mento","","He has got a small beard on his ___."],
+    ["cheeks","guance","","Her ___ are red because it's cold."],
+    ["spiky","a punta, ritti","","His hair is short and ___ with gel."],
+    ["wrinkles","rughe","","My grandma has got ___ on her face."]
+  ],
+  u2_2:[
+    ["choir","coro","","I sing in the school ___."],
+    ["flute","flauto","","We play the ___ in the music lesson."],
+    ["chorus","ritornello","","Everybody sings the ___ of the song."],
+    ["tune","melodia","","I can't stop singing this ___!"],
+    ["cheerful","allegro","","This song is ___: it makes me smile."],
+    ["lonely","solo, triste","","I feel ___ without my friends."]
+  ],
+  u2_3:[
+    ["hail","grandine","","Little balls of ice from the sky are ___."],
+    ["humid","umido","","In August the air is hot and ___."],
+    ["chilly","freschino","","Take a jumper: it's a bit ___ tonight."],
+    ["waterfall","cascata","","The water falls from the rocks: it's a ___."],
+    ["ocean","oceano","","The Pacific is the biggest ___ in the world."],
+    ["cliff","scogliera","","Don't go near the edge of the ___!"]
+  ],
+  u2_4:[
+    ["soundtrack","colonna sonora","","I love the music in the ___ of that film."],
+    ["fantasy film","film fantasy","","Harry Potter is a ___."],
+    ["special effects","effetti speciali","","The ___ in this film are amazing."],
+    ["hero","eroe","","The ___ saves the world at the end."],
+    ["villain","il cattivo","","The ___ wants to destroy the city."],
+    ["reality show","reality","","In a ___ real people live in a house with cameras."]
+  ],
+  u2_5:[
+    ["seat belt","cintura di sicurezza","","Put on your ___ in the car."],
+    ["traffic jam","ingorgo","","We're late because of a ___."],
+    ["departures","partenze","","Check the ___ board for your train."],
+    ["arrivals","arrivi","","We wait for Grandma at ___."],
+    ["boarding pass","carta d'imbarco","","Show your ___ at the gate."],
+    ["cable car","funivia","","We go up the mountain by ___."]
+  ],
+  u2_6:[
+    ["teaspoon","cucchiaino","","Add a ___ of sugar."],
+    ["recipe","ricetta (di cucina)","","My grandma's ___ for chocolate cake is the best."],
+    ["ingredients","ingredienti","","Read the ___: flour, eggs and milk."],
+    ["grate","grattugiare","","___ the cheese on the pasta."],
+    ["slice","fetta","","Can I have a ___ of pizza?"],
+    ["leftovers","avanzi","","We eat the ___ from yesterday's dinner."]
+  ],
+  u2_7:[
+    ["mop","lavare il pavimento","","___ the kitchen floor, please."],
+    ["laundry","bucato","","I put the ___ in the washing machine."],
+    ["clothes peg","molletta","","Hang the T-shirt with a ___."],
+    ["vacuum cleaner","aspirapolvere","","The ___ is very noisy."],
+    ["rubber gloves","guanti di gomma","","Wear ___ when you clean the bath."],
+    ["fold","piegare","","___ your clothes and put them in the drawer."]
+  ],
+  u2_8:[
+    ["town hall","municipio","","The mayor works in the ___."],
+    ["police station","commissariato","","Lost your wallet? Go to the ___."],
+    ["zebra crossing","strisce pedonali","","Cross the road at the ___."],
+    ["bus stop","fermata dell'autobus","\u{1F68F}","I wait for the bus at the ___."],
+    ["sign","cartello","","Read the ___: no parking here."],
+    ["petrol station","distributore di benzina","","Dad buys petrol at the ___."]
+  ],
+  u3_1:[
+    ["pilot","pilota","","A ___ flies planes."],
+    ["architect","architetto","","An ___ designs buildings."],
+    ["programmer","programmatore","","A ___ writes code for computers."],
+    ["boss","capo","","My mum is the ___: she manages ten people."],
+    ["colleague","collega","","I work with my ___ in the same office."],
+    ["punctual","puntuale","","She is always on time: she's very ___."]
+  ],
+  u3_2:[
+    ["screenshot","schermata","","Take a ___ of the message and send it to me."],
+    ["headset","cuffie con microfono","","I talk to my friends with a ___ when I play online."],
+    ["touchscreen","schermo tattile","","You use a ___ with your finger."],
+    ["username","nome utente","","Write your ___ and your password."],
+    ["attachment","allegato","","Open the ___ in the email."],
+    ["power bank","batteria portatile","","My phone is dead: can I use your ___?"]
+  ],
+  u3_3:[
+    ["binoculars","binocolo","","I can see the birds with my ___."],
+    ["blister","vescica","","My new boots gave me a ___ on my foot."],
+    ["summit","vetta","","We reached the ___ of the mountain at noon."],
+    ["sunscreen","crema solare","","Put on ___: the sun is very strong."],
+    ["waterproof","impermeabile","","Take a ___ jacket: it might rain."],
+    ["zip line","teleferica (zip line)","","Have you ever been on a ___?"]
+  ],
+  u3_4:[
+    ["landslide","frana","","After the heavy rain there was a ___ on the road."],
+    ["carbon footprint","impronta di carbonio","","Walking to school reduces your ___."],
+    ["endangered","in via di estinzione","","The panda is an ___ animal."],
+    ["smoke","fumo","","There is black ___ from the fire."],
+    ["volunteer","volontario","","I'm a ___: I help people after the flood."],
+    ["deforestation","deforestazione","","___ destroys the homes of many animals."]
+  ],
+  u3_5:[
+    ["sore throat","mal di gola","","I can't speak: I've got a ___."],
+    ["flu","influenza","","She's in bed with the ___."],
+    ["pill","pillola","\u{1F48A}","Take one ___ after dinner."],
+    ["rash","sfogo sulla pelle","","I've got a red ___ on my arm."],
+    ["crutches","stampelle","","He broke his leg and walks with ___."],
+    ["prescription","ricetta (del medico)","","The doctor writes a ___ for your medicine."]
+  ]
+};
+(function(){
+  const gia={};
+  for(const u in GEM_LEX) (GEM_LEX[u]||[]).forEach(function(w){ gia[String(w[0]).toLowerCase()]=u; });
+  GEM_VERBS.forEach(function(v){ gia[v[0]]=gia[v[0]]||"verbi"; });
+  GEM_ADJ.forEach(function(a){ gia[a[0]]=gia[a[0]]||"aggettivi"; });
+  for(const u in GEM_LEX_EXTRA){
+    if(!GEM_LEX[u]){ console.warn("GEM_LEX_EXTRA: unit senza lessico",u); continue; }
+    GEM_LEX_EXTRA[u].forEach(function(w){
+      const k=String(w[0]).toLowerCase();
+      if(gia[k]){ console.warn("GEM_LEX_EXTRA: «"+w[0]+"» c'e' gia' in "+gia[k]+", scartata"); return; }
+      gia[k]=u; GEM_LEX[u].push([w[0],w[1],w[2]||"",w[3]||"","x"]);
+    });
+  }
+})();
 
 /* Unit sbloccate che hanno lessico. */
 function gemLexUnits(){
@@ -57300,11 +57505,13 @@ function gemItem(key){
     if(!rec) return null;
     let dove=un; try{ const sy=Gate.info(un); if(sy) dove="Anno "+sy.yr+" \u00b7 "+sy.t; }catch(e){}
     const alts=gemLexAlts(un,en);
-    return { key, kind:"lex", unit:un, word:en, it:rec[1],
+    const extra=rec[4]==="x";             // v306: parola extra, fuori dal libro
+    return { key, kind:"lex", unit:un, word:en, it:rec[1], extra,
              pic:rec[2]||"", cloze:rec[3]||"",
              answer:en, wrong:alts.slice(0,2).map(function(a){ return a.en; }), alts,
              full:en+" \u2014 "+rec[1],
-             why:"Lessico di <b>"+_escHtml(dove)+"</b>." };
+             why:extra ? "\u2B50 Parola <b>extra</b>: non \u00e8 nel libro, ma va con <b>"+_escHtml(dove)+"</b>."
+                       : "Lessico di <b>"+_escHtml(dove)+"</b>." };
   }
   if(k==="v1"||k==="v2"){
     const v=GEM_VERBS.find(x=>x[0]===w); if(!v) return null;
@@ -57324,9 +57531,12 @@ function gemItem(key){
       }
     }
     /* v306: forme accettate scrivendo, oltre a quella insegnata */
+    /* v306: forme insegnate tutte e due (got/gotten): valgono scrivendo e
+       stanno tutte e due sulla scheda */
     const also=(k==="v2"&&v[0]==="get")?["gotten"]:[];
+    const p2=(v[0]==="get")?"got / gotten":v[2];
     return { key, kind:k, word:v[0], answer:ask, wrong, also,
-             full:v[0]+" \u2014 "+v[1]+" \u2014 "+v[2], it:v[3],
+             full:v[0]+" \u2014 "+v[1]+" \u2014 "+p2, it:v[3],
              why:"Verbo irregolare: il passato <b>non</b> si fa con -ed, si impara a memoria." };
   }
   const a=GEM_ADJ.find(x=>x[0]===w); if(!a) return null;
@@ -57337,9 +57547,11 @@ function gemItem(key){
      lungo, o more/most su uno corto. E' l'altro errore vero. */
   const bad = (a[1]==="m") ? (k==="c" ? w+"er" : w+"est")
                            : (k==="c" ? "more "+w : "most "+w);
+  /* far: si insegnano further E farther (furthest E farthest) */
   const also=(w==="far")?(k==="c"?["farther"]:["farthest"]):[];
+  const fc=(w==="far")?"further / farther":f.comp, fs=(w==="far")?"furthest / farthest":f.sup;
   return { key, kind:k, word:w, answer:ask, wrong:[bad,other], also,
-           full:w+" \u2014 "+f.comp+" \u2014 "+f.sup, it:a[2], why:f.why };
+           full:w+" \u2014 "+fc+" \u2014 "+fs, it:a[2], why:f.why };
 }
 function gemFormKeys(){
   const out=[];
@@ -57597,8 +57809,8 @@ function gemOpen(g){
      passa in seconda dopo l'estate. Anche chi ha giocato PRIMA di questa
      versione (nessun giorno registrato) la rivede una volta.
    ===================================================================== */
-const GEM_SHOWS=2;
-const GEM_REFRESH_DAYS=30;
+const GEM_SHOWS=3;          // Giacomo, 8 ott: tre presentazioni prima di scrivere
+const GEM_REFRESH_DAYS=20;
 function gemToday(){ return Math.floor(Date.now()/86400000); }
 function gemLemma(key){
   const p=key.indexOf(":"), k=key.slice(0,p), w=key.slice(p+1);
@@ -57629,7 +57841,7 @@ function gemShow(g,it,kd,why,np){
   const sub={ again:"Ancora una volta \u2014 guardalo bene", miss:"Ripassiamolo insieme",
               refresh:"Te lo ricordi? Rivediamolo" }[why] || "Nuovo \u2014 guardalo bene";
   const next=(np||0)<GEM_SHOWS
-    ? "Lo rivedrai ancora una volta, poi "+(verb?"dovrai <b>scriverlo tu</b>.":"te lo chiedo io.")
+    ? "Lo rivedrai ancora "+((GEM_SHOWS-np)>1?(GEM_SHOWS-np)+" volte":"una volta")+", poi "+(verb?"dovrai <b>scriverlo tu</b>.":"te lo chiedo io.")
     : "La prossima volta che trovi questo cristallo, "+(verb?"lo <b>scrivi tu</b>.":"te lo chiedo io.");
   DialogueBox.open({
     name:kd.ic+" "+kd.nome, sub:sub,
@@ -57670,7 +57882,8 @@ function gemFormWrite(g,it,kd,near){
 function gemFormJudge(g,it,kd,val){
   const a=gemLexNorm(val), ok=[it.answer].concat(it.also||[]).map(gemLexNorm);
   if(!a) return;                                   // campo vuoto: non e' un tentativo
-  if(ok.indexOf(a)>=0){ DialogueBox.close(); gemTake(g,it,false); return; }
+  if(ok.indexOf(a)>=0){ DialogueBox.close();
+    gemTake(g, a===ok[0]?it:Object.assign({},it,{answer:a}), false); return; }
   /* «Ci sei quasi» solo per un dito storto: una lettera sulle parole corte,
      due sulle lunghe. E MAI per la forma regolare inventata (*goed,
      *buyed): quello non e' un refuso, e' proprio l'errore da correggere. */
@@ -57831,7 +58044,10 @@ function gemLexAsk(g,it,kd){
   const m=modes[Math.floor(Math.random()*modes.length)];
   /* La scrittura non si applica a "choice": li' la domanda puo' essere in
      direzione EN->IT, e far scrivere l'ITALIANO non allena niente. */
-  if(m!=="choice" && Math.random()<0.34) gemLexWrite(g,it,kd,m,null);
+  /* v306: una parola EXTRA non e' nel libro: finche' non la si e' presa
+     almeno una volta si sceglie fra tre, non la si scrive */
+  const nuovaExtra=it.extra && !((Gems.state().got||{})[it.key]);
+  if(m!=="choice" && !nuovaExtra && Math.random()<0.34) gemLexWrite(g,it,kd,m,null);
   else gemLexChoice(g,it,kd,m,false);
 }
 /* Costruisce l'item da consegnare a gemTake/gemMiss per QUESTA domanda: in
@@ -57956,7 +58172,7 @@ function gemLexChoice(g,it,kd,m,downgraded){
   DialogueBox.open({
     name:kd.ic+" "+kd.nome,
     sub:downgraded?"Allora scegli fra tre":"Rispondi e prendi il cristallo",
-    html:head+'<div class="gem-qs">'+qs+'</div>'
+    html:gemLexExtraTag(it)+head+'<div class="gem-qs">'+qs+'</div>'
         +(downgraded?'<div class="gem-near">Non era quella \u2014 prova cos\u00ec.</div>':""),
     choices:opts.map(function(o){ return { label:o, keepOpen:true,
       act:function(){ DialogueBox.close();
@@ -57976,7 +58192,7 @@ function gemLexWrite(g,it,kd,m,near){
       +'<div class="gem-qs">Complete the sentence in English.</div>';
   DialogueBox.open({
     name:kd.ic+" "+kd.nome, sub:near?"Ci sei quasi":"Scrivi la parola",
-    html:head
+    html:gemLexExtraTag(it)+head
         +'<div class="gem-it">'+_escHtml(it.it)+'</div>'
         +(near?'<div class="gem-near">Hai scritto \u00ab'+_escHtml(near)
                +'\u00bb \u2014 controlla le lettere.</div>':"")
@@ -58003,6 +58219,11 @@ function gemLexWrite(g,it,kd,m,near){
     const el=document.getElementById("gem-write");
     if(el && !(navigator.maxTouchPoints>0)) el.focus();
   },60);
+}
+/* v306: le parole extra si dichiarano subito, nella domanda: chi non la
+   sa non deve pensare di essersi perso una lezione */
+function gemLexExtraTag(it){
+  return (it&&it.extra) ? '<div class="gem-note">\u2B50 Parola <b>extra</b> \u2014 non \u00e8 nel libro, puoi impararla qui.</div>' : "";
 }
 function gemLexNorm(t){ return String(t||"").toLowerCase().trim()
   .replace(/\s+/g," ").replace(/[.!?,;:]+$/,""); }
