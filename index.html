@@ -56126,9 +56126,10 @@ function dressAcc(meshes,acc,holder){
    · Designer bag: trapuntata a rombi, chiusura dorata con la pietra, e la
      tracolla e' una CATENA dorata a maglie vere.
    La tracolla passa sulla spalla sinistra (+x), scende in diagonale davanti
-   e dietro fino al fianco destro; la borsa sta sul davanti del fianco
-   destro, appoggiata su quello che c'e' sotto (felpa o giacca: la giacca
-   si veste prima, vedi applyLook).
+   e dietro fino al fianco destro; la borsa sta davanti, al centro della
+   pancia (v305: sul fianco la prendeva il braccio), appoggiata su quello
+   che c'e' sotto (felpa o giacca: la giacca si veste prima, vedi
+   applyLook).
    ⚠️ SI COSTRUISCE COME LA CERNIERA DELLA GIACCA, NON COME LA COLLANA:
    pesata sullo scheletro della testa si staccherebbe dal busto (vedi la
    nota in dressCoat). Si disegna nel sistema della testa (x, y su dagli
@@ -56182,8 +56183,22 @@ function _accBag(meshes,H,id,C){
       const qx=ax-d.x*u, qy=ay-d.y*u, qz=az-d.z*u; if(qx*qx+qy*qy+qz*qz>r2) continue; if(t===null||u>t) t=u; }
     return t===null?def:t; };
   const nz=M.nz, yN=M.neckY, Lt=Math.max(0.3,yN-yH);
-  /* ---- la borsa: davanti al fianco destro, segue la curva del fianco ---- */
-  const W=K.W, Hb=K.H, D=K.D, yT=yH+0.37*Lt, yc=yT-Hb/2, hwR=hwAt(yT), bx=-(hwR*0.52+0.006);
+  /* ---- la borsa: davanti alla pancia, segue la curva del busto ----
+     v305 (Giacomo, 8 ott: «le borse vanno messe piu' davanti, cosi'
+     finiscono fuse col braccio alcune volte (non sempre)»). Prima stava a
+     meta' del fianco destro e sporgeva oltre la sagoma del busto: proprio
+     dove, camminando e correndo, l'AVAMBRACCIO DESTRO oscilla avanti e
+     verso l'interno — ci entrava fino a 4 cm, in un fotogramma su due
+     (ecco il «non sempre»). Misurato fotogramma per fotogramma (Idle, Walk,
+     Run, ragazzo e ragazza, borsa piu' stretta e piu' larga): sul fianco
+     destro e anche al centro esatto il braccio la prende ancora; al centro
+     della pancia spostata di un decimo della sua larghezza verso sinistra
+     (+x) non la tocca mai. Spostata di piu' torna a toccarla, piu' in alto
+     va peggio. Il centro e' quello del busto all'altezza della borsa, non
+     quello degli occhi: sulla ragazza i due non coincidono. */
+  const W=K.W, Hb=K.H, D=K.D, yT=yH+0.37*Lt, yc=yT-Hb/2;
+  let x0=9, x1=-9; AN.forEach(a=>{ if(a.l.y>yT-Hb&&a.l.y<yT){ x0=Math.min(x0,a.l.x); x1=Math.max(x1,a.l.x); } });
+  const bx=(x1>x0?(x0+x1)/2:0)+0.10*W;
   const zAt=(x,y)=>nz+ray(new V3(x,y,nz),new V3(0,0,1),0.02,0.11);
   const S=[]; for(let k=0;k<=4;k++) for(let j=0;j<=3;j++){ const x=bx+W*(k/4-0.5), y=yc+Hb*(j/3-0.5); S.push(new V3(x,y,zAt(x,y))); }
   let zL=-9, zR=-9; S.forEach(p=>{ if(p.x>bx+W*0.4) zL=Math.max(zL,p.z); if(p.x<bx-W*0.4) zR=Math.max(zR,p.z); });
