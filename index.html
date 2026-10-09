@@ -22418,10 +22418,12 @@ function buildSchoolNPCs(){
     setTimeout(()=>tryT(0),0); }
   SCHOOL_PUPILS.forEach(p=>{ try{
     const n=spawnNPC({ id:p.id, name:p.name, sub:"Pupil", area:UNIT0.area, model:p.model, keepModel:true,
-      x:C.x+p.desk.x, z:C.z+p.desk.z+0.42, face:Math.PI, height:p.h, snap:false, watch:false });
+      x:C.x+p.desk.x, z:C.z+p.desk.z+0.42, face:Math.PI, height:p.h, snap:false, watch:false,
+      radius:1.6, interact:pupilChat });                                // v306: dopo la lezione si chiacchiera
     /* le pin delle gambe arrivano qualche fotogramma dopo lo spawn: si
        ritenta finche' ci sono (al massimo ~4 s) */
     if(n){ n.watch=false; LESSON.pupils[p.id]=n;                      // v306: per le lezioni
+      if(n.inter) n.inter.enabled=lessonPupilsFree();
       const tryS=k=>{ if(n.__seated) return; let ok=false;
         try{ ok=!!(n.pins&&n.pins.length) && npcSitAt(n,C.x+p.desk.x,C.z+p.desk.z+0.42,Math.PI,0.4225,0,0.04); }catch(e){ console.warn("[school] sit",e); }
         if(!ok && k<40) setTimeout(()=>tryS(k+1),100); };
@@ -22447,15 +22449,8 @@ function graceStepLine(){
   return { en:"Can I help you?", it:"" };
 }
 function talkToGrace(npc){
-  /* v306: la lezione di ripasso. Si propone una volta per ingresso (o subito
-     se l'hai chiesta dall'HUD); lo Starter solo a quest gia' avviata, se no
-     al primo ingresso in assoluto la maestra proporrebbe un ripasso di
-     qualcosa che non hai ancora visto. */
-  if(!LESSON.on){ const lid=lessonUnitId();
-    const want=lessonWanted();
-    let ok=!!lid && (want===lid || !LESSON.offered);
-    if(ok && lid==="u0" && want!=="u0"){ let st=0; try{ st=Progress.get("u0").step||0; }catch(e){} ok=st>=2; }
-    if(ok){ LESSON.offered=true; lessonOffer(npc,lid); return; } }
+  /* v306: con la lezione in attesa Miss Grace ti invita a sederti */
+  if(!LESSON.on && LESSON.pending && !LESSON.fetching){ lessonInvite(npc,LESSON.pending); return; }
   if(ambientReady(npc,UNIT0)){ openAmbient(npc,UNIT0.id,"🍎","Teacher"); return; }
   if(Quest.unit===UNIT0 && Quest.step){
     if(Quest.step.id==="gram"){ runSchoolGrammar(npc); return; }
@@ -22783,32 +22778,25 @@ function lessonWanted(){
   return null;
 }
 function lessonWantClear(){ LESSON.wanted=null; try{ Sync.del(LESSON_WANT_K); }catch(e){ try{ Sync.set(LESSON_WANT_K,null); }catch(e2){} } }
+/* v306 (Giacomo, 9 ott): di default la lezione e' sull'ULTIMA UNIT APERTA
+   DAL DOCENTE (il cursore di classe), a Starter finito; un'altra unit la si
+   chiede dentro la quest col pulsante Help, che ha la precedenza. */
+function lessonDefaultUnit(){
+  let c=null; try{ c=Gate.cursor(); }catch(e){}
+  if(!c) return null;
+  if(c.yr>=9){                                   // docente senza simulazione: tutto aperto
+    const q=Sync.get("et_last_quest",null);
+    return (q && q.id && LESSONS[q.id] && lessonUnitObj(q.id)) ? q.id : null;
+  }
+  let best=null;
+  SYLLABUS.forEach(x=>{ if(LESSONS[x.id] && lessonUnitObj(x.id) && (x.yr<c.yr || (x.yr===c.yr && x.n<=c.n))) best=x.id; });
+  return best;
+}
 function lessonUnitId(){
   const w=lessonWanted();
   if(w && lessonUnitObj(w)) return w;
-  const q=Sync.get("et_last_quest",null);
-  if(q && q.id && LESSONS[q.id] && !lessonDone(q.id) && lessonUnitObj(q.id)) return q.id;
-  let st=0; try{ st=Progress.get("u0").step||0; }catch(e){}
-  if(!lessonDone("u0")) return st>0 ? "u0" : null;
-  return lessonFrontier();
-}
-/* v306 (Giacomo, 9 ott: «se hai concluso la quest della Town School,
-   quando entri ti deve mostrare il poster della unit in cui sei arrivato»).
-   Starter finito, nessuna quest in corso e nessun aiuto chiesto: la unit a
-   cui sei arrivato nel gioco, cioe' la prima APERTA e non finita dopo
-   l'ultima che hai finito (curricolo in ordine: Anno 1, 2, 3). Se dopo non
-   ce n'e', la piu' avanti fra quelle aperte e non finite; se hai finito
-   tutto quello che e' aperto, l'ultima toccata o l'ultima aperta. */
-function lessonFrontier(){
-  const ok=id=>{ if(!LESSONS[id] || !lessonUnitObj(id)) return false;
-    try{ return Gate.unlocked(id); }catch(e){ return false; } };
-  const ids=SYLLABUS.map(x=>x.id).filter(ok);
-  let lastDone=-1; ids.forEach((id,i)=>{ if(lessonDone(id)) lastDone=i; });
-  for(let i=lastDone+1;i<ids.length;i++) if(!lessonDone(ids[i])) return ids[i];
-  for(let i=ids.length-1;i>=0;i--) if(!lessonDone(ids[i])) return ids[i];
-  const q=Sync.get("et_last_quest",null);
-  if(q && q.id && ids.indexOf(q.id)>=0) return q.id;
-  return ids.length ? ids[ids.length-1] : null;
+  if(!lessonDone("u0")) return null;            // lo Starter si fa con la sua quest
+  return lessonDefaultUnit();
 }
 function lessonTitle(id){ const s=Gate.info(id);
   return s ? ((s.n===0?"the Starter":"Unit "+s.n)+" — "+s.t) : id; }
@@ -22821,7 +22809,7 @@ function lessonNextTask(id){
   return { where:u.areaName||"", en:s.introObjEn||"", it:s.introObj||"" };
 }
 
-const LESSON={ on:false, seated:false, id:null, score:0, total:0, offered:false, wanted:null,
+const LESSON={ on:false, seated:false, id:null, score:0, total:0, wanted:null, pending:null, fetching:false, obs:null,
   theme:null, posters:[], board:null, boardDefault:null, pupils:{} };
 
 /* ---- la lavagna ----------------------------------------------------------- */
@@ -22930,15 +22918,111 @@ function lessonThemeClear(){
   LESSON.theme=null;
 }
 /* entrando a scuola: i poster seguono la quest in corso (lo Starter tiene i suoi) */
+/* ==== v306 — LA LEZIONE E' GIA' IN CORSO (Giacomo, 9 ott: «il giocatore
+   entra nell'ultima unit aperta dal professore. Se vuoi una lezione su
+   altro la chiedi dentro la quest con Help. Di default entri (se hai gia'
+   finito la Town School quest) e trovi una lezione che sta andando, coi
+   poster dell'ultima unit aperta dall'insegnante: ti dicono good morning /
+   afternoon / evening e ti invitano a sederti. Se giri per la classe, dopo
+   un po' Miss Grace viene, come per Can I help you?, e ti fa sedere per
+   forza perche' la lezione deve iniziare. Finita la lezione puoi parlare
+   coi compagni e guardare i poster»).
+   · LESSON.pending = la lezione che ti aspetta in questo ingresso;
+   · finita (o interrotta alzandosi) non ricomincia per 15 minuti: rientrare
+     subito dopo non deve voler dire rifarla. ==== */
+const LESSON_AGAIN_MS=15*60000;
+const LESSON_FETCH_MS=20000;      // dopo il saluto, quanto si puo' girare prima che Miss Grace venga
 function lessonOnSchoolEnter(){
-  LESSON.offered=false;
+  LESSON.pending=null; LESSON.fetching=false;
   const id=lessonUnitId();
   if(id && id!=="u0") lessonThemeApply(id); else lessonThemeClear();
-  /* l'avviso una volta per unit e per sessione: ora la scuola ha quasi sempre
-     una unit da ripassare, e a ogni ingresso sarebbe una predica */
-  LESSON.told=LESSON.told||{};
-  if(id && (id!=="u0" || lessonWanted()==="u0") && (!LESSON.told[id] || lessonWanted()===id) && (LESSON.told[id]=1))
-    setTimeout(()=>toast("\u{1F34E} Miss Grace can give you a lesson on "+lessonTitle(id)+": go and talk to her!"),1600);
+  LESSON.doneAt=LESSON.doneAt||{};
+  if(id && !(LESSON.doneAt[id] && Date.now()-LESSON.doneAt[id]<LESSON_AGAIN_MS && lessonWanted()!==id)){
+    LESSON.pending=id; LESSON.greetAt=0;
+    lessonGreetWhenFree(id);
+  }
+  lessonPupilsSync();
+  lessonWatchInit();
+}
+/* il saluto aspetta che non ci siano altre finestre aperte (a Starter
+   finito, entrando esce la festa «Well done!» della questline) */
+function lessonGreetWhenFree(id){
+  let tries=0;
+  const t=()=>{ if(LESSON.pending!==id || LESSON.on || area!=="school") return;
+    const qm=document.getElementById("quest-modal");
+    if((qm && qm.classList.contains("show")) || !GRACE){ if(tries++<200) setTimeout(t,400); return; }
+    lessonInvite(GRACE,id); };
+  setTimeout(t,1200);
+}
+function lessonInvite(npc,id){
+  const g=greetTimeOfDay(), me=(Student.nome||"").split(" ")[0]||"";
+  LESSON.greetAt=Date.now();
+  DialogueBox.open({ npc:npc||GRACE, icon:"\u{1F34E}", sub:"Teacher",
+    text:g.en+(me?", "+me:"")+"! You're just in time: our lesson on "+lessonTitle(id)+" is starting. Come in and sit down, please!",
+    italian:g.it+"! La lezione su "+lessonTitle(id)+" sta per cominciare: siediti al tuo banco.",
+    html:lesCard("les-w","\u{1F4CB} Today's lesson",'<div class="les-title">'+_escHtml(lessonTitle(id))+'</div>'
+      +'<div style="font-size:13px;color:#6b6358">'+_escHtml((LESSONS[id]||{}).g||"")+'</div>'),
+    choices:[
+      { label:"\u{1FA91} Sit down", act:()=>lessonStart(id) },
+      { label:"Just a moment, please!", act:()=>{ LESSON.greetAt=Date.now(); } } ] });
+}
+/* Miss Grace viene a prenderti: stesso percorso «a L» dell'assist dello
+   Starter (corridoio ovest, poi in orizzontale verso di te) */
+function lessonWatchInit(){
+  if(LESSON.obs || typeof scene==="undefined") return;
+  LESSON.obs=scene.onBeforeRenderObservable.add(()=>{
+    if(area!=="school" || !LESSON.pending || LESSON.on || LESSON.fetching || !GRACE || !LESSON.greetAt) return;
+    const qm=document.getElementById("quest-modal");
+    if(qm && qm.classList.contains("show")){ return; }
+    if(Date.now()-LESSON.greetAt<LESSON_FETCH_MS) return;
+    lessonFetch();
+  });
+}
+function lessonFetch(){
+  const id=LESSON.pending; if(!id) return;
+  LESSON.fetching=true;
+  const C=INTERIORS[UNIT0.area].center, V=BABYLON.Vector3;
+  LESSON.graceHome=GRACE.carrier.position.clone(); LESSON.graceYaw=GRACE.carrier.rotation.y;
+  const arrive=()=>{
+    GRACE.watch=true;
+    const me=(Student.nome||"").split(" ")[0]||"";
+    DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Teacher",
+      text:"Come on"+(me?", "+me:"")+"! The lesson is starting. Please, sit down at your desk.",
+      italian:"Dai, la lezione comincia: siediti al tuo banco.",
+      buttons:[{ label:"\u{1FA91} OK, sorry!", cls:"primary", act:()=>{ LESSON.fetching=false; lessonGraceHome(); lessonStart(id); } }] });
+  };
+  const abort=()=>{ LESSON.fetching=false; lessonGraceHome(true); if(LESSON.pending===id) lessonStart(id); };
+  try{ npcWalkSeq(GRACE,[()=>new V(C.x-2.5,0,C.z-3.0),()=>new V(C.x-2.5,0,player.position.z),()=>player.position],
+    1.9,arrive,"school",abort); }
+  catch(e){ abort(); }
+}
+/* alla lezione Miss Grace sta alla lavagna: si teletrasporta al suo posto
+   (la classe e' seduta e guarda avanti, non la vede camminare indietro) */
+function lessonGraceHome(){
+  if(!GRACE || !LESSON.graceHome) return;
+  try{ GRACE.__noPin=false; GRACE.play("Idle"); }catch(e){}
+  GRACE.carrier.position.copyFrom(LESSON.graceHome); GRACE.carrier.rotation.y=LESSON.graceYaw; GRACE.watch=true;
+  LESSON.graceHome=null;
+}
+/* ---- i compagni: muti durante lo Starter (non rubano la E agli oggetti sui
+   banchi) e durante la lezione; dopo si chiacchiera ---- */
+function lessonPupilsFree(){ return lessonDone("u0") && !LESSON.on && !LESSON.pending; }
+function lessonPupilsSync(){
+  const on=lessonPupilsFree();
+  Object.keys(LESSON.pupils).forEach(k=>{ const n=LESSON.pupils[k]; if(n && n.inter) n.inter.enabled=on; });
+}
+function pupilChat(n){
+  if(!lessonPupilsFree()) return;
+  const id=LESSON.lastId||lessonUnitId()||"u0", L=LESSONS[id]||LESSONS.u0;
+  const w=shuffle((GEM_LEX[id]||[]).filter(x=>x[4]!=="x"))[0];
+  const lines=[
+    { en:"That lesson was useful! I think \u00ab"+String(L.g).split("\u00b7")[0].trim()+"\u00bb is easier now.", it:"La lezione e' stata utile!" },
+    { en:"Have you seen the posters? "+(w?"I always forget the word «"+w[0]+"»!":"They're really useful."), it:"Hai visto i poster?" },
+    { en:"Miss Grace is a great teacher. English is my favourite subject!", it:"Miss Grace e' brava: l'inglese e' la mia materia preferita." },
+  ];
+  const l=lines[Math.floor(Math.random()*lines.length)];
+  DialogueBox.open({ npc:n, icon:"\u{1F64B}", sub:"Classmate", text:l.en, italian:l.it,
+    choices:[ { label:"\u{1F44D} Me too!", act:()=>{} }, { label:"See you later!", act:()=>{} } ] });
 }
 
 /* ---- il posto a sedere ------------------------------------------------------ */
@@ -23009,17 +23093,6 @@ function _ask(text,it,html,answer,wrong,full,next,kws){
         buttons:[{ label:"Next", cls:"primary", act:()=>{ if(LESSON.on) next(); } }] }); } }))
   });
 }
-function lessonOffer(npc,id){
-  const it=(id==="u0")?"Vuoi ripassare lo Starter con Miss Grace?":"Vuoi una lezione di ripasso sulla unit che stai facendo?";
-  DialogueBox.open({ npc, icon:"\u{1F34E}", sub:"Teacher",
-    text:"Hello! Would you like a revision lesson on "+lessonTitle(id)+"? We can sit down and practise together with the class.",
-    italian:it,
-    choices:[
-      { label:"\u{1F4DA} Yes, please!", act:()=>lessonStart(id) },
-      /* «no» rinuncia anche alla richiesta dell'HUD: se no talkToGrace la
-         riproporrebbe subito, all'infinito */
-      { label:"No, thanks.", act:()=>{ lessonWantClear(); try{ talkToGrace(npc); }catch(e){} } } ] });
-}
 /* ---- le schede colorate della lezione ---------------------------------------
    (Giacomo, 9 ott: «le spiegazioni di Miss Grace rendile user-friendly, non
    tutte nere: colori, parole chiave»). La riga che Miss Grace DICE resta
@@ -23054,7 +23127,9 @@ function lesSpeak(i){ const t=_lesSayQ[i]; if(t) try{ TTS.say(t,{gender:"f"}); }
 function _lesPlain(h){ const d=document.createElement("div"); d.innerHTML=String(h||""); return (d.textContent||"").trim(); }
 function lessonStart(id){
   const L=LESSONS[id]; if(!L || !GRACE) return;
-  LESSON.on=true; LESSON.id=id; LESSON.score=0; LESSON.total=0; lessonWantClear();
+  LESSON.on=true; LESSON.id=id; LESSON.lastId=id; LESSON.score=0; LESSON.total=0; lessonWantClear();
+  LESSON.pending=id; lessonPupilsSync();
+  if(LESSON.fetching){ LESSON.fetching=false; lessonGraceHome(); }
   if(id!=="u0") lessonThemeApply(id);
   lessonSit();
   const me=(Student.nome||"").split(" ")[0]||"";
@@ -23072,8 +23147,9 @@ function lessonStart(id){
   };
   const steps=[];
   steps.push(()=>{ lessonBoard(title,["Words","Grammar: "+L.g,"Useful phrases: "+L.fn]);
-    _say(GRACE,"Good morning, class! Sit down, please. Today we're going to revise "+title+". Look at the board!",
-      "Buongiorno! Oggi ripassiamo "+title+": guarda la lavagna.",next,"Good morning, Miss Grace!",
+    const g=greetTimeOfDay();
+    _say(GRACE,g.en+", class! Today we're going to revise "+title+". Look at the board!",
+      g.it+"! Oggi ripassiamo "+title+": guarda la lavagna.",next,g.en+", Miss Grace!",
       lesCard("les-w","\u{1F4CB} Today's lesson",'<div class="les-title">'+_escHtml(title)+'</div>'
         +'<div class="les-plan"><span>\u{1F4D7} Words<small>parole</small></span>'
         +'<span>\u{1F4D8} Grammar<small>'+_escHtml(L.g)+'</small></span>'
@@ -23132,7 +23208,9 @@ function lessonStart(id){
 }
 function lessonEnd(quiet){
   if(!LESSON.on) return;
-  LESSON.on=false; LESSON.id=null;
+  LESSON.doneAt=LESSON.doneAt||{}; if(LESSON.id) LESSON.doneAt[LESSON.id]=Date.now();
+  LESSON.on=false; LESSON.id=null; LESSON.pending=null;
+  setTimeout(lessonPupilsSync,0);
   if(quiet){ try{ DialogueBox.close(); }catch(e){} }      // interrotta alzandosi: via anche la domanda aperta
   lessonBoardReset();
   if(LESSON.seated){ LESSON.seated=false; lessonGetUp(); }
