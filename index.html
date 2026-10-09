@@ -22451,6 +22451,11 @@ function graceStepLine(){
 function talkToGrace(npc){
   /* v306: con la lezione in attesa Miss Grace ti invita a sederti */
   if(!LESSON.on && LESSON.pending && !LESSON.fetching){ lessonInvite(npc,LESSON.pending); return; }
+  if(LESSON.on && LESSON.paused && !LESSON.fetching){
+    DialogueBox.open({ npc, icon:"\u{1F34E}", sub:"Teacher", text:"The lesson isn't over yet! Please, go back to your desk.",
+      italian:"La lezione non e' finita: torna al tuo banco.",
+      buttons:[{ label:"\u{1FA91} Sit down", cls:"primary", act:()=>lessonResume() }] });
+    return; }
   if(ambientReady(npc,UNIT0)){ openAmbient(npc,UNIT0.id,"🍎","Teacher"); return; }
   if(Quest.unit===UNIT0 && Quest.step){
     if(Quest.step.id==="gram"){ runSchoolGrammar(npc); return; }
@@ -22971,15 +22976,20 @@ function lessonInvite(npc,id){
 function lessonWatchInit(){
   if(LESSON.obs || typeof scene==="undefined") return;
   LESSON.obs=scene.onBeforeRenderObservable.add(()=>{
-    if(area!=="school" || !LESSON.pending || LESSON.on || LESSON.fetching || !GRACE || !LESSON.greetAt) return;
+    /* uscito dalla scuola a lezione in pausa: la lezione finisce li' */
+    if(area!=="school"){ if(LESSON.on && LESSON.paused){ LESSON.fetching=false; lessonGraceHome(); lessonEnd(true); } return; }
+    if(LESSON.fetching || !GRACE) return;
     const qm=document.getElementById("quest-modal");
-    if(qm && qm.classList.contains("show")){ return; }
+    if(qm && qm.classList.contains("show")) return;
+    if(LESSON.on){ if(LESSON.paused && Date.now()-LESSON.pausedAt>=LESSON_FETCH_MS) lessonFetch(); return; }
+    if(!LESSON.pending || !LESSON.greetAt) return;
     if(Date.now()-LESSON.greetAt<LESSON_FETCH_MS) return;
     lessonFetch();
   });
 }
 function lessonFetch(){
-  const id=LESSON.pending; if(!id) return;
+  const resume=LESSON.on && LESSON.paused;
+  const id=resume?LESSON.id:LESSON.pending; if(!id) return;
   LESSON.fetching=true;
   const C=INTERIORS[UNIT0.area].center, V=BABYLON.Vector3;
   LESSON.graceHome=GRACE.carrier.position.clone(); LESSON.graceYaw=GRACE.carrier.rotation.y;
@@ -22987,11 +22997,14 @@ function lessonFetch(){
     GRACE.watch=true;
     const me=(Student.nome||"").split(" ")[0]||"";
     DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Teacher",
-      text:"Come on"+(me?", "+me:"")+"! The lesson is starting. Please, sit down at your desk.",
-      italian:"Dai, la lezione comincia: siediti al tuo banco.",
-      buttons:[{ label:"\u{1FA91} OK, sorry!", cls:"primary", act:()=>{ LESSON.fetching=false; lessonGraceHome(); lessonStart(id); } }] });
+      text:resume?("Come on"+(me?", "+me:"")+"! The lesson isn't over yet. Please, sit down at your desk.")
+                 :("Come on"+(me?", "+me:"")+"! The lesson is starting. Please, sit down at your desk."),
+      italian:resume?"Dai, la lezione non e' finita: torna al tuo banco.":"Dai, la lezione comincia: siediti al tuo banco.",
+      buttons:[{ label:"\u{1FA91} OK, sorry!", cls:"primary", act:()=>{ LESSON.fetching=false; lessonGraceHome();
+        if(resume) lessonResume(); else lessonStart(id); } }] });
   };
-  const abort=()=>{ LESSON.fetching=false; lessonGraceHome(true); if(LESSON.pending===id) lessonStart(id); };
+  const abort=()=>{ LESSON.fetching=false; lessonGraceHome(true);
+    if(resume){ if(LESSON.on && LESSON.paused) lessonResume(); } else if(LESSON.pending===id) lessonStart(id); };
   try{ npcWalkSeq(GRACE,[()=>new V(C.x-2.5,0,C.z-3.0),()=>new V(C.x-2.5,0,player.position.z),()=>player.position],
     1.9,arrive,"school",abort); }
   catch(e){ abort(); }
@@ -23062,11 +23075,44 @@ function lessonGetUp(){
     }
   }
 }
+/* v306 (Giacomo, 9 ott: «ci si possa alzare e la lezione continua, ma se
+   non si esce dopo 20 secondi o non ci si risiede, ti fa sedere Grace»).
+   Alzarsi METTE IN PAUSA la lezione: ci si risiede col tasto E alla sedia
+   (o parlando con Miss Grace) e si riprende dalla stessa battuta; dopo
+   20 s in piedi Miss Grace viene a prenderti; uscire dalla scuola la
+   chiude (vedi lessonWatchInit). */
 function lessonStand(silent){
   if(!LESSON.seated) return; LESSON.seated=false;
   lessonGetUp();
-  if(LESSON.on) lessonEnd(true);
+  if(LESSON.on){
+    LESSON.paused=true; LESSON.pausedAt=Date.now();
+    try{ DialogueBox.close(); }catch(e){}
+    lessonSeatInter(true);
+    if(!silent) toast("\u{1FA91} The lesson isn't over: sit down again, or leave the school.");
+    return;
+  }
   if(!silent) toast("\u{1F44B} You stand up.");
+}
+/* la sedia: E per risedersi mentre la lezione e' in pausa */
+function lessonSeatInter(on){
+  if(!LESSON.seatInter && on){
+    const I=INTERIORS[UNIT0.area]; if(!I) return; const C=I.center;
+    LESSON.seatInter=addInteract({ id:"lesson_seat", area:UNIT0.area, radius:1.7,
+      pos:()=>new BABYLON.Vector3(C.x+LESSON_DESK.x,0,C.z+LESSON_DESK.z+0.42),
+      prompt:()=>"\u{1FA91} Press <b>E</b> to <b>sit down</b> and go on with the lesson",
+      interact:()=>lessonResume() });
+  }
+  if(LESSON.seatInter) LESSON.seatInter.enabled=!!on;
+}
+function lessonResume(){
+  if(!LESSON.on || !LESSON.paused) return;
+  LESSON.paused=false; lessonSeatInter(false);
+  if(LESSON.fetching){ LESSON.fetching=false; lessonGraceHome(); }
+  lessonSit();
+  /* si riprende dalla stessa battuta; se la domanda era gia' stata
+     risposta (si era sul «Next» della correzione), dalla successiva */
+  setTimeout(()=>{ if(!LESSON.on || LESSON.paused) return;
+    if(LESSON.curDone){ if(LESSON.next) LESSON.next(); } else if(LESSON.cur) LESSON.cur(); },350);
 }
 
 /* ---- la lezione ------------------------------------------------------------- */
@@ -23079,11 +23125,11 @@ function _say(who,text,it,next,label,html){
 /* domanda al giocatore: tre risposte, recast se sbaglia, poi avanti */
 function _ask(text,it,html,answer,wrong,full,next,kws){
   const opts=shuffle([answer].concat(wrong.slice(0,2)));
-  LESSON.total++;
   DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Your turn!", text, italian:it||undefined, html:html||undefined,
     choices:opts.map(o=>({ label:o, act:()=>{
       if(!LESSON.on) return;
-      const ok=(o===answer); if(ok) LESSON.score++;
+      const ok=(o===answer); LESSON.total++; if(ok) LESSON.score++;
+      LESSON.curDone=true;
       const praise=["Well done!","Excellent!","That's right!","Very good!","Perfect!"][Math.floor(Math.random()*5)];
       DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:ok?"✅ Correct":"Not quite",
         text:ok?praise:"Not quite. Look at the right answer.",
@@ -23203,13 +23249,16 @@ function lessonStart(id){
         +'<div style="text-align:center;font-size:13px;color:#6b6358">+'+stars+' stars</div>'
         +(taskEn?'<div class="les-task">\u{1F3AF} <b>Next task</b>'+(task.where?' \u00b7 '+_escHtml(task.where):'')+'<br>'+_escHtml(taskEn)+'</div>':'')));
   });
-  let k=0; function next(){ if(!LESSON.on) return; const f=steps[k++]; if(f) f(); else lessonEnd(false); }
+  let k=0; function next(){ if(!LESSON.on || LESSON.paused) return; const f=steps[k++]; LESSON.cur=f; LESSON.curDone=false;
+    if(f) f(); else lessonEnd(false); }
+  LESSON.next=next; LESSON.paused=false;
   setTimeout(next,450);
 }
 function lessonEnd(quiet){
   if(!LESSON.on) return;
   LESSON.doneAt=LESSON.doneAt||{}; if(LESSON.id) LESSON.doneAt[LESSON.id]=Date.now();
-  LESSON.on=false; LESSON.id=null; LESSON.pending=null;
+  LESSON.on=false; LESSON.id=null; LESSON.pending=null; LESSON.paused=false; LESSON.cur=null; LESSON.next=null;
+  lessonSeatInter(false);
   setTimeout(lessonPupilsSync,0);
   if(quiet){ try{ DialogueBox.close(); }catch(e){} }      // interrotta alzandosi: via anche la domanda aperta
   lessonBoardReset();
