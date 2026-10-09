@@ -22978,6 +22978,7 @@ function lessonWatchInit(){
   LESSON.obs=scene.onBeforeRenderObservable.add(()=>{
     /* uscito dalla scuola a lezione in pausa: la lezione finisce li' */
     if(area!=="school"){ if(LESSON.on && LESSON.paused){ LESSON.fetching=false; lessonGraceHome(); lessonEnd(true); } return; }
+    if(LESSON.seated && Date.now()-(LESSON.deskAt||0)>1500){ LESSON.deskAt=Date.now(); try{ lessonDeskCheck(); }catch(e){} }
     if(LESSON.fetching || !GRACE) return;
     const qm=document.getElementById("quest-modal");
     if(qm && qm.classList.contains("show")) return;
@@ -23038,12 +23039,66 @@ function pupilChat(n){
     choices:[ { label:"\u{1F44D} Me too!", act:()=>{} }, { label:"See you later!", act:()=>{} } ] });
 }
 
-/* ---- il posto a sedere ------------------------------------------------------ */
-const LESSON_DESK={ x:0, z:1.7 };              // fila di mezzo, accanto a Lily
+/* ---- il posto a sedere ------------------------------------------------------
+   v306 (Giacomo, 9 ott: «se entrano piu' alunni insieme, non si siedano uno
+   addosso all'altro»). Ognuno ha il SUO banco, ricavato dal codice (cosi'
+   due alunni che entrano insieme partono quasi sempre da banchi diversi), e
+   se quel banco e' gia' preso da un compagno seduto si passa al primo
+   libero. Se due si siedono nello stesso istante sullo stesso banco, se ne
+   accorgono al giro dopo (lessonDeskCheck) e si sposta quello col codice
+   «piu' grande». Finiti i sei banchi liberi, sul proprio schermo cede il
+   posto un compagno finto (Lily, Ben, Tim): sono NPC locali, nessuno li
+   vede scomparire tranne chi ha bisogno del banco. */
+const LESSON_DESK={ x:0, z:1.7 };              // il banco «di prima», ora solo il ripiego
+function _lessonMyKey(){ try{ return String(Presenza.io||Student.code||"me"); }catch(e){ return "me"; } }
+function _lessonHash(t){ let h=0; t=String(t||""); for(let i=0;i<t.length;i++) h=((h<<5)-h+t.charCodeAt(i))|0; return Math.abs(h); }
+function _lessonSeatPos(d){ const C=INTERIORS[UNIT0.area].center; return { x:C.x+d.x, z:C.z+d.z+0.42 }; }
+/* compagni seduti (o fermi) su un banco: [{key,x,z}] */
+function _lessonOthers(){
+  let v=[]; try{ v=(typeof Presenza!=="undefined" && Presenza.acceso)?Presenza.vicini():[]; }catch(e){ v=[]; }
+  return v.filter(o=>o && isFinite(o.x) && isFinite(o.z));
+}
+function _lessonTaken(d,others,me){
+  const S=_lessonSeatPos(d);
+  return others.some(o=>o.key!==me && Math.hypot(o.x-S.x,o.z-S.z)<0.55);
+}
+function lessonChooseDesk(){
+  const me=_lessonMyKey(), others=_lessonOthers();
+  const free=SCHOOL_FREE_DESKS.slice();
+  const start=_lessonHash(me)%free.length;
+  for(let i=0;i<free.length;i++){ const d=free[(start+i)%free.length];
+    if(!_lessonTaken(d,others,me)) return { x:d.x, z:d.z }; }
+  /* tutti presi: si libera il banco di un compagno finto */
+  const npcDesks=SCHOOL_PUPILS.map(p=>({ x:p.desk.x, z:p.desk.z, npc:LESSON.pupils[p.id] }))
+    .concat([{ x:SCHOOL_TIM_DESK.x, z:SCHOOL_TIM_DESK.z, npc:TIM }]);
+  for(let i=0;i<npcDesks.length;i++){ const d=npcDesks[i];
+    const S=_lessonSeatPos(d);
+    if(others.some(o=>o.key!==me && Math.hypot(o.x-S.x,o.z-S.z)<0.55)) continue;
+    if(d.npc && d.npc.carrier){ try{ d.npc.carrier.setEnabled(false); if(d.npc.inter) d.npc.inter.enabled=false; }catch(e){}
+      (LESSON.hidden=LESSON.hidden||[]).push(d.npc); }
+    return { x:d.x, z:d.z }; }
+  return { x:LESSON_DESK.x, z:LESSON_DESK.z };
+}
+function lessonNpcRestore(){
+  (LESSON.hidden||[]).forEach(n=>{ try{ n.carrier.setEnabled(true); }catch(e){} });
+  LESSON.hidden=[]; lessonPupilsSync();
+}
+/* due seduti sullo stesso banco nello stesso istante: si sposta uno solo */
+function lessonDeskCheck(){
+  if(!LESSON.seated || !LESSON.desk) return;
+  const me=_lessonMyKey(), S=_lessonSeatPos(LESSON.desk);
+  const clash=_lessonOthers().some(o=>o.key!==me && o.seduto && Math.hypot(o.x-S.x,o.z-S.z)<0.35 && String(o.key)<me);
+  if(!clash) return;
+  LESSON.desk=null; LESSON.seated=false;
+  try{ playerStand(); }catch(e){}
+  lessonSit();
+}
 function lessonSit(){
   const I=INTERIORS[UNIT0.area]; if(!I) return false; const C=I.center, V=BABYLON.Vector3;
   try{ standUpAll(); }catch(e){}
-  const f=new V(0,0,-1), S=new V(C.x+LESSON_DESK.x, 0, C.z+LESSON_DESK.z+0.42);
+  if(!LESSON.desk || _lessonTaken(LESSON.desk,_lessonOthers(),_lessonMyKey())) LESSON.desk=lessonChooseDesk();
+  const d=LESSON.desk;
+  const f=new V(0,0,-1), S=new V(C.x+d.x, 0, C.z+d.z+0.42);
   moveTarget=null; pendingInteract=null; try{ tapMark.setEnabled(false); }catch(e){}
   player.position.set(S.x,0,S.z); player.rotation.y=Math.PI; player.computeWorldMatrix(true);
   try{ playAvatarAnim(IDLE_ANIM); }catch(e){}
@@ -23098,7 +23153,7 @@ function lessonSeatInter(on){
   if(!LESSON.seatInter && on){
     const I=INTERIORS[UNIT0.area]; if(!I) return; const C=I.center;
     LESSON.seatInter=addInteract({ id:"lesson_seat", area:UNIT0.area, radius:1.7,
-      pos:()=>new BABYLON.Vector3(C.x+LESSON_DESK.x,0,C.z+LESSON_DESK.z+0.42),
+      pos:()=>{ const d=LESSON.desk||LESSON_DESK; return new BABYLON.Vector3(C.x+d.x,0,C.z+d.z+0.42); },
       prompt:()=>"\u{1FA91} Press <b>E</b> to <b>sit down</b> and go on with the lesson",
       interact:()=>lessonResume() });
   }
@@ -23258,6 +23313,7 @@ function lessonEnd(quiet){
   if(!LESSON.on) return;
   LESSON.doneAt=LESSON.doneAt||{}; if(LESSON.id) LESSON.doneAt[LESSON.id]=Date.now();
   LESSON.on=false; LESSON.id=null; LESSON.pending=null; LESSON.paused=false; LESSON.cur=null; LESSON.next=null;
+  setTimeout(()=>{ if(!LESSON.on){ LESSON.desk=null; lessonNpcRestore(); } },0);
   lessonSeatInter(false);
   setTimeout(lessonPupilsSync,0);
   if(quiet){ try{ DialogueBox.close(); }catch(e){} }      // interrotta alzandosi: via anche la domanda aperta
