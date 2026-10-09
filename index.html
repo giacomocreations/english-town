@@ -58654,15 +58654,18 @@ function gemItem(key){
   }
   const a=GEM_ADJ.find(x=>x[0]===w); if(!a) return null;
   const f=gemForms(a);
-  const ask = k==="c" ? f.comp : f.sup;
-  const other = k==="c" ? f.sup : f.comp;
+  /* v306 (Giacomo, 9 ott: «per i superlativi aggiungi sempre the, es. the
+     closest»): il superlativo si insegna, si sceglie e si scrive con the. */
+  const T=function(x){ return "the "+x; };
+  const ask = k==="c" ? f.comp : T(f.sup);
+  const other = k==="c" ? T(f.sup) : f.comp;
   /* Il distrattore "sbagliato di regola": chi usa -er su un aggettivo
      lungo, o more/most su uno corto. E' l'altro errore vero. */
-  const bad = (a[1]==="m") ? (k==="c" ? w+"er" : w+"est")
-                           : (k==="c" ? "more "+w : "most "+w);
+  const bad = (a[1]==="m") ? (k==="c" ? w+"er" : T(w+"est"))
+                           : (k==="c" ? "more "+w : T("most "+w));
   /* far: si insegnano further E farther (furthest E farthest) */
-  const also=(w==="far")?(k==="c"?["farther"]:["farthest"]):[];
-  const fc=(w==="far")?"further / farther":f.comp, fs=(w==="far")?"furthest / farthest":f.sup;
+  const also=(w==="far")?(k==="c"?["farther"]:["the farthest"]):[];
+  const fc=(w==="far")?"further / farther":f.comp, fs=(w==="far")?"the furthest / the farthest":T(f.sup);
   return { key, kind:k, word:w, answer:ask, wrong:[bad,other], also,
            full:w+" \u2014 "+fc+" \u2014 "+fs, it:a[2], why:f.why };
 }
@@ -58821,6 +58824,10 @@ function buildGems(){
     GEMS.push(g);
     gemRespawn(g,true);
   }
+  /* v306: login, simulazione, cursore dal cloud cambiano le parole giuste
+     (vedi gemCtxCheck). Ogni due secondi costa una firma di stringhe. */
+  _gemCtxLast=gemCtxSig();
+  setInterval(function(){ try{ gemCtxCheck(); }catch(e){} }, 2000);
   /* rotazione + oscillazione: un frame handler solo per tutti e nove */
   scene.onBeforeRenderObservable.add(()=>{
     if(area!=="town") return;
@@ -58848,15 +58855,9 @@ function gemRespawn(g,first,keep){
   g.mesh.position.set(p[0], p[2]+0.55, p[1]);
   g.disc.position.set(p[0], p[2]+0.05, p[1]);
   g.awaitingRespawn=false;           // e' arrivato: da qui in poi lo gestisce il giorno/notte
-  if(!keep){ const k=gemPickKey(busyKeys); g.key=k; g.item=k?gemItem(k):null; }
+  if(!keep){ const k=gemPickKey(busyKeys); g.key=k; g.item=k?gemItem(k):null; g.ctx=gemCtxSig(); }
   if(!g.item){ g.mesh.setEnabled(false); g.disc.setEnabled(false); g.inter.enabled=false; return; }
-  const col=BABYLON.Color3.FromHexString(GEM_KINDS[g.item.kind].col);
-  g.mat.albedoColor=col.scale(0.55);
-  g.mat.emissiveColor=col.scale(0.52);
-  /* ⚠ in ADDITIVO un emissive pieno somma su tutti e tre i canali e
-     l'alone esce GRIGIO-LATTE invece che del colore della categoria (visto
-     negli screenshot): si scala, cosi' resta un tocco di viola/verde/oro. */
-  g.dmat.emissiveColor=col.scale(0.60);
+  gemPaint(g);
   /* ⚠️ CHIUSURA NOTTURNA (Giacomo, 12 set): i cristalli erano l'unica
      cosa in citta' che restava raccoglibile tutta la notte, mentre negozi,
      auto e popolazione chiudono tutti alle 22. Stessa guardia di townOpen()
@@ -58865,6 +58866,55 @@ function gemRespawn(g,first,keep){
      spento finche' updateGemsVisibility() non lo riaccende. */
   const show=townOpen();
   g.mesh.setEnabled(show); g.disc.setEnabled(show); g.inter.enabled=show;
+}
+/* ============================================================================
+   v306 — I CRISTALLI NATI PRIMA DEL LOGIN (Giacomo, 9 ott: «con l'account
+   docente, simulando la terza, mi capitano sempre gemme lessico dello
+   Starter»). buildGems() gira in finishBoot, PRIMA che si inserisca il
+   codice (RICORDA_CODICE=false): in quel momento nessuno e' loggato, il
+   cursore e' COORTI["*"] = Anno 1 · Starter, e i dodici cristalli nascevano
+   tutti con parole dello Starter — e le tenevano finche' non li si
+   raccoglieva uno per uno. Valeva per tutti, non solo per il docente.
+   Ora ogni cristallo ricorda per CHI e con QUALI unit aperte ha scelto la
+   sua parola (gemCtxSig); quando cambia — login, cambio di simulazione,
+   cursore di classe arrivato dal cloud — i cristalli fermi in citta' si
+   riassegnano. Quelli in volo (awaitingRespawn) scelgono da soli quando
+   arrivano. Mai mentre una finestra e' aperta: potrebbe essere proprio la
+   domanda di quel cristallo, e si riprova al giro dopo. */
+function gemCtxSig(){
+  let c="", y=1, u="";
+  try{ c=Student.code||""; }catch(e){}
+  try{ y=studentYear(); }catch(e){}
+  try{ u=gemLexUnits().join(","); }catch(e){}
+  return c+"|"+y+"|"+u;
+}
+function gemPaint(g){
+  const col=BABYLON.Color3.FromHexString(GEM_KINDS[g.item.kind].col);
+  g.mat.albedoColor=col.scale(0.55);
+  g.mat.emissiveColor=col.scale(0.52);
+  /* ⚠ in ADDITIVO un emissive pieno somma su tutti e tre i canali e
+     l'alone esce GRIGIO-LATTE invece che del colore della categoria (visto
+     negli screenshot): si scala, cosi' resta un tocco di viola/verde/oro. */
+  g.dmat.emissiveColor=col.scale(0.60);
+}
+let _gemCtxLast=null;
+function gemCtxCheck(){
+  if(!GEMS.length) return;
+  try{ const qm=document.getElementById("quest-modal");
+       if(qm && qm.classList.contains("show")) return; }catch(e){}
+  const sig=gemCtxSig();
+  if(sig===_gemCtxLast) return;
+  _gemCtxLast=sig;
+  GEMS.forEach(function(g){
+    if(g.awaitingRespawn || g.ctx===sig) return;
+    /* chiavi tenute dagli ALTRI cristalli: niente doppioni in citta' */
+    const busy=GEMS.filter(function(x){ return x!==g && x.key; }).map(function(x){ return x.key; });
+    const k=gemPickKey(busy), it=k?gemItem(k):null;
+    g.ctx=sig;
+    if(!it) return;                 // nessuna parola disponibile: si tiene quella che ha
+    g.key=k; g.item=it; gemPaint(g);
+    if(!g.mesh.isEnabled() && townOpen()){ g.mesh.setEnabled(true); g.disc.setEnabled(true); g.inter.enabled=true; }
+  });
 }
 function gemHide(g,ms,keep){
   g.mesh.setEnabled(false); g.disc.setEnabled(false); g.inter.enabled=false;
@@ -59014,14 +59064,15 @@ function gemShow(g,it,kd,why,np){
    lettera, e un errore vero non e' un muro: si scende alle tre tessere
    sulla stessa domanda. Ma l'errore resta segnato, e la prossima volta
    quella chiave si ripresenta con le tre forme. */
-function gemFormWrite(g,it,kd,near){
+function gemFormWrite(g,it,kd,near,noThe){
   DialogueBox.open({
     name:kd.ic+" "+kd.nome, sub:near?"Ci sei quasi":"Scrivilo tu",
     html:'<div class="gem-q">'+_escHtml(it.word)+' \u2192 <b>?</b></div>'
         +'<div class="gem-qs">Write the <b>'+kd.q+'</b> of \u00ab'+_escHtml(it.word)+'\u00bb.</div>'
         +'<div class="gem-it">'+_escHtml(it.word)+' = '+_escHtml(it.it)+'</div>'
         +(near?'<div class="gem-near">Hai scritto \u00ab'+_escHtml(near)
-               +'\u00bb \u2014 controlla le lettere.</div>':"")
+               +(noThe?'\u00bb \u2014 il superlativo vuole sempre <b>the</b> davanti.</div>'
+                      :'\u00bb \u2014 controlla le lettere.</div>'):"")
         +'<input id="gem-write" class="gem-input" type="text" autocomplete="off" '
         +'autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="\u2026">',
     buttons:[{ label:"Check", cls:"primary", keepOpen:true, act:function(){
@@ -59044,6 +59095,11 @@ function gemFormJudge(g,it,kd,val){
   /* «Ci sei quasi» solo per un dito storto: una lettera sulle parole corte,
      due sulle lunghe. E MAI per la forma regolare inventata (*goed,
      *buyed): quello non e' un refuso, e' proprio l'errore da correggere. */
+  /* v306: superlativo giusto ma senza the («closest»): seconda occasione
+     con l'avviso apposito, non «controlla le lettere» */
+  if(it.kind==="s" && ok.indexOf("the "+a)>=0 && !it.__near){
+    it.__near=true; DialogueBox.close(); gemFormWrite(g,it,kd,val,true); return;
+  }
   const t=ok[0], reg=(it.kind==="v1"||it.kind==="v2")?gemLexNorm(gemRegular(it.word)):"";
   const scambio=a.length===t.length && a.split("").sort().join("")===t.split("").sort().join("");   // «goen»
   if(a!==reg && (scambio || gemLexDist(a,t)<=(t.length>6?2:1)) && t.length>3 && !it.__near){
@@ -59932,7 +59988,7 @@ function buildTeca(){
       h+='<div class="gem-row'+((g1||g2)?"":" off")+'">'
         +'<span class="gb">'+_escHtml(a[0])+'</span>'
         +'<span class="'+(g1?"gc":"gc off")+'">'+(g1?_escHtml(f.comp):"—")+'</span>'
-        +'<span class="'+(g2?"gs":"gs off")+'">'+(g2?_escHtml(f.sup):"—")+'</span>'
+        +'<span class="'+(g2?"gs":"gs off")+'">'+(g2?_escHtml("the "+f.sup):"—")+'</span>'
         +'<small>'+_escHtml(a[2])+'</small></div>';
     });
     h+='</div>';
