@@ -22712,16 +22712,19 @@ const LESSONS={
     fn:"Apologising",
     phr:[["Sorry I'm late. The bus was late.","Don't worry, it's OK.","I'm late too, sorry you.","Yes, I am."],
          ["I'm really sorry, I forgot your helmet.","That's all right, but don't forget again!","Sorry for you.","You're welcome."]] },
-  u3_5:{ g:"should / shouldn't · If I were you, I'd...",
-    rule:"SHOULD + verb to give advice: You should drink water. SHOULDN'T = it isn't a good idea. IF I WERE YOU, I'D... is another way to give advice.",
-    ruleIt:"should + verbo per dare un consiglio, shouldn't = non e' una buona idea. If I were you, I'd... = se fossi in te...",
-    ex:["You should see a doctor.","You shouldn't go to school with a temperature.","If I were you, I'd stay in bed."],
-    quiz:[["You've got a cold. You ___ stay warm.","should","shouldn't","would"],
-          ["You ___ eat so many sweets. They're bad for your teeth.","shouldn't","should","wouldn't"],
-          ["If I ___ you, I'd take a pill.","were","was","am"]],
+  /* ⚠️ u3_5: «If I were you, I'd…» e' una FORMULA CONGELATA che vive solo
+     nella funzione (come nella quest, nightLine): mai nella grammatica, mai
+     un esercizio su were/was. Il second conditional non e' nel programma. */
+  u3_5:{ g:"should / shouldn't",
+    rule:"SHOULD + verb to give advice: You should drink water. SHOULDN'T + verb when something isn't a good idea: You shouldn't eat too many sweets. Question: Should I...? \u2014 Yes, you should. / No, you shouldn't.",
+    ruleIt:"should + verbo base per dare un consiglio, shouldn't per sconsigliare. Domanda: Should I...? Risposte brevi: Yes, you should / No, you shouldn't.",
+    ex:["You should see a doctor.","You shouldn't go to school with a temperature.","Should I take a pill? \u2014 Yes, you should."],
+    quiz:[["You've got a cold. You ___ stay warm.","should","shouldn't","should to"],
+          ["You ___ eat so many sweets. They're bad for your teeth.","shouldn't","should","don't should"],
+          ["___ I go to the doctor? \u2014 Yes, you should.","Should","Do","Am"]],
     fn:"Asking for and giving advice",
     phr:[["I've got a terrible headache. What should I do?","You should lie down and rest.","I've got a headache too.","You should to rest."],
-         ["I can't sleep at night.","If I were you, I'd turn off the phone.","If I was you, I sleep.","I can't too."]] },
+         ["I can't sleep at night. What should I do?","If I were you, I'd turn off my phone.","I can't sleep too.","I didn't sleep."]] },
 };
 /* ---- quale unit ripassare ------------------------------------------------
    L'ultima quest toccata e non ancora finita (Quest.loadStep la segna in
