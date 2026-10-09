@@ -531,6 +531,30 @@
     padding:11px 12px;font-size:17px;font-weight:700;text-align:center;
     color:var(--ink);background:#fff;border:2px solid #cdd6dc;border-radius:10px;}
   .gem-input:focus{outline:none;border-color:#a77ce8;}
+  /* v306 — le schede della lezione di Miss Grace (vedi lessonStart) */
+  .les-card{margin:8px 0 2px;padding:10px 12px;border-radius:14px;background:#fbf6ea;border-left:6px solid var(--lc,#3a6a8a);
+    color:var(--ink);text-align:left;line-height:1.45;}
+  .les-tag{display:inline-block;font-size:11px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:#fff;
+    background:var(--lc,#3a6a8a);border-radius:999px;padding:2px 9px;margin-bottom:6px;}
+  .les-g{--lc:#7d5a8c;} .les-w{--lc:#3a6a8a;} .les-x{--lc:#4f8a4f;} .les-p{--lc:#c2572e;} .les-ok{--lc:#3d8a4e;background:#eef8ef;}
+  .les-no{--lc:#d98a2b;background:#fff4e5;} .les-end{--lc:#c8a45a;background:#fff8e6;}
+  .les-title{font-size:17px;font-weight:900;margin:0 0 4px;}
+  .les-rule{font-size:15px;}
+  .les-kw{display:inline-block;font-weight:900;color:#5a2f74;background:#efe3f7;border-radius:7px;padding:0 6px;margin:0 1px;}
+  .les-hl{font-weight:900;color:#2f6b3a;background:#e2f3e4;border-radius:6px;padding:0 4px;}
+  .les-ex{list-style:none;margin:2px 0 0;padding:0;}
+  .les-ex li{margin:5px 0;padding:6px 10px;background:#fff;border-radius:10px;font-size:15px;}
+  .les-ex li::before{content:"\2714\FE0F  ";}
+  .les-plan{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;}
+  .les-plan span{flex:1 1 30%;min-width:96px;background:#fff;border-radius:10px;padding:7px 8px;font-size:13px;font-weight:800;text-align:center;}
+  .les-plan small{display:block;font-weight:600;color:#6b6358;font-size:11px;margin-top:2px;}
+  .les-words{display:flex;gap:8px;flex-wrap:wrap;}
+  .les-words span{flex:1 1 28%;min-width:84px;background:#fff;border-radius:10px;padding:6px;text-align:center;font-weight:900;font-size:15px;}
+  .les-words i{display:block;font-style:normal;font-size:26px;line-height:1.2;} .les-words small{display:block;font-weight:600;color:#6b6358;font-size:11px;}
+  .les-say{float:right;border:0;background:#fff;border-radius:999px;width:30px;height:30px;cursor:pointer;font-size:15px;box-shadow:0 1px 3px rgba(0,0,0,.15);}
+  .les-score{font-size:24px;font-weight:900;text-align:center;margin:2px 0;}
+  .les-task{margin-top:8px;padding:8px 10px;background:#fff;border-radius:10px;font-size:14px;}
+  .les-task b{color:#c2572e;}
   /* v306 — microfono accanto ai campi di scrittura (vedi Mic) */
   .mic-row{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:4px 0 0;}
   .mic-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;
@@ -22963,13 +22987,13 @@ function lessonStand(silent){
 
 /* ---- la lezione ------------------------------------------------------------- */
 function _lessonPupil(id){ return LESSON.pupils[id]||{ name:id==="pupil_lily"?"Lily":(id==="pupil_ben"?"Ben":"Tim"), gender:id==="pupil_lily"?"f":"m" }; }
-function _say(who,text,it,next,label){
+function _say(who,text,it,next,label,html){
   DialogueBox.open({ npc:who, icon:who===GRACE?"\u{1F34E}":"\u{1F64B}", sub:who===GRACE?"Teacher":"Classmate",
-    text, italian:it||undefined,
+    text, italian:it||undefined, html:html||undefined,
     buttons:[{ label:label||"OK", cls:"primary", act:()=>{ if(LESSON.on && next) next(); } }] });
 }
 /* domanda al giocatore: tre risposte, recast se sbaglia, poi avanti */
-function _ask(text,it,html,answer,wrong,full,next){
+function _ask(text,it,html,answer,wrong,full,next,kws){
   const opts=shuffle([answer].concat(wrong.slice(0,2)));
   LESSON.total++;
   DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Your turn!", text, italian:it||undefined, html:html||undefined,
@@ -22978,8 +23002,10 @@ function _ask(text,it,html,answer,wrong,full,next){
       const ok=(o===answer); if(ok) LESSON.score++;
       const praise=["Well done!","Excellent!","That's right!","Very good!","Perfect!"][Math.floor(Math.random()*5)];
       DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:ok?"✅ Correct":"Not quite",
-        text:ok?(praise+" "+(full||answer)):("Not quite. The answer is: "+(full||answer)),
-        html:ok?undefined:'<div class="gem-recast">Non <s>'+_escHtml(o)+'</s> — <b>'+_escHtml(answer)+'</b></div>',
+        text:ok?praise:"Not quite. Look at the right answer.",
+        html:ok ? lesCard("les-ok","\u2705 "+praise,'<div class="les-rule">'+lesMark(full||answer,kws||[answer.toLowerCase()])+'</div>')
+                : lesCard("les-no","\u{1F4A1} Correct answer",'<div class="gem-recast" style="text-align:left">Non <s>'+_escHtml(o)+'</s> \u2014 <b>'+_escHtml(answer)+'</b></div>'
+                    +'<div class="les-rule" style="margin-top:6px">'+lesMark(full||answer,kws||[answer.toLowerCase()])+'</div>'),
         buttons:[{ label:"Next", cls:"primary", act:()=>{ if(LESSON.on) next(); } }] }); } }))
   });
 }
@@ -22994,6 +23020,38 @@ function lessonOffer(npc,id){
          riproporrebbe subito, all'infinito */
       { label:"No, thanks.", act:()=>{ lessonWantClear(); try{ talkToGrace(npc); }catch(e){} } } ] });
 }
+/* ---- le schede colorate della lezione ---------------------------------------
+   (Giacomo, 9 ott: «le spiegazioni di Miss Grace rendile user-friendly, non
+   tutte nere: colori, parole chiave»). La riga che Miss Grace DICE resta
+   corta (la voce la legge); quello che si STUDIA va nella scheda sotto:
+   etichetta colorata per sezione, parole chiave della regola come
+   bollini, la struttura evidenziata negli esempi, verde per il giusto e
+   arancio per la correzione. Il 🔊 della scheda rilegge la regola. */
+const _LES_STOP=["TV","PE","OK","UK","USA","CV","DJ","I"];
+function lesKeywords(L){
+  const out=[];
+  (String(L.rule).match(/\b[A-Z][A-Z']+(?:\s+[A-Z][A-Z']+)*\b/g)||[]).forEach(k=>{
+    if(_LES_STOP.indexOf(k)<0 && k.length>1) out.push(k.toLowerCase()); });
+  String(L.g).split(/[\/·,]/).forEach(k=>{ k=k.replace(/\.\.\./g,"").trim().toLowerCase();
+    if(k && k.split(" ").length<=3 && !/present|past|questions|plurals|words|verb|prepositions|comparatives|superlatives|adverbs|conditional/.test(k)) out.push(k); });
+  return out.filter((k,i)=>out.indexOf(k)===i).sort((a,b)=>b.length-a.length);
+}
+function lesRule(rule){
+  return _escHtml(rule).replace(/\b([A-Z][A-Z']+(?:\s+[A-Z][A-Z']+)*)\b/g,(m)=>
+    (_LES_STOP.indexOf(m)>=0||m.length<2)?m:'<span class="les-kw">'+m.toLowerCase()+'</span>');
+}
+function lesMark(text,kws){
+  let h=_escHtml(text);
+  kws.forEach(k=>{ const re=new RegExp("(^|[^A-Za-z'])("+k.replace(/[.*+?^${}()|[\]\\]/g,"\\$&").replace(/'/g,"(?:'|&#39;|&#x27;)")+")(?![A-Za-z])","gi");
+    h=h.replace(re,(m,a,b)=>a+'<span class="les-hl">'+b+'</span>'); });
+  return h;
+}
+function lesCard(cls,tag,body){ return '<div class="les-card '+cls+'"><span class="les-tag">'+tag+'</span>'+body+'</div>'; }
+const _lesSayQ=[];
+function lesSayBtn(text){ _lesSayQ.push(String(text)); if(_lesSayQ.length>40) _lesSayQ.shift();
+  return '<button type="button" class="les-say" title="Listen" onclick="lesSpeak('+(_lesSayQ.length-1)+')">\u{1F50A}</button>'; }
+function lesSpeak(i){ const t=_lesSayQ[i]; if(t) try{ TTS.say(t,{gender:"f"}); }catch(e){} }
+function _lesPlain(h){ const d=document.createElement("div"); d.innerHTML=String(h||""); return (d.textContent||"").trim(); }
 function lessonStart(id){
   const L=LESSONS[id]; if(!L || !GRACE) return;
   LESSON.on=true; LESSON.id=id; LESSON.score=0; LESSON.total=0; lessonWantClear();
@@ -23002,7 +23060,8 @@ function lessonStart(id){
   const me=(Student.nome||"").split(" ")[0]||"";
   const toYou=me?(", "+me):"";                                   // senza nome: «your turn!», non «your turn, you»
   const lily=_lessonPupil("pupil_lily"), ben=_lessonPupil("pupil_ben"), tim=TIM||_lessonPupil("tim");
-  const title=lessonTitle(id);
+  const title=lessonTitle(id), kws=lesKeywords(L);
+  const noHint=t=>String(t).replace(/\s*\([^)]*\)\s*$/,"");
   /* le parole: tre della unit (non extra), con l'emoji o con la frase */
   const pool=shuffle((GEM_LEX[id]||[]).filter(w=>w[4]!=="x" && (w[2]||w[3])));
   const W=pool.slice(0,3);
@@ -23014,43 +23073,59 @@ function lessonStart(id){
   const steps=[];
   steps.push(()=>{ lessonBoard(title,["Words","Grammar: "+L.g,"Useful phrases: "+L.fn]);
     _say(GRACE,"Good morning, class! Sit down, please. Today we're going to revise "+title+". Look at the board!",
-      "Buongiorno! Oggi ripassiamo "+title+": guarda la lavagna.",next,"Good morning, Miss Grace!"); });
+      "Buongiorno! Oggi ripassiamo "+title+": guarda la lavagna.",next,"Good morning, Miss Grace!",
+      lesCard("les-w","\u{1F4CB} Today's lesson",'<div class="les-title">'+_escHtml(title)+'</div>'
+        +'<div class="les-plan"><span>\u{1F4D7} Words<small>parole</small></span>'
+        +'<span>\u{1F4D8} Grammar<small>'+_escHtml(L.g)+'</small></span>'
+        +'<span>\u{1F4AC} Phrases<small>'+_escHtml(L.fn)+'</small></span></div>')); });
   /* 1 — PAROLE: Lily fa la prima, poi tocca a te */
   if(W.length){ const w0=W[0];
     steps.push(()=>{ lessonBoard("Words",W.map(w=>(w[2]?w[2]+" ":"")+w[0]+" = "+w[1]));
-      _say(GRACE,"Let's start with some words. Lily, how do you say «"+w0[1]+"» in English?","Prima le parole: Lily risponde per prima.",next); });
-    steps.push(()=>_say(lily,"It's «"+w0[0]+"»!","",next));
+      _say(GRACE,"Let's start with some words. Lily, how do you say \u00ab"+w0[1]+"\u00bb in English?","Prima le parole: Lily risponde per prima.",next,null,
+        lesCard("les-w","\u{1F4D7} Words",'<div class="les-words">'+W.map(w=>'<span>'+(w[2]?'<i>'+w[2]+'</i>':'')+(w===w0?'?':_escHtml(w[0]))+'<small>'+_escHtml(w[1])+'</small></span>').join("")+'</div>')); });
+    steps.push(()=>_say(lily,"It's \u00ab"+w0[0]+"\u00bb!","",next,null,
+      lesCard("les-ok","\u2705 Lily",'<div class="les-title">'+(w0[2]?w0[2]+' ':'')+_escHtml(w0[0])+' <small style="font-weight:600;color:#6b6358">= '+_escHtml(w0[1])+'</small></div>')));
     steps.push(()=>_say(GRACE,"Very good, Lily! Now it's your turn"+toYou+".","Ora tocca a te!",next));
     W.slice(1).forEach(w=>steps.push(()=>{ lessonBoard("Words",W.map(x=>x[0]===w[0]?"?":x[0]));
-      const q=qWord(w); _ask(q.text,"Scegli la parola giusta ("+w[1]+").",q.html,w[0],alts(w),w[3]?w[3].replace("___",w[0]):w[0],next); }));
+      const q=qWord(w); _ask(q.text,"Scegli la parola giusta ("+w[1]+").",q.html,w[0],alts(w),w[3]?w[3].replace("___",w[0]):w[0],next,[]); }));
   }
   /* 2 — GRAMMATICA: la regola, gli esempi, Ben fa il primo, tu gli altri due */
   steps.push(()=>{ lessonBoard(L.g,L.ex);
-    _say(GRACE,"Now, grammar: "+L.g+". "+L.rule,L.ruleIt,next,"I see!"); });
-  steps.push(()=>_say(GRACE,"Look at the examples on the board: "+L.ex.join(" "),"Leggi gli esempi alla lavagna.",next));
+    _say(GRACE,"Now, grammar: "+L.g+". Read the rule carefully.",L.ruleIt,next,"I see!",
+      lesCard("les-g","\u{1F4D8} Grammar",lesSayBtn(L.rule)+'<div class="les-title">'+_escHtml(L.g)+'</div><div class="les-rule">'+lesRule(L.rule)+'</div>')); });
+  steps.push(()=>_say(GRACE,"Look at the examples on the board.","Leggi gli esempi: la parte evidenziata e' la regola.",next,null,
+    lesCard("les-x","\u{1F4DD} Examples",lesSayBtn(L.ex.join(" "))+'<ul class="les-ex">'+L.ex.map(e=>'<li>'+lesMark(e,kws)+'</li>').join("")+'</ul>')));
   const q0=L.quiz[0];
-  steps.push(()=>{ lessonBoard(L.g,[q0[0]]); _say(GRACE,"Ben, can you complete this one? "+q0[0].replace("___","...").replace(/\s*\([^)]*\)\s*$/,""),"Ben prova per primo.",next); });
-  steps.push(()=>_say(ben,q0[0].replace("___",q0[1]).replace(/\s*\([^)]*\)\s*$/,""),"",next));
+  steps.push(()=>{ lessonBoard(L.g,[q0[0]]); _say(GRACE,"Ben, can you complete this one? "+noHint(q0[0]).replace("___","..."),"Ben prova per primo.",next,null,
+    lesCard("les-g","\u270F\uFE0F Ben's turn",'<div class="gem-cloze">'+_escHtml(q0[0]).replace("___","<b>_____</b>")+'</div>')); });
+  steps.push(()=>_say(ben,noHint(q0[0].replace("___",q0[1])),"",next,null,
+    lesCard("les-ok","\u2705 Ben",'<div class="les-rule">'+lesMark(noHint(q0[0].replace("___",q0[1])),[q0[1].toLowerCase()].concat(kws))+'</div>')));
   steps.push(()=>_say(GRACE,"Excellent, Ben! Now you try"+toYou+".","Ora prova tu.",next));
   L.quiz.slice(1).forEach(q=>steps.push(()=>{ lessonBoard(L.g,[q[0]]);
     _ask("Complete the sentence.","Completa la frase.",'<div class="gem-cloze">'+_escHtml(q[0]).replace("___","<b>_____</b>")+'</div>',
-      q[1],[q[2],q[3]],q[0].replace("___",q[1]).replace(/\s*\([^)]*\)\s*$/,""),next); }));
+      q[1],[q[2],q[3]],noHint(q[0].replace("___",q[1])),next,[q[1].toLowerCase()].concat(kws)); }));
   /* 3 — FUNZIONE: Tim fa la battuta, tu rispondi */
-  steps.push(()=>{ lessonBoard(L.fn,L.phr.map(p=>"— "+p[0]));
-    _say(GRACE,"Great! Now let's practise: "+L.fn.toLowerCase()+". Tim, help me, please!","Ora un dialogo: Tim ti fa una domanda.",next); });
+  steps.push(()=>{ lessonBoard(L.fn,L.phr.map(p=>"\u2014 "+p[0]));
+    _say(GRACE,"Great! Now let's practise: "+L.fn.toLowerCase()+". Tim, help me, please!","Ora un dialogo: Tim ti fa una domanda.",next,null,
+      lesCard("les-p","\u{1F4AC} Useful phrases",'<div class="les-title">'+_escHtml(L.fn)+'</div>')); });
   L.phr.forEach((p,i)=>{
-    steps.push(()=>_say(i===0?tim:GRACE,p[0],"",next,"..."));
-    steps.push(()=>_ask("What do you answer?","Scegli la risposta giusta.",'<div class="gem-q">«'+_escHtml(p[0])+'»</div>',p[1],[p[2],p[3]],p[1],next));
+    steps.push(()=>_say(i===0?tim:GRACE,p[0],"",next,"...",
+      lesCard("les-p","\u{1F4AC} "+(i===0?"Tim":"Miss Grace"),'<div class="les-title">\u00ab'+_escHtml(p[0])+'\u00bb</div>')));
+    steps.push(()=>_ask("What do you answer?","Scegli la risposta giusta.",lesCard("les-p","\u{1F4AC} "+(i===0?"Tim":"Miss Grace"),'<div class="les-title">\u00ab'+_escHtml(p[0])+'\u00bb</div>'),p[1],[p[2],p[3]],p[1],next,[]));
   });
   /* 4 — CHIUSURA: com'e' andata, e da dove si riparte */
   steps.push(()=>{
     const n=LESSON.score, t=LESSON.total, task=lessonNextTask(id);
     const stars=Math.max(2,n*2);
     try{ Stars.award(null,stars,"lezione"); }catch(e){}
-    lessonBoard("Well done, class!",[n+" / "+t+" correct","Homework: "+(task&&task.en?task.en:"practise at home!")]);
+    const taskEn=task&&task.en?_lesPlain(task.en):"";
+    lessonBoard("Well done, class!",[n+" / "+t+" correct","Homework: "+(taskEn||"practise at home!")]);
     const msg=(n===t?"Fantastic! You got everything right. ":(n>=t-1?"Very good work today! ":"Good effort! Don't worry, practice makes perfect. "))
-      +(task&&task.en?"Now go back to "+(task.where||"your quest")+". Your next task: "+task.en:"See you next time!");
-    _say(GRACE,msg,(task&&task.it?"Ora torna alla quest. Il prossimo compito: "+task.it:"Alla prossima!"),()=>lessonEnd(false),"Thank you, Miss Grace!");
+      +(taskEn?"Now go back to "+(task.where||"your quest")+".":"See you next time!");
+    _say(GRACE,msg,(task&&task.it?"Ora torna alla quest. Il prossimo compito: "+_lesPlain(task.it):"Alla prossima!"),()=>lessonEnd(false),"Thank you, Miss Grace!",
+      lesCard("les-end","\u2B50 Your result",'<div class="les-score">'+n+' / '+t+' \u2B50</div>'
+        +'<div style="text-align:center;font-size:13px;color:#6b6358">+'+stars+' stars</div>'
+        +(taskEn?'<div class="les-task">\u{1F3AF} <b>Next task</b>'+(task.where?' \u00b7 '+_escHtml(task.where):'')+'<br>'+_escHtml(taskEn)+'</div>':'')));
   });
   let k=0; function next(){ if(!LESSON.on) return; const f=steps[k++]; if(f) f(); else lessonEnd(false); }
   setTimeout(next,450);
