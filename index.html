@@ -22765,8 +22765,26 @@ function lessonUnitId(){
   const q=Sync.get("et_last_quest",null);
   if(q && q.id && LESSONS[q.id] && !lessonDone(q.id) && lessonUnitObj(q.id)) return q.id;
   let st=0; try{ st=Progress.get("u0").step||0; }catch(e){}
-  if(!lessonDone("u0") && st>0) return "u0";
-  return null;
+  if(!lessonDone("u0")) return st>0 ? "u0" : null;
+  return lessonFrontier();
+}
+/* v306 (Giacomo, 9 ott: «se hai concluso la quest della Town School,
+   quando entri ti deve mostrare il poster della unit in cui sei arrivato»).
+   Starter finito, nessuna quest in corso e nessun aiuto chiesto: la unit a
+   cui sei arrivato nel gioco, cioe' la prima APERTA e non finita dopo
+   l'ultima che hai finito (curricolo in ordine: Anno 1, 2, 3). Se dopo non
+   ce n'e', la piu' avanti fra quelle aperte e non finite; se hai finito
+   tutto quello che e' aperto, l'ultima toccata o l'ultima aperta. */
+function lessonFrontier(){
+  const ok=id=>{ if(!LESSONS[id] || !lessonUnitObj(id)) return false;
+    try{ return Gate.unlocked(id); }catch(e){ return false; } };
+  const ids=SYLLABUS.map(x=>x.id).filter(ok);
+  let lastDone=-1; ids.forEach((id,i)=>{ if(lessonDone(id)) lastDone=i; });
+  for(let i=lastDone+1;i<ids.length;i++) if(!lessonDone(ids[i])) return ids[i];
+  for(let i=ids.length-1;i>=0;i--) if(!lessonDone(ids[i])) return ids[i];
+  const q=Sync.get("et_last_quest",null);
+  if(q && q.id && ids.indexOf(q.id)>=0) return q.id;
+  return ids.length ? ids[ids.length-1] : null;
 }
 function lessonTitle(id){ const s=Gate.info(id);
   return s ? ((s.n===0?"the Starter":"Unit "+s.n)+" — "+s.t) : id; }
@@ -22892,7 +22910,10 @@ function lessonOnSchoolEnter(){
   LESSON.offered=false;
   const id=lessonUnitId();
   if(id && id!=="u0") lessonThemeApply(id); else lessonThemeClear();
-  if(id && (id!=="u0" || lessonWanted()==="u0"))
+  /* l'avviso una volta per unit e per sessione: ora la scuola ha quasi sempre
+     una unit da ripassare, e a ogni ingresso sarebbe una predica */
+  LESSON.told=LESSON.told||{};
+  if(id && (id!=="u0" || lessonWanted()==="u0") && (!LESSON.told[id] || lessonWanted()===id) && (LESSON.told[id]=1))
     setTimeout(()=>toast("\u{1F34E} Miss Grace can give you a lesson on "+lessonTitle(id)+": go and talk to her!"),1600);
 }
 
