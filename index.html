@@ -54653,9 +54653,10 @@ MECH.stormNight=function(s){
    SI MOSTRA. In prima nessuno puo' "indovinare" `went`: non c'e' nulla da
    cui dedurlo, e sbagliando dieci volte quello che si fissa e' la forma
    sbagliata (*goed). Quindi al primo incontro con un item il cristallo si
-   APRE e basta — tre forme, voce, raccogli. v306: le presentazioni sono
-   TRE, poi il verbo lo si SCRIVE (il comparativo si scrive o si sceglie),
-   e la scheda torna dopo un errore o dopo 20 giorni che non lo si incontra
+   APRE e basta — tre forme, voce, raccogli. v306 (9 ott): UNA
+   presentazione, poi si risponde: in prima si sceglie fra tre, in seconda
+   si scrive dopo l'unit del passato irregolare, in terza si scrive (vedi
+   gemWrites); la scheda torna dopo un errore o dopo 20 giorni che non lo si incontra
    (vedi gemStage). L'esposizione precede sempre il richiamo; non e' un
    effetto sperato, e' un meccanismo.
 
@@ -58903,9 +58904,11 @@ function gemOpen(g){
     const np=Gems.markPres(gemLemma(it.key),st.pres);
     gemShow(g,it,kd,st.why,np); gemDueArm(it.key); return;
   }
-  /* verbi: si scrive, sempre. Comparativi e superlativi: si scrive o si
-     sceglie, a caso (Giacomo: «idem per il comparativo, oppure sceglielo») */
-  if(it.kind==="v1"||it.kind==="v2"||Math.random()<0.5) gemFormWrite(g,it,kd,null);
+  /* v306: scrivere o scegliere dipende dalla classe (gemWrites). Quando si
+     scrive: i verbi sempre, comparativi e superlativi a caso fra scrivere
+     e scegliere (Giacomo, 8 ott: «idem per il comparativo, oppure sceglielo») */
+  const verb=(it.kind==="v1"||it.kind==="v2");
+  if(gemWrites(it) && (verb||Math.random()<0.5)) gemFormWrite(g,it,kd,null);
   else gemAsk(g,it,kd,false);
 }
 /* ============================================================================
@@ -58926,8 +58929,28 @@ function gemOpen(g){
      passa in seconda dopo l'estate. Anche chi ha giocato PRIMA di questa
      versione (nessun giorno registrato) la rivede una volta.
    ===================================================================== */
-const GEM_SHOWS=3;          // Giacomo, 8 ott: tre presentazioni prima di scrivere
+/* v306 (Giacomo, 9 ott 2026, simulando la terza: «tutte le gemme che prendo
+   sono senza risposta, senza scelta autonoma»). Con tre presentazioni per
+   lemma e un centinaio di lemmi in giro, per settimane ogni cristallo era
+   una scheda da guardare. Decisione: UNA presentazione, poi si risponde
+   gia' dal cristallo successivo dello stesso lemma (la coda di rinforzo lo
+   riporta dopo due cristalli). COME si risponde dipende dalla classe:
+   · prima: si SCEGLIE fra tre tessere (verbi, comparativi, superlativi);
+   · seconda: si sceglie finche' la classe non ha fatto l'unit del passato
+     irregolare (Anno 2 · Unit 3, Weather Station) — per i comparativi
+     l'Anno 2 · Unit 5, Central Station; da li' in poi si SCRIVE;
+   · terza: si SCRIVE.
+   La scheda continua a tornare dopo un errore e dopo GEM_REFRESH_DAYS. */
+const GEM_SHOWS=1;
 const GEM_REFRESH_DAYS=20;
+const GEM_WRITE_UNIT={ v:"u2_3", a:"u2_5" };
+function gemWrites(it){
+  let yr=1; try{ yr=studentYear(); }catch(e){}
+  if(yr>=3) return true;
+  if(yr<2) return false;
+  const u=GEM_WRITE_UNIT[gemLemma(it.key).charAt(0)];
+  try{ return !!u && Gate.unlocked(u); }catch(e){ return false; }
+}
 function gemToday(){ return Math.floor(Date.now()/86400000); }
 function gemLemma(key){
   const p=key.indexOf(":"), k=key.slice(0,p), w=key.slice(p+1);
@@ -58957,9 +58980,10 @@ function gemShow(g,it,kd,why,np){
   const verb=(it.kind==="v1"||it.kind==="v2");
   const sub={ again:"Ancora una volta \u2014 guardalo bene", miss:"Ripassiamolo insieme",
               refresh:"Te lo ricordi? Rivediamolo" }[why] || "Nuovo \u2014 guardalo bene";
+  const tu=(verb&&gemWrites(it))?"lo <b>scrivi tu</b>.":"te lo chiedo io.";
   const next=(np||0)<GEM_SHOWS
-    ? "Lo rivedrai ancora "+((GEM_SHOWS-np)>1?(GEM_SHOWS-np)+" volte":"una volta")+", poi "+(verb?"dovrai <b>scriverlo tu</b>.":"te lo chiedo io.")
-    : "La prossima volta che trovi questo cristallo, "+(verb?"lo <b>scrivi tu</b>.":"te lo chiedo io.");
+    ? "Lo rivedrai ancora "+((GEM_SHOWS-np)>1?(GEM_SHOWS-np)+" volte":"una volta")+", poi "+tu
+    : "La prossima volta che trovi questo cristallo, "+tu;
   DialogueBox.open({
     name:kd.ic+" "+kd.nome, sub:sub,
     text:it.full,
