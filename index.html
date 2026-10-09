@@ -31546,7 +31546,7 @@ const PHONES=(function(){
    viene davvero CHIAMATA (a runtime, ben dopo il boot): l'ordine con cui
    le due dichiarazioni compaiono nel file non conta. */
 (function(){ const _toast=toast;
-  toast=function(m){
+  toast=function(m,ms){                         // v306: ms = quanto resta (le frasi del tempo: 7 s)
     try{
       if(typeof m==="string"){
         const c0=m.charAt(0);
@@ -31554,7 +31554,7 @@ const PHONES=(function(){
         else if(c0==="\u274c"||c0==="\u274C"||c0==="\u2717") SFX.wrong();
       }
     }catch(e){}
-    return _toast(m);
+    return _toast(m,ms);
   };
 })();
 
@@ -32761,7 +32761,8 @@ function rainForceCycle(){
      l'ultima, che e' un'istruzione per il docente. */
   const m=["Storm: it's thundering and lightning!","It's pouring!","It's drizzling.","It's dry. It isn't raining.",
            "Stagione reale ("+Math.round(rainSeason()*100)+"% del tempo)"];
-  toast((_rainCycleI===0?"\u26C8\uFE0F ":"\u{1F327}\uFE0F ")+m[_rainCycleI]);
+  if(_rainCycleI<4) weatherSay(_rainCycleI===0?"\u26C8\uFE0F":"\u{1F327}\uFE0F", m[_rainCycleI]);
+  else toast("\u{1F327}\uFE0F "+m[_rainCycleI]);
   if(_rainCycleI===0) STORM.next=1.2;          // il primo lampo subito, per chi collauda
   /* L'annuncio automatico non deve scattare per un cambio a comando: chi
      collauda sta gia' guardando, e due messaggi di fila sono rumore. */
@@ -41024,8 +41025,25 @@ const Mic=(function(){
   }
   return { available:!!SR, stop, scan };
 })();
-function toast(m){ const e=document.getElementById("toast"); e.textContent=m; e.classList.add("show");
-  clearTimeout(toastT); toastT=setTimeout(()=>e.classList.remove("show"),2400); }
+function toast(m,ms){ const e=document.getElementById("toast"); e.textContent=m; e.classList.add("show");
+  clearTimeout(toastT); toastT=setTimeout(()=>e.classList.remove("show"),ms||2400); }
+/* v306 (Giacomo, 9 ott: «la scritta in inglese "sta piovendo, sta tuonando"
+   lasciala un po' piu' in sovraimpressione: anche con la lettura imparano
+   la pronuncia»). Le frasi del tempo restano 7 s invece di 2,4 e la voce
+   inglese le legge — ma SOLO se in quel momento non parla nessuno e non
+   c'e' un dialogo aperto: TTS.say zittisce la lettura in corso, e un tuono
+   non deve mai tagliare la battuta di un NPC. Si legge la frase, non
+   l'emoji. */
+const WEATHER_SAY_MS=7000;
+function weatherSay(icon,en){
+  toast(icon+" "+en, WEATHER_SAY_MS);
+  try{
+    const qm=document.getElementById("quest-modal");
+    if(qm && qm.classList.contains("show")) return;
+    if((typeof TTS!=="undefined" && TTS._busy) || (window.speechSynthesis && speechSynthesis.speaking)) return;
+    TTS.say(en);
+  }catch(e){}
+}
 
 /* coriandoli di fine-unit: solo DOM/CSS a runtime, nessun asset esterno */
 function confettiBurst(){
@@ -42830,9 +42848,9 @@ function stormTick(){
   const which=STORM.n%2;                                      // 0: lightning, 1: thundering
   if(outside){ try{ stormFlash(); }catch(e){} try{ stormBolt(); }catch(e){}
     if(say && which===0){ STORM.saidAt=Date.now();
-      toast(STORM.n===0 ? "\u26C8\uFE0F There's a storm! It's lightning!" : "\u26A1 It's lightning!"); } }
+      if(STORM.n===0) weatherSay("\u26C8\uFE0F","There's a storm! It's lightning!"); else weatherSay("\u26A1","It's lightning!"); } }
   setTimeout(()=>{ try{ SFX.thunder(dist, outside?1:(inTown?0.5:0.35)); }catch(e){}
-    if(say && which===1){ STORM.saidAt=Date.now(); try{ toast("\u26C8\uFE0F It's thundering!"); }catch(e){} } },
+    if(say && which===1){ STORM.saidAt=Date.now(); try{ weatherSay("\u26C8\uFE0F","It's thundering!"); }catch(e){} } },
     350+dist*2600);
   STORM.n++;
 }
@@ -42860,8 +42878,8 @@ function rainAnnounce(f){
   if(now-rainSaidAt<RAIN_SAY_GAP) return;
   rainSaidAt=now;
   try{
-    if(on) toast("\u{1F327}\uFE0F "+rainStateEn());
-    else   toast("\u{1F326}\uFE0F It's stopped raining.");
+    if(on) weatherSay("\u{1F327}\uFE0F", rainStateEn()||"It's raining.");
+    else   weatherSay("\u{1F326}\uFE0F", "It's stopped raining.");
   }catch(e){}
 }
 
