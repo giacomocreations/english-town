@@ -83,6 +83,14 @@
       if(nascosto && Date.now() - nascosto > 30*60*1000 && navigator.serviceWorker.controller)
         navigator.serviceWorker.controller.postMessage({ type:"et-controlla" });
     });
+    /* v306: e anche mentre la scheda resta aperta e in vista tutta la
+       mattina (la LIM, il Chromebook mai chiuso): un controllo ogni 20
+       minuti. Il service worker ne fa al massimo uno ogni 5 e, se la pagina
+       non e' cambiata, costa una HEAD di pochi byte. */
+    setInterval(function(){
+      if(!document.hidden && navigator.serviceWorker.controller)
+        navigator.serviceWorker.controller.postMessage({ type:"et-controlla" });
+    }, 20*60*1000);
   }
   window.addEventListener("beforeinstallprompt", function(ev){
     ev.preventDefault(); P.evento = ev;
@@ -165,9 +173,33 @@
     }
     box.style.display = "none";
   };
-  /* avviso di versione nuova: una striscia in basso, NON un modale. Chi
-     sta scrivendo una risposta non viene interrotto: puo' ignorarla, e la
-     prossima apertura e' comunque gia' aggiornata. */
+  /* v306 — AGGIORNAMENTO AUTOMATICO (Giacomo, 9 ott: «si puo' fare in modo
+     che l'aggiornamento venga fatto automaticamente senza dover premere?
+     Con i miei alunni, distratti, non succederebbe»). La pagina nuova e'
+     GIA' scaricata dal service worker quando arriva «et-update» (vedi
+     controllaNovita in et-sw.js): basta ricaricare, e si apre all'istante
+     dalla cache. Prima c'erano «Aggiorna ora / Piu' tardi» e quasi nessuno
+     premeva; ora la striscia fa un conto alla rovescia e ricarica da sola.
+     ⚠️ MAI A META' DI QUALCOSA: il conto si ferma (e la striscia dice
+     «appena finisci») se c'e' una finestra di dialogo aperta, se in una
+     casella c'e' testo non ancora inviato, o se si e' a lezione da Miss
+     Grace. Prima del login (nessuna partita in corso) bastano 3 secondi.
+     I progressi sono gia' salvati a ogni passo: ricaricando si riparte
+     dallo step in corso, come riaprendo il gioco. */
+  P.momentoBuono = function(){
+    try{
+      var inGioco = !(typeof started === "undefined" || !started);
+      if(!inGioco) return true;                                  // schermata d'ingresso: niente da perdere
+      var qm = document.getElementById("quest-modal");
+      if(qm && qm.classList.contains("show")) return false;     // un dialogo o una domanda aperta
+      var campi = document.querySelectorAll("textarea, input[type=text], input:not([type])");
+      for(var i=0;i<campi.length;i++){ var c = campi[i];
+        if(c.id === "lg-code") continue;
+        if(c.offsetParent && String(c.value||"").trim()) return false; }   // testo non ancora inviato
+      if(typeof LESSON !== "undefined" && LESSON && LESSON.on) return false;
+    }catch(e){}
+    return true;
+  };
   P.mostraAggiornamento = function(){
     if(document.getElementById("et-upd")) return;
     var go = function(){
@@ -177,16 +209,26 @@
         + "max-width:92vw;display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center;"
         + "padding:9px 12px;border-radius:12px;background:rgba(29,42,50,.94);color:#fbf7ec;"
         + "font:600 13.5px/1.35 system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.35)";
-      b.innerHTML = "\uD83D\uDD04 \u00c8 pronta una versione nuova di QuestTown."
+      b.innerHTML = '<span id="et-upd-t">🔄 Nuova versione di QuestTown…</span>'
         + '<button type="button" style="font:700 13px system-ui,sans-serif;padding:5px 10px;border-radius:8px;'
-        + 'border:none;background:#e8b04b;color:#1d2a32;cursor:pointer">Aggiorna ora</button>'
-        + '<button type="button" aria-label="Chiudi" style="font:700 13px system-ui,sans-serif;padding:5px 8px;'
-        + 'border-radius:8px;border:none;background:transparent;color:#fbf7ec;opacity:.7;cursor:pointer">'
-        + 'Pi\u00f9 tardi</button>';
-      var bt = b.querySelectorAll("button");
-      bt[0].onclick = function(){ location.reload(); };
-      bt[1].onclick = function(){ b.remove(); };
+        + 'border:none;background:#e8b04b;color:#1d2a32;cursor:pointer">Aggiorna ora</button>';
+      b.querySelector("button").onclick = function(){ location.reload(); };
       document.body.appendChild(b);
+      var t = b.querySelector("#et-upd-t");
+      var inGioco = false; try{ inGioco = !(typeof started === "undefined" || !started); }catch(e){}
+      var resta = inGioco ? 8 : 3;
+      var giro = function(){
+        if(P.momentoBuono()){
+          if(resta <= 0){ t.textContent = "🔄 Aggiornamento in corso…"; location.reload(); return; }
+          t.textContent = "🔄 Nuova versione di QuestTown: si aggiorna da sola tra " + resta + " s";
+          resta--;
+        } else {
+          t.textContent = "🔄 Nuova versione di QuestTown: si aggiorna appena finisci quello che stai facendo";
+          if(resta < 3) resta = 3;                             // tornati liberi, ancora qualche secondo di preavviso
+        }
+        setTimeout(giro, 1000);
+      };
+      giro();
     };
     go();
   };
