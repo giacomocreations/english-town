@@ -17676,7 +17676,7 @@ const Gate=(function(){
        collaudare il gate (il gate spento non si puo' collaudare da spento). */
     if(Student.teacher){
       const sim=Sync.get("et_sim",null);
-      return sim ? (COORTI[sim]||COORTI["*"]) : {yr:9,n:99};
+      return sim ? simCursore(sim) : {yr:9,n:99};
     }
     const ov=Sync.get("et_cursor",null);
     if(ov && ov.yr!=null && ov.n!=null) return ov;
@@ -42993,6 +42993,50 @@ function elencoCursori(ms){
   return Cloud.leggi(ET_CLASSI.replace(/\/$/,""), ms||8000);
 }
 /* =====================================================================
+   v306 — LA SIMULAZIONE DEL DOCENTE SEGUE LA CLASSE PIU' AVANTI (Giacomo,
+   9 ott: «se simulo seconda, guarda la unit della classe seconda piu'
+   avanzata»). Prima «Come una 2ª» voleva dire COORTI["2"], cioe' una
+   seconda al primo giorno di scuola, qualunque cosa le seconde vere
+   avessero gia' aperto. Ora, per ogni anno, si prende il cursore della
+   classe di quell'anno che e' andata piu' avanti (una classe senza cursore
+   nel cloud vale la sua riga di COORTI, come per i suoi alunni).
+   · La tabella si legge al login del docente, a ogni cambio di simulazione
+     e dopo ogni salvataggio di un cursore di classe; resta in una chiave
+     locale (et_sim_classi) e si usa anche offline.
+   · Nessuna classe di quell'anno nel cloud (o rete muta al primo avvio):
+     vale COORTI, come prima.
+   ⚠️ Il nome della chiave e' scritto dentro simCursore e non in una const:
+   Gate.cursor() viene chiamato anche durante l'avvio, prima che lo script
+   arrivi fin qui, e una const letta prima della sua riga darebbe errore. */
+function simCursore(sim){
+  let t=null; try{ t=Sync.get("et_sim_classi",null); }catch(e){}
+  const v=(t && t[sim]) ? cursoreValido(t[sim]) : null;
+  return v || COORTI[sim] || COORTI["*"];
+}
+function simClasse(sim){
+  try{ const t=Sync.get("et_sim_classi",null); return (t && t[sim] && t[sim].cls) || ""; }catch(e){ return ""; }
+}
+function aggiornaSimDocente(){
+  if(!Student.teacher) return Promise.resolve(false);
+  const prima=Gate.label();
+  return elencoCursori(8000).then(function(r){
+    if(!Student.teacher || !r.risposto) return false;   // non lo so: resta la copia di prima
+    const val=(r.val && typeof r.val==="object") ? r.val : {};
+    const best={};
+    Object.keys(val).forEach(function(nome){
+      const c=normClasse(nome); if(!RE_CLASSE.test(c)) return;
+      const y=c.charAt(0);
+      const v=cursoreValido(val[nome]) || COORTI[c] || COORTI[y];
+      if(!v) return;
+      const b=best[y];
+      if(!b || v.yr>b.yr || (v.yr===b.yr && v.n>b.n)) best[y]={ yr:v.yr, n:v.n, cls:c };
+    });
+    Sync.set("et_sim_classi", best);
+    if(Gate.label()!==prima){ try{ teacherBadge(); questHudRefresh(); }catch(e){} }
+    return true;
+  }).catch(function(){ return false; });
+}
+/* =====================================================================
    FASE 5 · PASSO 4 — SINCRONIZZAZIONE DEI PROGRESSI
    englishtown/progress/<CODICE>, in lettura e scrittura.
 
@@ -43503,6 +43547,7 @@ function welcomeStudent(){
      cursore vero, se e' cambiato, arriva dietro con un suo avviso. Il
      controllo per classe rende gratis le chiamate ripetute. */
   aggiornaCursoreClasse();
+  try{ aggiornaSimDocente(); }catch(e){}     // v306: solo docente, altrimenti non fa niente
   try{ Sincro.avvia(); }catch(e){}
   /* ⚠️ DOPO Sincro e senza attenderlo: la presenza vive su un altro progetto
      Firebase e non deve dipendere in nessun modo da come e' andata la
@@ -43579,13 +43624,15 @@ function teacherBadge(){
     document.body.appendChild(b);
   }
   const sim=Sync.get("et_sim",null);
-  b.textContent="\u{1F469}\u200D\u{1F3EB} DOCENTE \u00b7 "+(sim?("simulo "+sim+"\u00aa \u2014 "+Gate.label()):"tutto aperto");
+  const sc=sim?simClasse(sim):"";
+  b.textContent="\u{1F469}\u200D\u{1F3EB} DOCENTE \u00b7 "+(sim?("simulo "+sim+"\u00aa"+(sc?" ("+sc+")":"")+" \u2014 "+Gate.label()):"tutto aperto");
 }
 function openTeacherPanel(){
   const sim=Sync.get("et_sim",null);
   const btn=(lab,v)=>({ label:lab+(String(sim)===String(v)?" \u2713":""), cls:"primary",
     act:()=>{ if(v===null) Sync.del("et_sim"); else Sync.set("et_sim",v);
       teacherBadge(); try{ questHudRefresh(); }catch(e){}
+      try{ aggiornaSimDocente(); }catch(e){}      // v306: la classe piu' avanti di quell'anno
       toast("\u{1F441}\u{FE0F} Vedi la citt\u00e0 come: "+Gate.label()
         +" \u00b7 lingua: "+(yrEnglish()?"inglese (Anno "+studentYear()+")":"con traduzioni (Anno 1)")); } });
   QModal.open({
@@ -43856,6 +43903,7 @@ function ccSalva(togli){
   }
   ccMsg("salvo\u2026");
   scriviCursoreClasse(cls, cur).then(function(w){
+    try{ aggiornaSimDocente(); }catch(e){}   // v306: la simulazione segue le classi
     /* \u26a0\ufe0f Non si annuncia mai l'esito guardando cio' che si e' INVIATO: si
        rilegge dal database e si mostra quello. Una scrittura scaduta puo'
        essere arrivata lo stesso, e una riuscita puo' essere stata riscritta
