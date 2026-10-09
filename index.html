@@ -58724,13 +58724,34 @@ function gemDueTake(busy){
   }
   return null;
 }
+/* v306 (Giacomo, 9 ott: «simulo il terzo anno e mi da' il lessico di primo
+   anno»). Il gate era giusto (solo le unit svolte), il PESO no: si pescava
+   a caso fra tutte le parole aperte, e l'Anno 1 ne ha piu' del doppio —
+   misurato, una terza riceveva il 68% di parole di prima, e anche con
+   l'Anno 3 aperto solo il 9% di parole di terza. Ora il 70% viene
+   dall'ANNO PIU' RECENTE APERTO per la classe (in terza: le unit di terza
+   appena il docente le apre, finche' non ce ne sono quelle di seconda), il
+   30% dagli anni prima: il ripasso a spirale resta, ma non comanda. */
+const GEM_LEX_RECENT=0.70;
+function gemLexSplit(keys){
+  const yrOf=k=>{ const u=k.split(":")[1]; const s=Gate.info(u); return s?s.yr:1; };
+  let top=0; keys.forEach(k=>{ const y=yrOf(k); if(y>top) top=y; });
+  const recent=[], older=[];
+  keys.forEach(k=>{ (yrOf(k)===top?recent:older).push(k); });
+  return { recent, older, top };
+}
 function gemPickKey(busy){
   const due=gemDueTake(busy);
   if(due) return due;
   const lex=gemLexIndex().keys;
   const useLex = lex.length && Math.random()<GEM_LEX_SHARE;
-  const a=useLex?lex:gemFormKeys(), b=useLex?gemFormKeys():lex;
-  return gemPickFrom(a,busy) || gemPickFrom(b,busy);
+  if(useLex){
+    const sp=gemLexSplit(lex);
+    const first=(sp.older.length && Math.random()>=GEM_LEX_RECENT) ? sp.older : sp.recent;
+    const second=(first===sp.recent) ? sp.older : sp.recent;
+    return gemPickFrom(first,busy) || gemPickFrom(second,busy) || gemPickFrom(gemFormKeys(),busy);
+  }
+  return gemPickFrom(gemFormKeys(),busy) || gemPickFrom(lex,busy);
 }
 
 /* ---- I CRISTALLI IN CITTA' --------------------------------------------- */
