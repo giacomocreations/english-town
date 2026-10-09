@@ -22889,9 +22889,31 @@ function lessonSit(){
   LESSON.seated=true;
   return true;
 }
+/* v306 (Giacomo, 9 ott: «quando si alza dalla sedia della scuola rimane
+   incastrata, non si puo' piu' muovere»). La fila di banchi e' UN solido
+   solo, sedie comprese: il posto della lezione sta dentro, e alzandosi ogni
+   passo veniva respinto. Come le altre sedute (panchine, metro), alzandosi
+   si esce: nel punto libero piu' vicino, cercato prima dietro la sedia (il
+   corridoio fra le file) e poi tutto intorno, a cerchi di 10 cm. */
+function lessonGetUp(){
+  try{ playerStand(); }catch(e){}
+  /* libero = fuori dai solidi E dagli NPC (Lily siede al banco accanto) */
+  const free=(x,z)=>!blocked(x,z) && !(typeof npcBlocked==="function" && npcBlocked(x,z));
+  if(typeof blocked!=="function" || free(player.position.x,player.position.z)) return;
+  const x0=player.position.x, z0=player.position.z;
+  for(let r=0.1;r<=3.0;r+=0.1){
+    const n=Math.max(8,Math.round(r*24));
+    for(let k=0;k<n;k++){
+      /* si parte da dietro (+z: il giocatore guarda la lavagna, a -z) */
+      const a=Math.PI/2+(k%2?1:-1)*Math.ceil(k/2)*(2*Math.PI/n);
+      const x=x0+Math.cos(a)*r, z=z0+Math.sin(a)*r;
+      if(free(x,z)){ player.position.x=x; player.position.z=z; return; }
+    }
+  }
+}
 function lessonStand(silent){
   if(!LESSON.seated) return; LESSON.seated=false;
-  try{ playerStand(); }catch(e){}
+  lessonGetUp();
   if(LESSON.on) lessonEnd(true);
   if(!silent) toast("\u{1F44B} You stand up.");
 }
@@ -22993,7 +23015,7 @@ function lessonEnd(quiet){
   LESSON.on=false; LESSON.id=null;
   if(quiet){ try{ DialogueBox.close(); }catch(e){} }      // interrotta alzandosi: via anche la domanda aperta
   lessonBoardReset();
-  if(LESSON.seated){ LESSON.seated=false; try{ playerStand(); }catch(e){} }
+  if(LESSON.seated){ LESSON.seated=false; lessonGetUp(); }
   if(!quiet) toast("\u{1F3EB} Class dismissed! Good luck with your quest.");
 }
 
