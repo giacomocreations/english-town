@@ -55893,11 +55893,26 @@ const GEM_LEX_EXTRA={
 })();
 
 /* Unit sbloccate che hanno lessico. */
+/* v306 (Giacomo, 9 ott: «simulando la 3 mi capitano solo gemme di Climate
+   & Fire Stn, e qualcuna dello Starter»; e: «a prescindere dalle quest
+   completate»). Qui si usava Gate.unlocked(), che apre anche le unit gia'
+   COMPLETATE oltre il cursore: il docente aveva finito la quest di Climate
+   collaudandola, e con la simulazione ferma all'Anno 2 quella era l'unica
+   unit dell'Anno 3 «aperta» — cioe' l'anno piu' recente, cioe' il 70% dei
+   cristalli tutto su di lei. Il lessico segue SOLO il cursore della classe
+   (gemUnitOpen): ne' le quest fatte lo allargano, ne' quelle lasciate
+   indietro lo restringono. */
+function gemUnitOpen(id){
+  const s=(typeof Gate!=="undefined")?Gate.info(id):null;
+  if(!s) return true;                                   // unit non in tabella: non gestita dal gate
+  let c={yr:1,n:0}; try{ c=Gate.cursor(); }catch(e){}
+  return (s.yr<c.yr) || (s.yr===c.yr && s.n<=c.n);
+}
 function gemLexUnits(){
   const out=[];
   for(const id in GEM_LEX){
     if(!Object.prototype.hasOwnProperty.call(GEM_LEX,id)) continue;
-    let ok=true; try{ ok=Gate.unlocked(id); }catch(e){ ok=true; }
+    let ok=true; try{ ok=gemUnitOpen(id); }catch(e){ ok=true; }
     if(ok) out.push(id);
   }
   return out;
@@ -58808,6 +58823,23 @@ function gemLexSplit(keys){
   keys.forEach(k=>{ (yrOf(k)===top?recent:older).push(k); });
   return { recent, older, top };
 }
+/* v306: prima la UNIT, a caso fra quelle del gruppo, poi la parola dentro
+   la unit. Pescando direttamente fra le parole, il ripasso (2/3 delle
+   volte una parola gia' vista) riportava sempre le unit gia' viste di piu':
+   chi aveva preso tante parole dello Starter continuava a riceverne, e lo
+   squilibrio si alimentava da solo. Cosi' ogni unit aperta pesa uguale. */
+function gemPickLexUnit(keys,busy){
+  const by={};
+  keys.forEach(function(k){ const u=k.split(":")[1]; (by[u]=by[u]||[]).push(k); });
+  const units=Object.keys(by);
+  while(units.length){
+    const i=Math.floor(Math.random()*units.length);
+    const k=gemPickFrom(by[units[i]],busy);
+    if(k) return k;
+    units.splice(i,1);                       // unit tutta gia' in citta': si prova un'altra
+  }
+  return null;
+}
 function gemPickKey(busy){
   const due=gemDueTake(busy);
   if(due) return due;
@@ -58817,7 +58849,7 @@ function gemPickKey(busy){
     const sp=gemLexSplit(lex);
     const first=(sp.older.length && Math.random()>=GEM_LEX_RECENT) ? sp.older : sp.recent;
     const second=(first===sp.recent) ? sp.older : sp.recent;
-    return gemPickFrom(first,busy) || gemPickFrom(second,busy) || gemPickFrom(gemFormKeys(),busy);
+    return gemPickLexUnit(first,busy) || gemPickLexUnit(second,busy) || gemPickFrom(gemFormKeys(),busy);
   }
   return gemPickFrom(gemFormKeys(),busy) || gemPickFrom(lex,busy);
 }
@@ -59063,7 +59095,7 @@ function gemWrites(it){
   if(yr>=3) return true;
   if(yr<2) return false;
   const u=GEM_WRITE_UNIT[gemLemma(it.key).charAt(0)];
-  try{ return !!u && Gate.unlocked(u); }catch(e){ return false; }
+  try{ return !!u && gemUnitOpen(u); }catch(e){ return false; }
 }
 function gemToday(){ return Math.floor(Date.now()/86400000); }
 function gemLemma(key){
