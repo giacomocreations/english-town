@@ -22428,8 +22428,9 @@ function talkToGrace(npc){
      al primo ingresso in assoluto la maestra proporrebbe un ripasso di
      qualcosa che non hai ancora visto. */
   if(!LESSON.on){ const lid=lessonUnitId();
-    let ok=!!lid && (LESSON.wanted===lid || !LESSON.offered);
-    if(ok && lid==="u0" && LESSON.wanted!=="u0"){ let st=0; try{ st=Progress.get("u0").step||0; }catch(e){} ok=st>=2; }
+    const want=lessonWanted();
+    let ok=!!lid && (want===lid || !LESSON.offered);
+    if(ok && lid==="u0" && want!=="u0"){ let st=0; try{ st=Progress.get("u0").step||0; }catch(e){} ok=st>=2; }
     if(ok){ LESSON.offered=true; lessonOffer(npc,lid); return; } }
   if(ambientReady(npc,UNIT0)){ openAmbient(npc,UNIT0.id,"🍎","Teacher"); return; }
   if(Quest.unit===UNIT0 && Quest.step){
@@ -22740,10 +22741,31 @@ function lessonUnitObj(id){
   return null;
 }
 function lessonDone(id){ try{ return !!Progress.get(id).done; }catch(e){ return false; } }
+/* v306 (Giacomo, 9 ott: «andando su Eco Point e chiedendo aiuto, alla Town
+   School mi chiedeva di fare la lezione sullo Starter»). La richiesta del
+   pulsante «Help» non veniva letta: contava solo et_last_quest, che non si
+   scrive se la unit risulta gia' completata (docente, o una unit rigiocata)
+   — e allora si ricadeva sullo Starter. Ora, in ordine:
+   1. la unit per cui hai chiesto aiuto (anche se completata), salvata su
+      disco perche' sopravviva al taxi e a un ricaricamento, valida un giorno;
+   2. l'ultima quest in corso;
+   3. lo Starter, ma solo se lo stai davvero facendo (iniziato, non finito):
+      a un ragazzo di seconda che non l'ha mai aperto non si propone. */
+const LESSON_WANT_K="et_lesson_wanted";
+function lessonWanted(){
+  if(LESSON.wanted) return LESSON.wanted;
+  const w=Sync.get(LESSON_WANT_K,null);
+  if(w && w.id && LESSONS[w.id] && (Date.now()-(w.t||0))<86400000) return w.id;
+  return null;
+}
+function lessonWantClear(){ LESSON.wanted=null; try{ Sync.del(LESSON_WANT_K); }catch(e){ try{ Sync.set(LESSON_WANT_K,null); }catch(e2){} } }
 function lessonUnitId(){
+  const w=lessonWanted();
+  if(w && lessonUnitObj(w)) return w;
   const q=Sync.get("et_last_quest",null);
   if(q && q.id && LESSONS[q.id] && !lessonDone(q.id) && lessonUnitObj(q.id)) return q.id;
-  if(!lessonDone("u0")) return "u0";
+  let st=0; try{ st=Progress.get("u0").step||0; }catch(e){}
+  if(!lessonDone("u0") && st>0) return "u0";
   return null;
 }
 function lessonTitle(id){ const s=Gate.info(id);
@@ -22870,7 +22892,7 @@ function lessonOnSchoolEnter(){
   LESSON.offered=false;
   const id=lessonUnitId();
   if(id && id!=="u0") lessonThemeApply(id); else lessonThemeClear();
-  if(id && (id!=="u0" || LESSON.wanted==="u0"))
+  if(id && (id!=="u0" || lessonWanted()==="u0"))
     setTimeout(()=>toast("\u{1F34E} Miss Grace can give you a lesson on "+lessonTitle(id)+": go and talk to her!"),1600);
 }
 
@@ -22947,11 +22969,13 @@ function lessonOffer(npc,id){
     italian:it,
     choices:[
       { label:"\u{1F4DA} Yes, please!", act:()=>lessonStart(id) },
-      { label:"No, thanks.", act:()=>{ try{ talkToGrace(npc); }catch(e){} } } ] });
+      /* «no» rinuncia anche alla richiesta dell'HUD: se no talkToGrace la
+         riproporrebbe subito, all'infinito */
+      { label:"No, thanks.", act:()=>{ lessonWantClear(); try{ talkToGrace(npc); }catch(e){} } } ] });
 }
 function lessonStart(id){
   const L=LESSONS[id]; if(!L || !GRACE) return;
-  LESSON.on=true; LESSON.id=id; LESSON.score=0; LESSON.total=0; LESSON.wanted=null;
+  LESSON.on=true; LESSON.id=id; LESSON.score=0; LESSON.total=0; lessonWantClear();
   if(id!=="u0") lessonThemeApply(id);
   lessonSit();
   const me=(Student.nome||"").split(" ")[0]||"";
@@ -23023,6 +23047,7 @@ function lessonEnd(quiet){
 function lessonHelp(){
   const u=Quest.unit; if(!u) return;
   LESSON.wanted=u.id;
+  try{ Sync.set(LESSON_WANT_K,{ id:u.id, t:Date.now() }); }catch(e){}
   const title=lessonTitle(u.id), inTown=(typeof area!=="undefined" && area==="town");
   DialogueBox.open({ icon:"\u{1F3EB}", name:"Town School", sub:"Need some help?",
     text:"Stuck? Go to the Town School: Miss Grace will give you a lesson on "+title+". Your progress is saved.",
