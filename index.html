@@ -23671,7 +23671,13 @@ const _AMB_COMMENT={
   u6:[["Yummy!","Che buono!"],["That sounds delicious!","Sembra buonissimo!"],["Good choice!","Bella scelta!"]],
   u7:[["Well done!","Bravo/a!"],["That's a great sport!","Che bello sport!"],["You're quite sporty!","Sei sportivo/a!"]],
   u8:[["Very smart!","Elegante!"],["That sounds nice!","Che bello!"],["Good look!","Bel look!"]],
-  u2_4:[["Nice, I want to see it!","Bello, voglio vederlo!"],["Good choice!","Bella scelta!"],["I didn't know that film!","Non conoscevo quel film!"]],
+  /* v306 (Giacomo, 9 ott: «Did you watch TV yesterday? — No, I didn't. I
+     read a book.» → Ross: «I didn't know that film!»). Via le due battute
+     che presuppongono un FILM nominato («I didn't know that film!», «Nice, I
+     want to see it!»): il tema copre anche TV, programmi, attori e domande
+     sì/no. Stessa lezione del «Me too»: niente battute che devono sapere
+     di cosa si parla. */
+  u2_4:[["Nice!","Bello!"],["Good choice!","Bella scelta!"],["That sounds interesting!","Sembra interessante!"]],
   u2_5:[["Have a good trip!","Buon viaggio!"],["That's a good way to travel!","Bel modo di viaggiare!"],["Interesting!","Interessante!"]],
   /* ⚠️ Mancavano DA SEMPRE: senza un pool proprio, il topic cadeva su
      _AMB_COMMENT.u0 (le battute generiche dello Starter — nome/età/colore).
@@ -23837,6 +23843,15 @@ const _AMB_NEG_REPLY=[
    ["No problem! Have a guess next time.","Nessun problema! La prossima volta prova a indovinare."],
    ["Never mind!","Non importa!"]],
 ];
+/* v306 — RISPOSTA NEGATIVA A UNA DOMANDA SÌ/NO («No, I didn't. I read a
+   book.», «No, I can't.», «I haven't.»). Non e' un «non lo so» ne' un
+   «niente»: e' una risposta piena, ma le battute dei temi sono quasi tutte
+   di entusiasmo su qualcosa che si e' FATTO o NOMINATO («Well done!» a «No,
+   I can't swim», «I didn't know that film!» a «No, I didn't»). Qui si
+   risponde neutro, cosa che non e' mai sbagliata. */
+const _AMB_NO_RE=/^\W*(no\b|nope\b|not really\b|never\b|i'm not\b|i\s+(never|didn'?t|did not|don'?t|do not|can'?t|cannot|can not|haven'?t|have not|hasn'?t|wasn'?t|was not|won'?t|will not|am not)\b)/i;
+const _AMB_NO_REPLY=[["I see!","Capisco!"],["Oh, OK!","Ah, ok!"],["Fair enough!","Mi sembra giusto!"],
+  ["Thanks for telling me!","Grazie per avermelo detto!"]];
 function ambReact(topic,answer,ev,noBye){
   /* ⚠️ PRIMA di tutto il resto: qui non si cita niente. L'eco esiste per
      dimostrare che l'NPC ha ascoltato, ma ripetere «Nothing?» o «I don't
@@ -23848,7 +23863,8 @@ function ambReact(topic,answer,ev,noBye){
     const bb=_AMB_BYE[(Math.random()*_AMB_BYE.length)|0];
     return { en:r[0]+(noBye?"":" "+bb[0]), it:r[1]+(noBye?"":" "+bb[1]) };
   }
-  const pool=_AMB_COMMENT[topic]||_AMB_COMMENT.u0;
+  const no=_AMB_NO_RE.test(String(answer||"").replace(/[\u2018\u2019]/g,"'"));
+  const pool=no ? _AMB_NO_REPLY : (_AMB_COMMENT[topic]||_AMB_COMMENT.u0);
   const c=pool[(Math.random()*pool.length)|0], b=_AMB_BYE[(Math.random()*_AMB_BYE.length)|0];
   /* ❌ L'ECO E' STATA TOLTA (Giacomo, 4 set, dopo averci giocato: «non ha
      senso, quasi sempre suona strano»). Era il capoluogo della frase ripetuto
