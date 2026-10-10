@@ -4727,7 +4727,7 @@ function buildAvatar(){
      osservatore in più, e dopo cinque prove davanti allo specchio le gambe
      sarebbero state "pinnate" cinque volte per fotogramma. */
   if(!_pinHooked){ _pinHooked=true;
-    scene.onBeforeRenderObservable.add(()=>{ if(SIT.on && SIT.pins) _applyPins(SIT.pins); else if(_pinLegs) pinLegsToBind(); }); }
+    scene.onBeforeRenderObservable.add(()=>{ if(SKDANCE.on && SKDANCE.cur) _applyPins(SKDANCE.cur); else if(SIT.on && SIT.pins) _applyPins(SIT.pins); else if(_pinLegs) pinLegsToBind(); }); }
 }
 let _pinHooked=false;
 /* Ricostruzione a caldo dell'avatar. L'ordine conta:
@@ -14444,6 +14444,563 @@ function buildPark(){
   // cartello d'ingresso parco
   landmarkSign(80,7,0,"🌳","Central Park","Esplora · tante Unit qui dentro");
   try{ buildParkFun(); }catch(e){ console.warn("[parco] riddle/story/watcher",e); }   // v307
+  try{ buildSkatepark(); }catch(e){ console.warn("[skatepark]",e); }                  // v308
+}
+
+/* =====================================================================
+   v308 — LO SKATEPARK (Giacomo, 10 ott: «uno skate park con graffiti, con
+   ragazzi che ballano con le varie mosse, con delle casse bluetooth che
+   mettono i pezzi del Beat Club. I ragazzi seguono i bpm dei pezzi, sono
+   vestiti hip hop coi catenoni. La musica si sente solo quando arrivi
+   vicino, via via sempre piu' forte. Le mosse si alternano, ma non una
+   dietro l'altra: per legarle usa dei saltelli, ispirati al video di
+   Billie Jean»). Sul prato a nord-est del Sunny Side Diner (x 15..45,
+   z 46..66), dove Giacomo stava col Ranger nello screenshot.
+   · LE MOSSE non sono clip (i rig non ne hanno): sono POSE costruite sulle
+     ossa come la posa seduta (dancePoseFor, stesse primitive di
+     sitPoseFor) e fuse a ogni fotogramma sul battito del brano:
+       moonwalk  — un tallone su e l'altro piede che scivola, si va indietro;
+       sidewalk  — la stessa alternanza, ma si scivola di lato;
+       toe stand — sulle punte, la mano al cappello (Billie Jean);
+       ankle taps— i talloni che battono veloci, a mezzo tempo.
+     Fra una mossa e l'altra un SALTELLO (piega, stacco, atterraggio) in cui
+     ci si gira: le mosse non si attaccano mai una all'altra.
+   · IL TEMPO: l'orologio e' il brano che suona dalle casse (currentTime x
+     bpm di GIG_SONGS), quindi i passi cadono sul battito vero.
+   · LA MUSICA: un <audio> suo, che parte solo entro 45 m e cresce
+     avvicinandosi; segue il bottone 🔊 (AUDIO.gain) e tace di notte, come
+     i ragazzi. Le cuffie della Teca tacciono quando sei li'.
+   · IL GIOCATORE balla anche lui, sulla pista fra le casse: ogni mossa si
+     sblocca con le stelle (SK_MOVES).
+   ===================================================================== */
+const SKATE={ C:{ x:30, z:56 }, gy:0, dancers:[], audio:null, songI:-1, near:false, vol:0, blocked:false,
+  bpm:120, beat:0, t0:performance.now(), lastB:0, leds:[], built:false };
+const SK_MOVES=[ { id:"moonwalk", en:"Moonwalk",   ic:"\u{1F319}", stars:800,  beats:8 },
+                 { id:"sidewalk", en:"Sidewalk / Airwalk", ic:"↔️", stars:1200, beats:8 },
+                 { id:"toe",      en:"Toe stand (Billie Jean)", ic:"\u{1FA70}", stars:1600, beats:4 },
+                 { id:"ankle",    en:"Ankle breaker", ic:"\u{1F45F}", stars:2000, beats:4 } ];
+/* ---- le POSE chiave: angoli nel mondo (radianti, avanti = positivo).
+   t = coscia, s = stinco, p = punta del piede verso il basso */
+const SK_ARMS={
+  swing:{ up:(o,f,dn)=>dn.scale(0.95).add(f.scale(0.18)).add(o.scale(0.14)),
+          fore:(o,f,dn)=>f.scale(0.75).subtract(dn.scale(0.35)).add(o.scale(0.05)) },
+  mw:   { up:(o,f,dn)=>dn.scale(0.95).add(f.scale(0.06)).add(o.scale(0.22)),
+          fore:(o,f,dn)=>f.scale(0.55).add(dn.scale(0.55)).add(o.scale(0.10)) },
+  hat:  { up:(o,f,dn,sd)=>sd==="R"?new BABYLON.Vector3(0,0.55,0).add(o.scale(0.55)).add(f.scale(0.35)):dn.scale(0.9).add(o.scale(0.25)).add(f.scale(0.1)),
+          fore:(o,f,dn,sd)=>sd==="R"?new BABYLON.Vector3(0,0.9,0).subtract(o.scale(0.55)).add(f.scale(0.1)):dn.scale(0.6).add(f.scale(0.5)).subtract(o.scale(0.2)) } };
+const SK_POSES={
+  stand: { L:{t:0.03,s:0,p:0},       R:{t:0.03,s:0,p:0},       arms:"swing" },
+  mwL:   { L:{t:0.45,s:-0.55,p:1.05}, R:{t:0,s:0,p:0},           arms:"mw" },
+  mwR:   { L:{t:0,s:0,p:0},           R:{t:0.45,s:-0.55,p:1.05}, arms:"mw" },
+  toe:   { L:{t:0.05,s:0,p:0.8},     R:{t:0.05,s:0,p:0.8},     arms:"hat", lift:0.07 },
+  crouch:{ L:{t:0.62,s:-0.5,p:0.05}, R:{t:0.62,s:-0.5,p:0.05}, arms:"swing" },
+  tapL:  { L:{t:0.24,s:-0.32,p:0.8}, R:{t:0.03,s:0,p:0},       arms:"mw" },
+  tapR:  { L:{t:0.03,s:0,p:0},       R:{t:0.24,s:-0.32,p:0.8}, arms:"mw" } };
+/* una posa di ballo sulle ossa (come sitPoseFor): gambe per angoli,
+   piede per pendenza, braccia con _armPose. Ritorna { pins, drop, lift } */
+function dancePoseFor(root,pins,fwd,spec){
+  if(!pins||!pins.length||!root) return null;
+  const V=BABYLON.Vector3, up=new V(0,1,0), dn=new V(0,-1,0), f=new V(fwd.x,0,fwd.z).normalize();
+  const extra=_restPinsFor(root,_SIT_BODY_RE,pins.map(k=>k.tn)), all=pins.concat(extra);
+  const saved=all.map(k=>({tn:k.tn, q:k.tn.rotationQuaternion?k.tn.rotationQuaternion.clone():null, p:k.tn.position.clone()}));
+  all.forEach(k=>{ k.tn.position.copyFrom(k.p); if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion(); k.tn.rotationQuaternion.copyFrom(k.q); });
+  _sitRefresh(root);
+  const end=(t,n)=>new RegExp("(^|_)"+n.replace(".","\\.")+"$").test(t.name);
+  const tns=pins.map(k=>k.tn), out=new Map(), outP=new Map(), loss={};
+  ["L","R"].forEach(sd=>{ const S=spec[sd]||{t:0,s:0,p:0};
+    tns.filter(t=>end(t,"UpperLeg."+sd)).forEach(U=>{
+      const K=U.getDescendants(false).find(d=>end(d,"LowerLeg."+sd)); if(!K) return;
+      const pK0=K.getAbsolutePosition().clone();
+      let F=null, fd=1e9;
+      tns.concat(root.getDescendants(false)).forEach(t=>{ if(!end(t,"Foot."+sd)||!t.getAbsolutePosition) return;
+        const d=V.Distance(t.getAbsolutePosition(),pK0); if(d<fd){ fd=d; F=t; } });
+      if(!F) return;
+      const footChild=F.isDescendantOf(K);
+      const pH=U.getAbsolutePosition().clone(), pA=F.getAbsolutePosition().clone();
+      const lT=V.Distance(pH,pK0), lS=V.Distance(pK0,pA);
+      const toe=F.getDescendants(false).find(d=>/(^|_)(Toe|Ball)\.[LR]$/.test(d.name));
+      const footLoc=toe?V.TransformNormal(toe.getAbsolutePosition().subtract(pA),F.getWorldMatrix().clone().invert()):null;
+      const shinLoc=V.TransformNormal(pA.subtract(pK0),K.getWorldMatrix().clone().invert());
+      _sitWorldRot(U,pH,pK0.subtract(pH),dn.scale(Math.cos(S.t)).add(f.scale(Math.sin(S.t))));
+      _sitRefresh(root);
+      const K2=K.getAbsolutePosition().clone(), sdir=dn.scale(Math.cos(S.s)).add(f.scale(Math.sin(S.s)));
+      _sitWorldRot(K,K2,V.TransformNormal(shinLoc,K.getWorldMatrix()),sdir);
+      _sitRefresh(root);
+      out.set(U,U.rotationQuaternion.clone()); out.set(K,K.rotationQuaternion.clone());
+      if(!footChild && F.parent){
+        const tgt=K2.add(sdir.scale(lS)), lp=V.TransformCoordinates(tgt,F.parent.getWorldMatrix().clone().invert());
+        F.position.copyFrom(lp); outP.set(F,lp.clone()); _sitRefresh(root); }
+      /* il piede: la punta scende di p rispetto all'orizzontale */
+      const A2=F.getAbsolutePosition().clone();
+      const cur=footLoc?V.TransformNormal(footLoc,F.getWorldMatrix()):f.clone();
+      let h=new V(cur.x,0,cur.z); if(h.length()<1e-4) h=f.clone(); h.normalize();
+      _sitWorldRot(F,A2,cur,h.scale(Math.cos(S.p)).add(dn.scale(Math.sin(S.p))));
+      _sitRefresh(root); out.set(F,F.rotationQuaternion.clone());
+      const ls=(lT+lS)-(lT*Math.cos(S.t)+lS*Math.cos(S.s));
+      loss[sd]=(loss[sd]==null)?ls:Math.min(loss[sd],ls);
+    });
+  });
+  const AR=SK_ARMS[spec.arms||"swing"];
+  try{ _armPose(root,all.map(k=>k.tn),f,(o,sd)=>AR.up(o,f,dn,sd),(o,sd)=>AR.fore(o,f,dn,sd),null).forEach((q,tn)=>out.set(tn,q)); }catch(e){}
+  const res=all.map(k=>({ tn:k.tn, p:(outP.get(k.tn)||k.p).clone(), s:k.s.clone(), q:(out.get(k.tn)||k.q).clone() }));
+  saved.forEach(k=>{ if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); k.tn.position.copyFrom(k.p); });
+  return { pins:res, drop:Math.max(0,Math.min(loss.L||0,loss.R||0)), lift:spec.lift||0 };
+}
+/* tutte le pose per un corpo (si calcolano UNA volta, in piedi e fermi) */
+function _skKeyframes(root,pins,fwd){
+  const K={}; for(const nm in SK_POSES){ const r=dancePoseFor(root,pins,fwd,SK_POSES[nm]); if(!r) return null; K[nm]=r; }
+  return K;
+}
+const _skQ=new BABYLON.Quaternion();
+/* fonde due pose dentro cur (stessi oggetti, ogni fotogramma) */
+function _skBlend(cur,A,B,t){
+  for(let i=0;i<cur.length;i++){ const a=A.pins[i], b=B.pins[i], c=cur[i];
+    BABYLON.Quaternion.SlerpToRef(a.q,b.q,t,c.q); BABYLON.Vector3.LerpToRef(a.p,b.p,t,c.p); }
+  return (A.lift-A.drop)*(1-t)+(B.lift-B.drop)*t;
+}
+const _skEase=t=>t<0?0:(t>1?1:t*t*(3-2*t));
+/* dove si e' dentro una mossa (b = battiti dall'inizio): pose, quanto si
+   scivola, quanto si salta */
+function _skEval(K,mv,b){
+  const P=K;
+  if(mv==="moonwalk"||mv==="sidewalk"){ const k=Math.floor(b), fr=b-k;
+    /* mezzo battito FERMI nella posa (un tallone su), poi lo scambio: e'
+       lo scatto del moonwalk vero, non una dissolvenza continua */
+    return { A:k%2?P.mwR:P.mwL, B:k%2?P.mwL:P.mwR, t:_skEase((fr-0.5)/0.4), glide:1, hop:0 }; }
+  if(mv==="toe"){
+    if(b<0.5) return { A:P.stand, B:P.toe, t:_skEase(b/0.5), glide:0, hop:0 };
+    if(b<3.3) return { A:P.toe, B:P.toe, t:0, glide:0, hop:0 };
+    return { A:P.toe, B:P.stand, t:_skEase((b-3.3)/0.7), glide:0, hop:0 }; }
+  if(mv==="ankle"){ const h=b*2, k=Math.floor(h), fr=h-k;
+    return { A:k%2?P.tapR:P.tapL, B:k%2?P.tapL:P.tapR, t:_skEase((fr-0.45)/0.45), glide:0, hop:0 }; }
+  /* il saltello: piega, stacco, in aria, atterraggio, su */
+  if(b<0.4)  return { A:P.stand, B:P.crouch, t:_skEase(b/0.4), glide:0, hop:0, turn:0 };
+  if(b<1.0){ const u=(b-0.4)/0.6; return { A:P.crouch, B:P.stand, t:_skEase(u*2), glide:0, hop:0.2*Math.sin(Math.PI*u), turn:u }; }
+  if(b<1.3)  return { A:P.stand, B:P.crouch, t:_skEase((b-1.0)/0.3), glide:0, hop:0, turn:1 };
+  return { A:P.crouch, B:P.stand, t:_skEase((b-1.3)/0.7), glide:0, hop:0, turn:1 };
+}
+/* la prossima mossa: mai la stessa di prima; e dopo ogni mossa, il saltello */
+function _skNext(D,list){
+  if(D.mv!=="hop"){ D.mv="hop"; D.dur=2; return; }
+  const opts=list.filter(m=>m!==D.last); const mv=opts.length?opts[(Math.random()*opts.length)|0]:list[0];
+  D.mv=mv; D.last=mv; D.dur=(SK_MOVES.find(x=>x.id===mv)||{beats:4}).beats;
+}
+
+/* ---- COSTRUZIONE ------------------------------------------------------------ */
+function _skConcreteTex(){
+  const S=512, dt=new BABYLON.DynamicTexture("skConcT",{width:S,height:S},scene,true), c=dt.getContext();
+  c.fillStyle="#b9b6ae"; c.fillRect(0,0,S,S);
+  let sd=17; const rnd=()=>{ sd=(sd*16807)%2147483647; return (sd%10000)/10000; };
+  for(let i=0;i<5000;i++){ const g=150+(rnd()*60|0); c.fillStyle="rgba("+g+","+g+","+(g-6)+",0.35)"; c.fillRect(rnd()*S,rnd()*S,2,2); }
+  for(let i=0;i<10;i++){ c.fillStyle="rgba(70,66,60,0.06)"; c.beginPath(); c.ellipse(rnd()*S,rnd()*S,20+rnd()*60,12+rnd()*40,rnd()*3,0,Math.PI*2); c.fill(); }
+  c.strokeStyle="rgba(60,58,54,0.55)"; c.lineWidth=3; c.strokeRect(1.5,1.5,S-3,S-3);         // i giunti
+  dt.update(); dt.wrapU=dt.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE; return dt;
+}
+/* i graffiti: lettere a palloncino con contorno, ombra 3D, luce, colature;
+   stelle, corone, frecce, schizzi di spray, piccole firme */
+function _skGraffiti(name,W,H,pieces,bg){
+  const dt=new BABYLON.DynamicTexture(name,{width:W,height:H},scene,true), c=dt.getContext();
+  c.fillStyle=bg||"#9d9a93"; c.fillRect(0,0,W,H);
+  let sd=W+H; const rnd=()=>{ sd=(sd*16807)%2147483647; return (sd%10000)/10000; };
+  for(let i=0;i<1800;i++){ const g=120+(rnd()*60|0); c.fillStyle="rgba("+g+","+g+","+g+",0.3)"; c.fillRect(rnd()*W,rnd()*H,2,2); }
+  for(let i=0;i<60;i++){ c.fillStyle="hsla("+(rnd()*360|0)+",80%,55%,0.35)"; c.beginPath(); c.arc(rnd()*W,rnd()*H,1+rnd()*4,0,Math.PI*2); c.fill(); }
+  const star=(x,y,r,col)=>{ c.beginPath(); for(let k=0;k<10;k++){ const a=-Math.PI/2+k*Math.PI/5, rr=k%2?r*0.45:r;
+      c.lineTo(x+Math.cos(a)*rr,y+Math.sin(a)*rr); } c.closePath(); c.fillStyle=col; c.fill(); c.lineWidth=5; c.strokeStyle="#111"; c.stroke(); };
+  const crown=(x,y,s,col)=>{ c.beginPath(); c.moveTo(x-s,y+s*0.5); c.lineTo(x-s,y-s*0.4); c.lineTo(x-s*0.5,y); c.lineTo(x,y-s*0.7);
+      c.lineTo(x+s*0.5,y); c.lineTo(x+s,y-s*0.4); c.lineTo(x+s,y+s*0.5); c.closePath(); c.fillStyle=col; c.fill(); c.lineWidth=5; c.strokeStyle="#111"; c.stroke(); };
+  pieces.forEach(P=>{
+    if(P.star){ star(P.x,P.y,P.r,P.col); return; }
+    if(P.crown){ crown(P.x,P.y,P.s,P.col); return; }
+    if(P.tag){ c.save(); c.translate(P.x,P.y); c.rotate(P.rot||-0.08); c.font="italic bold "+P.size+"px 'Brush Script MT',cursive";
+      c.fillStyle=P.col; c.fillText(P.tag,0,0); c.restore(); return; }
+    /* v308b (Giacomo: «le scritte devono essere stile graffiti»): niente
+       testo in fila. Ogni lettera per conto suo — storta, alzata o
+       abbassata, inclinata in avanti, accavallata alla vicina — e poi gli
+       strati di un pezzo vero, dal muro verso l'esterno: nuvola
+       «throw-up» dietro, alone di spray, rilievo 3D a scalini, contorno
+       nero, contorno chiaro, riempimento sfumato, lucidi a goccia,
+       colature, frecce dalle lettere di testa e di coda, scintille. */
+    const font=sz=>"900 "+sz+"px Impact,'Arial Black',sans-serif";
+    const ch=P.text.split("");
+    c.font=font(P.size);
+    const meas=()=>ch.map(l=>l===" "?P.size*0.32:c.measureText(l).width);
+    let ws=meas(), tot=ws.reduce((a,b)=>a+b,0)*0.86;
+    while(P.maxW && P.size>30 && tot+P.size*0.5>P.maxW){ P.size-=4; c.font=font(P.size); ws=meas(); tot=ws.reduce((a,b)=>a+b,0)*0.86; }
+    const S=P.size, L=[]; let x0=-tot/2;
+    ch.forEach((l,k)=>{ const w=ws[k]*0.86;
+      if(l!==" ") L.push({ l, x:x0+w/2, y:(rnd()-0.5)*S*0.18, r:(rnd()-0.5)*0.26, s:0.9+rnd()*0.25 });
+      x0+=w; });
+    c.save(); c.translate(P.x,P.y); c.rotate(P.rot||0);
+    c.textAlign="center"; c.textBaseline="middle"; c.lineJoin="round"; c.lineCap="round";
+    const each=(fn)=>L.forEach(t=>{ c.save(); c.translate(t.x,t.y); c.rotate(t.r); c.transform(1,0,-0.18,1,0,0); c.scale(t.s,t.s); fn(t); c.restore(); });
+    /* nuvola throw-up dietro il pezzo */
+    c.fillStyle=P.bgc||"rgba(30,30,40,0.9)"; c.strokeStyle="#0d0d0f"; c.lineWidth=6;
+    c.beginPath(); for(let k=0;k<=L.length+1;k++){ const x=-tot/2-S*0.15+k*(tot+S*0.3)/(L.length+1);
+      c.moveTo(x+S*0.45,-S*0.05); c.ellipse(x,-S*0.05+(k%2?S*0.06:-S*0.04),S*0.45,S*0.55,0,0,Math.PI*2); } c.fill();
+    /* alone di spray */
+    c.save(); c.shadowColor=P.c1; c.shadowBlur=S*0.35; c.fillStyle=P.c1; each(t=>c.fillText(t.l,0,0)); c.restore();
+    /* rilievo 3D a scalini */
+    for(let k=8;k>=1;k--){ c.fillStyle=k>5?"#0c0c10":"#2a1a3a"; each(t=>c.fillText(t.l,k*S*0.012,k*S*0.014)); }
+    /* contorni: nero spesso, poi chiaro */
+    c.strokeStyle="#0c0c10"; c.lineWidth=S*0.2; each(t=>c.strokeText(t.l,0,0));
+    c.strokeStyle=P.out||"#ffffff"; c.lineWidth=S*0.075; each(t=>c.strokeText(t.l,0,0));
+    /* riempimento: sfumato in verticale, con una banda di colore nel mezzo */
+    const g=c.createLinearGradient(0,-S*0.5,0,S*0.5);
+    g.addColorStop(0,P.c1); g.addColorStop(0.48,P.c1); g.addColorStop(0.52,P.c2); g.addColorStop(1,P.c2);
+    c.fillStyle=g; each(t=>c.fillText(t.l,0,0));
+    c.fillStyle="rgba(255,255,255,0.35)"; each(t=>c.fillText(t.l,-S*0.015,-S*0.02));      // il lucido
+    c.fillStyle=g; each(t=>c.fillText(t.l,S*0.004,S*0.012));
+    /* lucidi a goccia su ogni lettera */
+    c.fillStyle="rgba(255,255,255,0.9)";
+    L.forEach(t=>{ c.beginPath(); c.ellipse(t.x-S*0.12,t.y-S*0.24,S*0.05,S*0.022,-0.5,0,Math.PI*2); c.fill();
+      c.beginPath(); c.arc(t.x-S*0.03,t.y-S*0.27,S*0.014,0,Math.PI*2); c.fill(); });
+    /* colature */
+    for(let k=0;k<9;k++){ const t=L[(rnd()*L.length)|0], x=t.x+(rnd()-0.5)*S*0.3, y=t.y+S*0.3, Ld=S*0.1+rnd()*S*0.45;
+      c.fillStyle=P.c2; c.fillRect(x-2.5,y,5,Ld); c.beginPath(); c.arc(x,y+Ld,5,0,Math.PI*2); c.fill(); }
+    /* frecce dalla prima e dall'ultima lettera */
+    const arrow=(t,dir)=>{ c.save(); c.translate(t.x+dir*S*0.28,t.y-S*0.22); c.rotate(dir*-0.5);
+      c.beginPath(); c.moveTo(0,0); c.quadraticCurveTo(dir*S*0.35,-S*0.2,dir*S*0.55,-S*0.05);
+      c.lineWidth=S*0.09; c.strokeStyle="#0c0c10"; c.stroke(); c.lineWidth=S*0.05; c.strokeStyle=P.c1; c.stroke();
+      c.beginPath(); c.moveTo(dir*S*0.66,-S*0.02); c.lineTo(dir*S*0.48,-S*0.16); c.lineTo(dir*S*0.5,S*0.08); c.closePath();
+      c.fillStyle=P.c1; c.fill(); c.lineWidth=4; c.strokeStyle="#0c0c10"; c.stroke(); c.restore(); };
+    if(L.length>1){ arrow(L[0],-1); arrow(L[L.length-1],1); }
+    /* scintille */
+    const spark=(x,y,r)=>{ c.beginPath(); c.moveTo(x,y-r); c.lineTo(x+r*0.2,y-r*0.2); c.lineTo(x+r,y); c.lineTo(x+r*0.2,y+r*0.2);
+      c.lineTo(x,y+r); c.lineTo(x-r*0.2,y+r*0.2); c.lineTo(x-r,y); c.lineTo(x-r*0.2,y-r*0.2); c.closePath(); c.fillStyle="#fff"; c.fill(); };
+    for(let k=0;k<4;k++){ const t=L[(rnd()*L.length)|0]; spark(t.x+(rnd()-0.5)*S*0.5,t.y-S*0.35+rnd()*S*0.2,S*0.06+rnd()*S*0.05); }
+    c.restore();
+  });
+  dt.update(); return dt;
+}
+function _skWall(name,x,z,len,ry,tex,backTex){
+  const H=2.7, T=0.3, g=SKATE.gy;
+  const w=BABYLON.MeshBuilder.CreateBox(name,{width:len,height:H,depth:T},scene);
+  w.material=lpMat("#8f8c86"); w.position.set(x,g+H/2,z); w.rotation.y=ry; w.parent=townRoot; w.__occluder=true;
+  const cap=BABYLON.MeshBuilder.CreateBox(name+"c",{width:len+0.1,height:0.1,depth:T+0.1},scene);
+  cap.material=lpMat("#76736d"); cap.position.set(x,g+H+0.05,z); cap.rotation.y=ry; cap.parent=townRoot;
+  const face=(t,side)=>{ const p=BABYLON.MeshBuilder.CreatePlane(name+"g",{width:len-0.04,height:H-0.06},scene);
+    const m=new BABYLON.StandardMaterial(name+"gm"+side,scene); m.diffuseTexture=t; m.specularColor=new BABYLON.Color3(0.04,0.04,0.04);
+    m.emissiveColor=new BABYLON.Color3(0.22,0.22,0.22); p.material=m;
+    /* il piano di serie si vede da -z locale: girato col muro, piu' PI per il retro */
+    const ox=Math.sin(ry)*side*(T/2+0.006), oz=Math.cos(ry)*side*(T/2+0.006);
+    p.position.set(x+ox,g+H/2,z+oz); p.rotation.y=ry+(side>0?Math.PI:0); p.parent=townRoot; p.isPickable=false; };
+  face(tex,-1); if(backTex) face(backTex,1);
+  addSolidRot(x,z,ry,len/2,T/2+0.05,"town");
+}
+/* quarter pipe: profilo a quarto di cerchio estruso lungo la larghezza */
+function _skQuarter(x,z,width,ry){
+  const R=1.4, deck=0.7, g=SKATE.gy, V=BABYLON.Vector3, sh=[];
+  for(let i=0;i<=12;i++){ const a=i/12*Math.PI/2; sh.push(new V(R*Math.sin(a),R-R*Math.cos(a),0)); }
+  sh.push(new V(R+deck,R,0)); sh.push(new V(R+deck,0,0)); sh.push(new V(0,0,0));
+  const m=BABYLON.MeshBuilder.ExtrudeShape("skQP",{ shape:sh, path:[new V(0,0,-width/2),new V(0,0,width/2)], cap:BABYLON.Mesh.CAP_ALL,
+    sideOrientation:BABYLON.Mesh.DOUBLESIDE },scene);
+  const mt=lpMat("#a7a49d"); m.material=mt;
+  const r=new BABYLON.TransformNode("skQPr",scene); r.parent=townRoot; r.position.set(x,g+0.035,z); r.rotation.y=ry; m.parent=r; m.__occluder=true;
+  const cop=BABYLON.MeshBuilder.CreateCylinder("skCop",{diameter:0.08,height:width,tessellation:10},scene);
+  cop.material=hm7Mat("#c9ccd2",0.6,48); cop.rotation.x=Math.PI/2; cop.position.set(R,R+0.02,0); cop.parent=r;
+  /* solido: dalla meta' della curva al retro */
+  const cx=x+Math.cos(ry)*(R*0.55+deck/2+R*0.2), cz=z-Math.sin(ry)*(R*0.55+deck/2+R*0.2);
+  addSolidRot(cx,cz,ry,(R*0.45+deck)/2+0.1,width/2,"town");
+}
+function _skFunbox(x,z){
+  const g=SKATE.gy, V=BABYLON.Vector3, Lb=3.6, Wd=2.4, Hb=0.5, Lr=1.5;
+  const top=BABYLON.MeshBuilder.CreateBox("skFB",{width:Lb,height:Hb,depth:Wd},scene);
+  top.material=lpMat("#a29f98"); top.position.set(x,g+Hb/2,z); top.parent=townRoot; top.__occluder=true;
+  [-1,1].forEach(sd=>{ const sh=sd>0?[new V(0,0,0),new V(Lr,0,0),new V(0,Hb,0)]:[new V(0,0,0),new V(0,Hb,0),new V(-Lr,0,0)];
+    const w=BABYLON.MeshBuilder.ExtrudeShape("skFBr",{ shape:sh, path:[new V(0,0,-Wd/2),new V(0,0,Wd/2)], cap:BABYLON.Mesh.CAP_ALL, sideOrientation:BABYLON.Mesh.DOUBLESIDE },scene);
+    w.material=lpMat("#aaa79f"); w.position.set(x+sd*Lb/2,g,z); w.parent=townRoot; w.__occluder=true; });
+  const rail=BABYLON.MeshBuilder.CreateCylinder("skRail",{diameter:0.07,height:Lb+0.2,tessellation:10},scene);
+  rail.material=hm7Mat("#d8dbe0",0.7,64); rail.rotation.z=Math.PI/2; rail.position.set(x,g+Hb+0.32,z); rail.parent=townRoot;
+  [-1.4,1.4].forEach(dx=>{ const p=BABYLON.MeshBuilder.CreateBox("skRP",{width:0.06,height:0.32,depth:0.06},scene);
+    p.material=hm7Mat("#4a4f56",0.3,32); p.position.set(x+dx,g+Hb+0.16,z); p.parent=townRoot; });
+  addSolid(x-Lb/2-Lr*0.6,x+Lb/2+Lr*0.6,z-Wd/2,z+Wd/2,"town");
+}
+function _skFlatRail(x,z,len){
+  const g=SKATE.gy;
+  const r=BABYLON.MeshBuilder.CreateCylinder("skFR",{diameter:0.06,height:len,tessellation:10},scene);
+  r.material=hm7Mat("#e3b33a",0.5,48); r.rotation.z=Math.PI/2; r.position.set(x,g+0.42,z); r.parent=townRoot;
+  [-len/2+0.3,0,len/2-0.3].forEach(dx=>{ const p=BABYLON.MeshBuilder.CreateBox("skFRp",{width:0.06,height:0.42,depth:0.06},scene);
+    p.material=hm7Mat("#3a3f46",0.3,32); p.position.set(x+dx,g+0.21,z); p.parent=townRoot; });
+  addSolid(x-len/2,x+len/2,z-0.08,z+0.08,"town");
+}
+function _skSpeaker(x,z,ry){
+  const g=SKATE.gy, r=new BABYLON.TransformNode("skSpk",scene); r.parent=townRoot; r.position.set(x,g+0.035,z); r.rotation.y=ry;
+  const body=BABYLON.MeshBuilder.CreateBox("skSpB",{width:0.5,height:0.8,depth:0.4},scene);
+  body.material=hm7Mat("#1d1f23",0.25,24); body.position.y=0.4; body.parent=r; body.__occluder=true;
+  if(!SKATE.grille){ const dt=new BABYLON.DynamicTexture("skGrT",{width:128,height:192},scene,true), c=dt.getContext();
+    c.fillStyle="#141518"; c.fillRect(0,0,128,192);
+    [[64,58,40],[64,140,30]].forEach(w=>{ c.fillStyle="#2b2e33"; c.beginPath(); c.arc(w[0],w[1],w[2],0,Math.PI*2); c.fill();
+      c.fillStyle="#0c0d0f"; c.beginPath(); c.arc(w[0],w[1],w[2]*0.45,0,Math.PI*2); c.fill(); });
+    c.fillStyle="rgba(255,255,255,0.08)"; for(let y=4;y<192;y+=5) for(let x=4;x<128;x+=5) c.fillRect(x,y,1.5,1.5);
+    dt.update(); const m=new BABYLON.StandardMaterial("skGrM",scene); m.diffuseTexture=dt; m.specularColor=new BABYLON.Color3(0.05,0.05,0.05); SKATE.grille=m; }
+  const gr=BABYLON.MeshBuilder.CreatePlane("skSpG",{width:0.46,height:0.72},scene);
+  gr.material=SKATE.grille; gr.position.set(0,0.4,0.203); gr.rotation.y=Math.PI; gr.parent=r;
+  const led=BABYLON.MeshBuilder.CreateBox("skLed",{width:0.46,height:0.03,depth:0.41},scene);
+  const lm=new BABYLON.StandardMaterial("skLedM"+SKATE.leds.length,scene); lm.diffuseColor=new BABYLON.Color3(0,0,0);
+  lm.emissiveColor=new BABYLON.Color3(0.1,0.5,1); led.material=lm; led.position.y=0.82; led.parent=r;
+  SKATE.leds.push(lm);
+  addSolid(x-0.3,x+0.3,z-0.25,z+0.25,"town");
+}
+/* i ballerini: guardaroba hip hop della Teca (cappellino, occhiali, catena
+   d'oro, bomber/pelle, cargo/joggers) */
+const SK_CREW=[
+  { id:"sk_d1", name:"Jay",  model:"avatar",  h:1.70, x:24.6, z:51.4, look:{ hat:"cap", hatc:"black", face:"designer", neck:"royal", neckc:"gold", coat:"bomber", coatc:"black", bottom:"cargo" } },
+  { id:"sk_d2", name:"Nia",  model:"avatarW", h:1.62, x:28.4, z:51.0, look:{ hat:"cap", hatc:"red", face:"shades", neck:"medallion", neckc:"gold", coat:"leather", bottom:"joggers" } },
+  { id:"sk_d3", name:"Leon", model:"avatar",  h:1.74, x:32.2, z:51.5, look:{ hat:"beanie", hatc:"yellow", face:"aviator", neck:"royal", neckc:"gold", coat:"puffer", coatc:"purple", bottom:"joggers" } },
+  { id:"sk_d4", name:"Kiki", model:"avatarW", h:1.6,  x:35.9, z:51.1, look:{ hat:"cap", hatc:"white", face:"designer", neck:"medallion", neckc:"gold", coat:"bomber", coatc:"pink", bottom:"cargo" } } ];
+function buildSkatepark(){
+  if(SKATE.built) return; SKATE.built=true;
+  const C=SKATE.C, W=30, D=20, g=_benchGround(C.x,C.z,0); SKATE.gy=g;
+  /* il pavimento: cemento a lastre, calpestabile e «costruito» (cosi' il
+     confine della citta' lo include e il Ranger non dice «sei fuori») */
+  const slab=BABYLON.MeshBuilder.CreateGround("skSlab",{width:W,height:D},scene);
+  const sm=new BABYLON.StandardMaterial("skSlabM",scene), ct=_skConcreteTex();
+  const t=new BABYLON.Texture(null,scene,{internalTexture:ct.getInternalTexture()}); t.wrapU=t.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE; t.uScale=W/3; t.vScale=D/3;
+  sm.diffuseTexture=t; sm.specularColor=new BABYLON.Color3(0.05,0.05,0.05); slab.material=sm;
+  slab.position.set(C.x,g+0.035,C.z); slab.parent=townRoot; slab.__ground=true; slab.receiveShadows=true;
+  [[0,-D/2,W+0.5,0.3],[0,D/2,W+0.5,0.3],[-W/2,0,0.3,D],[W/2,0,0.3,D]].forEach(e=>{
+    const b=BABYLON.MeshBuilder.CreateBox("skCurb",{width:e[2],height:0.1,depth:e[3]},scene);
+    b.material=lpMat("#8e8b84"); b.position.set(C.x+e[0],g+0.05,C.z+e[1]); b.parent=townRoot; });
+  /* le rampe */
+  _skQuarter(C.x-W/2+0.2,C.z+3.0,9,Math.PI);            // ovest: la curva guarda a est
+  _skQuarter(C.x+W/2-0.2,C.z+3.0,9,0);                  // est: la curva guarda a ovest
+  _skFunbox(C.x,C.z+3.2);
+  _skFlatRail(C.x,C.z+7.6,5);
+  /* i muri dei graffiti */
+  const G1=_skGraffiti("skGraf1",2048,256,[
+    { text:"SKATE", x:270, y:132, size:150, maxW:500, c1:"#b6f23a", c2:"#2e9d3a", rot:-0.05 },
+    { star:1, x:470, y:70, r:42, col:"#ffd23a" },
+    { text:"QUESTTOWN", x:1010, y:130, size:178, maxW:860, c1:"#ff5fc8", c2:"#7a2fd8", out:"#ffe9a8" },
+    { crown:1, x:1010, y:30, s:46, col:"#ffcf33" },
+    { text:"HIP HOP", x:1740, y:134, size:150, maxW:560, c1:"#ffb02e", c2:"#e4322b", rot:0.04 },
+    { star:1, x:1500, y:205, r:30, col:"#3ad1ff" }, { star:1, x:1935, y:62, r:34, col:"#ff5fc8" },
+    { tag:"Jay was here", x:60, y:238, size:34, col:"#1d1f24" }, { tag:"Nia 4ever", x:1830, y:244, size:34, col:"#d8f3ff", rot:-0.12 } ]);
+  const G1b=_skGraffiti("skGraf1b",1024,128,[ { tag:"keep it real", x:120, y:80, size:44, col:"#e24a3a" }, { tag:"Leon", x:720, y:90, size:52, col:"#2f64b0" } ]);
+  _skWall("skWallN",C.x,C.z+D/2+0.6,26,0,G1,G1b);
+  const G2=_skGraffiti("skGraf2",1024,320,[
+    { text:"WE ARE", x:512, y:92, size:120, maxW:720, c1:"#5fe3ff", c2:"#2f64d8", rot:-0.03 },
+    { text:"STARS", x:520, y:218, size:150, maxW:720, c1:"#ffe14a", c2:"#ff7a1f", rot:0.02 },
+    { star:1, x:110, y:160, r:52, col:"#ffd23a" }, { star:1, x:930, y:120, r:40, col:"#ff5fc8" },
+    { tag:"Kiki", x:820, y:300, size:40, col:"#1d1f24" } ]);
+  _skWall("skWallE",C.x+W/2+0.4,C.z-5.6,7,Math.PI/2,G2,null);      // la faccia dipinta verso la pista (ovest)
+  /* le casse ai lati della pista, girate verso il centro */
+  _skSpeaker(C.x-7.2,C.z-5.6,Math.atan2(7.2,0.6)+Math.PI);
+  _skSpeaker(C.x+7.2,C.z-5.6,Math.atan2(-7.2,0.6)+Math.PI);
+  /* due panchine per guardare, sul lato sud */
+  try{ parkBench(C.x-4.5,C.z-D/2+1.1,0,{}); parkBench(C.x+4.5,C.z-D/2+1.1,0,{}); }catch(e){}
+  /* il ballo del giocatore: sulla pista fra le casse */
+  addInteract({ id:"skate_dance", area:"town", radius:4.2, prio:3,
+    pos:()=>new BABYLON.Vector3(C.x,g,C.z-5.2),
+    prompt:()=>SKDANCE.on?'\u{1F57A} Press <b>E</b> to <b>stop dancing</b>':'\u{1F57A} Press <b>E</b> to <b>dance</b> with the crew!',
+    interact:()=>{ if(SKDANCE.on) skDanceStop(); else skDanceMenu(); } });
+  landmarkSign(C.x,4.2,C.z+D/2+0.6,"\u{1F6F9}","Skatepark","Hip hop · music · dance");
+  /* i ballerini */
+  SK_CREW.forEach(cr=>{ try{
+    const n=spawnNPC({ id:cr.id, name:cr.name, sub:"Dancer", area:"town", model:cr.model, keepModel:true, height:cr.h,
+      x:cr.x, z:cr.z, face:Math.PI, watch:false, look:cr.look });
+    if(!n) return;
+    _pkNoLabel(n); try{ regTownPop(n); }catch(e){}
+    const D={ n, home:{ x:cr.x, z:cr.z }, face:Math.PI, K:null, cur:null, mv:"hop", last:null, dur:2, m0:0, baseY:null, turnFrom:Math.PI, turnTo:Math.PI, sdir:1 };
+    SKATE.dancers.push(D);
+  }catch(e){ console.warn("[skate] dancer",e); } });
+  scene.onBeforeRenderObservable.add(skateTick);
+  scene.onBeforeRenderObservable.add(()=>{ try{ skPhotoTick(); }catch(e){} });
+  /* per il Ranger: i ballerini dal vivo, e le foto dei locali gia' visitati */
+  const jay=SKATE.dancers[0];
+  if(jay && typeof PARKFUN!=="undefined"){
+    PARKFUN.people.skate={ npc:jay.n, sideX:0.4, viewFn:()=>({ x:Math.sin(jay.face), z:Math.cos(jay.face) }) };
+    PARKFUN.people.beat={ always:true, now:()=>!!skPhoto("beat"), img:()=>skPhoto("beat") };
+    PARKFUN.people.cinema={ always:true, now:()=>!!skPhoto("cinema"), img:()=>skPhoto("cinema") }; }
+}
+/* le pose si calcolano quando le pin delle gambe ci sono (qualche
+   fotogramma dopo lo spawn) e il vestito e' su */
+function _skPrepare(D){
+  const n=D.n; if(!n.pins||!n.pins.length) return false;
+  if(!D.bind) D.bind=n.pins.map(k=>({ tn:k.tn, p:k.p.clone(), q:k.q.clone(), s:k.s.clone() }));
+  n.carrier.rotation.y=0; n.carrier.computeWorldMatrix(true); _sitRefresh(n.carrier);
+  const K=_skKeyframes(n.holder,D.bind,new BABYLON.Vector3(0,0,1)); if(!K) return false;
+  n.carrier.rotation.y=D.face;
+  D.K=K; D.cur=K.stand.pins.map(k=>({ tn:k.tn, p:k.p.clone(), q:k.q.clone(), s:k.s.clone() }));
+  n.pins=D.cur; D.baseY=n.holder.position.y;
+  return true;
+}
+function skateTick(){
+  if(area!=="town") { skateAudio(false,99); return; }
+  const now=performance.now(), C=SKATE.C;
+  const d=Math.hypot(player.position.x-C.x, player.position.z-C.z);
+  const anyone=SKATE.dancers.some(D=>_pkVisible(D.n));
+  skateAudio(anyone,d);
+  /* l'orologio: il brano, se suona; se no, un battito suo allo stesso bpm */
+  const A=SKATE.audio;
+  if(A && !A.paused && A.currentTime>0) SKATE.beat=SKATE.bOff+A.currentTime*SKATE.bpm/60;
+  else SKATE.beat=SKATE.lastB+(now-SKATE.t0)/1000*SKATE.bpm/60;
+  if(!(A && !A.paused)){ SKATE.lastB=SKATE.beat; SKATE.t0=now; }
+  const B=SKATE.beat, fr=B-Math.floor(B), pulse=Math.max(0,1-fr*3);
+  SKATE.leds.forEach((m,i)=>{ const h=((Math.floor(B/4)+i)%3); const col=[[0.1,0.5,1],[1,0.2,0.7],[0.3,1,0.4]][h];
+    m.emissiveColor.set(col[0]*(0.25+0.75*pulse),col[1]*(0.25+0.75*pulse),col[2]*(0.25+0.75*pulse)); });
+  if(d>70) return;                                   // lontani: nessuno li vede, niente calcoli
+  const dt=Math.min(0.05,engine.getDeltaTime()/1000), bps=SKATE.bpm/60;
+  SKATE.dancers.forEach(D=>{
+    if(!_pkVisible(D.n)) return;
+    if(!D.K){ if(!_skPrepare(D)) return; D.m0=Math.floor(B)+1; }
+    let b=B-D.m0;
+    if(b<0||b>D.dur+8){ D.m0=Math.floor(B); b=B-D.m0; }        // brano cambiato: si riparte dal battito
+    if(b>=D.dur){ const was=D.mv; _skNext(D,SK_MOVES.map(m=>m.id)); D.m0+=(was==="hop"?2:SKATE_DUR(was)); b=B-D.m0;
+      if(D.mv==="hop") _skPlanTurn(D); }
+    const E=_skEval(D.K,D.mv,b);
+    const dy=_skBlend(D.cur,E.A,E.B,E.t);
+    D.n.holder.position.y=D.baseY+dy+(E.hop||0);
+    if(D.mv==="hop" && E.turn!=null){ let df=D.turnTo-D.turnFrom; while(df>Math.PI) df-=2*Math.PI; while(df<-Math.PI) df+=2*Math.PI;
+      D.face=D.turnFrom+df*_skEase(E.turn); D.n.carrier.rotation.y=D.face; }
+    if(E.glide){ const f={ x:Math.sin(D.face), z:Math.cos(D.face) }, sp=0.34*bps*dt;
+      const c=D.n.carrier.position;
+      if(D.mv==="moonwalk"){ c.x-=f.x*sp; c.z-=f.z*sp; }
+      else { c.x+=f.z*sp*D.sdir; c.z-=f.x*sp*D.sdir; }
+      c.x=Math.max(C.x-6.3,Math.min(C.x+6.3,c.x)); c.z=Math.max(C.z-8.6,Math.min(C.z-3.4,c.z)); }   // restano sulla pista
+  });
+}
+function SKATE_DUR(mv){ return (SK_MOVES.find(m=>m.id===mv)||{beats:4}).beats; }
+/* durante il saltello ci si gira cosi' che la mossa dopo riporti verso casa */
+function _skPlanTurn(D){
+  D.turnFrom=D.face;
+  const c=D.n.carrier.position, hx=D.home.x-c.x, hz=D.home.z-c.z, far=Math.hypot(hx,hz)>0.6;
+  /* la prossima mossa non si sa ancora: si guarda al pubblico (sud), un po'
+     di sbieco; se si e' lontani da casa, di spalle a casa (il moonwalk
+     torna indietro) */
+  D.turnTo=far?Math.atan2(-hx,-hz):Math.PI+(Math.random()-0.5)*1.2;
+  D.sdir=(hx*Math.cos(D.turnTo)-hz*Math.sin(D.turnTo))>0?1:-1;
+}
+/* ---- LA MUSICA DELLE CASSE ------------------------------------------------- */
+function skateAudio(on,d){
+  const R=45;
+  let want=on && d<R && !AUDIO.muted() && !document.hidden && area==="town";
+  try{ if(typeof SHOW!=="undefined" && SHOW.seated) want=false; }catch(e){}
+  SKATE.near=want;
+  if(!want){ if(SKATE.audio && !SKATE.audio.paused){ try{ SKATE.audio.pause(); }catch(e){} } return; }
+  if(typeof GIG_SONGS==="undefined" || !GIG_SONGS.length) return;
+  if(!SKATE.audio) skateNextSong(true);
+  const A=SKATE.audio; if(!A) return;
+  const k=Math.max(0,Math.min(1,(R-d)/(R-6)));
+  A.volume=Math.max(0,Math.min(1,0.9*Math.pow(k,1.6)*AUDIO.gain()));
+  if(A.paused && !SKATE.blocked){ const p=A.play(); if(p&&p.catch) p.catch(()=>{ SKATE.blocked=true; }); }
+}
+function skateNextSong(first){
+  const n=GIG_SONGS.length;
+  SKATE.songI=first?((Math.random()*n)|0):(SKATE.songI+1)%n;
+  const s=GIG_SONGS[SKATE.songI];
+  if(SKATE.audio){ try{ SKATE.audio.pause(); SKATE.audio.removeAttribute("src"); SKATE.audio.load(); }catch(e){} }
+  const a=new Audio(GIG_DIR+s.f); a.preload="auto"; a.volume=0;
+  a.addEventListener("ended",()=>{ if(SKATE.audio===a) skateNextSong(false); });
+  a.addEventListener("error",()=>{ if(SKATE.audio===a){ SKATE.failed=(SKATE.failed||0)+1; if(SKATE.failed<4) setTimeout(()=>{ if(SKATE.audio===a) skateNextSong(false); },3000); } });
+  SKATE.audio=a; SKATE.bpm=s.bpm||120; SKATE.bOff=Math.ceil(SKATE.beat||0);
+}
+/* il primo tocco sblocca l'audio se il browser l'aveva fermato */
+["pointerdown","keydown"].forEach(t=>window.addEventListener(t,()=>{ SKATE.blocked=false; },{ capture:true, passive:true }));
+
+/* ---- IL GIOCATORE BALLA ---------------------------------------------------- */
+const SKDANCE={ on:false, K:null, cur:null, mv:"hop", last:null, dur:2, m0:0, list:[], baseY:0, face:0, turnFrom:0, turnTo:0, sdir:1 };
+function skMoveOk(m){ try{ if(Student.teacher) return true; }catch(e){} let st=0; try{ st=Stars.total(); }catch(e){} return st>=m.stars; }
+function skDanceMenu(){
+  let st=0; try{ st=Stars.total(); }catch(e){}
+  const ok=SK_MOVES.filter(skMoveOk);
+  const ch=SK_MOVES.map(m=>skMoveOk(m)
+    ? { label:m.ic+" "+m.en, act:()=>skDanceStart([m.id]) }
+    : { label:"\u{1F512} "+m.en+" · ⭐"+m.stars, act:()=>{ toast("\u{1F512} "+m.en+": ti servono "+m.stars+" stelle (ne hai "+st+")."); } });
+  if(ok.length>=2) ch.push({ label:"\u{1F3B2} Freestyle!", act:()=>skDanceStart(ok.map(m=>m.id)) });
+  /* v308: anche al Beat Club, accanto al ballo libero di prima */
+  const club=(typeof UNIT_MUSIC!=="undefined" && area===UNIT_MUSIC.area);
+  if(club) ch.unshift({ label:"\u{1F64C} Just dance!", act:()=>danceStart() });
+  DialogueBox.open({ name:club?"The Beat Club":"Skatepark", icon:club?"\u{1F3B5}":"\u{1F6F9}", sub:(club?"Dance to the music":"Dance with the crew")+" · ⭐ "+st,
+    text:ok.length?"Choose a move and dance to the music! Walk to stop.":"You need more stars to learn the moves. Keep playing!",
+    italian:ok.length?"Scegli una mossa e balla a tempo! Per smettere, cammina.":"Ti servono piu' stelle per imparare le mosse: la prima, il Moonwalk, a "+SK_MOVES[0].stars+".",
+    choices:ch, buttons:[{ label:"Close", cls:"ghost", act:()=>{} }] });
+}
+function skDanceStart(list){
+  if(!avatarRoot || !_legPins || !_legPins.length) return;
+  try{ standUpAll(); }catch(e){}
+  moveTarget=null; pendingInteract=null;
+  const ry=player.rotation.y; player.rotation.y=0; player.computeWorldMatrix(true); _sitRefresh(avatarRoot);
+  const K=_skKeyframes(avatarRoot,_legPins,new BABYLON.Vector3(0,0,1));
+  player.rotation.y=ry;
+  if(!K){ toast("\u{1F57A} Non riesco a ballare adesso: riprova."); return; }
+  try{ if(typeof PDANCE!=="undefined" && PDANCE.on) danceStop(); }catch(e){}
+  SKDANCE.area=area;
+  Object.assign(SKDANCE,{ on:true, K, list, mv:"hop", last:null, dur:2, m0:Math.floor(_skDanceClock().beat)+1, baseY:avatarRoot.position.y,
+    face:ry, turnFrom:ry, turnTo:ry, sdir:1, home:{ x:player.position.x, z:player.position.z } });
+  SKDANCE.cur=K.stand.pins.map(k=>({ tn:k.tn, p:k.p.clone(), q:k.q.clone(), s:k.s.clone() }));
+  try{ playAvatarAnim(IDLE_ANIM); }catch(e){}
+  if(!SKDANCE.obs) SKDANCE.obs=scene.onBeforeRenderObservable.add(skDanceTick);
+  toast("\u{1F57A} Dance! (walk to stop)");
+}
+function skDanceStop(){
+  if(!SKDANCE.on) return; SKDANCE.on=false;
+  if(avatarRoot) avatarRoot.position.y=SKDANCE.baseY;
+  try{ if(_legPins) _applyPins(_legPins); }catch(e){}
+  SKDANCE.cur=null;
+}
+function _skDanceClock(){
+  if(SKDANCE.area==="town") return { beat:SKATE.beat, bpm:SKATE.bpm };
+  try{ return danceBeat(); }catch(e){ return { beat:performance.now()/1000*2, bpm:120 }; }
+}
+function skDanceTick(){
+  if(!SKDANCE.on) return;
+  if(area!==SKDANCE.area){ skDanceStop(); return; }
+  const S=SKDANCE, CL=_skDanceClock(), B=CL.beat, dt=Math.min(0.05,engine.getDeltaTime()/1000);
+  let b=B-S.m0;
+  if(b<0||b>S.dur+8){ S.m0=Math.floor(B); b=B-S.m0; }
+  if(b>=S.dur){ const was=S.mv;
+    if(was==="hop"){ const opts=S.list.length>1?S.list.filter(m=>m!==S.last):S.list; S.mv=opts[(Math.random()*opts.length)|0]; S.last=S.mv; S.dur=SKATE_DUR(S.mv); }
+    else { S.mv="hop"; S.dur=2;
+      S.turnFrom=S.face;
+      const hx=S.home.x-player.position.x, hz=S.home.z-player.position.z;
+      S.turnTo=Math.hypot(hx,hz)>0.6?Math.atan2(-hx,-hz):S.face;
+      S.sdir=(hx*Math.cos(S.turnTo)-hz*Math.sin(S.turnTo))>0?1:-1; }
+    S.m0+=(was==="hop"?2:SKATE_DUR(was)); b=B-S.m0; }
+  const E=_skEval(S.K,S.mv,b), dy=_skBlend(S.cur,E.A,E.B,E.t);
+  avatarRoot.position.y=S.baseY+dy+(E.hop||0);
+  if(S.mv==="hop" && E.turn!=null){ let df=S.turnTo-S.turnFrom; while(df>Math.PI) df-=2*Math.PI; while(df<-Math.PI) df+=2*Math.PI;
+    S.face=S.turnFrom+df*_skEase(E.turn); }
+  player.rotation.y=S.face;
+  if(E.glide){ const f={ x:Math.sin(S.face), z:Math.cos(S.face) }, sp=0.34*CL.bpm/60*dt;
+    let nx=player.position.x, nz=player.position.z;
+    if(S.mv==="moonwalk"){ nx-=f.x*sp; nz-=f.z*sp; } else { nx+=f.z*sp*S.sdir; nz-=f.x*sp*S.sdir; }
+    if(!blocked(nx,nz)){ player.position.x=nx; player.position.z=nz; } }
+}
+
+/* ---- LE FOTO DEI LOCALI (per il Ranger) ----------------------------------
+   Giacomo: «il Ranger mostra una foto del locale presa quando ci sei gia'
+   stato». Uno scatto al Beat Club durante il concerto, uno al cinema da
+   seduti col film: restano sul dispositivo (localStorage, una foto per
+   posto, rifatta al massimo una volta al giorno) e il Ranger le mostra. */
+function skPhoto(k){ try{ return localStorage.getItem("et_ph_"+k)||""; }catch(e){ return ""; } }
+function _skShoot(k,cam,look){
+  let out=""; const prev=scene.activeCamera; let c=null;
+  try{ c=new BABYLON.FreeCamera("_phCam",cam,scene); c.setTarget(look); c.minZ=0.2; c.maxZ=400; c.fov=0.9;
+    scene.activeCamera=c; scene.render(); scene.render();
+    const src=engine.getRenderingCanvas(), cv=document.createElement("canvas"); cv.width=360; cv.height=225;
+    cv.getContext("2d").drawImage(src,0,0,src.width,src.height,0,0,360,225); out=cv.toDataURL("image/jpeg",0.6); }
+  catch(e){}
+  finally{ try{ scene.activeCamera=prev; }catch(e){} try{ if(c) c.dispose(); }catch(e){} }
+  if(out.length>2000){ try{ localStorage.setItem("et_ph_"+k,out); localStorage.setItem("et_ph_"+k+"_d",new Date().toDateString()); }catch(e){} }
+}
+const SKPH={ beatT:0, cineT:0 };
+function skPhotoTick(){
+  const now=performance.now(), today=new Date().toDateString();
+  let dBeat="", dCine=""; try{ dBeat=localStorage.getItem("et_ph_beat_d")||""; dCine=localStorage.getItem("et_ph_cinema_d")||""; }catch(e){}
+  /* Beat Club, concerto in corso, dopo 6 s dentro */
+  if(typeof UNIT_MUSIC!=="undefined" && area===UNIT_MUSIC.area && typeof GIG!=="undefined" && GIG.on){
+    if(!SKPH.beatT) SKPH.beatT=now;
+    if(now-SKPH.beatT>6000 && dBeat!==today && !_dlgOpen()){
+      const I=INTERIORS[UNIT_MUSIC.area]; if(I){ const c=I.center;
+        _skShoot("beat",new BABYLON.Vector3(c.x+2.6,2.7,c.z+5.8),new BABYLON.Vector3(c.x,1.2,c.z-3.6)); } }
+  } else SKPH.beatT=0;
+  /* cinema, seduti col film, dopo 8 s: tu che guardi il film */
+  if(area==="cinema" && typeof SHOW!=="undefined" && SHOW.seated){
+    if(!SKPH.cineT) SKPH.cineT=now;
+    if(now-SKPH.cineT>8000 && dCine!==today){
+      const p=player.position, a=player.rotation.y, f={ x:Math.sin(a), z:Math.cos(a) }, r={ x:Math.cos(a), z:-Math.sin(a) };
+      _skShoot("cinema",new BABYLON.Vector3(p.x+f.x*1.3+r.x*1.1,p.y+1.25,p.z+f.z*1.3+r.z*1.1),new BABYLON.Vector3(p.x,p.y+0.85,p.z)); }
+  } else SKPH.cineT=0;
 }
 
 /* =====================================================================
@@ -14877,6 +15434,10 @@ const PARK_SCENES=[
      citta'»): chi chiacchiera, e il tempo che fa (solo se piove davvero) */
   { id:"talk",    who:"they",ing:["They're","talking."],                  ingD:["talk","He's","She's"],    has:null },
   { id:"weather", who:"it",  ing:["It's","raining."],                     ingD:["rain","They're","rains."],has:null, q:"Look at the sky! What's the weather like?" },
+  /* v308: lo skatepark dal vivo e le foto dei locali gia' visitati */
+  { id:"skate",   who:"he",  ing:["He's","dancing."],                     ingD:["dance","She's","dances."],has:null, q:"Look at the skatepark! What is he doing?" },
+  { id:"beat",    who:"they",ing:["They're","dancing."],                  ingD:["dance","He's","dances."], has:null, q:"Do you remember the Beat Club? Look at this photo! What are they doing?" },
+  { id:"cinema",  who:"i",   ing:["I'm","watching","a","film."],          ingD:["watch","He's","films."],  has:null, q:"Look! This is you at the cinema. What are you doing?" },
 ];
 function parkWatchMode(){
   const open=parkOpenUnits();
@@ -14888,6 +15449,7 @@ function parkWatchMode(){
    Photo Spot: due render e si rimette tutto com'era) */
 function parkSnap(sc){
   const P=PARKFUN.people[sc.id]; if(!P) return "";
+  if(P.img) return P.img();                       // v308: la foto del locale, scattata quando c'eri
   let look, camPos;
   if(P.snap){ const v=P.snap(); camPos=v.cam; look=v.look; }
   else {
@@ -14981,30 +15543,33 @@ function parkWatchAsk(){
    she?, is o are?, oppure «controlla le lettere» per un refuso); al secondo
    errore si mostra la frase giusta. 3⭐ al primo colpo, 1⭐ al secondo:
    scrivere vale piu' che comporre. */
-const _PK_SUBJ={ it:"(it)", he:"(he|the man|the boy|the runner|the jogger)", she:"(she|the woman|the girl|the lady)",
+const _PK_SUBJ={ i:"(i)", it:"(it)", he:"(he|the man|the boy|the runner|the jogger)", she:"(she|the woman|the girl|the lady)",
   they:"(they|the people|the fans|the two people|the man and the woman|the woman and the man|the boy and the girl)" };
 const PARK_WRITE_RE={
   reader:"HE is reading (a|the|his) book", lunch:"SHE is eating (a|the|her) sandwich",
   guitar:"SHE is playing (the |a |her )?guitar", clap:"THEY are clapping( their hands)?",
   wave:"SHE is (waving|waiving)( her hand| hello| at me| to me| goodbye)?", jogger:"HE is (running|jogging)",
-  talk:"THEY are (talking|chatting|speaking)( to each other| together)?", weather:"IT is (raining|pouring|drizzling)" };
+  talk:"THEY are (talking|chatting|speaking)( to each other| together)?", weather:"IT is (raining|pouring|drizzling)",
+  skate:"HE is (dancing|moonwalking|doing the moonwalk|breakdancing)", beat:"THEY are (dancing|having fun|jumping)",
+  cinema:"I am (watching|seeing) (a|the) (film|movie)" };
 function _pkNorm(v){
   return String(v||"").toLowerCase().replace(/[’‘`]/g,"'").replace(/[^a-z' ]+/g," ")
-    .replace(/\b(he|she|it)'s\b/g,"$1 is").replace(/\bthey're\b/g,"they are").replace(/\s+/g," ").trim();
+    .replace(/\b(he|she|it)'s\b/g,"$1 is").replace(/\bthey're\b/g,"they are").replace(/\bi'm\b/g,"i am").replace(/\s+/g," ").trim();
 }
 function _pkWriteOk(sc,v){
   const src=PARK_WRITE_RE[sc.id]; if(!src) return false;
-  const re=new RegExp("^"+src.replace(/HE|SHE|THEY|IT/,m=>_PK_SUBJ[m.toLowerCase()])+"$");
+  const re=new RegExp("^"+src.replace(/HE|SHE|THEY|IT|I/,m=>_PK_SUBJ[m.toLowerCase()])+"$");
   return re.test(_pkNorm(v));
 }
 function _pkWriteHint(sc,v){
   const a=_pkNorm(v), want=_pkNorm(sc.ing.join(" "));
-  const subj=a.split(" ")[0], SUB={they:"They",he:"He",she:"She",it:"It"}[sc.who]||"She";
+  const subj=a.split(" ")[0], SUB={they:"They",he:"He",she:"She",it:"It",i:"I"}[sc.who]||"She";
+  if(sc.who==="i" && /^i\b/.test(a) && !/\bam\b/.test(a)) return "\u{1F4A1} Con I si usa AM: I am \u2026";
   const isHe=/^(he|the man|the boy)\b/.test(a), isShe=/^(she|the woman|the girl|the lady)\b/.test(a), isThey=/^(they|the people|the fans)\b/.test(a);
   if((sc.who==="he"&&(isShe||isThey))||(sc.who==="she"&&(isHe||isThey))||(sc.who==="they"&&(isHe||isShe)))
     return "\u{1F440} Guarda bene la foto: "+(sc.who==="they"?"sono in due → They":(sc.who==="he"?"e' un uomo → He":"e' una donna/ragazza → She"))+".";
   if(gemLexDist(a,want)<=2) return "\u{1F50E} Ci sei quasi: controlla le lettere.";
-  if(!/\b(is|are|am)\b/.test(a)) return "\u{1F4A1} Manca il verbo essere: "+(SUB+(sc.who==="they"?" ARE ":" IS ")+"…");
+  if(!/\b(is|are|am)\b/.test(a)) return "\u{1F4A1} Manca il verbo essere: "+(SUB+(sc.who==="they"?" ARE ":(sc.who==="i"?" AM ":" IS "))+"…");
   if(sc.who==="they" && /\bis\b/.test(a)) return "\u{1F4A1} Con They si usa ARE: They are …";
   if(sc.who!=="they" && /\bare\b/.test(a)) return "\u{1F4A1} Con "+SUB+" si usa IS.";
   if(!/\b[a-z]+ing\b/.test(a)) return "\u{1F4A1} Il verbo vuole -ING: is play → is playING.";
@@ -15027,7 +15592,7 @@ function parkWatchWrite(sc,img){
   DialogueBox.open({ ..._pkSpk(), sub:"Question "+(s.wN+1)+"/3 · write it",
     text:q, italian:"Scrivi la frase al present continuous (He's / She's / They're + -ing).",
     html:(img?'<div style="text-align:center;margin-bottom:6px"><img alt="" style="max-width:100%;max-height:150px;border-radius:10px;border:3px solid #fbf7ec;box-shadow:0 3px 10px rgba(0,0,0,.35)" src="'+img+'"></div>':"")
-      +'<input id="pk-write" class="gem-input" data-mic="1" type="text" autocomplete="off" autocapitalize="sentences" autocorrect="off" spellcheck="false" placeholder="'+({they:"They’re …",he:"He’s …",she:"She’s …",it:"It’s …"}[sc.who])+'">'
+      +'<input id="pk-write" class="gem-input" data-mic="1" type="text" autocomplete="off" autocapitalize="sentences" autocorrect="off" spellcheck="false" placeholder="'+({they:"They’re …",he:"He’s …",she:"She’s …",it:"It’s …",i:"I’m …"}[sc.who])+'">'
       +'<div id="pk-fb" style="min-height:18px;margin-top:6px;font-size:13px;color:#b5452f"></div>',
     buttons:[{ label:"✔ Check", cls:"primary", keepOpen:true, act:judge },{ label:"Not now", cls:"ghost", act:()=>{} }] });
   const inp=document.getElementById("pk-write");
@@ -32782,6 +33347,7 @@ const PHONES=(function(){
     if(document.hidden) return false;
     if(AUDIO.muted()) return false;                                     // muto: niente da scaricare
     if(AUDIO.playing()) return false;                                   // il concerto: suona il club
+    if(typeof SKATE!=="undefined" && SKATE.near) return false;          // v308: allo skatepark suonano le casse
     if(typeof SHOW!=="undefined" && SHOW.seated) return false;          // al cinema si guarda il film
     return true; }
   function vol(){ if(a) a.volume=Math.max(0,Math.min(1,VOL*AUDIO.gain())); }
@@ -34848,8 +35414,11 @@ function danceInit(){
   if(PDANCE.inter) return;
   PDANCE.inter=addInteract({ id:"beat_dance", area:UNIT_MUSIC.area, radius:2.5, prio:5, enabled:false,
     pos:()=>player.position,
-    prompt:()=>PDANCE.on?'\u{1F483} Press <b>E</b> to <b>stop dancing</b>':'\u{1F483} Press <b>E</b> to <b>dance</b>!',
-    interact:()=>{ PDANCE.on?danceStop():danceStart(); } });
+    prompt:()=>(PDANCE.on||SKDANCE.on)?'\u{1F483} Press <b>E</b> to <b>stop dancing</b>':'\u{1F483} Press <b>E</b> to <b>dance</b>!',
+    /* v308: con almeno un passo sbloccato (il docente li ha tutti) si
+       sceglie: ballo libero di prima o i passi di Billie Jean */
+    interact:()=>{ if(PDANCE.on){ danceStop(); return; } if(SKDANCE.on){ skDanceStop(); return; }
+      if(SK_MOVES.some(skMoveOk)) skDanceMenu(); else danceStart(); } });
 }
 /* il palco: dove stanno i musicisti (GIG_BAND, coordinate locali al club) */
 function danceStageFace(){
@@ -42008,6 +42577,7 @@ function move(nx,nz,spd){
   if(typeof BSIT!=="undefined" && BSIT.b) benchStand(true);     // v291: dalla panchina il primo passo ti rimette in piedi
   if(typeof CAFE_PICK!=="undefined" && CAFE_PICK.seated) cafeLeaveSeat();
   if(typeof LESSON!=="undefined" && LESSON.seated) lessonStand(false);   // v306: alzarsi chiude la lezione
+  if(typeof SKDANCE!=="undefined" && SKDANCE.on) skDanceStop();           // v308: camminare smette di ballare
   if(typeof SUBSIT!=="undefined" && SUBSIT.on) subBenchStand(true);   // v297: panchina della metro   // v295: al caffe' il primo passo ti alza dallo sgabello (tazza e cibo sul vassoio)
   spd=spd||PLAYER_SPEED;
   const ox=player.position.x, oz=player.position.z;
