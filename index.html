@@ -14524,7 +14524,7 @@ function buildPark(){
      sblocca con le stelle (SK_MOVES).
    ===================================================================== */
 const SKATE={ C:{ x:30, z:56 }, gy:0, dancers:[], audio:null, songI:-1, near:false, vol:0, blocked:false,
-  bpm:120, beat:0, aOff:0, gap:false, quiet:false, leds:[], built:false };
+  bpm:120, beat:0, aOff:0, gap:false, quiet:false, crewOn:false, reqUntil:0, leds:[], built:false };
 /* v308b (Giacomo: «aggiungi anche il ballo base con la mano che si alza e
    salto a tempo originale del Beat Club»): e' il primo, sempre sbloccato */
 const SK_MOVES=[ { id:"basic",    en:"Beat Club dance", ic:"\u{1F64C}", stars:0, beats:16 },
@@ -14593,8 +14593,18 @@ function dancePoseFor(root,pins,fwd,spec){
         F.position.copyFrom(lp); outP.set(F,lp.clone()); _sitRefresh(root); }
       /* il piede: la punta scende di p rispetto all'orizzontale */
       const A2=F.getAbsolutePosition().clone();
-      const cur=footLoc?V.TransformNormal(footLoc,F.getWorldMatrix()):f.clone();
-      let h=new V(cur.x,0,cur.z); if(h.length()<1e-4) h=f.clone(); h.normalize();
+      /* v309d (Giacomo: «nel moonwalk un piede e' storto, deve essere
+         parallelo all'altro»). Il rig del giocatore non ha l'osso della
+         punta, e prima si dava per scontato che il piede guardasse avanti:
+         invece, misurato, a riposo av_Foot.L e' girato di ~52 gradi in fuori
+         rispetto al destro (l'asse lungo del piede e' la Y locale). Lo si
+         inclinava senza raddrizzarlo, e col tallone alzato si vedeva storto.
+         Ora la punta (osso Toe, o la Y locale del piede) va DRITTA IN AVANTI
+         in ogni posa: i due piedi restano paralleli. */
+      let cur=footLoc?V.TransformNormal(footLoc,F.getWorldMatrix()):null;
+      if(!cur){ const y=V.TransformNormal(new V(0,1,0),F.getWorldMatrix()); if(y.length()>1e-5){ y.normalize(); if(Math.abs(y.y)<0.6) cur=y; } }
+      if(!cur) cur=f.clone();
+      const h=f.clone();
       _sitWorldRot(F,A2,cur,h.scale(Math.cos(S.p)).add(dn.scale(Math.sin(S.p))));
       _sitRefresh(root); out.set(F,F.rotationQuaternion.clone());
       const ls=(lT+lS)-(lT*Math.cos(S.t)+lS*Math.cos(S.s));
@@ -14869,11 +14879,15 @@ function buildSkatepark(){
   landmarkSign(C.x,4.2,C.z+D/2+0.6,"\u{1F6F9}","Skatepark","Hip hop · music · dance");
   /* i ballerini */
   SK_CREW.forEach(cr=>{ try{
+    let D=null;
+    /* v309d: quando sono fermi ci si parla (vedi talkToDancer) */
     const n=spawnNPC({ id:cr.id, name:cr.name, sub:"Dancer", area:"town", model:cr.model, keepModel:true, height:cr.h,
-      x:cr.x, z:cr.z, face:Math.PI, watch:false, look:cr.look });
+      x:cr.x, z:cr.z, face:Math.PI, watch:false, look:cr.look, radius:2.2,
+      prompt:'Press <b>E</b> to talk to <b>'+cr.name+'</b>', interact:()=>{ if(D) talkToDancer(D); } });
     if(!n) return;
+    n.__skDancer=true; if(n.inter) n.inter.enabled=false;
     _pkNoLabel(n); try{ regTownPop(n); }catch(e){}
-    const D={ n, home:{ x:cr.x, z:cr.z }, face:Math.PI, K:null, cur:null, mv:"hop", last:null, dur:2, m0:0, baseY:null, turnFrom:Math.PI, turnTo:Math.PI, sdir:1, st:"dance", i:SKATE.dancers.length };
+    D={ n, home:{ x:cr.x, z:cr.z }, face:Math.PI, K:null, cur:null, mv:"hop", last:null, dur:2, m0:0, baseY:null, turnFrom:Math.PI, turnTo:Math.PI, sdir:1, st:"dance", i:SKATE.dancers.length };
     SKATE.dancers.push(D);
   }catch(e){ console.warn("[skate] dancer",e); } });
   scene.onBeforeRenderObservable.add(skateTick);
@@ -14913,7 +14927,11 @@ function skateTick(){
      chiacchiere e di notte tacciono, e anche il tuo ballo si ferma
      (SKATE.quiet, come fra un brano e l'altro). */
   const crew=skPhase()==="dance" && SKATE.dancers.some(D=>_pkVisible(D.n));
-  SKATE.quiet=SKATE.gap || !crew;
+  SKATE.crewOn=crew;
+  /* v309d (Giacomo: «se non c'e' musica, puoi ballare, a tempo su schiocco
+     di dita, bpm casuali tra 70 e 100»): SKATE.quiet = le casse tacciono,
+     e il tuo ballo va sullo schiocco (_skDanceClock) invece di fermarsi */
+  SKATE.quiet=!crew;
   skateAudio(crew, d, RA);
   /* l'orologio: la radio, piu' lo scarto (smorzato) del brano che senti,
      cosi' i passi cadono su quello che esce dalle casse senza scatti */
@@ -14935,6 +14953,7 @@ function skateTick(){
   const see=d<55;                                    // da lontano il cambio e' istantaneo
   const R=skCrewStep(B,rest);
   SKATE.dancers.forEach(D=>{
+    if(D.n.inter) D.n.inter.enabled=(D.st==="chill" && _pkVisible(D.n));    // si parla solo quando sono fermi
     if(!_pkVisible(D.n)) return;
     if(!D.K){ if(!_skPrepare(D)) return; D.m0=Math.floor(B)+1; }
     if(ph==="chill" && D.st==="dance") skGoChill(D,see);
@@ -15014,7 +15033,9 @@ function SKATE_DUR(mv){ return (SK_MOVES.find(m=>m.id===mv)||{beats:4}).beats; }
    in piedi davanti a loro; chi parla gesticola. La musica resta: le casse
    suonano e il giocatore puo' ballare lo stesso. */
 const SK_CYCLE=15*60*1000;
-function skPhase(){ if(SKATE.force) return SKATE.force; return (Math.floor(radioNow()/SK_CYCLE)%2)?"chill":"dance"; }   // v309: l'ora della radio
+function skPhase(){ if(SKATE.force) return SKATE.force;
+  if(radioNow()<(SKATE.reqUntil||0)) return "dance";                     // v309d: gliel'hai chiesto tu
+  return (Math.floor(radioNow()/SK_CYCLE)%2)?"chill":"dance"; }   // v309: l'ora della radio
 /* la panchina delle chiacchiere: quella dove non sei seduto tu */
 function skPhaseBenches(ph){
   const Bs=SKATE.benches||[]; Bs.forEach(b=>{ b.npcBusy=false; });
@@ -15058,6 +15079,64 @@ function skGoDance(D,see,B){
     const n=D.n; n.carrier.rotation.y=Math.PI; n.holder.position.y=D.baseY; n.pins=D.cur;
     try{ n.play("Idle"); }catch(e){}
     Object.assign(D,{ st:"dance", face:Math.PI, turnFrom:Math.PI, turnTo:Math.PI, mv:"hop", dur:2, m0:Math.floor(SKATE.beat)+1, restT:0 }); });
+}
+/* ---- PARLARE CON LA CREW (v309d) ---------------------------------------------
+   Giacomo: «puoi parlare con i ballerini quando sono fermi come con gli altri
+   npc e chiedergli se vogliono ballare. Se glielo chiedi, inizia il loro
+   ballo. Anche con loro speak, stesse regole degli altri npc, solo che puoi
+   dirgli can you dance? Do you want to dance? e varianti».
+   Il dialogo e' quello di tutti (Let's talk!, Ask me con le domande, la
+   scrittura libera e il microfono, le stesse stelle). In piu', nella domanda
+   scritta o detta, un invito a ballare (skInvito) fa ripartire la crew:
+   si balla fino alla fine di questo quarto d'ora (SKATE.reqUntil), poi
+   tutto torna all'orologio. ⚠️ E' una scelta LOCALE: i compagni vedono
+   la crew secondo il loro orologio. */
+function talkToDancer(D){
+  const npc=D.n; if(!npc || D.st!=="chill") return;
+  const first=!npcMet(npc), g=npcGreet(npc); npcTouch(npc); npc.metPlayer=true;
+  const icon="\u{1F6F9}", sub="Dancer \u00b7 Skatepark";
+  const ch=[];
+  let topics=[]; try{ topics=npcTopics(npc)||[]; }catch(e){}
+  if(topics.length) ch.push({ label:"\u{1F4AC} Let's talk!"+(isChatty(npc)?" \u2b50\u00d7"+STAR_RULES.chattyMul:""),
+    act:()=>openAmbient(npc,null,icon,sub) });
+  ch.push({ label:"\u2753 Ask me", act:()=>openAskMenu(npc,icon,sub,null) });
+  DialogueBox.open({ npc, icon, sub,
+    text:greetJoin(g.en,(first?"I'm "+npc.name+". ":"")+"We're having a break now. No music, no dancing!"),
+    italian:greetJoin(g.it,(first?"Sono "+npc.name+". ":"")+"Adesso facciamo una pausa: niente musica, niente ballo!")
+      +" (\u{1F4A1} Con \u00abAsk me\u00bb \u2192 \u270D\uFE0E puoi chiedergli se vuole ballare.)",
+    choices:ch, buttons:[{ label:"Goodbye", cls:"ghost", act:()=>{} }] });
+}
+/* e' un invito a ballare? «Can you dance?», «Do you want to dance?»,
+   «Would you like to dance?», «Shall we dance?», «Let's dance!», «Dance
+   with me, please!»... ma non «Where did you learn to dance?» */
+function skInvito(t){
+  const s=" "+String(t||"").toLowerCase().replace(/[\u2019`]/g,"'").replace(/[^a-z' ?!]+/g," ").replace(/\s+/g," ").trim()+" ";
+  if(!/\bdance\b/.test(s)) return false;
+  if(/^ (what|where|when|why|who|whose|which|how(?! about))\b/.test(s)) return false;
+  if(/\b(don't|do not|can't|cannot|won't|never)\b/.test(s)) return false;
+  /* col microfono il «?» non arriva mai (Mic mette il punto): conta anche
+     la domanda che comincia con l'ausiliare */
+  return /\?/.test(s) || /^ (can|could|do|would|will|shall|are|may|wanna)\b/.test(s)
+      || /\b(let's|lets|let us|please|with me|wanna|want|shall|how about|come on)\b/.test(s);
+}
+function skCrewInvite(){
+  SKATE.reqUntil=Math.ceil((radioNow()+1000)/SK_CYCLE)*SK_CYCLE;
+  try{ toast("\u{1F6F9} The crew is dancing! \u{1F3B6}",3000); }catch(e){}
+}
+/* la risposta all'invito, dentro la scrittura libera dell'«Ask me» */
+function skInvitoRisposta(ta,fb,typed){
+  const npc=_ASKFREE.npc; npcTouch(npc);
+  const bad=askFormCheck(typed, ftLevel());
+  const got=Stars.awardAskNPC(npcCardId(npc), bad?"retry":"first");
+  const R=[["Sure! Let's dance! Come on, crew!","Certo! Balliamo! Dai, ragazzi!"],
+           ["Yes, of course! Music on, guys!","Ma certo! Musica, ragazzi!"],
+           ["Why not? Let's go! Watch our moves!","Perch\u00e9 no? Andiamo! Guarda le nostre mosse!"]][(Math.random()*3)|0];
+  fb.innerHTML=(bad?'<div style="opacity:.72;font-size:.93em;margin-bottom:6px;">\u{1F7E1} '+bad.it+'</div>':'')
+    +'<div style="font-weight:800;">\u{1F7E2} '+_escHtml(R[0])+(got>0?' <span style="color:#a05a2c">\u2b50 +'+got+'</span>':'')+'</div>'
+    +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">'+_escHtml(R[1])+'</div>';
+  _npcTTS(npc,R[0]);
+  _askDone(ta,null);
+  skCrewInvite();
 }
 /* chi e' in piedi parla a turno: gesticola, l'altro ascolta */
 function skChatTick(){
@@ -15165,6 +15244,7 @@ function skDanceStart(list){
   if(!K){ toast("\u{1F57A} Non riesco a ballare adesso: riprova."); return; }
   try{ if(typeof PDANCE!=="undefined" && PDANCE.on) danceStop(); }catch(e){}
   SKDANCE.area=area;
+  SKDANCE.snap=null;
   /* al Beat Club si balla rivolti al palco */
   let f0=ry; if(area!=="town"){ try{ f0=danceStageFace(); player.rotation.y=f0; }catch(e){} }
   Object.assign(SKDANCE,{ on:true, K, list, mv:"hop", last:null, dur:2, m0:Math.floor(_skDanceClock().beat)+1, baseY:avatarRoot.position.y,
@@ -15173,17 +15253,24 @@ function skDanceStart(list){
   try{ playAvatarAnim(IDLE_ANIM); }catch(e){}
   if(!SKDANCE.obs) SKDANCE.obs=scene.onBeforeRenderObservable.add(skDanceTick);
   try{ if(SKATE.danceInter) SKATE.danceInter.prio=-2; }catch(e){}
-  toast("\u{1F57A} Dance! (walk to stop)");
+  toast((SKDANCE.area==="town" && SKATE.quiet)?"\u{1FAF0} No music? Dance to the finger snaps! (walk to stop)":"\u{1F57A} Dance! (walk to stop)");
 }
 function skDanceStop(){
-  if(!SKDANCE.on) return; SKDANCE.on=false;
+  if(!SKDANCE.on) return; SKDANCE.on=false; SKDANCE.snap=null;
   try{ if(SKATE.danceInter) SKATE.danceInter.prio=3; }catch(e){}
   if(avatarRoot) avatarRoot.position.y=SKDANCE.baseY;
   try{ if(_legPins) _applyPins(_legPins); }catch(e){}
   SKDANCE.cur=null;
 }
 function _skDanceClock(){
-  if(SKDANCE.area==="town") return { beat:SKATE.beat, bpm:SKATE.bpm };
+  if(SKDANCE.area==="town"){
+    /* casse spente: si balla sullo schiocco di dita, a un bpm a caso fra 70
+       e 100 (uno nuovo ogni volta che la musica si ferma) */
+    if(SKATE.quiet){ const S=SKDANCE;
+      if(!S.snap) S.snap={ bpm:70+Math.floor(Math.random()*31), t0:performance.now(), last:-1 };
+      return { beat:(performance.now()-S.snap.t0)/1000*S.snap.bpm/60, bpm:S.snap.bpm, snap:true }; }
+    SKDANCE.snap=null;
+    return { beat:SKATE.beat, bpm:SKATE.bpm }; }
   try{ return danceBeat(); }catch(e){ return { beat:performance.now()/1000*2, bpm:120 }; }
 }
 function skDanceTick(){
@@ -15192,9 +15279,11 @@ function skDanceTick(){
   const S=SKDANCE, CL=_skDanceClock(), B=CL.beat, dt=Math.min(0.05,engine.getDeltaTime()/1000);
   /* fra un brano e l'altro ci si ferma: allo skatepark le casse in pausa,
      al Beat Club il concerto fra un pezzo e l'altro */
-  const rest=(S.area==="town") ? SKATE.quiet
+  const rest=(S.area==="town") ? (SKATE.crewOn && SKATE.gap)
                               : !(typeof AUDIO!=="undefined" && AUDIO.playing());
   if(_skRest(S,rest,B,null,()=>{ player.rotation.y=S.face; })) return;
+  /* lo schiocco, uno per battito */
+  if(CL.snap && S.snap){ const k=Math.floor(B); if(k!==S.snap.last){ S.snap.last=k; try{ SFX.snap(); }catch(e){} } }
   let b=B-S.m0;
   if(b<0||b>S.dur+8){ S.m0=Math.floor(B); b=B-S.m0; }
   if(b>=S.dur){ const was=S.mv;
@@ -27010,6 +27099,8 @@ function submitAskFree(){
     return;
   }
   if(linguaccia(typed)){ fb.innerHTML=linguacciaHtml(); return; }
+  /* v309d: alla crew dello skatepark si puo' chiedere di ballare */
+  if(_ASKFREE.npc && _ASKFREE.npc.__skDancer && skInvito(typed)){ skInvitoRisposta(ta,fb,typed); return; }
   const bio=npcBio(_ASKFREE.npc);
   const arch=askArchitect(typed,bio);
   if(arch){
@@ -34845,8 +34936,21 @@ const SFX=(function(){
       t+=0.2+Math.random()*0.07;
     }
   }
+  /* v309d: lo schiocco di dita (si balla senza musica allo skatepark):
+     un colpo di rumore secco e alto, piu' il «toc» del dito sul palmo */
+  function snap(at){
+    const c=ready(); if(!c) return; const g0=lvl(); if(g0<=0) return;
+    const t=Math.max(c.currentTime,at||0)+0.01;
+    const src=c.createBufferSource(); src.buffer=noise; src.playbackRate.value=1.6;
+    const hp=c.createBiquadFilter(); hp.type="bandpass"; hp.frequency.value=2600+Math.random()*500; hp.Q.value=1.1;
+    const g=c.createGain(); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.32*g0,t+0.003); g.gain.exponentialRampToValueAtTime(0.0001,t+0.06);
+    src.connect(hp); hp.connect(g); g.connect(master); src.start(t,Math.random()*0.5); src.stop(t+0.08);
+    const o=c.createOscillator(); o.type="triangle"; o.frequency.setValueAtTime(1500,t); o.frequency.exponentialRampToValueAtTime(700,t+0.03);
+    const og=c.createGain(); og.gain.setValueAtTime(0.0001,t); og.gain.exponentialRampToValueAtTime(0.08*g0,t+0.002); og.gain.exponentialRampToValueAtTime(0.0001,t+0.035);
+    o.connect(og); og.connect(master); o.start(t); o.stop(t+0.05);
+  }
   return { wake, step, walked, carHorn, carPass, setCarPass, correct, wrong, panOf,
-           shout, voiceState, sip, chew,
+           shout, voiceState, sip, chew, snap,
            gemChime, gemFit, thunder,
            bell, bellHear, shutter, tick, waterLevel, fountLevel, clubLevel, cricketLevel, windLevel,
            rainLevel:rainAudioLevel,
@@ -62668,10 +62772,11 @@ const Presenza=(function(){
     try{ if(typeof SKDANCE!=="undefined" && SKDANCE.on && SKDANCE.area===area){
       const S=SKDANCE, B=_skDanceClock().beat;
       let c=_MOSSA[S.mv]||"h"; if(c==="s" && S.sdir<0) c="S";
-      const rest=(S.area==="town")?SKATE.quiet:!(typeof AUDIO!=="undefined" && AUDIO.playing());
+      const CL=_skDanceClock();
+      const rest=(S.area==="town")?(SKATE.crewOn && SKATE.gap):!(typeof AUDIO!=="undefined" && AUDIO.playing());
       const b=rest?0:Math.max(0,Math.min(S.dur,B-S.m0));
       return { x:player.position.x, z:player.position.z, y:player.position.y, r:S.face,
-               k:"m"+(rest?"r":c)+Math.round(b*10) }; } }catch(e){}
+               k:"m"+(rest?"r":c)+Math.round(b*10)+(CL.snap?"@"+CL.bpm:"") }; } }catch(e){}   // v309d: @bpm dello schiocco
     try{ if(typeof PDANCE!=="undefined" && PDANCE.on)
       return { x:player.position.x, z:player.position.z, y:player.position.y, r:PDANCE.face,
                k:"d"+Math.round(((PDANCE.phase%2)+2)%2*100) }; }catch(e){}
@@ -62731,10 +62836,10 @@ const Presenza=(function(){
       else if(!ta && (mm=/^o([0-9a-u]{4})([0-3-])$/.exec(f))) ta={ k:"o", c:mm[1], cur:mm[2] };
       else if(!ta && (mm=/^c([0-7])([0-4])([0-4])([0-4])([01-])$/.exec(f))) ta={ k:"c", c:mm[1]+mm[2]+mm[3]+mm[4], cur:mm[5] }; }
     const d=/^d(\d{1,3})$/.exec(p[4]||"");            // v304: balla (fase in centesimi di battito)
-    const mz=/^m([hbmsStar])(\d{1,3})$/.exec(p[4]||""); // v309: i passi (mossa, battiti x10)
+    const mz=/^m([hbmsStar])(\d{1,3})(?:@(\d{2,3}))?$/.exec(p[4]||""); // v309: i passi (mossa, battiti x10, @bpm dello schiocco)
     return { x:x, z:z, y:(isFinite(y)?y:0), r:(isFinite(r)?r:0),
              balla:d?{ ph:+d[1]/100 }:null,
-             mossa:mz?{ mv:_MOSSA_DA[mz[1]], sdir:(mz[1]==="S"?-1:1), b:+mz[2]/10 }:null,
+             mossa:mz?{ mv:_MOSSA_DA[mz[1]], sdir:(mz[1]==="S"?-1:1), b:+mz[2]/10, bpm:mz[3]?+mz[3]:0 }:null,
              siede:m?{ seat:+m[1]/100, gy:+m[2]/100, eat:m[3]||"", c:!!m[4], ta:ta }:null,
              cameriere:w?{ x:+w[1], z:+w[2] }:null };
   }
@@ -63254,7 +63359,7 @@ const Presenza=(function(){
     }
     if(b.anim!=="Idle"){ b.anim="Idle"; b.play("Idle"); }
     b.noPin=false;
-    let bpm=120; try{ bpm=(area==="town")?SKATE.bpm:danceBeat().bpm; }catch(err){}
+    let bpm=m.bpm||120; if(!m.bpm) try{ bpm=(area==="town")?SKATE.bpm:danceBeat().bpm; }catch(err){}
     let E;
     if(m.mv==="rest"||!m.mv) E={ A:K.stand, B:K.stand, t:0, hop:0 };
     else { const dur=(m.mv==="hop")?2:SKATE_DUR(m.mv);
