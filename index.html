@@ -14625,14 +14625,65 @@ function dancePoseFor(root,pins,fwd,spec){
 /* tutte le pose per un corpo (si calcolano UNA volta, in piedi e fermi) */
 function _skKeyframes(root,pins,fwd){
   const K={}; for(const nm in SK_POSES){ const r=dancePoseFor(root,pins,fwd,SK_POSES[nm]); if(!r) return null; K[nm]=r; }
+  try{ _skSoles(root,K); }catch(e){ console.warn("[ballo] suole",e); }
   return K;
 }
+/* v309f (Giacomo: «i piedi dei ballerini sembrano affondare un po' nel
+   terreno»). Misurato: durante i passi le scarpe scendevano sotto il
+   pavimento di 2-5 cm (moonwalk, sidewalk) e fino a 10-13 cm (talloni,
+   saltello). L'altezza della posa veniva solo da coscia e stinco piegati
+   (drop) piu' un «lift» a occhio: non contava il piede, che sulle punte o
+   girato scende sotto la caviglia. Ora per ogni posa si MISURA il punto
+   piu' basso vero delle scarpe (mesh con lo scheletro applicato) e la si
+   alza di quanto basta perche' tocchi terra come da fermi: P.off. */
+function _skSoles(root,K){
+  const feet=root.getChildMeshes(false).filter(m=>/Casual_Feet/.test(m.name) && m.skeleton && m.getTotalVertices && m.getTotalVertices()>0);
+  if(!feet.length) return;
+  const sks=[...new Set(feet.map(m=>m.skeleton))];
+  const low=()=>{ _sitRefresh(root); sks.forEach(sk=>{ try{ sk.prepare(true); }catch(e){} });
+    let y=1e9; feet.forEach(m=>{ m.computeWorldMatrix(true); m.refreshBoundingInfo({ applySkeleton:true });
+      y=Math.min(y,m.getBoundingInfo().boundingBox.minimumWorld.y); }); return y; };
+  const all=K.stand.pins.map(k=>k.tn);
+  Object.defineProperty(K,"__tab",{ value:{}, enumerable:false });   // fuori dal for..in delle pose
+  const saved=all.map(t=>({ t, p:t.position.clone(), q:t.rotationQuaternion?t.rotationQuaternion.clone():null }));
+  try{
+    const base=low();                                  // in piedi com'e' adesso: le scarpe a terra
+    if(!isFinite(base) || base>1e8) return;
+    for(const nm in K){ K[nm].name=nm; K[nm].tab=K.__tab; _applyPins(K[nm].pins); const y=low(); if(isFinite(y) && y<1e8) K[nm].off=base-y; }
+    /* ⚠️ A META' FRA DUE POSE la gamba non si accorcia a meta' (va col
+       coseno): con la media lineare, piegandosi nel saltello i piedi
+       scendevano ancora di qualche centimetro. Per ogni coppia di pose che
+       si fondono si misurano anche i punti a 1/4, 1/2 e 3/4. */
+    const Q=BABYLON.Quaternion, V=BABYLON.Vector3;
+    SK_PAIRS.forEach(pr=>{ const A=K[pr[0]], B=K[pr[1]]; if(!A||!B||A.off==null||B.off==null) return;
+      const row=[A.off];
+      [0.25,0.5,0.75].forEach(t=>{ const tmp=A.pins.map((k,i)=>({ tn:k.tn, s:k.s, p:V.Lerp(k.p,B.pins[i].p,t), q:Q.Slerp(k.q,B.pins[i].q,t) }));
+        _applyPins(tmp); const y=low(); row.push((isFinite(y)&&y<1e8)?base-y:A.off*(1-t)+B.off*t); });
+      row.push(B.off); K.__tab[pr[0]+">"+pr[1]]=row; });
+  } finally {
+    saved.forEach(k=>{ k.t.position.copyFrom(k.p); if(k.q) k.t.rotationQuaternion.copyFrom(k.q); });
+    _sitRefresh(root); sks.forEach(sk=>{ try{ sk.prepare(true); }catch(e){} });
+    feet.forEach(m=>{ try{ m.refreshBoundingInfo(); }catch(e){} });
+  }
+}
+/* le coppie di pose che _skEval fonde fra loro */
+const SK_PAIRS=[["stand","crouch"],["bDn","bUp"],["mwL","mwR"],["stand","toe"],["tapL","tapR"]];
+/* di quanto si alza (o si abbassa) il corpo in questa posa */
+function _skH(P){ return (P.off!=null)?P.off:((P.lift||0)-(P.drop||0)); }
+/* ...e a meta' strada fra due pose (tabella misurata in _skSoles, se c'e') */
+function _skHmix(A,B,t){
+  const T=A.tab;
+  if(T && A!==B && A.name && B.name){
+    let row=T[A.name+">"+B.name], u=t;
+    if(!row){ row=T[B.name+">"+A.name]; u=1-t; }
+    if(row){ const x=Math.max(0,Math.min(1,u))*4, i=Math.min(3,Math.floor(x)), f=x-i; return row[i]*(1-f)+row[i+1]*f; } }
+  return _skH(A)*(1-t)+_skH(B)*t; }
 const _skQ=new BABYLON.Quaternion();
 /* fonde due pose dentro cur (stessi oggetti, ogni fotogramma) */
 function _skBlend(cur,A,B,t){
   for(let i=0;i<cur.length;i++){ const a=A.pins[i], b=B.pins[i], c=cur[i];
     BABYLON.Quaternion.SlerpToRef(a.q,b.q,t,c.q); BABYLON.Vector3.LerpToRef(a.p,b.p,t,c.p); }
-  return (A.lift-A.drop)*(1-t)+(B.lift-B.drop)*t;
+  return _skHmix(A,B,t);
 }
 const _skEase=t=>t<0?0:(t>1?1:t*t*(3-2*t));
 /* dove si e' dentro una mossa (b = battiti dall'inizio): pose, quanto si
@@ -15017,7 +15068,7 @@ function _skRest(D,rest,B,holder,face){
       D.snapY=holder?holder.position.y-D.baseY:avatarRoot.position.y-D.baseY; }
     const t=_skEase((performance.now()-D.restT)/400), K=D.K;
     _skBlend(D.cur,D.snap,K.stand,t);
-    const y=D.snapY*(1-t)+(K.stand.lift-K.stand.drop)*t;
+    const y=D.snapY*(1-t)+_skH(K.stand)*t;
     if(holder) holder.position.y=D.baseY+y; else avatarRoot.position.y=D.baseY+y;
     face(); return true; }
   if(D.restT){ D.restT=0; D.mv="hop"; D.dur=2; D.m0=Math.floor(B)+1; D.turnFrom=D.face; D.turnTo=D.face; }
