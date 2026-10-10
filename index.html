@@ -4448,24 +4448,31 @@ function eatReachPose(g,what){
   if(g.__reach && g.__reachOf===EAT.rest) return g.__reach;
   g.__reach=null; g.__reachOf=EAT.rest;
   const S=EAT.seat; if(!S||!SIT.on||!EAT.rest||!EAT.hand||typeof avatarRoot==="undefined"||!avatarRoot||!_legPins) return null;
+  const lift=(SIT.baseY!=null)?SIT.baseY-avatarRoot.position.y:0;
+  const r=_eatReachAt(avatarRoot,_legPins,S.f,S.seatY,S.groundY,g,what,EAT.hand,lift);
+  if(!r||r.length!==EAT.rest.length) return null;
+  return (g.__reach=r); }
+/* v309: la stessa posa per un corpo qualsiasi (anche i compagni, vedi
+   Presenza._gesto): root = holder del corpo, legPins = le sue pin in
+   piedi, hand = il suo polso destro, lift = di quanto e' sceso sedendosi */
+function _eatReachAt(root,legPins,f,seatY,groundY,g,what,hand,lift){
   const V=BABYLON.Vector3, B=_eatBounds(g);
   /* dove si prende l'oggetto, a casa sua (dritto) */
   g.computeWorldMatrix(true);
   const h=B.mx.y-B.mn.y, frac=(what==="sip")?0.32:0.45;
   const gw=V.TransformCoordinates(new V((B.mn.x+B.mx.x)/2,B.mn.y+h*frac,(B.mn.z+B.mx.z)/2),g.getWorldMatrix());
   /* polso -> centro del palmo, misurato sulla mano vera */
-  eatHandPos(); const hb=_handBasis(EAT.hand);
+  _eatChain(hand); const hb=_handBasis(hand);
   const k=hb?Math.min(0.12,Math.max(0.04,V.Dot(hb.c.subtract(hb.w),hb.d))):0.07;
   /* sitPoseFor misura le gambe col corpo in piedi (come in eatPrepare):
      lo si rialza per un attimo e il bersaglio sale con lui */
-  const y0=avatarRoot.position.y, lift=(SIT.baseY!=null)?SIT.baseY-y0:0;
+  const y0=root.position.y;
   let r=null;
-  try{ avatarRoot.position.y=y0+lift; _sitRefresh(avatarRoot);
-    r=sitPoseFor(avatarRoot,_legPins,S.f,S.seatY,S.groundY,_eatReachArms(gw.add(new V(0,lift,0)),B.r,k)); }
+  try{ root.position.y=y0+lift; _sitRefresh(root);
+    r=sitPoseFor(root,legPins,f,seatY,groundY,_eatReachArms(gw.add(new V(0,lift,0)),B.r,k)); }
   catch(e){ r=null; }
-  finally{ avatarRoot.position.y=y0; _sitRefresh(avatarRoot); }
-  if(!r||!r.pins||r.pins.length!==EAT.rest.length) return null;
-  return (g.__reach=r.pins); }
+  finally{ root.position.y=y0; _sitRefresh(root); }
+  return (r&&r.pins)||null; }
 const EAT={ rest:null, sip:null, mix:null, hand:null, obs:null, busy:false };
 /* da chiamare PRIMA di playerSit (stesso f, stessa seduta): prepara la posa «alla bocca» */
 function eatPrepare(f,seatY,groundY){
@@ -4473,11 +4480,12 @@ function eatPrepare(f,seatY,groundY){
   EAT.seat={ f:f.clone(), seatY, groundY };                 // v298: per la posa «mi allungo verso il vassoio»
   if(typeof avatarRoot==="undefined" || !avatarRoot || !_legPins) return;
   try{ const r=sitPoseFor(avatarRoot,_legPins,f,seatY,groundY,EAT_ARMS); if(r) EAT.sip=r.pins; }catch(e){}
-  const ds=avatarRoot.getDescendants(false);
-  /* il polso da cui discendono le dita (ogni pezzo ha il suo scheletro:
-     serve la copia che porta davvero la mano, per _handBasis) */
-  EAT.hand=ds.find(d=>/(^|_)(Wrist|Hand|Palm)\.R$/.test(d.name) && d.getDescendants(false).some(x=>/(^|_)Middle2\.R$/.test(x.name)))
-         ||ds.find(d=>/(^|_)Hand\.R$/.test(d.name))||ds.find(d=>/(^|_)(Wrist|Palm)\.R$/.test(d.name))||null; }
+  EAT.hand=_eatHandOf(avatarRoot); }
+/* il polso da cui discendono le dita (ogni pezzo ha il suo scheletro:
+   serve la copia che porta davvero la mano, per _handBasis) */
+function _eatHandOf(root){ const ds=root.getDescendants(false);
+  return ds.find(d=>/(^|_)(Wrist|Hand|Palm)\.R$/.test(d.name) && d.getDescendants(false).some(x=>/(^|_)Middle2\.R$/.test(x.name)))
+       ||ds.find(d=>/(^|_)Hand\.R$/.test(d.name))||ds.find(d=>/(^|_)(Wrist|Palm)\.R$/.test(d.name))||null; }
 /* dopo playerSit: la posa a riposo e' SIT.pins */
 function eatAfterSit(){ EAT.rest=SIT.pins;
   if(EAT.sip && EAT.rest && EAT.sip.length===EAT.rest.length) EAT.mix=EAT.rest.map(k=>({ tn:k.tn, p:k.p.clone(), s:k.s.clone(), q:k.q.clone() }));
@@ -4499,23 +4507,28 @@ function eatBlend(A,B,t,fing){ if(!EAT.mix||!SIT.on||!A||!B) return;
 const EAT_CURL={ "2":0.95, "3":0.85 }, EAT_CURL_THUMB={ "2":0.35, "3":0.30 };
 function eatFingers(t){
   if(typeof avatarRoot==="undefined" || !avatarRoot) return;
-  if(!EAT.fing || EAT.fingOf!==avatarRoot){
-    EAT.fingOf=avatarRoot; EAT.fing=[];
-    avatarRoot.getDescendants(false).forEach(d=>{ const m=/(^|_)(Index|Middle|Ring|Pinky|Thumb)([23])\.R$/.exec(d.name);
-      if(m && d.computeWorldMatrix){ if(!d.rotationQuaternion) d.rotationQuaternion=BABYLON.Quaternion.FromEulerVector(d.rotation);
-        const kid=d.getChildren().find(c=>c.getAbsolutePosition);
-        if(kid) EAT.fing.push({ tn:d, kid, base:d.rotationQuaternion.clone(), ang:(m[2]==="Thumb"?EAT_CURL_THUMB:EAT_CURL)[m[3]] }); } });
-    /* dalla radice in giu': prima le falangi 2, poi le 3 */
-    EAT.fing.sort((a,b)=>a.tn.name.slice(-3).localeCompare(b.tn.name.slice(-3)));
-  }
-  if(!EAT.fing.length) return;
-  EAT.fing.forEach(F=>F.tn.rotationQuaternion.copyFrom(F.base));
-  if(t<=0.001){ EAT.fingT=0; return; }
-  eatHandPos();                                    // la catena fino al polso, ricalcolata adesso (v298)
-  const hb=_handBasis(EAT.hand); if(!hb) return;
+  if(!EAT.fing || EAT.fingOf!==avatarRoot){ EAT.fingOf=avatarRoot; EAT.fing=_eatFingList(avatarRoot); }
+  EAT.fingT=_eatCurl(EAT.fing,EAT.hand,t);
+}
+/* v309: le falangi di un corpo qualsiasi (anche i compagni) */
+function _eatFingList(root){ const L=[];
+  root.getDescendants(false).forEach(d=>{ const m=/(^|_)(Index|Middle|Ring|Pinky|Thumb)([23])\.R$/.exec(d.name);
+    if(m && d.computeWorldMatrix){ if(!d.rotationQuaternion) d.rotationQuaternion=BABYLON.Quaternion.FromEulerVector(d.rotation);
+      const kid=d.getChildren().find(c=>c.getAbsolutePosition);
+      if(kid) L.push({ tn:d, kid, base:d.rotationQuaternion.clone(), ang:(m[2]==="Thumb"?EAT_CURL_THUMB:EAT_CURL)[m[3]] }); } });
+  /* dalla radice in giu': prima le falangi 2, poi le 3 */
+  L.sort((a,b)=>a.tn.name.slice(-3).localeCompare(b.tn.name.slice(-3)));
+  return L; }
+/* chiude le dita della lista attorno al palmo di hand (t 0..1); ritorna t */
+function _eatCurl(list,hand,t){
+  if(!list || !list.length) return 0;
+  list.forEach(F=>F.tn.rotationQuaternion.copyFrom(F.base));
+  if(t<=0.001) return 0;
+  _eatChain(hand);                                 // la catena fino al polso, ricalcolata adesso (v298)
+  const hb=_handBasis(hand); if(!hb) return 0;
   const V=BABYLON.Vector3;
   const refresh=n=>{ const ch=[]; for(let q=n;q;q=q.parent) ch.unshift(q); ch.forEach(x=>x.computeWorldMatrix&&x.computeWorldMatrix(true)); };
-  EAT.fing.forEach(F=>{
+  list.forEach(F=>{
     refresh(F.kid);
     const p=F.tn.getAbsolutePosition().clone(), sg=F.kid.getAbsolutePosition().subtract(p);
     if(sg.length()<1e-4) return; sg.normalize();
@@ -4523,7 +4536,7 @@ function eatFingers(t){
     const a=F.ang*t, to=sg.scale(Math.cos(a)).add(np.scale(Math.sin(a)));
     _sitWorldRot(F.tn,p,sg,to);
   });
-  EAT.fingT=t;
+  return t;
 }
 /* dove deve stare l'oggetto (nel sistema del suo genitore) perche' la sua
    parte BASSA sia nel palmo: punto di presa dell'oggetto = centro del
@@ -4537,9 +4550,10 @@ function _eatBounds(g){
   if(mn.x>mx.x){ mn=new V(-0.04,0,-0.04); mx=new V(0.04,0.1,0.04); }
   const r=Math.min(0.06,Math.max(0.02,Math.max(mx.x-mn.x,mx.z-mn.z)/2*0.92));
   return (g.__gb={ mn, mx, r }); }
-function eatGripLocal(g,what){
-  eatHandPos();
-  const V=BABYLON.Vector3, B=_eatBounds(g), hb=_handBasis(EAT.hand);
+function eatGripLocal(g,what){ return _eatGripAt(g,what,EAT.hand); }
+function _eatGripAt(g,what,hand){
+  _eatChain(hand);
+  const V=BABYLON.Vector3, B=_eatBounds(g), hb=_handBasis(hand);
   if(!hb || !g.parent) return g.__home.clone();
   const h=B.mx.y-B.mn.y, frac=(what==="sip")?0.32:0.45;
   const gl=new V((B.mn.x+B.mx.x)/2, B.mn.y+h*frac, (B.mn.z+B.mx.z)/2);
@@ -4549,7 +4563,8 @@ function eatGripLocal(g,what){
   g.parent.computeWorldMatrix(true);
   return V.TransformCoordinates(originW,g.parent.getWorldMatrix().clone().invert()); }
 /* la mano destra nel mondo, adesso (catena ricalcolata dalla radice) */
-function eatHandPos(){ const h=EAT.hand; if(!h) return null;
+function eatHandPos(){ return _eatChain(EAT.hand); }
+function _eatChain(h){ if(!h) return null;
   const chain=[]; for(let q=h;q;q=q.parent) chain.unshift(q);
   chain.forEach(n=>{ if(n.computeWorldMatrix) n.computeWorldMatrix(true); });
   return h.getAbsolutePosition().clone(); }
@@ -9516,7 +9531,7 @@ let NEWSAGENT=null;
    ===================================================================== */
 const DINER={ x:0, z:32, gy:0, built:false, name:"Sunny Side Diner",
   tables:[], seats:[], waiter:null, guests:[], st:"idle", seat:null, o:null,
-  food:[], busy:false, meInter:null, timer:null,
+  food:[], onTable:{}, eatG:{}, busy:false, meInter:null, timer:null,
   debt:null, ate:false, wasOut:false };   // v291: il conto lasciato li' e il «Still hungry?»
 const DINER_MENU={
   drinks:[
@@ -10316,6 +10331,7 @@ function _dinerServeDessert(){
   /* v305: col dolce si sparecchia il piatto e il contorno (il bicchiere resta):
      prima il dolce finiva posato sopra la ciotola del contorno */
   DINER.food.forEach(st=>{ try{ st.getChildMeshes(false).forEach(m=>{ if(m.__key==="main"||m.__key==="side") m.dispose(false,false); }); }catch(e){} });
+  delete DINER.onTable.main; delete DINER.onTable.side;                  // v309: per i compagni
   _dinerServe(["dessert"]); DINER.st="eating2";
   DialogueBox.open({ npc:DINER.waiter, icon:"\u{1F354}", sub:DINER.name, text:"There you go. Just call me when you want the bill!",
     italian:"Ecco qua. Chiamami quando vuoi il conto (premi E).", buttons:[{ label:"OK!", cls:"primary", act:()=>{} }] });
@@ -10416,7 +10432,7 @@ function dinerBillCall(){ const s=DINER.seat; if(!s) return;
 /* ------------------------------------------------------------------ */
 /* IL CIBO SUL TAVOLO                                                   */
 /* ------------------------------------------------------------------ */
-function _dinerClearFood(){ DINER.food.forEach(m=>{ try{ m.dispose(false,false); }catch(e){} }); DINER.food=[]; }
+function _dinerClearFood(){ DINER.food.forEach(m=>{ try{ m.dispose(false,false); }catch(e){} }); DINER.food=[]; DINER.onTable={}; DINER.eatG={}; }
 /* il cibo si costruisce in un GRUPPO con l'origine sul piano d'appoggio:
    lo stesso gruppo sta sul vassoio di Ray (v289) e poi sul tavolo */
 /* =====================================================================
@@ -10603,7 +10619,25 @@ function _dinerServe(keys){
   if(set && keys.indexOf("drink")>=0){ set.computeWorldMatrix(true);
     const dw=BABYLON.Vector3.TransformNormal(new BABYLON.Vector3(0,0,1),set.getWorldMatrix());
     if(dw.x*Math.cos(s.face)-dw.z*Math.sin(s.face)<0){ set.rotation.y+=Math.PI; set.computeWorldMatrix(true); } }
+  keys.forEach(k=>{ delete DINER.eatG[k]; });
   if(set){ DINER.food.push(set); _dinerEat(set,keys); }
+  /* v309: cosa c'e' in tavola e quanto ne resta, per i compagni (Presenza._posa) */
+  const o=DINER.o; keys.forEach(k=>{ const v=(o.__srv&&o.__srv[k])||o.slip[k];
+    if(v && v.en!=="\u2014") DINER.onTable[k]={ v, G:(DINER.eatG||{})[k]||null }; });
+}
+/* il tavolo in sei caratteri, «o» + una cifra base36 per portata (bevanda,
+   piatto, contorno, dolce: 0 = niente, se no 1 + voce*5 + quanto ne resta
+   in quarti) + la portata che sta portando alla bocca (0-3, «-» nessuna) */
+const DINER_KEYS=["drink","main","side","dessert"], DINER_CAT={ drink:"drinks", main:"mains", side:"sides", dessert:"desserts" };
+function dinerTableCode(){
+  const T=DINER.onTable||{}; let c="", any=false;
+  DINER_KEYS.forEach(k=>{ const e=T[k], i=e?DINER_MENU[DINER_CAT[k]].indexOf(e.v):-1;
+    if(i<0){ c+="0"; return; } any=true;
+    const G=e.G, q=!G?4:(G.done>=G.n?0:Math.max(1,Math.round((1-G.done/G.n)*4)));
+    c+=(1+i*5+q).toString(36); });
+  if(!any) return "";
+  let cur="-"; try{ const Q=EAT.q; if(EAT.busy && Q && Q.cur && Q.cur.key){ const j=DINER_KEYS.indexOf(Q.cur.key); if(j>=0) cur=String(j); } }catch(e){}
+  return "o"+c+cur;
 }
 /* v297 — SI MANGIA DAVVERO (Giacomo: «il sistema di mangiare mettilo anche
    seduto al Sunny Side»): come al caffe', col braccio (eatRun). Il
@@ -10612,6 +10646,12 @@ function _dinerServe(keys){
    si rimpicciolisce a ogni morso. Sorsi e morsi alternati. */
 function _dinerEat(set,keys){
   const s=DINER.seat; if(!s) return;
+  const groups=_dinerGroups(set,keys);
+  _dinerEatRun(groups,s);
+}
+/* v309: i gruppi «cosa va alla bocca» di un servizio (anche quello del
+   tavolo di un compagno, vedi Presenza._tavola) */
+function _dinerGroups(set,keys){
   const groups={};
   keys.forEach(key=>{
     const ms=set.getChildMeshes(true).filter(m=>m.__key===key); if(!ms.length) return;
@@ -10627,16 +10667,23 @@ function _dinerEat(set,keys){
     food.forEach(m=>m.setParent(g));
     const liq=(key==="drink")?food.filter(m=>m.material && /^dn_c_/.test(m.material.name)):[];
     groups[key]={ g, liq, n:(key==="drink"?4:3), done:0 }; });
+  return groups;
+}
+/* quanto ne resta (f 0..1): il livello del bicchiere, il cibo che si rimpicciolisce */
+function _dinerLevel(G,key,f,gone){
+  if(key==="drink") G.liq.forEach(m=>{ if(m.__h0==null){ m.__h0=m.scaling.y; m.__y0=m.position.y; }
+      const bb=m.getBoundingInfo().boundingBox, h=(bb.maximum.y-bb.minimum.y)*m.__h0;
+      m.scaling.y=m.__h0*f; m.position.y=m.__y0-h*(1-f)/2; });
+  else { G.g.scaling.setAll(Math.max(0.001,f)); G.g.setEnabled(!gone); }
+}
+function _dinerEatRun(groups,s){
+  Object.keys(groups).forEach(k=>{ DINER.eatG[k]=groups[k]; if(DINER.onTable[k]) DINER.onTable[k].G=groups[k]; });
   const order=[]; const ks=Object.keys(groups);
   /* v305: una cosa sola (il dolce da solo) si finisce in due volte, senza riappoggiarla */
   if(ks.length===1) groups[ks[0]].n=2;
   for(let r=0;r<4;r++) ks.forEach(k=>{ if(r<groups[k].n) order.push(k); });
-  const steps=order.map(k=>{ const G=groups[k]; return { g:G.g, what:(k==="drink"?"sip":"bite"), apply:()=>{ G.done++;
-      const f=Math.max(0.05,1-G.done/G.n);
-      if(k==="drink") G.liq.forEach(m=>{ if(m.__h0==null){ m.__h0=m.scaling.y; m.__y0=m.position.y; }
-          const bb=m.getBoundingInfo().boundingBox, h=(bb.maximum.y-bb.minimum.y)*m.__h0;
-          m.scaling.y=m.__h0*f; m.position.y=m.__y0-h*(1-f)/2; });
-      else { G.g.scaling.setAll(Math.max(0.001,f)); if(G.done>=G.n) G.g.setEnabled(false); } } }; });
+  const steps=order.map(k=>{ const G=groups[k]; return { g:G.g, key:k, what:(k==="drink"?"sip":"bite"), apply:()=>{ G.done++;
+      _dinerLevel(G,k,Math.max(0.05,1-G.done/G.n),G.done>=G.n); } }; });
   DINER.eating=true;
   const f=new BABYLON.Vector3(Math.sin(s.face),0,Math.cos(s.face));
   eatRun(steps,f,()=>{ DINER.eating=false; toast("\u{1F60B} Delicious! \u00b7 Buonissimo!"); });
@@ -14477,7 +14524,7 @@ function buildPark(){
      sblocca con le stelle (SK_MOVES).
    ===================================================================== */
 const SKATE={ C:{ x:30, z:56 }, gy:0, dancers:[], audio:null, songI:-1, near:false, vol:0, blocked:false,
-  bpm:120, beat:0, t0:performance.now(), lastB:0, leds:[], built:false };
+  bpm:120, beat:0, aOff:0, gap:false, leds:[], built:false };
 /* v308b (Giacomo: «aggiungi anche il ballo base con la mano che si alza e
    salto a tempo originale del Beat Club»): e' il primo, sempre sbloccato */
 const SK_MOVES=[ { id:"basic",    en:"Beat Club dance", ic:"\u{1F64C}", stars:0, beats:16 },
@@ -14852,16 +14899,27 @@ function _skPrepare(D){
   return true;
 }
 function skateTick(){
-  if(area!=="town") { skateAudio(false,99); return; }
-  const now=performance.now(), C=SKATE.C;
+  if(area!=="town") { skateAudio(false,99,null); return; }
+  const C=SKATE.C;
   const d=Math.hypot(player.position.x-C.x, player.position.z-C.z);
-  const anyone=SKATE.dancers.some(D=>_pkVisible(D.n));
-  skateAudio(anyone,d);
-  /* l'orologio: il brano, se suona; se no, un battito suo allo stesso bpm */
-  const A=SKATE.audio;
-  if(A && !A.paused && A.currentTime>0) SKATE.beat=SKATE.bOff+A.currentTime*SKATE.bpm/60;
-  else SKATE.beat=SKATE.lastB+(now-SKATE.t0)/1000*SKATE.bpm/60;
-  if(!(A && !A.paused)){ SKATE.lastB=SKATE.beat; SKATE.t0=now; }
+  /* v309: il brano e il punto li detta la radio dello skatepark, uguale per
+     tutti (radioAt); fra un brano e l'altro c'e' la pausa (SKATE.gap) */
+  const RA=radioAt("skate");
+  SKATE.gap=!RA || RA.gap;
+  if(RA) SKATE.bpm=GIG_SONGS[RA.idx].bpm||120;
+  /* v309 (Giacomo: «quando non ballano allo skatepark non c'e' musica»):
+     prima le casse suonavano solo se c'era la crew. Ora suonano sempre
+     quando la citta' e' aperta, e anche di notte se balli tu. */
+  let open=true; try{ open=townOpen(); }catch(e){}
+  skateAudio(open || (SKDANCE.on && SKDANCE.area==="town"), d, RA);
+  /* l'orologio: la radio, piu' lo scarto (smorzato) del brano che senti,
+     cosi' i passi cadono su quello che esce dalle casse senza scatti */
+  const A=SKATE.audio, dt0=Math.min(0.05,engine.getDeltaTime()/1000);
+  if(RA && !RA.gap){
+    if(A && !A.paused && A.__seek==null && A.currentTime>0 && SKATE.songI===RA.idx){
+      const o=A.currentTime-RA.t; if(Math.abs(o)<1.5) SKATE.aOff+=(o-SKATE.aOff)*Math.min(1,dt0*2); }
+    else SKATE.aOff*=Math.max(0,1-dt0);
+    SKATE.beat=Math.max(0,RA.t+SKATE.aOff)*SKATE.bpm/60; }
   const B=SKATE.beat, fr=B-Math.floor(B), pulse=Math.max(0,1-fr*3);
   SKATE.leds.forEach((m,i)=>{ const h=((Math.floor(B/4)+i)%3); const col=[[0.1,0.5,1],[1,0.2,0.7],[0.3,1,0.4]][h];
     m.emissiveColor.set(col[0]*(0.25+0.75*pulse),col[1]*(0.25+0.75*pulse),col[2]*(0.25+0.75*pulse)); });
@@ -14870,7 +14928,7 @@ function skateTick(){
   if(ph!==SKATE.phase){ SKATE.phase=ph; skPhaseBenches(ph); }
   if(d>70) return;                                   // lontani: nessuno li vede, niente calcoli
   const dt=Math.min(0.05,engine.getDeltaTime()/1000), bps=SKATE.bpm/60;
-  const rest=!!(SKATE.pending && SKATE.near);           // fra un brano e l'altro: silenzio
+  const rest=SKATE.gap;                                // fra un brano e l'altro: silenzio
   const see=d<55;                                    // da lontano il cambio e' istantaneo
   const R=skCrewStep(B,rest);
   SKATE.dancers.forEach(D=>{
@@ -14911,15 +14969,22 @@ function skateTick(){
    insieme, cosi' le distanze restano quelle della fila. */
 const SK_ROUTINE=["basic","moonwalk","basic","sidewalk","toe","ankle","basic","sidewalk","moonwalk","ankle","toe"];
 const SK_GLIDE=1.4;                                   // metri per ogni moonwalk/sidewalk
+/* v309: la coreografia e' una funzione del battito DENTRO IL BRANO (dal
+   primo battito: saltello, mossa, saltello, mossa...), non un contatore
+   partito quando sei arrivato tu: due compagni vedono la crew fare la
+   stessa mossa nello stesso momento. */
 function skCrewStep(B,rest){
-  const R=SKATE.crew||(SKATE.crew={ mv:"hop", m0:Math.floor(B)+1, dur:2, i:-1, sdir:1, rest:false });
+  const R=SKATE.crew||(SKATE.crew={ mv:"hop", m0:0, dur:2, i:-1, sdir:1, rest:false });
   if(rest){ R.rest=true; return R; }
-  if(R.rest){ R.rest=false; R.mv="hop"; R.dur=2; R.m0=Math.floor(B)+1; return R; }     // si riparte insieme, col saltello
-  let b=B-R.m0;
-  if(b<0||b>R.dur+8){ R.mv="hop"; R.dur=2; R.m0=Math.floor(B)+1; return R; }          // brano cambiato
-  if(b>=R.dur){ const was=R.mv; R.m0+=R.dur;
-    if(was!=="hop"){ R.mv="hop"; R.dur=2; }
-    else { R.i=(R.i+1)%SK_ROUTINE.length; R.mv=SK_ROUTINE[R.i]; R.dur=SKATE_DUR(R.mv); if(R.mv==="sidewalk") R.sdir=-R.sdir; } }
+  R.rest=false;
+  if(!SKATE.crewL){ let L=0, n=0; SK_ROUTINE.forEach(m=>{ L+=2+SKATE_DUR(m); if(m==="sidewalk") n++; });
+    SKATE.crewL=L; SKATE.crewFlip=(n%2===1); }
+  const k=Math.floor(Math.max(0,B)/SKATE.crewL);
+  let m0=k*SKATE.crewL, mv="hop", dur=2, i=-1, sdir=(SKATE.crewFlip && k%2)?-1:1;
+  while(B>=m0+dur){ m0+=dur;
+    if(mv!=="hop"){ mv="hop"; dur=2; }
+    else { i++; mv=SK_ROUTINE[i]; dur=SKATE_DUR(mv); if(mv==="sidewalk") sdir=-sdir; } }
+  R.mv=mv; R.m0=m0; R.dur=dur; R.i=i; R.sdir=sdir;
   return R;
 }
 /* in piedi fermi durante la pausa: dalla posa in cui si era alla posa base
@@ -14946,7 +15011,7 @@ function SKATE_DUR(mv){ return (SK_MOVES.find(m=>m.id===mv)||{beats:4}).beats; }
    in piedi davanti a loro; chi parla gesticola. La musica resta: le casse
    suonano e il giocatore puo' ballare lo stesso. */
 const SK_CYCLE=15*60*1000;
-function skPhase(){ if(SKATE.force) return SKATE.force; return (Math.floor(Date.now()/SK_CYCLE)%2)?"chill":"dance"; }
+function skPhase(){ if(SKATE.force) return SKATE.force; return (Math.floor(radioNow()/SK_CYCLE)%2)?"chill":"dance"; }   // v309: l'ora della radio
 /* la panchina delle chiacchiere: quella dove non sei seduto tu */
 function skPhaseBenches(ph){
   const Bs=SKATE.benches||[]; Bs.forEach(b=>{ b.npcBusy=false; });
@@ -15011,63 +15076,41 @@ function skInZone(x,z,start){
   return true;
 }
 /* ---- LA MUSICA DELLE CASSE ------------------------------------------------- */
-function skateAudio(on,d){
+function skateAudio(on,d,RA){
   const R=45;
   /* isteresi di 4 m sul confine: camminandoci sopra la musica non va e viene */
   let want=on && d<(SKATE.near?R+4:R) && !AUDIO.muted() && !document.hidden && area==="town";
   try{ if(typeof SHOW!=="undefined" && SHOW.seated) want=false; }catch(e){}
   SKATE.near=want;
-  if(!want){ if(SKATE.audio && !SKATE.audio.paused){ try{ SKATE.audio.pause(); }catch(e){} } return; }
-  if(typeof GIG_SONGS==="undefined" || !GIG_SONGS.length) return;
-  if(SKATE.pending){ if(performance.now()<SKATE.gapUntil) return; SKATE.pending=false; skateNextSong(false); }
-  if(!SKATE.audio) skateNextSong(true);
+  const A0=SKATE.audio;
+  if(!want || !RA || RA.gap || SKATE.dead){ if(A0 && !A0.paused){ try{ A0.pause(); }catch(e){} } return; }
+  const now=performance.now();
+  if(!A0 || SKATE.songI!==RA.idx){ if(now<(SKATE.retryAt||0)) return; skateSong(RA.idx,RA.t); }
   const A=SKATE.audio; if(!A) return;
   const k=Math.max(0,Math.min(1,(R-d)/(R-6)));
-  if(A.__seek!=null) return;                         // si sta riprendendo dal punto dove s'era fermato
   A.volume=Math.max(0,Math.min(1,0.9*Math.pow(k,1.6)*AUDIO.gain()));
+  if(A.__seek==null && now>(SKATE.seekT||0)){
+    /* fermo da un po' (ti eri allontanato) o scivolato: torna sulla radio */
+    if(Math.abs(A.currentTime-RA.t)>(A.paused?0.4:1.2)){ try{ A.currentTime=RA.t; }catch(e){} SKATE.seekT=now+2500; } }
   if(A.paused && !SKATE.blocked){ const p=A.play(); if(p&&p.catch) p.catch(()=>{ SKATE.blocked=true; }); }
 }
-function skateNextSong(first){
-  const n=GIG_SONGS.length;
-  SKATE.songI=first?((Math.random()*n)|0):(SKATE.songI+1)%n;
-  const s=GIG_SONGS[SKATE.songI];
+/* v309: il brano della radio, dal punto in cui e' (piu' il tempo del
+   caricamento). ⚠️ Un errore a meta' (il wifi della scuola, v308e) non
+   cambia brano: si butta l'<audio> e al giro dopo se ne fa un altro allo
+   stesso brano, nel punto in cui e' arrivata la radio. Un file che non
+   parte mai, dopo 4 tentativi, lascia le casse mute. */
+function skateSong(i,t){
   if(SKATE.audio){ try{ SKATE.audio.pause(); SKATE.audio.removeAttribute("src"); SKATE.audio.load(); }catch(e){} }
-  const a=new Audio(GIG_DIR+s.f); a.preload="auto"; a.volume=0;
-  /* v308c (Giacomo: «quando la canzone finisce, tra una e l'altra, si
-     fermano, e poi riprendono»): 5 s di silenzio, poi il brano dopo */
-  _skAudioEvents(a);
-  SKATE.audio=a; SKATE.songT=0; SKATE.retry=0; SKATE.bpm=s.bpm||120; SKATE.bOff=Math.ceil(SKATE.beat||0);
-}
-/* ⚠️ v308e (Giacomo: «a volte inizia un pezzo, si interrompe e inizia un
-   altro»). Il colpevole: un intoppo di RETE a meta' brano. Il file scende
-   in streaming e, dopo una pausa (ti allontani e torni) o sul wifi della
-   scuola, il browser puo' perdere la connessione: l'<audio> da' "error" e
-   il gestore di prima, pensato per un file mancante, passava al brano dopo
-   tre secondi. Ora un errore a brano gia' iniziato RIPRENDE lo stesso
-   brano dal punto in cui era (fino a 3 volte); solo un brano che non parte
-   proprio fa passare al successivo. Anche un "ended" che arriva prima della
-   fine vera (file troncato dalla rete) riprende invece di cambiare. */
-function _skAudioEvents(a){
-  a.addEventListener("timeupdate",()=>{ if(SKATE.audio===a && a.__seek==null && a.currentTime>0.5) SKATE.songT=a.currentTime; });
-  a.addEventListener("ended",()=>{ if(SKATE.audio!==a) return;
-    const left=(isFinite(a.duration)&&a.duration>0)?a.duration-(SKATE.songT||a.currentTime):0;
-    if(left>4 && skateResume()) return;
-    SKATE.pending=true; SKATE.gapUntil=performance.now()+5000; });
+  const s=GIG_SONGS[i], a=new Audio(GIG_DIR+s.f); a.preload="auto"; a.volume=0;
+  a.__seek=t; const t0=performance.now();
+  a.addEventListener("loadedmetadata",()=>{ if(SKATE.audio!==a) return;
+    try{ a.currentTime=Math.min(a.__seek+(performance.now()-t0)/1000,(a.duration||1e9)-0.5); }catch(e){}
+    a.__seek=null; SKATE.failed=0; },{ once:true });
   a.addEventListener("error",()=>{ if(SKATE.audio!==a) return;
-    if(skateResume()) return;
-    SKATE.failed=(SKATE.failed||0)+1; if(SKATE.failed<4) setTimeout(()=>{ if(SKATE.audio===a) skateNextSong(false); },3000); });
-}
-function skateResume(){
-  const t=SKATE.songT||0, s=GIG_SONGS[SKATE.songI];
-  if(!s || t<1 || (SKATE.retry||0)>=3) return false;
-  SKATE.retry=(SKATE.retry||0)+1;
-  const old=SKATE.audio; try{ old.pause(); old.removeAttribute("src"); old.load(); }catch(e){}
-  const a=new Audio(GIG_DIR+s.f); a.preload="auto"; a.volume=0; a.__seek=t;
-  a.addEventListener("loadedmetadata",()=>{ try{ a.currentTime=a.__seek; }catch(e){} a.__seek=null; },{ once:true });
-  _skAudioEvents(a);
-  SKATE.audio=a;                                      // stesso brano, stesso bOff: il battito non salta
+    SKATE.audio=null; SKATE.songI=-1; SKATE.retryAt=performance.now()+3000;
+    SKATE.failed=(SKATE.failed||0)+1; if(SKATE.failed>=4) SKATE.dead=true; });
   setTimeout(()=>{ if(a.__seek!=null) a.__seek=null; },8000);
-  return true;
+  SKATE.audio=a; SKATE.songI=i;
 }
 /* il primo tocco sblocca l'audio se il browser l'aveva fermato */
 ["pointerdown","keydown"].forEach(t=>window.addEventListener(t,()=>{ SKATE.blocked=false; },{ capture:true, passive:true }));
@@ -15146,7 +15189,7 @@ function skDanceTick(){
   const S=SKDANCE, CL=_skDanceClock(), B=CL.beat, dt=Math.min(0.05,engine.getDeltaTime()/1000);
   /* fra un brano e l'altro ci si ferma: allo skatepark le casse in pausa,
      al Beat Club il concerto fra un pezzo e l'altro */
-  const rest=(S.area==="town") ? !!(SKATE.pending && SKATE.near)
+  const rest=(S.area==="town") ? SKATE.gap
                               : !(typeof AUDIO!=="undefined" && AUDIO.playing());
   if(_skRest(S,rest,B,null,()=>{ player.rotation.y=S.face; })) return;
   let b=B-S.m0;
@@ -29448,6 +29491,21 @@ const CAFE_SEAT_Y=0.86, CAFE_FOOT_Y=0.34, CAFE_TRAY_X=0.65;
 /* il vassoio (0.28 x 0.44) davanti a ciascuno sgabello, misurato fra gli
    oggetti del bancone: il primo scosta di 6 cm dalla vetrina dei dolci */
 const CAFE_TRAY_Z=[-2.26,0,2.2];
+/* v309: il vassoio in sei caratteri per i compagni (Presenza._posa):
+   «c» + bevanda (voce*2 + grande) + quanta ne resta (quarti) + cibo (0 =
+   niente, se no 1 + voce) + quanto ne resta + cosa sta portando alla bocca
+   (0 bevanda, 1 cibo, «-» niente) */
+function cafeTableCode(){
+  const P=CAFE_PICK; if(!P.seated || !P.o || !P.parts) return "";
+  const sl=P.o.slip||{}, di=Math.max(0,CAFE_CARD.drinks.findIndex(x=>x.en===(sl.drink&&sl.drink.en)));
+  const big=(sl.size && sl.size.en==="Large")?1:0;
+  const fi=(sl.food && sl.food.en!=="\u2014")?CAFE_CARD.food.findIndex(x=>x.en===sl.food.en)+1:0;
+  const Q=P.seq, c=Q?Q.cnt:{ sip:0, bite:0 };
+  const qd=!Q?4:(c.sip>=Q.nS?0:Math.max(1,Math.round((1-c.sip/Q.nS)*4)));
+  const qf=(!Q||!Q.nB)?4:(c.bite>=Q.nB?0:Math.max(1,Math.round((1-c.bite/Q.nB)*4)));
+  let cur="-"; try{ const q=EAT.q; if(EAT.busy && q && q.cur) cur=(q.cur.what==="sip")?"0":"1"; }catch(e){}
+  return "c"+(di*2+big)+qd+fi+qf+cur;
+}
 function _cafeStoolW(P){ return new BABYLON.Vector3(P.spot.x+0.1, 0, P.spot.z+CAFE_STOOLS[P.stool]); }
 function cafeServe(npc,o){
   cafeClear();
@@ -33513,10 +33571,16 @@ const AUDIO=(function(){
        - stop() rilascia il file con removeAttribute+load, che per la
          specifica non genera errori (e' lo stesso modo in cui l'ODEON gia'
          spegne il suo video, showStop). */
-  function play(src,onEnd,onFail){
+  /* v309: at = da dove partire (secondi), per entrare a meta' del brano
+     che stanno sentendo tutti (vedi radioAt); il tempo del caricamento si
+     aggiunge, cosi' si arriva al punto giusto e non mezzo secondo indietro */
+  function play(src,onEnd,onFail,at){
     stop();
     const a=new Audio(src); curSrc=src; cur=a;
     a.preload="auto";
+    if(at>0.3){ const t0=performance.now();
+      a.addEventListener("loadedmetadata",()=>{ if(cur!==a) return;
+        try{ a.currentTime=Math.min(at+(performance.now()-t0)/1000,(a.duration||1e9)-0.5); }catch(e){} },{ once:true }); }
     a.addEventListener("ended",()=>{ if(cur!==a) return; cur=null; if(onEnd) onEnd(); });
     a.addEventListener("error",()=>{ if(cur!==a) return; cur=null; if(onFail) onFail(); });
     _apply();
@@ -33540,7 +33604,8 @@ const AUDIO=(function(){
   function gain(){ return Math.max(0,Math.min(1,STEPS[vi]*duck)); }
   function playing(){ return !!cur; }
   function time(){ return cur? (cur.currentTime||0) : 0; }   // orologio del brano: ci ballano sopra
-  return { play, stop, duckOn, duckOff, cycle, refreshBtn, muted, playing, time, gain, bind, unbind };
+  function seek(t){ if(cur) try{ cur.currentTime=t; }catch(e){} }   // v309: rimesso sulla radio
+  return { play, stop, seek, duckOn, duckOff, cycle, refreshBtn, muted, playing, time, gain, bind, unbind };
 })();
 (function(){ const b=document.getElementById("au-btn"); if(b) b.addEventListener("click",()=>AUDIO.cycle()); })();
 /* =====================================================================
@@ -34923,7 +34988,52 @@ const GIG_SONGS=[
            it:"Da quanto sei qui? Io sono qui dalle sette!" } },
 ];
 const GIG={ force:null, on:false, idx:0, line:0, timer:null, gap:null, failed:false,
-            order:null, pos:0 };
+            soundcheck:false, syncT:0 };
+/* =====================================================================
+   v309 — LA MUSICA E' LA STESSA PER TUTTI (Giacomo, 10 ott: «la musica
+   deve essere uguale per tutti»). Prima ogni dispositivo sceglieva per
+   conto suo: il Beat Club rimescolava la scaletta a caso entrando, le casse
+   dello skatepark partivano da un brano a caso, e tutti dall'inizio. Due
+   compagni allo stesso concerto sentivano due canzoni diverse e ballavano
+   su due battiti diversi.
+   Ora c'e' una RADIO: la scaletta e' una funzione dell'ORA, uguale su ogni
+   dispositivo. Ogni giro e' un rimescolamento deterministico (seme = canale
+   + numero del giro), fra un brano e l'altro RADIO.gap secondi di pausa, e
+   chi arriva a meta' entra a meta' del brano, nel punto in cui lo stanno
+   sentendo gli altri. Un canale per posto ("club", "skate"): i due posti
+   non suonano per forza la stessa canzone.
+   ⚠️ L'ORA E' QUELLA DEL SERVER quando la presenza e' collegata
+   (.info/serverTimeOffset, vedi Presenza._collega): gli orologi dei
+   Chromebook non sono allineati. Senza presenza si usa quello del
+   dispositivo, di solito giusto entro un secondo.
+   ⚠️ Le durate sono i `sec` di GIG_SONGS: misurate sui file (ffprobe, 10
+   ott), arrotondate per eccesso. Chi cambia un file cambi anche il suo sec.
+   ===================================================================== */
+const RADIO={ off:0, gap:5 };
+function radioNow(){ return Date.now()+(RADIO.off||0); }
+function _radioOrder(chan,k){
+  const o=GIG_SONGS.map((s,i)=>i);
+  let h=2166136261; const t=chan+":"+k;
+  for(let i=0;i<t.length;i++){ h^=t.charCodeAt(i); h=Math.imul(h,16777619); }
+  const rnd=()=>{ h=Math.imul(h^(h>>>15),2246822507); h=Math.imul(h^(h>>>13),3266489909); h^=h>>>16; return (h>>>0)/4294967296; };
+  for(let i=o.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)), x=o[i]; o[i]=o[j]; o[j]=x; }
+  return o; }
+/* dove si e' sul canale `chan` all'istante ms (default: adesso):
+   { idx, t (secondi dentro il brano), left, gap, wait (secondi al brano dopo) } */
+function radioAt(chan,ms){
+  const N=GIG_SONGS.length; if(!N) return null;
+  const G=RADIO.gap; let L=0; GIG_SONGS.forEach(s=>{ L+=(s.sec||150)+G; });
+  const now=(ms==null)?radioNow():ms, t=now/1000, k=Math.floor(t/L); let r=t-k*L;
+  const o=_radioOrder(chan,k);
+  /* la prima del giro non e' mai l'ultima del giro prima (due volte di fila) */
+  if(N>2 && o[0]===_radioOrder(chan,k-1)[N-1]){ const x=o[0]; o[0]=o[1]; o[1]=x; }
+  for(let i=0;i<N;i++){ const d=GIG_SONGS[o[i]].sec||150;
+    if(r<d) return { idx:o[i], t:r, left:d-r, gap:false, wait:0 };
+    r-=d;
+    if(r<G){ const w=G-r, nx=(i<N-1)?o[i+1]:radioAt(chan,now+w*1000+50).idx;
+      return { idx:nx, t:0, left:0, gap:true, wait:w }; }
+    r-=G; }
+  return { idx:o[0], t:0, left:0, gap:true, wait:0 }; }
 function beatClockH(){ const d=new Date(); return d.getHours()+d.getMinutes()/60; }
 /* "gig" 20:00-22:00 · "soundcheck" 17:00-19:00 · altrimenti chiuso.
    Di giorno il club e' un posto di lavoro (la questline), di sera un locale.
@@ -35046,42 +35156,51 @@ function gigOnEnter(){
   gigStart();
 }
 function gigStart(){
-  /* SCALETTA CASUALE: ogni serata ha un ordine suo (chiesto da Giacomo). Chi
-     torna una seconda volta non risente gli stessi pezzi nello stesso ordine,
-     e chi si ferma poco non becca sempre le prime due canzoni. L'ordine e'
-     un rimescolamento degli INDICI, cosi' GIG_SONGS resta in ordine di
-     programma (Anno 1 -> Anno 3) e la tabella nel MD resta leggibile. */
-  GIG.order=shuffle(GIG_SONGS.map((s,i)=>i));
-  GIG.on=true; GIG.failed=false; GIG.pos=0; GIG.idx=GIG.order[0]; GIG.line=0;
+  /* SCALETTA CASUALE (chiesto da Giacomo), ma v309 uguale per tutti: la
+     detta la radio del club (radioAt), che rimescola ogni giro con un seme
+     comune. GIG_SONGS resta in ordine di programma (Anno 1 -> Anno 3). */
+  GIG.on=true; GIG.failed=false; GIG.soundcheck=false; GIG.line=0;
   gigBuildCrowd(); gigBuildBand(); gigBuildCrowdFX(); gigBuildLights(); gigFXEnable(true);
   toast("\u{1F3B8} Il concerto \u00e8 iniziato!");
-  gigPlayCurrent();
+  gigSync();
 }
-function gigPlayCurrent(){
+/* v309: si suona quello che la radio del club sta suonando adesso, dal
+   punto in cui e' arrivata; nella pausa fra due brani si aspetta il dopo */
+function gigSync(){
+  clearTimeout(GIG.gap); clearInterval(GIG.timer);
+  if(!GIG.on || area!==UNIT_MUSIC.area) return;
+  const R=radioAt("club"); if(!R) return;
+  GIG.idx=R.idx;
+  /* in pausa, o all'ultimo secondo del brano (l'audio finisce un filo dopo l'orologio) */
+  const wait=R.gap?R.wait:(R.left<1.2?R.left+RADIO.gap:0);
+  if(wait>0){
+    if(GIG.soundcheck && AUDIO.playing()){ GIG.on=false; AUDIO.stop(); gigDrawLED(); return; }   // la prova e' un brano solo
+    try{ AUDIO.stop(); }catch(e){}
+    GIG.line=0; gigDrawLED();
+    GIG.gap=setTimeout(gigSync, wait*1000+60); return; }
+  gigPlayCurrent(R.t);
+}
+function gigPlayCurrent(at){
   const S=GIG_SONGS[GIG.idx]; if(!S) return;
-  GIG.line=0; gigDrawLED();
+  GIG.line=Math.floor((at||0)/3.6); gigDrawLED();
   clearInterval(GIG.timer);
   GIG.timer=setInterval(()=>{ if(!GIG.on) return; GIG.line++; gigDrawLED(); }, 3600);
-  AUDIO.play(GIG_DIR+S.f, gigNext, gigFail);
-  if(typeof Stars!=="undefined" && GIG.idx===0){ /* nessun punto: e' ascolto libero */ }
+  AUDIO.play(GIG_DIR+S.f, gigNext, gigFail, at||0);
 }
 function gigNext(){
   clearInterval(GIG.timer);
   if(!GIG.on) return;
-  /* fine giro: si rimescola di nuovo, ma evitando che l'ultima canzone della
-     serata sia anche la prima del giro successivo (suonerebbe due volte di
-     fila e sembrerebbe un errore). */
-  GIG.pos=(GIG.pos||0)+1;
-  if(!GIG.order||GIG.pos>=GIG.order.length){
-    const last=GIG.idx;
-    let o=shuffle(GIG_SONGS.map((s,i)=>i));
-    if(o.length>1 && o[0]===last){ const t=o[0]; o[0]=o[1]; o[1]=t; }
-    GIG.order=o; GIG.pos=0;
-  }
-  GIG.idx=GIG.order[GIG.pos];
-  GIG.line=0; gigDrawLED();
-  clearTimeout(GIG.gap);
-  GIG.gap=setTimeout(()=>{ if(GIG.on && area===UNIT_MUSIC.area) gigPlayCurrent(); }, 5000);
+  if(GIG.soundcheck){ GIG.on=false; gigDrawLED(); return; }
+  gigSync();
+}
+/* ogni tanto: se l'audio e' scivolato via dalla radio (rete lenta, scheda
+   in pausa) lo si rimette al punto giusto, o al brano giusto */
+function gigDrift(){
+  if(!GIG.on || !AUDIO.playing()) return;
+  const now=performance.now(); if(now<GIG.syncT) return; GIG.syncT=now+2500;
+  const R=radioAt("club"); if(!R || R.gap) return;
+  if(R.idx!==GIG.idx){ if(!GIG.soundcheck) gigSync(); return; }
+  const a=AUDIO.time(); if(a>0 && Math.abs(a-R.t)>1.2) AUDIO.seek(R.t);
 }
 /* Degrado gentile: se la cartella audio/ non c'e' (o il file manca), il club
    NON si rompe — il concerto risulta annullato e tutto il resto funziona. */
@@ -35093,16 +35212,13 @@ function gigFail(){
   toast("\u{1F3B5} Audio non trovato: serve la cartella <b>audio/beatclub/</b> accanto al file");
 }
 function gigSoundcheck(){
-  GIG.on=true; GIG.failed=false;
-  GIG.idx=(Math.random()*GIG_SONGS.length)|0; GIG.line=0;
-  gigDrawLED();
-  clearInterval(GIG.timer);
-  GIG.timer=setInterval(()=>{ if(!GIG.on) return; GIG.line++; gigDrawLED(); }, 3600);
+  /* v309: anche la prova suona il brano della radio, per tutti lo stesso */
+  GIG.on=true; GIG.failed=false; GIG.soundcheck=true; GIG.line=0;
   toast("\u{1F39A}\uFE0F Sound check \u2014 la band sta provando");
-  AUDIO.play(GIG_DIR+GIG_SONGS[GIG.idx].f, ()=>{ GIG.on=false; clearInterval(GIG.timer); gigDrawLED(); }, gigFail);
+  gigSync();
 }
 function gigStop(){
-  GIG.on=false;
+  GIG.on=false; GIG.soundcheck=false;
   try{ gigFXEnable(false); gigClearCrowdSolids(); }catch(e){}
   clearInterval(GIG.timer); clearTimeout(GIG.gap);
   try{ AUDIO.stop(); }catch(e){}
@@ -35662,7 +35778,11 @@ function danceStop(){
    v304: lo usano anche i compagni che ballano (Presenza._balla). */
 function danceBeat(){
   const S=(typeof GIG_SONGS!=="undefined"&&GIG_SONGS[GIG.idx])||{}, bpm=S.bpm||110;
-  const at=AUDIO.time(); return { beat:(at>0?at:performance.now()/1000)*bpm/60, bpm }; }
+  let at=AUDIO.time();
+  /* v309: senza audio (muto, autoplay negato) si balla sulla radio del club,
+     cioe' sullo stesso battito dei compagni */
+  if(!(at>0)){ const R=radioAt("club"); at=(R && !R.gap && R.idx===GIG.idx)?R.t:performance.now()/1000; }
+  return { beat:at*bpm/60, bpm }; }
 /* il braccio a tempo: fotogramma della clip «Wave» dal battito */
 function danceWaveFrame(g,B){
   const clip=(g.to-g.from)/60, spb=60/B.bpm, per=(clip/spb>=3)?4:2;
@@ -35687,6 +35807,7 @@ function danceTick(){
 }
 function gigTick(){
   danceTick();
+  try{ gigDrift(); }catch(e){}
   if(!CROWD.length && !GIG_BAND_NPC.length) return;
   if(!GIG.on || area!==UNIT_MUSIC.area){ return; }
   const S=GIG_SONGS[GIG.idx]||{}; const bpm=S.bpm||110;
@@ -62529,7 +62650,23 @@ const Presenza=(function(){
      campo, con l'imbardata VERSO IL PALCO (non quella che ondeggia: cambiando
      a ogni invio farebbe traffico per niente). Il salto, l'ondeggiare e il
      braccio a tempo li rifa' chi guarda, sul battito del suo brano. */
+  /* v309 (Giacomo, 10 ott: «quando ballano col compagno non si vedono»):
+     i PASSI (SKDANCE, skatepark e Beat Club) non viaggiavano: il compagno
+     ti vedeva fermo in piedi, o scivolare nel moonwalk. Ora il quinto campo
+     e' «m<mossa><battiti x10>» (h saltello, b ballo base, m moonwalk, s/S
+     sidewalk a destra/sinistra, t punte, a talloni, r pausa fra due brani)
+     con l'imbardata senza l'ondeggiare; chi guarda rifa' la stessa posa
+     sulle ossa (dancePoseFor) e fa avanzare i battiti col suo orologio. */
+  const _MOSSA={ hop:"h", basic:"b", moonwalk:"m", sidewalk:"s", toe:"t", ankle:"a" };
+  const _MOSSA_DA={ h:"hop", b:"basic", m:"moonwalk", s:"sidewalk", S:"sidewalk", t:"toe", a:"ankle", r:"rest" };
   function _posa(){
+    try{ if(typeof SKDANCE!=="undefined" && SKDANCE.on && SKDANCE.area===area){
+      const S=SKDANCE, B=_skDanceClock().beat;
+      let c=_MOSSA[S.mv]||"h"; if(c==="s" && S.sdir<0) c="S";
+      const rest=(S.area==="town")?SKATE.gap:!(typeof AUDIO!=="undefined" && AUDIO.playing());
+      const b=rest?0:Math.max(0,Math.min(S.dur,B-S.m0));
+      return { x:player.position.x, z:player.position.z, y:player.position.y, r:S.face,
+               k:"m"+(rest?"r":c)+Math.round(b*10) }; } }catch(e){}
     try{ if(typeof PDANCE!=="undefined" && PDANCE.on)
       return { x:player.position.x, z:player.position.z, y:player.position.y, r:PDANCE.face,
                k:"d"+Math.round(((PDANCE.phase%2)+2)%2*100) }; }catch(e){}
@@ -62539,8 +62676,19 @@ const Presenza=(function(){
       let g="";
       if(typeof EAT!=="undefined" && EAT.busy && EAT.q && EAT.q.cur) g=(EAT.q.cur.what==="bite")?"b":"d";
       return { x:player.position.x, z:player.position.z, y:player.position.y, r:player.rotation.y,
-               k:"s"+Math.round(SIT.seatY*100)+"_"+Math.round(SIT.gy*100)+g+_camerierePos() }; } }catch(e){}
+               k:"s"+Math.round(SIT.seatY*100)+"_"+Math.round(SIT.gy*100)+g, w:_camerierePos(), o:_tavolaCodice() }; } }catch(e){}
     return null;
+  }
+  /* v309 (Giacomo, 10 ott: «quello che mangiano si vede male, non si vedono
+     i piatti»): cosa c'e' sul tavolo (diner) o sul vassoio (caffe') viaggia
+     come campo in coda a `p` (dopo quello del cameriere, se c'e'): i client
+     vecchi leggono solo i primi sei e non se ne accorgono. Chi guarda
+     costruisce gli STESSI piatti (_dinerFoodSet, _cafeBuildOrder) davanti
+     al compagno e il compagno li prende con la mano come il giocatore. */
+  function _tavolaCodice(){
+    try{ if(area==="town" && typeof DINER!=="undefined" && DINER.seat) return dinerTableCode(); }catch(e){}
+    try{ if(area==="town" && typeof CAFE_PICK!=="undefined" && CAFE_PICK.seated) return cafeTableCode(); }catch(e){}
+    return "";
   }
   /* v302 (Giacomo, 3 ott: «il cameriere non si vede andare dal compagno se
      ha ordinato, si vede fermo»). Ogni dispositivo ha il SUO Ray, che serve
@@ -62556,7 +62704,13 @@ const Presenza=(function(){
   }
   function _pos(){
     const s=_posa();
-    if(s) return s.x.toFixed(2)+","+s.z.toFixed(2)+","+s.y.toFixed(2)+","+s.r.toFixed(2)+","+s.k;
+    if(s){ const p=s.x.toFixed(2)+","+s.z.toFixed(2)+","+s.y.toFixed(2)+","+s.r.toFixed(2)+","+s.k;
+      /* ⚠️ le regole tengono `p` entro 48 caratteri: se non ci sta tutto si
+         rinuncia prima al cameriere (si vede solo mentre porta), poi al tavolo */
+      const w=s.w||"", o=s.o?(","+s.o):"";
+      if((p+w+o).length<=48) return p+w+o;
+      if((p+o).length<=48) return p+o;
+      return (p+w).length<=48?p+w:p; }
     return player.position.x.toFixed(1)+","+player.position.z.toFixed(1)+","
           +player.position.y.toFixed(2)+","+player.rotation.y.toFixed(2);
   }
@@ -62565,11 +62719,18 @@ const Presenza=(function(){
     const x=parseFloat(p[0]), z=parseFloat(p[1]), y=parseFloat(p[2]), r=parseFloat(p[3]);
     if(!isFinite(x)||!isFinite(z)) return null;
     const m=/^s(-?\d{1,4})_(-?\d{1,4})([db]?)(c?)$/.exec(p[4]||"");
-    const w=/^w(-?\d{1,4}(?:\.\d)?):(-?\d{1,4}(?:\.\d)?)$/.exec(p[5]||"");
+    /* dal sesto campo in poi: il cameriere (w...) e il tavolo (o... / c..., v309) */
+    let w=null, ta=null;
+    for(let i=5;i<p.length;i++){ const f=p[i]||""; let mm;
+      if(!w && (mm=/^w(-?\d{1,4}(?:\.\d)?):(-?\d{1,4}(?:\.\d)?)$/.exec(f))) w=mm;
+      else if(!ta && (mm=/^o([0-9a-u]{4})([0-3-])$/.exec(f))) ta={ k:"o", c:mm[1], cur:mm[2] };
+      else if(!ta && (mm=/^c([0-7])([0-4])([0-4])([0-4])([01-])$/.exec(f))) ta={ k:"c", c:mm[1]+mm[2]+mm[3]+mm[4], cur:mm[5] }; }
     const d=/^d(\d{1,3})$/.exec(p[4]||"");            // v304: balla (fase in centesimi di battito)
+    const mz=/^m([hbmsStar])(\d{1,3})$/.exec(p[4]||""); // v309: i passi (mossa, battiti x10)
     return { x:x, z:z, y:(isFinite(y)?y:0), r:(isFinite(r)?r:0),
              balla:d?{ ph:+d[1]/100 }:null,
-             siede:m?{ seat:+m[1]/100, gy:+m[2]/100, eat:m[3]||"", c:!!m[4] }:null,
+             mossa:mz?{ mv:_MOSSA_DA[mz[1]], sdir:(mz[1]==="S"?-1:1), b:+mz[2]/10 }:null,
+             siede:m?{ seat:+m[1]/100, gy:+m[2]/100, eat:m[3]||"", c:!!m[4], ta:ta }:null,
              cameriere:w?{ x:+w[1], z:+w[2] }:null };
   }
   /* ---- FREQUENZA CHE SI ADATTA ALLA FOLLA -------------------------------
@@ -62637,6 +62798,8 @@ const Presenza=(function(){
     e.zona=String(v.a||"town");
     e.siede=p.siede;                                   // v302: seduto / mangia / beve
     e.balla=p.balla;                                   // v304: balla al concerto
+    /* v309: i passi; t = quando e' arrivato il campione, per far avanzare i battiti */
+    e.mossa=p.mossa?Object.assign(p.mossa,{ t:ora }):null;
     e.cameriere=p.cameriere;                           // v302: dove sta il suo Ray (dinerMirror)
     /* ⚠️ Il numero di sequenza distingue una frase NUOVA da una che e'
        semplicemente ancora nel nodo: senza, ogni aggiornamento di posizione
@@ -62862,9 +63025,11 @@ const Presenza=(function(){
      posti lo stesso dato. */
   function _chiaveDi(e){ for(const k in peers) if(peers[k]===e) return k; return ""; }
   function _rilascia(e){
+    try{ if(e && e.tavola) _sparecchia(e); }catch(err){}   // v309: i suoi piatti se ne vanno con lui
     const b=e&&e.corpo; if(!b) return;
     try{ _alza(b); }catch(err){}                        // v302: il prossimo compagno su questo corpo parte in piedi
     try{ if(b.ballo) _fermaBallo(b); }catch(err){}      // v304: e non salta
+    try{ if(b.sk) _fermaPassi(b); }catch(err){}         // v309: ne' balla
     try{ if(b.label){ b.label.hidden=true; if(b.label.ctrl) b.label.ctrl.isVisible=false; } }catch(err){}
     try{ if(b.inter) b.inter.enabled=false; }catch(err){}
     b.usato=false; b.libero=Date.now(); b.anim=null;
@@ -62961,12 +63126,18 @@ const Presenza=(function(){
         b.label.area=e.zona;
         if(!vis && b.label.ctrl) b.label.ctrl.isVisible=false;
       }
-      if(!vis){ if(b.sit) _alza(b); if(b.ballo) _fermaBallo(b); continue; }
+      if(!vis){ if(e.tavola) _sparecchia(e); if(b.sit) _alza(b); if(b.ballo) _fermaBallo(b); if(b.sk) _fermaPassi(b); continue; }
       if(b.inter) b.inter.area=e.zona;
       /* v302: seduto (vedi _posa): posa sulle ossa come il giocatore, niente
          Walk, niente giro verso di te; il gesto del mangiare lo rifa' qui */
-      if(e.siede && ((ora-e.t0)>=e.dur || e.vel<=0.35)){ _siedi(b,q,e.siede,ora); continue; }
+      if(e.siede && ((ora-e.t0)>=e.dur || e.vel<=0.35)){
+        try{ _tavola(e,q); }catch(err){ console.warn("[presenza] tavola",err); }
+        _siedi(b,q,e.siede,ora,e); continue; }
+      if(e.tavola) _sparecchia(e);
       if(b.sit) _alza(b);
+      /* v309: i passi si ballano anche mentre scivola (moonwalk): niente Walk */
+      if(e.mossa){ if(b.ballo) _fermaBallo(b); if(_passi(b,q,e.mossa,ora,dt)) continue; }
+      if(b.sk) _fermaPassi(b);
       if(e.balla && ((ora-e.t0)>=e.dur || e.vel<=0.35)){ _balla(b,q,e.balla); continue; }
       if(b.ballo) _fermaBallo(b);
       b.carrier.position.set(q.x, q.y, q.z);
@@ -62998,7 +63169,7 @@ const Presenza=(function(){
      (EAT_ARMS), a ciclo locale: a 2 Hz di aggiornamenti non si potrebbe
      trasmettere un braccio che sale e scende, e non serve — basta sapere
      CHE sta mangiando. */
-  function _siedi(b,q,s,ora){
+  function _siedi(b,q,s,ora,e){
     const V=BABYLON.Vector3, key=[q.x,q.z,q.y,q.r,s.seat,s.gy,s.c?1:0].join("|");
     if(!b.sit || b.sit.key!==key){
       if(b.sit) _alza(b);
@@ -63022,7 +63193,11 @@ const Presenza=(function(){
     const S=b.sit;
     b.carrier.position.set(q.x+S.off.x, q.y, q.z+S.off.z);
     if(!S.rest) return;
-    /* il gesto: ogni 3,2 s il braccio sale alla bocca, resta, scende */
+    S.seat=s.seat; S.gy=s.gy;
+    /* v309: c'e' la sua tavola: prende davvero quello che sta mangiando */
+    if(e && e.tavola && !e.tavola.vuota){ S.eat=""; _gesto(b,e,ora); return; }
+    if(b.gesto || b.gestoV) _gestoFine(b);
+    /* client vecchio (niente tavola): ogni 3,2 s il braccio sale alla bocca, resta, scende */
     let t=0;
     if(s.eat && S.sip){ const u=(ora%3200)/3200, sm=function(x){ return x*x*(3-2*x); };
       t=u<0.25?0:(u<0.45?sm((u-0.25)/0.2):(u<0.65?1:(u<0.85?1-sm((u-0.65)/0.2):0))); }
@@ -63047,12 +63222,58 @@ const Presenza=(function(){
     b.ballo=true;
     const g=b.anims.Wave; if(g && b.cur===g) danceWaveFrame(g,B);
   }
+  /* ---- I PASSI (v309) ---------------------------------------------------
+     Le stesse pose del giocatore e della crew (_skKeyframes, calcolate una
+     volta per corpo, in piedi e girato a nord) fuse sul battito: la mossa e
+     i battiti arrivano col campione, e fra un campione e l'altro i battiti
+     avanzano col bpm del brano che suona qui. */
+  function _passi(b,q,m,ora,dt){
+    const V=BABYLON.Vector3;
+    if(!b.skK){
+      if(b.skNo) return false;
+      const ry=b.carrier.rotation.y; let K=null;
+      try{ b.holder.position.y=b.holderY0; _applyPins(b.pinsStand);
+        b.carrier.rotation.y=0; _sitRefresh(b.carrier);
+        K=_skKeyframes(b.holder,b.pinsStand,new V(0,0,1)); }catch(err){ K=null; }
+      b.carrier.rotation.y=ry;
+      if(!K){ b.skNo=true; return false; }
+      b.skK=K; b.skCur=K.stand.pins.map(function(k){ return { tn:k.tn, p:k.p.clone(), q:k.q.clone(), s:k.s.clone() }; });
+    }
+    const K=b.skK;
+    if(!b.sk){
+      /* com'erano le ossa prima di ballare (busto e spalle l'Idle non li
+         anima): si rimettono smettendo, come playerStand */
+      b.skPrev=K.stand.pins.map(function(k){ const t=k.tn; return { tn:t, p:t.position.clone(), s:t.scaling.clone(),
+        q:t.rotationQuaternion?t.rotationQuaternion.clone():BABYLON.Quaternion.FromEulerVector(t.rotation) }; });
+      b.sk=true; b.carrier.rotation.y=q.r;
+    }
+    if(b.anim!=="Idle"){ b.anim="Idle"; b.play("Idle"); }
+    b.noPin=false;
+    let bpm=120; try{ bpm=(area==="town")?SKATE.bpm:danceBeat().bpm; }catch(err){}
+    let E;
+    if(m.mv==="rest"||!m.mv) E={ A:K.stand, B:K.stand, t:0, hop:0 };
+    else { const dur=(m.mv==="hop")?2:SKATE_DUR(m.mv);
+      E=_skEval(K,m.mv,Math.min(dur-0.001, m.b+Math.max(0,ora-m.t)/1000*bpm/60)); }
+    const dy=_skBlend(b.skCur,E.A,E.B,E.t);
+    b.pins=b.skCur;
+    b.holder.position.y=b.holderY0+dy+(E.hop||0);
+    b.carrier.position.set(q.x,q.y,q.z);
+    let d2=(q.r+(E.sway||0))-b.carrier.rotation.y;
+    while(d2>Math.PI) d2-=2*Math.PI; while(d2<-Math.PI) d2+=2*Math.PI;
+    b.carrier.rotation.y+=d2*Math.min(1,12*dt);
+    return true;
+  }
+  function _fermaPassi(b){
+    b.sk=false; b.pins=b.pinsStand; b.holder.position.y=b.holderY0; b.anim=null;
+    if(b.skPrev){ try{ _applyPins(b.skPrev); }catch(err){} b.skPrev=null; }
+  }
   function _fermaBallo(b){
     b.ballo=false; b.holder.position.y=b.holderY0; b.anim=null;
     if(b.anims.Wave){ try{ b.anims.Wave.speedRatio=1; }catch(err){} }
   }
   function _alza(b){
     if(!b.sit) return;
+    if(b.gesto || b.gestoV){ _gestoFine(b); try{ if(b.fingL) _eatCurl(b.fingL,b.hand,0); }catch(err){} b.gestoV=null; }
     b.sit=null; b.pins=b.pinsStand; b.holder.position.y=b.holderY0;
     try{ accBagUp(b.meshes); }catch(err){}                                               // v306
     if(b.prop){ for(const k in b.prop) try{ b.prop[k].setEnabled(false); }catch(err){} }
@@ -63065,7 +63286,7 @@ const Presenza=(function(){
     if(!b.prop) b.prop={};
     for(const k in b.prop) b.prop[k].setEnabled(k===eat);
     if(!eat) return;
-    if(!b.hand) b.hand=b.holder.getDescendants(false).find(function(d){ return /(^|_)(Wrist|Hand|Palm)\.R$/.test(d.name); })||null;
+    if(!b.hand) b.hand=_eatHandOf(b.holder);            // v309: la copia del polso che porta le dita
     if(!b.hand) return;
     let g=b.prop[eat];
     if(!g){
@@ -63080,6 +63301,152 @@ const Presenza=(function(){
     ch.forEach(function(n){ if(n.computeWorldMatrix) n.computeWorldMatrix(true); });
     const w=b.hand.getAbsolutePosition(), f=S.f;
     g.position.set(w.x+f.x*0.05, w.y+0.03, w.z+f.z*0.05);
+  }
+  /* ---- LA TAVOLA DEL COMPAGNO (v309) -------------------------------------
+     Giacomo, 10 ott: «quello che mangiano si vede male, non si vedono i
+     piatti e quello che mangiano e' preso male, non come avatar principale».
+     Prima il compagno seduto alzava il braccio con una pallina o un
+     cilindro bianco attaccati al polso. Ora dal codice del tavolo
+     (_tavolaCodice) si costruiscono gli STESSI piatti del giocatore, nello
+     stesso punto (il tavolo del diner davanti alla sua sedia, il vassoio
+     del caffe' davanti al suo sgabello), col livello di quanto ne resta; e
+     il gesto e' quello di eatRun: ci si allunga, le dita si chiudono sulla
+     parte bassa dell'oggetto, alla bocca, giu', la mano si apre. */
+  function _strutt(ta){
+    if(ta.k==="c") return "c"+ta.c[0]+ta.c[2];
+    let o="o"; for(let i=0;i<4;i++){ const v=parseInt(ta.c[i],36); o+=v?String.fromCharCode(97+Math.floor((v-1)/5)):"-"; }
+    return o; }
+  function _tavola(e,q){
+    const ta=e.siede && e.siede.ta, id=ta?_strutt(ta):"";
+    if(e.tavola && e.tavola.id!==id) _sparecchia(e);
+    if(!ta) return;
+    if(!e.tavola){
+      let T=null; try{ T=(ta.k==="o")?_apparecchiaDiner(q,ta.c):_apparecchiaCafe(q,ta.c); }catch(err){ T=null; }
+      e.tavola=T||{ vuota:true }; e.tavola.id=id; }
+    const T=e.tavola; if(T.vuota) return;
+    if(T.lv!==ta.c){ T.lv=ta.c; try{ _livelli(T,ta.c); }catch(err){} }
+    T.cur=ta.cur;
+  }
+  function _apparecchiaDiner(q,c){
+    if(typeof DINER==="undefined" || !DINER.seats || !DINER.seats.length) return null;
+    let s=null, bd=1.0;
+    DINER.seats.forEach(function(x){ const d=Math.hypot(x.x-q.x,x.z-q.z); if(d<bd){ bd=d; s=x; } });
+    if(!s || !s.t) return null;
+    const slip={}, keys=[];
+    DINER_KEYS.forEach(function(k,i){ const v=parseInt(c[i],36); if(!v) return;
+      const it=DINER_MENU[DINER_CAT[k]][Math.floor((v-1)/5)]; if(it){ slip[k]=it; keys.push(k); } });
+    if(!keys.length) return null;
+    /* _dinerFoodSet legge DINER.o: per un attimo e' l'ordine del compagno */
+    const sv=DINER.o; let set=null; DINER.o={ slip:slip };
+    try{ set=_dinerFoodSet(keys,townRoot,s.t.x+s.sd*0.2,s.t.top,s.t.z); }catch(err){ set=null; }
+    finally{ DINER.o=sv; }
+    if(!set) return null;
+    /* il bicchiere dalla parte della sua mano destra, come in _dinerServe */
+    if(keys.indexOf("drink")>=0){ set.computeWorldMatrix(true);
+      const dw=BABYLON.Vector3.TransformNormal(new BABYLON.Vector3(0,0,1),set.getWorldMatrix());
+      if(dw.x*Math.cos(s.face)-dw.z*Math.sin(s.face)<0){ set.rotation.y+=Math.PI; set.computeWorldMatrix(true); } }
+    const G=_dinerGroups(set,keys), items={};
+    keys.forEach(function(k){ if(G[k]) items[String(DINER_KEYS.indexOf(k))]={ g:G[k].g, what:(k==="drink"?"sip":"bite"), G:G[k], key:k }; });
+    return { k:"o", root:set, items:items };
+  }
+  function _apparecchiaCafe(q,c){
+    if(typeof CAFE_SPOTS==="undefined" || !CAFE_SPOTS.length) return null;
+    let sp=null, bd=3.5;
+    CAFE_SPOTS.forEach(function(x){ const d=Math.hypot(x.x+0.1-q.x,x.z-q.z); if(d<bd && Math.abs((x.y||0)-q.y)<2.5){ bd=d; sp=x; } });
+    if(!sp) return null;
+    let si=0, sd=1e9; CAFE_STOOLS.forEach(function(zs,i){ const d=Math.abs(q.z-(sp.z+zs)); if(d<sd){ sd=d; si=i; } });
+    const n=new BABYLON.TransformNode("presCafe",scene); n.parent=townRoot;
+    n.position.set(sp.x+CAFE_TRAY_X, sp.y+1.18, sp.z+CAFE_TRAY_Z[si]);
+    const dv=+c[0], fv=+c[2];
+    const o={ slip:{ drink:CAFE_CARD.drinks[dv>>1]||CAFE_CARD.drinks[0], size:{ en:(dv&1)?"Large":"Regular" },
+                     food:fv?(CAFE_CARD.food[fv-1]||{ en:"—" }):{ en:"—" } } };
+    let R=null; try{ R=_cafeBuildOrder(o,n); }catch(err){ R=null; }
+    if(!R){ try{ n.dispose(false,false); }catch(err){} return null; }
+    const items={};
+    if(R.drink) items["0"]={ g:R.drink, what:"sip" };
+    if(R.bite||R.food) items["1"]={ g:R.bite||R.food, what:"bite" };
+    return { k:"c", root:n, R:R, items:items };
+  }
+  /* quanto ne resta, in quarti (vedi dinerTableCode / cafeTableCode) */
+  function _livelli(T,c){
+    if(T.k==="o"){ for(const i in T.items){ const it=T.items[i], v=parseInt(c[+i],36); if(!v) continue;
+        const ql=(v-1)%5;
+        _dinerLevel(it.G,it.key,it.key==="drink"?Math.max(0.05,ql/4):ql/4,it.key!=="drink" && ql===0); }
+      return; }
+    const R=T.R, qd=+c[1], qf=+c[3];
+    if(R.level){ const f=Math.max(0.04,qd/4), L=R.level; L.scaling.y=f; L.position.y=L.__y0+L.__h*f/2; }
+    (R.bits||[]).forEach(function(b){ b.setEnabled(qd>=4); });
+    if(R.bite){ R.bite.scaling.setAll(Math.max(0.001,qf/4)); R.bite.setEnabled(qf>0); }
+  }
+  function _sparecchia(e){
+    const T=e.tavola; e.tavola=null;
+    if(e.corpo && (e.corpo.gesto || e.corpo.gestoV)) _gestoFine(e.corpo,true);
+    if(T && T.root){ try{ T.root.dispose(false,false); }catch(err){} try{ _octDirty(); }catch(err){} }
+  }
+  /* la posa «allungato verso l'oggetto», per questo corpo e questa seduta */
+  function _verso(b,g,what){
+    const S=b.sit; if(!S || !S.rest) return null;
+    if(g.__rpB===b && g.__rpK===S.key) return g.__rp;
+    if(!b.hand) b.hand=_eatHandOf(b.holder); if(!b.hand) return null;
+    const r=_eatReachAt(b.holder,b.pinsStand,S.f,S.seat,S.gy,g,what,b.hand,b.holderY0-b.holder.position.y);
+    g.__rpB=b; g.__rpK=S.key; g.__rp=(r && r.length===S.rest.length)?r:null;
+    return g.__rp;
+  }
+  /* il gesto, come eatRun: reach -> up -> hold (finche' lui lo tiene alla
+     bocca) -> down -> release. Qui si fondono le pose; dita e oggetto li
+     sistema _gestoMano, dopo le pin */
+  function _gesto(b,e,ora){
+    const S=b.sit, T=e.tavola, A=S.rest, U=S.sip;
+    if(!S.mix || !U){ b.pins=A; return; }
+    const want=(T.cur && T.items[T.cur])||null;
+    let G=b.gesto;
+    if(!G){
+      if(!want || !want.g || want.g.isDisposed() || !want.g.isEnabled()){ b.pins=A; return; }
+      G=b.gesto={ it:want, ph:"reach", t0:ora, R:null, D:null, needD:false };
+      try{ G.R=_verso(b,want.g,want.what); }catch(err){ G.R=null; }
+      if(!G.R) G.ph="up";
+    }
+    if(G.it.g.isDisposed()){ _gestoFine(b,true); b.pins=A; return; }
+    const sm=function(u){ u=Math.max(0,Math.min(1,u)); return u*u*(3-2*u); };
+    const it=G.it, tilt=(it.what==="sip")?0.6:0, R=G.R||A, el=ora-G.t0;
+    let P0=A, P1=A, k=0, fing=0, tl=0, mode="home", oe=0;
+    if(G.ph==="reach"){ const u=el/560, x=sm(u); P0=A; P1=R; k=x; fing=Math.max(0,(x-0.6)/0.4);
+      if(u>=1){ G.ph="up"; G.t0=ora; G.needD=true; } }
+    else if(G.ph==="up"){ const u=el/650, x=sm(u); P0=R; P1=U; k=x; fing=G.R?1:x; tl=tilt*x*x; mode="in"; oe=x;
+      if(u>=1){ G.ph="hold"; G.t0=ora; } }
+    else if(G.ph==="hold"){ P0=U; P1=U; k=1; fing=1; tl=tilt; mode="in"; oe=1;
+      if(el>650 && want!==it){ G.ph="down"; G.t0=ora; } }
+    else if(G.ph==="down"){ const u=el/600, x=sm(u); P0=U; P1=R; k=x; fing=G.R?1:1-x; tl=tilt*(1-x); mode="in"; oe=1-x;
+      if(u>=1){ G.ph=G.R?"release":"end"; G.t0=ora; mode="home"; tl=0; } }
+    else if(G.ph==="release"){ const u=el/520, x=sm(u); P0=R; P1=A; k=x; fing=Math.max(0,1-x/0.4);
+      if(u>=1) G.ph="end"; }
+    if(G.ph==="end"){ _gestoFine(b); b.pins=A; return; }
+    const M=S.mix;
+    for(let i=0;i<M.length;i++){ BABYLON.Quaternion.SlerpToRef(P0[i].q,P1[i].q,k,M[i].q); BABYLON.Vector3.LerpToRef(P0[i].p,P1[i].p,k,M[i].p); }
+    b.pins=M;
+    b.gestoV={ it:it, fing:fing, tilt:tl, mode:mode, e:oe };
+  }
+  /* fine del gesto: l'oggetto torna al suo posto, le dita si aprono */
+  function _gestoFine(b,via){
+    const G=b.gesto; b.gesto=null;
+    if(G && !via){ const g=G.it.g; if(g && !g.isDisposed() && g.__home){ g.position.copyFrom(g.__home);
+        try{ eatTilt(g,b.sit?b.sit.f:new BABYLON.Vector3(0,0,1),0); }catch(err){} } }
+    b.gestoV={ it:null, fing:0 };
+  }
+  function _gestoMano(b){
+    const V=b.gestoV;
+    if(!b.hand) b.hand=_eatHandOf(b.holder);
+    if(!b.fingL) b.fingL=_eatFingList(b.holder);
+    _eatCurl(b.fingL,b.hand,V.fing);
+    if(!V.it){ b.gestoV=null; return; }
+    const g=V.it.g, G=b.gesto, S=b.sit; if(!g || g.isDisposed() || !S) return;
+    if(!g.__home) g.__home=g.position.clone();
+    eatTilt(g,S.f,V.tilt);
+    if(V.mode==="home"){ g.position.copyFrom(g.__home); return; }
+    const grip=_eatGripAt(g,V.it.what,b.hand);
+    if(G && G.needD){ G.D=g.__home.subtract(grip); G.needD=false; }
+    if(G && G.D) g.position.copyFrom(grip.add(G.D.scale(1-V.e)));
+    else BABYLON.Vector3.LerpToRef(g.__home,grip,V.e,g.position);
   }
   /* i Ray dei compagni serviti al diner, in questa stessa zona (dinerMirror) */
   function camerieri(){
@@ -63105,6 +63472,7 @@ const Presenza=(function(){
         if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion();
         k.tn.rotationQuaternion.copyFrom(k.q); k.tn.scaling.copyFrom(k.s);
       }
+      if(b.gestoV) try{ _gestoMano(b); }catch(err){ b.gestoV=null; }   // v309: dita e piatto, dopo le pin
       if(b.sit || b.prop) try{ _inMano(b); }catch(err){}
     }
   }
@@ -63129,6 +63497,9 @@ const Presenza=(function(){
         radice.on("child_added", _campione);
         radice.on("child_changed", _campione);
         radice.on("child_removed", function(sn){ if(sn&&sn.key) _via(sn.key); });
+        /* v309: l'ora del server, per la radio (la musica uguale per tutti) */
+        try{ app.database().ref(".info/serverTimeOffset").on("value", function(sn){
+          const v=+(sn&&sn.val()); if(isFinite(v) && Math.abs(v)<864e5) RADIO.off=v; }); }catch(err){}
         acceso=true; motivo="ok"; t0=Date.now();
         _invia(true);
         if(!timer) timer=setInterval(function(){ try{ _invia(false); }catch(err){} }, 250);
