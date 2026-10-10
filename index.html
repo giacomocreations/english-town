@@ -10851,9 +10851,14 @@ function initBenches(){
 /* ---- IL GIORNALE IN MANO ---------------------------------------------- */
 const NEWS={ has:false, fold:null, open:null, mat:null, hands:null, handsOf:null, left:null, leftT:0 };
 /* le braccia da seduti mentre si legge: gomiti in giu', mani davanti al petto */
+/* ⚠️ v307e (Giacomo, 10 ott: «da seduto non afferra il giornale alle
+   estremita'»). Misurato: con l'avambraccio rivolto verso l'interno
+   (-o*0,40) le mani finivano a 7-13 cm l'una dall'altra, al CENTRO di un
+   giornale largo 56 cm. Avambraccio un po' in fuori: ~55 cm, le mani sui
+   bordi; il giornale poi si allarga/stringe sulla distanza vera (newsTick). */
 const NEWS_ARMS={
-  up:(o,f,dn)=>dn.scale(0.95).add(f.scale(0.26)).add(o.scale(0.10)),
-  fore:(o,f,dn)=>f.scale(0.85).subtract(dn.scale(0.30)).subtract(o.scale(0.40)) };
+  up:(o,f,dn)=>dn.scale(0.95).add(f.scale(0.26)).add(o.scale(0.15)),
+  fore:(o,f,dn)=>f.scale(0.85).subtract(dn.scale(0.30)).add(o.scale(0.10)) };
 function _newsMat(){
   if(NEWS.mat) return NEWS.mat;
   /* una texture sola: a sinistra la prima pagina, a destra una pagina interna */
@@ -10937,7 +10942,10 @@ function newsTick(){
   if(reading){
     const a=_newsHandPos(H.L), b=_newsHandPos(H.R); if(!a||!b) return;
     const mid=a.add(b).scale(0.5);
-    NEWS.open.position.set(mid.x+f.x*0.04, mid.y+0.12, mid.z+f.z*0.04);
+    /* largo quanto le mani: i bordi del giornale stanno nei pugni */
+    const k=Math.max(0.6,Math.min(1.2,BABYLON.Vector3.Distance(a,b)/0.56));
+    NEWS.open.scaling.set(k,1,1);
+    NEWS.open.position.set(mid.x+f.x*0.04, mid.y+0.10, mid.z+f.z*0.04);
     NEWS.open.rotation.set(-0.30,ry,0);               // la pagina un po' inclinata verso chi legge
     return;
   }
@@ -10945,9 +10953,13 @@ function newsTick(){
     const S=BSIT.S, L=BSIT.L, t=(S.x-L.cx)*L.ax+(S.z-L.cz)*L.az, sd=(t+0.35<=L.half+0.3)?0.35:-0.35;
     NEWS.fold.position.set(S.x+L.ax*sd, BSIT.seatY+0.008, S.z+L.az*sd);
     NEWS.fold.rotation.set(0,Math.atan2(L.ax,L.az),Math.PI/2); return; }
+  /* in piedi: stretto per il bordo di sopra fra pollice e dita, il resto
+     pende lungo la gamba (prima il centro del giornale stava SULLA mano e
+     la mano lo attraversava) */
   const r=_newsHandPos(H.R); if(!r) return;
-  NEWS.fold.position.set(r.x+f.x*0.02, r.y-0.08, r.z+f.z*0.02);
-  NEWS.fold.rotation.set(0,ry,0.12);
+  const rx=Math.cos(ry), rz=-Math.sin(ry);            // il «destra» del giocatore
+  NEWS.fold.position.set(r.x-rx*0.035+f.x*0.03, r.y-0.11, r.z-rz*0.035+f.z*0.03);
+  NEWS.fold.rotation.set(0,ry,0.06);
 }
 
 function buildTownCafe(){
@@ -14861,6 +14873,10 @@ const PARK_SCENES=[
   { id:"clap",    who:"they",ing:["They're","clapping."],                 ingD:["clap","He's","She's"],    has:null },
   { id:"wave",    who:"she", ing:["She's","waving."],                     ingD:["wave","He's","They're"],  has:null },
   { id:"jogger",  who:"he",  ing:["He's","running."],                     ingD:["run","She's","runing."],  has:null },
+  /* v307e (Giacomo: «domande sempre piu' varie, prese dalla vita della
+     citta'»): chi chiacchiera, e il tempo che fa (solo se piove davvero) */
+  { id:"talk",    who:"they",ing:["They're","talking."],                  ingD:["talk","He's","She's"],    has:null },
+  { id:"weather", who:"it",  ing:["It's","raining."],                     ingD:["rain","They're","rains."],has:null, q:"Look at the sky! What's the weather like?" },
 ];
 function parkWatchMode(){
   const open=parkOpenUnits();
@@ -14872,12 +14888,16 @@ function parkWatchMode(){
    Photo Spot: due render e si rimette tutto com'era) */
 function parkSnap(sc){
   const P=PARKFUN.people[sc.id]; if(!P) return "";
-  const n=P.npc||P[0]; if(!n) return "";
-  const p=n.pos(), f=P.view||{x:1,z:0};
-  const look=new BABYLON.Vector3(p.x+(P.lookDx||0),p.y+0.95,p.z+(P.lookDz||0));
-  const camPos=new BABYLON.Vector3(p.x+f.x*3.4+(P.sideX||0),p.y+1.75,p.z+f.z*3.4+(P.sideZ||0));
+  let look, camPos;
+  if(P.snap){ const v=P.snap(); camPos=v.cam; look=v.look; }
+  else {
+    const n=P.npc||P[0]; if(!n) return "";
+    const p=n.pos(), f=(P.viewFn?P.viewFn():P.view)||{x:1,z:0};
+    look=new BABYLON.Vector3(p.x+(P.lookDx||0),p.y+0.95,p.z+(P.lookDz||0));
+    camPos=new BABYLON.Vector3(p.x+f.x*3.4+(P.sideX||0),p.y+1.75,p.z+f.z*3.4+(P.sideZ||0)); }
   let cam=null, out=""; const prev=scene.activeCamera;
   try{
+    PARKFUN.snapping=true;
     cam=new BABYLON.FreeCamera("_parkCam",camPos,scene); cam.setTarget(look);
     cam.minZ=0.3; cam.maxZ=400; cam.fov=0.85;
     scene.activeCamera=cam; scene.render(); scene.render();
@@ -14885,7 +14905,8 @@ function parkSnap(sc){
     cv.getContext("2d").drawImage(src,0,0,src.width,src.height,0,0,360,225);
     out=cv.toDataURL("image/jpeg",0.6);
   }catch(e){ console.warn("[park] snap",e); }
-  finally{ try{ scene.activeCamera=prev; }catch(e){} try{ if(cam) cam.dispose(); }catch(e){} try{ scene.render(); }catch(e){} }
+  finally{ try{ scene.activeCamera=prev; }catch(e){} try{ if(cam) cam.dispose(); }catch(e){} try{ scene.render(); }catch(e){}
+    PARKFUN.snapping=false; if(PARKFUN.ranger) PARKFUN.ranger.idle=performance.now(); }
   return out.length>2000?out:"";
 }
 function parkOnSit(b){
@@ -14896,11 +14917,14 @@ function parkOnSit(b){
   if(!(b.x>86 && b.x<152 && b.z>-60 && b.z<60)) return;      // solo le panchine del parco
   if(typeof NEWS!=="undefined" && NEWS.has) return;          // c'e' il giornale da leggere
   const mode=parkWatchMode(); if(!mode) return;
-  if(!Object.keys(PARKFUN.people).some(k=>_pkVisible(PARKFUN.people[k].npc))) return;   // di notte non c'e' nessuno
+  if(!Object.keys(PARKFUN.people).some(k=>{ const P=PARKFUN.people[k]; return P.always?(!P.now||P.now()):_pkVisible(P.npc); })) return;   // di notte non c'e' nessuno
   const s=parkState(); if(s.wN>=3) return;
+  /* v307e (Giacomo: «quando ti siedi arriva il Park Ranger e ti fa le
+     domande: cosi' si capisce chi e' che parla») */
+  if(parkRangerCome(b)) return;
   setTimeout(()=>{
     if(BSIT.b!==b || _dlgOpen()) return;
-    DialogueBox.open({ name:"Park watcher", icon:"\u{1F440}", sub:"Central Park · "+(3-s.wN)+" left today",
+    DialogueBox.open({ ..._pkSpk(), sub:"Central Park · "+(3-s.wN)+" left today",
       text:"What a lovely park! Look at the people around you. Can you tell me what they are doing?",
       italian:(function(){ let y=1; try{ y=studentYear(); }catch(e){}
         return y>=3 && mode==="ing" ? "Guarda le persone del parco e scrivi che cosa stanno facendo: 3 stelle al primo tentativo, fino a 3 domande al giorno."
@@ -14912,7 +14936,8 @@ function parkOnSit(b){
 function parkWatchAsk(){
   const s=parkState(), mode=parkWatchMode(); if(!mode) return;
   if(s.wN>=3){ toast("\u{1F440} That's all for today: come back tomorrow!"); return; }
-  const here=sc=>PARKFUN.people[sc.id] && _pkVisible(PARKFUN.people[sc.id].npc);
+  const here=sc=>{ const P=PARKFUN.people[sc.id];
+    return !!P && (P.always || _pkVisible(P.npc)) && (!P.now || P.now()); };   // v307e: chi saluta o applaude, solo mentre lo fa
   const ok=PARK_SCENES.filter(sc=>here(sc) && (mode==="ing"||sc.has) && s.wSeen.indexOf(sc.id)<0);
   const all=PARK_SCENES.filter(sc=>here(sc) && (mode==="ing"||sc.has));
   const P=ok.length?ok:all; if(!P.length) return;
@@ -14921,11 +14946,11 @@ function parkWatchAsk(){
   let yr=1; try{ yr=studentYear(); }catch(e){}
   if(mode==="ing" && yr>=3){ parkWatchWrite(sc,img); return; }   // v307b: in terza si scrive
   const tokens=mode==="ing"?sc.ing:sc.has, distr=mode==="ing"?sc.ingD:sc.hasD;
-  const q=mode==="ing"
+  const q=sc.q || (mode==="ing"
     ? (sc.who==="they"?"Look! What are they doing?":"Look! What is "+sc.who+" doing?")
-    : "Look! What has "+sc.who+" got?";
+    : "Look! What has "+sc.who+" got?");
   let tries=0;
-  DialogueBox.open({ name:"Park watcher", icon:"\u{1F440}", sub:"Question "+(s.wN+1)+"/3",
+  DialogueBox.open({ ..._pkSpk(), sub:"Question "+(s.wN+1)+"/3",
     text:q, italian:mode==="ing"?"Componi la frase: present continuous (He's / She's / They're + -ing).":"Componi la frase con «has got».",
     html:img?'<div style="text-align:center;margin-bottom:6px"><img alt="" style="max-width:100%;max-height:150px;border-radius:10px;border:3px solid #fbf7ec;box-shadow:0 3px 10px rgba(0,0,0,.35)" src="'+img+'"></div>':"",
     tiles:{ tokens, distractors:distr, checkLabel:"✔ Say it",
@@ -14936,7 +14961,7 @@ function parkWatchAsk(){
         st.wN=(st.wN||0)+1; if(st.wSeen.indexOf(sc.id)<0) st.wSeen.push(sc.id); parkSave(st);
         try{ Stars.award(null,got,"park watcher"); }catch(e){}
         const more=st.wN<3;
-        DialogueBox.open({ name:"Park watcher", icon:"\u{1F440}", sub:"✅ +"+got+" ⭐",
+        DialogueBox.open({ ..._pkSpk(), sub:"✅ +"+got+" ⭐",
           text:tokens.join(" ")+(more?" Well done! Another one?":" Well done! That's all for today."),
           italian:more?"Bravo! Un'altra?":"Bravo! Per oggi basta: torna domani.",
           buttons:more?[{ label:"\u{1F440} Yes, another one!", cls:"primary", act:()=>parkWatchAsk() },{ label:"No, thanks", cls:"ghost", act:()=>{} }]
@@ -14956,38 +14981,39 @@ function parkWatchAsk(){
    she?, is o are?, oppure «controlla le lettere» per un refuso); al secondo
    errore si mostra la frase giusta. 3⭐ al primo colpo, 1⭐ al secondo:
    scrivere vale piu' che comporre. */
-const _PK_SUBJ={ he:"(he|the man|the boy|the runner|the jogger)", she:"(she|the woman|the girl|the lady)",
+const _PK_SUBJ={ it:"(it)", he:"(he|the man|the boy|the runner|the jogger)", she:"(she|the woman|the girl|the lady)",
   they:"(they|the people|the fans|the two people|the man and the woman|the woman and the man|the boy and the girl)" };
 const PARK_WRITE_RE={
   reader:"HE is reading (a|the|his) book", lunch:"SHE is eating (a|the|her) sandwich",
   guitar:"SHE is playing (the |a |her )?guitar", clap:"THEY are clapping( their hands)?",
-  wave:"SHE is (waving|waiving)( her hand| hello| at me| to me| goodbye)?", jogger:"HE is (running|jogging)" };
+  wave:"SHE is (waving|waiving)( her hand| hello| at me| to me| goodbye)?", jogger:"HE is (running|jogging)",
+  talk:"THEY are (talking|chatting|speaking)( to each other| together)?", weather:"IT is (raining|pouring|drizzling)" };
 function _pkNorm(v){
   return String(v||"").toLowerCase().replace(/[’‘`]/g,"'").replace(/[^a-z' ]+/g," ")
     .replace(/\b(he|she|it)'s\b/g,"$1 is").replace(/\bthey're\b/g,"they are").replace(/\s+/g," ").trim();
 }
 function _pkWriteOk(sc,v){
   const src=PARK_WRITE_RE[sc.id]; if(!src) return false;
-  const re=new RegExp("^"+src.replace(/HE|SHE|THEY/,m=>_PK_SUBJ[m.toLowerCase()])+"$");
+  const re=new RegExp("^"+src.replace(/HE|SHE|THEY|IT/,m=>_PK_SUBJ[m.toLowerCase()])+"$");
   return re.test(_pkNorm(v));
 }
 function _pkWriteHint(sc,v){
   const a=_pkNorm(v), want=_pkNorm(sc.ing.join(" "));
-  const subj=a.split(" ")[0];
+  const subj=a.split(" ")[0], SUB={they:"They",he:"He",she:"She",it:"It"}[sc.who]||"She";
   const isHe=/^(he|the man|the boy)\b/.test(a), isShe=/^(she|the woman|the girl|the lady)\b/.test(a), isThey=/^(they|the people|the fans)\b/.test(a);
   if((sc.who==="he"&&(isShe||isThey))||(sc.who==="she"&&(isHe||isThey))||(sc.who==="they"&&(isHe||isShe)))
     return "\u{1F440} Guarda bene la foto: "+(sc.who==="they"?"sono in due → They":(sc.who==="he"?"e' un uomo → He":"e' una donna/ragazza → She"))+".";
   if(gemLexDist(a,want)<=2) return "\u{1F50E} Ci sei quasi: controlla le lettere.";
-  if(!/\b(is|are|am)\b/.test(a)) return "\u{1F4A1} Manca il verbo essere: "+(sc.who==="they"?"They ARE …":(sc.who==="he"?"He IS …":"She IS …"));
+  if(!/\b(is|are|am)\b/.test(a)) return "\u{1F4A1} Manca il verbo essere: "+(SUB+(sc.who==="they"?" ARE ":" IS ")+"…");
   if(sc.who==="they" && /\bis\b/.test(a)) return "\u{1F4A1} Con They si usa ARE: They are …";
-  if(sc.who!=="they" && /\bare\b/.test(a)) return "\u{1F4A1} Con "+(sc.who==="he"?"He":"She")+" si usa IS.";
+  if(sc.who!=="they" && /\bare\b/.test(a)) return "\u{1F4A1} Con "+SUB+" si usa IS.";
   if(!/\b[a-z]+ing\b/.test(a)) return "\u{1F4A1} Il verbo vuole -ING: is play → is playING.";
-  if(subj && !/^(he|she|they|the)$/.test(subj)) return "\u{1F4A1} Comincia con He / She / They.";
+  if(subj && !/^(he|she|they|it|the)$/.test(subj)) return "\u{1F4A1} Comincia con He / She / They.";
   return "\u{1F4A1} Guarda bene che cosa sta facendo, e controlla la frase.";
 }
 function parkWatchWrite(sc,img){
   const s=parkState();
-  const q=sc.who==="they"?"Look! What are they doing?":"Look! What is "+sc.who+" doing?";
+  const q=sc.q || (sc.who==="they"?"Look! What are they doing?":"Look! What is "+sc.who+" doing?");
   let tries=0;
   const judge=()=>{
     const el=document.getElementById("pk-write"), fb=document.getElementById("pk-fb"); if(!el) return;
@@ -14998,10 +15024,10 @@ function parkWatchWrite(sc,img){
     if(fb) fb.innerHTML=_escHtml(_pkWriteHint(sc,v));
     el.focus && el.select && el.select();
   };
-  DialogueBox.open({ name:"Park watcher", icon:"\u{1F440}", sub:"Question "+(s.wN+1)+"/3 · write it",
+  DialogueBox.open({ ..._pkSpk(), sub:"Question "+(s.wN+1)+"/3 · write it",
     text:q, italian:"Scrivi la frase al present continuous (He's / She's / They're + -ing).",
     html:(img?'<div style="text-align:center;margin-bottom:6px"><img alt="" style="max-width:100%;max-height:150px;border-radius:10px;border:3px solid #fbf7ec;box-shadow:0 3px 10px rgba(0,0,0,.35)" src="'+img+'"></div>':"")
-      +'<input id="pk-write" class="gem-input" data-mic="1" type="text" autocomplete="off" autocapitalize="sentences" autocorrect="off" spellcheck="false" placeholder="'+(sc.who==="they"?"They’re …":(sc.who==="he"?"He’s …":"She’s …"))+'">'
+      +'<input id="pk-write" class="gem-input" data-mic="1" type="text" autocomplete="off" autocapitalize="sentences" autocorrect="off" spellcheck="false" placeholder="'+({they:"They’re …",he:"He’s …",she:"She’s …",it:"It’s …"}[sc.who])+'">'
       +'<div id="pk-fb" style="min-height:18px;margin-top:6px;font-size:13px;color:#b5452f"></div>',
     buttons:[{ label:"✔ Check", cls:"primary", keepOpen:true, act:judge },{ label:"Not now", cls:"ghost", act:()=>{} }] });
   const inp=document.getElementById("pk-write");
@@ -15014,12 +15040,60 @@ function parkWatchDone(sc,got,said){
   st.wN=(st.wN||0)+1; if(st.wSeen.indexOf(sc.id)<0) st.wSeen.push(sc.id); parkSave(st);
   if(got>0) try{ Stars.award(null,got,"park watcher"); }catch(e){}
   const more=st.wN<3, right=sc.ing.join(" ");
-  DialogueBox.open({ name:"Park watcher", icon:"\u{1F440}", sub:got?"✅ +"+got+" ⭐":"Not this time",
+  DialogueBox.open({ ..._pkSpk(), sub:got?"✅ +"+got+" ⭐":"Not this time",
     text:(got?(said||right)+" Well done!":"The answer is: "+right)+(more?" Another one?":" That's all for today."),
     italian:got?(more?"Bravo! Un'altra?":"Bravo! Per oggi basta: torna domani."):"La frase giusta e' qui sopra. "+(more?"Un'altra?":"Torna domani!"),
     html:got?"":lesCard("les-no","\u{1F4A1} The answer",'<div class="les-title">'+_escHtml(right)+'</div>'),
     buttons:more?[{ label:"\u{1F440} Yes, another one!", cls:"primary", act:()=>parkWatchAsk() },{ label:"No, thanks", cls:"ghost", act:()=>{} }]
                 :[{ label:"OK", cls:"primary", act:()=>{} }] });
+}
+/* ---- IL RANGER ALLA PANCHINA ------------------------------------------------
+   Ci si siede su una panchina del parco: Mr. Poole (il Town Ranger) compare
+   a ~12 m alle spalle, fuori vista come negli altri interventi, arriva a
+   passo svelto, si ferma accanto alla panchina, saluta e fa le domande. Chi
+   parla e' lui (nome, voce, giacca gialla). Finite le domande — o se ci si
+   alza — torna al suo giro. */
+function _pkSpk(){ return (PARKFUN.ranger && typeof RANGER!=="undefined" && RANGER) ? { npc:RANGER, icon:"\u{1F9E5}" } : { name:"Park watcher", icon:"\u{1F440}" }; }
+function _pkRangerSpot(){
+  const px=player.position.x, pz=player.position.z, fy=player.rotation.y;
+  for(const dist of [12,15,9,18]) for(const off of [0,35,-35,70,-70,110,-110]){
+    const a=fy+Math.PI+off*Math.PI/180, x=px+Math.sin(a)*dist, z=pz+Math.cos(a)*dist;
+    if(blocked(x,z)||blocked(x+0.6,z)||blocked(x-0.6,z)||blocked(x,z+0.6)||blocked(x,z-0.6)) continue;
+    const y=_rangerGroundY(x,z); if(y===null) continue;
+    return new BABYLON.Vector3(x,y,z); }
+  return null;
+}
+function parkRangerCome(b){
+  if(typeof RANGER==="undefined" || !RANGER || RANGER_A.active) return false;
+  const L=BSIT.L; if(!L) return false;
+  RANGER_A.active=true; RANGER_A.mode="park"; PARKFUN.ranger=null;
+  const d=Math.hypot(player.position.x-RANGER.carrier.position.x, player.position.z-RANGER.carrier.position.z);
+  if(d>16){ const sp=_pkRangerSpot(); if(sp){ RANGER.carrier.position.copyFrom(sp); RANGER_A.post=null; } }
+  RANGER.holder.setEnabled(true); RANGER_A.vis=true;
+  /* accanto alla panchina, dal lato libero: oltre la fine della fila */
+  const S=BSIT.S, t=(S.x-L.cx)*L.ax+(S.z-L.cz)*L.az, sd=t>0?1:-1;
+  const spot=()=>{ const P=BSIT.S||player.position; return new BABYLON.Vector3(P.x+L.ax*sd*1.25+L.fx*0.35*(L.stand||1),0,P.z+L.az*sd*1.25+L.fz*0.35*(L.stand||1)); };
+  toast("\u{1F9E5} Mr. Poole, the Town Ranger, is coming\u2026");
+  npcWalkSeq(RANGER,[spot],0.45,()=>{
+    if(BSIT.b!==b){ rangerRelease(); return; }
+    PARKFUN.ranger={ at:performance.now(), idle:performance.now() };
+    RANGER.__noPin=false; RANGER.play("Idle"); RANGER.watch=true;
+    RANGER.carrier.rotation.y=Math.atan2(player.position.x-RANGER.carrier.position.x, player.position.z-RANGER.carrier.position.z);
+    const s=parkState(), g=greetTimeOfDay(), me=(Student.nome||"").split(" ")[0]||"";
+    DialogueBox.open({ ..._pkSpk(), sub:"Town Ranger \u00b7 "+(3-s.wN)+" left today",
+      text:g.en+(me?", "+me:"")+"! Lovely day in the park, isn't it? Look at the people around you. Can you tell me what they're doing?",
+      italian:"Il Ranger ti chiede di descrivere che cosa succede nel parco: fino a 3 domande al giorno.",
+      buttons:[{ label:"\u{1F440} Yes, let's look!", cls:"primary", act:()=>parkWatchAsk() },
+               { label:"No, thanks", cls:"ghost", act:()=>{} }] });
+  },"town",()=>{ PARKFUN.ranger=null; rangerRelease(); },{ speed:2.1 });
+  return true;
+}
+/* quando non c'e' piu' niente da dirsi (nessuna finestra per 2,5 s, o ci si
+   e' alzati) il Ranger torna al suo giro */
+function parkRangerTick(){
+  const R=PARKFUN.ranger; if(!R) return; const now=performance.now();
+  if(_dlgOpen() || PARKFUN.snapping){ R.idle=now; return; }      // durante lo scatto la finestra e' chiusa per un attimo
+  if(!BSIT.b || now-R.idle>2500){ PARKFUN.ranger=null; try{ rangerRelease(); }catch(e){} }
 }
 /* ---- COSTRUZIONE ---------------------------------------------------------- */
 /* panchina da parco in legno (doghe + fianchi in ghisa), 1,8 m: due posti */
@@ -15055,7 +15129,7 @@ function _pkSitNpc(cfg,bench,t,prop){
      ritenta finche' ci sono, come per gli alunni della Town School */
   let pn=null;
   const tryS=k=>{ if(n.__seated) return; let ok=false;
-    try{ ok=!!(n.pins&&n.pins.length) && npcSitAt(n,S.x,S.z,S.face,S.y,S.gy,0.03); }catch(e){ console.warn("[park] sit",e); }
+    try{ ok=!!(n.pins&&n.pins.length) && (cfg.arms ? _pkSitArms(n,S,cfg.arms) : npcSitAt(n,S.x,S.z,S.face,S.y,S.gy,0.03)); }catch(e){ console.warn("[park] sit",e); }
     if(ok && pn && pn.__hold) setTimeout(()=>{ try{ _pkHold(n,pn); }catch(e){} },120);   // a posa applicata
     if(!ok && k<40) setTimeout(()=>tryS(k+1),100); };
   setTimeout(()=>tryS(0),0);
@@ -15068,6 +15142,29 @@ function _pkStandNpc(cfg,x,z,face,anim){
   n.watch=false; _pkNoLabel(n); if(anim) try{ n.play(anim); }catch(e){}
   try{ regTownPop(n); }catch(e){}
   return n;
+}
+/* v307e (Giacomo, 10 ott: «la ragazza ha le mani infilate dentro la gonna,
+   dovrebbe reggere il panino; il signore ha le mani infilate nel libro,
+   dovrebbero essere sui bordi per leggerlo»). La posa seduta di serie
+   appoggia le mani sulle cosce: qualunque oggetto ci si metta, le mani ci
+   finiscono dentro. Qui la stessa npcSitAt, ma con le BRACCIA SU (come il
+   giocatore che legge il giornale: sitPoseFor accetta arms = { up, fore }). */
+/* misurate sui rig (distanza fra le mani da seduti): READ 0,34-0,46 m,
+   EAT 0,19-0,22 m. L'oggetto poi si adatta alla distanza vera (fit). */
+const PK_ARMS_READ={                        // libro aperto davanti al petto, mani sui bordi
+  up:(o,f,dn)=>dn.scale(0.95).add(f.scale(0.26)).add(o.scale(0.15)),
+  fore:(o,f,dn)=>f.scale(0.85).subtract(dn.scale(0.30)).add(o.scale(0.10)) };
+const PK_ARMS_EAT={                         // il panino con due mani, all'altezza del petto
+  up:(o,f,dn)=>dn.scale(0.95).add(f.scale(0.30)).add(o.scale(0.08)),
+  fore:(o,f,dn)=>f.scale(0.60).subtract(dn.scale(0.60)).subtract(o.scale(0.15)) };
+function _pkSitArms(n,S,arms){
+  const f=new BABYLON.Vector3(Math.sin(S.face),0,Math.cos(S.face));
+  n.carrier.rotation.y=S.face; n.baseYaw=S.face;
+  n.carrier.computeWorldMatrix(true); _sitRefresh(n.carrier);
+  const r=sitPoseFor(n.holder,n.pins,f,S.y,S.gy,arms); if(!r) return false;
+  n.pins=r.pins; n.holder.position.y-=r.drop; n.__seated=true;
+  if(r.hip){ const c=n.carrier.position; c.x+=(S.x-f.x*0.03)-r.hip.x; c.z+=(S.z-f.z*0.03)-r.hip.z; }
+  return true;
 }
 /* v307c (Giacomo, 10 ott: «il libro e' sospeso in aria, non sta nelle mani
    del lettore»). La posizione dell'oggetto NON si indovina: da seduti si
@@ -15082,8 +15179,13 @@ function _pkHold(n,node){
   const side=sd=>{ for(const k of ["MiddleHand","Palm","Wrist"]){
       const t=all.find(x=>new RegExp(k+"\\."+sd+"$").test(x.name)); if(t) return t; } return null; };
   const L=side("L"), R=side("R"); if(!L||!R) return;
-  L.computeWorldMatrix(true); R.computeWorldMatrix(true); n.carrier.computeWorldMatrix(true);
-  const mid=L.getAbsolutePosition().add(R.getAbsolutePosition()).scale(0.5);
+  try{ _applyPins(n.pins); }catch(e){}
+  const wm=t=>{ const ch=[]; for(let q=t;q;q=q.parent) ch.unshift(q); ch.forEach(q=>q.computeWorldMatrix(true)); return t.getAbsolutePosition().clone(); };
+  const pl=wm(L), pr=wm(R); n.carrier.computeWorldMatrix(true);
+  const mid=pl.add(pr).scale(0.5);
+  /* largo quanto la distanza fra le mani: le mani stanno SUI BORDI */
+  if(H.fit){ const d=BABYLON.Vector3.Distance(pl,pr), k=Math.max(H.kMin||0.6,Math.min(H.kMax||1.6,d/H.fit));
+    node.scaling.setAll(k); node.__k=k; node.__d=d; }
   const inv=n.carrier.getWorldMatrix().clone(); inv.invert();
   const loc=BABYLON.Vector3.TransformCoordinates(mid,inv);
   node.position.set(loc.x, loc.y+(H.dy||0), loc.z+(H.dz||0));
@@ -15204,13 +15306,16 @@ function buildParkFun(){
   /* 👀 LE PERSONE DEL PARCO — in fondo al vialetto della fontana, dove il
      parco si apre sullo skyline (x 132..142, z -6..6) */
   { const R=parkBench(134.6,-5.4,0,{ noInter:true });
+    /* il panino fra le due mani (centrato: la base del prop sta a terra) */
     const sand=()=>{ const r=new BABYLON.TransformNode("pkSand",scene); const k=LEXPROPS.sandwich("pkSandw"); k.parent=r; k.scaling.setAll(0.42);
-      k.position.set(0,0,-0.07);
-      r.position.set(0,0.66,0.12); r.rotation.x=-0.35; r.__hold={ dy:0.03, dz:0.02, rx:-0.35 }; return r; };
+      k.position.set(0,-0.04,0);
+      r.position.set(0,0.9,0.25); r.__hold={ dy:0, dz:0.01, rx:-0.25, fit:0.155, kMin:0.8, kMax:1.5 }; return r; };
+    /* il libro aperto in piedi davanti a lui, le pagine verso di lui
+       (rx -1,05: il piano del libro si alza a ~60°), largo quanto le mani */
     const rbook=()=>{ const r=_pkOpenBook("pkRBook","#2f6a4a");
-      r.position.set(0,0.66,0.15); r.rotation.x=-0.6; r.__hold={ dy:0.07, dz:0.02, rx:-0.6 }; return r; };
-    const reader=_pkSitNpc({ id:"pk_reader", name:"Reader", model:"npcMan2", height:1.76 }, R, -0.42, rbook);
-    const lunch=_pkSitNpc({ id:"pk_lunch", name:"Girl", model:"npcWomanB", height:1.6, tint:{ Purple:"#c0442e", LightBlue:"#2f4a6a" } }, R, 0.45, sand);
+      r.position.set(0,0.9,0.3); r.__hold={ dy:0, dz:0.02, rx:-1.05, fit:0.36, kMin:0.7, kMax:1.5 }; return r; };
+    const reader=_pkSitNpc({ id:"pk_reader", name:"Reader", model:"npcMan2", height:1.76, arms:PK_ARMS_READ }, R, -0.42, rbook);
+    const lunch=_pkSitNpc({ id:"pk_lunch", name:"Girl", model:"npcWomanB", height:1.6, arms:PK_ARMS_EAT, tint:{ Purple:"#c0442e", LightBlue:"#2f4a6a" } }, R, 0.45, sand);
     if(reader) PARKFUN.people.reader={ npc:reader, view:{x:0,z:1}, sideX:0.5 };
     if(lunch)  PARKFUN.people.lunch ={ npc:lunch,  view:{x:0,z:1}, sideX:-0.5 };
     const G=parkBench(134.6,6.0,Math.PI,{ noInter:true });
@@ -15218,11 +15323,39 @@ function buildParkFun(){
       k.position.set(0,-0.55,0); r.position.set(-0.05,0.86,0.30); r.rotation.z=-1.05; r.rotation.y=0.2; return r; };
     const gu=_pkSitNpc({ id:"pk_guitar", name:"Busker", model:"npcWoman", height:1.66 }, G, 0.0, gtr);
     if(gu) PARKFUN.people.guitar={ npc:gu, view:{x:0,z:-1}, sideX:-0.4 };
-    const c1=_pkStandNpc({ id:"pk_clap1", name:"Fan", model:"npcMan2", height:1.7 }, 137.0, 3.2, Math.atan2(134.6-137.0,6.0-3.2), "Clapping");
-    const c2=_pkStandNpc({ id:"pk_clap2", name:"Fan", model:"npcWoman", height:1.62 }, 138.2, 4.3, Math.atan2(134.6-138.2,6.0-4.3), "Clapping");
-    if(c1 && c2) PARKFUN.people.clap={ npc:c1, view:{x:0.55,z:-0.83}, lookDx:0.6, lookDz:0.5, sideX:0.3 };
-    const wv=_pkStandNpc({ id:"pk_wave", name:"Girl", model:"npcWomanB", keepModel:true, height:1.58 }, 141.2, 0.6, -Math.PI/2, "Wave");
-    if(wv) PARKFUN.people.wave={ npc:wv, view:{x:-1,z:0}, sideZ:0.6 };
+    /* v307e (Giacomo: «i tipi che battono le mani non possono stare tutta la
+       vita cosi'»): ascoltano, e alla fine di un pezzo applaudono (3,5 s),
+       ognuno coi suoi tempi */
+    const c1=_pkStandNpc({ id:"pk_clap1", name:"Fan", model:"npcMan2", height:1.7 }, 137.0, 3.2, Math.atan2(134.6-137.0,6.0-3.2), "Idle");
+    const c2=_pkStandNpc({ id:"pk_clap2", name:"Fan", model:"npcWoman", height:1.62 }, 138.2, 4.3, Math.atan2(134.6-138.2,6.0-4.3), "Idle");
+    if(c1 && c2){ const now=performance.now();
+      PARKFUN.fans=[{ n:c1, on:false, t:now+4000 },{ n:c2, on:false, t:now+4600 }];
+      PARKFUN.people.clap={ npc:c1, view:{x:0.55,z:-0.83}, lookDx:0.6, lookDz:0.5, sideX:0.3,
+        now:()=>PARKFUN.fans.every(F=>F.on) }; }
+    /* v307e (Giacomo: «la tipa che saluta ferma non ha senso: dovrebbe
+       camminare, arrivare dai tipi in panchina e salutare»): un giro.
+       Dal fondo del vialetto alla panchina del lettore (si ferma e saluta),
+       poi dalla chitarrista (ascolta), poi giro largo dietro i fan e di
+       nuovo in fondo. Si ferma se le sei davanti, come il corridore. */
+    const WP=[ { x:146.0, z:1.0, wait:4000 },
+               { x:134.6, z:-3.3, wait:4200, act:"Wave", look:{ x:134.6, z:-5.4 } },
+               { x:135.3, z:2.4, wait:7000, look:{ x:134.6, z:6.0 } },
+               { x:138.6, z:0.6, wait:0 } ];
+    const wv=_pkStandNpc({ id:"pk_wave", name:"Girl", model:"npcWomanB", keepModel:true, height:1.58 }, WP[0].x, WP[0].z, -Math.PI/2, "Idle");
+    if(wv){ PARKFUN.walker={ n:wv, wp:WP, i:0, mode:"wait", t:performance.now()+2500, act:null };
+      PARKFUN.people.wave={ npc:wv, sideZ:0.0, viewFn:()=>{ const a=wv.carrier.rotation.y; return { x:Math.sin(a), z:Math.cos(a) }; },
+        now:()=>PARKFUN.walker && PARKFUN.walker.act==="Wave" }; }
+    /* due amici che chiacchierano (gesti a turno, come in un dialogo) */
+    const t1=_pkStandNpc({ id:"pk_talk1", name:"Friend", model:"avatar", height:1.62 }, 129.7, 6.3, Math.atan2(130.8-129.7,7.0-6.3), "Idle");
+    const t2=_pkStandNpc({ id:"pk_talk2", name:"Friend", model:"npcWomanB", height:1.58 }, 130.8, 7.0, Math.atan2(129.7-130.8,6.3-7.0), "Idle");
+    if(t1 && t2){ PARKFUN.talk={ a:t1, b:t2, turn:0, t:performance.now()+1500 };
+      PARKFUN.people.talk={ npc:t1, view:{x:0.83,z:-0.55}, lookDx:0.55, lookDz:0.35, sideX:-0.5 }; }
+    /* il tempo che fa: si chiede solo se piove davvero; la foto e' il cielo
+       davanti a chi e' seduto */
+    PARKFUN.people.weather={ always:true, now:()=>{ try{ return rainHere()>0.2; }catch(e){ return false; } },
+      snap:()=>{ const p=player.position, a=player.rotation.y;
+        return { cam:new BABYLON.Vector3(p.x-Math.sin(a)*1.5,p.y+1.6,p.z-Math.cos(a)*1.5),
+                 look:new BABYLON.Vector3(p.x+Math.sin(a)*12,p.y+3.0,p.z+Math.cos(a)*12) }; } };
     /* il corridore: avanti e indietro sul vialetto est (x 124..128) */
     const jg=_pkStandNpc({ id:"pk_jogger", name:"Runner", model:"npcMan2", height:1.74, tint:{ Purple:"#2f7fd0", LightBlue:"#22262a" } }, 126.0, -12, 0, "Run");
     if(jg){ jg.__noPin=true;
@@ -15231,10 +15364,50 @@ function buildParkFun(){
     scene.onBeforeRenderObservable.add(parkJogTick);
   }
 }
+function parkTalkTick(){
+  const T=PARKFUN.talk; if(!T) return; const now=performance.now(); if(now<T.t) return;
+  /* parla uno, poi l'altro: chi parla gesticola, chi ascolta sta fermo */
+  T.turn=1-T.turn; const sp=T.turn?T.a:T.b, ls=T.turn?T.b:T.a;
+  try{ sp.play("Interact"); ls.play("Idle"); }catch(e){}
+  T.t=now+2200+Math.random()*1800;
+}
+function parkFansTick(){
+  const F=PARKFUN.fans; if(!F) return; const now=performance.now();
+  /* applaudono INSIEME (la fine del pezzo e' una sola), poi ascoltano 8-13 s */
+  if(now<F[0].t) return;
+  const on=!F[0].on, nx=now+(on?3500:8000+Math.random()*5000);
+  F.forEach((f,i)=>{ f.on=on; f.t=nx; setTimeout(()=>{ try{ f.n.play(on?"Clapping":"Idle"); }catch(e){} }, i*250); });
+}
+function parkWalkTick(){
+  const W=PARKFUN.walker; if(!W || !_pkVisible(W.n)) return;
+  const n=W.n, c=n.carrier, now=performance.now(), dt=Math.min(0.05,engine.getDeltaTime()/1000);
+  if(W.mode==="wait"){
+    if(now<W.t) return;
+    if(W.act){ W.act=null; n.play("Idle"); }
+    W.i=(W.i+1)%W.wp.length; W.mode="walk"; n.__noPin=true; n.play("Walk"); return; }
+  const T=W.wp[W.i], dx=T.x-c.position.x, dz=T.z-c.position.z, d=Math.hypot(dx,dz);
+  /* qualcuno davanti: si aspetta (ferma, non cammina sul posto) */
+  const px=player.position.x-c.position.x, pz=player.position.z-c.position.z;
+  if(d>0.01 && Math.hypot(px,pz)<1.3 && (px*dx+pz*dz)/d>0.2){
+    if(!W.blocked){ W.blocked=true; n.__noPin=false; n.play("Idle"); } return; }
+  if(W.blocked){ W.blocked=false; n.__noPin=true; n.play("Walk"); }
+  if(d<0.08){
+    W.mode="wait"; W.t=now+T.wait; n.__noPin=false;
+    if(T.look) c.rotation.y=Math.atan2(T.look.x-c.position.x,T.look.z-c.position.z);
+    if(T.act){ W.act=T.act; n.play(T.act); } else n.play("Idle");
+    return; }
+  const sp=1.15*dt, k=Math.min(1,sp/d);
+  c.position.x+=dx*k; c.position.z+=dz*k;
+  /* si gira con dolcezza verso dove va */
+  let want=Math.atan2(dx,dz), cur=c.rotation.y, df=want-cur;
+  while(df>Math.PI) df-=2*Math.PI; while(df<-Math.PI) df+=2*Math.PI;
+  c.rotation.y=cur+df*Math.min(1,dt*8);
+}
 function parkJogTick(){
   /* gli oggetti in mano seguono chi li tiene (di notte spariscono insieme) */
   for(let i=0;i<PARKFUN.props.length;i++){ const P=PARKFUN.props[i], v=_pkVisible(P.npc);
     if(P.node.isEnabled()!==v) P.node.setEnabled(v); }
+  if(area==="town"){ try{ parkFansTick(); }catch(e){} try{ parkWalkTick(); }catch(e){} try{ parkTalkTick(); }catch(e){} try{ parkRangerTick(); }catch(e){} }
   const J=PARKFUN.jog; if(!J || area!=="town" || !_pkVisible(J.n)) return;
   const c=J.n.carrier, dt=Math.min(0.05,engine.getDeltaTime()/1000);
   /* qualcuno davanti sul vialetto: si ferma e aspetta (corsa sul posto no, Idle) */
