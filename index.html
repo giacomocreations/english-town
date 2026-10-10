@@ -15739,7 +15739,9 @@ function parkOnSit(b){
   if(typeof NEWS!=="undefined" && NEWS.has) return;          // c'e' il giornale da leggere
   const mode=parkWatchMode(); if(!mode) return;
   if(!Object.keys(PARKFUN.people).some(k=>{ const P=PARKFUN.people[k]; return P.always?(!P.now||P.now()):_pkVisible(P.npc); })) return;   // di notte non c'e' nessuno
-  const s=parkState(); if(s.wN>=3) return;
+  const s=parkState();
+  /* v309c: finite le 3 domande del giorno lo si dice, se no sembra rotto */
+  if(s.wN>=3){ setTimeout(()=>{ if(BSIT.b===b && !_dlgOpen()) toast("\u{1F440} Park watcher: 3/3 today \u2014 come back tomorrow! \u00b7 domani altre 3 domande",4200); },900); return; }
   /* v307e (Giacomo: «quando ti siedi arriva il Park Ranger e ti fa le
      domande: cosi' si capisce chi e' che parla») */
   if(parkRangerCome(b)) return;
