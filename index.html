@@ -14475,7 +14475,10 @@ function buildPark(){
    ===================================================================== */
 const SKATE={ C:{ x:30, z:56 }, gy:0, dancers:[], audio:null, songI:-1, near:false, vol:0, blocked:false,
   bpm:120, beat:0, t0:performance.now(), lastB:0, leds:[], built:false };
-const SK_MOVES=[ { id:"moonwalk", en:"Moonwalk",   ic:"\u{1F319}", stars:800,  beats:8 },
+/* v308b (Giacomo: «aggiungi anche il ballo base con la mano che si alza e
+   salto a tempo originale del Beat Club»): e' il primo, sempre sbloccato */
+const SK_MOVES=[ { id:"basic",    en:"Beat Club dance", ic:"\u{1F64C}", stars:0, beats:16 },
+                 { id:"moonwalk", en:"Moonwalk",   ic:"\u{1F319}", stars:800,  beats:8 },
                  { id:"sidewalk", en:"Sidewalk / Airwalk", ic:"↔️", stars:1200, beats:8 },
                  { id:"toe",      en:"Toe stand (Billie Jean)", ic:"\u{1FA70}", stars:1600, beats:4 },
                  { id:"ankle",    en:"Ankle breaker", ic:"\u{1F45F}", stars:2000, beats:4 } ];
@@ -14487,15 +14490,23 @@ const SK_ARMS={
   mw:   { up:(o,f,dn)=>dn.scale(0.95).add(f.scale(0.06)).add(o.scale(0.22)),
           fore:(o,f,dn)=>f.scale(0.55).add(dn.scale(0.55)).add(o.scale(0.10)) },
   hat:  { up:(o,f,dn,sd)=>sd==="R"?new BABYLON.Vector3(0,0.55,0).add(o.scale(0.55)).add(f.scale(0.35)):dn.scale(0.9).add(o.scale(0.25)).add(f.scale(0.1)),
-          fore:(o,f,dn,sd)=>sd==="R"?new BABYLON.Vector3(0,0.9,0).subtract(o.scale(0.55)).add(f.scale(0.1)):dn.scale(0.6).add(f.scale(0.5)).subtract(o.scale(0.2)) } };
+          fore:(o,f,dn,sd)=>sd==="R"?new BABYLON.Vector3(0,0.9,0).subtract(o.scale(0.55)).add(f.scale(0.1)):dn.scale(0.6).add(f.scale(0.5)).subtract(o.scale(0.2)) },
+  /* la mano su del ballo del Beat Club: in alto (sul salto) e a meta' (sulla piega) */
+  waveUp:{ up:(o,f,dn,sd)=>sd==="R"?new BABYLON.Vector3(0,0.9,0).add(o.scale(0.35)).add(f.scale(0.12)):dn.scale(0.95).add(f.scale(0.18)).add(o.scale(0.14)),
+           fore:(o,f,dn,sd)=>sd==="R"?new BABYLON.Vector3(0,0.95,0).add(o.scale(0.12)).add(f.scale(0.08)):f.scale(0.75).subtract(dn.scale(0.35)).add(o.scale(0.05)) },
+  waveMid:{ up:(o,f,dn,sd)=>sd==="R"?new BABYLON.Vector3(0,0.55,0).add(o.scale(0.6)).add(f.scale(0.3)):dn.scale(0.95).add(f.scale(0.18)).add(o.scale(0.14)),
+           fore:(o,f,dn,sd)=>sd==="R"?new BABYLON.Vector3(0,0.75,0).subtract(o.scale(0.15)).add(f.scale(0.25)):f.scale(0.75).subtract(dn.scale(0.35)).add(o.scale(0.05)) } };
 const SK_POSES={
-  stand: { L:{t:0.03,s:0,p:0},       R:{t:0.03,s:0,p:0},       arms:"swing" },
-  mwL:   { L:{t:0.45,s:-0.55,p:1.05}, R:{t:0,s:0,p:0},           arms:"mw" },
-  mwR:   { L:{t:0,s:0,p:0},           R:{t:0.45,s:-0.55,p:1.05}, arms:"mw" },
-  toe:   { L:{t:0.05,s:0,p:0.8},     R:{t:0.05,s:0,p:0.8},     arms:"hat", lift:0.07 },
-  crouch:{ L:{t:0.62,s:-0.5,p:0.05}, R:{t:0.62,s:-0.5,p:0.05}, arms:"swing" },
-  tapL:  { L:{t:0.24,s:-0.32,p:0.8}, R:{t:0.03,s:0,p:0},       arms:"mw" },
-  tapR:  { L:{t:0.03,s:0,p:0},       R:{t:0.24,s:-0.32,p:0.8}, arms:"mw" } };
+  /* lean = busto in avanti (v308b, Giacomo: «leggermente, non troppo») */
+  stand: { L:{t:0.03,s:0,p:0},       R:{t:0.03,s:0,p:0},       arms:"swing", lean:0.12 },
+  bUp:   { L:{t:0.04,s:0,p:0.3},     R:{t:0.04,s:0,p:0.3},     arms:"waveUp", lean:0.08 },
+  bDn:   { L:{t:0.32,s:-0.36,p:0.1}, R:{t:0.32,s:-0.36,p:0.1}, arms:"waveMid", lean:0.16 },
+  mwL:   { L:{t:0.45,s:-0.55,p:1.05}, R:{t:0,s:0,p:0},           arms:"mw", lean:0.14 },
+  mwR:   { L:{t:0,s:0,p:0},           R:{t:0.45,s:-0.55,p:1.05}, arms:"mw", lean:0.14 },
+  toe:   { L:{t:0.05,s:0,p:0.8},     R:{t:0.05,s:0,p:0.8},     arms:"hat", lift:0.07, lean:0.06 },
+  crouch:{ L:{t:0.62,s:-0.5,p:0.05}, R:{t:0.62,s:-0.5,p:0.05}, arms:"swing", lean:0.2 },
+  tapL:  { L:{t:0.24,s:-0.32,p:0.8}, R:{t:0.03,s:0,p:0},       arms:"mw", lean:0.14 },
+  tapR:  { L:{t:0.03,s:0,p:0},       R:{t:0.24,s:-0.32,p:0.8}, arms:"mw", lean:0.14 } };
 /* una posa di ballo sulle ossa (come sitPoseFor): gambe per angoli,
    piede per pendenza, braccia con _armPose. Ritorna { pins, drop, lift } */
 function dancePoseFor(root,pins,fwd,spec){
@@ -14540,6 +14551,11 @@ function dancePoseFor(root,pins,fwd,spec){
       loss[sd]=(loss[sd]==null)?ls:Math.min(loss[sd],ls);
     });
   });
+  /* il busto in avanti PRIMA delle braccia (le spalle vanno col busto),
+     come arms.lean di sitPoseFor */
+  if(spec.lean){ const a=spec.lean, lu=up.scale(Math.cos(a)).add(f.scale(Math.sin(a))), tl=all.map(k=>k.tn), sp=_sitSpineTop(tl);
+    sp.forEach(S=>_sitWorldRot(S,S.getAbsolutePosition().clone(),up,lu)); _sitRefresh(root);
+    sp.forEach(S=>out.set(S,S.rotationQuaternion.clone())); }
   const AR=SK_ARMS[spec.arms||"swing"];
   try{ _armPose(root,all.map(k=>k.tn),f,(o,sd)=>AR.up(o,f,dn,sd),(o,sd)=>AR.fore(o,f,dn,sd),null).forEach((q,tn)=>out.set(tn,q)); }catch(e){}
   const res=all.map(k=>({ tn:k.tn, p:(outP.get(k.tn)||k.p).clone(), s:k.s.clone(), q:(out.get(k.tn)||k.q).clone() }));
@@ -14567,6 +14583,9 @@ function _skEval(K,mv,b){
     /* mezzo battito FERMI nella posa (un tallone su), poi lo scambio: e'
        lo scatto del moonwalk vero, non una dissolvenza continua */
     return { A:k%2?P.mwR:P.mwL, B:k%2?P.mwL:P.mwR, t:_skEase((fr-0.5)/0.4), glide:1, hop:0 }; }
+  if(mv==="basic"){ const k=Math.floor(b), fr=b-k;
+    const t=fr<0.5?_skEase(fr/0.5):1-_skEase((fr-0.5)/0.5);
+    return { A:P.bDn, B:P.bUp, t, glide:0, hop:0.1*Math.sin(Math.PI*fr), sway:0.16*Math.sin(Math.PI*b) }; }
   if(mv==="toe"){
     if(b<0.5) return { A:P.stand, B:P.toe, t:_skEase(b/0.5), glide:0, hop:0 };
     if(b<3.3) return { A:P.toe, B:P.toe, t:0, glide:0, hop:0 };
@@ -14791,8 +14810,8 @@ function buildSkatepark(){
   /* il ballo del giocatore: sulla pista fra le casse */
   addInteract({ id:"skate_dance", area:"town", radius:4.2, prio:3,
     pos:()=>new BABYLON.Vector3(C.x,g,C.z-5.2),
-    prompt:()=>SKDANCE.on?'\u{1F57A} Press <b>E</b> to <b>stop dancing</b>':'\u{1F57A} Press <b>E</b> to <b>dance</b> with the crew!',
-    interact:()=>{ if(SKDANCE.on) skDanceStop(); else skDanceMenu(); } });
+    prompt:()=>SKDANCE.on?'\u{1F57A} Press <b>E</b>: <b>next move</b> \u00b7 walk to stop':'\u{1F57A} Press <b>E</b> to <b>dance</b> with the crew!',
+    interact:()=>skDanceE() });
   landmarkSign(C.x,4.2,C.z+D/2+0.6,"\u{1F6F9}","Skatepark","Hip hop · music · dance");
   /* i ballerini */
   SK_CREW.forEach(cr=>{ try{
@@ -14850,6 +14869,7 @@ function skateTick(){
     const E=_skEval(D.K,D.mv,b);
     const dy=_skBlend(D.cur,E.A,E.B,E.t);
     D.n.holder.position.y=D.baseY+dy+(E.hop||0);
+    if(E.sway!=null) D.n.carrier.rotation.y=D.face+E.sway;
     if(D.mv==="hop" && E.turn!=null){ let df=D.turnTo-D.turnFrom; while(df>Math.PI) df-=2*Math.PI; while(df<-Math.PI) df+=2*Math.PI;
       D.face=D.turnFrom+df*_skEase(E.turn); D.n.carrier.rotation.y=D.face; }
     if(E.glide){ const f={ x:Math.sin(D.face), z:Math.cos(D.face) }, sp=0.34*bps*dt;
@@ -14900,6 +14920,22 @@ function skateNextSong(first){
 /* ---- IL GIOCATORE BALLA ---------------------------------------------------- */
 const SKDANCE={ on:false, K:null, cur:null, mv:"hop", last:null, dur:2, m0:0, list:[], baseY:0, face:0, turnFrom:0, turnTo:0, sdir:1 };
 function skMoveOk(m){ try{ if(Student.teacher) return true; }catch(e){} let st=0; try{ st=Stars.total(); }catch(e){} return st>=m.stars; }
+/* v308b (Giacomo: «calcando E quando puoi ballare cambia direttamente i passi
+   uno dietro l'altro; andando avanti o indietro col cursore si ferma e
+   cammina normalmente»). E = il passo dopo (si parte dal ballo del Beat
+   Club, poi i passi sbloccati); il cambio arriva col saltello, sul battito. */
+function skDanceList(){ return SK_MOVES.filter(skMoveOk).map(m=>m.id); }
+function skDanceE(){
+  const L=skDanceList(); if(!L.length) return;
+  const name=id=>{ const m=SK_MOVES.find(x=>x.id===id); return m?(m.ic+" "+m.en):id; };
+  if(!SKDANCE.on){ SKDANCE.idx=0; skDanceStart([L[0]]);
+    if(SKDANCE.on) toast(name(L[0])+" \u2014 E: next move \u00b7 walk to stop",3500); return; }
+  SKDANCE.idx=((SKDANCE.idx||0)+1)%L.length;
+  const nx=L[SKDANCE.idx]; SKDANCE.list=[nx];
+  if(SKDANCE.mv!=="hop") SKDANCE.m0=_skDanceClock().beat-SKDANCE.dur;       // si chiude il passo: saltello, poi il nuovo
+  const lock=SK_MOVES.find(m=>!skMoveOk(m));
+  toast(name(nx)+(L.length<2&&lock?" \u2014 \u{1F512} "+lock.en+" a \u2B50"+lock.stars:""),2600);
+}
 function skDanceMenu(){
   let st=0; try{ st=Stars.total(); }catch(e){}
   const ok=SK_MOVES.filter(skMoveOk);
@@ -14960,7 +14996,7 @@ function skDanceTick(){
   avatarRoot.position.y=S.baseY+dy+(E.hop||0);
   if(S.mv==="hop" && E.turn!=null){ let df=S.turnTo-S.turnFrom; while(df>Math.PI) df-=2*Math.PI; while(df<-Math.PI) df+=2*Math.PI;
     S.face=S.turnFrom+df*_skEase(E.turn); }
-  player.rotation.y=S.face;
+  player.rotation.y=S.face+(E.sway||0);
   if(E.glide){ const f={ x:Math.sin(S.face), z:Math.cos(S.face) }, sp=0.34*CL.bpm/60*dt;
     let nx=player.position.x, nz=player.position.z;
     if(S.mv==="moonwalk"){ nx-=f.x*sp; nz-=f.z*sp; } else { nx+=f.z*sp*S.sdir; nz-=f.x*sp*S.sdir; }
@@ -35414,11 +35450,10 @@ function danceInit(){
   if(PDANCE.inter) return;
   PDANCE.inter=addInteract({ id:"beat_dance", area:UNIT_MUSIC.area, radius:2.5, prio:5, enabled:false,
     pos:()=>player.position,
-    prompt:()=>(PDANCE.on||SKDANCE.on)?'\u{1F483} Press <b>E</b> to <b>stop dancing</b>':'\u{1F483} Press <b>E</b> to <b>dance</b>!',
+    prompt:()=>(PDANCE.on||SKDANCE.on)?'\u{1F483} Press <b>E</b>: <b>next move</b> \u00b7 walk to stop':'\u{1F483} Press <b>E</b> to <b>dance</b>!',
     /* v308: con almeno un passo sbloccato (il docente li ha tutti) si
        sceglie: ballo libero di prima o i passi di Billie Jean */
-    interact:()=>{ if(PDANCE.on){ danceStop(); return; } if(SKDANCE.on){ skDanceStop(); return; }
-      if(SK_MOVES.some(skMoveOk)) skDanceMenu(); else danceStart(); } });
+    interact:()=>{ if(PDANCE.on){ danceStop(); return; } skDanceE(); } });
 }
 /* il palco: dove stanno i musicisti (GIG_BAND, coordinate locali al club) */
 function danceStageFace(){
