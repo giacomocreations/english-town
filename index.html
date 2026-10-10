@@ -14660,17 +14660,67 @@ const PARK_STORIES=[
    q:[["Where are the firefighters at the start?","At the station.","In the forest.","At home."],["What have they already cleaned?","Their helmets and hoses.","The fire engine.","The kitchen."],["Have they had lunch yet?","No, not yet.","Yes, they have.","Yes, already."]]},
   {u:"u3_5",ic:"\u{1F3E5}",t:"Too many sweets",p:["Ruby has got a terrible stomachache.","Yesterday she ate a big bag of sweets at the cinema.","Her mum says: «You should drink some water and lie down.»","The doctor says: «You shouldn't eat so many sweets. You should eat more fruit.»","Now Ruby feels better, and she eats an apple every day!"],
    q:[["What's the matter with Ruby?","She's got a stomachache.","She's got a toothache.","She's got a cough."],["What did she eat yesterday?","A big bag of sweets.","A big pizza.","Some apples."],["What does the doctor say?","«You shouldn't eat so many sweets.»","«You should eat more sweets.»","«You should go to school.»"]]},
+  /* ---- v307b: la SECONDA storia di ogni unit (Giacomo, 10 ott: «scrivi
+     una seconda storia per unit»). id = unit + "b": cosi' «gia' sentita»
+     distingue le due. Stesse regole: lessico e grammatica della unit. */
+  {u:"u0",id:"u0b",ic:"✏️",t:"The lost pencil case",p:["It's Monday morning. Lily is in the classroom.","Her pencil case isn't in her bag! It's purple and white.","Is it on the desk? No, it isn't. Is it under the chair? No!","Tom says: «Look, Lily! It's next to the board!»","Lily is happy: «Thank you, Tom! You're a good friend.»"],
+   q:[["What colour is the pencil case?","Purple and white.","Red and blue.","Black and yellow."],["Where is the pencil case?","Next to the board.","Under the chair.","In her bag."],["Who helps Lily?","Tom.","Miss Grace.","Her mum."]]},
+  {u:"u1",id:"u1b",ic:"\u{1F5FE}",t:"A postcard from Italy",p:["Hi! My name is Kenji. I'm from Japan. I'm Japanese.","I'm on holiday in Italy with my family.","Italy is beautiful and the Italian food is great!","My friend Marco is Italian. He is from Rome.","Tomorrow we're at the airport again. Goodbye, Italy!"],
+   q:[["Where is Kenji from?","He's from Japan.","He's from China.","He's from Italy."],["Where is Kenji on holiday?","In Italy.","In Spain.","In England."],["Who is Marco?","Kenji's Italian friend.","Kenji's brother.","A pilot."]]},
+  {u:"u2",id:"u2b",ic:"\u{1F476}",t:"My twin cousins",p:["My name is Ella and this is my family.","My mum has got a sister, Aunt Kate. Her husband is Uncle Tom.","They've got twin babies, a boy and a girl: Max and Molly.","Max is the first baby and Molly is the second, ten minutes later!","On the twins' first birthday, Grandpa makes a big cake with one candle."],
+   q:[["Who is Aunt Kate?","Ella's mum's sister.","Ella's grandmother.","Ella's cousin."],["What are the twins' names?","Max and Molly.","Tom and Kate.","Ella and Max."],["Who is the second baby?","Molly.","Max.","Ella."]]},
+  {u:"u3",id:"u3b",ic:"\u{1F3E1}",t:"The new house",p:["Sam's family has got a new house. It's big and white.","There are three bedrooms and two bathrooms.","In the living room there is a big sofa and there are two armchairs.","Sam's bedroom is next to the bathroom. There's a desk under the window.","There isn't a garden, but there is a small balcony with flowers."],
+   q:[["How many bedrooms are there?","Three.","Two.","Four."],["Where is Sam's bedroom?","Next to the bathroom.","Next to the kitchen.","Under the stairs."],["Is there a garden?","No, there isn't.","Yes, there is.","Yes, there are."]]},
+  {u:"u4",id:"u4b",ic:"\u{1F4F7}",t:"Grandad's old things",p:["Grandad has got a box of old things in the attic.","He has got an old camera, a big watch and some comics.","The comics are from 1970! They are his favourite things.","Mia hasn't got a camera, so Grandad gives her his old camera.","Now Mia takes photos of everything: the cat, the garden and Grandad!"],
+   q:[["Where is Grandad's box?","In the attic.","In the kitchen.","Under the bed."],["How old are the comics?","They are from 1970.","They are new.","They are from 2020."],["What does Grandad give Mia?","His old camera.","His watch.","His comics."]]},
+  {u:"u5",id:"u5b",ic:"\u{1F404}",t:"Saturday on the farm",p:["Lucy lives on a farm. On Saturdays she gets up at six o'clock!","First she feeds the chickens, then she has breakfast with her dad.","At ten o'clock she rides her horse in the fields.","In the afternoon she helps her mum and she reads a book.","She goes to bed early, at nine o'clock, because she's always tired!"],
+   q:[["What time does Lucy get up on Saturdays?","At six o'clock.","At nine o'clock.","At ten o'clock."],["What does she do first?","She feeds the chickens.","She rides her horse.","She reads a book."],["Why does she go to bed early?","She's always tired.","She's ill.","She wants to watch TV."]]},
+  {u:"u6",id:"u6b",ic:"\u{1F9FA}",t:"The summer picnic",p:["Every summer Emma has a picnic in the park with her friends.","She makes cheese sandwiches and a big salad.","Her friend Ben brings orange juice and strawberries.","Ben doesn't like cheese, so he eats the salad and the fruit.","After lunch they play football and they eat ice cream."],
+   q:[["Where does Emma have her picnic?","In the park.","At the beach.","At school."],["What does Ben bring?","Orange juice and strawberries.","Cheese sandwiches.","A cake."],["Why doesn't Ben eat the sandwiches?","He doesn't like cheese.","He isn't hungry.","They're too big."]]},
+  {u:"u7",id:"u7b",ic:"\u{1F3CA}",t:"Grandma can swim!",p:["Grandma Rose is seventy, but she's very fit.","She can swim, she can ride a bike and she can dance!","She can't play tennis, but she wants to learn.","Every Tuesday she goes to the pool with her friends.","She has got a gold medal from a swimming race. She's a champion!"],
+   q:[["How old is Grandma Rose?","She's seventy.","She's sixty.","She's eighty."],["What can't she do?","Play tennis.","Swim.","Ride a bike."],["When does she go to the pool?","Every Tuesday.","Every day.","On Sundays."]]},
+  {u:"u8",id:"u8b",ic:"\u{1F389}",t:"The school party",p:["It's Friday evening and there's a party at school.","Leo is wearing his new black jeans and a blue shirt.","His friend Amy is wearing a red dress and white trainers.","They are dancing and they are drinking orange juice.","Miss Grace is taking photos of everybody. Smile!"],
+   q:[["What is Leo wearing?","Black jeans and a blue shirt.","A red dress.","Shorts and a T-shirt."],["What are Leo and Amy drinking?","Orange juice.","Milk.","Water."],["What is Miss Grace doing?","She's taking photos.","She's dancing.","She's singing."]]},
+  {u:"u2_1",id:"u2_1b",ic:"\u{1F466}",t:"Who's the new boy?",p:["There's a new boy in our class. His name is Ravi.","He's tall and thin, and he's got short, curly black hair.","He wears glasses and he's got a big smile.","Today he is wearing a green jumper, because it's cold.","He's very friendly, and today he's sitting next to me!"],
+   q:[["What is Ravi's hair like?","Short, curly and black.","Long and blond.","Straight and red."],["Why is he wearing a jumper today?","Because it's cold.","Because it's his birthday.","Because it's new."],["What is Ravi like?","Very friendly.","Very shy.","Very lazy."]]},
+  {u:"u2_2",id:"u2_2b",ic:"\u{1F3A4}",t:"The lost microphone",p:["On Saturday the school band had a concert in the park.","Ten minutes before the show, Mia couldn't find the microphone!","Everybody looked for it, but it wasn't on the stage.","Then Tom found it in the drummer's bag!","The concert started late, but the audience was happy and the band was proud."],
+   q:[["Where was the concert?","In the park.","At school.","At the Beat Club."],["Where was the microphone?","In the drummer's bag.","On the stage.","Under a chair."],["Who found it?","Tom.","Mia.","The drummer."]]},
+  {u:"u2_3",id:"u2_3b",ic:"❄️",t:"Snow in April",p:["Last April Jack went to the mountains with his school.","On Monday it was sunny and warm, and they walked by the lake.","On Tuesday it was very cold and it snowed all day!","They didn't go out. They played games and drank hot chocolate.","On Wednesday the sky was blue again and they made a big snowman."],
+   q:[["Where did Jack go?","To the mountains.","To the beach.","To an island."],["What was the weather like on Tuesday?","It snowed all day.","It was sunny and warm.","It was windy."],["What did they make on Wednesday?","A snowman.","A cake.","A sandcastle."]]},
+  {u:"u2_4",id:"u2_4b",ic:"\u{1F4FA}",t:"Uncle Jim on TV",p:["Last week my uncle Jim was on a TV quiz show!","We watched the episode at home with a big bowl of popcorn.","The first questions were easy and he answered them all.","The last question was about a famous film director, and he didn't know the answer.","He didn't win the big prize, but he got a T-shirt, and we were very proud of him."],
+   q:[["Who was on the quiz show?","My uncle.","My dad.","My teacher."],["Were the first questions difficult?","No, they were easy.","Yes, they were.","Yes, very difficult."],["What did he get?","A T-shirt.","The big prize.","A car."]]},
+  {u:"u2_5",id:"u2_5b",ic:"\u{1F68B}",t:"Bus or tram?",p:["Ali and Sara go to the museum every month.","Ali always takes the tram. It's faster than the bus.","Sara takes the bus, because it's cheaper than the tram.","Last Sunday the tram was late, so Sara arrived first!","«The bus isn't the fastest,» she laughed, «but today it was the best!»"],
+   q:[["Why does Ali take the tram?","It's faster than the bus.","It's cheaper.","It's bigger."],["Why does Sara take the bus?","It's cheaper than the tram.","It's faster.","It's near her house."],["Who arrived first last Sunday?","Sara.","Ali.","They arrived together."]]},
+  {u:"u2_6",id:"u2_6b",ic:"♻️",t:"The zero-waste lunch",p:["Our class wanted a lunch with no rubbish.","We didn't use plastic bottles: we brought water in glass bottles.","We put our sandwiches in boxes, not in plastic bags.","There were a few apples left, so the next day we made an apple cake.","At the end there wasn't any rubbish in the bin!"],
+   q:[["What did the class want?","A lunch with no rubbish.","A big party.","A new bin."],["Where did they put the sandwiches?","In boxes.","In plastic bags.","In bottles."],["What did they make with the apples?","An apple cake.","Apple juice.","A salad."]]},
+  {u:"u2_7",id:"u2_7b",ic:"\u{1F9E6}",t:"My messy brother",p:["My little brother never tidies his room.","There are socks on the floor and toys on the bed.","Mum says: «You have to tidy your room before dinner!»","He doesn't have to do the washing-up, but he has to make his bed.","Tonight his room is clean... because I helped him!"],
+   q:[["Is the brother's room usually tidy?","No, it isn't.","Yes, it is.","Yes, always."],["What does he have to do before dinner?","Tidy his room.","Do the washing-up.","Cook dinner."],["Why is his room clean tonight?","Because I helped him.","Because Mum tidied it.","Because he hasn't got any toys."]]},
+  {u:"u2_8",id:"u2_8b",ic:"\u{1F5FA}️",t:"The treasure hunt",p:["On Saturday we're going to have a treasure hunt in town.","The first clue says: «Go to the bakery and turn right.»","The second clue is in the library, next to the big window.","The last clue says: «The treasure is opposite the post office.»","We're going to find it first, because we know the town very well!"],
+   q:[["When is the treasure hunt?","On Saturday.","On Monday.","Tonight."],["Where is the second clue?","In the library.","In the bakery.","At the station."],["Where is the treasure?","Opposite the post office.","Next to the bank.","In the park."]]},
+  {u:"u3_1",id:"u3_1b",ic:"\u{1F468}‍\u{1F373}",t:"Dad's new job",p:["My dad is a cook. Next week he's starting a new job in a big restaurant.","He's meeting the manager on Friday to sign the contract.","The job is full-time, so he's going to work in the evenings too.","Dad is creative and hard-working, and he loves cooking for people.","On Saturday we're having dinner at his restaurant. I can't wait!"],
+   q:[["What is Dad's job?","He's a cook.","He's a waiter.","He's a manager."],["When is he meeting the manager?","On Friday.","On Monday.","On Saturday."],["What is the family doing on Saturday?","Having dinner at his restaurant.","Going to the cinema.","Visiting Grandma."]]},
+  {u:"u3_2",id:"u3_2b",ic:"\u{1F4F1}",t:"The phone of the future",p:["In 2050 phones will be very different.","They won't need a charger, because the sun will charge them.","Maybe they'll understand our feelings and they'll talk like friends.","My grandma isn't sure: «People might forget how to talk to each other!»","I think she may be right. I'll switch off my phone at dinner tonight."],
+   q:[["What will charge the phones?","The sun.","A battery.","A charger."],["What is Grandma worried about?","People might forget how to talk.","Phones will be expensive.","Phones won't work."],["What will I do tonight?","Switch off my phone at dinner.","Buy a new phone.","Call Grandma."]]},
+  {u:"u3_3",id:"u3_3b",ic:"\u{1F30D}",t:"Have you ever been abroad?",p:["Ana has been to six countries. She has visited Spain, France and even Japan!","She has eaten sushi and she has climbed a volcano.","Her brother Leo has never been abroad. He has never flown on a plane.","But next summer they're going to Canada together.","«Have you ever packed a suitcase?» Ana asks. Leo laughs: «No, never!»"],
+   q:[["How many countries has Ana been to?","Six.","Three.","Two."],["Has Leo ever flown on a plane?","No, he hasn't.","Yes, he has.","Yes, many times."],["Where are they going next summer?","To Canada.","To Japan.","To Spain."]]},
+  {u:"u3_4",id:"u3_4b",ic:"\u{1F30A}",t:"Has it stopped raining yet?",p:["It has rained for five days, and the river is very high.","The town has just closed the bridge.","The volunteers have already put sandbags in front of the shops.","«Has the water reached the school yet?» asks a girl. «Not yet,» says a firefighter.","This morning the rain has finally stopped. Everybody is safe."],
+   q:[["How long has it rained?","For five days.","For two hours.","For a month."],["What has the town just closed?","The bridge.","The school.","The shops."],["Has the water reached the school?","No, not yet.","Yes, it has.","Yes, already."]]},
+  {u:"u3_5",id:"u3_5b",ic:"\u{1FA79}",t:"The football injury",p:["During the match Tom fell and hurt his knee.","His coach said: «You shouldn't play now. You should sit down.»","At the hospital the doctor looked at the X-ray.","«It isn't broken. You should rest for a week, and you shouldn't run.»","Tom was sad, but now he watches the matches and cheers for his team."],
+   q:[["What did Tom hurt?","His knee.","His arm.","His head."],["What did the doctor look at?","The X-ray.","His teeth.","His eyes."],["What should Tom do?","Rest for a week.","Play football.","Run every day."]]},
 ];
-/* la storia di oggi: la piu' recente fra le unit aperte non ancora
-   ascoltate (cosi' segue la classe); finite, una a caso fra quelle aperte */
+/* la storia di oggi: fra le unit aperte, quella della unit PIU' RECENTE che
+   lo studente non ha ancora sentito (prima la «a», poi la «b»): cosi'
+   segue la classe. Finite tutte, una a caso fra quelle aperte. */
+function _pkStoryKey(t){ return t.id||t.u; }
 function parkStoryToday(s){
-  if(s.sid){ const t=PARK_STORIES.find(x=>x.u===s.sid); if(t) return t; }
-  const open=parkOpenUnits();
+  if(s.sid){ const t=PARK_STORIES.find(x=>_pkStoryKey(x)===s.sid); if(t) return t; }
+  const open=parkOpenUnits(), ord=u=>SYLLABUS.findIndex(x=>x.id===u);
   let pool=PARK_STORIES.filter(t=>open.indexOf(t.u)>=0);
   if(!pool.length) pool=[PARK_STORIES[0]];
-  const fresh=pool.filter(t=>s.heard.indexOf(t.u)<0);
-  const t=fresh.length?fresh[fresh.length-1]:pool[_parkSeed("story")%pool.length];
-  s.sid=t.u; parkSave(s); return t;
+  const fresh=pool.filter(t=>s.heard.indexOf(_pkStoryKey(t))<0)
+    .sort((a,b)=>(ord(b.u)-ord(a.u)) || ((a.id?1:0)-(b.id?1:0)));
+  const t=fresh.length?fresh[0]:pool[_parkSeed("story")%pool.length];
+  s.sid=_pkStoryKey(t); parkSave(s); return t;
 }
 function talkToOakley(npc){
   if(PARKFUN.busy) return;
@@ -14724,7 +14774,7 @@ function parkStoryStart(t,again){
     const s=parkState(); let got=0;
     if(!again && !s.sDone){
       got=score+(score===t.q.length?2:0);
-      s.sDone=true; if(s.heard.indexOf(t.u)<0) s.heard.push(t.u); parkSave(s);
+      s.sDone=true; if(s.heard.indexOf(_pkStoryKey(t))<0) s.heard.push(_pkStoryKey(t)); parkSave(s);
       if(got>0) try{ Stars.award(null,got,"storia"); }catch(e){}
     }
     DialogueBox.open({ npc:O, icon:"\u{1F4D6}", sub:"The end",
@@ -14790,7 +14840,9 @@ function parkOnSit(b){
     if(BSIT.b!==b || _dlgOpen()) return;
     DialogueBox.open({ name:"Park watcher", icon:"\u{1F440}", sub:"Central Park · "+(3-s.wN)+" left today",
       text:"What a lovely park! Look at the people around you. Can you tell me what they are doing?",
-      italian:"Guarda le persone del parco e descrivile con le tessere: 2 stelle al primo tentativo, fino a 3 domande al giorno.",
+      italian:(function(){ let y=1; try{ y=studentYear(); }catch(e){}
+        return y>=3 && mode==="ing" ? "Guarda le persone del parco e scrivi che cosa stanno facendo: 3 stelle al primo tentativo, fino a 3 domande al giorno."
+                                    : "Guarda le persone del parco e descrivile con le tessere: 2 stelle al primo tentativo, fino a 3 domande al giorno."; })(),
       buttons:[{ label:"\u{1F440} Yes, let's look!", cls:"primary", act:()=>parkWatchAsk() },
                { label:"No, thanks", cls:"ghost", act:()=>{} }] });
   },1100);
@@ -14804,6 +14856,8 @@ function parkWatchAsk(){
   const P=ok.length?ok:all; if(!P.length) return;
   const sc=P[(_parkSeed("watch")+s.wN)%P.length];
   const img=parkSnap(sc);
+  let yr=1; try{ yr=studentYear(); }catch(e){}
+  if(mode==="ing" && yr>=3){ parkWatchWrite(sc,img); return; }   // v307b: in terza si scrive
   const tokens=mode==="ing"?sc.ing:sc.has, distr=mode==="ing"?sc.ingD:sc.hasD;
   const q=mode==="ing"
     ? (sc.who==="they"?"Look! What are they doing?":"Look! What is "+sc.who+" doing?")
@@ -14828,6 +14882,83 @@ function parkWatchAsk(){
     buttons:[{ label:"Not now", cls:"ghost", act:()=>{} }] });
 }
 
+/* ---- v307b — IN TERZA LA FRASE SI SCRIVE (Giacomo, 10 ott: «in terza il
+   present continuous lo devono scrivere loro»). Niente tessere: casella di
+   testo, e si giudica il SENSO della forma, non la virgola:
+   · maiuscole, punteggiatura e apostrofi curvi non contano;
+   · She's = She is, They're = They are;
+   · il soggetto puo' anche essere un nome («The girl is waving»);
+   · l'oggetto ammette le varianti naturali (a / the / his book, playing
+     guitar, waving her hand, jogging).
+   Sbagliando arriva un suggerimento MIRATO (manca is/are, manca -ing, he o
+   she?, is o are?, oppure «controlla le lettere» per un refuso); al secondo
+   errore si mostra la frase giusta. 3⭐ al primo colpo, 1⭐ al secondo:
+   scrivere vale piu' che comporre. */
+const _PK_SUBJ={ he:"(he|the man|the boy|the runner|the jogger)", she:"(she|the woman|the girl|the lady)",
+  they:"(they|the people|the fans|the two people|the man and the woman|the woman and the man|the boy and the girl)" };
+const PARK_WRITE_RE={
+  reader:"HE is reading (a|the|his) book", lunch:"SHE is eating (a|the|her) sandwich",
+  guitar:"SHE is playing (the |a |her )?guitar", clap:"THEY are clapping( their hands)?",
+  wave:"SHE is waving( her hand| hello| at me| to me| goodbye)?", jogger:"HE is (running|jogging)" };
+function _pkNorm(v){
+  return String(v||"").toLowerCase().replace(/[’‘`]/g,"'").replace(/[^a-z' ]+/g," ")
+    .replace(/\b(he|she|it)'s\b/g,"$1 is").replace(/\bthey're\b/g,"they are").replace(/\s+/g," ").trim();
+}
+function _pkWriteOk(sc,v){
+  const src=PARK_WRITE_RE[sc.id]; if(!src) return false;
+  const re=new RegExp("^"+src.replace(/HE|SHE|THEY/,m=>_PK_SUBJ[m.toLowerCase()])+"$");
+  return re.test(_pkNorm(v));
+}
+function _pkWriteHint(sc,v){
+  const a=_pkNorm(v), want=_pkNorm(sc.ing.join(" "));
+  const subj=a.split(" ")[0];
+  const isHe=/^(he|the man|the boy)\b/.test(a), isShe=/^(she|the woman|the girl|the lady)\b/.test(a), isThey=/^(they|the people|the fans)\b/.test(a);
+  if((sc.who==="he"&&(isShe||isThey))||(sc.who==="she"&&(isHe||isThey))||(sc.who==="they"&&(isHe||isShe)))
+    return "\u{1F440} Guarda bene la foto: "+(sc.who==="they"?"sono in due → They":(sc.who==="he"?"e' un uomo → He":"e' una donna/ragazza → She"))+".";
+  if(gemLexDist(a,want)<=2) return "\u{1F50E} Ci sei quasi: controlla le lettere.";
+  if(!/\b(is|are|am)\b/.test(a)) return "\u{1F4A1} Manca il verbo essere: "+(sc.who==="they"?"They ARE …":(sc.who==="he"?"He IS …":"She IS …"));
+  if(sc.who==="they" && /\bis\b/.test(a)) return "\u{1F4A1} Con They si usa ARE: They are …";
+  if(sc.who!=="they" && /\bare\b/.test(a)) return "\u{1F4A1} Con "+(sc.who==="he"?"He":"She")+" si usa IS.";
+  if(!/\b[a-z]+ing\b/.test(a)) return "\u{1F4A1} Il verbo vuole -ING: is play → is playING.";
+  if(subj && !/^(he|she|they|the)$/.test(subj)) return "\u{1F4A1} Comincia con He / She / They.";
+  return "\u{1F4A1} Guarda bene che cosa sta facendo, e controlla la frase.";
+}
+function parkWatchWrite(sc,img){
+  const s=parkState();
+  const q=sc.who==="they"?"Look! What are they doing?":"Look! What is "+sc.who+" doing?";
+  let tries=0;
+  const judge=()=>{
+    const el=document.getElementById("pk-write"), fb=document.getElementById("pk-fb"); if(!el) return;
+    const v=el.value; if(!_pkNorm(v)) return;                       // vuoto: non e' un tentativo
+    if(_pkWriteOk(sc,v)){ DialogueBox.close(); parkWatchDone(sc,tries?1:3,null); return; }
+    tries++;
+    if(tries>=2){ DialogueBox.close(); parkWatchDone(sc,0,null); return; }
+    if(fb) fb.innerHTML=_escHtml(_pkWriteHint(sc,v));
+    el.focus && el.select && el.select();
+  };
+  DialogueBox.open({ name:"Park watcher", icon:"\u{1F440}", sub:"Question "+(s.wN+1)+"/3 · write it",
+    text:q, italian:"Scrivi la frase al present continuous (He's / She's / They're + -ing).",
+    html:(img?'<div style="text-align:center;margin-bottom:6px"><img alt="" style="max-width:100%;max-height:150px;border-radius:10px;border:3px solid #fbf7ec;box-shadow:0 3px 10px rgba(0,0,0,.35)" src="'+img+'"></div>':"")
+      +'<input id="pk-write" class="gem-input" type="text" autocomplete="off" autocapitalize="sentences" autocorrect="off" spellcheck="false" placeholder="'+(sc.who==="they"?"They’re …":(sc.who==="he"?"He’s …":"She’s …"))+'">'
+      +'<div id="pk-fb" style="min-height:18px;margin-top:6px;font-size:13px;color:#b5452f"></div>',
+    buttons:[{ label:"✔ Check", cls:"primary", keepOpen:true, act:judge },{ label:"Not now", cls:"ghost", act:()=>{} }] });
+  const inp=document.getElementById("pk-write");
+  if(inp) inp.onkeydown=e=>{ if(e.key==="Enter"||e.keyCode===13){ e.preventDefault(); e.stopPropagation(); judge(); } };
+  setTimeout(()=>{ const el=document.getElementById("pk-write"); if(el && !(navigator.maxTouchPoints>0)) el.focus(); },60);
+}
+/* chiusura comune: stelle, contatore del giorno, «un'altra?» */
+function parkWatchDone(sc,got,said){
+  const st=parkState();
+  st.wN=(st.wN||0)+1; if(st.wSeen.indexOf(sc.id)<0) st.wSeen.push(sc.id); parkSave(st);
+  if(got>0) try{ Stars.award(null,got,"park watcher"); }catch(e){}
+  const more=st.wN<3, right=sc.ing.join(" ");
+  DialogueBox.open({ name:"Park watcher", icon:"\u{1F440}", sub:got?"✅ +"+got+" ⭐":"Not this time",
+    text:(got?(said||right)+" Well done!":"The answer is: "+right)+(more?" Another one?":" That's all for today."),
+    italian:got?(more?"Bravo! Un'altra?":"Bravo! Per oggi basta: torna domani."):"La frase giusta e' qui sopra. "+(more?"Un'altra?":"Torna domani!"),
+    html:got?"":lesCard("les-no","\u{1F4A1} The answer",'<div class="les-title">'+_escHtml(right)+'</div>'),
+    buttons:more?[{ label:"\u{1F440} Yes, another one!", cls:"primary", act:()=>parkWatchAsk() },{ label:"No, thanks", cls:"ghost", act:()=>{} }]
+                :[{ label:"OK", cls:"primary", act:()=>{} }] });
+}
 /* ---- COSTRUZIONE ---------------------------------------------------------- */
 /* panchina da parco in legno (doghe + fianchi in ghisa), 1,8 m: due posti */
 function parkBench(x,z,ry,o){ o=o||{};
