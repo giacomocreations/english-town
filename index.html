@@ -14601,12 +14601,6 @@ function _skEval(K,mv,b){
   if(b<1.3)  return { A:P.stand, B:P.crouch, t:_skEase((b-1.0)/0.3), glide:0, hop:0, turn:1 };
   return { A:P.crouch, B:P.stand, t:_skEase((b-1.3)/0.7), glide:0, hop:0, turn:1 };
 }
-/* la prossima mossa: mai la stessa di prima; e dopo ogni mossa, il saltello */
-function _skNext(D,list){
-  if(D.mv!=="hop"){ D.mv="hop"; D.dur=2; return; }
-  const opts=list.filter(m=>m!==D.last); const mv=opts.length?opts[(Math.random()*opts.length)|0]:list[0];
-  D.mv=mv; D.last=mv; D.dur=(SK_MOVES.find(x=>x.id===mv)||{beats:4}).beats;
-}
 
 /* ---- COSTRUZIONE ------------------------------------------------------------ */
 function _skConcreteTex(){
@@ -14770,10 +14764,10 @@ function _skSpeaker(x,z,ry){
 /* i ballerini: guardaroba hip hop della Teca (cappellino, occhiali, catena
    d'oro, bomber/pelle, cargo/joggers) */
 const SK_CREW=[
-  { id:"sk_d1", name:"Jay",  model:"avatar",  h:1.70, x:24.6, z:51.4, look:{ hat:"cap", hatc:"black", face:"designer", neck:"royal", neckc:"gold", coat:"bomber", coatc:"black", bottom:"cargo" } },
-  { id:"sk_d2", name:"Nia",  model:"avatarW", h:1.62, x:28.4, z:51.0, look:{ hat:"cap", hatc:"red", face:"shades", neck:"medallion", neckc:"gold", coat:"leather", bottom:"joggers" } },
-  { id:"sk_d3", name:"Leon", model:"avatar",  h:1.74, x:32.2, z:51.5, look:{ hat:"beanie", hatc:"yellow", face:"aviator", neck:"royal", neckc:"gold", coat:"puffer", coatc:"purple", bottom:"joggers" } },
-  { id:"sk_d4", name:"Kiki", model:"avatarW", h:1.6,  x:35.9, z:51.1, look:{ hat:"cap", hatc:"white", face:"designer", neck:"medallion", neckc:"gold", coat:"bomber", coatc:"pink", bottom:"cargo" } } ];
+  { id:"sk_d1", name:"Jay",  model:"avatar",  h:1.70, x:24.45, z:50.8, look:{ hat:"cap", hatc:"black", face:"designer", neck:"royal", neckc:"gold", coat:"bomber", coatc:"black", bottom:"cargo" } },
+  { id:"sk_d2", name:"Nia",  model:"avatarW", h:1.62, x:28.15, z:50.8, look:{ hat:"cap", hatc:"red", face:"shades", neck:"medallion", neckc:"gold", coat:"leather", bottom:"joggers" } },
+  { id:"sk_d3", name:"Leon", model:"avatar",  h:1.74, x:31.85, z:50.8, look:{ hat:"beanie", hatc:"yellow", face:"aviator", neck:"royal", neckc:"gold", coat:"puffer", coatc:"purple", bottom:"joggers" } },
+  { id:"sk_d4", name:"Kiki", model:"avatarW", h:1.6,  x:35.55, z:50.8, look:{ hat:"cap", hatc:"white", face:"designer", neck:"medallion", neckc:"gold", coat:"bomber", coatc:"pink", bottom:"cargo" } } ];
 function buildSkatepark(){
   if(SKATE.built) return; SKATE.built=true;
   const C=SKATE.C, W=30, D=20, g=_benchGround(C.x,C.z,0); SKATE.gy=g;
@@ -14878,6 +14872,7 @@ function skateTick(){
   const dt=Math.min(0.05,engine.getDeltaTime()/1000), bps=SKATE.bpm/60;
   const rest=!!(SKATE.pending && SKATE.near);           // fra un brano e l'altro: silenzio
   const see=d<55;                                    // da lontano il cambio e' istantaneo
+  const R=skCrewStep(B,rest);
   SKATE.dancers.forEach(D=>{
     if(!_pkVisible(D.n)) return;
     if(!D.K){ if(!_skPrepare(D)) return; D.m0=Math.floor(B)+1; }
@@ -14885,31 +14880,47 @@ function skateTick(){
     else if(ph==="dance" && D.st==="chill") skGoDance(D,see,B);
     if(D.st!=="dance") return;
     if(_skRest(D,rest,B,D.n.holder,v=>{ D.n.carrier.rotation.y=D.face; })) return;
-    let b=B-D.m0;
-    if(b<0||b>D.dur+8){ D.m0=Math.floor(B); b=B-D.m0; }        // brano cambiato: si riparte dal battito
-    if(b>=D.dur){ const was=D.mv; _skNext(D,SK_MOVES.map(m=>m.id)); D.m0+=(was==="hop"?2:SKATE_DUR(was)); b=B-D.m0;
-      if(D.mv==="hop") _skPlanTurn(D); }
-    const E=_skEval(D.K,D.mv,b);
+    /* v308h: la stessa mossa, sullo stesso battito, per tutti (vedi skCrewStep) */
+    D.mv=R.mv; D.m0=R.m0; D.dur=R.dur; D.sdir=R.sdir; D.face=Math.PI;
+    const b=B-R.m0, E=_skEval(D.K,D.mv,b);
     const dy=_skBlend(D.cur,E.A,E.B,E.t);
     D.n.holder.position.y=D.baseY+dy+(E.hop||0);
-    if(E.sway!=null) D.n.carrier.rotation.y=D.face+E.sway;
-    if(D.mv==="hop" && E.turn!=null){ let df=D.turnTo-D.turnFrom; while(df>Math.PI) df-=2*Math.PI; while(df<-Math.PI) df+=2*Math.PI;
-      D.face=D.turnFrom+df*_skEase(E.turn); D.n.carrier.rotation.y=D.face; }
-    if(E.glide){ const f={ x:Math.sin(D.face), z:Math.cos(D.face) }, sp=0.34*bps*dt;
-      const c=D.n.carrier.position, ox=c.x, oz=c.z;
+    D.n.carrier.rotation.y=D.face+(E.sway||0);
+    const c=D.n.carrier.position;
+    /* il saltello riporta ognuno al suo posto nella fila */
+    if(D.mv==="hop" && b>0.4 && b<1.6){ const hx=D.home.x-c.x, hz=D.home.z-c.z, hd=Math.hypot(hx,hz), st=Math.min(hd,1.6*bps*dt);
+      if(hd>0.01){ c.x+=hx/hd*st; c.z+=hz/hd*st; } }
+    if(E.glide){ const f={ x:Math.sin(D.face), z:Math.cos(D.face) }, sp=SK_GLIDE/SKATE_DUR(D.mv)*bps*dt;
+      const ox=c.x, oz=c.z;
       if(D.mv==="moonwalk"){ c.x-=f.x*sp; c.z-=f.z*sp; }
       else { c.x+=f.z*sp*D.sdir; c.z-=f.x*sp*D.sdir; }
-      /* v308d (Giacomo: «a volte si incastrano, vanno uno addosso
-         all'altro»): ognuno resta nella SUA corsia attorno al posto di
-         partenza (i posti distano ~3,7 m: corsia larga 2,6 m), e se due si
-         avvicinano comunque a meno di 1,1 m, quello che scivola si ferma */
+      /* v308d: ognuno resta nella SUA corsia (i posti distano 3,7 m); se il
+         giocatore e' in mezzo, chi gli scivola addosso si ferma */
       const hx=D.home.x, hz=D.home.z;
-      let nx=Math.max(hx-1.3,Math.min(hx+1.3,c.x)), nz=Math.max(hz-1.9,Math.min(hz+1.3,c.z));
-      nx=Math.max(C.x-6.3,Math.min(C.x+6.3,nx)); nz=Math.max(C.z-8.6,Math.min(C.z-3.4,nz));
-      const crowd=SKATE.dancers.some(O=>O!==D && O.n && O.n.carrier && Math.hypot(O.n.carrier.position.x-nx,O.n.carrier.position.z-nz)<1.1)
-        || Math.hypot(player.position.x-nx,player.position.z-nz)<0.9;
+      let nx=Math.max(hx-1.5,Math.min(hx+1.5,c.x)), nz=Math.max(hz-0.3,Math.min(hz+1.6,c.z));
+      nx=Math.max(C.x-7.2,Math.min(C.x+7.2,nx)); nz=Math.max(C.z-8.6,Math.min(C.z-3.4,nz));
+      const crowd=Math.hypot(player.position.x-nx,player.position.z-nz)<0.9;
       if(crowd){ c.x=ox; c.z=oz; } else { c.x=nx; c.z=nz; } }
   });
+}
+/* v308h (Giacomo: «i 4 ballerini sincronizzati, come un ballo di
+   gruppo»). Una sola coreografia per tutta la crew: la stessa mossa sullo
+   stesso battito, tutti rivolti al pubblico (sud), in fila. Fra una mossa e
+   l'altra il saltello, che riporta ognuno al suo posto; il moonwalk scivola
+   indietro e il sidewalk una volta a destra e una a sinistra, tutti
+   insieme, cosi' le distanze restano quelle della fila. */
+const SK_ROUTINE=["basic","moonwalk","basic","sidewalk","toe","ankle","basic","sidewalk","moonwalk","ankle","toe"];
+const SK_GLIDE=1.4;                                   // metri per ogni moonwalk/sidewalk
+function skCrewStep(B,rest){
+  const R=SKATE.crew||(SKATE.crew={ mv:"hop", m0:Math.floor(B)+1, dur:2, i:-1, sdir:1, rest:false });
+  if(rest){ R.rest=true; return R; }
+  if(R.rest){ R.rest=false; R.mv="hop"; R.dur=2; R.m0=Math.floor(B)+1; return R; }     // si riparte insieme, col saltello
+  let b=B-R.m0;
+  if(b<0||b>R.dur+8){ R.mv="hop"; R.dur=2; R.m0=Math.floor(B)+1; return R; }          // brano cambiato
+  if(b>=R.dur){ const was=R.mv; R.m0+=R.dur;
+    if(was!=="hop"){ R.mv="hop"; R.dur=2; }
+    else { R.i=(R.i+1)%SK_ROUTINE.length; R.mv=SK_ROUTINE[R.i]; R.dur=SKATE_DUR(R.mv); if(R.mv==="sidewalk") R.sdir=-R.sdir; } }
+  return R;
 }
 /* in piedi fermi durante la pausa: dalla posa in cui si era alla posa base
    in 0,4 s; alla ripresa si riparte dal saltello, sul battito */
@@ -14926,16 +14937,6 @@ function _skRest(D,rest,B,holder,face){
   return false;
 }
 function SKATE_DUR(mv){ return (SK_MOVES.find(m=>m.id===mv)||{beats:4}).beats; }
-/* durante il saltello ci si gira cosi' che la mossa dopo riporti verso casa */
-function _skPlanTurn(D){
-  D.turnFrom=D.face;
-  const c=D.n.carrier.position, hx=D.home.x-c.x, hz=D.home.z-c.z, far=Math.hypot(hx,hz)>0.6;
-  /* la prossima mossa non si sa ancora: si guarda al pubblico (sud), un po'
-     di sbieco; se si e' lontani da casa, di spalle a casa (il moonwalk
-     torna indietro) */
-  D.turnTo=far?Math.atan2(-hx,-hz):Math.PI+(Math.random()-0.5)*1.2;
-  D.sdir=(hx*Math.cos(D.turnTo)-hz*Math.sin(D.turnTo))>0?1:-1;
-}
 /* ---- BALLO E CHIACCHIERE (v308e) --------------------------------------------
    Giacomo: «i ballerini non ballano tutto il tempo: un quarto d'ora ballo,
    un quarto d'ora stanno due seduti e due in piedi, come se stessero
