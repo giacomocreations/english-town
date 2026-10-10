@@ -102,12 +102,32 @@
     try{ if(typeof window.toast === "function") window.toast("\u2705 QuestTown \u00e8 installata: la trovi fra le tue app."); }catch(e){}
   });
   P.installabile = function(){ return !!P.evento && !P.standalone; };
+  /* v307 — LA FINESTRA DEL BROWSER NON E' NOSTRA. Dopo il nostro bottone
+     Chrome/Android apre la SUA conferma, con colori decisi da lui: su
+     alcuni tablet «Installa» e' chiaro e «Non adesso» e' quello colorato,
+     e i ragazzi toccano il colorato. La pagina non puo' ridipingerla, quindi
+     sopra si mette un richiamo scuro che dice quale toccare; sparisce da
+     solo quando si risponde (o dopo 15 s). */
+  P.richiamo = function(){
+    var r = document.getElementById("et-inst-hint"); if(r) r.remove();
+    if(!document.body) return;
+    r = document.createElement("div"); r.id = "et-inst-hint";
+    r.style.cssText = "position:fixed;z-index:80;left:50%;top:12px;transform:translateX(-50%);max-width:92vw;"
+      + P.STILE_SCURO + "font-size:15px;padding:11px 16px;text-align:center;pointer-events:none";
+    r.innerHTML = "\uD83D\uDC49 Nella finestra che si apre tocca <b style=\"color:#e8b04b\">Installa</b>";
+    document.body.appendChild(r);
+    var via = function(){ var x = document.getElementById("et-inst-hint"); if(x) x.remove(); };
+    setTimeout(via, 15000);
+    P.richiamoVia = via;
+  };
   P.installa = function(){
     var ev = P.evento; if(!ev) return;
     P.evento = null;
     P.aggiornaInstalla();                  // l'evento vale UNA volta: via subito il bottone
+    P.richiamo();
     try{ ev.prompt(); }catch(e){}
     try{ ev.userChoice.then(function(r){
+      try{ if(P.richiamoVia) P.richiamoVia(); }catch(e){}
       if(r && r.outcome === "accepted") P.installata = true;
       P.aggiornaInstalla(); }); }catch(e){}
   };
@@ -126,12 +146,16 @@
     if(!b){
       b = document.createElement("div"); b.id = "et-inst";
       b.style.cssText = "position:fixed;z-index:15;top:14px;right:120px;display:flex;align-items:center;"
-        + "background:rgba(251,247,236,.94);border-radius:12px;box-shadow:0 4px 14px rgba(20,30,40,.18);"
-        + "font:800 12px system-ui,sans-serif;color:#1d2a32;overflow:hidden";
+        + "background:#1d2a32;border-radius:12px;box-shadow:0 4px 14px rgba(20,30,40,.35);"
+        + "font:800 12px system-ui,sans-serif;color:#fff;overflow:hidden";
+      /* v307 (Giacomo, 10 ott): «Installa» e' la parte SCURA, quella che
+         salta all'occhio — i ragazzi toccano la parte evidenziata. Prima la
+         pastiglia era chiara come ⚙︎ e l'occhio andava altrove. La ✕ resta
+         discreta, senza sfondo suo. */
       b.innerHTML = '<button type="button" style="font:inherit;color:inherit;background:none;border:none;'
         + 'padding:8px 10px 8px 12px;cursor:pointer">\uD83D\uDCF2 Installa</button>'
         + '<button type="button" aria-label="Nascondi" title="Nascondi" style="font:inherit;color:inherit;'
-        + 'background:none;border:none;border-left:1px solid rgba(29,42,50,.15);padding:8px 9px;opacity:.55;'
+        + 'background:none;border:none;border-left:1px solid rgba(255,255,255,.22);padding:8px 9px;opacity:.6;'
         + 'cursor:pointer">\u2715</button>';
       var bt = b.querySelectorAll("button");
       bt[0].onclick = function(){ P.installa(); };
@@ -151,24 +175,31 @@
     b.style.top = r.top + "px";
     b.style.right = Math.round(window.innerWidth - r.left + 8) + "px";
   };
+  /* v307: tutto cio' che riguarda l'installazione ha lo STESSO aspetto
+     scuro della pastiglia, cosi' l'occhio lo riconosce come «la cosa da
+     toccare» (prima il bottone era marrone su crema, quasi spento). */
+  P.STILE_SCURO = "display:inline-block;font:700 14px system-ui,sans-serif;border-radius:10px;"
+    + "background:#1d2a32;color:#fff;box-shadow:0 3px 10px rgba(20,30,40,.28);";
   /* la riga «Installa» dentro il modale d'ingresso (#lg-install), se c'e' */
   P.aggiornaInstalla = function(){
     try{ P.pastiglia(); }catch(e){}
     var box = document.getElementById("lg-install"); if(!box) return;
     if(P.installata){
-      box.innerHTML = "\u2705 Installata! Da ora trovi <b>QuestTown</b> fra le tue app.";
+      box.innerHTML = '<div style="' + P.STILE_SCURO + 'padding:9px 12px">'
+        + '\u2705 Installata! Da ora trovi <b>QuestTown</b> fra le tue app.</div>';
       box.style.display = "block"; return;
     }
     if(P.installabile()){
-      box.innerHTML = '<button type="button" onclick="ET_PWA.installa()" style="font:700 14px system-ui,sans-serif;'
-        + 'padding:7px 12px;border-radius:9px;border:1px solid #e8b04b;background:#2a2217;color:#ffe9b8;cursor:pointer">'
+      box.innerHTML = '<button type="button" onclick="ET_PWA.installa()" style="' + P.STILE_SCURO
+        + 'font-size:15px;padding:10px 16px;border:none;cursor:pointer">'
         + '\uD83D\uDCF2 Installa QuestTown</button>'
         + '<span style="opacity:.75;font-size:12.5px;margin-left:8px">cos\u00ec la trovi fra le app</span>';
       box.style.display = "block"; return;
     }
     if(P.ios && !P.standalone){
-      box.innerHTML = '\uD83D\uDCF2 <span style="font-size:13px">Per metterla fra le app: tocca <b>Condividi</b> '
-        + '(il quadrato con la freccia) e poi <b>Aggiungi alla schermata Home</b>.</span>';
+      box.innerHTML = '<div style="' + P.STILE_SCURO + 'font-size:13px;font-weight:600;padding:9px 12px">'
+        + '\uD83D\uDCF2 Per metterla fra le app: tocca <b>Condividi</b> '
+        + '(il quadrato con la freccia) e poi <b>Aggiungi alla schermata Home</b>.</div>';
       box.style.display = "block"; return;
     }
     box.style.display = "none";
@@ -186,10 +217,22 @@
      Grace. Prima del login (nessuna partita in corso) bastano 3 secondi.
      I progressi sono gia' salvati a ogni passo: ricaricando si riparte
      dallo step in corso, come riaprendo il gioco. */
+  /* ⚠️ v307 (Giacomo, 10 ott: «deve aspettare che entri con codice o
+     guest, lo interpreta come se stessi giocando»). `started` diventa vero
+     a fine caricamento, PRIMA del codice: il modale «Welcome» e' un
+     #quest-modal aperto, quindi la schermata d'ingresso passava per «a
+     meta' di qualcosa» e l'aggiornamento aspettava il login. Finche' il
+     codice non e' dato (loginPending) non c'e' niente da perdere. */
+  P.inGioco = function(){
+    try{
+      if(typeof started === "undefined" || !started) return false;
+      if(typeof loginPending !== "undefined" && loginPending) return false;
+    }catch(e){}
+    return true;
+  };
   P.momentoBuono = function(){
     try{
-      var inGioco = !(typeof started === "undefined" || !started);
-      if(!inGioco) return true;                                  // schermata d'ingresso: niente da perdere
+      if(!P.inGioco()) return true;                              // schermata d'ingresso: niente da perdere
       var qm = document.getElementById("quest-modal");
       if(qm && qm.classList.contains("show")) return false;     // un dialogo o una domanda aperta
       var campi = document.querySelectorAll("textarea, input[type=text], input:not([type])");
@@ -215,8 +258,7 @@
       b.querySelector("button").onclick = function(){ location.reload(); };
       document.body.appendChild(b);
       var t = b.querySelector("#et-upd-t");
-      var inGioco = false; try{ inGioco = !(typeof started === "undefined" || !started); }catch(e){}
-      var resta = inGioco ? 8 : 3;
+      var resta = P.inGioco() ? 8 : 3;
       var giro = function(){
         if(P.momentoBuono()){
           if(resta <= 0){ t.textContent = "🔄 Aggiornamento in corso…"; location.reload(); return; }
@@ -15374,8 +15416,11 @@ const TTS={
     if(/\bmale\b/i.test(n)||/\bmale\b/i.test(u)) return true;
     if(/\bfemale\b/i.test(n)||/\bfemale\b/i.test(u)) return false;
     return this._MNAMES.test(n) || this._MURI.test(u); },
+  /* voci che su QUESTO dispositivo hanno gia' fallito (v307, vedi say) */
+  _ko:{},
   _pick(){ if(!this.available()) return;
-    const vs=speechSynthesis.getVoices()||[]; if(!vs.length) return;
+    const vs=(speechSynthesis.getVoices()||[]).filter(v=>!this._ko[this._vuri(v)]); if(!vs.length){
+      this.voice=this.voiceF=this.voiceM=null; return; }
     const score=v=>{ const L=(v.lang||"").replace("_","-").toLowerCase(), g=/google/i.test(v.name||"");
       if(L.startsWith("en-gb")) return g?6:4;
       if(L.startsWith("en-us")) return g?5:3;
@@ -15396,6 +15441,42 @@ const TTS={
   },
   init(){ if(!this.available()) return; this._pick();
     try{ speechSynthesis.onvoiceschanged=()=>this._pick(); }catch(e){} },
+  /* ⚠️ v307 — MUTO SUI TABLET (Giacomo, 10 ott: «su tablet non si sente
+     l'audio della Quest Town School, ne' delle lezioni, ne' delle quest dei
+     building»). Sul PC tutto bene, sul tablet silenzio. Tre cause note dei
+     motori vocali mobili, tutte e tre coperte qui:
+       1) cancel() e subito speak(): su Chrome Android (e Safari iPad) il
+          cancel arriva al motore DOPO, e si porta via anche la frase appena
+          accodata. Nelle quest succede sempre: l'NPC parla, poi la consegna
+          o il 🔊 interrompono. Ora si cancella solo se c'e' davvero qualcosa
+          in corso, e in quel caso si parla un attimo dopo (90 ms).
+       2) la voce scelta e' ELENCATA ma non installata (Android elenca
+          en-GB anche se i dati vocali non sono scaricati; le voci
+          «femminili» -x-gba/-x-sfg sono spesso solo di rete): la frase
+          finisce in errore senza un suono. Ora un errore che non sia
+          un'interruzione riprova con la voce di sistema (en-GB, poi en-US)
+          e quella voce non si usa piu' per il resto della partita.
+       3) iPad/iPhone: la voce si sblocca solo se la PRIMA frase parte da un
+          tocco. Le battute delle quest partono spesso dal ciclo di gioco
+          (si cammina fino all'NPC), non dal tocco, e restavano mute per
+          sempre. Ora al primo tocco sulla pagina si pronuncia una frase
+          vuota a volume zero: da li' in poi la voce e' sbloccata. */
+  _sbloccato:false, _tentSblocco:0,
+  sblocca(){
+    if(this._sbloccato||this._tentSblocco>=3||!this.available()) return;
+    try{
+      const ss=speechSynthesis;
+      if(ss.speaking||ss.pending){ this._sbloccato=true; return; }   // gia' parla: e' sbloccata
+      this._tentSblocco++;
+      const u=new SpeechSynthesisUtterance(" ");
+      u.volume=0; u.lang="en-GB";
+      u.onstart=u.onend=()=>{ TTS._sbloccato=true; };
+      ss.speak(u);
+    }catch(e){}
+  },
+  _segnaKo(v){ const k=this._vuri(v); if(!k||this._ko[k]) return;
+    this._ko[k]=true; console.warn("[TTS] voce non funzionante su questo dispositivo, scartata:", k);
+    this._pick(); },
   say(text,opts){ opts=opts||{};
     return new Promise(res=>{
       if(!this.available()||!text){ res(false); return; }
@@ -15404,11 +15485,14 @@ const TTS={
       try{ if(SpeakLock.isOpen()) SpeakLock.lock(); }catch(e){}
       const res0=res; res=ok=>{ if(my===TTS._seq){ TTS._busy=false; try{ SpeakLock.unlock(); }catch(e){} } res0(ok); };
       try{
-        speechSynthesis.cancel();                 // stop di qualsiasi lettura precedente
-        speechSynthesis.resume();                 // bug noto Chrome: puo' restare "in pausa" e muto
+        const ss=speechSynthesis;
+        /* stop di qualsiasi lettura precedente — solo se c'e' (vedi 1) */
+        const occupato=!!(ss.speaking||ss.pending);
+        if(occupato) ss.cancel();
+        try{ ss.resume(); }catch(e){}            // bug noto Chrome: puo' restare "in pausa" e muto
         /* v306: «got / gotten», «further / farther»: lo slash fra spazi si
            legge «or», non «slash» */
-        const u=new SpeechSynthesisUtterance(String(text).replace(/\s\/\s/g," or "));
+        const testo=String(text).replace(/\s\/\s/g," or ");
         /* Voce per genere. Se il sistema ha una voce inglese esplicitamente
            femminile/maschile la usiamo; se ne ha UNA SOLA in tutto (capita
            su Chromebook piu' spartani), il personaggio resta comunque
@@ -15431,20 +15515,42 @@ const TTS={
            quello, non il gusto, e' il pavimento vero. */
         if(opts.gender==="f"){ if(this.voiceF) v=this.voiceF; else if(opts.pitch==null) pit=1.18; }
         else if(opts.gender==="m"){ if(this.voiceM) v=this.voiceM; else if(opts.pitch==null) pit=0.72; }
-        if(v) u.voice=v;
-        u.lang=(v&&v.lang)||"en-GB";
-        u.rate=opts.rate||this.rate; u.pitch=pit;
         let done=false; const fin=ok=>{ if(!done){ done=true; res(ok); } };
-        u.onend=()=>fin(true); u.onerror=()=>fin(false);
+        /* tentativo 0: la voce scelta; 1: voce di sistema en-GB; 2: en-US */
+        const parla=(voce,tent)=>{
+          if(done) return;
+          if(my!==TTS._seq){ fin(false); return; }        // nel frattempo e' arrivata un'altra frase
+          const u=new SpeechSynthesisUtterance(testo);
+          if(voce) u.voice=voce;
+          u.lang=(voce&&voce.lang)||(tent>=2?"en-US":"en-GB");
+          u.rate=opts.rate||TTS.rate; u.pitch=pit;
+          let partita=false;
+          u.onstart=()=>{ partita=true; TTS._sbloccato=true; };
+          u.onend=()=>fin(true);
+          u.onerror=ev=>{ const err=(ev&&ev.error)||"";
+            if(err==="interrupted"||err==="canceled"){ fin(false); return; }
+            if(!partita && tent<2 && my===TTS._seq){
+              if(voce) TTS._segnaKo(voce);
+              parla(null,tent+1); return; }
+            if(err==="not-allowed"){ TTS._sbloccato=false; TTS._tentSblocco=0; }
+            fin(false); };
+          ss.speak(u);
+        };
         // watchdog: alcuni Chrome non emettono onend se la scheda perde il focus
-        setTimeout(()=>fin(true), 1500+text.length*90);
-        speechSynthesis.speak(u);
+        setTimeout(()=>fin(true), 1500+testo.length*90);
+        if(occupato) setTimeout(()=>{ try{ ss.resume(); }catch(e){} try{ parla(v,0); }catch(e){ fin(false); } }, 90);
+        else parla(v,0);
       }catch(e){ res(false); }
     }); },
   stop(){ this._seq=(this._seq||0)+1; this._busy=false; try{ SpeakLock.unlock(); }catch(e){}
     if(this.available()) try{ speechSynthesis.cancel(); }catch(e){} },
 };
 TTS.init();
+/* v307: lo sblocco della voce al primo tocco (iPad/iPhone, vedi sopra).
+   In cattura sulla finestra, cosi' nessun gestore del gioco puo' fermarlo. */
+["pointerup","touchend","click","keydown"].forEach(function(t){
+  try{ window.addEventListener(t, function(){ TTS.sblocca(); }, { capture:true, passive:true }); }catch(e){}
+});
 
 /* =====================================================================
    FASE 0.2 — SISTEMA NPC (riuso Hoodie_Character, zero asset nuovi)
