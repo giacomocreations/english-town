@@ -14577,6 +14577,8 @@ function parkRiddle(){
       buttons:[{ label:"OK", cls:"primary", act:()=>{} }] });
     return;
   }
+  let yr=1; try{ yr=studentYear(); }catch(e){}
+  if(yr>=3){ parkRiddleWrite(r,s); return; }        // v307d: in terza la risposta si scrive
   const opts=shuffle([r.a].concat(r.w.slice(0,3)));
   DialogueBox.open({ name:"Riddle of the day", icon:"\u{1F9E9}", sub:"Gazebo · Central Park"+(s.rTries?" · last try!":""),
     text:r.en, italian:"Indovina! Scegli la risposta giusta: al primo tentativo 3 stelle, al secondo 1.",
@@ -14610,6 +14612,66 @@ function parkRiddle(){
     } })) });
 }
 
+/* v307d (Giacomo, 10 ott: «anche riddle of the day in terza deve
+   scriverlo l'alunno, senza rosa di opzioni, con funzione speak»).
+   Casella di testo con 🎤 Speak (Mic, data-mic). Si accetta la parola anche
+   dentro una frase («It's a ruler», «You are a passport»), senza articolo,
+   con o senza la s finale; un refuso da niente si fa correggere senza
+   perdere il tentativo (una volta). Al primo errore un aiuto: l'iniziale e
+   quante lettere. 3⭐ al primo colpo, 1⭐ al secondo. */
+function _pkRidNorm(v){
+  let a=String(v||"").toLowerCase().replace(/[’‘`]/g,"'").replace(/[^a-z' -]+/g," ").replace(/\s+/g," ").trim();
+  a=a.replace(/^(it is|it's|its|you are|you're|i am|i'm|they are|they're|we are|we're|he is|he's|she is|she's|the answer is|answer)\s+/,"");
+  a=a.replace(/^(a|an|the|some)\s+/,"");
+  return a.replace(/-/g," ").trim();
+}
+function _pkRidOk(r,v){
+  const a=_pkRidNorm(v), t=_pkRidNorm(r.a);
+  return !!a && (a===t || a+"s"===t || a===t+"s" || a+"es"===t || a===t+"es");
+}
+function parkRiddleWrite(r,s){
+  let near=false;
+  const clue=()=>{ const t=r.a; return "Starts with «"+t.charAt(0).toUpperCase()+"» · "
+    +t.replace(/[^A-Za-z]/g,"").length+" letters"+(t.indexOf(" ")>=0?" ("+t.split(" ").length+" words)":""); };
+  const open=(msg)=>{
+    DialogueBox.open({ name:"Riddle of the day", icon:"\u{1F9E9}", sub:"Gazebo · Central Park · write it"+(s.rTries?" · last try!":""),
+      text:r.en, italian:"Scrivi (o di') la risposta in inglese: 3 stelle al primo tentativo, 1 al secondo.",
+      html:'<input id="pk-rid" class="gem-input" data-mic="1" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="…">'
+        +'<div id="pk-rid-fb" style="min-height:18px;margin-top:6px;font-size:13px;color:#b5452f">'+(msg?_escHtml(msg):"")+'</div>',
+      buttons:[{ label:"✔ Check", cls:"primary", keepOpen:true, act:judge },{ label:"Not now", cls:"ghost", act:()=>{} }] });
+    const inp=document.getElementById("pk-rid");
+    if(inp) inp.onkeydown=e=>{ if(e.key==="Enter"||e.keyCode===13){ e.preventDefault(); e.stopPropagation(); judge(); } };
+    setTimeout(()=>{ const el=document.getElementById("pk-rid"); if(el && !(navigator.maxTouchPoints>0)) el.focus(); },60);
+  };
+  const judge=()=>{
+    const el=document.getElementById("pk-rid"), fb=document.getElementById("pk-rid-fb"); if(!el) return;
+    const v=el.value; if(!_pkRidNorm(v)) return;                     // vuoto: non e' un tentativo
+    const st=parkState(); if(st.rDone) return;
+    if(_pkRidOk(r,v)){
+      const got=st.rTries?1:3;
+      st.rDone=true; st.rOk=true; if(st.solved.indexOf(st.rid)<0) st.solved.push(st.rid); parkSave(st);
+      try{ Stars.award(null,got,"indovinello"); }catch(e){}
+      DialogueBox.open({ name:"Riddle of the day", icon:"\u{1F9E9}", sub:"✅ Correct!",
+        text:"Yes! The answer is: "+r.a+". Well done!", italian:"Esatto! Torna domani per un nuovo indovinello.",
+        html:lesCard("les-ok","✅ +"+got+" ⭐",'<div class="les-title">'+_escHtml(r.a)+'</div>'),
+        buttons:[{ label:"See you tomorrow!", cls:"primary", act:()=>{} }] });
+      parkRiddleBoardDraw(); return; }
+    const a=_pkRidNorm(v), t=_pkRidNorm(r.a);
+    if(!near && t.length>3 && gemLexDist(a,t)<=(t.length>6?2:1)){ near=true;
+      if(fb) fb.textContent="\u{1F50E} Ci sei quasi: controlla le lettere."; return; }
+    st.rTries=(st.rTries||0)+1;
+    if(st.rTries>=2){
+      st.rDone=true; st.rOk=false; parkSave(st);
+      DialogueBox.open({ name:"Riddle of the day", icon:"\u{1F9E9}", sub:"Not this time",
+        text:"Oh no! The answer is: "+r.a+". Try again tomorrow!", italian:"Peccato! La risposta era «"+r.a+"». Domani ce n'e' un altro.",
+        html:lesCard("les-no","\u{1F4A1} The answer",'<div class="les-title">'+_escHtml(r.a)+'</div>'),
+        buttons:[{ label:"OK", cls:"primary", act:()=>{} }] });
+      parkRiddleBoardDraw(); return; }
+    parkSave(st); s=st;
+    open("❌ Not quite! Here's a clue: "+clue());
+  };
+  open(s.rTries?"\u{1F4A1} "+clue():"");
+}
 /* ---- 📖 LE STORIE --------------------------------------------------------
    Una per unit, scritte con il lessico e la grammatica di QUELLA unit
    (present simple in Anno 1, past simple e confronti in Anno 2, present
@@ -15035,6 +15097,7 @@ function _pkOpenBook(name,hex){
   if(!_pkPageMat){ const dt=new BABYLON.DynamicTexture("pkPageT",{width:128,height:128},scene,true), c=dt.getContext();
     c.fillStyle="#f6efdc"; c.fillRect(0,0,128,128); c.fillStyle="rgba(60,50,40,0.55)";
     for(let y=14;y<118;y+=9) c.fillRect(12,y,104-((y*7)%23),3);
+    dt.wAng=Math.PI/2;                         // le righe corrono lungo la larghezza della pagina, non in verticale
     dt.update(); _pkPageMat=new BABYLON.StandardMaterial("pkPageM",scene); _pkPageMat.diffuseTexture=dt;
     _pkPageMat.specularColor=new BABYLON.Color3(0,0,0); _pkPageMat.emissiveColor=new BABYLON.Color3(0.25,0.25,0.22); }
   const cov=BABYLON.MeshBuilder.CreateBox(name+"C",{width:0.36,height:0.012,depth:0.25},scene);
@@ -15046,19 +15109,22 @@ function _pkOpenBook(name,hex){
 /* la lavagnetta del gazebo: cavalletto + lavagna disegnata */
 function parkRiddleBoardDraw(){
   const B=PARKFUN.riddleBoard; if(!B) return;
-  const c=B.dt.getContext(), W=512, H=384;
-  c.fillStyle="#5a3b22"; c.fillRect(0,0,W,H);                     // cornice
-  c.fillStyle="#24493a"; c.fillRect(18,18,W-36,H-36);             // ardesia
+  /* si disegna in coordinate 512x384, scalate sulla tela vera */
+  const c=B.dt.getContext(), sz=B.dt.getSize();
+  c.save(); c.scale(sz.width/512,sz.height/384);
+  c.fillStyle="#5a3b22"; c.fillRect(0,0,512,384);                 // cornice
+  c.fillStyle="#24493a"; c.fillRect(18,18,476,348);               // ardesia
   c.fillStyle="rgba(255,255,255,0.05)"; for(let i=0;i<40;i++) c.fillRect(30+Math.random()*440,30+Math.random()*320,40+Math.random()*60,2);
   c.textAlign="center"; c.textBaseline="middle";
-  c.fillStyle="#f3df8a"; c.font="bold 60px 'Comic Sans MS',cursive,sans-serif"; c.fillText("RIDDLE",W/2,74);
-  c.fillText("OF THE DAY",W/2,138);
+  c.fillStyle="#f3df8a"; c.font="bold 60px 'Comic Sans MS',cursive,sans-serif"; c.fillText("RIDDLE",256,74);
+  c.fillText("OF THE DAY",256,138);
   let s=null; try{ s=parkState(); }catch(e){}
   c.fillStyle="rgba(255,255,255,0.93)";
-  if(s && s.rDone){ c.font="bold 40px 'Comic Sans MS',cursive,sans-serif"; c.fillText(s.rOk?"Solved! ✓":"Try tomorrow!",W/2,222);
-    c.font="28px 'Comic Sans MS',cursive,sans-serif"; c.fillText("New riddle tomorrow",W/2,290); }
-  else { c.font="bold 150px 'Comic Sans MS',cursive,sans-serif"; c.fillText("?",W/2,250);
-    c.font="bold 34px 'Comic Sans MS',cursive,sans-serif"; c.fillText("3 ★ for the answer!",W/2,334); }
+  if(s && s.rDone){ c.font="bold 40px 'Comic Sans MS',cursive,sans-serif"; c.fillText(s.rOk?"Solved! ✓":"Try tomorrow!",256,222);
+    c.font="28px 'Comic Sans MS',cursive,sans-serif"; c.fillText("New riddle tomorrow",256,290); }
+  else { c.font="bold 150px 'Comic Sans MS',cursive,sans-serif"; c.fillText("?",256,250);
+    c.font="bold 34px 'Comic Sans MS',cursive,sans-serif"; c.fillText("3 ★ for the answer!",256,334); }
+  c.restore();
   B.dt.update();
 }
 function _pkEasel(x,y,z,face,name,w,h,draw){
@@ -15071,7 +15137,12 @@ function _pkEasel(x,y,z,face,name,w,h,draw){
   const m=new BABYLON.StandardMaterial(name+"M",scene); m.diffuseTexture=dt; m.specularColor=new BABYLON.Color3(0.03,0.03,0.03);
   m.emissiveColor=new BABYLON.Color3(0.55,0.55,0.55);
   const pl=BABYLON.MeshBuilder.CreatePlane(name+"P",{width:w,height:h},scene);
-  pl.material=m; pl.position.set(0,1.18,0.17); pl.rotation.x=-0.12; pl.parent=r;
+  /* ⚠️ v307d (Giacomo: «il cartello sembra a meta'!»): il pannello e' girato
+     di 180° (rotation.y=PI) e l'inclinazione si applica DOPO la rotazione:
+     con -0.12 come il legno dietro pendeva dall'altra parte, i due si
+     incrociavano a meta' altezza e la parte bassa finiva dietro il legno.
+     Girato, la stessa pendenza del legno e' +0.12. */
+  pl.material=m; pl.position.set(0,1.18,0.175); pl.rotation.x=0.12; pl.parent=r;
   pl.rotation.y=Math.PI;                       // la faccia verso +z locale (verso chi guarda)
   const back=BABYLON.MeshBuilder.CreateBox(name+"B",{width:w+0.04,height:h+0.04,depth:0.03},scene);
   back.material=wood; back.position.set(0,1.18,0.15); back.rotation.x=-0.12; back.parent=r;
@@ -15112,12 +15183,13 @@ function buildParkFun(){
     PARKFUN.storyBench=parkBench(L.x,L.z,fL,{ slots:[-0.35,0.35] }); PARKFUN.storyBench.noWatch=true;
     const books=()=>{ const r=new BABYLON.TransformNode("pkBooks",scene);
       ["#b5452f","#3f7ab0","#4f8a3c"].forEach((h,i)=>{ const k=LEXPROPS.book("pkBk"+i,{hex:h}); k.parent=r; k.position.y=i*0.032; k.rotation.y=i*0.35; });
+      /* v307d (Giacomo: «le mani conficcate nel libro»): il libro della
+         storia non sta piu' in mano a Mr. Oakley ma APERTO in cima alla pila */
+      const ob2=_pkOpenBook("pkOakBook","#7a2f2a"); ob2.parent=r; ob2.position.y=3*0.032; ob2.rotation.y=0.15;
       return r; };
     const oak=_pkSitNpc({ id:"oakley", name:"Mr. Oakley", sub:"\u{1F4D6} Storyteller", model:"npcMan2", height:1.72, keepLabel:true,
       tint:{ Purple:"#6b5a3e", LightBlue:"#3c4652" }, interact:talkToOakley, radius:5,
-      prompt:'\u{1F4D6} Press <b>E</b>: <b>Story Tree</b> — listen to a story' }, ob, -0.35,
-      ()=>{ const r=_pkOpenBook("pkOakBook","#7a2f2a");
-            r.position.set(0,0.66,0.15); r.rotation.x=-0.6; r.__hold={ dy:0.07, dz:0.02, rx:-0.6 }; return r; });
+      prompt:'\u{1F4D6} Press <b>E</b>: <b>Story Tree</b> — listen to a story' }, ob, -0.35, null);
     PARKFUN.oakley=oak;
     /* la pila di libri accanto a lui, sulla panchina */
     try{ const S=_pkSeat(ob,0.42), r=books(); r.parent=townRoot; r.position.set(S.x,S.y,S.z); r.rotation.y=ob.ry; }catch(e){}
