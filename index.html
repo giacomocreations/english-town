@@ -14705,7 +14705,11 @@ function _skWall(name,x,z,len,ry,tex,backTex){
     m.emissiveColor=new BABYLON.Color3(0.22,0.22,0.22); p.material=m;
     /* il piano di serie si vede da -z locale: girato col muro, piu' PI per il retro */
     const ox=Math.sin(ry)*side*(T/2+0.006), oz=Math.cos(ry)*side*(T/2+0.006);
-    p.position.set(x+ox,g+H/2,z+oz); p.rotation.y=ry+(side>0?Math.PI:0); p.parent=townRoot; p.isPickable=false; };
+    p.position.set(x+ox,g+H/2,z+oz); p.rotation.y=ry+(side>0?Math.PI:0); p.parent=townRoot; p.isPickable=false;
+    /* v308f (Giacomo: «il graffito laterale ha un glow esagerato»): il
+       bagliore prende la luce propria del muro e, sul muro corto visto da
+       lontano, lo velava tutto di bianco. I graffiti fuori dal bagliore. */
+    try{ if(typeof glowL!=="undefined" && glowL) glowL.addExcludedMesh(p); }catch(e){} };
   face(tex,-1); if(backTex) face(backTex,1);
   addSolidRot(x,z,ry,len/2,T/2+0.05,"town");
 }
