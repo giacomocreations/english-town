@@ -15089,8 +15089,8 @@ function skGoDance(D,see,B){
    scrittura libera e il microfono, le stesse stelle). In piu', nella domanda
    scritta o detta, un invito a ballare (skInvito) fa ripartire la crew:
    si balla fino alla fine di questo quarto d'ora (SKATE.reqUntil), poi
-   tutto torna all'orologio. ⚠️ E' una scelta LOCALE: i compagni vedono
-   la crew secondo il loro orologio. */
+   tutto torna all'orologio. v309e: l'invito passa a tutta la classe con la
+   presenza (Presenza._invitoCampo), quindi la crew balla per tutti. */
 function talkToDancer(D){
   const npc=D.n; if(!npc || D.st!=="chill") return;
   const first=!npcMet(npc), g=npcGreet(npc); npcTouch(npc); npc.metPlayer=true;
@@ -15121,6 +15121,7 @@ function skInvito(t){
 }
 function skCrewInvite(){
   SKATE.reqUntil=Math.ceil((radioNow()+1000)/SK_CYCLE)*SK_CYCLE;
+  SKATE.reqMine=true;                                   // v309e: lo si dice alla classe (Presenza._invitoCampo)
   try{ toast("\u{1F6F9} The crew is dancing! \u{1F3B6}",3000); }catch(e){}
 }
 /* la risposta all'invito, dentro la scrittura libera dell'«Ask me» */
@@ -62813,16 +62814,25 @@ const Presenza=(function(){
       return ",w"+w.x.toFixed(1)+":"+w.z.toFixed(1); }catch(e){ return ""; }
   }
   function _pos(){
-    const s=_posa();
+    const s=_posa(), iv=_invitoCampo();
     if(s){ const p=s.x.toFixed(2)+","+s.z.toFixed(2)+","+s.y.toFixed(2)+","+s.r.toFixed(2)+","+s.k;
       /* ⚠️ le regole tengono `p` entro 48 caratteri: se non ci sta tutto si
          rinuncia prima al cameriere (si vede solo mentre porta), poi al tavolo */
       const w=s.w||"", o=s.o?(","+s.o):"";
-      if((p+w+o).length<=48) return p+w+o;
-      if((p+o).length<=48) return p+o;
-      return (p+w).length<=48?p+w:p; }
-    return player.position.x.toFixed(1)+","+player.position.z.toFixed(1)+","
+      let q=((p+w+o).length<=48)?p+w+o:(((p+o).length<=48)?p+o:(((p+w).length<=48)?p+w:p));
+      if(iv && (q+iv).length<=48) q+=iv;
+      return q; }
+    const q=player.position.x.toFixed(1)+","+player.position.z.toFixed(1)+","
           +player.position.y.toFixed(2)+","+player.rotation.y.toFixed(2);
+    return (iv && (q+iv).length<=48)?q+iv:q;
+  }
+  /* v309e (Giacomo: «fai passare l'invito per tutti»): chi ha chiesto alla
+     crew di ballare lo dice a tutta la classe finche' l'invito dura, come
+     campo in coda a `p`: «,i» + il numero del quarto d'ora in cui finisce
+     (base 36). Chi lo riceve fa ballare la crew anche da se' (_campione). */
+  function _invitoCampo(){
+    try{ if(typeof SKATE==="undefined" || !SKATE.reqMine || radioNow()>=SKATE.reqUntil) return "";
+      return ",i"+Math.round(SKATE.reqUntil/SK_CYCLE).toString(36); }catch(e){ return ""; }
   }
   function _leggiPos(t){
     const p=String(t||"").split(",");
@@ -62830,14 +62840,16 @@ const Presenza=(function(){
     if(!isFinite(x)||!isFinite(z)) return null;
     const m=/^s(-?\d{1,4})_(-?\d{1,4})([db]?)(c?)$/.exec(p[4]||"");
     /* dal sesto campo in poi: il cameriere (w...) e il tavolo (o... / c..., v309) */
-    let w=null, ta=null;
-    for(let i=5;i<p.length;i++){ const f=p[i]||""; let mm;
+    let w=null, ta=null, iv=0;
+    for(let i=4;i<p.length;i++){ const f=p[i]||""; let mm;
+      if(!iv && (mm=/^i([0-9a-z]{1,8})$/.exec(f))){ iv=parseInt(mm[1],36)*SK_CYCLE; continue; }   // v309e: l'invito alla crew
+      if(i<5) continue;
       if(!w && (mm=/^w(-?\d{1,4}(?:\.\d)?):(-?\d{1,4}(?:\.\d)?)$/.exec(f))) w=mm;
       else if(!ta && (mm=/^o([0-9a-u]{4})([0-3-])$/.exec(f))) ta={ k:"o", c:mm[1], cur:mm[2] };
       else if(!ta && (mm=/^c([0-7])([0-4])([0-4])([0-4])([01-])$/.exec(f))) ta={ k:"c", c:mm[1]+mm[2]+mm[3]+mm[4], cur:mm[5] }; }
     const d=/^d(\d{1,3})$/.exec(p[4]||"");            // v304: balla (fase in centesimi di battito)
     const mz=/^m([hbmsStar])(\d{1,3})(?:@(\d{2,3}))?$/.exec(p[4]||""); // v309: i passi (mossa, battiti x10, @bpm dello schiocco)
-    return { x:x, z:z, y:(isFinite(y)?y:0), r:(isFinite(r)?r:0),
+    return { x:x, z:z, y:(isFinite(y)?y:0), r:(isFinite(r)?r:0), invito:(isFinite(iv)?iv:0),
              balla:d?{ ph:+d[1]/100 }:null,
              mossa:mz?{ mv:_MOSSA_DA[mz[1]], sdir:(mz[1]==="S"?-1:1), b:+mz[2]/10, bpm:mz[3]?+mz[3]:0 }:null,
              siede:m?{ seat:+m[1]/100, gy:+m[2]/100, eat:m[3]||"", c:!!m[4], ta:ta }:null,
@@ -62910,6 +62922,14 @@ const Presenza=(function(){
     e.balla=p.balla;                                   // v304: balla al concerto
     /* v309: i passi; t = quando e' arrivato il campione, per far avanzare i battiti */
     e.mossa=p.mossa?Object.assign(p.mossa,{ t:ora }):null;
+    /* v309e: un compagno ha invitato la crew a ballare: balla anche qui.
+       Solo un invito ancora valido e non piu' lungo di un quarto d'ora. */
+    try{ if(p.invito && String(v.a||"town")==="town" && typeof SKATE!=="undefined"){
+      const now=radioNow();
+      if(p.invito>now && p.invito-now<=SK_CYCLE+60000 && p.invito>(SKATE.reqUntil||0)){
+        const prima=skPhase(); SKATE.reqUntil=p.invito;
+        if(prima!=="dance" && area==="town" && Math.hypot(player.position.x-SKATE.C.x,player.position.z-SKATE.C.z)<60)
+          toast("\u{1F6F9} "+(nomi[key]?nomi[key]+" asked the crew to dance! ":"The crew is dancing! ")+"\u{1F3B6}",3200); } } }catch(err){}
     e.cameriere=p.cameriere;                           // v302: dove sta il suo Ray (dinerMirror)
     /* ⚠️ Il numero di sequenza distingue una frase NUOVA da una che e'
        semplicemente ancora nel nodo: senza, ogni aggiornamento di posizione
