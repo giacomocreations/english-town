@@ -15118,8 +15118,10 @@ function skDanceStart(list){
   if(!K){ toast("\u{1F57A} Non riesco a ballare adesso: riprova."); return; }
   try{ if(typeof PDANCE!=="undefined" && PDANCE.on) danceStop(); }catch(e){}
   SKDANCE.area=area;
+  /* al Beat Club si balla rivolti al palco */
+  let f0=ry; if(area!=="town"){ try{ f0=danceStageFace(); player.rotation.y=f0; }catch(e){} }
   Object.assign(SKDANCE,{ on:true, K, list, mv:"hop", last:null, dur:2, m0:Math.floor(_skDanceClock().beat)+1, baseY:avatarRoot.position.y,
-    face:ry, turnFrom:ry, turnTo:ry, sdir:1, home:{ x:player.position.x, z:player.position.z } });
+    face:f0, turnFrom:f0, turnTo:f0, sdir:1, home:{ x:player.position.x, z:player.position.z } });
   SKDANCE.cur=K.stand.pins.map(k=>({ tn:k.tn, p:k.p.clone(), q:k.q.clone(), s:k.s.clone() }));
   try{ playAvatarAnim(IDLE_ANIM); }catch(e){}
   if(!SKDANCE.obs) SKDANCE.obs=scene.onBeforeRenderObservable.add(skDanceTick);
@@ -15153,18 +15155,27 @@ function skDanceTick(){
     else { S.mv="hop"; S.dur=2;
       S.turnFrom=S.face;
       const hx=S.home.x-player.position.x, hz=S.home.z-player.position.z;
-      S.turnTo=Math.hypot(hx,hz)>0.6?Math.atan2(-hx,-hz):S.face;
+      S.turnTo=(S.area==="town" && Math.hypot(hx,hz)>0.6)?Math.atan2(-hx,-hz):S.face;
       S.sdir=(hx*Math.cos(S.turnTo)-hz*Math.sin(S.turnTo))>0?1:-1; }
     S.m0+=(was==="hop"?2:SKATE_DUR(was)); b=B-S.m0; }
   const E=_skEval(S.K,S.mv,b), dy=_skBlend(S.cur,E.A,E.B,E.t);
   avatarRoot.position.y=S.baseY+dy+(E.hop||0);
-  if(S.mv==="hop" && E.turn!=null){ let df=S.turnTo-S.turnFrom; while(df>Math.PI) df-=2*Math.PI; while(df<-Math.PI) df+=2*Math.PI;
+  /* v308g (Giacomo: «al Beat Club se balli devi essere rivolto verso il
+     palco, sempre»). Nel club niente giravolte: la faccia e' sempre verso
+     il palco, e il saltello fra un passo e l'altro ti riporta al tuo posto
+     (il moonwalk ti fa scivolare indietro, lontano dal palco). */
+  const club=S.area!=="town";
+  if(club){ try{ S.face=danceStageFace(); }catch(e){}
+    if(S.mv==="hop"){ const hx=S.home.x-player.position.x, hz=S.home.z-player.position.z, hd=Math.hypot(hx,hz), st=Math.min(hd,0.7*dt);
+      if(hd>0.02 && !blocked(player.position.x+hx/hd*st,player.position.z+hz/hd*st)){ player.position.x+=hx/hd*st; player.position.z+=hz/hd*st; } } }
+  else if(S.mv==="hop" && E.turn!=null){ let df=S.turnTo-S.turnFrom; while(df>Math.PI) df-=2*Math.PI; while(df<-Math.PI) df+=2*Math.PI;
     S.face=S.turnFrom+df*_skEase(E.turn); }
   player.rotation.y=S.face+(E.sway||0);
   if(E.glide){ const f={ x:Math.sin(S.face), z:Math.cos(S.face) }, sp=0.34*CL.bpm/60*dt;
     let nx=player.position.x, nz=player.position.z;
     if(S.mv==="moonwalk"){ nx-=f.x*sp; nz-=f.z*sp; } else { nx+=f.z*sp*S.sdir; nz-=f.x*sp*S.sdir; }
-    const pista=S.area!=="town" || skInZone(nx,nz,false);      // v308e: allo skatepark non si esce sul prato
+    const pista=club ? Math.hypot(nx-S.home.x,nz-S.home.z)<1.2      // nel club: entro 1,2 m dal tuo posto, in mezzo alla folla
+                     : skInZone(nx,nz,false);                       // v308e: allo skatepark non si esce sul prato
     if(pista && !blocked(nx,nz)){ player.position.x=nx; player.position.z=nz; } }
 }
 
