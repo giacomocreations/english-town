@@ -14875,10 +14875,19 @@ function skateTick(){
     if(D.mv==="hop" && E.turn!=null){ let df=D.turnTo-D.turnFrom; while(df>Math.PI) df-=2*Math.PI; while(df<-Math.PI) df+=2*Math.PI;
       D.face=D.turnFrom+df*_skEase(E.turn); D.n.carrier.rotation.y=D.face; }
     if(E.glide){ const f={ x:Math.sin(D.face), z:Math.cos(D.face) }, sp=0.34*bps*dt;
-      const c=D.n.carrier.position;
+      const c=D.n.carrier.position, ox=c.x, oz=c.z;
       if(D.mv==="moonwalk"){ c.x-=f.x*sp; c.z-=f.z*sp; }
       else { c.x+=f.z*sp*D.sdir; c.z-=f.x*sp*D.sdir; }
-      c.x=Math.max(C.x-6.3,Math.min(C.x+6.3,c.x)); c.z=Math.max(C.z-8.6,Math.min(C.z-3.4,c.z)); }   // restano sulla pista
+      /* v308d (Giacomo: «a volte si incastrano, vanno uno addosso
+         all'altro»): ognuno resta nella SUA corsia attorno al posto di
+         partenza (i posti distano ~3,7 m: corsia larga 2,6 m), e se due si
+         avvicinano comunque a meno di 1,1 m, quello che scivola si ferma */
+      const hx=D.home.x, hz=D.home.z;
+      let nx=Math.max(hx-1.3,Math.min(hx+1.3,c.x)), nz=Math.max(hz-1.9,Math.min(hz+1.3,c.z));
+      nx=Math.max(C.x-6.3,Math.min(C.x+6.3,nx)); nz=Math.max(C.z-8.6,Math.min(C.z-3.4,nz));
+      const crowd=SKATE.dancers.some(O=>O!==D && O.n && O.n.carrier && Math.hypot(O.n.carrier.position.x-nx,O.n.carrier.position.z-nz)<1.1)
+        || Math.hypot(player.position.x-nx,player.position.z-nz)<0.9;
+      if(crowd){ c.x=ox; c.z=oz; } else { c.x=nx; c.z=nz; } }
   });
 }
 /* in piedi fermi durante la pausa: dalla posa in cui si era alla posa base
