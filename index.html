@@ -14859,9 +14859,11 @@ function skateTick(){
     m.emissiveColor.set(col[0]*(0.25+0.75*pulse),col[1]*(0.25+0.75*pulse),col[2]*(0.25+0.75*pulse)); });
   if(d>70) return;                                   // lontani: nessuno li vede, niente calcoli
   const dt=Math.min(0.05,engine.getDeltaTime()/1000), bps=SKATE.bpm/60;
+  const rest=!!(SKATE.pending && SKATE.near);           // fra un brano e l'altro: silenzio
   SKATE.dancers.forEach(D=>{
     if(!_pkVisible(D.n)) return;
     if(!D.K){ if(!_skPrepare(D)) return; D.m0=Math.floor(B)+1; }
+    if(_skRest(D,rest,B,D.n.holder,v=>{ D.n.carrier.rotation.y=D.face; })) return;
     let b=B-D.m0;
     if(b<0||b>D.dur+8){ D.m0=Math.floor(B); b=B-D.m0; }        // brano cambiato: si riparte dal battito
     if(b>=D.dur){ const was=D.mv; _skNext(D,SK_MOVES.map(m=>m.id)); D.m0+=(was==="hop"?2:SKATE_DUR(was)); b=B-D.m0;
@@ -14878,6 +14880,20 @@ function skateTick(){
       else { c.x+=f.z*sp*D.sdir; c.z-=f.x*sp*D.sdir; }
       c.x=Math.max(C.x-6.3,Math.min(C.x+6.3,c.x)); c.z=Math.max(C.z-8.6,Math.min(C.z-3.4,c.z)); }   // restano sulla pista
   });
+}
+/* in piedi fermi durante la pausa: dalla posa in cui si era alla posa base
+   in 0,4 s; alla ripresa si riparte dal saltello, sul battito */
+function _skRest(D,rest,B,holder,face){
+  if(rest){
+    if(!D.restT){ D.restT=performance.now(); D.snap={ pins:D.cur.map(k=>({ p:k.p.clone(), q:k.q.clone() })), lift:0, drop:0 };
+      D.snapY=holder?holder.position.y-D.baseY:avatarRoot.position.y-D.baseY; }
+    const t=_skEase((performance.now()-D.restT)/400), K=D.K;
+    _skBlend(D.cur,D.snap,K.stand,t);
+    const y=D.snapY*(1-t)+(K.stand.lift-K.stand.drop)*t;
+    if(holder) holder.position.y=D.baseY+y; else avatarRoot.position.y=D.baseY+y;
+    face(); return true; }
+  if(D.restT){ D.restT=0; D.mv="hop"; D.dur=2; D.m0=Math.floor(B)+1; D.turnFrom=D.face; D.turnTo=D.face; }
+  return false;
 }
 function SKATE_DUR(mv){ return (SK_MOVES.find(m=>m.id===mv)||{beats:4}).beats; }
 /* durante il saltello ci si gira cosi' che la mossa dopo riporti verso casa */
@@ -14898,6 +14914,7 @@ function skateAudio(on,d){
   SKATE.near=want;
   if(!want){ if(SKATE.audio && !SKATE.audio.paused){ try{ SKATE.audio.pause(); }catch(e){} } return; }
   if(typeof GIG_SONGS==="undefined" || !GIG_SONGS.length) return;
+  if(SKATE.pending){ if(performance.now()<SKATE.gapUntil) return; SKATE.pending=false; skateNextSong(false); }
   if(!SKATE.audio) skateNextSong(true);
   const A=SKATE.audio; if(!A) return;
   const k=Math.max(0,Math.min(1,(R-d)/(R-6)));
@@ -14910,7 +14927,9 @@ function skateNextSong(first){
   const s=GIG_SONGS[SKATE.songI];
   if(SKATE.audio){ try{ SKATE.audio.pause(); SKATE.audio.removeAttribute("src"); SKATE.audio.load(); }catch(e){} }
   const a=new Audio(GIG_DIR+s.f); a.preload="auto"; a.volume=0;
-  a.addEventListener("ended",()=>{ if(SKATE.audio===a) skateNextSong(false); });
+  /* v308c (Giacomo: «quando la canzone finisce, tra una e l'altra, si
+     fermano, e poi riprendono»): 5 s di silenzio, poi il brano dopo */
+  a.addEventListener("ended",()=>{ if(SKATE.audio===a){ SKATE.pending=true; SKATE.gapUntil=performance.now()+5000; } });
   a.addEventListener("error",()=>{ if(SKATE.audio===a){ SKATE.failed=(SKATE.failed||0)+1; if(SKATE.failed<4) setTimeout(()=>{ if(SKATE.audio===a) skateNextSong(false); },3000); } });
   SKATE.audio=a; SKATE.bpm=s.bpm||120; SKATE.bOff=Math.ceil(SKATE.beat||0);
 }
@@ -14924,14 +14943,17 @@ function skMoveOk(m){ try{ if(Student.teacher) return true; }catch(e){} let st=0
    uno dietro l'altro; andando avanti o indietro col cursore si ferma e
    cammina normalmente»). E = il passo dopo (si parte dal ballo del Beat
    Club, poi i passi sbloccati); il cambio arriva col saltello, sul battito. */
-function skDanceList(){ return SK_MOVES.filter(skMoveOk).map(m=>m.id); }
+/* il giro di E: i passi sbloccati, e per ultimo il Freestyle (tutti a caso)
+   se oltre al ballo base ce ne sono almeno due */
+function skDanceList(){ const L=SK_MOVES.filter(skMoveOk).map(m=>m.id);
+  if(L.filter(x=>x!=="basic").length>=2) L.push("free"); return L; }
 function skDanceE(){
   const L=skDanceList(); if(!L.length) return;
-  const name=id=>{ const m=SK_MOVES.find(x=>x.id===id); return m?(m.ic+" "+m.en):id; };
+  const name=id=>{ if(id==="free") return "\u{1F3B2} Freestyle"; const m=SK_MOVES.find(x=>x.id===id); return m?(m.ic+" "+m.en):id; };
   if(!SKDANCE.on){ SKDANCE.idx=0; skDanceStart([L[0]]);
     if(SKDANCE.on) toast(name(L[0])+" \u2014 E: next move \u00b7 walk to stop",3500); return; }
   SKDANCE.idx=((SKDANCE.idx||0)+1)%L.length;
-  const nx=L[SKDANCE.idx]; SKDANCE.list=[nx];
+  const nx=L[SKDANCE.idx]; SKDANCE.list=(nx==="free")?L.filter(x=>x!=="free"):[nx];
   if(SKDANCE.mv!=="hop") SKDANCE.m0=_skDanceClock().beat-SKDANCE.dur;       // si chiude il passo: saltello, poi il nuovo
   const lock=SK_MOVES.find(m=>!skMoveOk(m));
   toast(name(nx)+(L.length<2&&lock?" \u2014 \u{1F512} "+lock.en+" a \u2B50"+lock.stars:""),2600);
@@ -14982,6 +15004,11 @@ function skDanceTick(){
   if(!SKDANCE.on) return;
   if(area!==SKDANCE.area){ skDanceStop(); return; }
   const S=SKDANCE, CL=_skDanceClock(), B=CL.beat, dt=Math.min(0.05,engine.getDeltaTime()/1000);
+  /* fra un brano e l'altro ci si ferma: allo skatepark le casse in pausa,
+     al Beat Club il concerto fra un pezzo e l'altro */
+  const rest=(S.area==="town") ? !!(SKATE.pending && SKATE.near)
+                              : !(typeof AUDIO!=="undefined" && AUDIO.playing());
+  if(_skRest(S,rest,B,null,()=>{ player.rotation.y=S.face; })) return;
   let b=B-S.m0;
   if(b<0||b>S.dur+8){ S.m0=Math.floor(B); b=B-S.m0; }
   if(b>=S.dur){ const was=S.mv;
