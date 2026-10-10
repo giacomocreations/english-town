@@ -16097,8 +16097,13 @@ function buildParkFun(){
     if(reader) PARKFUN.people.reader={ npc:reader, view:{x:0,z:1}, sideX:0.5 };
     if(lunch)  PARKFUN.people.lunch ={ npc:lunch,  view:{x:0,z:1}, sideX:-0.5 };
     const G=parkBench(134.6,6.0,Math.PI,{ noInter:true });
+    /* v308h (Giacomo: «la chitarra deve essere in grembo al signore, sopra
+       le gambe»): niente piedistallo; la cassa appoggiata sulla coscia
+       destra, il manico verso sinistra e un po' in su, la buca davanti.
+       r = centro della cassa grande (y 0,26 nel prop, scala 0,78). */
     const gtr=()=>{ const r=new BABYLON.TransformNode("pkGtr",scene); const k=LEXPROPS.guitar("pkGuitar"); k.parent=r; k.scaling.setAll(0.78);
-      k.position.set(0,-0.55,0); r.position.set(-0.05,0.86,0.30); r.rotation.z=-1.05; r.rotation.y=0.2; return r; };
+      k.getChildMeshes().forEach(m=>{ if(m.position.y<0.05) m.setEnabled(false); });          // il piedistallo
+      k.position.set(0,-0.26*0.78,0); r.position.set(0.11,0.72,0.2); r.rotation.z=Math.PI/2-0.35; r.rotation.y=0.12; return r; };
     const gu=_pkSitNpc({ id:"pk_guitar", name:"Busker", model:"npcWoman", height:1.66 }, G, 0.0, gtr);
     if(gu) PARKFUN.people.guitar={ npc:gu, view:{x:0,z:-1}, sideX:-0.4 };
     /* v307e (Giacomo: «i tipi che battono le mani non possono stare tutta la
