@@ -14899,7 +14899,7 @@ const _PK_SUBJ={ he:"(he|the man|the boy|the runner|the jogger)", she:"(she|the 
 const PARK_WRITE_RE={
   reader:"HE is reading (a|the|his) book", lunch:"SHE is eating (a|the|her) sandwich",
   guitar:"SHE is playing (the |a |her )?guitar", clap:"THEY are clapping( their hands)?",
-  wave:"SHE is waving( her hand| hello| at me| to me| goodbye)?", jogger:"HE is (running|jogging)" };
+  wave:"SHE is (waving|waiving)( her hand| hello| at me| to me| goodbye)?", jogger:"HE is (running|jogging)" };
 function _pkNorm(v){
   return String(v||"").toLowerCase().replace(/[’‘`]/g,"'").replace(/[^a-z' ]+/g," ")
     .replace(/\b(he|she|it)'s\b/g,"$1 is").replace(/\bthey're\b/g,"they are").replace(/\s+/g," ").trim();
@@ -14939,7 +14939,7 @@ function parkWatchWrite(sc,img){
   DialogueBox.open({ name:"Park watcher", icon:"\u{1F440}", sub:"Question "+(s.wN+1)+"/3 · write it",
     text:q, italian:"Scrivi la frase al present continuous (He's / She's / They're + -ing).",
     html:(img?'<div style="text-align:center;margin-bottom:6px"><img alt="" style="max-width:100%;max-height:150px;border-radius:10px;border:3px solid #fbf7ec;box-shadow:0 3px 10px rgba(0,0,0,.35)" src="'+img+'"></div>':"")
-      +'<input id="pk-write" class="gem-input" type="text" autocomplete="off" autocapitalize="sentences" autocorrect="off" spellcheck="false" placeholder="'+(sc.who==="they"?"They’re …":(sc.who==="he"?"He’s …":"She’s …"))+'">'
+      +'<input id="pk-write" class="gem-input" data-mic="1" type="text" autocomplete="off" autocapitalize="sentences" autocorrect="off" spellcheck="false" placeholder="'+(sc.who==="they"?"They’re …":(sc.who==="he"?"He’s …":"She’s …"))+'">'
       +'<div id="pk-fb" style="min-height:18px;margin-top:6px;font-size:13px;color:#b5452f"></div>',
     buttons:[{ label:"✔ Check", cls:"primary", keepOpen:true, act:judge },{ label:"Not now", cls:"ghost", act:()=>{} }] });
   const inp=document.getElementById("pk-write");
@@ -14991,11 +14991,13 @@ function _pkSitNpc(cfg,bench,t,prop){
   if(!cfg.keepLabel) _pkNoLabel(n);
   /* le pin delle gambe arrivano qualche fotogramma dopo lo spawn: si
      ritenta finche' ci sono, come per gli alunni della Town School */
+  let pn=null;
   const tryS=k=>{ if(n.__seated) return; let ok=false;
     try{ ok=!!(n.pins&&n.pins.length) && npcSitAt(n,S.x,S.z,S.face,S.y,S.gy,0.03); }catch(e){ console.warn("[park] sit",e); }
+    if(ok && pn && pn.__hold) setTimeout(()=>{ try{ _pkHold(n,pn); }catch(e){} },120);   // a posa applicata
     if(!ok && k<40) setTimeout(()=>tryS(k+1),100); };
   setTimeout(()=>tryS(0),0);
-  if(prop){ try{ const p=prop(); p.parent=n.carrier; PARKFUN.props.push({ node:p, npc:n }); } catch(e){ console.warn("[park] prop",e); } }
+  if(prop){ try{ pn=prop(); pn.parent=n.carrier; PARKFUN.props.push({ node:pn, npc:n }); } catch(e){ console.warn("[park] prop",e); } }
   try{ regTownPop(n); }catch(e){}            // di notte la citta' chiude: anche il parco si svuota
   return n;
 }
@@ -15004,6 +15006,42 @@ function _pkStandNpc(cfg,x,z,face,anim){
   n.watch=false; _pkNoLabel(n); if(anim) try{ n.play(anim); }catch(e){}
   try{ regTownPop(n); }catch(e){}
   return n;
+}
+/* v307c (Giacomo, 10 ott: «il libro e' sospeso in aria, non sta nelle mani
+   del lettore»). La posizione dell'oggetto NON si indovina: da seduti si
+   misurano le mani vere (MiddleHand / Palm / Wrist dei due lati: i rig ne
+   hanno di diverse) e l'oggetto va nel punto fra le due, nel sistema del
+   carrier. hold = { dy, dz, rx }: un filo sopra i palmi, inclinato verso
+   chi legge. Misurato: le mani da seduti stanno a ~0,6 m da terra, 13-16 cm
+   davanti al bacino — prima il libro era a 0,98 m e 34 cm avanti. */
+function _pkHold(n,node){
+  const H=node.__hold; if(!H) return;
+  const all=n.holder.getDescendants(false);
+  const side=sd=>{ for(const k of ["MiddleHand","Palm","Wrist"]){
+      const t=all.find(x=>new RegExp(k+"\\."+sd+"$").test(x.name)); if(t) return t; } return null; };
+  const L=side("L"), R=side("R"); if(!L||!R) return;
+  L.computeWorldMatrix(true); R.computeWorldMatrix(true); n.carrier.computeWorldMatrix(true);
+  const mid=L.getAbsolutePosition().add(R.getAbsolutePosition()).scale(0.5);
+  const inv=n.carrier.getWorldMatrix().clone(); inv.invert();
+  const loc=BABYLON.Vector3.TransformCoordinates(mid,inv);
+  node.position.set(loc.x, loc.y+(H.dy||0), loc.z+(H.dz||0));
+  node.rotation.set(H.rx||0, H.ry||0, H.rz||0);
+}
+/* libro APERTO (chi legge non tiene un libro chiuso): copertina e due
+   blocchi di pagine a V, con qualche riga di testo disegnata */
+let _pkPageMat=null;
+function _pkOpenBook(name,hex){
+  const r=new BABYLON.TransformNode(name,scene);
+  if(!_pkPageMat){ const dt=new BABYLON.DynamicTexture("pkPageT",{width:128,height:128},scene,true), c=dt.getContext();
+    c.fillStyle="#f6efdc"; c.fillRect(0,0,128,128); c.fillStyle="rgba(60,50,40,0.55)";
+    for(let y=14;y<118;y+=9) c.fillRect(12,y,104-((y*7)%23),3);
+    dt.update(); _pkPageMat=new BABYLON.StandardMaterial("pkPageM",scene); _pkPageMat.diffuseTexture=dt;
+    _pkPageMat.specularColor=new BABYLON.Color3(0,0,0); _pkPageMat.emissiveColor=new BABYLON.Color3(0.25,0.25,0.22); }
+  const cov=BABYLON.MeshBuilder.CreateBox(name+"C",{width:0.36,height:0.012,depth:0.25},scene);
+  cov.material=lpMat(hex||"#7a2f2a"); cov.parent=r;
+  [-1,1].forEach(sd=>{ const pg=BABYLON.MeshBuilder.CreateBox(name+"P",{width:0.17,height:0.02,depth:0.23},scene);
+    pg.material=_pkPageMat; pg.position.set(sd*0.088,0.016,0); pg.rotation.z=-sd*0.13; pg.parent=r; });
+  return r;
 }
 /* la lavagnetta del gazebo: cavalletto + lavagna disegnata */
 function parkRiddleBoardDraw(){
@@ -15078,8 +15116,8 @@ function buildParkFun(){
     const oak=_pkSitNpc({ id:"oakley", name:"Mr. Oakley", sub:"\u{1F4D6} Storyteller", model:"npcMan2", height:1.72, keepLabel:true,
       tint:{ Purple:"#6b5a3e", LightBlue:"#3c4652" }, interact:talkToOakley, radius:5,
       prompt:'\u{1F4D6} Press <b>E</b>: <b>Story Tree</b> — listen to a story' }, ob, -0.35,
-      ()=>{ const r=new BABYLON.TransformNode("pkOakBook",scene); const k=LEXPROPS.book("pkOakB",{hex:"#7a2f2a"}); k.parent=r;
-            r.position.set(0,0.98,0.34); r.rotation.x=-1.0; return r; });
+      ()=>{ const r=_pkOpenBook("pkOakBook","#7a2f2a");
+            r.position.set(0,0.66,0.15); r.rotation.x=-0.6; r.__hold={ dy:0.07, dz:0.02, rx:-0.6 }; return r; });
     PARKFUN.oakley=oak;
     /* la pila di libri accanto a lui, sulla panchina */
     try{ const S=_pkSeat(ob,0.42), r=books(); r.parent=townRoot; r.position.set(S.x,S.y,S.z); r.rotation.y=ob.ry; }catch(e){}
@@ -15095,9 +15133,10 @@ function buildParkFun(){
      parco si apre sullo skyline (x 132..142, z -6..6) */
   { const R=parkBench(134.6,-5.4,0,{ noInter:true });
     const sand=()=>{ const r=new BABYLON.TransformNode("pkSand",scene); const k=LEXPROPS.sandwich("pkSandw"); k.parent=r; k.scaling.setAll(0.42);
-      r.position.set(0.02,0.95,0.30); r.rotation.x=-0.5; return r; };
-    const rbook=()=>{ const r=new BABYLON.TransformNode("pkRBook",scene); const k=LEXPROPS.book("pkRBk",{hex:"#2f6a4a"}); k.parent=r;
-      r.position.set(0,0.98,0.34); r.rotation.x=-1.0; return r; };
+      k.position.set(0,0,-0.07);
+      r.position.set(0,0.66,0.12); r.rotation.x=-0.35; r.__hold={ dy:0.03, dz:0.02, rx:-0.35 }; return r; };
+    const rbook=()=>{ const r=_pkOpenBook("pkRBook","#2f6a4a");
+      r.position.set(0,0.66,0.15); r.rotation.x=-0.6; r.__hold={ dy:0.07, dz:0.02, rx:-0.6 }; return r; };
     const reader=_pkSitNpc({ id:"pk_reader", name:"Reader", model:"npcMan2", height:1.76 }, R, -0.42, rbook);
     const lunch=_pkSitNpc({ id:"pk_lunch", name:"Girl", model:"npcWomanB", height:1.6, tint:{ Purple:"#c0442e", LightBlue:"#2f4a6a" } }, R, 0.45, sand);
     if(reader) PARKFUN.people.reader={ npc:reader, view:{x:0,z:1}, sideX:0.5 };
