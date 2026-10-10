@@ -1461,10 +1461,16 @@ const SHOP_EXTRA_SHELVES=(()=>{
   unit( 6.10, 8.55,3.2, Math.PI);     // sud — destra di OPEN
   return out;
 })();
+const U4_TROLLEY={ node:null, hidden:[] };   // v307: carrello di Mia + articoli tolti dagli scaffali
 const UNIT4={ id:"u4", area:"shop", areaName:"Corner Shop",
   title:"Unit 4 — My things", size:9, tint:"#dccfb6",
   enterToast:"Sei entrato nel Corner Shop",
   onEnter:()=>setTimeout(buildShopNPCs,0),   // stesso pattern anti-TTS di buildEmma
+  /* v307 (Giacomo, 10 ott: «nel listening gli oggetti devono finire
+     davvero nel carrello e sparire dagli scaffali»). Come al Market (v256):
+     una copia entra nel carrello di Mia; lo scaffale resta vuoto finche'
+     Sam non rifornisce (vedi listenAndDo / u4ShelvesBack). */
+  stashCart:()=>U4_TROLLEY.node, restockLater:true,
   props:[
     { key:"f_table",    x:-5.4, z:0.0,  yaw:Math.PI/2, fit:2.4 },   // bancone
     { prop:"cashDesk",  x:-5.35, z:-2.05, yaw:Math.PI/2 },          // cassa accanto al bancone
@@ -1476,7 +1482,7 @@ const UNIT4={ id:"u4", area:"shop", areaName:"Corner Shop",
     { key:"f_cupboard", x: 5.6, z:-7.9, fit:1.8 },
     { prop:"shelfUnit", w:2.6, x: 8.55, z:-1.7, yaw:-Math.PI/2 },   // est: skateboard + regali
     { prop:"shelfUnit", w:1.6, x: 8.55, z: 1.9, yaw:-Math.PI/2, boards:[0.12] },  // est: bay chitarra
-    { prop:"trolley",   x: 2.7, z:-0.5, yaw:0.5 },                  // carrello di Mia per la festa di Ben (etichettato in buildShopNPCs)
+    { prop:"trolley",   x: 2.7, z:-0.5, yaw:0.5, onBuilt:(n)=>{ U4_TROLLEY.node=n; } },   // carrello di Mia per la festa di Ben (etichettato in buildShopNPCs)
     /* ARREDO (non lessicale): riempie il negozio senza confondere il lessico */
     { prop:"plant",  x: 7.7, z: 7.0 },
     { prop:"plant",  x:-7.9, z: 0.2 },   // sotto il banner (il banner sta in alto)
@@ -21214,6 +21220,14 @@ const NUM_WORD={2:"two",3:"three"};
 function u4Article(en){ return /^[aeiou]/i.test(en)?"an":"a"; }
 function u4Words(s,punct){ const w=String(s).split(" "); if(punct) w[w.length-1]+=punct; return w; }
 function u4Restock(list){ (list||[]).forEach(e=>{ if(e&&e.mesh) e.mesh.setEnabled(true); }); }
+/* v307: il carrello di Mia si svuota (alla cassa) e gli scaffali tornano
+   pieni. msg: il toast, solo se c'era davvero qualcosa da rimettere. */
+function u4ShelvesBack(msg){
+  const had=U4_TROLLEY.hidden.length>0;
+  u4Restock(U4_TROLLEY.hidden); U4_TROLLEY.hidden=[];
+  try{ cartClear(U4_TROLLEY.node); }catch(e){}
+  if(had && msg) toast(msg);
+}
 
 /* ---- Sam: saluto contestuale + dispatch ---- */
 function samStepLine(){
@@ -21368,16 +21382,25 @@ function shopAnswer(npc,e){
   const pw=u4Words(e.item.pl,",");
   const t2=[cap].concat(pw,["please."]);
   const sw=u4Words(e.item.en); const d2=[capO, sw[sw.length-1]+",", "much"];
+  let said=want;
   DialogueBox.open({ npc, icon:"🛒", sub:"Plurale — how many?",
     text:"Yes, I have! How many do you want?",
     italian:"La lista dice: "+want.toUpperCase()+" ("+e.n+"). Rispondi con le tessere — attento al PLURALE.",
     tiles:{ tokens:t2, distractors:d2, checkLabel:"✔ Rispondi",
-      onCheck:(w)=>{ const ok=w.join(" ")===t2.join(" ");
-        if(ok) return {ok:true,msg:"✓ Right!"};
-        return {ok:false,msg:"Riprova! 💡 Controlla il NUMERO sulla lista e usa il PLURALE."}; },
-      onSuccess:()=>{ shopTake(e.item, want+" "+e.item.pl);
+      /* v307 (Giacomo, 10 ott: «se scegli two e non three ti dice che e'
+         sbagliato, ma grammaticalmente e' giusto»). Qui si allena il
+         PLURALE: «Two comics, please.» e «Three comics, please.» sono
+         entrambe corrette. Si accetta l'una e l'altra; Sam ti da' il numero
+         che hai chiesto, e se non e' quello della lista lo si fa notare
+         senza toglierti niente. Sbagliato resta il singolare («comic,»). */
+      onCheck:(w)=>{ const j=w.join(" ");
+        if(j===t2.join(" ")){ said=want; return {ok:true,msg:"✓ Right!"}; }
+        if(j===[capO].concat(pw,["please."]).join(" ")){ said=other;
+          return {ok:true,msg:"✓ Right! (La lista diceva "+want.toUpperCase()+", ma la frase e' corretta.)"}; }
+        return {ok:false,msg:"Riprova! 💡 Usa il PLURALE: "+e.item.pl+"."}; },
+      onSuccess:()=>{ shopTake(e.item, said+" "+e.item.pl);
         DialogueBox.open({ npc, icon:"🛒", sub:"Ecco a te!",
-          text:"Here you are — "+want+" "+e.item.pl+"!", italian:"Ecco fatto!",
+          text:"Here you are — "+said+" "+e.item.pl+"!", italian:"Ecco fatto!",
           buttons:[{label:"Thanks!", cls:"primary", act:()=>shopNext(npc)}] }); } },
     buttons:[{label:"Leave", cls:"ghost", act:()=>{}}] });
 }
@@ -21897,6 +21920,16 @@ const MECH={
     const st=Quest.state;
     st.seq = st.seq || pick(pool, Math.min(4, pool.length));
     st.idx = st.idx||0; st.plays = st.plays||0; st.revealed = st.revealed||false;
+    /* v307: ripartendo a meta' (si era usciti, o ricaricato) il carrello e
+       gli scaffali tornano com'erano: dentro le cose gia' messe, fuori dagli
+       scaffali le stesse */
+    const later=!!(Quest.step && Quest.step.stash && Quest.unit && Quest.unit.restockLater && Quest.unit.stashCart);
+    if(later){
+      try{ u4ShelvesBack(); const cart=Quest.unit.stashCart();
+        st.stashed=[];
+        st.seq.slice(0,st.idx).forEach(en=>{ if(!en || !en.mesh) return;
+          cartAdd(cart,en); en.mesh.setEnabled(false); st.stashed.push(en); U4_TROLLEY.hidden.push(en); });
+      }catch(e){} }
     function onTap(entry){
       const target=st.seq[st.idx];
       if(entry===target){
@@ -21904,10 +21937,15 @@ const MECH={
         if(stp&&stp.stash&&entry.mesh){ entry.mesh.setEnabled(false);
           try{ if(Quest.unit&&Quest.unit.stashCart) cartAdd(Quest.unit.stashCart(),entry); }catch(e){}   // v256
           (st.stashed=st.stashed||[]).push(entry);
+          if(later) U4_TROLLEY.hidden.push(entry);           // v307: torna sullo scaffale solo quando Sam rifornisce
           toast("✓ "+(stp.stashMsg||("Well done! "+sentenceFor(entry)))); }
         else toast("✓ Well done! "+sentenceFor(entry));
         st.idx++; st.plays=0; st.revealed=false;
-        if(st.idx>=st.seq.length){ if(st.stashed) u4Restock(st.stashed);
+        if(st.idx>=st.seq.length){
+          /* v307: al Corner Shop la merce resta nel carrello e gli scaffali
+             restano vuoti; Sam li rifornisce quando servono di nuovo
+             (Show and tell) o quando esci (u4ShelvesBack) */
+          if(st.stashed && !later) u4Restock(st.stashed);
           Quest.complete("🎧 Listening completato! Hai eseguito tutti i comandi."); return; }
         replayListenCmd();
       } else { toast("❌ Not that one — listen again! 🔊"); }
@@ -21968,6 +22006,7 @@ const MECH={
   // FINAL → show and tell: scegli l'oggetto preferito, frase a tessere + mini-writing
   showAndTell(s){
     buildShopNPCs();
+    u4ShelvesBack("\u{1F4E6} Mia ha pagato la spesa: Sam rimette gli oggetti sugli scaffali.");   // v307: servono di nuovo tutti
     questHudSet("final", HOBJ("Choose your <b>favourite object</b> in the shop: <b>touch it</b>, then build the sentence and write.","Scegli il tuo <b>oggetto preferito</b> nel negozio: <b>toccalo</b>, poi componi la frase e scrivi."), Quest.i, Quest.total);
     unitPool().forEach(entry=>{
       Quest.questInteract({ id:"show_"+entry.en, area:Quest.unit.area, radius:3.2,
@@ -23085,6 +23124,7 @@ function lessonThemeClear(){
      subito dopo non deve voler dire rifarla. ==== */
 const LESSON_AGAIN_MS=15*60000;
 const LESSON_FETCH_MS=20000;      // dopo il saluto, quanto si puo' girare prima che Miss Grace venga
+const LESSON_STAND_MS=60000;      // v307: a lezione in corso, quanto si puo' stare in piedi in classe
 function lessonOnSchoolEnter(){
   LESSON.pending=null; LESSON.fetching=false;
   const id=lessonUnitId();
@@ -23130,7 +23170,7 @@ function lessonWatchInit(){
     if(LESSON.fetching || !GRACE) return;
     const qm=document.getElementById("quest-modal");
     if(qm && qm.classList.contains("show")) return;
-    if(LESSON.on){ if(LESSON.paused && Date.now()-LESSON.pausedAt>=LESSON_FETCH_MS) lessonFetch(); return; }
+    if(LESSON.on){ if(LESSON.paused && Date.now()-LESSON.pausedAt>=LESSON_STAND_MS) lessonFetch(); return; }
     if(!LESSON.pending || !LESSON.greetAt) return;
     if(Date.now()-LESSON.greetAt<LESSON_FETCH_MS) return;
     lessonFetch();
@@ -23278,12 +23318,20 @@ function lessonGetUp(){
     }
   }
 }
-/* v306 (Giacomo, 9 ott: «ci si possa alzare e la lezione continua, ma se
-   non si esce dopo 20 secondi o non ci si risiede, ti fa sedere Grace»).
-   Alzarsi METTE IN PAUSA la lezione: ci si risiede col tasto E alla sedia
-   (o parlando con Miss Grace) e si riprende dalla stessa battuta; dopo
-   20 s in piedi Miss Grace viene a prenderti; uscire dalla scuola la
-   chiude (vedi lessonWatchInit). */
+/* v307 (Giacomo, 10 ott: «deve essere possibile alzarsi e lasciare la
+   lezione, ma se si sta in giro per piu' di un minuto in classe senza
+   risedersi, Miss Grace ti fa sedere. La lezione va avanti anche se sei in
+   piedi; se vuoi puoi uscire dalla stanza»).
+   · Alzarsi: col bottone «🚶 Stand up» in ogni finestra della lezione (con
+     la finestra aperta non si cammina, quindi prima non ci si alzava mai)
+     o con il primo passo, se la finestra e' chiusa.
+   · In piedi la lezione NON si ferma: Miss Grace e i compagni vanno avanti
+     da soli (voce + sottotitolo, la lavagna cambia), e le domande per te
+     le prende un compagno. LESSON.paused oggi vuol dire «in piedi».
+   · Ci si risiede col tasto E alla sedia (o parlando con Miss Grace) e si
+     riprende da dove e' arrivata la lezione; dopo 1 minuto in piedi Miss
+     Grace viene a prenderti; uscire dalla scuola chiude la lezione (vedi
+     lessonWatchInit). */
 function lessonStand(silent){
   if(!LESSON.seated) return; LESSON.seated=false;
   lessonGetUp();
@@ -23291,10 +23339,32 @@ function lessonStand(silent){
     LESSON.paused=true; LESSON.pausedAt=Date.now();
     try{ DialogueBox.close(); }catch(e){}
     lessonSeatInter(true);
-    if(!silent) toast("\u{1FA91} The lesson isn't over: sit down again, or leave the school.");
+    if(!silent) toast("\u{1F6B6} The lesson goes on: sit down again (E at your chair) or leave the room. After 1 minute Miss Grace will ask you to sit down.",6500);
+    /* la lezione va avanti: la battuta in corso la dice lei (o, se era una
+       domanda per te, risponde un compagno) e poi si prosegue */
+    setTimeout(()=>{ if(!LESSON.on || !LESSON.paused) return;
+      if(LESSON.curDone){ if(LESSON.next) LESSON.next(); } else if(LESSON.cur) LESSON.cur(); },900);
     return;
   }
   if(!silent) toast("\u{1F44B} You stand up.");
+}
+/* il bottone per alzarsi, in coda a ogni finestra della lezione */
+function _lessonStandBtn(){ return { label:"\u{1F6B6} Stand up", cls:"ghost", act:()=>{ if(LESSON.on && LESSON.seated) lessonStand(false); } }; }
+/* in piedi: la battuta si sente e si legge nel sottotitolo, poi si va avanti
+   da soli. Mentre Miss Grace viene a prenderti (fetching) si aspetta. */
+function _lessonAuto(who,text,cb){
+  if(LESSON.autoT){ clearTimeout(LESSON.autoT); LESSON.autoT=null; }
+  const nm=who===GRACE?"\u{1F34E} Miss Grace":("\u{1F64B} "+((who&&who.name)||"Classmate"));
+  const ms=Math.max(4500, String(text).length*80);
+  if(!LESSON.fetching){
+    try{ TTS.say(text,(who&&who.gender)?{gender:who.gender}:{gender:"f"}); }catch(e){}
+    try{ toast(nm+": "+text, ms); }catch(e){}
+  }
+  const go=()=>{ LESSON.autoT=null;
+    if(!LESSON.on || !LESSON.paused) return;
+    if(LESSON.fetching){ LESSON.autoT=setTimeout(go,1000); return; }
+    cb(); };
+  LESSON.autoT=setTimeout(go, LESSON.fetching?1000:ms);
 }
 /* la sedia: E per risedersi mentre la lezione e' in pausa */
 function lessonSeatInter(on){
@@ -23310,6 +23380,7 @@ function lessonSeatInter(on){
 function lessonResume(){
   if(!LESSON.on || !LESSON.paused) return;
   LESSON.paused=false; lessonSeatInter(false);
+  if(LESSON.autoT){ clearTimeout(LESSON.autoT); LESSON.autoT=null; }
   if(LESSON.fetching){ LESSON.fetching=false; lessonGraceHome(); }
   lessonSit();
   /* si riprende dalla stessa battuta; se la domanda era gia' stata
@@ -23319,16 +23390,25 @@ function lessonResume(){
 }
 
 /* ---- la lezione ------------------------------------------------------------- */
+function noHintTxt(t){ return String(t).replace(/\s*\([^)]*\)\s*$/,""); }
 function _lessonPupil(id){ return LESSON.pupils[id]||{ name:id==="pupil_lily"?"Lily":(id==="pupil_ben"?"Ben":"Tim"), gender:id==="pupil_lily"?"f":"m" }; }
 function _say(who,text,it,next,label,html){
+  if(LESSON.paused){ _lessonAuto(who,text,()=>{ if(LESSON.on && next) next(); }); return; }   // v307: in piedi
   DialogueBox.open({ npc:who, icon:who===GRACE?"\u{1F34E}":"\u{1F64B}", sub:who===GRACE?"Teacher":"Classmate",
     text, italian:it||undefined, html:html||undefined,
-    buttons:[{ label:label||"OK", cls:"primary", act:()=>{ if(LESSON.on && next) next(); } }] });
+    buttons:[{ label:label||"OK", cls:"primary", act:()=>{ if(LESSON.on && next) next(); } }, _lessonStandBtn()] });
 }
 /* domanda al giocatore: tre risposte, recast se sbaglia, poi avanti */
 function _ask(text,it,html,answer,wrong,full,next,kws){
+  /* v307: in piedi la domanda la prende un compagno (e non conta nel punteggio) */
+  if(LESSON.paused){
+    const who=_lessonPupil(Math.random()<0.5?"pupil_lily":"pupil_ben");
+    LESSON.curDone=true;
+    _lessonAuto(who, noHintTxt(full||answer), ()=>{ if(LESSON.on) next(); });
+    return; }
   const opts=shuffle([answer].concat(wrong.slice(0,2)));
   DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Your turn!", text, italian:it||undefined, html:html||undefined,
+    buttons:[_lessonStandBtn()],
     choices:opts.map(o=>({ label:o, act:()=>{
       if(!LESSON.on) return;
       const ok=(o===answer); LESSON.total++; if(ok) LESSON.score++;
@@ -23452,7 +23532,8 @@ function lessonStart(id){
         +'<div style="text-align:center;font-size:13px;color:#6b6358">+'+stars+' stars</div>'
         +(taskEn?'<div class="les-task">\u{1F3AF} <b>Next task</b>'+(task.where?' \u00b7 '+_escHtml(task.where):'')+'<br>'+_escHtml(taskEn)+'</div>':'')));
   });
-  let k=0; function next(){ if(!LESSON.on || LESSON.paused) return; const f=steps[k++]; LESSON.cur=f; LESSON.curDone=false;
+  /* v307: in piedi la lezione va avanti (LESSON.paused = in piedi, vedi lessonStand) */
+  let k=0; function next(){ if(!LESSON.on) return; const f=steps[k++]; LESSON.cur=f; LESSON.curDone=false;
     if(f) f(); else lessonEnd(false); }
   LESSON.next=next; LESSON.paused=false;
   setTimeout(next,450);
@@ -23461,6 +23542,7 @@ function lessonEnd(quiet){
   if(!LESSON.on) return;
   LESSON.doneAt=LESSON.doneAt||{}; if(LESSON.id) LESSON.doneAt[LESSON.id]=Date.now();
   LESSON.on=false; LESSON.id=null; LESSON.pending=null; LESSON.paused=false; LESSON.cur=null; LESSON.next=null;
+  if(LESSON.autoT){ clearTimeout(LESSON.autoT); LESSON.autoT=null; }
   setTimeout(()=>{ if(!LESSON.on){ LESSON.desk=null; lessonNpcRestore(); } },0);
   lessonSeatInter(false);
   setTimeout(lessonPupilsSync,0);
@@ -39970,6 +40052,7 @@ function unitPool(){ const u=Quest.unit;
 function enterArea(target){
   if(typeof area!=="undefined" && area!==target){ try{ standUpAll(); }catch(e){} }   // v296: cambiando luogo si e' sempre in piedi
   if(typeof area!=="undefined" && area==="market" && target!=="market"){ try{ marketOnLeave(); }catch(e){} }   // v256
+  if(typeof area!=="undefined" && area==="shop" && target!=="shop"){ try{ u4ShelvesBack(); }catch(e){} }   // v307: carrello di Mia vuoto, scaffali pieni
   area=target;
   townRoot.setEnabled(target==="town"); homeRoot.setEnabled(target==="home");
   if(target==="home"){ setTimeout(()=>{ try{ homeShadowSweep(); }catch(e){} },120); setTimeout(()=>{ try{ homeShadowSweep(); }catch(e){} },1200); }   // v301
