@@ -15245,7 +15245,7 @@ function skDanceStart(list){
   if(!K){ toast("\u{1F57A} Non riesco a ballare adesso: riprova."); return; }
   try{ if(typeof PDANCE!=="undefined" && PDANCE.on) danceStop(); }catch(e){}
   SKDANCE.area=area;
-  SKDANCE.snap=null;
+  SKDANCE.schiocco=null;
   /* al Beat Club si balla rivolti al palco */
   let f0=ry; if(area!=="town"){ try{ f0=danceStageFace(); player.rotation.y=f0; }catch(e){} }
   Object.assign(SKDANCE,{ on:true, K, list, mv:"hop", last:null, dur:2, m0:Math.floor(_skDanceClock().beat)+1, baseY:avatarRoot.position.y,
@@ -15257,7 +15257,7 @@ function skDanceStart(list){
   toast((SKDANCE.area==="town" && SKATE.quiet)?"\u{1FAF0} No music? Dance to the finger snaps! (walk to stop)":"\u{1F57A} Dance! (walk to stop)");
 }
 function skDanceStop(){
-  if(!SKDANCE.on) return; SKDANCE.on=false; SKDANCE.snap=null;
+  if(!SKDANCE.on) return; SKDANCE.on=false; SKDANCE.schiocco=null;
   try{ if(SKATE.danceInter) SKATE.danceInter.prio=3; }catch(e){}
   if(avatarRoot) avatarRoot.position.y=SKDANCE.baseY;
   try{ if(_legPins) _applyPins(_legPins); }catch(e){}
@@ -15266,11 +15266,14 @@ function skDanceStop(){
 function _skDanceClock(){
   if(SKDANCE.area==="town"){
     /* casse spente: si balla sullo schiocco di dita, a un bpm a caso fra 70
-       e 100 (uno nuovo ogni volta che la musica si ferma) */
+       e 100 (uno nuovo ogni volta che la musica si ferma).
+       ⚠️ SKDANCE.schiocco, NON .snap: .snap e' la posa salvata da _skRest
+       nelle pause, e con lo stesso nome il gioco si piantava (_skBlend su
+       uno schiocco senza pins). */
     if(SKATE.quiet){ const S=SKDANCE;
-      if(!S.snap) S.snap={ bpm:70+Math.floor(Math.random()*31), t0:performance.now(), last:-1 };
-      return { beat:(performance.now()-S.snap.t0)/1000*S.snap.bpm/60, bpm:S.snap.bpm, snap:true }; }
-    SKDANCE.snap=null;
+      if(!S.schiocco) S.schiocco={ bpm:70+Math.floor(Math.random()*31), t0:performance.now(), last:-1 };
+      return { beat:(performance.now()-S.schiocco.t0)/1000*S.schiocco.bpm/60, bpm:S.schiocco.bpm, snap:true }; }
+    SKDANCE.schiocco=null;
     return { beat:SKATE.beat, bpm:SKATE.bpm }; }
   try{ return danceBeat(); }catch(e){ return { beat:performance.now()/1000*2, bpm:120 }; }
 }
@@ -15284,7 +15287,7 @@ function skDanceTick(){
                               : !(typeof AUDIO!=="undefined" && AUDIO.playing());
   if(_skRest(S,rest,B,null,()=>{ player.rotation.y=S.face; })) return;
   /* lo schiocco, uno per battito */
-  if(CL.snap && S.snap){ const k=Math.floor(B); if(k!==S.snap.last){ S.snap.last=k; try{ SFX.snap(); }catch(e){} } }
+  if(CL.snap && S.schiocco){ const k=Math.floor(B); if(k!==S.schiocco.last){ S.schiocco.last=k; try{ SFX.snap(); }catch(e){} } }
   let b=B-S.m0;
   if(b<0||b>S.dur+8){ S.m0=Math.floor(B); b=B-S.m0; }
   if(b>=S.dur){ const was=S.mv;
