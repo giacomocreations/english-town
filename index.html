@@ -10778,6 +10778,7 @@ function benchSit(b){
   BSIT.meInter.enabled=true;
   if(NEWS.has){ toast("\u{1FA91} You sit down and open the newspaper…"); setTimeout(()=>{ if(BSIT.b===b) benchRead(); },700); }
   else toast("\u{1FA91} You sit down. (E or walk to stand up)");
+  try{ parkOnSit(b); }catch(e){}       // v307: Park watcher / Story Tree
 }
 /* il corpo sulla seduta; da capo anche per aprire/chiudere il giornale
    (braccia diverse) e dopo una ricostruzione dell'avatar */
@@ -14430,6 +14431,579 @@ function buildPark(){
   spawnProp('pk_squirrel',94.3,-11.5,0.55,{byHeight:true, ry:2.4,  solid:false});
   // cartello d'ingresso parco
   landmarkSign(80,7,0,"🌳","Central Park","Esplora · tante Unit qui dentro");
+  try{ buildParkFun(); }catch(e){ console.warn("[parco] riddle/story/watcher",e); }   // v307
+}
+
+/* =====================================================================
+   v307 — IL PARCO CHE FA GIOCARE (Giacomo, 10 ott: «mi piace molto il
+   Cantastorie [...] nel gazebo possiamo fare anche Riddle of the Day. Ed
+   e' interessante The Watcher: quando ti siedi su una panchina del parco ti
+   viene chiesto qualcosa»; «cantastorie dove nel parco?» -> sotto il pino).
+   Tre attivita' QUOTIDIANE, ognuna con le sue stelle una volta al giorno:
+     🧩 RIDDLE OF THE DAY — lavagnetta nel gazebo. Un indovinello al giorno
+        sulle parole delle unit gia' aperte dalla classe; 4 risposte.
+        Giusto al primo colpo 3⭐, al secondo 1⭐, poi si scopre.
+     📖 STORY TREE — Mr. Oakley sotto il grande pino. Ti siedi sulla
+        panchina davanti a lui, ti legge una storia breve (una per unit,
+        scritta con lessico e grammatica di quella unit) e ti fa 3 domande:
+        1⭐ per risposta giusta, +2 se sono tutte giuste. Una storia nuova al
+        giorno; le storie gia' sentite si possono riascoltare senza stelle.
+     👀 PARK WATCHER — sedendoti su una panchina del parco, la voce ti
+        chiede che cosa stanno facendo le persone (una foto della scena nel
+        riquadro) e rispondi con le tessere. Dalla Unit 8 dell'Anno 1 in poi
+        e' present continuous («She's playing the guitar»); prima vale «have
+        got» («She has got a guitar»). 3 domande al giorno, 2⭐ / 1⭐.
+   Le persone del parco sono vere: il lettore e il ragazzo col panino sulla
+   panchina in fondo al vialetto, la chitarrista con due ragazzi che
+   battono le mani, una ragazza che saluta, un corridore sul vialetto est.
+   Tutto lo stato del giorno sta in Sync («et_park»), quindi segue lo
+   studente e non il dispositivo.
+   ===================================================================== */
+const PARK_K="et_park";
+const PARKFUN={ riddleBoard:null, oakley:null, storyBench:null, people:{}, jog:null, busy:false, props:[] };
+function _pkVisible(n){ return !!(n && n.holder && n.holder.isEnabled()); }
+function _parkToday(){ return new Date().toDateString(); }
+function _parkHash(t){ let h=0; t=String(t||""); for(let i=0;i<t.length;i++) h=((h<<5)-h+t.charCodeAt(i))|0; return Math.abs(h); }
+function parkState(){
+  let s=null; try{ s=Sync.get(PARK_K,null); }catch(e){}
+  s=(s && typeof s==="object")?s:{};
+  s.solved=Array.isArray(s.solved)?s.solved:[]; s.heard=Array.isArray(s.heard)?s.heard:[];
+  if(s.d!==_parkToday()){                         // giorno nuovo: si azzera solo il «di oggi»
+    s.d=_parkToday(); s.rid=null; s.rTries=0; s.rDone=false; s.rOk=false;
+    s.sid=null; s.sDone=false; s.wN=0; s.wSeen=[]; }
+  s.wSeen=Array.isArray(s.wSeen)?s.wSeen:[];
+  return s;
+}
+function parkSave(s){ try{ Sync.set(PARK_K,s); }catch(e){} }
+/* le unit aperte dal docente (il docente senza simulazione: tutte) */
+function parkOpenUnits(){
+  return SYLLABUS.filter(x=>{ try{ return gemUnitOpen(x.id); }catch(e){ return true; } }).map(x=>x.id);
+}
+function _parkSeed(kind){ let c=""; try{ c=Student.code||""; }catch(e){} return _parkHash(_parkToday()+"|"+c+"|"+kind); }
+
+/* ---- 🧩 GLI INDOVINELLI ------------------------------------------------
+   u = unit, a = risposta, w = tre risposte sbagliate DELLO STESSO TIPO
+   (sempre parole della stessa unit: si sceglie fra cose vere, non fra
+   intrusi buffi). L'inglese resta al livello della unit. */
+const PARK_RIDDLES=[
+  {u:"u0",a:"ruler",w:["rubber","pen","desk"],en:"I am long and thin. I help you draw straight lines. What am I?"},
+  {u:"u0",a:"rubber",w:["ruler","pencil case","book"],en:"I am small. When you make a mistake with your pencil, I make it go away. What am I?"},
+  {u:"u0",a:"board",w:["desk","chair","timetable"],en:"I am on the wall of your classroom. The teacher writes on me every day. What am I?"},
+  {u:"u1",a:"passport",w:["suitcase","flight","gate"],en:"I am a small book. You show me at the airport when you go to another country. What am I?"},
+  {u:"u1",a:"suitcase",w:["passport","airport","tourist"],en:"I have got a handle and wheels. Your clothes travel inside me. What am I?"},
+  {u:"u1",a:"Italian",w:["Spanish","French","German"],en:"Pizza and pasta come from my country. People in Rome speak me. What language am I?"},
+  {u:"u2",a:"grandmother",w:["aunt","sister","daughter"],en:"I am your mother's mother. Who am I?"},
+  {u:"u2",a:"cousin",w:["uncle","brother","son"],en:"I am the son or the daughter of your aunt and uncle. Who am I?"},
+  {u:"u2",a:"birthday",w:["surname","family","name"],en:"I come once a year. There is a cake and you are one year older. What am I?"},
+  {u:"u3",a:"fridge",w:["cooker","cupboard","wardrobe"],en:"I am in the kitchen. I am cold inside and there is milk in me. What am I?"},
+  {u:"u3",a:"mirror",w:["window","carpet","lamp"],en:"Look at me and you can see your face. What am I?"},
+  {u:"u3",a:"stairs",w:["roof","floor","wall"],en:"You go up and down on me to go to the bedrooms. What am I?"},
+  {u:"u4",a:"umbrella",w:["skateboard","wallet","torch"],en:"When it rains, you open me over your head. What am I?"},
+  {u:"u4",a:"key",w:["ring","watch","charger"],en:"I am small and I open the door of your house. What am I?"},
+  {u:"u4",a:"watch",w:["necklace","glasses","camera"],en:"I am on your wrist and I tell you the time. What am I?"},
+  {u:"u5",a:"go to bed",w:["get up","have lunch","go to school"],en:"I am the last thing you do every day. Then you close your eyes and sleep. What am I?"},
+  {u:"u5",a:"get up",w:["go to bed","have dinner","watch TV"],en:"Your alarm rings at seven o'clock. You open your eyes and you leave your bed. What do you do?"},
+  {u:"u5",a:"evening",w:["morning","afternoon","night"],en:"I come after the afternoon and before the night. What am I?"},
+  {u:"u6",a:"banana",w:["apple","lemon","carrot"],en:"I am long and yellow. Monkeys love me. What am I?"},
+  {u:"u6",a:"egg",w:["milk","bread","cheese"],en:"A chicken gives me to you. You can eat me for breakfast. What am I?"},
+  {u:"u6",a:"ice cream",w:["soup","pasta","salad"],en:"I am cold and sweet. You eat me in summer, but I melt in the sun! What am I?"},
+  {u:"u7",a:"referee",w:["captain","coach","player"],en:"I have got a whistle. I watch the match and I stop it when a player breaks the rules. Who am I?"},
+  {u:"u7",a:"swimming",w:["cycling","skiing","running"],en:"You do me in a pool and you get wet! What sport am I?"},
+  {u:"u7",a:"medal",w:["helmet","net","whistle"],en:"I am round and I am gold, silver or bronze. Champions wear me. What am I?"},
+  {u:"u8",a:"gloves",w:["socks","scarf","belt"],en:"I keep your hands warm in winter. You wear two of me. What am I?"},
+  {u:"u8",a:"pyjamas",w:["swimsuit","coat","tie"],en:"You wear me in bed at night. What am I?"},
+  {u:"u8",a:"receipt",w:["change","price","size"],en:"I am a small piece of paper. The shop gives me to you when you pay. What am I?"},
+  {u:"u2_1",a:"freckles",w:["glasses","fringe","plait"],en:"We are small brown dots on your face. The sun gives us to some people. What are we?"},
+  {u:"u2_1",a:"hairdryer",w:["comb","shampoo","hairdresser"],en:"I am hot and noisy. I make your wet hair dry. What am I?"},
+  {u:"u2_1",a:"bald",w:["curly","blond","wavy"],en:"My grandad hasn't got any hair on his head. What is he?"},
+  {u:"u2_2",a:"drums",w:["violin","piano","trumpet"],en:"You hit me with two sticks. I am very loud! What instrument am I?"},
+  {u:"u2_2",a:"audience",w:["singer","drummer","band"],en:"We sit in front of the stage, we listen to the band and we clap. Who are we?"},
+  {u:"u2_2",a:"nervous",w:["relaxed","bored","proud"],en:"Before my first concert my hands were cold and my heart was very fast. How did I feel?"},
+  {u:"u2_3",a:"rainbow",w:["cloud","lightning","fog"],en:"I have got seven colours. You see me in the sky after the rain. What am I?"},
+  {u:"u2_3",a:"volcano",w:["island","desert","valley"],en:"I am a mountain, but sometimes fire and smoke come out of me. What am I?"},
+  {u:"u2_3",a:"island",w:["hill","forest","valley"],en:"I have got water all around me. What am I?"},
+  {u:"u2_4",a:"popcorn",w:["ticket","trailer","seat"],en:"I am salty or sweet. People eat me in the cinema during the film. What am I?"},
+  {u:"u2_4",a:"subtitles",w:["trailer","review","plot"],en:"The actors speak English, but you read their words in Italian at the bottom of the screen. What are they?"},
+  {u:"u2_4",a:"horror film",w:["comedy","cartoon","documentary"],en:"I am full of monsters and ghosts. People scream when they watch me. What am I?"},
+  {u:"u2_5",a:"platform",w:["timetable","passenger","tram"],en:"At the station you wait for the train on me. What am I?"},
+  {u:"u2_5",a:"helicopter",w:["plane","ferry","tram"],en:"I can fly, but I haven't got wings. I've got big blades on the top. What am I?"},
+  {u:"u2_5",a:"ferry",w:["coach","lorry","taxi"],en:"I am a big boat. I take people and cars across the sea. What am I?"},
+  {u:"u2_6",a:"spoon",w:["fork","knife","pan"],en:"You eat soup with me. What am I?"},
+  {u:"u2_6",a:"jar",w:["carton","packet","bowl"],en:"I am made of glass and I have got a lid. There is jam inside me. What am I?"},
+  {u:"u2_6",a:"peel",w:["fry","pour","bake"],en:"Before you eat a banana, you have to do this. What do you do?"},
+  {u:"u2_7",a:"broom",w:["bucket","pillow","towel"],en:"I have got a long handle. You sweep the floor with me. What am I?"},
+  {u:"u2_7",a:"dishwasher",w:["washing machine","oven","drawer"],en:"I am a machine in the kitchen. I wash the plates and the glasses for you. What am I?"},
+  {u:"u2_7",a:"pillow",w:["sheet","towel","cloth"],en:"I am soft. You put your head on me in bed. What am I?"},
+  {u:"u2_8",a:"library",w:["bakery","bank","museum"],en:"You can borrow books from me, but you must be quiet inside. What am I?"},
+  {u:"u2_8",a:"bakery",w:["chemist","post office","library"],en:"I sell fresh bread and cakes every morning. What am I?"},
+  {u:"u2_8",a:"traffic lights",w:["roundabout","crossroads","pavement"],en:"I have got three colours: red, yellow and green. Cars stop when I am red. What am I?"},
+  {u:"u3_1",a:"vet",w:["dentist","nurse","farmer"],en:"I'm a doctor, but my patients are cats, dogs and horses. What's my job?"},
+  {u:"u3_1",a:"journalist",w:["lawyer","plumber","engineer"],en:"I write articles for a newspaper. What's my job?"},
+  {u:"u3_1",a:"firefighter",w:["police officer","mechanic","builder"],en:"I drive a red truck with a siren and I put out fires. What's my job?"},
+  {u:"u3_2",a:"password",w:["website","folder","battery"],en:"I am a secret word. You need me to open your account. What am I?"},
+  {u:"u3_2",a:"battery",w:["keyboard","printer","mouse"],en:"Your phone needs me to work. When I'm empty, you charge me. What am I?"},
+  {u:"u3_2",a:"robot",w:["satellite","app","screen"],en:"I am a machine. In the future I will cook and clean for you. What am I?"},
+  {u:"u3_3",a:"compass",w:["torch","rope","tent"],en:"I always point north. I help you when you have got lost. What am I?"},
+  {u:"u3_3",a:"sleeping bag",w:["backpack","first aid kit","campfire"],en:"You get inside me to sleep in a tent. I keep you warm. What am I?"},
+  {u:"u3_3",a:"cave",w:["trail","shelter","lake"],en:"I am a dark hole in a mountain. Bats live in me. What am I?"},
+  {u:"u3_4",a:"earthquake",w:["flood","drought","heatwave"],en:"The ground shakes and buildings can fall down. What is it?"},
+  {u:"u3_4",a:"solar panel",w:["wind farm","siren","hose"],en:"I sit on the roof and I make energy from the sun. What am I?"},
+  {u:"u3_4",a:"drought",w:["hurricane","flood","wildfire"],en:"It hasn't rained for months. The rivers are empty and the plants are dying. What is it?"},
+  {u:"u3_5",a:"ambulance",w:["bandage","plaster","X-ray"],en:"I have got a siren and I take sick people to the hospital fast. What am I?"},
+  {u:"u3_5",a:"toothache",w:["headache","cough","stomachache"],en:"You should see a dentist when you have got this. What is it?"},
+  {u:"u3_5",a:"knee",w:["shoulder","finger","throat"],en:"I am in the middle of your leg. I help you bend it. What am I?"},
+];
+/* l'indovinello di oggi: fra quelli delle unit aperte e non ancora risolti
+   (finiti tutti, si ricomincia), scelto dal giorno e dal codice — lo stesso
+   tutta la giornata, diverso fra compagni di banco */
+function parkRiddleToday(s){
+  if(s.rid!=null){ const r=PARK_RIDDLES.find(x=>x.u+"|"+x.a===s.rid); if(r) return r; }
+  const open=parkOpenUnits();
+  let pool=PARK_RIDDLES.filter(r=>open.indexOf(r.u)>=0);
+  if(!pool.length) pool=PARK_RIDDLES.filter(r=>r.u==="u0");
+  const fresh=pool.filter(r=>s.solved.indexOf(r.u+"|"+r.a)<0);
+  const P=fresh.length?fresh:pool;
+  const r=P[_parkSeed("riddle")%P.length];
+  s.rid=r.u+"|"+r.a; parkSave(s); return r;
+}
+function parkRiddle(){
+  const s=parkState(), r=parkRiddleToday(s);
+  const card=lesCard("les-w","\u{1F9E9} Riddle of the day",'<div class="les-title" style="font-size:17px;line-height:1.35">'+_escHtml(r.en)+'</div>');
+  if(s.rDone){
+    DialogueBox.open({ name:"Riddle of the day", icon:"\u{1F9E9}", sub:"Gazebo · Central Park",
+      text:r.en, italian:"Hai gia' fatto l'indovinello di oggi. Domani ce n'e' uno nuovo!",
+      html:card+lesCard(s.rOk?"les-ok":"les-no",s.rOk?"✅ Solved":"\u{1F4A1} The answer",'<div class="les-title">'+_escHtml(r.a)+'</div>')
+        +'<div style="text-align:center;font-size:13px;color:#6b6358;margin-top:6px">\u{1F319} A new riddle tomorrow!</div>',
+      buttons:[{ label:"OK", cls:"primary", act:()=>{} }] });
+    return;
+  }
+  const opts=shuffle([r.a].concat(r.w.slice(0,3)));
+  DialogueBox.open({ name:"Riddle of the day", icon:"\u{1F9E9}", sub:"Gazebo · Central Park"+(s.rTries?" · last try!":""),
+    text:r.en, italian:"Indovina! Scegli la risposta giusta: al primo tentativo 3 stelle, al secondo 1.",
+    choices:opts.map(o=>({ label:o, act:()=>{
+      const st=parkState(); if(st.rDone) return;
+      if(o===r.a){
+        const got=st.rTries?1:3;
+        st.rDone=true; st.rOk=true; if(st.solved.indexOf(st.rid)<0) st.solved.push(st.rid); parkSave(st);
+        try{ Stars.award(null,got,"indovinello"); }catch(e){}
+        try{ SFX.ding&&SFX.ding(); }catch(e){}
+        DialogueBox.open({ name:"Riddle of the day", icon:"\u{1F9E9}", sub:"✅ Correct!",
+          text:"Yes! The answer is: "+r.a+". Well done!", italian:"Esatto! Torna domani per un nuovo indovinello.",
+          html:lesCard("les-ok","✅ +"+got+" ⭐",'<div class="les-title">'+_escHtml(r.a)+'</div>'),
+          buttons:[{ label:"See you tomorrow!", cls:"primary", act:()=>{} }] });
+        parkRiddleBoardDraw();
+        return; }
+      st.rTries=(st.rTries||0)+1;
+      if(st.rTries>=2){
+        st.rDone=true; st.rOk=false; parkSave(st);
+        DialogueBox.open({ name:"Riddle of the day", icon:"\u{1F9E9}", sub:"Not this time",
+          text:"Oh no! The answer is: "+r.a+". Try again tomorrow!", italian:"Peccato! La risposta era «"+r.a+"». Domani ce n'e' un altro.",
+          html:lesCard("les-no","\u{1F4A1} The answer",'<div class="les-title">'+_escHtml(r.a)+'</div>'),
+          buttons:[{ label:"OK", cls:"primary", act:()=>{} }] });
+        parkRiddleBoardDraw();
+        return; }
+      parkSave(st);
+      DialogueBox.open({ name:"Riddle of the day", icon:"\u{1F9E9}", sub:"Not quite…",
+        text:"Not quite! Read the riddle again. You have got one more try.",
+        italian:"Non e' questa. Rileggi l'indovinello: hai ancora un tentativo (1 stella).",
+        buttons:[{ label:"\u{1F504} Try again", cls:"primary", act:()=>parkRiddle() }] });
+    } })) });
+}
+
+/* ---- 📖 LE STORIE --------------------------------------------------------
+   Una per unit, scritte con il lessico e la grammatica di QUELLA unit
+   (present simple in Anno 1, past simple e confronti in Anno 2, present
+   perfect / will / should in Anno 3). q = [domanda, giusta, sbagliata,
+   sbagliata]. */
+const PARK_STORIES=[
+  {u:"u0",ic:"\u{1F392}",t:"Tom's new school",p:["This is Tom. He is eleven years old.","Today is his first day at a new school.","His bag is blue and his pencil case is red.","His teacher is Miss Grace. She is very nice.","Tom's favourite subject is Art. He loves colours!"],
+   q:[["How old is Tom?","He's eleven.","He's twelve.","He's ten."],["What colour is his bag?","Blue.","Red.","Green."],["What is Tom's favourite subject?","Art.","Maths.","Music."]]},
+  {u:"u1",ic:"✈️",t:"The girl from Brazil",p:["Ana is from Brazil. She is Brazilian.","She is at the airport with her suitcase and her passport.","She is going to London to visit her friend Emma.","Emma is English. She speaks English and a little Spanish.","At gate twelve Ana says: «Goodbye, Brazil! Hello, England!»"],
+   q:[["Where is Ana from?","She's from Brazil.","She's from Spain.","She's from England."],["Who is Emma?","Ana's English friend.","Ana's sister.","A pilot."],["What is the number of the gate?","Twelve.","Twenty.","Two."]]},
+  {u:"u2",ic:"\u{1F382}",t:"A big family birthday",p:["Today is Grandma Rose's birthday. She is seventy!","Her son Paul and his wife Lucy are in the garden.","Their children, Mia and Sam, are there too.","Mia is their first child and Sam is their second.","Grandad Joe has got a big chocolate cake. Happy birthday, Grandma!"],
+   q:[["Whose birthday is it?","Grandma Rose's.","Mia's.","Grandad Joe's."],["Who is Lucy?","Paul's wife.","Paul's sister.","Paul's mother."],["Who has got the cake?","Grandad Joe.","Sam.","Lucy."]]},
+  {u:"u3",ic:"\u{1F431}",t:"Where is the cat?",p:["Lily has got a small grey cat. His name is Smoky.","One morning, Smoky isn't in the kitchen.","He isn't on the sofa and he isn't under the bed.","There is a noise in the bedroom. It's the wardrobe!","Smoky is in the wardrobe, between Lily's jumpers. Silly cat!"],
+   q:[["What colour is the cat?","Grey.","Black.","White."],["Is Smoky on the sofa?","No, he isn't.","Yes, he is.","Yes, there is."],["Where is Smoky at the end?","In the wardrobe.","In the kitchen.","Under the bed."]]},
+  {u:"u4",ic:"\u{1F392}",t:"The lost backpack",p:["Leo has got a green backpack. It's his favourite.","In his backpack there are two comics, a torch and a key.","One day he leaves it on the bus!","A kind lady finds it and takes it to the Corner Shop.","Sam the shopkeeper calls Leo: «Have you got a green backpack? It's here!»"],
+   q:[["What colour is Leo's backpack?","Green.","Red.","Blue."],["How many comics are in the backpack?","Two.","Three.","One."],["Where does Leo leave his backpack?","On the bus.","At school.","In the park."]]},
+  {u:"u5",ic:"⏰",t:"A day in Ben's life",p:["Ben gets up at seven o'clock every day.","He has breakfast with his sister and he goes to school by bike.","He has lunch at school at half past twelve.","After school he does his homework and he walks the dog.","He goes to bed at half past nine, but on Saturdays he goes to bed at ten!"],
+   q:[["What time does Ben get up?","At seven o'clock.","At eight o'clock.","At half past seven."],["How does Ben go to school?","By bike.","By bus.","On foot."],["What does Ben do after his homework?","He walks the dog.","He watches TV.","He plays football."]]},
+  {u:"u6",ic:"\u{1F955}",t:"Grandad's market day",p:["Every Saturday Grandad Joe goes to the market.","He buys apples, carrots and fresh fish.","He doesn't buy meat because he doesn't eat it.","On Sunday he makes a big vegetable soup for the family.","The children don't like carrots, but they love Grandad's soup!"],
+   q:[["When does Grandad go to the market?","Every Saturday.","Every Sunday.","Every day."],["Does Grandad eat meat?","No, he doesn't.","Yes, he does.","Yes, he is."],["What does Grandad make on Sunday?","A vegetable soup.","A chocolate cake.","Fish and chips."]]},
+  {u:"u7",ic:"⚽",t:"The new goalkeeper",p:["Kim is in the school football team.","She can run fast, but she can't kick the ball very well.","One day the goalkeeper is ill, and the coach says: «Kim, can you play in goal?»","Kim is a bit scared, but she stops every ball!","The team wins the match two-nil, and Kim is the champion of the day."],
+   q:[["What can Kim do?","She can run fast.","She can kick very well.","She can swim fast."],["Why does Kim play in goal?","The goalkeeper is ill.","She is the captain.","She wants a medal."],["What is the score?","Two-nil.","Three-one.","One-all."]]},
+  {u:"u8",ic:"\u{1F455}",t:"Shopping with Mum",p:["It's Saturday and Nina is at the Clothes Shop with her mum.","Nina is wearing jeans and a yellow T-shirt.","Now she is trying on a red coat in the fitting room.","The coat is perfect, but it costs fifty pounds!","Mum smiles and says: «It's your birthday next week. Let's buy it!»"],
+   q:[["Where is Nina?","At the Clothes Shop.","At the market.","At school."],["What is Nina trying on?","A red coat.","A yellow T-shirt.","Blue jeans."],["How much is the coat?","Fifty pounds.","Fifteen pounds.","Five pounds."]]},
+  {u:"u2_1",ic:"\u{1F487}",t:"The new haircut",p:["Holly usually has got long, straight, blond hair.","But today she is sitting in the Style Salon.","The hairdresser is cutting her hair short and is giving her a fringe.","Holly is a bit nervous, but when she looks in the mirror, she smiles.","Her brother says: «You look great! You look like a film star!»"],
+   q:[["What is Holly's hair usually like?","Long and straight.","Short and curly.","Red and wavy."],["What is the hairdresser doing?","Cutting Holly's hair.","Washing the floor.","Drying her own hair."],["What does her brother say?","She looks great.","She looks tired.","She looks sad."]]},
+  {u:"u2_2",ic:"\u{1F3B8}",t:"The first concert",p:["Last Friday Leo's band played their first concert at the Beat Club.","Leo was very nervous before the gig.","There were a lot of people in the audience.","When the band started the first song, everybody danced and sang.","After the concert Leo was really proud. It was the best night of his life!"],
+   q:[["Where was the concert?","At the Beat Club.","At school.","In the park."],["How did Leo feel before the gig?","Nervous.","Bored.","Relaxed."],["How did Leo feel after the concert?","Proud.","Scared.","Sad."]]},
+  {u:"u2_3",ic:"\u{1F326}️",t:"The storm on the island",p:["Last summer Maya and her dad went to a small island.","On the first day it was sunny and they swam in the sea.","On the second day the sky was cloudy and very dark.","In the evening there was a big storm with thunder and lightning.","The next morning they saw a beautiful rainbow over the beach."],
+   q:[["Where did Maya go last summer?","To a small island.","To the mountains.","To a big city."],["What was the weather like on the first day?","It was sunny.","It was snowy.","It was foggy."],["What did they see the next morning?","A rainbow.","A volcano.","Snow on the beach."]]},
+  {u:"u2_4",ic:"\u{1F3AC}",t:"The scary film",p:["On Saturday evening Tom and Lucy went to the ODEON Cinema.","Lucy wanted to see a comedy, but Tom wanted a horror film.","They watched the horror film and they ate a big box of popcorn.","When the monster came out of the dark, Tom screamed and dropped the popcorn!","Lucy laughed all the way home: «That was the best comedy ever!»"],
+   q:[["Where did Tom and Lucy go?","To the cinema.","To the theatre.","To the museum."],["What film did they watch?","A horror film.","A comedy.","A cartoon."],["What did Tom drop?","The popcorn.","His phone.","The tickets."]]},
+  {u:"u2_5",ic:"\u{1F686}",t:"The slow train",p:["Emma wanted to visit her grandparents in the country.","The train is cheaper than the coach, but it's slower.","She bought a return ticket and she waited on platform three.","The train was twenty minutes late, so she read a book in the waiting room.","The journey was long, but it was the most relaxing trip of the year."],
+   q:[["Who did Emma visit?","Her grandparents.","Her cousins.","Her teacher."],["Which platform did she wait on?","Platform three.","Platform two.","Platform ten."],["Why did she read a book in the waiting room?","The train was late.","The train was full.","She was bored at home."]]},
+  {u:"u2_6",ic:"\u{1F95E}",t:"The pancake test",p:["Kai wanted to make pancakes for his mum.","He needed some flour, two eggs and a glass of milk.","There wasn't any milk in the fridge, so he went to the shop.","He mixed everything in a big bowl and he fried the pancakes in a pan.","The first pancake was terrible, but the second one was perfect!"],
+   q:[["What did Kai want to make?","Pancakes.","A cake.","Soup."],["Why did Kai go to the shop?","There wasn't any milk.","There weren't any eggs.","He wanted some sweets."],["What was the second pancake like?","Perfect.","Terrible.","Cold."]]},
+  {u:"u2_7",ic:"\u{1F9F9}",t:"Saturday chores",p:["On Saturday morning Rita has to help at home.","She has to make her bed and tidy her room.","Her brother has to take out the rubbish and feed the cat.","They don't have to do the washing-up, because Dad does it.","In the afternoon, when the house is clean, they can go to the park!"],
+   q:[["What does Rita have to do?","Make her bed and tidy her room.","Take out the rubbish.","Do the washing-up."],["Who feeds the cat?","Rita's brother.","Rita.","Dad."],["What can they do in the afternoon?","Go to the park.","Watch a film.","Go shopping."]]},
+  {u:"u2_8",ic:"\u{1F3D9}️",t:"Lost in the city",p:["Nico is new in town. He is going to meet his friend at the museum.","He comes out of the station, but he doesn't know the way.","A woman says: «Go straight on and turn left at the traffic lights.»","«The museum is opposite the library, next to the bank.»","Nico follows the directions and he arrives on time. Thank you!"],
+   q:[["Where is Nico going?","To the museum.","To the station.","To the bank."],["Where does he turn left?","At the traffic lights.","At the roundabout.","At the bakery."],["What is opposite the museum?","The library.","The bank.","The park."]]},
+  {u:"u3_1",ic:"\u{1F4BC}",t:"The job interview",p:["Sara is meeting a manager at the Job Centre on Monday.","She wants to work part-time as a vet's assistant.","She is hard-working and she loves animals.","On Monday morning she is wearing her best jacket, and she isn't late.","At the end the manager says: «Can you start next week?»"],
+   q:[["When is Sara's interview?","On Monday.","On Friday.","On Sunday."],["What job does she want?","A vet's assistant.","A teacher.","A journalist."],["What does the manager say at the end?","«Can you start next week?»","«Sorry, no.»","«Come back next year.»"]]},
+  {u:"u3_2",ic:"\u{1F916}",t:"The robot that cooks",p:["Tom's uncle is an engineer. He has built a robot called Chip.","Chip can switch on the oven and cook simple meals.","Tom thinks robots will do all our housework in the future.","His sister isn't sure: «They might break everything!»","That evening Chip cooked pasta. It was very salty, but nothing broke!"],
+   q:[["Who built Chip?","Tom's uncle.","Tom's sister.","Tom's teacher."],["What does Tom think about the future?","Robots will do our housework.","Robots might fly.","Robots won't work."],["How was the pasta?","Very salty.","Perfect.","Cold."]]},
+  {u:"u3_3",ic:"⛺",t:"A night in a cave",p:["Vik is a mountain guide. He has climbed a lot of mountains.","He has slept in a tent hundreds of times.","Last year he got lost in a storm and he slept in a cave!","He has never seen a bear, but he has seen wolves.","«Have you ever slept in a cave?» he asks the hikers with a smile."],
+   q:[["What is Vik's job?","He's a mountain guide.","He's a firefighter.","He's a farmer."],["Where did he sleep in the storm?","In a cave.","In a hotel.","In his car."],["Has Vik ever seen a bear?","No, he hasn't.","Yes, he has.","Yes, he did."]]},
+  {u:"u3_4",ic:"\u{1F525}",t:"The fire alarm",p:["The firefighters have just come back to the station.","They have already cleaned their helmets and their hoses.","Suddenly the alarm rings: there's a wildfire near the forest!","Nobody has had lunch yet, but they jump into the fire engine.","Two hours later the fire is out. «Have you eaten yet?» asks the chief. «Not yet!»"],
+   q:[["Where are the firefighters at the start?","At the station.","In the forest.","At home."],["What have they already cleaned?","Their helmets and hoses.","The fire engine.","The kitchen."],["Have they had lunch yet?","No, not yet.","Yes, they have.","Yes, already."]]},
+  {u:"u3_5",ic:"\u{1F3E5}",t:"Too many sweets",p:["Ruby has got a terrible stomachache.","Yesterday she ate a big bag of sweets at the cinema.","Her mum says: «You should drink some water and lie down.»","The doctor says: «You shouldn't eat so many sweets. You should eat more fruit.»","Now Ruby feels better, and she eats an apple every day!"],
+   q:[["What's the matter with Ruby?","She's got a stomachache.","She's got a toothache.","She's got a cough."],["What did she eat yesterday?","A big bag of sweets.","A big pizza.","Some apples."],["What does the doctor say?","«You shouldn't eat so many sweets.»","«You should eat more sweets.»","«You should go to school.»"]]},
+];
+/* la storia di oggi: la piu' recente fra le unit aperte non ancora
+   ascoltate (cosi' segue la classe); finite, una a caso fra quelle aperte */
+function parkStoryToday(s){
+  if(s.sid){ const t=PARK_STORIES.find(x=>x.u===s.sid); if(t) return t; }
+  const open=parkOpenUnits();
+  let pool=PARK_STORIES.filter(t=>open.indexOf(t.u)>=0);
+  if(!pool.length) pool=[PARK_STORIES[0]];
+  const fresh=pool.filter(t=>s.heard.indexOf(t.u)<0);
+  const t=fresh.length?fresh[fresh.length-1]:pool[_parkSeed("story")%pool.length];
+  s.sid=t.u; parkSave(s); return t;
+}
+function talkToOakley(npc){
+  if(PARKFUN.busy) return;
+  const s=parkState(), t=parkStoryToday(s);
+  const me=(Student.nome||"").split(" ")[0]||"";
+  if(s.sDone){
+    DialogueBox.open({ npc, icon:"\u{1F4D6}", sub:"Storyteller",
+      text:"That's today's story"+(me?", "+me:"")+"! Come back tomorrow for a new one. Do you want to hear it again?",
+      italian:"La storia di oggi l'hai gia' ascoltata: domani ce n'e' una nuova. Vuoi riascoltarla (senza stelle)?",
+      buttons:[{ label:"\u{1F4D6} Again, please!", cls:"primary", act:()=>parkStoryStart(t,true) },
+               { label:"See you tomorrow!", cls:"ghost", act:()=>{} }] });
+    return;
+  }
+  const g=greetTimeOfDay();
+  DialogueBox.open({ npc, icon:"\u{1F4D6}", sub:"Storyteller",
+    text:g.en+(me?", "+me:"")+"! I'm Mr. Oakley. Sit down on the bench and listen: today's story is «"+t.t+"». Then I'll ask you three questions!",
+    italian:g.it+"! Siediti sulla panchina e ascolta la storia di oggi. Poi tre domande: 1 stella per risposta giusta, +2 se le indovini tutte.",
+    html:lesCard("les-w",t.ic+" Today's story",'<div class="les-title">'+_escHtml(t.t)+'</div>'),
+    buttons:[{ label:"\u{1FA91} Sit down and listen", cls:"primary", act:()=>parkStoryStart(t,false) },
+             { label:"Maybe later", cls:"ghost", act:()=>{} }] });
+}
+function parkStoryStart(t,again){
+  const b=PARKFUN.storyBench;
+  if(b && BSIT.b!==b){ try{ if(BSIT.b) benchStand(true); }catch(e){} try{ benchSit(b); }catch(e){} }
+  PARKFUN.busy=true;
+  const O=PARKFUN.oakley, n=t.p.length;
+  let score=0;
+  const stop={ label:"✋ Stop", cls:"ghost", act:()=>{ PARKFUN.busy=false; } };
+  const page=(i)=>{
+    if(i>=n){ ask(0); return; }
+    DialogueBox.open({ npc:O, icon:"\u{1F4D6}", sub:t.t+" · "+(i+1)+"/"+n,
+      text:t.p[i],
+      html:i===0?'<div style="text-align:center;font-size:46px;line-height:1.1;margin:2px 0 4px">'+t.ic+'</div>':"",
+      buttons:[{ label:i<n-1?"▶ Next":"▶ The end", cls:"primary", act:()=>page(i+1) }, stop] });
+  };
+  const ask=(k)=>{
+    if(k>=t.q.length){ done(); return; }
+    const q=t.q[k];
+    DialogueBox.open({ npc:O, icon:"❓", sub:"Question "+(k+1)+"/"+t.q.length, text:q[0],
+      italian:"Scegli la risposta giusta.",
+      choices:shuffle(q.slice(1)).map(o=>({ label:o, act:()=>{
+        const ok=(o===q[1]); if(ok) score++;
+        DialogueBox.open({ npc:O, icon:"\u{1F4D6}", sub:ok?"✅ Correct":"Not quite",
+          text:ok?["Very good!","That's right!","Excellent!"][k%3]:"Not quite. The answer is: "+q[1],
+          html:ok?lesCard("les-ok","✅ "+_escHtml(q[0]),'<div class="les-title">'+_escHtml(q[1])+'</div>')
+                 :lesCard("les-no","\u{1F4A1} "+_escHtml(q[0]),'<div class="gem-recast" style="text-align:left">Non <s>'+_escHtml(o)+'</s> — <b>'+_escHtml(q[1])+'</b></div>'),
+          buttons:[{ label:"Next", cls:"primary", act:()=>ask(k+1) }] }); } })) });
+  };
+  const done=()=>{
+    PARKFUN.busy=false;
+    const s=parkState(); let got=0;
+    if(!again && !s.sDone){
+      got=score+(score===t.q.length?2:0);
+      s.sDone=true; if(s.heard.indexOf(t.u)<0) s.heard.push(t.u); parkSave(s);
+      if(got>0) try{ Stars.award(null,got,"storia"); }catch(e){}
+    }
+    DialogueBox.open({ npc:O, icon:"\u{1F4D6}", sub:"The end",
+      text:(score===t.q.length?"Wonderful! You listened very carefully. ":(score?"Good listening! ":"Never mind, listening takes practice. "))
+        +"Come back tomorrow for a new story!",
+      italian:"Torna domani: c'e' una storia nuova.",
+      html:lesCard("les-end","⭐ Your result",'<div class="les-score">'+score+' / '+t.q.length+'</div>'
+        +(again?'<div style="text-align:center;font-size:13px;color:#6b6358">Practice: no stars this time</div>'
+               :'<div style="text-align:center;font-size:13px;color:#6b6358">+'+got+' stars</div>')),
+      buttons:[{ label:"Thank you, Mr. Oakley!", cls:"primary", act:()=>{ try{ if(BSIT.b===PARKFUN.storyBench) benchStand(); }catch(e){} } }] });
+  };
+  setTimeout(()=>page(0),450);
+}
+
+/* ---- 👀 PARK WATCHER -----------------------------------------------------
+   ing = present continuous (dalla Unit 8 dell'Anno 1), has = have got
+   (Unit 4-7; null = non si chiede: «She has got…» non descrive chi saluta) */
+const PARK_SCENES=[
+  { id:"reader",  who:"he",  ing:["He's","reading","a","book."],          ingD:["read","She's","an"],      has:["He","has","got","a","book."],      hasD:["have","She","an"] },
+  { id:"lunch",   who:"she", ing:["She's","eating","a","sandwich."],      ingD:["eat","He's","an"],        has:["She","has","got","a","sandwich."], hasD:["have","is","an"] },
+  { id:"guitar",  who:"she", ing:["She's","playing","the","guitar."],     ingD:["play","He's","a"],        has:["She","has","got","a","guitar."],   hasD:["have","He","an"] },
+  { id:"clap",    who:"they",ing:["They're","clapping."],                 ingD:["clap","He's","She's"],    has:null },
+  { id:"wave",    who:"she", ing:["She's","waving."],                     ingD:["wave","He's","They're"],  has:null },
+  { id:"jogger",  who:"he",  ing:["He's","running."],                     ingD:["run","She's","runing."],  has:null },
+];
+function parkWatchMode(){
+  const open=parkOpenUnits();
+  if(open.indexOf("u8")>=0) return "ing";
+  if(open.indexOf("u4")>=0) return "has";
+  return null;
+}
+/* la foto della scena, con una camera di passaggio (come gli scatti del
+   Photo Spot: due render e si rimette tutto com'era) */
+function parkSnap(sc){
+  const P=PARKFUN.people[sc.id]; if(!P) return "";
+  const n=P.npc||P[0]; if(!n) return "";
+  const p=n.pos(), f=P.view||{x:1,z:0};
+  const look=new BABYLON.Vector3(p.x+(P.lookDx||0),p.y+0.95,p.z+(P.lookDz||0));
+  const camPos=new BABYLON.Vector3(p.x+f.x*3.4+(P.sideX||0),p.y+1.75,p.z+f.z*3.4+(P.sideZ||0));
+  let cam=null, out=""; const prev=scene.activeCamera;
+  try{
+    cam=new BABYLON.FreeCamera("_parkCam",camPos,scene); cam.setTarget(look);
+    cam.minZ=0.3; cam.maxZ=400; cam.fov=0.85;
+    scene.activeCamera=cam; scene.render(); scene.render();
+    const src=engine.getRenderingCanvas(), cv=document.createElement("canvas"); cv.width=360; cv.height=225;
+    cv.getContext("2d").drawImage(src,0,0,src.width,src.height,0,0,360,225);
+    out=cv.toDataURL("image/jpeg",0.6);
+  }catch(e){ console.warn("[park] snap",e); }
+  finally{ try{ scene.activeCamera=prev; }catch(e){} try{ if(cam) cam.dispose(); }catch(e){} try{ scene.render(); }catch(e){} }
+  return out.length>2000?out:"";
+}
+function parkOnSit(b){
+  if(!b || area!=="town") return;
+  /* sulla panchina dello Story Tree: si siede e Mr. Oakley ti propone la storia */
+  if(b===PARKFUN.storyBench){ if(!PARKFUN.busy) setTimeout(()=>{ if(BSIT.b===b && !PARKFUN.busy && !_dlgOpen() && PARKFUN.oakley) talkToOakley(PARKFUN.oakley); },700); return; }
+  if(b.noWatch) return;
+  if(!(b.x>86 && b.x<152 && b.z>-60 && b.z<60)) return;      // solo le panchine del parco
+  if(typeof NEWS!=="undefined" && NEWS.has) return;          // c'e' il giornale da leggere
+  const mode=parkWatchMode(); if(!mode) return;
+  if(!Object.keys(PARKFUN.people).some(k=>_pkVisible(PARKFUN.people[k].npc))) return;   // di notte non c'e' nessuno
+  const s=parkState(); if(s.wN>=3) return;
+  setTimeout(()=>{
+    if(BSIT.b!==b || _dlgOpen()) return;
+    DialogueBox.open({ name:"Park watcher", icon:"\u{1F440}", sub:"Central Park · "+(3-s.wN)+" left today",
+      text:"What a lovely park! Look at the people around you. Can you tell me what they are doing?",
+      italian:"Guarda le persone del parco e descrivile con le tessere: 2 stelle al primo tentativo, fino a 3 domande al giorno.",
+      buttons:[{ label:"\u{1F440} Yes, let's look!", cls:"primary", act:()=>parkWatchAsk() },
+               { label:"No, thanks", cls:"ghost", act:()=>{} }] });
+  },1100);
+}
+function parkWatchAsk(){
+  const s=parkState(), mode=parkWatchMode(); if(!mode) return;
+  if(s.wN>=3){ toast("\u{1F440} That's all for today: come back tomorrow!"); return; }
+  const here=sc=>PARKFUN.people[sc.id] && _pkVisible(PARKFUN.people[sc.id].npc);
+  const ok=PARK_SCENES.filter(sc=>here(sc) && (mode==="ing"||sc.has) && s.wSeen.indexOf(sc.id)<0);
+  const all=PARK_SCENES.filter(sc=>here(sc) && (mode==="ing"||sc.has));
+  const P=ok.length?ok:all; if(!P.length) return;
+  const sc=P[(_parkSeed("watch")+s.wN)%P.length];
+  const img=parkSnap(sc);
+  const tokens=mode==="ing"?sc.ing:sc.has, distr=mode==="ing"?sc.ingD:sc.hasD;
+  const q=mode==="ing"
+    ? (sc.who==="they"?"Look! What are they doing?":"Look! What is "+sc.who+" doing?")
+    : "Look! What has "+sc.who+" got?";
+  let tries=0;
+  DialogueBox.open({ name:"Park watcher", icon:"\u{1F440}", sub:"Question "+(s.wN+1)+"/3",
+    text:q, italian:mode==="ing"?"Componi la frase: present continuous (He's / She's / They're + -ing).":"Componi la frase con «has got».",
+    html:img?'<div style="text-align:center;margin-bottom:6px"><img alt="" style="max-width:100%;max-height:150px;border-radius:10px;border:3px solid #fbf7ec;box-shadow:0 3px 10px rgba(0,0,0,.35)" src="'+img+'"></div>':"",
+    tiles:{ tokens, distractors:distr, checkLabel:"✔ Say it",
+      onCheck:(w)=>{ if(w.join(" ")===tokens.join(" ")) return {ok:true,msg:"✓ Right!"};
+        tries++; return {ok:false,msg:mode==="ing"?"Riprova! \u{1F4A1} Chi e'? Poi is/are + verbo in -ing.":"Riprova! \u{1F4A1} He/She + has got + a…"}; },
+      onSuccess:()=>{
+        const st=parkState(); const got=tries?1:2;
+        st.wN=(st.wN||0)+1; if(st.wSeen.indexOf(sc.id)<0) st.wSeen.push(sc.id); parkSave(st);
+        try{ Stars.award(null,got,"park watcher"); }catch(e){}
+        const more=st.wN<3;
+        DialogueBox.open({ name:"Park watcher", icon:"\u{1F440}", sub:"✅ +"+got+" ⭐",
+          text:tokens.join(" ")+(more?" Well done! Another one?":" Well done! That's all for today."),
+          italian:more?"Bravo! Un'altra?":"Bravo! Per oggi basta: torna domani.",
+          buttons:more?[{ label:"\u{1F440} Yes, another one!", cls:"primary", act:()=>parkWatchAsk() },{ label:"No, thanks", cls:"ghost", act:()=>{} }]
+                      :[{ label:"OK", cls:"primary", act:()=>{} }] }); } },
+    buttons:[{ label:"Not now", cls:"ghost", act:()=>{} }] });
+}
+
+/* ---- COSTRUZIONE ---------------------------------------------------------- */
+/* panchina da parco in legno (doghe + fianchi in ghisa), 1,8 m: due posti */
+function parkBench(x,z,ry,o){ o=o||{};
+  const b=new BABYLON.TransformNode("pkBench",scene); b.parent=townRoot; b.position.set(x,0,z); b.rotation.y=ry;
+  const gy=_benchGround(x,z,0), W=1.8;
+  const wood=lpMat("#6e4a2c"), iron=lpMat("#2c3135");
+  const bx=(w,h,d,px,py,pz,m,rx)=>{ const q=BABYLON.MeshBuilder.CreateBox("pkb",{width:w,height:h,depth:d},scene);
+    q.material=m; q.position.set(px,gy+py,pz); if(rx) q.rotation.x=rx; q.parent=b; q.__occluder=true; return q; };
+  [-0.15,0,0.15].forEach(zz=>bx(W,0.035,0.12,0,0.44,zz,wood));                  // seduta a doghe
+  [0.62,0.78].forEach(yy=>bx(W,0.09,0.03,0,yy,-0.25-(yy-0.6)*0.18,wood,-0.18)); // schienale
+  [-W/2+0.08,W/2-0.08].forEach(xx=>{                                             // fianchi in ghisa
+    bx(0.05,0.44,0.05,xx,0.22,0.17,iron); bx(0.05,0.86,0.05,xx,0.43,-0.22,iron,-0.12);
+    bx(0.05,0.04,0.46,xx,0.40,-0.02,iron); bx(0.05,0.035,0.36,xx,0.62,0.0,iron); });
+  addSolidRot(x,z,ry,W/2,0.32,"town");
+  const bench=regBench("bench",x,z,[_benchLine(x,z,ry,0,0.0,0.55,gy+0.47,{ hip:0.03, slots:o.slots||null })],{ radius:2.4, noInter:!!o.noInter });
+  bench.gy=gy; bench.ry=ry; bench.root=b;
+  return bench;
+}
+/* il posto i-esimo della panchina, nel mondo (t = lungo la fila) */
+function _pkSeat(bench,t){ const L=bench.lines[0]; return { x:L.cx+L.ax*t, z:L.cz+L.az*t, face:bench.ry, y:L.seatY, gy:bench.gy }; }
+function _pkNoLabel(n){ if(!n||!n.label) return; const k=labels.indexOf(n.label); if(k>=0) labels.splice(k,1);
+  try{ if(n.label.ctrl&&adt) adt.removeControl(n.label.ctrl); }catch(e){} n.label=null; }
+/* NPC seduto che tiene qualcosa davanti a se' (le braccia della posa
+   seduta sono gia' in avanti). loc = posizione nel carrier, in metri. */
+function _pkSitNpc(cfg,bench,t,prop){
+  const S=_pkSeat(bench,t);
+  const n=spawnNPC(Object.assign({ area:"town", x:S.x, z:S.z, face:S.face, watch:false, snap:false, y:S.gy, keepModel:true },cfg));
+  if(!n) return null;
+  n.watch=false;
+  if(!cfg.keepLabel) _pkNoLabel(n);
+  /* le pin delle gambe arrivano qualche fotogramma dopo lo spawn: si
+     ritenta finche' ci sono, come per gli alunni della Town School */
+  const tryS=k=>{ if(n.__seated) return; let ok=false;
+    try{ ok=!!(n.pins&&n.pins.length) && npcSitAt(n,S.x,S.z,S.face,S.y,S.gy,0.03); }catch(e){ console.warn("[park] sit",e); }
+    if(!ok && k<40) setTimeout(()=>tryS(k+1),100); };
+  setTimeout(()=>tryS(0),0);
+  if(prop){ try{ const p=prop(); p.parent=n.carrier; PARKFUN.props.push({ node:p, npc:n }); } catch(e){ console.warn("[park] prop",e); } }
+  try{ regTownPop(n); }catch(e){}            // di notte la citta' chiude: anche il parco si svuota
+  return n;
+}
+function _pkStandNpc(cfg,x,z,face,anim){
+  const n=spawnNPC(Object.assign({ area:"town", x, z, face, watch:false, keepModel:true },cfg)); if(!n) return null;
+  n.watch=false; _pkNoLabel(n); if(anim) try{ n.play(anim); }catch(e){}
+  try{ regTownPop(n); }catch(e){}
+  return n;
+}
+/* la lavagnetta del gazebo: cavalletto + lavagna disegnata */
+function parkRiddleBoardDraw(){
+  const B=PARKFUN.riddleBoard; if(!B) return;
+  const c=B.dt.getContext(), W=512, H=384;
+  c.fillStyle="#5a3b22"; c.fillRect(0,0,W,H);                     // cornice
+  c.fillStyle="#24493a"; c.fillRect(18,18,W-36,H-36);             // ardesia
+  c.fillStyle="rgba(255,255,255,0.05)"; for(let i=0;i<40;i++) c.fillRect(30+Math.random()*440,30+Math.random()*320,40+Math.random()*60,2);
+  c.textAlign="center"; c.textBaseline="middle";
+  c.fillStyle="#f3df8a"; c.font="bold 60px 'Comic Sans MS',cursive,sans-serif"; c.fillText("RIDDLE",W/2,74);
+  c.fillText("OF THE DAY",W/2,138);
+  let s=null; try{ s=parkState(); }catch(e){}
+  c.fillStyle="rgba(255,255,255,0.93)";
+  if(s && s.rDone){ c.font="bold 40px 'Comic Sans MS',cursive,sans-serif"; c.fillText(s.rOk?"Solved! ✓":"Try tomorrow!",W/2,222);
+    c.font="28px 'Comic Sans MS',cursive,sans-serif"; c.fillText("New riddle tomorrow",W/2,290); }
+  else { c.font="bold 150px 'Comic Sans MS',cursive,sans-serif"; c.fillText("?",W/2,250);
+    c.font="bold 34px 'Comic Sans MS',cursive,sans-serif"; c.fillText("3 ★ for the answer!",W/2,334); }
+  B.dt.update();
+}
+function _pkEasel(x,y,z,face,name,w,h,draw){
+  const r=new BABYLON.TransformNode(name,scene); r.parent=townRoot; r.position.set(x,y,z); r.rotation.y=face;
+  const wood=lpMat("#7a5532");
+  const leg=(lx,lz,rx)=>{ const q=BABYLON.MeshBuilder.CreateBox(name+"L",{width:0.06,height:1.75,depth:0.06},scene);
+    q.material=wood; q.position.set(lx,0.84,lz); q.rotation.x=rx; q.parent=r; q.__occluder=true; };
+  leg(-w/2+0.08,0.06,-0.12); leg(w/2-0.08,0.06,-0.12); leg(0,-0.36,0.30);
+  const dt=new BABYLON.DynamicTexture(name+"T",{width:512,height:Math.round(512*h/w)},scene,true);
+  const m=new BABYLON.StandardMaterial(name+"M",scene); m.diffuseTexture=dt; m.specularColor=new BABYLON.Color3(0.03,0.03,0.03);
+  m.emissiveColor=new BABYLON.Color3(0.55,0.55,0.55);
+  const pl=BABYLON.MeshBuilder.CreatePlane(name+"P",{width:w,height:h},scene);
+  pl.material=m; pl.position.set(0,1.18,0.17); pl.rotation.x=-0.12; pl.parent=r;
+  pl.rotation.y=Math.PI;                       // la faccia verso +z locale (verso chi guarda)
+  const back=BABYLON.MeshBuilder.CreateBox(name+"B",{width:w+0.04,height:h+0.04,depth:0.03},scene);
+  back.material=wood; back.position.set(0,1.18,0.15); back.rotation.x=-0.12; back.parent=r;
+  if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(pl);
+  const B={ root:r, dt, plane:pl };
+  if(draw) draw(dt);
+  return B;
+}
+function _pkLog(x,z,d,h){
+  const g=_benchGround(x,z,0);
+  const L=BABYLON.MeshBuilder.CreateCylinder("pkLog",{diameter:d,height:h,tessellation:14},scene);
+  L.material=lpMat("#6b4a2e"); L.position.set(x,g+h/2,z); L.parent=townRoot; L.__occluder=true;
+  const top=BABYLON.MeshBuilder.CreateCylinder("pkLogT",{diameter:d*0.92,height:0.012,tessellation:14},scene);
+  top.material=lpMat("#c9a06a"); top.position.set(x,g+h+0.004,z); top.parent=townRoot;
+  const ring=BABYLON.MeshBuilder.CreateCylinder("pkLogR",{diameter:d*0.5,height:0.014,tessellation:14},scene);
+  ring.material=lpMat("#a97f4f"); ring.position.set(x,g+h+0.006,z); ring.parent=townRoot;
+}
+function buildParkFun(){
+  /* 🧩 lavagnetta nel gazebo: dentro la balaustra (x 89.6..96.4, z
+     10.8..17.2), girata verso il varco d'ingresso a ovest */
+  { const X=95.4, Z=12.8, ex=89.4, ez=15.9;
+    const face=Math.atan2(ex-X,ez-Z);
+    PARKFUN.riddleBoard=_pkEasel(X,0.30,Z,face,"pkRiddle",1.05,0.79,null);
+    parkRiddleBoardDraw();
+    addSolid(X-0.45,X+0.45,Z-0.45,Z+0.45,"town");
+    addInteract({ id:"park_riddle", area:"town", radius:2.6, prio:3,
+      pos:()=>new BABYLON.Vector3(X,0.3,Z), meshes:[PARKFUN.riddleBoard.plane],
+      prompt:()=>"\u{1F9E9} <b>Riddle of the day</b> · press <b>E</b>",
+      interact:()=>parkRiddle() }); }
+  /* 📖 STORY TREE sotto i pini (il boschetto «tree_pine» a (96,-14) sono
+     DIECI pini, tronchi fra x 91..100 e z -10..-18, misurati sui vertici):
+     Mr. Oakley siede con le spalle al boschetto e guarda il prato a sud,
+     la panchina di chi ascolta e' davanti a lui, i tronchetti ai lati.
+     Prima le due panchine finivano su due tronchi. */
+  { const O={x:95.0,z:-22.4}, L={x:95.0,z:-26.1};
+    const fO=Math.atan2(L.x-O.x,L.z-O.z), fL=Math.atan2(O.x-L.x,O.z-L.z);
+    const ob=parkBench(O.x,O.z,fO,{ noInter:true });
+    PARKFUN.storyBench=parkBench(L.x,L.z,fL,{ slots:[-0.35,0.35] }); PARKFUN.storyBench.noWatch=true;
+    const books=()=>{ const r=new BABYLON.TransformNode("pkBooks",scene);
+      ["#b5452f","#3f7ab0","#4f8a3c"].forEach((h,i)=>{ const k=LEXPROPS.book("pkBk"+i,{hex:h}); k.parent=r; k.position.y=i*0.032; k.rotation.y=i*0.35; });
+      return r; };
+    const oak=_pkSitNpc({ id:"oakley", name:"Mr. Oakley", sub:"\u{1F4D6} Storyteller", model:"npcMan2", height:1.72, keepLabel:true,
+      tint:{ Purple:"#6b5a3e", LightBlue:"#3c4652" }, interact:talkToOakley, radius:5,
+      prompt:'\u{1F4D6} Press <b>E</b>: <b>Story Tree</b> — listen to a story' }, ob, -0.35,
+      ()=>{ const r=new BABYLON.TransformNode("pkOakBook",scene); const k=LEXPROPS.book("pkOakB",{hex:"#7a2f2a"}); k.parent=r;
+            r.position.set(0,0.98,0.34); r.rotation.x=-1.0; return r; });
+    PARKFUN.oakley=oak;
+    /* la pila di libri accanto a lui, sulla panchina */
+    try{ const S=_pkSeat(ob,0.42), r=books(); r.parent=townRoot; r.position.set(S.x,S.y,S.z); r.rotation.y=ob.ry; }catch(e){}
+    _pkLog(O.x-2.5,O.z-1.9,0.46,0.42); _pkLog(O.x+2.5,O.z-1.9,0.40,0.38);
+    PARKFUN.storySign=_pkEasel(O.x-3.6,0,O.z-0.4,Math.atan2(-1,-0.5),"pkStorySign",0.95,0.6,(dt)=>{
+      const c=dt.getContext(), W=512, H=dt.getSize().height;
+      c.fillStyle="#6b4a2e"; c.fillRect(0,0,W,H); c.fillStyle="#f2e6c8"; c.fillRect(14,14,W-28,H-28);
+      c.textAlign="center"; c.textBaseline="middle"; c.fillStyle="#5a3b22";
+      c.font="bold 70px Georgia,serif"; c.fillText("STORY TREE",W/2,H*0.36);
+      c.font="34px Georgia,serif"; c.fillText("\u{1F4D6} a new story every day",W/2,H*0.70); dt.update(); });
+  }
+  /* 👀 LE PERSONE DEL PARCO — in fondo al vialetto della fontana, dove il
+     parco si apre sullo skyline (x 132..142, z -6..6) */
+  { const R=parkBench(134.6,-5.4,0,{ noInter:true });
+    const sand=()=>{ const r=new BABYLON.TransformNode("pkSand",scene); const k=LEXPROPS.sandwich("pkSandw"); k.parent=r; k.scaling.setAll(0.42);
+      r.position.set(0.02,0.95,0.30); r.rotation.x=-0.5; return r; };
+    const rbook=()=>{ const r=new BABYLON.TransformNode("pkRBook",scene); const k=LEXPROPS.book("pkRBk",{hex:"#2f6a4a"}); k.parent=r;
+      r.position.set(0,0.98,0.34); r.rotation.x=-1.0; return r; };
+    const reader=_pkSitNpc({ id:"pk_reader", name:"Reader", model:"npcMan2", height:1.76 }, R, -0.42, rbook);
+    const lunch=_pkSitNpc({ id:"pk_lunch", name:"Girl", model:"npcWomanB", height:1.6, tint:{ Purple:"#c0442e", LightBlue:"#2f4a6a" } }, R, 0.45, sand);
+    if(reader) PARKFUN.people.reader={ npc:reader, view:{x:0,z:1}, sideX:0.5 };
+    if(lunch)  PARKFUN.people.lunch ={ npc:lunch,  view:{x:0,z:1}, sideX:-0.5 };
+    const G=parkBench(134.6,6.0,Math.PI,{ noInter:true });
+    const gtr=()=>{ const r=new BABYLON.TransformNode("pkGtr",scene); const k=LEXPROPS.guitar("pkGuitar"); k.parent=r; k.scaling.setAll(0.78);
+      k.position.set(0,-0.55,0); r.position.set(-0.05,0.86,0.30); r.rotation.z=-1.05; r.rotation.y=0.2; return r; };
+    const gu=_pkSitNpc({ id:"pk_guitar", name:"Busker", model:"npcWoman", height:1.66 }, G, 0.0, gtr);
+    if(gu) PARKFUN.people.guitar={ npc:gu, view:{x:0,z:-1}, sideX:-0.4 };
+    const c1=_pkStandNpc({ id:"pk_clap1", name:"Fan", model:"npcMan2", height:1.7 }, 137.0, 3.2, Math.atan2(134.6-137.0,6.0-3.2), "Clapping");
+    const c2=_pkStandNpc({ id:"pk_clap2", name:"Fan", model:"npcWoman", height:1.62 }, 138.2, 4.3, Math.atan2(134.6-138.2,6.0-4.3), "Clapping");
+    if(c1 && c2) PARKFUN.people.clap={ npc:c1, view:{x:0.55,z:-0.83}, lookDx:0.6, lookDz:0.5, sideX:0.3 };
+    const wv=_pkStandNpc({ id:"pk_wave", name:"Girl", model:"npcWomanB", keepModel:true, height:1.58 }, 141.2, 0.6, -Math.PI/2, "Wave");
+    if(wv) PARKFUN.people.wave={ npc:wv, view:{x:-1,z:0}, sideZ:0.6 };
+    /* il corridore: avanti e indietro sul vialetto est (x 124..128) */
+    const jg=_pkStandNpc({ id:"pk_jogger", name:"Runner", model:"npcMan2", height:1.74, tint:{ Purple:"#2f7fd0", LightBlue:"#22262a" } }, 126.0, -12, 0, "Run");
+    if(jg){ jg.__noPin=true;
+      PARKFUN.jog={ n:jg, z0:-12, z1:20, dir:1, wait:false };
+      PARKFUN.people.jogger={ npc:jg, view:{x:1,z:0}, sideZ:-1.2 }; }
+    scene.onBeforeRenderObservable.add(parkJogTick);
+  }
+}
+function parkJogTick(){
+  /* gli oggetti in mano seguono chi li tiene (di notte spariscono insieme) */
+  for(let i=0;i<PARKFUN.props.length;i++){ const P=PARKFUN.props[i], v=_pkVisible(P.npc);
+    if(P.node.isEnabled()!==v) P.node.setEnabled(v); }
+  const J=PARKFUN.jog; if(!J || area!=="town" || !_pkVisible(J.n)) return;
+  const c=J.n.carrier, dt=Math.min(0.05,engine.getDeltaTime()/1000);
+  /* qualcuno davanti sul vialetto: si ferma e aspetta (corsa sul posto no, Idle) */
+  const px=player.position.x-c.position.x, pz=player.position.z-c.position.z;
+  const ahead=pz*J.dir;
+  if(Math.abs(px)<1.0 && ahead>0 && ahead<1.6){ if(!J.wait){ J.wait=true; J.n.__noPin=false; J.n.play("Idle"); } return; }
+  if(J.wait){ J.wait=false; J.n.__noPin=true; J.n.play("Run"); }
+  c.position.z+=J.dir*3.0*dt;
+  if(c.position.z>J.z1){ c.position.z=J.z1; J.dir=-1; }
+  if(c.position.z<J.z0){ c.position.z=J.z0; J.dir=1; }
+  c.rotation.y=J.dir>0?0:Math.PI;
 }
 
 /* ---- INTERNO: casa MULTI-STANZA (placeholder, mobili .glb in arrivo) ---- */
