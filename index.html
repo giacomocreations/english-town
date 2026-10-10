@@ -7243,12 +7243,95 @@ function buildTown(){
 /* ---- VITA: alberi, lampioni, nuvole ---- */
 function insideSolid(x,z,m){ m=m||0; for(let i=0;i<solids.length;i++){ const s=solids[i]; if(s.area!=="town"||s.tree) continue;
   if(x>s.x0-m && x<s.x1+m && z>s.z0-m && z<s.z1+m) return true; } return false; }
-let _pitMat=null;
+/* v307 — L'AIUOLA DELL'ALBERO (Giacomo, 10 ott: «la base degli alberi in
+   citta' e' solo un quadrato marrone, migliora la grafica»). Ora e' un
+   tree pit vero da marciapiede: cordolo in pietra chiara leggermente
+   rialzato (con gli spigoli smussati da un filo piu' scuro), pacciame di
+   corteccia disegnato (scaglie in cinque marroni, terra scura fra l'una e
+   l'altra), un colletto di terra piu' scura attorno al tronco e qualche
+   ciuffo d'edera / fiorellino agli angoli.
+   ⚠️ COSTO: l'aiuola si costruisce UNA volta (modello, fuso per materiale:
+   5 mesh) e ogni albero ne prende ISTANZE — una draw call per materiale
+   per tutte le ~26 aiuole, non 26 x 5. Ruotata di 90° a caso, cosi' gli
+   angoli fioriti non sono tutti uguali.
+   ⚠️ INGOMBRO INVARIATO: 2,3 m di lato come il quadrato di prima, cordolo
+   alto 7 cm (ci si cammina sopra: il solido resta quello del tronco). */
+let _pitTpl=null, _mulchTex=null;
+function mulchTex(){ if(_mulchTex) return _mulchTex;
+  const W=256, dt=new BABYLON.DynamicTexture("mulchT",{width:W,height:W},scene,true), c=dt.getContext();
+  c.fillStyle="#2c2017"; c.fillRect(0,0,W,W);                         // terra fra le scaglie
+  let sd=29; const rnd=()=>{ sd=(sd*16807)%2147483647; return (sd%10000)/10000; };
+  const chip=(x,y,w,h,a,col)=>{ for(const ox of [0,-W,W]) for(const oy of [0,-W,W]){
+      const X=x+ox, Y=y+oy; if(X<-14||X>W+14||Y<-14||Y>W+14) continue;
+      c.save(); c.translate(X,Y); c.rotate(a); c.fillStyle=col; c.fillRect(-w/2,-h/2,w,h);
+      c.fillStyle="rgba(255,225,180,0.10)"; c.fillRect(-w/2,-h/2,w,Math.max(1,h*0.3));   // filo di luce sul bordo
+      c.restore(); } };
+  const cols=["#5a3c26","#6b4a2e","#7a5634","#4a3020","#8a6440"];
+  for(let i=0;i<900;i++){ const w=4+rnd()*9; chip(rnd()*W,rnd()*W,w,1.8+rnd()*3,rnd()*Math.PI,cols[(rnd()*cols.length)|0]); }
+  c.fillStyle="rgba(10,6,3,0.35)";                                     // ombre fra le scaglie
+  for(let i=0;i<260;i++){ c.beginPath(); c.arc(rnd()*W,rnd()*W,1+rnd()*2.2,0,Math.PI*2); c.fill(); }
+  dt.update(); dt.wrapU=dt.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE;
+  return (_mulchTex=dt); }
+function _treePitTemplate(){
+  if(_pitTpl) return _pitTpl;
+  const P=2.3, K=0.13, H=0.07, Y=0.04;            // lato, cordolo (largo/alto), quota del marciapiede
+  let sd=7; const rnd=()=>{ sd=(sd*16807)%2147483647; return (sd%10000)/10000; };
+  const box=(arr,w,h,d,x,y,z)=>{ const b=BABYLON.MeshBuilder.CreateBox("tpb",{width:w,height:h,depth:d},scene); b.position.set(x,y,z); arr.push(b); };
+  const ball=(arr,d,sy,x,y,z)=>{ const b=BABYLON.MeshBuilder.CreateSphere("tps",{diameter:d,segments:4},scene);
+    b.scaling.y=sy; b.position.set(x,y,z); arr.push(b); };
+  const curb=[], edge=[], soil=[], leaf=[], flw=[[],[],[]];
+  /* cordolo: quattro lastre di pietra, con la fuga agli angoli */
+  [[-1,0],[1,0]].forEach(([sx])=>box(curb,K,H,P-0.02,sx*(P/2-K/2),Y+H/2,0));
+  [[-1],[1]].forEach(([sz])=>box(curb,P-2*K-0.02,H,K,0,Y+H/2,sz*(P/2-K/2)));
+  /* spigolo interno smussato: un listello piu' scuro appena sotto il filo */
+  [[-1],[1]].forEach(([sx])=>box(edge,0.025,H*0.6,P-2*K,sx*(P/2-K-0.012),Y+H*0.45,0));
+  [[-1],[1]].forEach(([sz])=>box(edge,P-2*K,H*0.6,0.025,0,Y+H*0.45,sz*(P/2-K-0.012)));
+  /* colletto di terra attorno al tronco: un disco basso e scuro */
+  const col=BABYLON.MeshBuilder.CreateCylinder("tpc",{diameterTop:1.05,diameterBottom:1.35,height:0.05,tessellation:20},scene);
+  col.position.y=Y+0.05; soil.push(col);
+  /* ciuffi d'edera agli angoli (mai vicino al tronco: lo svaso arriva a 0,67):
+     cuscinetti bassi e larghi, e sopra qualcuno i fiorellini, in vista */
+  const tuft=(x,z,r,fl,ci)=>{ const sy=0.34+rnd()*0.12, top=Y+0.04+r*2*sy*0.5;
+    ball(leaf,r*2,sy,x,Y+0.04,z);
+    for(let i=0;i<fl;i++){ const a=rnd()*Math.PI*2, q=r*(0.15+rnd()*0.45);
+      ball(flw[(ci+i)%3],0.075+rnd()*0.03,0.6,x+Math.cos(a)*q,top+0.005,z+Math.sin(a)*q); } };
+  const corners=[[-1,-1],[1,-1],[1,1],[-1,1]];
+  corners.forEach(([cx,cz],ci)=>{ if(ci===2) return;                 // un angolo resta solo pacciame
+    const n=4+((rnd()*3)|0);
+    for(let i=0;i<n;i++){ const r=0.11+rnd()*0.10;
+      tuft(cx*(0.68+rnd()*0.26), cz*(0.68+rnd()*0.26), r, rnd()<0.6?1+((rnd()*2)|0):0, ci+i); }
+  });
+  /* qualche ciuffo sparso lungo i lati */
+  for(let i=0;i<4;i++){ const sx=rnd()<0.5?-1:1, along=(rnd()-0.5)*1.2, r=0.08+rnd()*0.06;
+    if(rnd()<0.5) tuft(sx*0.88,along,r,0,i); else tuft(along,sx*0.88,r,0,i); }
+  const T={ meshes:[] };
+  const fuse=(arr,mt,nm)=>{ if(!arr.length) return; const m=arr.length===1?arr[0]:BABYLON.Mesh.MergeMeshes(arr,true,true,undefined,false,false);
+    if(!m) return; m.name=nm; m.material=mt; m.isPickable=false; m.parent=townRoot; T.meshes.push(m); };
+  /* pacciame: un piano con la texture, ripetuta 2x2 (scaglie a misura vera) */
+  const mu=BABYLON.MeshBuilder.CreateGround("tpm",{width:P-2*K+0.01,height:P-2*K+0.01},scene);
+  mu.position.y=Y+0.035;
+  const mm=new BABYLON.StandardMaterial("tpitMulch",scene);
+  const mt=new BABYLON.Texture(null,scene,{internalTexture:mulchTex().getInternalTexture()});
+  mt.wrapU=mt.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE; mt.uScale=mt.vScale=2;
+  mm.diffuseTexture=mt; mm.specularColor=new BABYLON.Color3(0.02,0.02,0.02);
+  mu.material=mm; mu.isPickable=false; mu.parent=townRoot; mu.name="tpitMulch"; T.meshes.push(mu);
+  fuse(curb, hm7Mat("#a29d91",0.08,18), "tpitCurb");
+  fuse(edge, lpMat("#6f6a60"), "tpitEdge");
+  fuse(soil, lpMat("#241912"), "tpitSoil");
+  fuse(leaf, hedgeMat(1,1), "tpitLeaf");
+  const fc=["#f2d24a","#f4f1ea","#b78ad6"];
+  flw.forEach((a,i)=>fuse(a, lpMat(fc[i]), "tpitFlw"+i));
+  T.used=false;
+  return (_pitTpl=T); }
+function treePit(x,z){
+  const T=_treePitTemplate(), yaw=((Math.abs(Math.round(x*7+z*13))%4))*Math.PI/2;
+  T.meshes.forEach(m=>{
+    let n=m;
+    if(T.used){ n=m.createInstance(m.name+"_i"); n.parent=townRoot; n.isPickable=false; }
+    n.position.x=x; n.position.z=z; n.rotation.y=yaw; });
+  T.used=true; }
 function tree(x,z,pit){ if(insideSolid(x,z,2.4)) return;   // viali/marciapiedi: SOLO latifoglia
-  if(pit){ // aiuola quadrata scura (tree pit) come sui marciapiedi di Manhattan
-    if(!_pitMat) _pitMat=mat("tpitm","#3f342a");
-    const q=BABYLON.MeshBuilder.CreateGround("tpit",{width:2.3,height:2.3},scene);
-    q.material=_pitMat; q.position.set(x,0.065,z); q.parent=townRoot; q.isPickable=false; }
+  if(pit){ try{ treePit(x,z); }catch(e){ console.warn("[aiuola]",e); } }   // v307: tree pit con cordolo, pacciame ed edera
   /* TRONCO SOLIDO: il giocatore non attraversa l'albero, ma DEVE poter
      camminare sull'aiuola. Misurato sui vertici di Tree_single.glb
      (dequantizzato KHR_mesh_quantization, scala di gioco 0.826): la colonna
