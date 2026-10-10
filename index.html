@@ -14524,7 +14524,7 @@ function buildPark(){
      sblocca con le stelle (SK_MOVES).
    ===================================================================== */
 const SKATE={ C:{ x:30, z:56 }, gy:0, dancers:[], audio:null, songI:-1, near:false, vol:0, blocked:false,
-  bpm:120, beat:0, aOff:0, gap:false, leds:[], built:false };
+  bpm:120, beat:0, aOff:0, gap:false, quiet:false, leds:[], built:false };
 /* v308b (Giacomo: «aggiungi anche il ballo base con la mano che si alza e
    salto a tempo originale del Beat Club»): e' il primo, sempre sbloccato */
 const SK_MOVES=[ { id:"basic",    en:"Beat Club dance", ic:"\u{1F64C}", stars:0, beats:16 },
@@ -14907,11 +14907,14 @@ function skateTick(){
   const RA=radioAt("skate");
   SKATE.gap=!RA || RA.gap;
   if(RA) SKATE.bpm=GIG_SONGS[RA.idx].bpm||120;
-  /* v309 (Giacomo: «quando non ballano allo skatepark non c'e' musica»):
-     prima le casse suonavano solo se c'era la crew. Ora suonano sempre
-     quando la citta' e' aperta, e anche di notte se balli tu. */
-  let open=true; try{ open=townOpen(); }catch(e){}
-  skateAudio(open || (SKDANCE.on && SKDANCE.area==="town"), d, RA);
+  /* v309b (Giacomo: «quando non ballano, niente musica allo skatepark»):
+     le casse suonano SOLO mentre la crew balla — il quarto d'ora di ballo
+     (skPhase), di giorno, con i ragazzi in scena. Nel quarto d'ora delle
+     chiacchiere e di notte tacciono, e anche il tuo ballo si ferma
+     (SKATE.quiet, come fra un brano e l'altro). */
+  const crew=skPhase()==="dance" && SKATE.dancers.some(D=>_pkVisible(D.n));
+  SKATE.quiet=SKATE.gap || !crew;
+  skateAudio(crew, d, RA);
   /* l'orologio: la radio, piu' lo scarto (smorzato) del brano che senti,
      cosi' i passi cadono su quello che esce dalle casse senza scatti */
   const A=SKATE.audio, dt0=Math.min(0.05,engine.getDeltaTime()/1000);
@@ -15189,7 +15192,7 @@ function skDanceTick(){
   const S=SKDANCE, CL=_skDanceClock(), B=CL.beat, dt=Math.min(0.05,engine.getDeltaTime()/1000);
   /* fra un brano e l'altro ci si ferma: allo skatepark le casse in pausa,
      al Beat Club il concerto fra un pezzo e l'altro */
-  const rest=(S.area==="town") ? SKATE.gap
+  const rest=(S.area==="town") ? SKATE.quiet
                               : !(typeof AUDIO!=="undefined" && AUDIO.playing());
   if(_skRest(S,rest,B,null,()=>{ player.rotation.y=S.face; })) return;
   let b=B-S.m0;
@@ -62663,7 +62666,7 @@ const Presenza=(function(){
     try{ if(typeof SKDANCE!=="undefined" && SKDANCE.on && SKDANCE.area===area){
       const S=SKDANCE, B=_skDanceClock().beat;
       let c=_MOSSA[S.mv]||"h"; if(c==="s" && S.sdir<0) c="S";
-      const rest=(S.area==="town")?SKATE.gap:!(typeof AUDIO!=="undefined" && AUDIO.playing());
+      const rest=(S.area==="town")?SKATE.quiet:!(typeof AUDIO!=="undefined" && AUDIO.playing());
       const b=rest?0:Math.max(0,Math.min(S.dur,B-S.m0));
       return { x:player.position.x, z:player.position.z, y:player.position.y, r:S.face,
                k:"m"+(rest?"r":c)+Math.round(b*10) }; } }catch(e){}
