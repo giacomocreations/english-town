@@ -10738,7 +10738,7 @@ function regBench(kind,x,z,lines,o){ o=o||{};
   BENCHES.push(b);
   if(!o.noInter) b.inter=addInteract({ id:"citybench_"+BENCHES.length, area:"town", radius:o.radius||2.2, prio:2,
     pos:()=>new BABYLON.Vector3(b.x,0.5,b.z),
-    prompt:()=>BSIT.b?"":'\u{1FA91} Press <b>E</b> to <b>sit down</b>'+(NEWS.has?' and <b>read the newspaper</b>':''),
+    prompt:()=>(BSIT.b||b.npcBusy||(typeof SKDANCE!=="undefined" && SKDANCE.on))?"":'\u{1FA91} Press <b>E</b> to <b>sit down</b>'+(NEWS.has?' and <b>read the newspaper</b>':''),
     interact:()=>benchSit(b) });
   return b;
 }
@@ -10761,6 +10761,9 @@ function _benchSeatY(b,x,z,gy){
 function benchSit(b){
   if(BSIT.b || (typeof DINER!=="undefined" && DINER.seat) || area!=="town") return;
   if(typeof SHOW!=="undefined" && SHOW.seated) return;
+  /* v308e (Giacomo: «quando stai ballando, non puoi sederti sulla panchina») */
+  if(typeof SKDANCE!=="undefined" && SKDANCE.on){ toast("\u{1F57A} You're dancing! Walk to stop, then sit down."); return; }
+  if(b.npcBusy){ toast("\u{1FA91} This bench is taken."); return; }
   const P=player.position;
   /* la fila e il punto piu' vicini a te */
   let best=null;
@@ -14806,10 +14809,16 @@ function buildSkatepark(){
   _skSpeaker(C.x-7.2,C.z-5.6,Math.atan2(7.2,0.6)+Math.PI);
   _skSpeaker(C.x+7.2,C.z-5.6,Math.atan2(-7.2,0.6)+Math.PI);
   /* due panchine per guardare, sul lato sud */
-  try{ parkBench(C.x-4.5,C.z-D/2+1.1,0,{}); parkBench(C.x+4.5,C.z-D/2+1.1,0,{}); }catch(e){}
-  /* il ballo del giocatore: sulla pista fra le casse */
-  addInteract({ id:"skate_dance", area:"town", radius:4.2, prio:3,
-    pos:()=>new BABYLON.Vector3(C.x,g,C.z-5.2),
+  try{ SKATE.benches=[parkBench(C.x-4.5,C.z-D/2+1.1,0,{}), parkBench(C.x+4.5,C.z-D/2+1.1,0,{})]; }catch(e){ SKATE.benches=[]; }
+  /* il ballo del giocatore: v308e (Giacomo: «per ballare basta che sia
+     nello skatepark, magari non ai bordi, perche' poi esce e arriva nel
+     prato»). Si balla ovunque sulla pista, tranne la fascia lungo i bordi,
+     le rampe e accanto alle panchine; mentre balli il prompt ti segue e
+     vince su tutto il resto (E = passo dopo). */
+  SKATE.danceInter=addInteract({ id:"skate_dance", area:"town", radius:1.0, prio:3,
+    pos:()=>{ const P=player.position;
+      if(SKDANCE.on || skInZone(P.x,P.z,true)) return new BABYLON.Vector3(P.x,g,P.z);
+      return new BABYLON.Vector3(C.x,-99,C.z-500); },
     prompt:()=>SKDANCE.on?'\u{1F57A} Press <b>E</b>: <b>next move</b> \u00b7 walk to stop':'\u{1F57A} Press <b>E</b> to <b>dance</b> with the crew!',
     interact:()=>skDanceE() });
   landmarkSign(C.x,4.2,C.z+D/2+0.6,"\u{1F6F9}","Skatepark","Hip hop · music · dance");
@@ -14819,15 +14828,16 @@ function buildSkatepark(){
       x:cr.x, z:cr.z, face:Math.PI, watch:false, look:cr.look });
     if(!n) return;
     _pkNoLabel(n); try{ regTownPop(n); }catch(e){}
-    const D={ n, home:{ x:cr.x, z:cr.z }, face:Math.PI, K:null, cur:null, mv:"hop", last:null, dur:2, m0:0, baseY:null, turnFrom:Math.PI, turnTo:Math.PI, sdir:1 };
+    const D={ n, home:{ x:cr.x, z:cr.z }, face:Math.PI, K:null, cur:null, mv:"hop", last:null, dur:2, m0:0, baseY:null, turnFrom:Math.PI, turnTo:Math.PI, sdir:1, st:"dance", i:SKATE.dancers.length };
     SKATE.dancers.push(D);
   }catch(e){ console.warn("[skate] dancer",e); } });
   scene.onBeforeRenderObservable.add(skateTick);
   scene.onBeforeRenderObservable.add(()=>{ try{ skPhotoTick(); }catch(e){} });
+  scene.onBeforeRenderObservable.add(()=>{ try{ skChatTick(); }catch(e){} });
   /* per il Ranger: i ballerini dal vivo, e le foto dei locali gia' visitati */
   const jay=SKATE.dancers[0];
   if(jay && typeof PARKFUN!=="undefined"){
-    PARKFUN.people.skate={ npc:jay.n, sideX:0.4, viewFn:()=>({ x:Math.sin(jay.face), z:Math.cos(jay.face) }) };
+    PARKFUN.people.skate={ npc:jay.n, sideX:0.4, now:()=>jay.st==="dance", viewFn:()=>({ x:Math.sin(jay.face), z:Math.cos(jay.face) }) };
     PARKFUN.people.beat={ always:true, now:()=>!!skPhoto("beat"), img:()=>skPhoto("beat") };
     PARKFUN.people.cinema={ always:true, now:()=>!!skPhoto("cinema"), img:()=>skPhoto("cinema") }; }
 }
@@ -14857,12 +14867,19 @@ function skateTick(){
   const B=SKATE.beat, fr=B-Math.floor(B), pulse=Math.max(0,1-fr*3);
   SKATE.leds.forEach((m,i)=>{ const h=((Math.floor(B/4)+i)%3); const col=[[0.1,0.5,1],[1,0.2,0.7],[0.3,1,0.4]][h];
     m.emissiveColor.set(col[0]*(0.25+0.75*pulse),col[1]*(0.25+0.75*pulse),col[2]*(0.25+0.75*pulse)); });
+  /* v308e: un quarto d'ora si balla, un quarto d'ora si chiacchiera */
+  const ph=skPhase();
+  if(ph!==SKATE.phase){ SKATE.phase=ph; skPhaseBenches(ph); }
   if(d>70) return;                                   // lontani: nessuno li vede, niente calcoli
   const dt=Math.min(0.05,engine.getDeltaTime()/1000), bps=SKATE.bpm/60;
   const rest=!!(SKATE.pending && SKATE.near);           // fra un brano e l'altro: silenzio
+  const see=d<55;                                    // da lontano il cambio e' istantaneo
   SKATE.dancers.forEach(D=>{
     if(!_pkVisible(D.n)) return;
     if(!D.K){ if(!_skPrepare(D)) return; D.m0=Math.floor(B)+1; }
+    if(ph==="chill" && D.st==="dance") skGoChill(D,see);
+    else if(ph==="dance" && D.st==="chill") skGoDance(D,see,B);
+    if(D.st!=="dance") return;
     if(_skRest(D,rest,B,D.n.holder,v=>{ D.n.carrier.rotation.y=D.face; })) return;
     let b=B-D.m0;
     if(b<0||b>D.dur+8){ D.m0=Math.floor(B); b=B-D.m0; }        // brano cambiato: si riparte dal battito
@@ -14915,10 +14932,84 @@ function _skPlanTurn(D){
   D.turnTo=far?Math.atan2(-hx,-hz):Math.PI+(Math.random()-0.5)*1.2;
   D.sdir=(hx*Math.cos(D.turnTo)-hz*Math.sin(D.turnTo))>0?1:-1;
 }
+/* ---- BALLO E CHIACCHIERE (v308e) --------------------------------------------
+   Giacomo: «i ballerini non ballano tutto il tempo: un quarto d'ora ballo,
+   un quarto d'ora stanno due seduti e due in piedi, come se stessero
+   parlando tra di loro». L'orologio e' quello vero (alle :00 e alle :30 si
+   balla, alle :15 e alle :45 si chiacchiera), cosi' in classe tutti vedono
+   la stessa cosa. Nia e Kiki si siedono sulla panchina libera, Jay e Leon
+   in piedi davanti a loro; chi parla gesticola. La musica resta: le casse
+   suonano e il giocatore puo' ballare lo stesso. */
+const SK_CYCLE=15*60*1000;
+function skPhase(){ if(SKATE.force) return SKATE.force; return (Math.floor(Date.now()/SK_CYCLE)%2)?"chill":"dance"; }
+/* la panchina delle chiacchiere: quella dove non sei seduto tu */
+function skPhaseBenches(ph){
+  const Bs=SKATE.benches||[]; Bs.forEach(b=>{ b.npcBusy=false; });
+  if(ph!=="chill" || !Bs.length) return;
+  let k=0; try{ if(BSIT.b===Bs[0]) k=1; }catch(e){}
+  SKATE.chillB=Bs[k]; if(SKATE.chillB) SKATE.chillB.npcBusy=true;
+}
+/* il posto di ognuno: 1 e 3 seduti, 0 e 2 in piedi davanti, girati verso il gruppo */
+function _skChillSpot(D){
+  const b=SKATE.chillB; if(!b) return null;
+  if(D.i===1||D.i===3){ const S=_pkSeat(b,D.i===1?-0.42:0.42); return { sit:true, S, x:S.x, z:S.z+0.95 }; }
+  const x=b.x+(D.i===0?-0.62:0.68), z=b.z+(D.i===0?1.55:1.45);
+  return { sit:false, x, z, face:Math.atan2(b.x-x+(D.i===0?0.25:-0.25),b.z+0.55-z) };
+}
+/* via la posa del ballo: le pin di partenza (le gambe), in piedi */
+function _skUnpose(D){
+  const n=D.n; n.pins=D.bind.map(k=>({ tn:k.tn, p:k.p.clone(), q:k.q.clone(), s:k.s.clone() }));
+  n.holder.position.y=D.baseY; n.__seated=false; D.restT=0;
+}
+function _skWalk(D,x,z,see,done){
+  const n=D.n, c=n.carrier;
+  const jump=()=>{ c.position.x=x; c.position.z=z; n.__noPin=false; try{ n.play("Idle"); }catch(e){} done(); };
+  D.st="go";
+  if(!see){ jump(); return; }
+  npcWalkSeq(n,[()=>({ x, z })],0.25,done,"town",jump,{ detour:true, speed:1.15, onStuck:jump });
+}
+function skGoChill(D,see){
+  const sp=_skChillSpot(D); if(!sp) return;
+  _skUnpose(D);
+  _skWalk(D,sp.x,sp.z,see,()=>{
+    if(skPhase()!=="chill"){ D.st="chill"; return; }        // il quarto d'ora e' gia' finito: si torna a ballare
+    if(sp.sit){
+      let ok=false; try{ ok=npcSitAt(D.n,sp.S.x,sp.S.z,sp.S.face,sp.S.y,sp.S.gy,0.03); }catch(e){ console.warn("[skate] sit",e); }
+      if(!ok){ D.n.carrier.position.x=sp.x; D.n.carrier.position.z=sp.z; D.n.carrier.rotation.y=sp.S.face; } }
+    else { D.n.carrier.rotation.y=sp.face; try{ D.n.play("Idle"); }catch(e){} }
+    D.st="chill"; });
+}
+function skGoDance(D,see,B){
+  _skUnpose(D);
+  _skWalk(D,D.home.x,D.home.z,see,()=>{
+    const n=D.n; n.carrier.rotation.y=Math.PI; n.holder.position.y=D.baseY; n.pins=D.cur;
+    try{ n.play("Idle"); }catch(e){}
+    Object.assign(D,{ st:"dance", face:Math.PI, turnFrom:Math.PI, turnTo:Math.PI, mv:"hop", dur:2, m0:Math.floor(SKATE.beat)+1, restT:0 }); });
+}
+/* chi e' in piedi parla a turno: gesticola, l'altro ascolta */
+function skChatTick(){
+  if(SKATE.phase!=="chill" || area!=="town") return;
+  const now=performance.now(); if(now<(SKATE.chatT||0)) return;
+  const st=SKATE.dancers.filter(D=>D.st==="chill" && (D.i===0||D.i===2) && _pkVisible(D.n));
+  SKATE.chatT=now+2400+Math.random()*2000;
+  if(!st.length) return;
+  SKATE.chatTurn=((SKATE.chatTurn||0)+1)%3;               // 0: Jay, 1: Leon, 2: parla chi e' seduto (tutti ascoltano)
+  st.forEach(D=>{ const talk=(SKATE.chatTurn===0&&D.i===0)||(SKATE.chatTurn===1&&D.i===2);
+    try{ D.n.play(talk&&D.n.anims["Interact"]?"Interact":"Idle"); }catch(e){} });
+}
+/* dove si puo' ballare: la pista meno 1,8 m lungo i bordi, le rampe ai lati e
+   le panchine; edge=true per partire, false (piu' largo) per scivolare */
+function skInZone(x,z,start){
+  const C=SKATE.C, m=start?0:0.6;
+  if(Math.abs(x-C.x)>11.6+m || z<C.z-10+1.8-m || z>C.z+10-1.8+m) return false;
+  if(start && (SKATE.benches||[]).some(b=>Math.hypot(x-b.x,z-b.z)<2.5)) return false;
+  return true;
+}
 /* ---- LA MUSICA DELLE CASSE ------------------------------------------------- */
 function skateAudio(on,d){
   const R=45;
-  let want=on && d<R && !AUDIO.muted() && !document.hidden && area==="town";
+  /* isteresi di 4 m sul confine: camminandoci sopra la musica non va e viene */
+  let want=on && d<(SKATE.near?R+4:R) && !AUDIO.muted() && !document.hidden && area==="town";
   try{ if(typeof SHOW!=="undefined" && SHOW.seated) want=false; }catch(e){}
   SKATE.near=want;
   if(!want){ if(SKATE.audio && !SKATE.audio.paused){ try{ SKATE.audio.pause(); }catch(e){} } return; }
@@ -14927,6 +15018,7 @@ function skateAudio(on,d){
   if(!SKATE.audio) skateNextSong(true);
   const A=SKATE.audio; if(!A) return;
   const k=Math.max(0,Math.min(1,(R-d)/(R-6)));
+  if(A.__seek!=null) return;                         // si sta riprendendo dal punto dove s'era fermato
   A.volume=Math.max(0,Math.min(1,0.9*Math.pow(k,1.6)*AUDIO.gain()));
   if(A.paused && !SKATE.blocked){ const p=A.play(); if(p&&p.catch) p.catch(()=>{ SKATE.blocked=true; }); }
 }
@@ -14938,9 +15030,39 @@ function skateNextSong(first){
   const a=new Audio(GIG_DIR+s.f); a.preload="auto"; a.volume=0;
   /* v308c (Giacomo: «quando la canzone finisce, tra una e l'altra, si
      fermano, e poi riprendono»): 5 s di silenzio, poi il brano dopo */
-  a.addEventListener("ended",()=>{ if(SKATE.audio===a){ SKATE.pending=true; SKATE.gapUntil=performance.now()+5000; } });
-  a.addEventListener("error",()=>{ if(SKATE.audio===a){ SKATE.failed=(SKATE.failed||0)+1; if(SKATE.failed<4) setTimeout(()=>{ if(SKATE.audio===a) skateNextSong(false); },3000); } });
-  SKATE.audio=a; SKATE.bpm=s.bpm||120; SKATE.bOff=Math.ceil(SKATE.beat||0);
+  _skAudioEvents(a);
+  SKATE.audio=a; SKATE.songT=0; SKATE.retry=0; SKATE.bpm=s.bpm||120; SKATE.bOff=Math.ceil(SKATE.beat||0);
+}
+/* ⚠️ v308e (Giacomo: «a volte inizia un pezzo, si interrompe e inizia un
+   altro»). Il colpevole: un intoppo di RETE a meta' brano. Il file scende
+   in streaming e, dopo una pausa (ti allontani e torni) o sul wifi della
+   scuola, il browser puo' perdere la connessione: l'<audio> da' "error" e
+   il gestore di prima, pensato per un file mancante, passava al brano dopo
+   tre secondi. Ora un errore a brano gia' iniziato RIPRENDE lo stesso
+   brano dal punto in cui era (fino a 3 volte); solo un brano che non parte
+   proprio fa passare al successivo. Anche un "ended" che arriva prima della
+   fine vera (file troncato dalla rete) riprende invece di cambiare. */
+function _skAudioEvents(a){
+  a.addEventListener("timeupdate",()=>{ if(SKATE.audio===a && a.__seek==null && a.currentTime>0.5) SKATE.songT=a.currentTime; });
+  a.addEventListener("ended",()=>{ if(SKATE.audio!==a) return;
+    const left=(isFinite(a.duration)&&a.duration>0)?a.duration-(SKATE.songT||a.currentTime):0;
+    if(left>4 && skateResume()) return;
+    SKATE.pending=true; SKATE.gapUntil=performance.now()+5000; });
+  a.addEventListener("error",()=>{ if(SKATE.audio!==a) return;
+    if(skateResume()) return;
+    SKATE.failed=(SKATE.failed||0)+1; if(SKATE.failed<4) setTimeout(()=>{ if(SKATE.audio===a) skateNextSong(false); },3000); });
+}
+function skateResume(){
+  const t=SKATE.songT||0, s=GIG_SONGS[SKATE.songI];
+  if(!s || t<1 || (SKATE.retry||0)>=3) return false;
+  SKATE.retry=(SKATE.retry||0)+1;
+  const old=SKATE.audio; try{ old.pause(); old.removeAttribute("src"); old.load(); }catch(e){}
+  const a=new Audio(GIG_DIR+s.f); a.preload="auto"; a.volume=0; a.__seek=t;
+  a.addEventListener("loadedmetadata",()=>{ try{ a.currentTime=a.__seek; }catch(e){} a.__seek=null; },{ once:true });
+  _skAudioEvents(a);
+  SKATE.audio=a;                                      // stesso brano, stesso bOff: il battito non salta
+  setTimeout(()=>{ if(a.__seek!=null) a.__seek=null; },8000);
+  return true;
 }
 /* il primo tocco sblocca l'audio se il browser l'aveva fermato */
 ["pointerdown","keydown"].forEach(t=>window.addEventListener(t,()=>{ SKATE.blocked=false; },{ capture:true, passive:true }));
@@ -14997,10 +15119,12 @@ function skDanceStart(list){
   SKDANCE.cur=K.stand.pins.map(k=>({ tn:k.tn, p:k.p.clone(), q:k.q.clone(), s:k.s.clone() }));
   try{ playAvatarAnim(IDLE_ANIM); }catch(e){}
   if(!SKDANCE.obs) SKDANCE.obs=scene.onBeforeRenderObservable.add(skDanceTick);
+  try{ if(SKATE.danceInter) SKATE.danceInter.prio=-2; }catch(e){}
   toast("\u{1F57A} Dance! (walk to stop)");
 }
 function skDanceStop(){
   if(!SKDANCE.on) return; SKDANCE.on=false;
+  try{ if(SKATE.danceInter) SKATE.danceInter.prio=3; }catch(e){}
   if(avatarRoot) avatarRoot.position.y=SKDANCE.baseY;
   try{ if(_legPins) _applyPins(_legPins); }catch(e){}
   SKDANCE.cur=null;
@@ -15036,7 +15160,8 @@ function skDanceTick(){
   if(E.glide){ const f={ x:Math.sin(S.face), z:Math.cos(S.face) }, sp=0.34*CL.bpm/60*dt;
     let nx=player.position.x, nz=player.position.z;
     if(S.mv==="moonwalk"){ nx-=f.x*sp; nz-=f.z*sp; } else { nx+=f.z*sp*S.sdir; nz-=f.x*sp*S.sdir; }
-    if(!blocked(nx,nz)){ player.position.x=nx; player.position.z=nz; } }
+    const pista=S.area!=="town" || skInZone(nx,nz,false);      // v308e: allo skatepark non si esce sul prato
+    if(pista && !blocked(nx,nz)){ player.position.x=nx; player.position.z=nz; } }
 }
 
 /* ---- LE FOTO DEI LOCALI (per il Ranger) ----------------------------------
@@ -35525,9 +35650,10 @@ function danceWaveFrame(g,B){
 function danceTick(){
   if(!PDANCE.inter) danceInit();
   const can=GIG.on && area===UNIT_MUSIC.area;
-  if(PDANCE.inter){ PDANCE.inter.enabled=can;
+  const sk=(typeof SKDANCE!=="undefined" && SKDANCE.on && SKDANCE.area===area);   // i passi: E resta al ballo anche fra un pezzo e l'altro
+  if(PDANCE.inter){ PDANCE.inter.enabled=can||sk;
     /* vicino alla calca il ballo passa davanti a tutti (vedi sopra) */
-    const near=can && (PDANCE.on || danceNearCrowd());
+    const near=sk || (can && (PDANCE.on || danceNearCrowd()));
     if(near!==PDANCE.near){ PDANCE.near=near; PDANCE.inter.prio=near?-1:5; } }
   if(!PDANCE.on) return;
   if(!can || !avatarRoot){ danceStop(); return; }
@@ -42213,7 +42339,12 @@ function cycleInter(dir){
 function updateProximity(){
   const eye=1.45;
   const list=[];
+  /* v308e (Giacomo: «al Beat Club, se stai ballando, non puoi parlare con
+     gli altri: solo quando non balli»). Mentre balli (Beat Club o
+     skatepark) la E e' solo del ballo: niente persone, niente oggetti. */
+  const dancing=(typeof PDANCE!=="undefined" && PDANCE.on) || (typeof SKDANCE!=="undefined" && SKDANCE.on);
   for(const o of interactables){ if(!o.enabled||o.area!==area) continue;
+    if(dancing && o.id!=="beat_dance" && o.id!=="skate_dance") continue;
     const w=typeof o.pos==="function"?o.pos():o.pos;
     const dh=Math.hypot(player.position.x-w.x, player.position.z-w.z);
     if(dh>=o.radius) continue;
