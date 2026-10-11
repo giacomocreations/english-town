@@ -15077,18 +15077,20 @@ function skateTick(){
     /* v309g (Giacomo: «fanno un balzo laterale o in avanti molto lungo,
        innaturale»). Prima il moonwalk portava indietro di 1,4 m, il
        sidewalk di lato di 1,4 m, e il saltello dopo li riportava al posto
-       in un colpo solo: un balzo di un metro e mezzo in mezzo battito. Ora
-       il viaggio si chiude DENTRO la mossa — meta' battiti si scivola via,
-       meta' si torna coi passi (sidewalk avanti e indietro, moonwalk
-       indietro e poi qualche passo in avanti) — e il saltello resta sul
-       posto. Il punto dove si deve stare e' una funzione del battito
-       (_skGlideOff): ci si va dietro a passo, mai a scatti; se il giocatore
-       e' in mezzo ci si ferma e si recupera piano dopo. */
-    const c=D.n.carrier.position, off=_skGlideOff(D.mv,b,D.dur);
-    let tx=D.home.x, tz=D.home.z;
-    if(off){ const f={ x:Math.sin(D.face), z:Math.cos(D.face) };
-      if(D.mv==="moonwalk"){ tx-=f.x*off; tz-=f.z*off; }
-      else { tx+=f.z*off*D.sdir; tz-=f.x*off*D.sdir; } }
+       in un colpo solo: un balzo di un metro e mezzo in mezzo battito.
+       Poi (Giacomo: «il moonwalk si interrompe e va avanti!») nemmeno
+       tornare indietro a meta' mossa va bene: il moonwalk scivola indietro
+       dall'inizio alla fine. Il rientro lo fa la coreografia: i due moonwalk
+       vanno in versi opposti (uno guarda a ovest, l'altro a est) e cosi' i
+       due sidewalk, quindi a fine giro si e' di nuovo al proprio posto.
+       Fra una scivolata e l'altra si balla dove si e' arrivati (tutta la
+       fila si sposta insieme, le distanze restano quelle). Il punto dove si
+       deve stare e' una funzione del battito (skCrewStep: R.ox/R.oz gia'
+       percorsi, R.gx/R.gz la scivolata in corso): ci si va dietro a passo,
+       mai a scatti; se il giocatore e' in mezzo ci si ferma e si recupera
+       piano dopo. */
+    const c=D.n.carrier.position, u=Math.max(0,Math.min(1,b/D.dur));
+    const tx=D.home.x+(R.ox||0)+(R.gx||0)*SK_GLIDE*u, tz=D.home.z+(R.oz||0)+(R.gz||0)*SK_GLIDE*u;
     const hx=tx-c.x, hz=tz-c.z, hd=Math.hypot(hx,hz);
     if(hd>0.002){
       /* metri per battito: nei passi quanto basta a seguire (e a
@@ -15099,13 +15101,6 @@ function skateTick(){
       if(dN>=0.9 || dN>Math.hypot(px-c.x,pz-c.z)){ c.x=nx; c.z=nz; } }
   });
 }
-/* quanto si e' lontani dal proprio posto in questo punto della mossa: a
-   meta' mossa SK_GLIDE/2, all'inizio e alla fine zero */
-function _skGlideOff(mv,b,dur){
-  if(mv!=="moonwalk" && mv!=="sidewalk") return 0;
-  const h=dur/2, u=Math.max(0,Math.min(dur,b));
-  return SK_GLIDE/2*(u<h?u/h:(dur-u)/h);
-}
 /* v308h (Giacomo: «i 4 ballerini sincronizzati, come un ballo di
    gruppo»). Una sola coreografia per tutta la crew: la stessa mossa sullo
    stesso battito, tutti rivolti al pubblico (sud), in fila. Fra una mossa e
@@ -15113,7 +15108,7 @@ function _skGlideOff(mv,b,dur){
    indietro e il sidewalk una volta a destra e una a sinistra, tutti
    insieme, cosi' le distanze restano quelle della fila. */
 const SK_ROUTINE=["basic","moonwalk","basic","sidewalk","toe","ankle","basic","sidewalk","moonwalk","ankle","toe"];
-const SK_GLIDE=1.4;                                   // metri di passi per ogni moonwalk/sidewalk (meta' andata, meta' ritorno)
+const SK_GLIDE=1.0;                                   // metri di scivolata per ogni moonwalk/sidewalk (sempre nello stesso verso)
 /* v309g: il raccordo fra la mossa i e la successiva. Si alternano il
    saltello e il «rise» sulle punte (braccia aperte); accanto al toe stand
    sempre il saltello, se no sarebbero tre volte sulle punte di fila. */
@@ -15130,6 +15125,14 @@ function _skConn(i){
    saltello prima, scivola lungo la fila (a ovest la prima volta, a est la
    seconda), torna, e nel saltello dopo si rigira verso il pubblico. */
 function _skCrewFace(mv,i){ return mv==="moonwalk" ? Math.PI+((i%2)?1:-1)*Math.PI/2 : Math.PI; }
+/* il verso della scivolata (versore nel mondo): il moonwalk all'indietro
+   rispetto a dove si guarda, il sidewalk di lato (sdir) */
+function _skGlideDir(mv,i,sdir){
+  const F=_skCrewFace(mv,i), fx=Math.sin(F), fz=Math.cos(F);
+  if(mv==="moonwalk") return { x:-fx, z:-fz };
+  if(mv==="sidewalk") return { x:fz*sdir, z:-fx*sdir };
+  return { x:0, z:0 };
+}
 /* v309: la coreografia e' una funzione del battito DENTRO IL BRANO (dal
    primo battito: saltello, mossa, saltello, mossa...), non un contatore
    partito quando sei arrivato tu: due compagni vedono la crew fare la
@@ -15141,11 +15144,18 @@ function skCrewStep(B,rest){
   if(!SKATE.crewL){ let L=0, n=0; SK_ROUTINE.forEach(m=>{ L+=2+SKATE_DUR(m); if(m==="sidewalk") n++; });
     SKATE.crewL=L; SKATE.crewFlip=(n%2===1); }
   const k=Math.floor(Math.max(0,B)/SKATE.crewL);
-  let m0=k*SKATE.crewL, mv="hop", dur=2, i=-1, conn=true, sdir=(SKATE.crewFlip && k%2)?-1:1;
-  while(B>=m0+dur){ m0+=dur;
+  /* sdir parte da -1: il primo sidewalk (dopo il primo moonwalk, verso
+     est) torna verso ovest, il secondo va a est e il secondo moonwalk
+     riporta tutti al posto. Cosi' non ci si allontana mai piu' di
+     SK_GLIDE dal proprio posto (le casse sono a 1,6 m dagli ultimi). */
+  let m0=k*SKATE.crewL, mv="hop", dur=2, i=-1, conn=true, sdir=(SKATE.crewFlip && k%2)?1:-1, ox=0, oz=0;
+  while(B>=m0+dur){
+    if(!conn && (mv==="moonwalk"||mv==="sidewalk")){ const g=_skGlideDir(mv,i,sdir); ox+=g.x*SK_GLIDE; oz+=g.z*SK_GLIDE; }
+    m0+=dur;
     if(!conn){ conn=true; mv=_skConn(i); dur=2; }
     else { conn=false; i++; mv=SK_ROUTINE[i]; dur=SKATE_DUR(mv); if(mv==="sidewalk") sdir=-sdir; } }
-  R.mv=mv; R.m0=m0; R.dur=dur; R.i=i; R.sdir=sdir;
+  R.mv=mv; R.m0=m0; R.dur=dur; R.i=i; R.sdir=sdir; R.ox=ox; R.oz=oz;
+  { const g=conn?{ x:0, z:0 }:_skGlideDir(mv,i,sdir); R.gx=g.x; R.gz=g.z; }
   if(conn){ const N=SK_ROUTINE.length, pi=i>=0?i:N-1;
     R.faceFrom=_skCrewFace(SK_ROUTINE[pi],pi); R.faceTo=_skCrewFace(SK_ROUTINE[i+1],i+1); }
   else R.faceFrom=R.faceTo=_skCrewFace(mv,i);
