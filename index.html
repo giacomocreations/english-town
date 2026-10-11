@@ -15380,10 +15380,12 @@ function skInvitoRisposta(ta,fb,typed){
    · A CAPPELLA: niente base, solo le voci della crew. Voce americana
      (TTS accent "us") e piu' veloce (rate 1,22).
    · TRE ROUND, sempre piu' difficili, a tempo:
-     1) PUNCHLINE (10⭐, un tentativo, 30 s): la crew rappa una riga e
-        l'inizio della seconda; si sceglie la chiusura fra quattro. Le
-        sbagliate sono costruite apposta: una non fa rima, una fa rima ma
-        e' sgrammaticata, una fa rima ma non ha senso.
+     1) RHYME FIRE (10⭐, un tentativo, 30 s): la crew rappa una riga e
+        l'alunno scrive TRE parole che fanno rima con l'ultima.
+        (Giacomo: «deve scrivere l'alunno: niente frasi gia' pronte». Prima
+        era una scelta fra quattro chiusure: tolta. Per lo stesso motivo i
+        suggerimenti dicono il SUONO della rima, mai parole o frasi da
+        copiare; gli esempi compaiono solo a round chiuso.)
      2) FINISH MY BAR (20⭐, 10 al secondo tentativo, 60 s): la chiusura la
         scrive (o la dice) l'alunno, e deve fare rima.
      3) YOUR OWN BAR (30⭐ / 15, 90 s): una riga intera sua, su un tema, con
@@ -15408,34 +15410,28 @@ function skRapInvito(t){
 const CY_PTS={ r1:10, r2:20, r2b:10, r3:30, r3b:15, perfect:20 };
 /* le famiglie di rime: elenco scritto a mano + (dove e' sicuro) la desinenza */
 const CY_FAM={
-  OW:  { snd:"-OW (come flow)", ex:"go, show, know, slow, grow", w:"flow go show know slow glow grow low below though although pro radio video studio tornado tomorrow row throw snow blow toe pillow shadow window hello ago solo logo piano photo zero hero ego combo bro dough so no oh whoa stereo rodeo overflow plateau yo own" },
-  IGHT:{ snd:"-IGHT (come night)", ex:"light, bright, tight, fight, write", re:/ight$/, w:"write white kite bite quite polite excite ignite site spite invite unite despite satellite appetite dynamite recite alright" },
-  AY:  { snd:"-AY (come day)", ex:"way, play, stay, okay, today", re:/ay$/, w:"they hey obey grey weigh sleigh prey ballet buffet eh" },
-  EAM: { snd:"-EAM (come dream)", ex:"team, stream, supreme, extreme", re:/(eam|eme)$/, w:"seem esteem redeem regime meme" },
-  ACE: { snd:"-ACE (come space)", ex:"face, place, race, chase, base", re:/ace$/, w:"base case chase vase erase suitcase showcase bookcase" },
-  IME: { snd:"-IME (come time)", ex:"rhyme, climb, prime, overtime", re:/(ime|yme)$/, no:/^regime$/, w:"climb" },
-  EAT: { snd:"-EAT (come beat)", ex:"street, feet, heat, complete", re:/eet$/, w:"beat heat meat seat treat repeat complete compete defeat elite neat cheat wheat concrete delete athlete upbeat heartbeat offbeat retreat eat feat suite" },
-  OUND:{ snd:"-OUND (come sound)", ex:"ground, around, found, crowned", re:/ound$/, w:"crowned drowned frowned clowned downed" },
-  ART: { snd:"-ART (come art)", ex:"heart, start, smart, apart", re:/art$/, w:"heart" },
-  ALL: { snd:"-ALL (come all)", ex:"fall, wall, call, tall, crawl", re:/all$/, no:/^shall$/, w:"crawl brawl haul y'all yall sprawl drawl install" } };
-/* ROUND 1 — scegli la chiusura: [testo, perche' e' sbagliata] */
+  OW:  { snd:"-OW (come flow)", w:"flow go show know slow glow grow low below though although pro radio video studio tornado tomorrow row throw snow blow toe pillow shadow window hello ago solo logo piano photo zero hero ego combo bro dough so no oh whoa stereo rodeo overflow plateau yo own" },
+  IGHT:{ snd:"-IGHT (come night)", re:/ight$/, w:"write white kite bite quite polite excite ignite site spite invite unite despite satellite appetite dynamite recite alright" },
+  AY:  { snd:"-AY (come day)", re:/ay$/, w:"they hey obey grey weigh sleigh prey ballet buffet eh" },
+  EAM: { snd:"-EAM (come dream)", re:/(eam|eme)$/, w:"seem esteem redeem regime meme" },
+  ACE: { snd:"-ACE (come space)", re:/ace$/, w:"base case chase vase erase suitcase showcase bookcase" },
+  IME: { snd:"-IME (come time)", re:/(ime|yme)$/, no:/^regime$/, w:"climb" },
+  EAT: { snd:"-EAT (come beat)", re:/eet$/, w:"beat heat meat seat treat repeat complete compete defeat elite neat cheat wheat concrete delete athlete upbeat heartbeat offbeat retreat eat feat suite" },
+  OUND:{ snd:"-OUND (come sound)", re:/ound$/, w:"crowned drowned frowned clowned downed" },
+  ART: { snd:"-ART (come art)", re:/art$/, w:"heart" },
+  ALL: { snd:"-ALL (come all)", re:/all$/, no:/^shall$/, w:"crawl brawl haul y'all yall sprawl drawl install" } };
+/* ROUND 1 — rhyme fire: la riga della crew, la famiglia della rima */
 const CY_R1=[
-  { a:"I roll through the park with my board and my crew,", b:"every trick that I land is", ok:"brand new, it's true.",
-    bad:[["fresh and super cool.","non fa rima con «crew»"],["brand new, it were true.","fa rima, ma «it were» è sbagliato: it WAS / it IS"],["a kangaroo stew.","fa rima, ma non ha senso: uno stufato di canguro?"]] },
-  { a:"Mic in my hand and the beat's on the go,", b:"the crowd starts to jump as soon as I", ok:"start my flow.",
-    bad:[["start to rap.","non fa rima con «go»"],["starting my flow.","fa rima, ma dopo «as soon as I» ci vuole il verbo semplice: I START"],["eat the snow.","fa rima, ma non ha senso"]] },
-  { a:"They told me I'm small and I'd never get far,", b:"now look at me shining just like a", ok:"superstar.",
-    bad:[["diamond ring.","non fa rima con «far»"],["superstars.","«a» vuole il singolare: a superstar"],["chocolate bar.","fa rima, ma brillare come una tavoletta di cioccolato?"]] },
-  { a:"Rain on the window, the sky's looking gray,", b:"but deep down I know it's gonna be", ok:"a beautiful day.",
-    bad:[["really sunny.","non fa rima con «gray»"],["a beautiful days.","«a» vuole il singolare: a beautiful day"],["a hamburger tray.","fa rima, ma non ha senso"]] },
-  { a:"Step on the concrete, I'm feeling the heat,", b:"my sneakers keep dancing to every", ok:"beat.",
-    bad:[["song.","non fa rima con «heat»"],["beats.","dopo «every» ci vuole il singolare: every beat"],["sheet.","fa rima, ma ballare al ritmo di ogni lenzuolo?"]] },
-  { a:"They doubted my moves, but I kept on the grind,", b:"now I'm a step ahead and they're falling", ok:"behind.",
-    bad:[["back.","non fa rima con «grind»"],["behinded.","«behinded» non esiste: si dice falling BEHIND"],["a lemon rind.","fa rima, ma non ha senso"]] },
-  { a:"Breaking the ice, I'm the first on the floor,", b:"the crowd's going wild and they're shouting for", ok:"more!",
-    bad:[["another song!","non fa rima con «floor»"],["being more!","«shouting for being more» non è inglese: shouting for MORE"],["a dinosaur!","fa rima, ma… gridano per un dinosauro?"]] },
-  { a:"I've been working all summer, I don't take a break,", b:"I'm the real deal, baby, I'm not a", ok:"fake.",
-    bad:[["liar.","non fa rima con «break»"],["faking.","dopo «a» ci vuole un nome: a fake"],["chocolate cake.","fa rima, ma non c'entra niente"]] } ];
+  { a:"Grab the mic, take a breath, and let the words flow,", fam:"OW", key:"flow" },
+  { a:"City lights burning bright in the middle of the night,", fam:"IGHT", key:"night" },
+  { a:"Every single morning is a brand new chance to play,", fam:"AY", key:"play" },
+  { a:"Eyes on the prize, keep on chasing the dream,", fam:"EAM", key:"dream" },
+  { a:"Kickflip, heelflip, tricks all over the place,", fam:"ACE", key:"place" },
+  { a:"Tick-tock, tick-tock, we're running out of time,", fam:"IME", key:"time" },
+  { a:"Boom-bap, boom-bap, can you feel the beat?", fam:"EAT", key:"beat" },
+  { a:"Turn it up, turn it up, can you hear that sound?", fam:"OUND", key:"sound" },
+  { a:"Every single trick that I land is a work of art,", fam:"ART", key:"art" },
+  { a:"Stand up tall, we're gonna have a ball,", fam:"ALL", key:"ball" } ];
 /* ROUND 2 — chiudi la riga */
 const CY_R2=[
   { a:"I'm new to the cypher, but I've got the flow,", b:"so turn up the music and", fam:"OW", key:"flow", ex:["watch me go","on with the show"] },
@@ -15542,34 +15538,46 @@ function cypherStart(npc){
   if(st.used && !_cyTeacher()){ toast("\u{1F3A4} Cypher: una sfida al giorno, torna domani!"); return; }
   st.used=true; _cySave(st);                         // vale anche se si esce a meta': niente «riprovo il round 1»
   try{ TTS.stop(); }catch(e){}
-  Object.assign(CYPHER,{ on:true, npc, pts:0, perfect:true, r1:_cyPick(CY_R1), r2:_cyPick(CY_R2), r3:_cyPick(CY_R3), gen:CYPHER.gen+1 });
+  const r2=_cyPick(CY_R2), r3=_cyPick(CY_R3);
+  const r1=_cyPick(CY_R1.filter(q=>q.fam!==r2.fam && q.fam!==r3.fam));
+  Object.assign(CYPHER,{ on:true, npc, pts:0, perfect:true, r1, r2, r3, gen:CYPHER.gen+1 });
   DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:"The Cypher · \u{1F525} hard", autoSpeak:false,
-    text:"Welcome to the cypher! Three rounds, no mercy. Round one: pick the punchline. Round two: finish my bar. Round three: drop your own bar. You ready?",
-    italian:"Il cypher è una sfida di freestyle per chi è bravo davvero, con un inglese più difficile delle unit. Tre round a tempo: 1) scegli la chiusura giusta (rima + grammatica + senso); 2) chiudi tu la rima; 3) scrivi una rima tutta tua. Una sfida al giorno, fino a 80 ⭐.",
+    text:"Welcome to the cypher! Three rounds, no mercy. Round one: rhyme fire. Round two: finish my bar. Round three: drop your own bar. You ready?",
+    italian:"Il cypher è una sfida di freestyle per chi è bravo davvero, con un inglese più difficile delle unit. Tre round a tempo, e scrivi sempre TU: 1) tre parole in rima; 2) chiudi tu la riga della crew; 3) una riga tutta tua. Una sfida al giorno, fino a 80 ⭐.",
     buttons:[{ label:"\u{1F525} Let's go!", cls:"primary", act:()=>_cyR1() }] });
   _cyRap(npc,"Yo! Welcome to the cypher! Three rounds, no mercy. You ready?",1.15);
 }
 function _cyR1(){
-  const q=CYPHER.r1, g=++CYPHER.gen, npc=CYPHER.npc; let done=false;
-  const opts=_cyShuffle([{ t:q.ok, ok:true }].concat(q.bad.map(b=>({ t:b[0], why:b[1] }))));
-  const judge=o=>{ if(done) return; done=true; _cyStop(); _cyR1Res(q,o); };
-  DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:"Round 1/3 · Pick the punchline · ⭐ "+CY_PTS.r1, autoSpeak:false,
-    text:"Pick the punchline!",
-    italian:"Ascolta la crew e scegli la chiusura giusta: deve fare rima, essere corretta e avere senso. Un solo tentativo, 30 secondi!",
-    html:_cyBars([q.a,q.b+" …"])+_cyTimeHtml(30),
-    choices:opts.map(o=>({ label:o.t, act:()=>judge(o) })) });
-  _cyRap(npc,q.a+" "+q.b+"...").then(()=>{ if(g===CYPHER.gen && !done) _cyTimer(30,()=>{ judge(null); }); });
+  const q=CYPHER.r1, g=++CYPHER.gen, npc=CYPHER.npc, F=CY_FAM[q.fam]; let done=false;
+  const judge=timeout=>{ if(done) return; const el=document.getElementById("cy-in"); const v=el?el.value.trim():"";
+    if(!timeout && !v) return;
+    done=true; _cyStop();
+    let clean=true; try{ if(v && linguaccia(v)) clean=false; }catch(e){}
+    const seen=new Set(), res=[];
+    _cyWords(v).forEach(w=>{ if(seen.has(w)) return; seen.add(w);
+      res.push({ w, ok:clean && w!==q.key && w.length>1 && _cyRhymes(w,F) }); });
+    _cyR1Res(q,res.slice(0,6),!v,!clean); };
+  DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:"Round 1/3 · Rhyme fire · ⭐ "+CY_PTS.r1, autoSpeak:false,
+    text:"Rhyme fire! Give me three words that rhyme with “"+q.key.toUpperCase()+"”. Go!",
+    italian:"Scrivi (o di' al microfono) TRE parole diverse che fanno rima con «"+q.key+"» (suono "+F.snd+"). Non vale «"+q.key+"». Un tentativo, 30 secondi!",
+    html:_cyBars([q.a])+_cyInput("word, word, word")+_cyTimeHtml(30),
+    buttons:[{ label:"\u{1F3A4} Drop it", cls:"primary", keepOpen:true, act:()=>judge(false) }] });
+  _cyFocus();
+  _cyRap(npc,q.a+" Three rhymes! Go!").then(()=>{ if(g===CYPHER.gen && !done) _cyTimer(30,()=>judge(true)); });
 }
-function _cyR1Res(q,o){
-  const ok=!!(o&&o.ok), npc=CYPHER.npc; ++CYPHER.gen;
+function _cyR1Res(q,res,timeout,dirty){
+  const npc=CYPHER.npc; ++CYPHER.gen;
+  const good=res.filter(r=>r.ok).map(r=>r.w), ok=good.length>=3;
   if(ok) _cyGive(CY_PTS.r1); else CYPHER.perfect=false;
-  const hype=_cyPick(CY_HYPE), full=q.b+" "+q.ok;
-  DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:ok?"\u{1F525} +"+CY_PTS.r1+" ⭐":(o?"Ooooh!":"⏱ Time's up!"), autoSpeak:false,
-    text:ok?hype:(o?"Ooooh, that one missed the beat!":"Too slow, my friend!"),
-    italian:ok?"Giusto: rima, grammatica e senso!":((o?"«"+o.t+"»: "+o.why+". ":"Tempo scaduto. ")+"La chiusura giusta era: «"+q.ok+"»."),
-    html:_cyBars([q.a,full]),
+  const hype=_cyPick(CY_HYPE);
+  const list=res.length?res.map(r=>(r.ok?"✅ ":"❌ ")+_escHtml(r.w)).join(" &nbsp; "):"—";
+  DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:ok?"\u{1F525} +"+CY_PTS.r1+" ⭐":(timeout?"⏱ Time's up!":"Ooooh!"), autoSpeak:false,
+    text:ok?hype:(timeout?"Too slow, my friend!":"Ooooh, not enough rhymes!"),
+    italian:dirty?"Keep it clean! Nel cypher niente parolacce."
+      :(ok?"Tre rime giuste!":"Servivano tre parole diverse in rima con «"+q.key+"» (suono "+CY_FAM[q.fam].snd+"): ne hai azzeccate "+good.length+"."),
+    html:_cyBars([q.a])+'<div style="font-size:15px;line-height:1.8">'+list+'</div>',
     buttons:[{ label:"▶ Round 2", cls:"primary", act:()=>_cyR2() }] });
-  _cyRap(npc,(ok?hype+" ":"Check it: ")+q.a+" "+full);
+  _cyRap(npc,ok?hype+" "+q.key+", "+good.slice(0,3).join(", ")+"!":"Come on, rookie! Next round!");
 }
 function _cyR2(){
   const q=CYPHER.r2, g=++CYPHER.gen, npc=CYPHER.npc, F=CY_FAM[q.fam]; let tries=0, done=false;
@@ -15579,7 +15587,7 @@ function _cyR2(){
     const bad=_cyJudge(v,{ min:2, max:10, key:q.key, fam:q.fam, glue:false });
     if(!bad){ finish(true,v); return; }
     tries++; if(tries>=2){ finish(false,v,bad); return; }
-    if(fb) fb.innerHTML=_escHtml(bad.it)+(bad.k==="rhyme"?"<br>\u{1F4A1} Rime col suono "+_escHtml(F.snd)+": "+_escHtml(F.ex)+"…":"")+"<br>Ultimo tentativo!";
+    if(fb) fb.innerHTML=_escHtml(bad.it)+"<br>Ultimo tentativo!";
     el.focus && el.select && el.select(); };
   DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:"Round 2/3 · Finish my bar · ⭐ "+CY_PTS.r2, autoSpeak:false,
     text:"Finish my bar! Rhyme with “"+q.key.toUpperCase()+"”.",
@@ -15608,7 +15616,7 @@ function _cyR3(){
     const bad=_cyJudge(v,{ min:6, max:16, key:q.key, fam:q.fam, glue:true, word:q.word });
     if(!bad){ finish(true,v); return; }
     tries++; if(tries>=2){ finish(false,v,bad); return; }
-    if(fb) fb.innerHTML=_escHtml(bad.it)+(bad.k==="rhyme"?"<br>\u{1F4A1} Rime col suono "+_escHtml(F.snd)+": "+_escHtml(F.ex)+"…":"")+"<br>Ultimo tentativo!";
+    if(fb) fb.innerHTML=_escHtml(bad.it)+"<br>Ultimo tentativo!";
     el.focus && el.select && el.select(); };
   DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:"Round 3/3 · Your own bar · ⭐ "+CY_PTS.r3, autoSpeak:false,
     text:"Your turn! Topic: "+q.topic+". Use the word “"+q.word+"” and rhyme with “"+q.key.toUpperCase()+"”.",
