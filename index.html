@@ -14793,9 +14793,11 @@ function _skEval(K,mv,b){
 /* ---- COSTRUZIONE ------------------------------------------------------------ */
 function _skConcreteTex(){
   const S=512, dt=new BABYLON.DynamicTexture("skConcT",{width:S,height:S},scene,true), c=dt.getContext();
-  c.fillStyle="#b9b6ae"; c.fillRect(0,0,S,S);
+  /* v309g: texture CHIARA perche' il materiale ha diffuseColor 0,57 (vedi
+     buildSkatepark: col bianco pieno il clamp si mangiava le ombre) */
+  c.fillStyle="#ebe8e0"; c.fillRect(0,0,S,S);
   let sd=17; const rnd=()=>{ sd=(sd*16807)%2147483647; return (sd%10000)/10000; };
-  for(let i=0;i<5000;i++){ const g=150+(rnd()*60|0); c.fillStyle="rgba("+g+","+g+","+(g-6)+",0.35)"; c.fillRect(rnd()*S,rnd()*S,2,2); }
+  for(let i=0;i<5000;i++){ const g=196+(rnd()*56|0); c.fillStyle="rgba("+g+","+g+","+(g-6)+",0.35)"; c.fillRect(rnd()*S,rnd()*S,2,2); }
   for(let i=0;i<10;i++){ c.fillStyle="rgba(70,66,60,0.06)"; c.beginPath(); c.ellipse(rnd()*S,rnd()*S,20+rnd()*60,12+rnd()*40,rnd()*3,0,Math.PI*2); c.fill(); }
   c.strokeStyle="rgba(60,58,54,0.55)"; c.lineWidth=3; c.strokeRect(1.5,1.5,S-3,S-3);         // i giunti
   dt.update(); dt.wrapU=dt.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE; return dt;
@@ -14964,7 +14966,18 @@ function buildSkatepark(){
   const slab=BABYLON.MeshBuilder.CreateGround("skSlab",{width:W,height:D},scene);
   const sm=new BABYLON.StandardMaterial("skSlabM",scene), ct=_skConcreteTex();
   const t=new BABYLON.Texture(null,scene,{internalTexture:ct.getInternalTexture()}); t.wrapU=t.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE; t.uScale=W/3; t.vScale=D/3;
-  sm.diffuseTexture=t; sm.specularColor=new BABYLON.Color3(0.05,0.05,0.05); slab.material=sm;
+  sm.diffuseTexture=t; sm.specularColor=new BABYLON.Color3(0.05,0.05,0.05);
+  /* v309g (Giacomo: «aumenta le ombre sullo skatepark, quasi non si vedono;
+     quando piove si deve vedere anche li' come in strada»).
+     · OMBRE: il diffuso era bianco pieno (1,1,1): sole + emisfera a
+       mezzogiorno fanno ~1,7, il colore usciva oltre 1 e veniva tagliato
+       anche DENTRO l'ombra, che quindi quasi spariva. Stessa regola dei
+       marciapiedi (sidewalkMat): diffuso 0,57 e texture chiara, cosi' la
+       luce piena resta sotto il taglio e l'ombra si vede.
+     · PIOGGIA: il bagnato dei fondi (wetFX: piu' scuro, lucido, pozzanghere,
+       anelli delle gocce, e gli schizzi che cercano un fondo __wetFX). */
+  sm.diffuseColor=new BABYLON.Color3(0.57,0.57,0.57);
+  wetFX(sm); slab.material=sm;
   slab.position.set(C.x,g+0.035,C.z); slab.parent=townRoot; slab.__ground=true; slab.receiveShadows=true;
   [[0,-D/2,W+0.5,0.3],[0,D/2,W+0.5,0.3],[-W/2,0,0.3,D],[W/2,0,0.3,D]].forEach(e=>{
     const b=BABYLON.MeshBuilder.CreateBox("skCurb",{width:e[2],height:0.1,depth:e[3]},scene);
