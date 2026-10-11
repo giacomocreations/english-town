@@ -18150,13 +18150,14 @@ const TTS={
      Chi non rientra in nessuno dei tre resta «non so» e NON viene forzato:
      meglio due voci uguali con pitch diverso che una maestra con la voce di
      un uomo. Per quelli decide il ripiego in say(), ora allargato. */
-  _FNAMES:/\b(samantha|karen|moira|tessa|fiona|victoria|allison|ava|susan|zoe|nicky|kathy|serena|martha|catherine|zira|hazel|linda|heather|aria|jenny|michelle|sonia|libby|clara|natasha|neerja|emily|joanna|salli|kimberly|amy|raveena)\b/i,
-  _MNAMES:/\b(daniel|alex|fred|tom|oliver|arthur|gordon|rishi|aaron|ralph|albert|bruce|lee|david|mark|george|james|guy|ryan|christopher|eric|jacob|roger|brian|liam|william|prabhat|matthew|joey|russell|geraint|junior)\b/i,
+  _FNAMES:/\b(samantha|karen|moira|tessa|fiona|victoria|allison|ava|susan|zoe|nicky|kathy|serena|martha|catherine|zira|hazel|linda|heather|aria|jenny|michelle|sonia|libby|clara|natasha|neerja|emily|joanna|salli|kimberly|amy|raveena|emma|ana|sara|nancy|jane|monica)\b/i,
+  _MNAMES:/\b(daniel|alex|fred|tom|oliver|arthur|gordon|rishi|aaron|ralph|albert|bruce|lee|david|mark|george|james|guy|ryan|christopher|eric|jacob|roger|brian|liam|william|prabhat|matthew|joey|russell|geraint|junior|andrew|steffan|davis|tony|jason|brandon)\b/i,
   _FURI:/-x-(gba|gbc|sfg|tpf|iob|iog)\b/i,
-  _MURI:/-x-(gbb|gbd|rjs|tpc|tpd|iom)\b/i,
+  _MURI:/-x-(gbb|gbd|rjs|tpc|tpd|iom|iol)\b/i,
   _vuri(v){ return String((v&&(v.voiceURI||v.name))||""); },
   _isFemale(v){ const n=(v&&v.name)||"", u=this._vuri(v);
     if(/\bfemale\b/i.test(n)||/\bfemale\b/i.test(u)) return true;
+    if(/^google us english$/i.test(n.trim())) return true;     // v309h: la voce americana di Chrome e' femminile, ma il nome non lo dice
     if(/\bmale\b/i.test(n)||/\bmale\b/i.test(u)) return false;
     return this._FNAMES.test(n) || this._FURI.test(u); },
   _isMale(v){ const n=(v&&v.name)||"", u=this._vuri(v);
@@ -18195,6 +18196,15 @@ const TTS={
         const s=sUS(v); if(s>s2){ s2=s; b=v; } });
       return (b && /^en-us/i.test((b.lang||"").replace("_","-")))?b:null; };
     this.voiceUS=pickUS(null); this.voiceUSF=pickUS("f"); this.voiceUSM=pickUS("m");
+    /* v309h (Giacomo: «non sento una voce americana realmente maschile»):
+       sui Chromebook Chrome ha voci americane SOLO femminili. Per un ragazzo
+       una voce maschile VERA di un altro accento (canadese, australiano,
+       britannico…) e' meglio di una voce femminile abbassata di tono. */
+    const sM=v=>{ const L=(v.lang||"").replace("_","-").toLowerCase(), g=/google/i.test(v.name||"")?0.5:0;
+      if(L.startsWith("en-ca")) return 5+g; if(L.startsWith("en-au")) return 4+g; if(L.startsWith("en-gb")) return 3+g;
+      if(L.startsWith("en")) return 2+g; return 0; };
+    let bm=null, bs2=0; vs.forEach(v=>{ if(!this._isMale(v)) return; const sc=sM(v); if(sc>bs2){ bs2=sc; bm=v; } });
+    this.voiceENM=bm;
   },
   init(){ if(!this.available()) return; this._pick();
     try{ speechSynthesis.onvoiceschanged=()=>this._pick(); }catch(e){} },
@@ -18280,9 +18290,15 @@ const TTS={
         if(acc==null){ try{ const qm=document.getElementById("quest-modal"), np=(qm && qm.classList.contains("show"))?qm.__npc:null;
           if(np && np.__accent){ acc=np.__accent; if(gen==null) gen=np.gender; } }catch(e){} }
         const us=(acc==="us");
-        if(us){ const g=(gen==="f")?this.voiceUSF:(gen==="m"?this.voiceUSM:null);
-          v=g||this.voiceUS||null;
-          if(opts.pitch==null) pit=g?1:(gen==="f"?1.18:(gen==="m"?0.72:1)); }   // senza voce US per genere: lo scarto di tono di sempre
+        /* ragazze: la voce americana femminile (o quella americana di
+           sistema, che sui Chromebook e' femminile) SENZA ritocchi di tono;
+           ragazzi: americana maschile, se no maschile di un altro accento
+           (voiceENM), e solo in ultimo la voce americana col tono abbassato */
+        if(us){ let g=null, pk=1;
+          if(gen==="f") g=this.voiceUSF||this.voiceUS;
+          else if(gen==="m"){ g=this.voiceUSM||this.voiceENM; if(!g){ g=this.voiceUS; pk=0.72; } }
+          else g=this.voiceUS;
+          v=g||null; if(opts.pitch==null) pit=pk; }
         let done=false; const fin=ok=>{ if(!done){ done=true; res(ok); } };
         /* tentativo 0: la voce scelta; 1: voce di sistema en-GB; 2: en-US */
         const parla=(voce,tent)=>{
@@ -63219,7 +63235,10 @@ ET.voci=function(){
     voceBase:TTS.voice?TTS.voice.name:null,
     voceM:TTS.voiceM?TTS.voiceM.name:null,
     voceF:TTS.voiceF?TTS.voiceF.name:null,
-    architetto:TTS.voiceM?TTS.voiceM.name:"RIPIEGO: voce base con tono abbassato" };
+    architetto:TTS.voiceM?TTS.voiceM.name:"RIPIEGO: voce base con tono abbassato",
+    /* v309h: le voci della crew dello skatepark (accento americano) */
+    crewRagazze:(TTS.voiceUSF||TTS.voiceUS)?(TTS.voiceUSF||TTS.voiceUS).name:"voce di sistema en-US",
+    crewRagazzi:TTS.voiceUSM?TTS.voiceUSM.name+" (americana)":(TTS.voiceENM?TTS.voiceENM.name+" (maschile, ma non americana: sul dispositivo manca una voce americana maschile)":"RIPIEGO: voce americana con tono abbassato") };
   console.log(o); return o; };
 ET.pioggia=function(){
   let cop=null; try{ cop=rainCovered(player.position.x,player.position.z); }catch(e){}
