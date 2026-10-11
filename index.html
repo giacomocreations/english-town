@@ -14596,6 +14596,17 @@ const SK_POSES={
      abbassa l'anca, non lo fa puntare dentro il pavimento */
   mwLb:  { L:{t:0.58,s:-0.48,p:1.05}, R:{t:-0.22,s:-0.22,p:0},   arms:"mw", lean:0.14 },
   mwRb:  { L:{t:-0.22,s:-0.22,p:0},   R:{t:0.58,s:-0.48,p:1.05}, arms:"mw", lean:0.14 },
+  /* v309j: la fine della scivolata del sidewalk, verso destra (p) o verso
+     sinistra (n). a = gamba inclinata di lato (positivo = a destra). Il
+     piede piatto scivola verso dove si va: quello davanti si apre largo
+     (0,2), quello dietro si riavvicina meno (0,09), se no i piedi si
+     incrocerebbero; il piede piegato dietro si sposta un filo in senso
+     opposto (resta dov'era mentre il corpo va di lato) ed e' un filo piu'
+     chiuso per l'anca piu' bassa della gamba aperta */
+  swLp:  { L:{t:0.5,s:-0.58,p:1.05,a:-0.05}, R:{t:0,s:0,p:0,a:0.2},     arms:"mw", lean:0.14 },
+  swRp:  { L:{t:0,s:0,p:0,a:0.09},           R:{t:0.45,s:-0.55,p:1.05}, arms:"mw", lean:0.14 },
+  swRn:  { L:{t:0,s:0,p:0,a:-0.2},           R:{t:0.5,s:-0.58,p:1.05,a:0.05}, arms:"mw", lean:0.14 },
+  swLn:  { L:{t:0.45,s:-0.55,p:1.05},        R:{t:0,s:0,p:0,a:-0.09},   arms:"mw", lean:0.14 },
   toe:   { L:{t:0.05,s:0,p:0.8},     R:{t:0.05,s:0,p:0.8},     arms:"hat", lift:0.07, lean:0.06 },
   toe2:  { L:{t:0.05,s:0,p:0.8},     R:{t:0.05,s:0,p:0.8},     arms:"hat2", lift:0.07, lean:0.08 },
   rise:  { L:{t:0.05,s:0,p:0.75},    R:{t:0.05,s:0,p:0.75},    arms:"open", lift:0.06, lean:0.05 },
@@ -14604,14 +14615,16 @@ const SK_POSES={
   tapR:  { L:{t:0.03,s:0,p:0},       R:{t:0.24,s:-0.32,p:0.8}, arms:"mw", lean:0.14 } };
 /* le versioni con un avambraccio alzato (stesse gambe: legs = la posa da
    cui prendono l'altezza misurata, vedi _skSoles/_skHmix) */
-["mwL","mwR","mwLb","mwRb","tapL","tapR"].forEach(nm=>{
+["mwL","mwR","mwLb","mwRb","swLp","swRp","swRn","swLn","tapL","tapR"].forEach(nm=>{
   SK_POSES[nm+"r"]=Object.assign({},SK_POSES[nm],{ arms:"mwFR", legs:nm });
   SK_POSES[nm+"l"]=Object.assign({},SK_POSES[nm],{ arms:"mwFL", legs:nm }); });
 /* una posa di ballo sulle ossa (come sitPoseFor): gambe per angoli,
    piede per pendenza, braccia con _armPose. Ritorna { pins, drop, lift } */
 function dancePoseFor(root,pins,fwd,spec){
   if(!pins||!pins.length||!root) return null;
-  const V=BABYLON.Vector3, up=new V(0,1,0), dn=new V(0,-1,0), f=new V(fwd.x,0,fwd.z).normalize();
+  const V=BABYLON.Vector3, up=new V(0,1,0), dn=new V(0,-1,0), f=new V(fwd.x,0,fwd.z).normalize(), rt=new V(f.z,0,-f.x);
+  /* la direzione di un segmento della gamba: angolo avanti, poi l'apertura di lato (a) */
+  const legDir=(ang,a)=>{ const d=dn.scale(Math.cos(ang)).add(f.scale(Math.sin(ang))); return a?d.scale(Math.cos(a)).add(rt.scale(Math.sin(a))):d; };
   const extra=_restPinsFor(root,_SIT_BODY_RE,pins.map(k=>k.tn)), all=pins.concat(extra);
   const saved=all.map(k=>({tn:k.tn, q:k.tn.rotationQuaternion?k.tn.rotationQuaternion.clone():null, p:k.tn.position.clone()}));
   all.forEach(k=>{ k.tn.position.copyFrom(k.p); if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion(); k.tn.rotationQuaternion.copyFrom(k.q); });
@@ -14632,9 +14645,9 @@ function dancePoseFor(root,pins,fwd,spec){
       const toe=F.getDescendants(false).find(d=>/(^|_)(Toe|Ball)\.[LR]$/.test(d.name));
       const footLoc=toe?V.TransformNormal(toe.getAbsolutePosition().subtract(pA),F.getWorldMatrix().clone().invert()):null;
       const shinLoc=V.TransformNormal(pA.subtract(pK0),K.getWorldMatrix().clone().invert());
-      _sitWorldRot(U,pH,pK0.subtract(pH),dn.scale(Math.cos(S.t)).add(f.scale(Math.sin(S.t))));
+      _sitWorldRot(U,pH,pK0.subtract(pH),legDir(S.t,S.a));
       _sitRefresh(root);
-      const K2=K.getAbsolutePosition().clone(), sdir=dn.scale(Math.cos(S.s)).add(f.scale(Math.sin(S.s)));
+      const K2=K.getAbsolutePosition().clone(), sdir=legDir(S.s,S.a);
       _sitWorldRot(K,K2,V.TransformNormal(shinLoc,K.getWorldMatrix()),sdir);
       _sitRefresh(root);
       out.set(U,U.rotationQuaternion.clone()); out.set(K,K.rotationQuaternion.clone());
@@ -14657,7 +14670,7 @@ function dancePoseFor(root,pins,fwd,spec){
       const h=f.clone();
       _sitWorldRot(F,A2,cur,h.scale(Math.cos(S.p)).add(dn.scale(Math.sin(S.p))));
       _sitRefresh(root); out.set(F,F.rotationQuaternion.clone());
-      const ls=(lT+lS)-(lT*Math.cos(S.t)+lS*Math.cos(S.s));
+      const ls=(lT+lS)-(lT*Math.cos(S.t)+lS*Math.cos(S.s))*Math.cos(S.a||0);
       loss[sd]=(loss[sd]==null)?ls:Math.min(loss[sd],ls);
     });
   });
@@ -14720,7 +14733,8 @@ function _skSoles(root,K){
   }
 }
 /* le coppie di pose che _skEval fonde fra loro */
-const SK_PAIRS=[["stand","crouch"],["bDn","bUp"],["mwL","mwR"],["mwL","mwLb"],["mwLb","mwR"],["mwR","mwRb"],["mwRb","mwL"],["stand","mwL"],["mwRb","stand"],["stand","toe"],["toe","toe2"],["stand","rise"],["tapL","tapR"]];
+const SK_PAIRS=[["stand","crouch"],["bDn","bUp"],["mwL","mwLb"],["mwLb","mwR"],["mwR","mwRb"],["mwRb","mwL"],["stand","mwL"],["mwRb","stand"],
+  ["mwL","swLp"],["swLp","mwR"],["mwR","swRp"],["swRp","mwL"],["mwL","swLn"],["swLn","mwR"],["mwR","swRn"],["swRn","mwL"],["swRp","stand"],["swRn","stand"],["stand","toe"],["toe","toe2"],["stand","rise"],["tapL","tapR"]];
 /* di quanto si alza (o si abbassa) il corpo in questa posa */
 function _skH(P){ return (P.off!=null)?P.off:((P.lift||0)-(P.drop||0)); }
 /* ...e a meta' strada fra due pose (tabella misurata in _skSoles, se c'e') */
@@ -14766,7 +14780,7 @@ function _skArms(P,b,dur,a,z,t,E){
 }
 /* dove si e' dentro una mossa (b = battiti dall'inizio): pose, quanto si
    scivola, quanto si salta */
-function _skEval(K,mv,b){
+function _skEval(K,mv,b,sd){
   const P=K;
   /* v309i (Giacomo: «il piede che rimane a terra deve scivolare per piu'
      tempo mentre l'altro rimane piegato, se no e' troppo scattoso»). Prima
@@ -14777,17 +14791,16 @@ function _skEval(K,mv,b){
      piegato sulla punta; negli ultimi 0,3 lo scambio: il tallone di quello
      scivolato dietro si alza e l'altro si appoggia (mwLb -> mwR), e si
      riparte. Il primo battito entra dalla posa in piedi del saltello e
-     l'ultimo ci torna, senza scatti. */
-  if(mv==="moonwalk"){ const k=Math.floor(b), fr=b-k, Sd=k%2?"R":"L", Od=k%2?"L":"R", last=k>=7;
-    const a="mw"+Sd, ab="mw"+Sd+"b", nx=last?"stand":"mw"+Od;
+     l'ultimo ci torna, senza scatti.
+     v309j (Giacomo: «fallo anche per il sidewalk»): lo stesso, ma il piede
+     piatto scivola di lato verso dove si va (sd = SKATE/SKDANCE.sdir, +1 a
+     destra): mwL -> swLp (o swLn) -> mwR... */
+  if(mv==="moonwalk"||mv==="sidewalk"){ const k=Math.floor(b), fr=b-k, Sd=k%2?"R":"L", Od=k%2?"L":"R", last=k>=7;
+    const a="mw"+Sd, ab=mv==="moonwalk"?"mw"+Sd+"b":"sw"+Sd+((sd||1)<0?"n":"p"), nx=last?"stand":"mw"+Od;
     if(fr>=0.7) return _skArms(P,b,8,ab,nx,_skEase((fr-0.7)/0.3),{ glide:1, hop:0 });
     if(k===0 && fr<0.25) return _skArms(P,b,8,"stand",a,_skEase(fr/0.25),{ glide:1, hop:0 });
     const u0=k===0?0.25:0;
     return _skArms(P,b,8,a,ab,(fr-u0)/(0.7-u0),{ glide:1, hop:0 }); }
-  if(mv==="sidewalk"){ const k=Math.floor(b), fr=b-k;
-    /* mezzo battito FERMI nella posa (un tallone su), poi lo scambio: e'
-       lo scatto, non una dissolvenza continua (il sidewalk e' rimasto cosi') */
-    return _skArms(P,b,8,k%2?"mwR":"mwL",k%2?"mwL":"mwR",_skEase((fr-0.5)/0.4),{ glide:1, hop:0 }); }
   if(mv==="basic"){ const k=Math.floor(b), fr=b-k;
     const t=fr<0.5?_skEase(fr/0.5):1-_skEase((fr-0.5)/0.5);
     return { A:P.bDn, B:P.bUp, t, glide:0, hop:0.1*Math.sin(Math.PI*fr), sway:0.16*Math.sin(Math.PI*b) }; }
@@ -15153,7 +15166,7 @@ function skateTick(){
     if(_skRest(D,rest,B,D.n.holder,v=>{ D.n.carrier.rotation.y=D.face; })) return;
     /* v308h: la stessa mossa, sullo stesso battito, per tutti (vedi skCrewStep) */
     D.mv=R.mv; D.m0=R.m0; D.dur=R.dur; D.sdir=R.sdir;
-    const b=B-R.m0, E=_skEval(D.K,D.mv,b);
+    const b=B-R.m0, E=_skEval(D.K,D.mv,b,D.sdir);
     /* v309g: la direzione la detta la coreografia (moonwalk di profilo);
        nel saltello ci si gira insieme al salto */
     { let df=(R.faceTo==null?Math.PI:R.faceTo)-(R.faceFrom==null?Math.PI:R.faceFrom);
@@ -16001,7 +16014,7 @@ function skDanceTick(){
       S.turnTo=(S.area==="town" && Math.hypot(hx,hz)>0.6)?Math.atan2(-hx,-hz):S.face;
       S.sdir=(hx*Math.cos(S.turnTo)-hz*Math.sin(S.turnTo))>0?1:-1; }
     S.m0+=(was==="hop"?2:SKATE_DUR(was)); b=B-S.m0; }
-  const E=_skEval(S.K,S.mv,b), dy=_skBlendE(S.cur,E);
+  const E=_skEval(S.K,S.mv,b,S.sdir), dy=_skBlendE(S.cur,E);
   avatarRoot.position.y=S.baseY+dy+(E.hop||0);
   /* v308g (Giacomo: «al Beat Club se balli devi essere rivolto verso il
      palco, sempre»). Nel club niente giravolte: la faccia e' sempre verso
@@ -64252,7 +64265,7 @@ const Presenza=(function(){
     let E;
     if(m.mv==="rest"||!m.mv) E={ A:K.stand, B:K.stand, t:0, hop:0 };
     else { const dur=(m.mv==="hop")?2:SKATE_DUR(m.mv);
-      E=_skEval(K,m.mv,Math.min(dur-0.001, m.b+Math.max(0,ora-m.t)/1000*bpm/60)); }
+      E=_skEval(K,m.mv,Math.min(dur-0.001, m.b+Math.max(0,ora-m.t)/1000*bpm/60),m.sdir); }
     const dy=_skBlendE(b.skCur,E);
     b.pins=b.skCur;
     b.holder.position.y=b.holderY0+dy+(E.hop||0);
