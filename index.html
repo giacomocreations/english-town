@@ -14589,6 +14589,13 @@ const SK_POSES={
   bDn:   { L:{t:0.32,s:-0.36,p:0.1}, R:{t:0.32,s:-0.36,p:0.1}, arms:"waveMid", lean:0.16 },
   mwL:   { L:{t:0.45,s:-0.55,p:1.05}, R:{t:0,s:0,p:0},           arms:"mw", lean:0.14 },
   mwR:   { L:{t:0,s:0,p:0},           R:{t:0.45,s:-0.55,p:1.05}, arms:"mw", lean:0.14 },
+  /* v309i: la fine della scivolata del moonwalk (vedi _skEval): il piede
+     piatto e' andato indietro sotto il corpo, gamba tesa; il ginocchio
+     piegato e' un filo piu' avanti (la punta resta dov'era mentre il corpo
+     arretra) e un filo piu' chiuso, cosi' la gamba tesa inclinata, che
+     abbassa l'anca, non lo fa puntare dentro il pavimento */
+  mwLb:  { L:{t:0.58,s:-0.48,p:1.05}, R:{t:-0.22,s:-0.22,p:0},   arms:"mw", lean:0.14 },
+  mwRb:  { L:{t:-0.22,s:-0.22,p:0},   R:{t:0.58,s:-0.48,p:1.05}, arms:"mw", lean:0.14 },
   toe:   { L:{t:0.05,s:0,p:0.8},     R:{t:0.05,s:0,p:0.8},     arms:"hat", lift:0.07, lean:0.06 },
   toe2:  { L:{t:0.05,s:0,p:0.8},     R:{t:0.05,s:0,p:0.8},     arms:"hat2", lift:0.07, lean:0.08 },
   rise:  { L:{t:0.05,s:0,p:0.75},    R:{t:0.05,s:0,p:0.75},    arms:"open", lift:0.06, lean:0.05 },
@@ -14597,7 +14604,7 @@ const SK_POSES={
   tapR:  { L:{t:0.03,s:0,p:0},       R:{t:0.24,s:-0.32,p:0.8}, arms:"mw", lean:0.14 } };
 /* le versioni con un avambraccio alzato (stesse gambe: legs = la posa da
    cui prendono l'altezza misurata, vedi _skSoles/_skHmix) */
-["mwL","mwR","tapL","tapR"].forEach(nm=>{
+["mwL","mwR","mwLb","mwRb","tapL","tapR"].forEach(nm=>{
   SK_POSES[nm+"r"]=Object.assign({},SK_POSES[nm],{ arms:"mwFR", legs:nm });
   SK_POSES[nm+"l"]=Object.assign({},SK_POSES[nm],{ arms:"mwFL", legs:nm }); });
 /* una posa di ballo sulle ossa (come sitPoseFor): gambe per angoli,
@@ -14713,7 +14720,7 @@ function _skSoles(root,K){
   }
 }
 /* le coppie di pose che _skEval fonde fra loro */
-const SK_PAIRS=[["stand","crouch"],["bDn","bUp"],["mwL","mwR"],["stand","toe"],["toe","toe2"],["stand","rise"],["tapL","tapR"]];
+const SK_PAIRS=[["stand","crouch"],["bDn","bUp"],["mwL","mwR"],["mwL","mwLb"],["mwLb","mwR"],["mwR","mwRb"],["mwRb","mwL"],["stand","mwL"],["mwRb","stand"],["stand","toe"],["toe","toe2"],["stand","rise"],["tapL","tapR"]];
 /* di quanto si alza (o si abbassa) il corpo in questa posa */
 function _skH(P){ return (P.off!=null)?P.off:((P.lift||0)-(P.drop||0)); }
 /* ...e a meta' strada fra due pose (tabella misurata in _skSoles, se c'e') */
@@ -14761,9 +14768,25 @@ function _skArms(P,b,dur,a,z,t,E){
    scivola, quanto si salta */
 function _skEval(K,mv,b){
   const P=K;
-  if(mv==="moonwalk"||mv==="sidewalk"){ const k=Math.floor(b), fr=b-k;
+  /* v309i (Giacomo: «il piede che rimane a terra deve scivolare per piu'
+     tempo mentre l'altro rimane piegato, se no e' troppo scattoso»). Prima
+     in ogni battito si restava FERMI mezzo battito in una posa e poi i piedi
+     si scambiavano: il piede a terra non scivolava mai, si muoveva solo il
+     corpo. Ora per 0,7 battiti il piede piatto scivola da sotto il corpo
+     fino a dietro (mwL -> mwLb, a velocita' costante) mentre l'altro resta
+     piegato sulla punta; negli ultimi 0,3 lo scambio: il tallone di quello
+     scivolato dietro si alza e l'altro si appoggia (mwLb -> mwR), e si
+     riparte. Il primo battito entra dalla posa in piedi del saltello e
+     l'ultimo ci torna, senza scatti. */
+  if(mv==="moonwalk"){ const k=Math.floor(b), fr=b-k, Sd=k%2?"R":"L", Od=k%2?"L":"R", last=k>=7;
+    const a="mw"+Sd, ab="mw"+Sd+"b", nx=last?"stand":"mw"+Od;
+    if(fr>=0.7) return _skArms(P,b,8,ab,nx,_skEase((fr-0.7)/0.3),{ glide:1, hop:0 });
+    if(k===0 && fr<0.25) return _skArms(P,b,8,"stand",a,_skEase(fr/0.25),{ glide:1, hop:0 });
+    const u0=k===0?0.25:0;
+    return _skArms(P,b,8,a,ab,(fr-u0)/(0.7-u0),{ glide:1, hop:0 }); }
+  if(mv==="sidewalk"){ const k=Math.floor(b), fr=b-k;
     /* mezzo battito FERMI nella posa (un tallone su), poi lo scambio: e'
-       lo scatto del moonwalk vero, non una dissolvenza continua */
+       lo scatto, non una dissolvenza continua (il sidewalk e' rimasto cosi') */
     return _skArms(P,b,8,k%2?"mwR":"mwL",k%2?"mwL":"mwR",_skEase((fr-0.5)/0.4),{ glide:1, hop:0 }); }
   if(mv==="basic"){ const k=Math.floor(b), fr=b-k;
     const t=fr<0.5?_skEase(fr/0.5):1-_skEase((fr-0.5)/0.5);
