@@ -14554,22 +14554,22 @@ const SK_ARMS={
   waveMid:{ up:(o,f,dn,sd)=>sd==="R"?new BABYLON.Vector3(0,0.55,0).add(o.scale(0.6)).add(f.scale(0.3)):dn.scale(0.95).add(f.scale(0.18)).add(o.scale(0.14)),
            fore:(o,f,dn,sd)=>sd==="R"?new BABYLON.Vector3(0,0.75,0).subtract(o.scale(0.15)).add(f.scale(0.25)):f.scale(0.75).subtract(dn.scale(0.35)).add(o.scale(0.05)) } };
 /* v309g (Giacomo: «le braccia sono innaturali, non stanno cosi' ferme
-   durante le mosse»; poi: «fanno avanti indietro: fai che si muova una, e
-   dopo 4 battute si muove l'altro avambraccio, a parte la original move del
-   Beat Club»). Prima ogni mossa fondeva due pose con le STESSE braccia e
-   restavano immobili; il primo rimedio le faceva oscillare tutte e due in
-   controfase, come camminando, ed era troppo. Ora nei passi (moonwalk,
-   sidewalk, talloni) si muove UN avambraccio solo: nella posa del passo
-   «a riposo» le braccia sono quelle di sempre, nell'altra l'avambraccio
-   attivo sale quasi in orizzontale; ogni 4 battiti il lato attivo cambia
-   (_skEval). Il cambio cade sempre sulla posa a riposo: niente scatti.
-   Il toe stand ha gia' la mano al cappello e muove solo il braccio libero;
-   il ballo base del Beat Club resta com'era. */
+   durante le mosse»). Prima ogni mossa fondeva due pose con le STESSE
+   braccia e restavano immobili. Due tentativi scartati da Giacomo: tutte e
+   due in controfase («avanti e indietro»), poi un avambraccio che saliva e
+   scendeva a ogni passo («sembra un robottino»). Quello giusto: nei passi
+   (moonwalk, sidewalk, talloni) un avambraccio SI ALZA e RESTA FERMO; dopo
+   4 battiti scende mentre si alza l'altro, che resta fermo a sua volta, e
+   cosi' via; a fine mossa torna giu'. Le braccia sono quindi uno strato a
+   parte rispetto alle gambe: ogni posa dei passi ha tre versioni (braccia
+   giu', destro su, sinistro su: mwL, mwLr, mwLl...) e _skEval fonde le
+   gambe dentro la versione del momento, e le versioni fra loro solo nel
+   mezzo battito del cambio (E.A2/E.B2/E.w, vedi _skBlendE). Il toe stand
+   ha gia' la mano al cappello; il ballo base del Beat Club resta com'era. */
 function _skArmFore(side,amt){
   return { up:(o,f,dn,sd)=>{ const u=SK_ARMS.mw.up(o,f,dn,sd); return sd===side?u.add(f.scale(0.07)):u; },
            fore:(o,f,dn,sd)=>sd===side?f.scale(0.8).subtract(dn.scale(amt)).add(o.scale(0.06)):SK_ARMS.mw.fore(o,f,dn,sd) }; }
 SK_ARMS.mwFR=_skArmFore("R",0.12);  SK_ARMS.mwFL=_skArmFore("L",0.12);
-SK_ARMS.tapFR=_skArmFore("R",-0.15); SK_ARMS.tapFL=_skArmFore("L",-0.15);   // nei talloni (veloci) sale meno
 /* la piega del saltello: braccia un poco indietro e in fuori, gomiti morbidi */
 SK_ARMS.load={ up:(o,f,dn)=>dn.scale(0.95).subtract(f.scale(0.16)).add(o.scale(0.2)),
                fore:(o,f,dn)=>dn.scale(0.55).add(f.scale(0.35)).add(o.scale(0.08)) };
@@ -14586,15 +14586,18 @@ const SK_POSES={
   bUp:   { L:{t:0.04,s:0,p:0.3},     R:{t:0.04,s:0,p:0.3},     arms:"waveUp", lean:0.08 },
   bDn:   { L:{t:0.32,s:-0.36,p:0.1}, R:{t:0.32,s:-0.36,p:0.1}, arms:"waveMid", lean:0.16 },
   mwL:   { L:{t:0.45,s:-0.55,p:1.05}, R:{t:0,s:0,p:0},           arms:"mw", lean:0.14 },
-  mwR:   { L:{t:0,s:0,p:0},           R:{t:0.45,s:-0.55,p:1.05}, arms:"mwFR", lean:0.14 },
-  mwR2:  { L:{t:0,s:0,p:0},           R:{t:0.45,s:-0.55,p:1.05}, arms:"mwFL", lean:0.14 },
+  mwR:   { L:{t:0,s:0,p:0},           R:{t:0.45,s:-0.55,p:1.05}, arms:"mw", lean:0.14 },
   toe:   { L:{t:0.05,s:0,p:0.8},     R:{t:0.05,s:0,p:0.8},     arms:"hat", lift:0.07, lean:0.06 },
   toe2:  { L:{t:0.05,s:0,p:0.8},     R:{t:0.05,s:0,p:0.8},     arms:"hat2", lift:0.07, lean:0.08 },
   rise:  { L:{t:0.05,s:0,p:0.75},    R:{t:0.05,s:0,p:0.75},    arms:"open", lift:0.06, lean:0.05 },
   crouch:{ L:{t:0.62,s:-0.5,p:0.05}, R:{t:0.62,s:-0.5,p:0.05}, arms:"load", lean:0.2 },
   tapL:  { L:{t:0.24,s:-0.32,p:0.8}, R:{t:0.03,s:0,p:0},       arms:"mw", lean:0.14 },
-  tapR:  { L:{t:0.03,s:0,p:0},       R:{t:0.24,s:-0.32,p:0.8}, arms:"tapFR", lean:0.14 },
-  tapR2: { L:{t:0.03,s:0,p:0},       R:{t:0.24,s:-0.32,p:0.8}, arms:"tapFL", lean:0.14 } };
+  tapR:  { L:{t:0.03,s:0,p:0},       R:{t:0.24,s:-0.32,p:0.8}, arms:"mw", lean:0.14 } };
+/* le versioni con un avambraccio alzato (stesse gambe: legs = la posa da
+   cui prendono l'altezza misurata, vedi _skSoles/_skHmix) */
+["mwL","mwR","tapL","tapR"].forEach(nm=>{
+  SK_POSES[nm+"r"]=Object.assign({},SK_POSES[nm],{ arms:"mwFR", legs:nm });
+  SK_POSES[nm+"l"]=Object.assign({},SK_POSES[nm],{ arms:"mwFL", legs:nm }); });
 /* una posa di ballo sulle ossa (come sitPoseFor): gambe per angoli,
    piede per pendenza, braccia con _armPose. Ritorna { pins, drop, lift } */
 function dancePoseFor(root,pins,fwd,spec){
@@ -14687,7 +14690,8 @@ function _skSoles(root,K){
   try{
     const base=low();                                  // in piedi com'e' adesso: le scarpe a terra
     if(!isFinite(base) || base>1e8) return;
-    for(const nm in K){ K[nm].name=nm; K[nm].tab=K.__tab; _applyPins(K[nm].pins); const y=low(); if(isFinite(y) && y<1e8) K[nm].off=base-y; }
+    for(const nm in K){ const lg=(SK_POSES[nm]&&SK_POSES[nm].legs)||nm; K[nm].name=lg; K[nm].tab=K.__tab;
+      _applyPins(K[nm].pins); const y=low(); if(isFinite(y) && y<1e8) K[nm].off=base-y; }
     /* ⚠️ A META' FRA DUE POSE la gamba non si accorcia a meta' (va col
        coseno): con la media lineare, piegandosi nel saltello i piedi
        scendevano ancora di qualche centimetro. Per ogni coppia di pose che
@@ -14705,7 +14709,7 @@ function _skSoles(root,K){
   }
 }
 /* le coppie di pose che _skEval fonde fra loro */
-const SK_PAIRS=[["stand","crouch"],["bDn","bUp"],["mwL","mwR"],["mwL","mwR2"],["stand","toe"],["toe","toe2"],["stand","rise"],["tapL","tapR"],["tapL","tapR2"]];
+const SK_PAIRS=[["stand","crouch"],["bDn","bUp"],["mwL","mwR"],["stand","toe"],["toe","toe2"],["stand","rise"],["tapL","tapR"]];
 /* di quanto si alza (o si abbassa) il corpo in questa posa */
 function _skH(P){ return (P.off!=null)?P.off:((P.lift||0)-(P.drop||0)); }
 /* ...e a meta' strada fra due pose (tabella misurata in _skSoles, se c'e') */
@@ -14717,6 +14721,16 @@ function _skHmix(A,B,t){
     if(row){ const x=Math.max(0,Math.min(1,u))*4, i=Math.min(3,Math.floor(x)), f=x-i; return row[i]*(1-f)+row[i+1]*f; } }
   return _skH(A)*(1-t)+_skH(B)*t; }
 const _skQ=new BABYLON.Quaternion();
+/* come _skBlend, piu' lo strato delle braccia: se E porta una seconda
+   coppia (A2,B2) la si fonde con lo stesso t e poi si mescolano le due di w */
+function _skBlendE(cur,E){
+  const dy=_skBlend(cur,E.A,E.B,E.t);
+  if(E.A2 && E.B2 && E.w>0){
+    const T=cur.__sk2||(cur.__sk2=cur.map(k=>({ p:k.p.clone(), q:k.q.clone() })));
+    _skBlend(T,E.A2,E.B2,E.t);
+    for(let i=0;i<cur.length;i++){ BABYLON.Quaternion.SlerpToRef(cur[i].q,T[i].q,E.w,cur[i].q); BABYLON.Vector3.LerpToRef(cur[i].p,T[i].p,E.w,cur[i].p); } }
+  return dy;
+}
 /* fonde due pose dentro cur (stessi oggetti, ogni fotogramma) */
 function _skBlend(cur,A,B,t){
   for(let i=0;i<cur.length;i++){ const a=A.pins[i], b=B.pins[i], c=cur[i];
@@ -14724,6 +14738,21 @@ function _skBlend(cur,A,B,t){
   return _skHmix(A,B,t);
 }
 const _skEase=t=>t<0?0:(t>1?1:t*t*(3-2*t));
+/* v309g: lo strato delle braccia nei passi. a,z = pose delle gambe (base,
+   senza suffisso), t = il loro blend. In ogni gruppo di 4 battiti e' alzato
+   un avambraccio (destro, poi sinistro, poi destro...): nel primo mezzo
+   battito del gruppo si passa dal precedente (o da giu', a inizio mossa),
+   nell'ultimo mezzo battito della mossa si torna giu'. */
+function _skArms(P,b,dur,a,z,t,E){
+  const seg=Math.floor(Math.max(0,b)/4), cur=(seg%2)?"l":"r", u=b-seg*4;
+  let from=cur, to=cur, w=0;
+  if(b>dur-0.5){ from=cur; to=""; w=_skEase((b-(dur-0.5))/0.5); }
+  else if(u<0.5){ from=seg?((seg%2)?"r":"l"):""; to=cur; w=_skEase(u/0.5); }
+  const pk=(n,s)=>P[n+s]||P[n];
+  E.A=pk(a,from); E.B=pk(z,from); E.t=t;
+  if(w>0){ E.A2=pk(a,to); E.B2=pk(z,to); E.w=w; }
+  return E;
+}
 /* dove si e' dentro una mossa (b = battiti dall'inizio): pose, quanto si
    scivola, quanto si salta */
 function _skEval(K,mv,b){
@@ -14731,10 +14760,7 @@ function _skEval(K,mv,b){
   if(mv==="moonwalk"||mv==="sidewalk"){ const k=Math.floor(b), fr=b-k;
     /* mezzo battito FERMI nella posa (un tallone su), poi lo scambio: e'
        lo scatto del moonwalk vero, non una dissolvenza continua */
-    /* v309g: l'avambraccio che si muove cambia ogni 4 battiti (a battito
-       pari la posa e' mwL, a riposo: il cambio non si vede) */
-    const R=(Math.floor(b/4)%2 && P.mwR2)?P.mwR2:P.mwR;
-    return { A:k%2?R:P.mwL, B:k%2?P.mwL:R, t:_skEase((fr-0.5)/0.4), glide:1, hop:0 }; }
+    return _skArms(P,b,8,k%2?"mwR":"mwL",k%2?"mwL":"mwR",_skEase((fr-0.5)/0.4),{ glide:1, hop:0 }); }
   if(mv==="basic"){ const k=Math.floor(b), fr=b-k;
     const t=fr<0.5?_skEase(fr/0.5):1-_skEase((fr-0.5)/0.5);
     return { A:P.bDn, B:P.bUp, t, glide:0, hop:0.1*Math.sin(Math.PI*fr), sway:0.16*Math.sin(Math.PI*b) }; }
@@ -14750,8 +14776,8 @@ function _skEval(K,mv,b){
     if(b<0.5) return { A:P.stand, B:R, t:_skEase(b/0.5), glide:0, hop:0 };
     if(b<1.35) return { A:R, B:R, t:0, glide:0, hop:0 };
     return { A:R, B:P.stand, t:_skEase((b-1.35)/0.6), glide:0, hop:0 }; }
-  if(mv==="ankle"){ const h=b*2, k=Math.floor(h), fr=h-k, R=(Math.floor(b/4)%2 && P.tapR2)?P.tapR2:P.tapR;
-    return { A:k%2?R:P.tapL, B:k%2?P.tapL:R, t:_skEase((fr-0.45)/0.45), glide:0, hop:0 }; }
+  if(mv==="ankle"){ const h=b*2, k=Math.floor(h), fr=h-k;
+    return _skArms(P,b,4,k%2?"tapR":"tapL",k%2?"tapL":"tapR",_skEase((fr-0.45)/0.45),{ glide:0, hop:0 }); }
   /* il saltello: piega, stacco, in aria, atterraggio, su */
   if(b<0.4)  return { A:P.stand, B:P.crouch, t:_skEase(b/0.4), glide:0, hop:0, turn:0 };
   /* v309g: 12 cm e non 20: in un saltello di mezzo battito (0,3 s a 120
@@ -15071,7 +15097,7 @@ function skateTick(){
     { let df=(R.faceTo==null?Math.PI:R.faceTo)-(R.faceFrom==null?Math.PI:R.faceFrom);
       while(df>Math.PI) df-=2*Math.PI; while(df<-Math.PI) df+=2*Math.PI;
       D.face=(R.faceFrom==null?Math.PI:R.faceFrom)+df*(E.turn!=null?_skEase(E.turn):1); }
-    const dy=_skBlend(D.cur,E.A,E.B,E.t);
+    const dy=_skBlendE(D.cur,E);
     D.n.holder.position.y=D.baseY+dy+(E.hop||0);
     D.n.carrier.rotation.y=D.face+(E.sway||0);
     /* v309g (Giacomo: «fanno un balzo laterale o in avanti molto lungo,
@@ -15230,7 +15256,13 @@ function skGoDance(D,see,B){
   _skWalk(D,D.home.x,D.home.z,see,()=>{
     const n=D.n; n.carrier.rotation.y=Math.PI; n.holder.position.y=D.baseY; n.pins=D.cur;
     try{ n.play("Idle"); }catch(e){}
-    Object.assign(D,{ st:"dance", face:Math.PI, turnFrom:Math.PI, turnTo:Math.PI, mv:"hop", dur:2, m0:Math.floor(SKATE.beat)+1, restT:0 }); });
+    Object.assign(D,{ st:"dance", face:Math.PI, turnFrom:Math.PI, turnTo:Math.PI, mv:"hop", dur:2, m0:Math.floor(SKATE.beat)+1, restT:0 });
+    /* v309g (Giacomo: «se iniziano a ballare si toglie da solo il popup»):
+       la finestra aperta con un ballerino si chiude quando la crew riparte
+       (dopo la camminata al posto: la risposta all'invito si fa in tempo a
+       leggerla). */
+    try{ const q=document.getElementById("quest-modal");
+      if(q && q.classList.contains("show") && q.__npc && q.__npc.__skDancer) DialogueBox.close(); }catch(e){} });
 }
 /* ---- PARLARE CON LA CREW (v309d) ---------------------------------------------
    Giacomo: «puoi parlare con i ballerini quando sono fermi come con gli altri
@@ -15450,7 +15482,7 @@ function skDanceTick(){
       S.turnTo=(S.area==="town" && Math.hypot(hx,hz)>0.6)?Math.atan2(-hx,-hz):S.face;
       S.sdir=(hx*Math.cos(S.turnTo)-hz*Math.sin(S.turnTo))>0?1:-1; }
     S.m0+=(was==="hop"?2:SKATE_DUR(was)); b=B-S.m0; }
-  const E=_skEval(S.K,S.mv,b), dy=_skBlend(S.cur,E.A,E.B,E.t);
+  const E=_skEval(S.K,S.mv,b), dy=_skBlendE(S.cur,E);
   avatarRoot.position.y=S.baseY+dy+(E.hop||0);
   /* v308g (Giacomo: «al Beat Club se balli devi essere rivolto verso il
      palco, sempre»). Nel club niente giravolte: la faccia e' sempre verso
@@ -16260,9 +16292,14 @@ function parkBench(x,z,ry,o){ o=o||{};
     q.material=m; q.position.set(px,gy+py,pz); if(rx) q.rotation.x=rx; q.parent=b; q.__occluder=true; return q; };
   [-0.15,0,0.15].forEach(zz=>bx(W,0.035,0.12,0,0.44,zz,wood));                  // seduta a doghe
   [0.62,0.78].forEach(yy=>bx(W,0.09,0.03,0,yy,-0.25-(yy-0.6)*0.18,wood,-0.18)); // schienale
+  /* v309g (Giacomo: «le panchine dello skatepark hanno i braccioli sospesi
+     in aria»): il bracciolo stava a 62 cm, la gamba davanti finiva a 44 e
+     dietro non arrivava al montante dello schienale. Ora la gamba davanti
+     sale fino al bracciolo (come le panchine in ghisa vere) e il bracciolo
+     arriva fino al montante. */
   [-W/2+0.08,W/2-0.08].forEach(xx=>{                                             // fianchi in ghisa
-    bx(0.05,0.44,0.05,xx,0.22,0.17,iron); bx(0.05,0.86,0.05,xx,0.43,-0.22,iron,-0.12);
-    bx(0.05,0.04,0.46,xx,0.40,-0.02,iron); bx(0.05,0.035,0.36,xx,0.62,0.0,iron); });
+    bx(0.05,0.645,0.05,xx,0.3225,0.17,iron); bx(0.05,0.86,0.05,xx,0.43,-0.22,iron,-0.12);
+    bx(0.05,0.04,0.46,xx,0.40,-0.02,iron); bx(0.05,0.035,0.47,xx,0.63,-0.04,iron); });
   addSolidRot(x,z,ry,W/2,0.32,"town");
   const bench=regBench("bench",x,z,[_benchLine(x,z,ry,0,0.0,0.55,gy+0.47,{ hip:0.03, slots:o.slots||null })],{ radius:2.4, noInter:!!o.noInter });
   bench.gy=gy; bench.ry=ry; bench.root=b;
@@ -18395,7 +18432,7 @@ const WordTiles=(function(){
 function _modalPlace(el){ try{ el.classList.toggle("centered", typeof started==="undefined" || !started); }catch(e){} }
 const DialogueBox=(function(){
   const el=document.getElementById("quest-modal"), card=document.getElementById("qm-card");
-  function close(){ el.classList.remove("show"); card.innerHTML=""; try{ TTS.stop(); }catch(e){} try{ SpeakLock.unlock(); }catch(e){} }
+  function close(){ el.classList.remove("show"); card.innerHTML=""; el.__npc=null; try{ TTS.stop(); }catch(e){} try{ SpeakLock.unlock(); }catch(e){} }
   /* v301 (Giacomo, 2 ott: «se premi INVIO vale come OK / Send it»): nelle
      caselle di testo dei dialoghi il tasto Invio preme il bottone principale
      (Send it, Say it, Hand it in, OK next…). Per andare a capo: Maiusc+Invio.
@@ -18418,6 +18455,17 @@ const DialogueBox=(function(){
   }
   function open(cfg){
     cfg=cfg||{}; card.innerHTML=""; SpeakLock.sync();
+    /* v309g (Giacomo: «quando parli con la crew metti il tasto Leave per
+       finire la discussione»): nelle finestre con un ballerino (Ask me,
+       domanda scritta, tessere, risposta) c'era solo «Back». Se manca un
+       modo per salutare, si aggiunge «Leave». el.__npc = con chi si parla
+       (la crew chiude la finestra quando riparte a ballare: skGoDance). */
+    el.__npc=cfg.npc||null;
+    if(cfg.npc && cfg.npc.__skDancer){
+      const bye=a=>(a||[]).some(x=>/\b(Leave|Goodbye|Bye)\b/i.test(String(x&&x.label||"")));
+      if(!bye(cfg.buttons) && !bye(cfg.choices)){
+        if(cfg.choices && !cfg.buttons) cfg.choices=cfg.choices.concat([{ label:"\u{1F44B} Leave", act:()=>{} }]);
+        else cfg.buttons=(cfg.buttons||[]).concat([{ label:"\u{1F44B} Leave", cls:"ghost", act:()=>{} }]); } }
     const npcName=cfg.name||(cfg.npc&&cfg.npc.name)||"";
     /* Voce per genere: eredita da cfg.npc.gender (spawnNPC lo imposta
        sempre); cfg.ttsOpts, se il chiamante lo passa, vince comunque —
@@ -63623,7 +63671,7 @@ const Presenza=(function(){
     if(m.mv==="rest"||!m.mv) E={ A:K.stand, B:K.stand, t:0, hop:0 };
     else { const dur=(m.mv==="hop")?2:SKATE_DUR(m.mv);
       E=_skEval(K,m.mv,Math.min(dur-0.001, m.b+Math.max(0,ora-m.t)/1000*bpm/60)); }
-    const dy=_skBlend(b.skCur,E.A,E.B,E.t);
+    const dy=_skBlendE(b.skCur,E);
     b.pins=b.skCur;
     b.holder.position.y=b.holderY0+dy+(E.hop||0);
     b.carrier.position.set(q.x,q.y,q.z);
