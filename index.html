@@ -14569,7 +14569,9 @@ const SK_ARMS={
 function _skArmFore(side,amt){
   return { up:(o,f,dn,sd)=>{ const u=SK_ARMS.mw.up(o,f,dn,sd); return sd===side?u.add(f.scale(0.07)):u; },
            fore:(o,f,dn,sd)=>sd===side?f.scale(0.8).subtract(dn.scale(amt)).add(o.scale(0.06)):SK_ARMS.mw.fore(o,f,dn,sd) }; }
-SK_ARMS.mwFR=_skArmFore("R",0.12);  SK_ARMS.mwFL=_skArmFore("L",0.12);
+/* -0.16: l'avambraccio alzato resta un filo sotto l'orizzontale (Giacomo:
+   «puo' stare leggermente piu' basso»; prima saliva un poco sopra) */
+SK_ARMS.mwFR=_skArmFore("R",-0.16);  SK_ARMS.mwFL=_skArmFore("L",-0.16);
 /* la piega del saltello: braccia un poco indietro e in fuori, gomiti morbidi */
 SK_ARMS.load={ up:(o,f,dn)=>dn.scale(0.95).subtract(f.scale(0.16)).add(o.scale(0.2)),
                fore:(o,f,dn)=>dn.scale(0.55).add(f.scale(0.35)).add(o.scale(0.08)) };
@@ -15015,7 +15017,9 @@ function buildSkatepark(){
       prompt:'Press <b>E</b> to talk to <b>'+cr.name+'</b>', interact:()=>{ if(D) talkToDancer(D); } });
     if(!n) return;
     n.__skDancer=true; if(n.inter) n.inter.enabled=false;
-    _pkNoLabel(n); try{ regTownPop(n); }catch(e){}
+    /* v309g: la crew non e' nel registro della citta' (regTownPop): ha il
+       suo orario, dalle 15 (skCrewOpen, applicato in skateTick) */
+    _pkNoLabel(n); try{ setNPCPopVisible(n,skCrewOpen()); }catch(e){}
     D={ n, home:{ x:cr.x, z:cr.z }, face:Math.PI, K:null, cur:null, mv:"hop", last:null, dur:2, m0:0, baseY:null, turnFrom:Math.PI, turnTo:Math.PI, sdir:1, st:"dance", i:SKATE.dancers.length };
     SKATE.dancers.push(D);
   }catch(e){ console.warn("[skate] dancer",e); } });
@@ -15073,9 +15077,13 @@ function skateTick(){
   const B=SKATE.beat, fr=B-Math.floor(B), pulse=Math.max(0,1-fr*3);
   SKATE.leds.forEach((m,i)=>{ const h=((Math.floor(B/4)+i)%3); const col=[[0.1,0.5,1],[1,0.2,0.7],[0.3,1,0.4]][h];
     m.emissiveColor.set(col[0]*(0.25+0.75*pulse),col[1]*(0.25+0.75*pulse),col[2]*(0.25+0.75*pulse)); });
-  /* v308e: un quarto d'ora si balla, un quarto d'ora si chiacchiera */
-  const ph=skPhase();
-  if(ph!==SKATE.phase){ SKATE.phase=ph; skPhaseBenches(ph); }
+  /* v309g: la crew c'e' solo nel suo orario (skCrewOpen) */
+  const here=skCrewOpen();
+  if(here!==SKATE.crewHere){ SKATE.crewHere=here; SKATE.dancers.forEach(D=>{ try{ setNPCPopVisible(D.n,here); }catch(e){} }); }
+  /* v308e: un quarto d'ora si balla, un quarto d'ora si chiacchiera; senza
+     la crew nessuna panchina e' occupata */
+  const ph=skPhase(), phB=here?ph:"off";
+  if(phB!==SKATE.phase){ SKATE.phase=phB; skPhaseBenches(phB); }
   if(d>70) return;                                   // lontani: nessuno li vede, niente calcoli
   const dt=Math.min(0.05,engine.getDeltaTime()/1000), bps=SKATE.bpm/60;
   const rest=SKATE.gap;                                // fra un brano e l'altro: silenzio
@@ -15211,6 +15219,17 @@ function SKATE_DUR(mv){ if(mv==="hop"||mv==="rise") return 2; return (SK_MOVES.f
    in piedi davanti a loro; chi parla gesticola. La musica resta: le casse
    suonano e il giocatore puo' ballare lo stesso. */
 const SK_CYCLE=15*60*1000;
+/* v309g (Giacomo: «la crew arriva solo dopo le 15; il docente con G li
+   vede in azione»). I ragazzi dello skatepark ci vengono il pomeriggio,
+   dopo la scuola: dalle 15 fino alla chiusura della citta' (townOpen, le
+   22). Prima delle 15 la pista e' vuota e le casse tacciono (la musica va
+   solo con la crew che balla); ci si puo' ballare da soli sullo schiocco
+   di dita. I tasti di collaudo del docente (DAY.override) vincono: G =
+   giorno, crew in pista a qualunque ora; N = notte, via; C = ora vera. */
+function skCrewOpen(){
+  if(DAY.override!==null) return DAY.override>=0;
+  return new Date().getHours()>=15 && townOpen();
+}
 function skPhase(){ if(SKATE.force) return SKATE.force;
   if(radioNow()<(SKATE.reqUntil||0)) return "dance";                     // v309d: gliel'hai chiesto tu
   return (Math.floor(radioNow()/SK_CYCLE)%2)?"chill":"dance"; }   // v309: l'ora della radio
