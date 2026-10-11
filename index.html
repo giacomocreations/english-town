@@ -4938,6 +4938,22 @@ try{ const bp=pipe._buildPipeline;
 // glow per lampioni/insegne (cielo escluso)
 const glowL=new BABYLON.GlowLayer("glow", scene, {mainTextureFixedSize:512, blurKernelSize:24});
 glowL.intensity=0.65; if(skyDome) glowL.addExcludedMesh(skyDome);
+/* v309g (Giacomo: «abbassa ancora il glow notturno su High e Max, le
+   finestre troppo abbaglianti»). Le finestre sono centinaia di rettangoli
+   accesi uno accanto all'altro: nel bagliore i loro aloni si sommano e la
+   facciata diventa una lastra bianca, mentre un lampione da solo resta un
+   punto. Quindi, oltre ad abbassare il bagliore notturno (vedi
+   updateDayNight), quello che le FINESTRE mandano nel bagliore si scala con
+   __glowK sul materiale (vetri dei palazzi, lastre accese, finestre dello
+   skyline). Stesso calcolo che Babylon fa da se' (colore emissivo x livello
+   della texture x emissiveIntensity), piu' il fattore: gli altri materiali
+   restano identici a prima. */
+glowL.customEmissiveColorSelector=function(mesh,sub,m,res){
+  if(!m || !m.emissiveColor){ res.set(glowL.neutralColor.r,glowL.neutralColor.g,glowL.neutralColor.b,glowL.neutralColor.a); return; }
+  let i=(m.emissiveTexture?m.emissiveTexture.level:1)*(m.emissiveIntensity!=null?m.emissiveIntensity:1);
+  if(m.__glowK!=null) i*=m.__glowK;
+  res.set(m.emissiveColor.r*i,m.emissiveColor.g*i,m.emissiveColor.b*i,m.alpha); };
+const WIN_GLOW_K=0.4;
 
 // riflessi finestre: sonda d'ambiente (riflette cielo/edifici sui materiali PBR)
 const probe=new BABYLON.ReflectionProbe("etProbe",96,scene); probe.position.set(0,10,0);
@@ -5190,7 +5206,7 @@ function styleWindow(mt){ if(!mt||_winMats.has(mt)) return; _winMats.add(mt); wi
     if(mt.albedoColor) mt.albedoColor=BABYLON.Color3.FromHexString("#aacfe6");
     mt.metallic=0.9; mt.roughness=0.07; mt.environmentIntensity=1.45;
   }catch(e){}
-  mt.__nightEmissive=BABYLON.Color3.FromHexString("#ffd9a0");
+  mt.__nightEmissive=BABYLON.Color3.FromHexString("#ffd9a0"); mt.__glowK=WIN_GLOW_K;    // v309g
   if(mt.emissiveColor) mt.emissiveColor.set(0,0,0); nightLights.push(mt); }
 
 // ombra morbida singola (sole direzionale)
@@ -5962,7 +5978,10 @@ function updateDayNight(dt){ if(!DAY.enabled) return;
      0,8 e finestre, lampioni e perfino le strisce pedonali si sfocavano in
      aloni bianchi. Ora 0,35 di giorno e 0,5 di notte; le finestre lontane
      dello skyline da 3,0 a 2,2. */
-  if(glowL.isEnabled) glowL.intensity=0.35+0.15*nightF;   // acceso solo su «Alto» e «Max»: vedi applyQuality
+  /* v309g (Giacomo: «abbassa ancora il glow notturno»): di notte da 0,5 a
+     0,28 — e le finestre ne prendono solo il 40% (WIN_GLOW_K). Di giorno
+     resta 0,35. */
+  if(glowL.isEnabled) glowL.intensity=0.35-0.07*nightF;   // acceso solo su «Alto» e «Max»: vedi applyQuality
   /* \u26a0\ufe0f IL CANCELLO DELLA RIDIPINTURA guarda ANCHE la pioggia. Senza, il
      cielo si sarebbe ridipinto solo al variare di nightF: di giorno nightF
      sta fermo a zero, quindi l'acquazzone avrebbe abbassato le luci senza
@@ -6536,7 +6555,7 @@ function hzSkyline(NORTH,railGap){
   const parts={}, mats={};
   const getMat=(style,ti,ring)=>{ const k=style+"_"+ti+"_"+ring; if(mats[k]) return k;
     const m=new BABYLON.StandardMaterial("hzSk_"+k,scene);
-    m.diffuseTexture=TX[style].d; m.emissiveTexture=TX[style].l;
+    m.diffuseTexture=TX[style].d; m.emissiveTexture=TX[style].l; m.__glowK=WIN_GLOW_K;   // v309g
     m.specularColor=style==="curtain"?new C3(0.16,0.17,0.19):new C3(0.03,0.03,0.03);
     m.emissiveColor=new C3(0,0,0); m.fogEnabled=false;
     m.__tint=C3.FromHexString(PAL[ti]); m.__haze=ring?0.4:0.3; m.diffuseColor=m.__tint.clone();
@@ -6732,7 +6751,7 @@ function _bldMats(){ if(_bldM) return _bldM;
     m.diffuseColor=new BABYLON.Color3(0,0,0); m.specularColor=new BABYLON.Color3(0,0,0);
     m.emissiveColor=new BABYLON.Color3(0,0,0); m.alphaMode=BABYLON.Engine.ALPHA_ADD; m.alpha=0.999;
     m.disableDepthWrite=true; m.backFaceCulling=false;
-    m.__nightEmissive=BABYLON.Color3.FromHexString(hex); nightLights.push(m); return m; };
+    m.__nightEmissive=BABYLON.Color3.FromHexString(hex); m.__glowK=WIN_GLOW_K; nightLights.push(m); return m; };   // v309g: lastre delle finestre
   _bldM={ vc:vc, warm:lit("bld_warm","#ffcf8a"), cool:lit("bld_cool","#8fb4ff"), awn:{} };
   return _bldM; }
 /* tenda a righe (accento + crema), una texture per colore d'accento */
@@ -14494,6 +14513,7 @@ function buildPark(){
   // cartello d'ingresso parco
   landmarkSign(80,7,0,"🌳","Central Park","Esplora · tante Unit qui dentro");
   try{ buildParkFun(); }catch(e){ console.warn("[parco] riddle/story/watcher",e); }   // v307
+  try{ etSnapPrep(); }catch(e){ console.warn("[foto] camera",e); }                    // v309g: lo shader delle foto si compila ora, non alla prima domanda
   try{ buildSkatepark(); }catch(e){ console.warn("[skatepark]",e); }                  // v308
 }
 
@@ -14546,17 +14566,48 @@ const SK_ARMS={
            fore:(o,f,dn,sd)=>sd==="R"?new BABYLON.Vector3(0,0.95,0).add(o.scale(0.12)).add(f.scale(0.08)):f.scale(0.75).subtract(dn.scale(0.35)).add(o.scale(0.05)) },
   waveMid:{ up:(o,f,dn,sd)=>sd==="R"?new BABYLON.Vector3(0,0.55,0).add(o.scale(0.6)).add(f.scale(0.3)):dn.scale(0.95).add(f.scale(0.18)).add(o.scale(0.14)),
            fore:(o,f,dn,sd)=>sd==="R"?new BABYLON.Vector3(0,0.75,0).subtract(o.scale(0.15)).add(f.scale(0.25)):f.scale(0.75).subtract(dn.scale(0.35)).add(o.scale(0.05)) } };
+/* v309g (Giacomo: «le braccia sono innaturali, non stanno cosi' ferme
+   durante le mosse»). Prima ogni mossa fondeva due pose con le STESSE
+   braccia (moonwalk, sidewalk, talloni, toe stand, saltello): le gambe
+   andavano e le braccia restavano immobili, come appese. Ora le due pose di
+   ogni mossa hanno braccia un poco diverse e il blend le fa muovere:
+   · passi (moonwalk/sidewalk/talloni): il braccio opposto alla gamba che
+     lavora va avanti, l'altro un filo indietro (come camminando);
+   · saltello: nella piega le braccia vanno indietro, poi tornano su;
+   · toe stand: la mano resta al cappello ma il braccio libero respira.
+   Ampiezze piccole (una spinta di 0,1-0,2 sul versore): si muovono, non
+   sbracciano. sd = lato del braccio; dir = +1 se il destro va avanti. */
+function _skArmSwing(U,F,a,dir){
+  const k=sd=>(sd==="R"?1:-1)*dir;
+  return { up:(o,f,dn,sd)=>U(o,f,dn,sd).add(f.scale(a*k(sd))).add(o.scale(a*0.25)),
+           fore:(o,f,dn,sd)=>F(o,f,dn,sd).add(f.scale(a*1.3*k(sd))).subtract(dn.scale(a*0.6*Math.max(0,k(sd)))) }; }
+SK_ARMS.mwA=_skArmSwing(SK_ARMS.mw.up,SK_ARMS.mw.fore,0.16,1);
+SK_ARMS.mwB=_skArmSwing(SK_ARMS.mw.up,SK_ARMS.mw.fore,0.16,-1);
+SK_ARMS.tapA=_skArmSwing(SK_ARMS.mw.up,SK_ARMS.mw.fore,0.12,1);
+SK_ARMS.tapB=_skArmSwing(SK_ARMS.mw.up,SK_ARMS.mw.fore,0.12,-1);
+/* la piega del saltello: braccia un poco indietro e in fuori, gomiti morbidi */
+SK_ARMS.load={ up:(o,f,dn)=>dn.scale(0.95).subtract(f.scale(0.16)).add(o.scale(0.2)),
+               fore:(o,f,dn)=>dn.scale(0.55).add(f.scale(0.35)).add(o.scale(0.08)) };
+/* toe stand, seconda posa: la mano resta al cappello (appena piu' giu'),
+   il braccio libero si apre un poco e il polso sale */
+SK_ARMS.hat2={ up:(o,f,dn,sd)=>sd==="R"?new BABYLON.Vector3(0,0.5,0).add(o.scale(0.6)).add(f.scale(0.38)):dn.scale(0.85).add(o.scale(0.42)).add(f.scale(0.16)),
+               fore:(o,f,dn,sd)=>sd==="R"?new BABYLON.Vector3(0,0.85,0).subtract(o.scale(0.5)).add(f.scale(0.16)):dn.scale(0.3).add(f.scale(0.6)).add(o.scale(0.1)) };
+/* il raccordo sulle punte (rise): braccia aperte davanti, palmi verso il pubblico */
+SK_ARMS.open={ up:(o,f,dn)=>dn.scale(0.85).add(o.scale(0.38)).add(f.scale(0.14)),
+               fore:(o,f,dn)=>dn.scale(0.25).add(o.scale(0.32)).add(f.scale(0.62)) };
 const SK_POSES={
   /* lean = busto in avanti (v308b, Giacomo: «leggermente, non troppo») */
   stand: { L:{t:0.03,s:0,p:0},       R:{t:0.03,s:0,p:0},       arms:"swing", lean:0.12 },
   bUp:   { L:{t:0.04,s:0,p:0.3},     R:{t:0.04,s:0,p:0.3},     arms:"waveUp", lean:0.08 },
   bDn:   { L:{t:0.32,s:-0.36,p:0.1}, R:{t:0.32,s:-0.36,p:0.1}, arms:"waveMid", lean:0.16 },
-  mwL:   { L:{t:0.45,s:-0.55,p:1.05}, R:{t:0,s:0,p:0},           arms:"mw", lean:0.14 },
-  mwR:   { L:{t:0,s:0,p:0},           R:{t:0.45,s:-0.55,p:1.05}, arms:"mw", lean:0.14 },
+  mwL:   { L:{t:0.45,s:-0.55,p:1.05}, R:{t:0,s:0,p:0},           arms:"mwA", lean:0.14 },
+  mwR:   { L:{t:0,s:0,p:0},           R:{t:0.45,s:-0.55,p:1.05}, arms:"mwB", lean:0.14 },
   toe:   { L:{t:0.05,s:0,p:0.8},     R:{t:0.05,s:0,p:0.8},     arms:"hat", lift:0.07, lean:0.06 },
-  crouch:{ L:{t:0.62,s:-0.5,p:0.05}, R:{t:0.62,s:-0.5,p:0.05}, arms:"swing", lean:0.2 },
-  tapL:  { L:{t:0.24,s:-0.32,p:0.8}, R:{t:0.03,s:0,p:0},       arms:"mw", lean:0.14 },
-  tapR:  { L:{t:0.03,s:0,p:0},       R:{t:0.24,s:-0.32,p:0.8}, arms:"mw", lean:0.14 } };
+  toe2:  { L:{t:0.05,s:0,p:0.8},     R:{t:0.05,s:0,p:0.8},     arms:"hat2", lift:0.07, lean:0.08 },
+  rise:  { L:{t:0.05,s:0,p:0.75},    R:{t:0.05,s:0,p:0.75},    arms:"open", lift:0.06, lean:0.05 },
+  crouch:{ L:{t:0.62,s:-0.5,p:0.05}, R:{t:0.62,s:-0.5,p:0.05}, arms:"load", lean:0.2 },
+  tapL:  { L:{t:0.24,s:-0.32,p:0.8}, R:{t:0.03,s:0,p:0},       arms:"tapA", lean:0.14 },
+  tapR:  { L:{t:0.03,s:0,p:0},       R:{t:0.24,s:-0.32,p:0.8}, arms:"tapB", lean:0.14 } };
 /* una posa di ballo sulle ossa (come sitPoseFor): gambe per angoli,
    piede per pendenza, braccia con _armPose. Ritorna { pins, drop, lift } */
 function dancePoseFor(root,pins,fwd,spec){
@@ -14667,7 +14718,7 @@ function _skSoles(root,K){
   }
 }
 /* le coppie di pose che _skEval fonde fra loro */
-const SK_PAIRS=[["stand","crouch"],["bDn","bUp"],["mwL","mwR"],["stand","toe"],["tapL","tapR"]];
+const SK_PAIRS=[["stand","crouch"],["bDn","bUp"],["mwL","mwR"],["stand","toe"],["toe","toe2"],["stand","rise"],["tapL","tapR"]];
 /* di quanto si alza (o si abbassa) il corpo in questa posa */
 function _skH(P){ return (P.off!=null)?P.off:((P.lift||0)-(P.drop||0)); }
 /* ...e a meta' strada fra due pose (tabella misurata in _skSoles, se c'e') */
@@ -14699,13 +14750,24 @@ function _skEval(K,mv,b){
     return { A:P.bDn, B:P.bUp, t, glide:0, hop:0.1*Math.sin(Math.PI*fr), sway:0.16*Math.sin(Math.PI*b) }; }
   if(mv==="toe"){
     if(b<0.5) return { A:P.stand, B:P.toe, t:_skEase(b/0.5), glide:0, hop:0 };
-    if(b<3.3) return { A:P.toe, B:P.toe, t:0, glide:0, hop:0 };
+    /* v309g: sulle punte non si resta di sasso: due respiri del braccio
+       libero (toe -> toe2 -> toe), che tornano a zero prima di scendere */
+    if(b<3.3){ const w=Math.sin(Math.PI*2*(b-0.5)/2.8); return { A:P.toe, B:P.toe2||P.toe, t:w*w, glide:0, hop:0 }; }
     return { A:P.toe, B:P.stand, t:_skEase((b-3.3)/0.7), glide:0, hop:0 }; }
+  /* v309g: il raccordo sulle punte (2 battiti), alternato al saltello fra
+     una mossa e l'altra della crew: su, un attimo li', giu' */
+  if(mv==="rise"){ const R=P.rise||P.toe;
+    if(b<0.5) return { A:P.stand, B:R, t:_skEase(b/0.5), glide:0, hop:0 };
+    if(b<1.35) return { A:R, B:R, t:0, glide:0, hop:0 };
+    return { A:R, B:P.stand, t:_skEase((b-1.35)/0.6), glide:0, hop:0 }; }
   if(mv==="ankle"){ const h=b*2, k=Math.floor(h), fr=h-k;
     return { A:k%2?P.tapR:P.tapL, B:k%2?P.tapL:P.tapR, t:_skEase((fr-0.45)/0.45), glide:0, hop:0 }; }
   /* il saltello: piega, stacco, in aria, atterraggio, su */
   if(b<0.4)  return { A:P.stand, B:P.crouch, t:_skEase(b/0.4), glide:0, hop:0, turn:0 };
-  if(b<1.0){ const u=(b-0.4)/0.6; return { A:P.crouch, B:P.stand, t:_skEase(u*2), glide:0, hop:0.2*Math.sin(Math.PI*u), turn:u }; }
+  /* v309g: 12 cm e non 20: in un saltello di mezzo battito (0,3 s a 120
+     bpm) un corpo vero sale di una decina di centimetri, 20 sembravano
+     un volo */
+  if(b<1.0){ const u=(b-0.4)/0.6; return { A:P.crouch, B:P.stand, t:_skEase(u*2), glide:0, hop:0.12*Math.sin(Math.PI*u), turn:u }; }
   if(b<1.3)  return { A:P.stand, B:P.crouch, t:_skEase((b-1.0)/0.3), glide:0, hop:0, turn:1 };
   return { A:P.crouch, B:P.stand, t:_skEase((b-1.3)/0.7), glide:0, hop:0, turn:1 };
 }
@@ -15017,22 +15079,37 @@ function skateTick(){
     const dy=_skBlend(D.cur,E.A,E.B,E.t);
     D.n.holder.position.y=D.baseY+dy+(E.hop||0);
     D.n.carrier.rotation.y=D.face+(E.sway||0);
-    const c=D.n.carrier.position;
-    /* il saltello riporta ognuno al suo posto nella fila */
-    if(D.mv==="hop" && b>0.4 && b<1.6){ const hx=D.home.x-c.x, hz=D.home.z-c.z, hd=Math.hypot(hx,hz), st=Math.min(hd,1.6*bps*dt);
-      if(hd>0.01){ c.x+=hx/hd*st; c.z+=hz/hd*st; } }
-    if(E.glide){ const f={ x:Math.sin(D.face), z:Math.cos(D.face) }, sp=SK_GLIDE/SKATE_DUR(D.mv)*bps*dt;
-      const ox=c.x, oz=c.z;
-      if(D.mv==="moonwalk"){ c.x-=f.x*sp; c.z-=f.z*sp; }
-      else { c.x+=f.z*sp*D.sdir; c.z-=f.x*sp*D.sdir; }
-      /* v308d: ognuno resta nella SUA corsia (i posti distano 3,7 m); se il
-         giocatore e' in mezzo, chi gli scivola addosso si ferma */
-      const hx=D.home.x, hz=D.home.z;
-      let nx=Math.max(hx-1.5,Math.min(hx+1.5,c.x)), nz=Math.max(hz-0.3,Math.min(hz+1.6,c.z));
-      nx=Math.max(C.x-7.2,Math.min(C.x+7.2,nx)); nz=Math.max(C.z-8.6,Math.min(C.z-3.4,nz));
-      const crowd=Math.hypot(player.position.x-nx,player.position.z-nz)<0.9;
-      if(crowd){ c.x=ox; c.z=oz; } else { c.x=nx; c.z=nz; } }
+    /* v309g (Giacomo: «fanno un balzo laterale o in avanti molto lungo,
+       innaturale»). Prima il moonwalk portava indietro di 1,4 m, il
+       sidewalk di lato di 1,4 m, e il saltello dopo li riportava al posto
+       in un colpo solo: un balzo di un metro e mezzo in mezzo battito. Ora
+       il viaggio si chiude DENTRO la mossa — meta' battiti si scivola via,
+       meta' si torna coi passi (sidewalk avanti e indietro, moonwalk
+       indietro e poi qualche passo in avanti) — e il saltello resta sul
+       posto. Il punto dove si deve stare e' una funzione del battito
+       (_skGlideOff): ci si va dietro a passo, mai a scatti; se il giocatore
+       e' in mezzo ci si ferma e si recupera piano dopo. */
+    const c=D.n.carrier.position, off=_skGlideOff(D.mv,b,D.dur);
+    let tx=D.home.x, tz=D.home.z;
+    if(off){ const f={ x:Math.sin(D.face), z:Math.cos(D.face) };
+      if(D.mv==="moonwalk"){ tx-=f.x*off; tz-=f.z*off; }
+      else { tx+=f.z*off*D.sdir; tz-=f.x*off*D.sdir; } }
+    const hx=tx-c.x, hz=tz-c.z, hd=Math.hypot(hx,hz);
+    if(hd>0.002){
+      /* metri per battito: nei passi quanto basta a seguire (e a
+         recuperare un ritardo); nelle mosse da fermi quasi niente */
+      const vmax=(E.glide||D.mv==="hop"||D.mv==="rise")?0.45:0.08, st=Math.min(hd,vmax*bps*dt);
+      const nx=c.x+hx/hd*st, nz=c.z+hz/hd*st;
+      const px=player.position.x, pz=player.position.z, dN=Math.hypot(px-nx,pz-nz);
+      if(dN>=0.9 || dN>Math.hypot(px-c.x,pz-c.z)){ c.x=nx; c.z=nz; } }
   });
+}
+/* quanto si e' lontani dal proprio posto in questo punto della mossa: a
+   meta' mossa SK_GLIDE/2, all'inizio e alla fine zero */
+function _skGlideOff(mv,b,dur){
+  if(mv!=="moonwalk" && mv!=="sidewalk") return 0;
+  const h=dur/2, u=Math.max(0,Math.min(dur,b));
+  return SK_GLIDE/2*(u<h?u/h:(dur-u)/h);
 }
 /* v308h (Giacomo: «i 4 ballerini sincronizzati, come un ballo di
    gruppo»). Una sola coreografia per tutta la crew: la stessa mossa sullo
@@ -15041,7 +15118,15 @@ function skateTick(){
    indietro e il sidewalk una volta a destra e una a sinistra, tutti
    insieme, cosi' le distanze restano quelle della fila. */
 const SK_ROUTINE=["basic","moonwalk","basic","sidewalk","toe","ankle","basic","sidewalk","moonwalk","ankle","toe"];
-const SK_GLIDE=1.4;                                   // metri per ogni moonwalk/sidewalk
+const SK_GLIDE=1.4;                                   // metri di passi per ogni moonwalk/sidewalk (meta' andata, meta' ritorno)
+/* v309g: il raccordo fra la mossa i e la successiva. Si alternano il
+   saltello e il «rise» sulle punte (braccia aperte); accanto al toe stand
+   sempre il saltello, se no sarebbero tre volte sulle punte di fila. */
+function _skConn(i){
+  const a=SK_ROUTINE[i], z=SK_ROUTINE[i+1];
+  if(i<0 || a==="toe" || z==="toe") return "hop";
+  return (i%2)?"rise":"hop";
+}
 /* v309: la coreografia e' una funzione del battito DENTRO IL BRANO (dal
    primo battito: saltello, mossa, saltello, mossa...), non un contatore
    partito quando sei arrivato tu: due compagni vedono la crew fare la
@@ -15053,10 +15138,10 @@ function skCrewStep(B,rest){
   if(!SKATE.crewL){ let L=0, n=0; SK_ROUTINE.forEach(m=>{ L+=2+SKATE_DUR(m); if(m==="sidewalk") n++; });
     SKATE.crewL=L; SKATE.crewFlip=(n%2===1); }
   const k=Math.floor(Math.max(0,B)/SKATE.crewL);
-  let m0=k*SKATE.crewL, mv="hop", dur=2, i=-1, sdir=(SKATE.crewFlip && k%2)?-1:1;
+  let m0=k*SKATE.crewL, mv="hop", dur=2, i=-1, conn=true, sdir=(SKATE.crewFlip && k%2)?-1:1;
   while(B>=m0+dur){ m0+=dur;
-    if(mv!=="hop"){ mv="hop"; dur=2; }
-    else { i++; mv=SK_ROUTINE[i]; dur=SKATE_DUR(mv); if(mv==="sidewalk") sdir=-sdir; } }
+    if(!conn){ conn=true; mv=_skConn(i); dur=2; }
+    else { conn=false; i++; mv=SK_ROUTINE[i]; dur=SKATE_DUR(mv); if(mv==="sidewalk") sdir=-sdir; } }
   R.mv=mv; R.m0=m0; R.dur=dur; R.i=i; R.sdir=sdir;
   return R;
 }
@@ -15074,7 +15159,7 @@ function _skRest(D,rest,B,holder,face){
   if(D.restT){ D.restT=0; D.mv="hop"; D.dur=2; D.m0=Math.floor(B)+1; D.turnFrom=D.face; D.turnTo=D.face; }
   return false;
 }
-function SKATE_DUR(mv){ return (SK_MOVES.find(m=>m.id===mv)||{beats:4}).beats; }
+function SKATE_DUR(mv){ if(mv==="hop"||mv==="rise") return 2; return (SK_MOVES.find(m=>m.id===mv)||{beats:4}).beats; }
 /* ---- BALLO E CHIACCHIERE (v308e) --------------------------------------------
    Giacomo: «i ballerini non ballano tutto il tempo: un quarto d'ora ballo,
    un quarto d'ora stanno due seduti e due in piedi, come se stessero
@@ -15377,19 +15462,101 @@ function skDanceTick(){
    posto, rifatta al massimo una volta al giorno) e il Ranger le mostra. */
 function skPhoto(k){ try{ return localStorage.getItem("et_ph_"+k)||""; }catch(e){ return ""; } }
 function _skShoot(k,cam,look){
-  let out=""; const prev=scene.activeCamera; let c=null;
-  try{ c=new BABYLON.FreeCamera("_phCam",cam,scene); c.setTarget(look); c.minZ=0.2; c.maxZ=400; c.fov=0.9;
+  const out=etSnapshot(cam,look,{ fov:0.9, minZ:0.2, w:640, h:400, q:0.7 });
+  if(out){ try{ localStorage.setItem("et_ph_"+k,out); localStorage.setItem("et_ph_"+k+"_d",new Date().toDateString());
+    localStorage.setItem("et_ph_"+k+"_v","2"); }catch(e){} }
+}
+/* ---- LO SCATTO CON LA LUCE GIUSTA (v309g) ----------------------------------
+   Giacomo: «le foto del park watcher sono molto scure». Perche': la pipeline
+   della grafica (esposizione, tone mapping ACES e il passaggio da luce
+   «lineare» a colori da schermo) e' agganciata SOLO alla camera di gioco, e
+   con lei attiva i materiali lasciano quel lavoro al post-process
+   (applyByPostProcess). La camera di passaggio delle foto non ha
+   post-process: i materiali uscivano lineari, cioe' con le ombre e i mezzi
+   toni schiacciati verso il nero.
+   Qui la camera delle foto ha il SUO passaggio di image processing, con una
+   configurazione SUA (copiata da quella del gioco a ogni scatto, un filo
+   piu' esposta e senza vignettatura): toccarla non avvisa i 1600 materiali
+   (vedi qSenzaAvvisi) e non tocca la camera di gioco. Camera e passaggio
+   restano vivi fra uno scatto e l'altro, cosi' lo shader e' gia' compilato
+   (nasce in etSnapPrep, alla costruzione del parco). Se per qualche motivo
+   non fosse pronto, la correzione si fa sui pixel della foto (_etSnapGamma).
+   Si ritaglia il centro dell'inquadratura a 16:10, invece di schiacciare
+   tutto il canvas come prima, e a 640-720 px: la foto si puo' ingrandire. */
+const ETSNAP={ cam:null, ip:null, cfg:null };
+function etSnapPrep(){
+  if(ETSNAP.cam) return ETSNAP;
+  const c=new BABYLON.FreeCamera("_etSnapCam",new BABYLON.Vector3(0,10,0),scene);
+  try{ c.inputs.clear(); }catch(e){}
+  const cfg=new BABYLON.ImageProcessingConfiguration();
+  let tt=BABYLON.Constants.TEXTURETYPE_UNSIGNED_BYTE;
+  try{ if(engine.getCaps().textureHalfFloatRender) tt=BABYLON.Constants.TEXTURETYPE_HALF_FLOAT; }catch(e){}
+  ETSNAP.cam=c; ETSNAP.cfg=cfg;
+  try{ ETSNAP.ip=new BABYLON.ImageProcessingPostProcess("_etSnapIP",1.0,c,BABYLON.Texture.BILINEAR_SAMPLINGMODE,engine,false,tt,cfg); }
+  catch(e){ console.warn("[foto] image processing",e); ETSNAP.ip=null; }
+  return ETSNAP;
+}
+/* ripiego: da lineare a colori da schermo, sui pixel (tabella da 256) */
+function _etSnapGamma(ctx,w,h){
+  const L=new Uint8ClampedArray(256); for(let i=0;i<256;i++) L[i]=Math.round(255*Math.pow(Math.min(1,i/255*1.1),1/2.2));
+  const im=ctx.getImageData(0,0,w,h), d=im.data;
+  for(let i=0;i<d.length;i+=4){ d[i]=L[d[i]]; d[i+1]=L[d[i+1]]; d[i+2]=L[d[i+2]]; }
+  ctx.putImageData(im,0,0);
+}
+function etSnapshot(pos,look,o){
+  o=o||{}; const W=o.w||720, H=o.h||450;
+  let out="", ppPrev=null; const prev=scene.activeCamera;
+  try{
+    const S=etSnapPrep(), c=S.cam, sc=scene.imageProcessingConfiguration, cfg=S.cfg;
+    const ok=!!(S.ip && S.ip.isReady && S.ip.isReady());
+    if(ok){ cfg.toneMappingEnabled=sc.toneMappingEnabled; cfg.toneMappingType=sc.toneMappingType;
+      cfg.exposure=sc.exposure*(o.exposure||1.12); cfg.contrast=sc.contrast; cfg.vignetteEnabled=false; }
+    c.position.copyFrom(pos); c.setTarget(look);
+    c.minZ=o.minZ||0.3; c.maxZ=o.maxZ||400; c.fov=o.fov||0.85;
+    /* il passaggio va solo se lo shader e' pronto: se no niente post-process
+       (si corregge dopo, sui pixel) invece di un fotogramma vuoto */
+    ppPrev=scene.postProcessesEnabled; if(!ok) scene.postProcessesEnabled=false;
     scene.activeCamera=c; scene.render(); scene.render();
-    const src=engine.getRenderingCanvas(), cv=document.createElement("canvas"); cv.width=360; cv.height=225;
-    cv.getContext("2d").drawImage(src,0,0,src.width,src.height,0,0,360,225); out=cv.toDataURL("image/jpeg",0.6); }
-  catch(e){}
-  finally{ try{ scene.activeCamera=prev; }catch(e){} try{ if(c) c.dispose(); }catch(e){} }
-  if(out.length>2000){ try{ localStorage.setItem("et_ph_"+k,out); localStorage.setItem("et_ph_"+k+"_d",new Date().toDateString()); }catch(e){} }
+    const src=engine.getRenderingCanvas(), cv=document.createElement("canvas"); cv.width=W; cv.height=H;
+    const a=W/H; let sw=src.width, sh=src.height, sx=0, sy=0;
+    if(sw/sh>a){ sw=sh*a; sx=(src.width-sw)/2; } else { sh=sw/a; sy=(src.height-sh)/2; }
+    const ctx=cv.getContext("2d"); ctx.drawImage(src,sx,sy,sw,sh,0,0,W,H);
+    if(!ok) try{ _etSnapGamma(ctx,W,H); }catch(e){}
+    out=cv.toDataURL("image/jpeg",o.q||0.72);
+  }catch(e){ console.warn("[foto]",e); }
+  finally{ try{ scene.activeCamera=prev; }catch(e){} if(ppPrev!=null) scene.postProcessesEnabled=ppPrev; }
+  return out.length>2000?out:"";
+}
+/* ---- LA FOTO SI INGRANDISCE (v309g, Giacomo: «fai in modo che si
+   possano anche ingrandire»). Un tocco sulla foto la apre a tutto schermo
+   sopra il dialogo; un tocco ovunque, la ✕ o Esc la chiudono e si torna
+   alla domanda com'era. */
+function etZoomImg(src){
+  if(!src) return;
+  let z=document.getElementById("et-zoom");
+  if(!z){ z=document.createElement("div"); z.id="et-zoom";
+    z.style.cssText="position:fixed;inset:0;z-index:9990;background:rgba(8,12,16,.88);display:none;align-items:center;justify-content:center;padding:16px;cursor:zoom-out;touch-action:pinch-zoom";
+    z.innerHTML='<img alt="" style="max-width:100%;max-height:100%;border-radius:10px;border:4px solid #fbf7ec;box-shadow:0 6px 30px rgba(0,0,0,.6);object-fit:contain">'
+      +'<button type="button" aria-label="Close" style="position:absolute;top:12px;right:12px;width:44px;height:44px;border-radius:22px;border:0;background:#fbf7ec;color:#1d2a32;font-size:22px;font-weight:700;cursor:pointer">\u2715</button>';
+    const chiudi=e=>{ if(e){ e.preventDefault(); e.stopPropagation(); } z.style.display="none"; };
+    z.addEventListener("click",chiudi);
+    document.addEventListener("keydown",e=>{ if((e.key==="Escape"||e.keyCode===27) && z.style.display!=="none"){ chiudi(e); } },true);
+    document.body.appendChild(z); }
+  z.querySelector("img").src=src; z.style.display="flex";
+}
+/* la foto nel dialogo: piccola, con la lente, e si apre col tocco */
+function etZoomThumb(img){
+  return '<div style="text-align:center;margin-bottom:6px"><span style="position:relative;display:inline-block;cursor:zoom-in" onclick="etZoomImg(this.querySelector(\'img\').src)" title="Tap to zoom">'
+    +'<img alt="" style="display:block;max-width:100%;max-height:150px;border-radius:10px;border:3px solid #fbf7ec;box-shadow:0 3px 10px rgba(0,0,0,.35)" src="'+img+'">'
+    +'<span style="position:absolute;right:6px;bottom:6px;background:rgba(15,22,28,.72);color:#fff;border-radius:12px;padding:2px 8px;font-size:12px;pointer-events:none">\u{1F50D} Zoom</span></span></div>';
 }
 const SKPH={ beatT:0, cineT:0 };
 function skPhotoTick(){
   const now=performance.now(), today=new Date().toDateString();
-  let dBeat="", dCine=""; try{ dBeat=localStorage.getItem("et_ph_beat_d")||""; dCine=localStorage.getItem("et_ph_cinema_d")||""; }catch(e){}
+  /* v309g: le foto scattate prima (scure, senza la versione 2) si rifanno
+     alla prima occasione, anche se sono di oggi */
+  let dBeat="", dCine=""; try{ const v=k=>localStorage.getItem("et_ph_"+k+"_v")==="2";
+    dBeat=v("beat")?(localStorage.getItem("et_ph_beat_d")||""):""; dCine=v("cinema")?(localStorage.getItem("et_ph_cinema_d")||""):""; }catch(e){}
   /* Beat Club, concerto in corso, dopo 6 s dentro */
   if(typeof UNIT_MUSIC!=="undefined" && area===UNIT_MUSIC.area && typeof GIG!=="undefined" && GIG.on){
     if(!SKPH.beatT) SKPH.beatT=now;
@@ -15860,19 +16027,14 @@ function parkSnap(sc){
     const p=n.pos(), f=(P.viewFn?P.viewFn():P.view)||{x:1,z:0};
     look=new BABYLON.Vector3(p.x+(P.lookDx||0),p.y+0.95,p.z+(P.lookDz||0));
     camPos=new BABYLON.Vector3(p.x+f.x*3.4+(P.sideX||0),p.y+1.75,p.z+f.z*3.4+(P.sideZ||0)); }
-  let cam=null, out=""; const prev=scene.activeCamera;
+  let out="";
   try{
     PARKFUN.snapping=true;
-    cam=new BABYLON.FreeCamera("_parkCam",camPos,scene); cam.setTarget(look);
-    cam.minZ=0.3; cam.maxZ=400; cam.fov=0.85;
-    scene.activeCamera=cam; scene.render(); scene.render();
-    const src=engine.getRenderingCanvas(), cv=document.createElement("canvas"); cv.width=360; cv.height=225;
-    cv.getContext("2d").drawImage(src,0,0,src.width,src.height,0,0,360,225);
-    out=cv.toDataURL("image/jpeg",0.6);
+    out=etSnapshot(camPos,look,{ fov:0.85, minZ:0.3 });      // v309g: con la luce del gioco, e piu' grande
   }catch(e){ console.warn("[park] snap",e); }
-  finally{ try{ scene.activeCamera=prev; }catch(e){} try{ if(cam) cam.dispose(); }catch(e){} try{ scene.render(); }catch(e){}
+  finally{ try{ scene.render(); }catch(e){}
     PARKFUN.snapping=false; if(PARKFUN.ranger) PARKFUN.ranger.idle=performance.now(); }
-  return out.length>2000?out:"";
+  return out;
 }
 function parkOnSit(b){
   if(!b || area!=="town") return;
@@ -15919,7 +16081,7 @@ function parkWatchAsk(){
   let tries=0;
   DialogueBox.open({ ..._pkSpk(), sub:"Question "+(s.wN+1)+"/3",
     text:q, italian:mode==="ing"?"Componi la frase: present continuous (He's / She's / They're + -ing).":"Componi la frase con «has got».",
-    html:img?'<div style="text-align:center;margin-bottom:6px"><img alt="" style="max-width:100%;max-height:150px;border-radius:10px;border:3px solid #fbf7ec;box-shadow:0 3px 10px rgba(0,0,0,.35)" src="'+img+'"></div>':"",
+    html:img?etZoomThumb(img):"",
     tiles:{ tokens, distractors:distr, checkLabel:"✔ Say it",
       onCheck:(w)=>{ if(w.join(" ")===tokens.join(" ")) return {ok:true,msg:"✓ Right!"};
         tries++; return {ok:false,msg:mode==="ing"?"Riprova! \u{1F4A1} Chi e'? Poi is/are + verbo in -ing.":"Riprova! \u{1F4A1} He/She + has got + a…"}; },
@@ -15996,7 +16158,7 @@ function parkWatchWrite(sc,img){
   };
   DialogueBox.open({ ..._pkSpk(), sub:"Question "+(s.wN+1)+"/3 · write it",
     text:q, italian:"Scrivi la frase al present continuous (He's / She's / They're + -ing).",
-    html:(img?'<div style="text-align:center;margin-bottom:6px"><img alt="" style="max-width:100%;max-height:150px;border-radius:10px;border:3px solid #fbf7ec;box-shadow:0 3px 10px rgba(0,0,0,.35)" src="'+img+'"></div>':"")
+    html:(img?etZoomThumb(img):"")
       +'<input id="pk-write" class="gem-input" data-mic="1" type="text" autocomplete="off" autocapitalize="sentences" autocorrect="off" spellcheck="false" placeholder="'+({they:"They’re …",he:"He’s …",she:"She’s …",it:"It’s …",i:"I’m …"}[sc.who])+'">'
       +'<div id="pk-fb" style="min-height:18px;margin-top:6px;font-size:13px;color:#b5452f"></div>',
     buttons:[{ label:"✔ Check", cls:"primary", keepOpen:true, act:judge },{ label:"Not now", cls:"ghost", act:()=>{} }] });
