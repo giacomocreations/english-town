@@ -15334,9 +15334,15 @@ function talkToDancer(D){
   if(topics.length) ch.push({ label:"\u{1F4AC} Let's talk!"+(isChatty(npc)?" \u2b50\u00d7"+STAR_RULES.chattyMul:""),
     act:()=>openAmbient(npc,null,icon,sub) });
   ch.push({ label:"\u2753 Ask me", act:()=>openAskMenu(npc,icon,sub,null) });
+  /* v309h: il saluto in pausa cambia (prima era sempre lo stesso) */
+  const B=_cyPick([["We're having a break now. No music, no dancing!","Adesso facciamo una pausa: niente musica, niente ballo!"],
+    ["Just chilling with the crew. We'll dance again soon!","Ci rilassiamo un po' con la crew. Tra poco si torna a ballare!"],
+    ["Break time! My legs need a rest after all those moves.","Pausa! Dopo tutte quelle mosse le gambe hanno bisogno di riposo."],
+    ["Hey! We're taking five. What's up?","Ehi! Ci prendiamo cinque minuti. Che si dice?"],
+    ["No music right now, we're just hanging out. Wanna chat?","Niente musica per ora, stiamo solo in compagnia. Due chiacchiere?"]]);
   DialogueBox.open({ npc, icon, sub,
-    text:greetJoin(g.en,(first?"I'm "+npc.name+". ":"")+"We're having a break now. No music, no dancing!"),
-    italian:greetJoin(g.it,(first?"Sono "+npc.name+". ":"")+"Adesso facciamo una pausa: niente musica, niente ballo!")
+    text:greetJoin(g.en,(first?"I'm "+npc.name+". ":"")+B[0]),
+    italian:greetJoin(g.it,(first?"Sono "+npc.name+". ":"")+B[1])
       +" (\u{1F4A1} Con \u00abAsk me\u00bb \u2192 \u270D\uFE0E puoi chiedergli se vuole ballare\u2026 o se sa rappare: \u{1F3A4} \u00abCan you rap?\u00bb)",
     choices:ch, buttons:[{ label:"Goodbye", cls:"ghost", act:()=>{} }] });
 }
@@ -15500,7 +15506,47 @@ const CY_R3=[
   { topic:"food", it:"il cibo", word:"pizza", a:"Friday night, it's time for a treat,", fam:"EAT", key:"treat", ex:"A pizza with cheese is my favorite thing to eat" },
   { topic:"holidays", it:"le vacanze", word:"summer", a:"No more homework, the teacher said: hooray!", fam:"AY", key:"hooray", ex:"This summer I'm going to the beach every day" },
   { topic:"the weather", it:"il tempo atmosferico", word:"umbrella", a:"Look out the window, here comes the rain,", fam:"AIN", key:"rain", ex:"I open my umbrella and I run for the train" } ];
-const CY_HYPE=["Yo, that's fire!","Sheesh! Those bars are crazy!","Okay, okay, you got skills!","The crowd goes wild!","Bars! Straight bars!","Respect! That's how we do it!"];
+const CY_HYPE=["Yo, that's fire!","Sheesh! Those bars are crazy!","Okay, okay, you got skills!","The crowd goes wild!","Bars! Straight bars!","Respect! That's how we do it!",
+  "Whoa, you killed it!","That's what I'm talking about!","Big rhymes, big respect!","Somebody stop this rapper!","Now that's a real MC!"];
+/* v309h (Giacomo: «le frasi sono sempre le stesse, falle ruotare a caso»):
+   ogni frase di contorno della crew ha le sue varianti ([en, it] dove
+   serve la traduzione); le righe dei round non si ripetono finche' non
+   sono uscite le altre (_cyFresh) */
+const CY_TXT={
+  invite:[["Rap? Yo, you think you've got bars? Step into the cypher!","Rap? Pensi di saper rappare? Entra nel cypher!"],
+          ["Oh, you wanna battle? Bet! Step into the circle!","Vuoi sfidarci? Ci sto! Entra nel cerchio!"],
+          ["A rap battle? Say less! Let's see what you've got!","Una sfida rap? Non serve aggiungere altro! Vediamo cosa sai fare!"],
+          ["You can rap? Prove it! Get in the cypher!","Sai rappare? Dimostralo! Entra nel cypher!"],
+          ["Freestyle time! Crew, gather round, we've got a challenger!","È l'ora del freestyle! Ragazzi, tutti qui: abbiamo uno sfidante!"]],
+  already:[["You already battled today, champ! Come back tomorrow.","Hai già fatto il cypher oggi, campione! Torna domani."],
+           ["One cypher a day, that's the rule! See you tomorrow.","Un cypher al giorno, è la regola! Ci vediamo domani."],
+           ["Easy, superstar! You had your shot today. Tomorrow!","Calma, superstar! Oggi hai già avuto la tua occasione. Domani!"]],
+  welcome:["Yo! Welcome to the cypher! Three rounds, no mercy. Gather round, crew! You ready?",
+           "Alright, alright! Circle up, crew! We've got a new challenger. Three rounds, let's go!",
+           "Welcome to the cypher, rookie! Keep your rhymes tight and your words in English!",
+           "Gather round, everybody! Three rounds, one mic, no excuses. You ready?"],
+  r1go:["Three rhymes! Go!","Give me three rhymes! Go, go, go!","Three words that rhyme! The clock is ticking!","Your turn! Three rhymes, right now!"],
+  r2in:["My turn!","Check this out!","Listen up!","Here we go!"],
+  r2go:["Finish it!","Now close my bar!","Bring it home!","Your turn to finish it!"],
+  r3in:["Last round! The topic is TOPIC.","Final round! Today's topic: TOPIC.","Here comes the last one! The topic is TOPIC."],
+  r3go:["Your turn!","Show us what you've got!","Drop your bar!","The mic is yours!"],
+  miss:["Come on, rookie! Next round!","Ooooh, almost! Shake it off!","No worries, the next one is yours!","Keep your head up! Next round!"],
+  slow:["Too slow, my friend!","Time's up, rookie!","The clock got you this time!"],
+  back:["Listen!","Check it out!","Say it again, crew!"],
+  mine:["Check it!","Here's how I'd do it:","Listen to this one:"],
+  perfect:["PERFECT CYPHER! You're the king of the skatepark! Respect!","PERFECT CYPHER! Three rounds, zero mistakes. You're a legend!","PERFECT! The whole skatepark is cheering for you!"],
+  good:["Respect! You've got real skills. Come back tomorrow!","Not bad at all! You've got the flow. See you tomorrow!","You're getting dangerous! Come back tomorrow for more!"],
+  rookie:["Not bad, rookie! Come back tomorrow and battle again.","Keep practicing, rookie! Tomorrow is a new cypher.","Every MC starts somewhere! Come back tomorrow."] };
+const _cyLastT={};
+function _cyT(k){ const a=CY_TXT[k]; let x=_cyPick(a); if(a.length>1) while(x===_cyLastT[k]) x=_cyPick(a); _cyLastT[k]=x; return x; }   // mai la stessa due volte di fila
+/* una riga che non e' uscita di recente (gli ultimi «keep» indici, per
+   round, restano nel salvataggio del cypher) */
+function _cyFresh(arr,tag,st,keep,okFn){
+  const rec=(st.rec=st.rec||{}), last=rec[tag]||[], all=arr.map((q,i)=>i).filter(i=>!okFn||okFn(arr[i]));
+  let pool=all.filter(i=>last.indexOf(i)<0);
+  if(!pool.length) pool=all;
+  const i=_cyPick(pool); rec[tag]=last.concat([i]).slice(-Math.min(keep,arr.length-1)); return arr[i];
+}
 const CY_GLUE=new Set("i you he she we they it me my your our their his her its the a an is am are was were be been got get gets have has had can could will would to in on at of with and but so like all every never always don't can't won't just this that what when up down out no not do does did make take keep let i'm im you're we're they're it's that's i've i'll".split(" "));
 const CY_IT=/\b(il|lo|gli|che|sono|della|questo|perché|perche|anche|molto|io|noi|voi|loro|con|per|non|nel|una|uno|mia|mio|sempre|tutto)\b/g;
 const CYPHER={ on:false, npc:null, pts:0, perfect:true, tm:null, gen:0, crew:null, circle:false, cgen:0 };
@@ -15641,8 +15687,7 @@ function skCypherRisposta(ta,fb,typed){
   const bad=askFormCheck(typed, ftLevel());
   const got=Stars.awardAskNPC(npcCardId(npc), bad?"retry":"first");
   const st=_cyState(), can=!st.used || _cyTeacher();
-  const R=can?["Rap? Yo, you think you've got bars? Step into the cypher!","Rap? Pensi di saper rappare? Entra nel cypher!"]
-             :["You already battled today, champ! Come back tomorrow.","Hai già fatto il cypher oggi, campione! Torna domani."];
+  const R=can?_cyT("invite"):_cyT("already");
   fb.innerHTML=(bad?'<div style="opacity:.72;font-size:.93em;margin-bottom:6px;">\u{1F7E1} '+bad.it+'</div>':'')
     +'<div style="font-weight:800;">\u{1F7E2} '+_escHtml(R[0])+(got>0?' <span style="color:#a05a2c">⭐ +'+got+'</span>':'')+'</div>'
     +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">'+_escHtml(R[1])+'</div>'
@@ -15654,10 +15699,10 @@ function skCypherRisposta(ta,fb,typed){
 function cypherStart(npc){
   const st=_cyState();
   if(st.used && !_cyTeacher()){ toast("\u{1F3A4} Cypher: una sfida al giorno, torna domani!"); return; }
-  st.used=true; _cySave(st);                         // vale anche se si esce a meta': niente «riprovo il round 1»
   try{ TTS.stop(); }catch(e){}
-  const r2=_cyPick(CY_R2), r3=_cyPick(CY_R3);
-  const r1=_cyPick(CY_R1.filter(q=>q.fam!==r2.fam && q.fam!==r3.fam));
+  const r2=_cyFresh(CY_R2,"r2",st,8), r3=_cyFresh(CY_R3,"r3",st,6);
+  const r1=_cyFresh(CY_R1,"r1",st,8,q=>q.fam!==r2.fam && q.fam!==r3.fam);
+  st.used=true; _cySave(st);                         // vale anche se si esce a meta': niente «riprovo il round 1»
   Object.assign(CYPHER,{ on:true, npc, pts:0, perfect:true, r1, r2, r3 });
   const g=++CYPHER.gen;
   DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:"The Cypher · \u{1F525} hard", autoSpeak:false,
@@ -15665,7 +15710,7 @@ function cypherStart(npc){
     italian:"Il cypher è una sfida di freestyle per chi è bravo davvero, con un inglese più difficile delle unit. Tre round a tempo, e scrivi (o dici) sempre TU: 1) tre parole in rima; 2) chiudi tu la riga della crew; 3) una riga tutta tua. Ogni round lo rappa un ragazzo diverso. Una sfida al giorno, fino a 80 ⭐.",
     buttons:[{ label:"\u{1F525} Let's go!", cls:"primary", act:()=>_cyR1() }] });
   _cyCircle(npc);                                     // la crew si mette in cerchio con te
-  _cySeq(g,[()=>_cySay(npc,"Yo! Welcome to the cypher! Three rounds, no mercy. Gather round, crew! You ready?")]);
+  _cySeq(g,[()=>_cySay(npc,_cyT("welcome"))]);
 }
 function _cyR1(){
   const q=CYPHER.r1, g=++CYPHER.gen, npc=_cyRapper(0), F=CY_FAM[q.fam]; let done=false;
@@ -15683,7 +15728,7 @@ function _cyR1(){
     html:_cyBars([q.a])+_cyInput("word, word, word")+_cyTimeHtml(30),
     buttons:[{ label:"\u{1F3A4} Drop it", cls:"primary", keepOpen:true, act:()=>judge(false) }] });
   _cyFocus();
-  _cySeq(g,[()=>_cyRap(npc,q.a),()=>_cySay(npc,"Three rhymes! Go!")])
+  _cySeq(g,[()=>_cyRap(npc,q.a),()=>_cySay(npc,_cyT("r1go"))])
     .then(()=>{ if(g===CYPHER.gen && !done) _cyTimer(30,()=>judge(true)); });
 }
 function _cyR1Res(q,res,timeout,dirty){
@@ -15693,13 +15738,13 @@ function _cyR1Res(q,res,timeout,dirty){
   const hype=_cyPick(CY_HYPE);
   const list=res.length?res.map(r=>(r.ok?"✅ ":"❌ ")+_escHtml(r.w)).join(" &nbsp; "):"—";
   DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:ok?"\u{1F525} +"+CY_PTS.r1+" ⭐":(timeout?"⏱ Time's up!":"Ooooh!"), autoSpeak:false,
-    text:ok?hype:(timeout?"Too slow, my friend!":"Ooooh, not enough rhymes!"),
+    text:ok?hype:(timeout?_cyT("slow"):"Ooooh, not enough rhymes!"),
     italian:dirty?"Keep it clean! Nel cypher niente parolacce."
       :(ok?"Tre rime giuste!":"Servivano tre parole diverse in rima con «"+q.key+"» (suono "+CY_FAM[q.fam].snd+"): ne hai azzeccate "+good.length+"."),
     html:_cyBars([q.a])+'<div style="font-size:15px;line-height:1.8">'+list+'</div>',
     buttons:[{ label:"▶ Round 2", cls:"primary", act:()=>_cyR2() }] });
   _cySeq(g,ok?[()=>_cySay(npc,hype),()=>_cyRap(npc,q.key+", "+good.slice(0,3).join(", ")+"!")]
-             :[()=>_cySay(npc,"Come on, rookie! Next round!")]);
+             :[()=>_cySay(npc,_cyT("miss"))]);
 }
 function _cyR2(){
   const q=CYPHER.r2, g=++CYPHER.gen, npc=_cyRapper(1); let tries=0, done=false;
@@ -15717,7 +15762,7 @@ function _cyR2(){
     html:_cyBars([q.a,q.b+" …"])+_cyInput(q.b+" …")+_cyTimeHtml(60),
     buttons:[{ label:"\u{1F3A4} Drop it", cls:"primary", keepOpen:true, act:judge }] });
   _cyFocus();
-  _cySeq(g,[()=>_cySay(npc,"My turn!"),()=>_cyRap(npc,q.a+" "+q.b+"..."),()=>_cySay(npc,"Finish it!")])
+  _cySeq(g,[()=>_cySay(npc,_cyT("r2in")),()=>_cyRap(npc,q.a+" "+q.b+"..."),()=>_cySay(npc,_cyT("r2go"))])
     .then(()=>{ if(g===CYPHER.gen && !done) _cyTimer(60,()=>finish(false,"",null)); });
 }
 function _cyR2Res(q,ok,tries,text,bad){
@@ -15729,7 +15774,7 @@ function _cyR2Res(q,ok,tries,text,bad){
     italian:ok?"Rima chiusa! La crew te la rappa indietro.":((bad?bad.it+" ":(text?"":"Tempo scaduto. "))+"Per esempio: «"+q.b+" "+q.ex.join("» oppure «"+q.b+" ")+"»."),
     html:_cyBars([q.a,line]),
     buttons:[{ label:"▶ Round 3", cls:"primary", act:()=>_cyR3() }] });
-  _cySeq(g,[()=>_cySay(npc,ok?hype+" Listen!":"Check it!"),()=>_cyRap(npc,q.a+" "+line)]);
+  _cySeq(g,[()=>_cySay(npc,ok?hype+" "+_cyT("back"):_cyT("mine")),()=>_cyRap(npc,q.a+" "+line)]);
 }
 function _cyR3(){
   const q=CYPHER.r3, g=++CYPHER.gen, npc=_cyRapper(2); let tries=0, done=false;
@@ -15747,7 +15792,7 @@ function _cyR3(){
     html:_cyBars([q.a,"…"])+_cyInput("… "+q.word+" …")+_cyTimeHtml(90),
     buttons:[{ label:"\u{1F3A4} Drop it", cls:"primary", keepOpen:true, act:judge }] });
   _cyFocus();
-  _cySeq(g,[()=>_cySay(npc,"Last round! The topic is "+q.topic+"."),()=>_cyRap(npc,q.a),()=>_cySay(npc,"Your turn!")])
+  _cySeq(g,[()=>_cySay(npc,_cyT("r3in").replace("TOPIC",q.topic)),()=>_cyRap(npc,q.a),()=>_cySay(npc,_cyT("r3go"))])
     .then(()=>{ if(g===CYPHER.gen && !done) _cyTimer(90,()=>finish(false,"",null)); });
 }
 function _cyR3Res(q,ok,tries,text,bad){
@@ -15759,15 +15804,14 @@ function _cyR3Res(q,ok,tries,text,bad){
     italian:ok?"Rima tua, tema giusto, parola obbligatoria: la crew te la rappa!":((bad?bad.it+" ":(text?"":"Tempo scaduto. "))+"Per esempio: «"+q.ex+"»."),
     html:_cyBars([q.a,line]),
     buttons:[{ label:"\u{1F3C6} Results", cls:"primary", act:()=>_cyEnd() }] });
-  _cySeq(g,[()=>_cySay(npc,ok?hype+" Listen!":"Check it!"),()=>_cyRap(npc,q.a+" "+line)]);
+  _cySeq(g,[()=>_cySay(npc,ok?hype+" "+_cyT("back"):_cyT("mine")),()=>_cyRap(npc,q.a+" "+line)]);
 }
 function _cyEnd(){
   const npc=CYPHER.npc, g=++CYPHER.gen;
   const perfect=CYPHER.perfect; if(perfect) _cyGive(CY_PTS.perfect);
   const tot=CYPHER.pts; CYPHER.on=false;
   const st=_cyState(); st.best=Math.max(st.best||0,tot); _cySave(st);
-  const en=perfect?"PERFECT CYPHER! You're the king of the skatepark! Respect!"
-          :(tot>=40?"Respect! You've got real skills. Come back tomorrow!":"Not bad, rookie! Come back tomorrow and battle again.");
+  const en=_cyT(perfect?"perfect":(tot>=40?"good":"rookie"));
   DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:"\u{1F3C6} Cypher over · ⭐ "+tot+(perfect?" · PERFECT":""), autoSpeak:false,
     text:en,
     italian:(perfect?"Cypher perfetto: tutti e tre i round al primo colpo, +"+CY_PTS.perfect+" ⭐ di bonus! ":"")
