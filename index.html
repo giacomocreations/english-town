@@ -5373,7 +5373,7 @@ function taglioPersonaggi(){
     let ms=_pgMesh.get(n); if(!ms){ ms=n.holder.getChildMeshes(false); _pgMesh.set(n,ms); }
     let vis=true;
     if(_pgOn){ n.carrier.getAbsolutePosition().addToRef(BABYLON.Vector3.UpReadOnly,_pgC);
-      if(BABYLON.Vector3.Distance(_pgC,cp)>dMax+r) vis=false;
+      if(BABYLON.Vector3.Distance(_pgC,cp)>Math.min(dMax,n.__pgMax||1e9)+r) vis=false;   // v309g: __pgMax per NPC (la crew)
       else for(let k=0;k<pl.length;k++){ if(pl[k].dotCoordinate(_pgC)< -r){ vis=false; break; } } }
     _pgMostra(ms,vis); } }
 scene.onBeforeActiveMeshesEvaluationObservable.add(()=>{ try{ taglioPersonaggi(); }catch(e){} });
@@ -14693,7 +14693,9 @@ function _skSoles(root,K){
     const base=low();                                  // in piedi com'e' adesso: le scarpe a terra
     if(!isFinite(base) || base>1e8) return;
     for(const nm in K){ const lg=(SK_POSES[nm]&&SK_POSES[nm].legs)||nm; K[nm].name=lg; K[nm].tab=K.__tab;
+      if(lg!==nm) continue;                            // stesse gambe: l'altezza e' quella della posa base (sotto)
       _applyPins(K[nm].pins); const y=low(); if(isFinite(y) && y<1e8) K[nm].off=base-y; }
+    for(const nm in K){ const lg=K[nm].name; if(lg!==nm && K[lg]) K[nm].off=K[lg].off; }
     /* ⚠️ A META' FRA DUE POSE la gamba non si accorcia a meta' (va col
        coseno): con la media lineare, piegandosi nel saltello i piedi
        scendevano ancora di qualche centimetro. Per ogni coppia di pose che
@@ -14921,16 +14923,16 @@ function _skFunbox(x,z){
     w.material=lpMat("#aaa79f"); w.position.set(x+sd*Lb/2,g,z); w.parent=townRoot; w.__occluder=true; });
   const rail=BABYLON.MeshBuilder.CreateCylinder("skRail",{diameter:0.07,height:Lb+0.2,tessellation:10},scene);
   rail.material=hm7Mat("#d8dbe0",0.7,64); rail.rotation.z=Math.PI/2; rail.position.set(x,g+Hb+0.32,z); rail.parent=townRoot;
-  [-1.4,1.4].forEach(dx=>{ const p=BABYLON.MeshBuilder.CreateBox("skRP",{width:0.06,height:0.32,depth:0.06},scene);
-    p.material=hm7Mat("#4a4f56",0.3,32); p.position.set(x+dx,g+Hb+0.16,z); p.parent=townRoot; });
+  _mergeByMat([-1.4,1.4].map(dx=>{ const p=BABYLON.MeshBuilder.CreateBox("skRP",{width:0.06,height:0.32,depth:0.06},scene);
+    p.material=hm7Mat("#4a4f56",0.3,32); p.position.set(x+dx,g+Hb+0.16,z); p.parent=townRoot; return p; }),townRoot);
   addSolid(x-Lb/2-Lr*0.6,x+Lb/2+Lr*0.6,z-Wd/2,z+Wd/2,"town");
 }
 function _skFlatRail(x,z,len){
   const g=SKATE.gy;
   const r=BABYLON.MeshBuilder.CreateCylinder("skFR",{diameter:0.06,height:len,tessellation:10},scene);
   r.material=hm7Mat("#e3b33a",0.5,48); r.rotation.z=Math.PI/2; r.position.set(x,g+0.42,z); r.parent=townRoot;
-  [-len/2+0.3,0,len/2-0.3].forEach(dx=>{ const p=BABYLON.MeshBuilder.CreateBox("skFRp",{width:0.06,height:0.42,depth:0.06},scene);
-    p.material=hm7Mat("#3a3f46",0.3,32); p.position.set(x+dx,g+0.21,z); p.parent=townRoot; });
+  _mergeByMat([-len/2+0.3,0,len/2-0.3].map(dx=>{ const p=BABYLON.MeshBuilder.CreateBox("skFRp",{width:0.06,height:0.42,depth:0.06},scene);
+    p.material=hm7Mat("#3a3f46",0.3,32); p.position.set(x+dx,g+0.21,z); p.parent=townRoot; return p; }),townRoot);
   addSolid(x-len/2,x+len/2,z-0.08,z+0.08,"town");
 }
 function _skSpeaker(x,z,ry){
@@ -14979,9 +14981,10 @@ function buildSkatepark(){
   sm.diffuseColor=new BABYLON.Color3(0.57,0.57,0.57);
   wetFX(sm); slab.material=sm;
   slab.position.set(C.x,g+0.035,C.z); slab.parent=townRoot; slab.__ground=true; slab.receiveShadows=true;
-  [[0,-D/2,W+0.5,0.3],[0,D/2,W+0.5,0.3],[-W/2,0,0.3,D],[W/2,0,0.3,D]].forEach(e=>{
+  const curbs=[[0,-D/2,W+0.5,0.3],[0,D/2,W+0.5,0.3],[-W/2,0,0.3,D],[W/2,0,0.3,D]].map(e=>{
     const b=BABYLON.MeshBuilder.CreateBox("skCurb",{width:e[2],height:0.1,depth:e[3]},scene);
-    b.material=lpMat("#8e8b84"); b.position.set(C.x+e[0],g+0.05,C.z+e[1]); b.parent=townRoot; });
+    b.material=lpMat("#8e8b84"); b.position.set(C.x+e[0],g+0.05,C.z+e[1]); b.parent=townRoot; return b; });
+  _mergeByMat(curbs,townRoot);                          // v309g: 4 cordoli, un disegno
   /* le rampe */
   _skQuarter(C.x-W/2+0.2,C.z+3.0,9,Math.PI);            // ovest: la curva guarda a est
   _skQuarter(C.x+W/2-0.2,C.z+3.0,9,0);                  // est: la curva guarda a ovest
@@ -15030,6 +15033,12 @@ function buildSkatepark(){
       prompt:'Press <b>E</b> to talk to <b>'+cr.name+'</b>', interact:()=>{ if(D) talkToDancer(D); } });
     if(!n) return;
     n.__skDancer=true; if(n.inter) n.inter.enabled=false;
+    /* v309g: ogni ballerino sono ~29 pezzi (corpo e vestiti), x2 con
+       l'ombra: oltre 75 m dalla camera sono puntini e non si disegnano
+       (taglioPersonaggi), anche su High e Max dove gli altri non hanno
+       limite. La logica del ballo continua (si ferma gia' oltre 70 m dal
+       giocatore). */
+    n.__pgMax=75;
     /* v309g: la crew non e' nel registro della citta' (regTownPop): ha il
        suo orario, dalle 15 (skCrewOpen, applicato in skateTick) */
     _pkNoLabel(n); try{ setNPCPopVisible(n,skCrewOpen()); }catch(e){}
@@ -15102,10 +15111,11 @@ function skateTick(){
   const rest=SKATE.gap;                                // fra un brano e l'altro: silenzio
   const see=d<55;                                    // da lontano il cambio e' istantaneo
   const R=skCrewStep(B,rest);
+  let prep=false;                                      // v309g: le pose di UN ballerino per fotogramma (~0,3 s l'una)
   SKATE.dancers.forEach(D=>{
     if(D.n.inter) D.n.inter.enabled=(D.st==="chill" && _pkVisible(D.n));    // si parla solo quando sono fermi
     if(!_pkVisible(D.n)) return;
-    if(!D.K){ if(!_skPrepare(D)) return; D.m0=Math.floor(B)+1; }
+    if(!D.K){ if(prep) return; prep=true; if(!_skPrepare(D)) return; D.m0=Math.floor(B)+1; }
     if(ph==="chill" && D.st==="dance") skGoChill(D,see);
     else if(ph==="dance" && D.st==="chill") skGoDance(D,see,B);
     if(D.st!=="dance") return;
@@ -16316,12 +16326,28 @@ function parkRangerTick(){
 }
 /* ---- COSTRUZIONE ---------------------------------------------------------- */
 /* panchina da parco in legno (doghe + fianchi in ghisa), 1,8 m: due posti */
+/* v309g: fonde i pezzi per materiale (una mesh per materiale) tenendoli
+   figli di parent nella stessa posizione nel mondo; i flag che contano
+   (ombra/occlusione, ricevere ombre, cliccabile) passano alla fusione */
+function _mergeByMat(ms,parent){
+  const g=new Map(); ms.forEach(m=>{ if(!m) return; const k=m.material; if(!g.has(k)) g.set(k,[]); g.get(k).push(m); });
+  const out=[];
+  g.forEach(arr=>{
+    if(arr.length<2){ out.push(arr[0]); return; }
+    const occ=arr.some(m=>m.__occluder), rs=arr.some(m=>m.receiveShadows), pick=arr[0].isPickable, nm=arr[0].name;
+    let M=null; try{ M=BABYLON.Mesh.MergeMeshes(arr,true,true); }catch(e){ console.warn("[fusione]",e); }
+    if(!M){ out.push(...arr); return; }
+    M.name=nm; if(parent) M.setParent(parent); if(occ) M.__occluder=true; M.receiveShadows=rs; M.isPickable=pick;
+    out.push(M); });
+  return out;
+}
 function parkBench(x,z,ry,o){ o=o||{};
   const b=new BABYLON.TransformNode("pkBench",scene); b.parent=townRoot; b.position.set(x,0,z); b.rotation.y=ry;
   const gy=_benchGround(x,z,0), W=1.8;
   const wood=lpMat("#6e4a2c"), iron=lpMat("#2c3135");
+  const parts=[];
   const bx=(w,h,d,px,py,pz,m,rx)=>{ const q=BABYLON.MeshBuilder.CreateBox("pkb",{width:w,height:h,depth:d},scene);
-    q.material=m; q.position.set(px,gy+py,pz); if(rx) q.rotation.x=rx; q.parent=b; q.__occluder=true; return q; };
+    q.material=m; q.position.set(px,gy+py,pz); if(rx) q.rotation.x=rx; q.parent=b; q.__occluder=true; parts.push(q); return q; };
   [-0.15,0,0.15].forEach(zz=>bx(W,0.035,0.12,0,0.44,zz,wood));                  // seduta a doghe
   [0.62,0.78].forEach(yy=>bx(W,0.09,0.03,0,yy,-0.25-(yy-0.6)*0.18,wood,-0.18)); // schienale
   /* v309g (Giacomo: «le panchine dello skatepark hanno i braccioli sospesi
@@ -16332,6 +16358,10 @@ function parkBench(x,z,ry,o){ o=o||{};
   [-W/2+0.08,W/2-0.08].forEach(xx=>{                                             // fianchi in ghisa
     bx(0.05,0.645,0.05,xx,0.3225,0.17,iron); bx(0.05,0.86,0.05,xx,0.43,-0.22,iron,-0.12);
     bx(0.05,0.04,0.46,xx,0.40,-0.02,iron); bx(0.05,0.035,0.47,xx,0.63,-0.04,iron); });
+  /* v309g (Giacomo: «controlla se lo skatepark ha rallentato il gioco»):
+     la panchina erano 13 scatolette, 13 disegni + 13 nell'ombra. Fuse per
+     materiale (legno, ghisa): 2 + 2. Vale per tutte le panchine del parco. */
+  _mergeByMat(parts,b);
   addSolidRot(x,z,ry,W/2,0.32,"town");
   const bench=regBench("bench",x,z,[_benchLine(x,z,ry,0,0.0,0.55,gy+0.47,{ hip:0.03, slots:o.slots||null })],{ radius:2.4, noInter:!!o.noInter });
   bench.gy=gy; bench.ry=ry; bench.root=b;
