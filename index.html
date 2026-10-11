@@ -15039,6 +15039,10 @@ function buildSkatepark(){
        limite. La logica del ballo continua (si ferma gia' oltre 70 m dal
        giocatore). */
     n.__pgMax=75;
+    /* v309h (Giacomo: «i ragazzi della crew hanno subito l'accento
+       americano, non solo nel cypher»): TTS.say lo legge da qui per tutto
+       quello che dicono nelle finestre di dialogo */
+    n.__accent="us";
     /* v309g: la crew non e' nel registro della citta' (regTownPop): ha il
        suo orario, dalle 15 (skCrewOpen, applicato in skateTick) */
     _pkNoLabel(n); try{ setNPCPopVisible(n,skCrewOpen()); }catch(e){}
@@ -15081,7 +15085,7 @@ function skateTick(){
      (skPhase), di giorno, con i ragazzi in scena. Nel quarto d'ora delle
      chiacchiere e di notte tacciono, e anche il tuo ballo si ferma
      (SKATE.quiet, come fra un brano e l'altro). */
-  const crew=skPhase()==="dance" && SKATE.dancers.some(D=>_pkVisible(D.n));
+  const crew=skPhase()==="dance" && SKATE.dancers.some(D=>_pkVisible(D.n)) && !_cyCircleOn();   // v309h: il cypher e' a cappella
   SKATE.crewOn=crew;
   /* v309d (Giacomo: «se non c'e' musica, puoi ballare, a tempo su schiocco
      di dita, bpm casuali tra 70 e 100»): SKATE.quiet = le casse tacciono,
@@ -15099,6 +15103,7 @@ function skateTick(){
   const B=SKATE.beat, fr=B-Math.floor(B), pulse=Math.max(0,1-fr*3);
   SKATE.leds.forEach((m,i)=>{ const h=((Math.floor(B/4)+i)%3); const col=[[0.1,0.5,1],[1,0.2,0.7],[0.3,1,0.4]][h];
     m.emissiveColor.set(col[0]*(0.25+0.75*pulse),col[1]*(0.25+0.75*pulse),col[2]*(0.25+0.75*pulse)); });
+  try{ _cyWatch(); }catch(e){}                         // v309h: il cerchio del cypher si scioglie a finestra chiusa
   /* v309g: la crew c'e' solo nel suo orario (skCrewOpen) */
   const here=skCrewOpen();
   if(here!==SKATE.crewHere){ SKATE.crewHere=here; SKATE.dancers.forEach(D=>{ try{ setNPCPopVisible(D.n,here); }catch(e){} }); }
@@ -15117,7 +15122,10 @@ function skateTick(){
     if(!_pkVisible(D.n)) return;
     if(!D.K){ if(prep) return; prep=true; if(!_skPrepare(D)) return; D.m0=Math.floor(B)+1; }
     if(ph==="chill" && D.st==="dance") skGoChill(D,see);
-    else if(ph==="dance" && D.st==="chill") skGoDance(D,see,B);
+    /* v309h (Giacomo: «se deve partire il ballo mollano il cypher
+       improvvisamente»): finche' il cerchio c'e', la crew resta; il ballo
+       lo raggiungono dopo (_cyDisband -> _cyBack) */
+    else if(ph==="dance" && (D.st==="chill" || (D.st==="cypher" && !_cyCircleOn()))) skGoDance(D,see,B);
     if(D.st!=="dance") return;
     if(_skRest(D,rest,B,D.n.holder,v=>{ D.n.carrier.rotation.y=D.face; })) return;
     /* v308h: la stessa mossa, sullo stesso battito, per tutti (vedi skCrewStep) */
@@ -15372,22 +15380,31 @@ function skInvitoRisposta(ta,fb,typed){
    varianti e loro ti propongono la sfida. Accento americano, audio piu'
    veloce; per esempio devi chiudere la linea di un npc con una frase che fa
    rima. Linguaggio anche fuori dalle unit, volutamente piu' difficile»;
-   poi: «si puo' fare a cappella»).
+   poi: «si puo' fare a cappella»; «deve scrivere l'alunno: niente frasi
+   gia' pronte»; «non dimenticare la possibilita' di speak»; «quando
+   rappano con te si mettono in cerchio e chi rappa muove il braccio;
+   l'audio accelerato solo per le barre, e un pochino piu' lento»).
    · COME SI ENTRA: nell'«Ask me» con un ballerino (quando la crew
      chiacchiera, dalle 15) si scrive o si dice «Can you rap?», «Wanna
      battle?», «Can you freestyle?»… (skRapInvito). La crew risponde e
      propone la sfida. Una al giorno (il docente quante vuole).
-   · A CAPPELLA: niente base, solo le voci della crew. Voce americana
-     (TTS accent "us") e piu' veloce (rate 1,22).
-   · TRE ROUND, sempre piu' difficili, a tempo:
-     1) RHYME FIRE (10⭐, un tentativo, 30 s): la crew rappa una riga e
-        l'alunno scrive TRE parole che fanno rima con l'ultima.
-        (Giacomo: «deve scrivere l'alunno: niente frasi gia' pronte». Prima
-        era una scelta fra quattro chiusure: tolta. Per lo stesso motivo i
-        suggerimenti dicono il SUONO della rima, mai parole o frasi da
-        copiare; gli esempi compaiono solo a round chiuso.)
-     2) FINISH MY BAR (20⭐, 10 al secondo tentativo, 60 s): la chiusura la
-        scrive (o la dice) l'alunno, e deve fare rima.
+   · IL CERCHIO: si entra e la crew si alza e si mette in cerchio con te
+     (_cyCircle: tu e i quattro, a distanza uguale, tutti girati verso il
+     centro). Ogni round lo rappa un ragazzo diverso, a partire da quello
+     con cui hai parlato; chi parla o rappa gesticola (clip Interact, come
+     nelle chiacchiere), gli altri ascoltano. Finita la sfida — o chiusa la
+     finestra, o se riparte il ballo — tornano ai loro posti (_cyDisband).
+   · A CAPPELLA: niente base, solo le voci. Voce americana (come tutta la
+     crew, vedi n.__accent e TTS.say); le BARRE piu' veloci (CY_RATE), le
+     frasi normali («Yo, you think you've got bars?») a velocita' normale.
+   · TRE ROUND, sempre piu' difficili, a tempo, e scrive sempre l'alunno
+     (o parla: ogni casella ha il 🎤 Speak). I suggerimenti dicono il SUONO
+     della rima, mai parole o frasi da copiare; gli esempi compaiono solo a
+     round chiuso.
+     1) RHYME FIRE (10⭐, un tentativo, 30 s): tre parole diverse in rima
+        con l'ultima parola della riga della crew.
+     2) FINISH MY BAR (20⭐, 10 al secondo tentativo, 60 s): si chiude la
+        seconda riga della crew, in rima.
      3) YOUR OWN BAR (30⭐ / 15, 90 s): una riga intera sua, su un tema, con
         una parola obbligatoria e la rima imposta.
      Tutto al primo colpo: PERFECT CYPHER, +20⭐ (in tutto fino a 80⭐).
@@ -15396,8 +15413,7 @@ function skInvitoRisposta(ta,fb,typed){
      -ow di flow NON e' -ow di now), parola nuova (ripetere quella della
      crew non vale), lunghezza, una frase e non una lista di parole, la
      parola obbligatoria, niente italiano, niente parolacce (linguaccia).
-     Gli errori hanno un suggerimento mirato; al secondo si mostra un
-     esempio. Se va, la crew ti rappa indietro la tua rima.
+     Se va, la crew ti rappa indietro la tua rima.
    ===================================================================== */
 function skRapInvito(t){
   const s=" "+String(t||"").toLowerCase().replace(/[’`]/g,"'").replace(/[^a-z' ?!]+/g," ").replace(/\s+/g," ").trim()+" ";
@@ -15408,6 +15424,7 @@ function skRapInvito(t){
       || /\b(let's|lets|let us|please|with me|wanna|want|shall|how about|come on|show me|battle me|challenge)\b/.test(s);
 }
 const CY_PTS={ r1:10, r2:20, r2b:10, r3:30, r3b:15, perfect:20 };
+const CY_RATE=1.1;                                      // le barre: un po' piu' veloci (era 1,22: troppo)
 /* le famiglie di rime: elenco scritto a mano + (dove e' sicuro) la desinenza */
 const CY_FAM={
   OW:  { snd:"-OW (come flow)", w:"flow go show know slow glow grow low below though although pro radio video studio tornado tomorrow row throw snow blow toe pillow shadow window hello ago solo logo piano photo zero hero ego combo bro dough so no oh whoa stereo rodeo overflow plateau yo own" },
@@ -15419,29 +15436,56 @@ const CY_FAM={
   EAT: { snd:"-EAT (come beat)", re:/eet$/, w:"beat heat meat seat treat repeat complete compete defeat elite neat cheat wheat concrete delete athlete upbeat heartbeat offbeat retreat eat feat suite" },
   OUND:{ snd:"-OUND (come sound)", re:/ound$/, w:"crowned drowned frowned clowned downed" },
   ART: { snd:"-ART (come art)", re:/art$/, w:"heart" },
-  ALL: { snd:"-ALL (come all)", re:/all$/, no:/^shall$/, w:"crawl brawl haul y'all yall sprawl drawl install" } };
+  ALL: { snd:"-ALL (come all)", re:/all$/, no:/^shall$/, w:"crawl brawl haul y'all yall sprawl drawl install" },
+  AKE: { snd:"-AKE (come take)", re:/ake$/, w:"break steak awake ache" },
+  ING: { snd:"-ING (come king)", w:"king thing ring sing bring swing spring wing sting string anything everything something cling fling sling bling" },
+  OOL: { snd:"-OOL (come school)", re:/ool$/, w:"rule cruel jewel mule duel fuel" },
+  OP:  { snd:"-OP (come top)", re:/op$/, no:/^(develop|gallop|scallop|wallop)$/, w:"swap hip-hop hiphop nonstop" },
+  ONE: { snd:"-ONE (come phone)", w:"phone zone own alone stone bone known grown shown throne microphone tone cone blown flown thrown loan moan groan postpone unknown cyclone ozone smartphone headphone headphones" },
+  OLE: { snd:"-OLE (come goal)", re:/(ole|oal|oll)$/, no:/^(doll|atoll)$/, w:"soul control bowl patrol" },
+  AIN: { snd:"-AIN (come rain)", re:/(ain|ane)$/, no:/^(again|captain|mountain|certain|curtain|fountain|bargain|britain|villain|chaplain)$/, w:"reign vein" } };
 /* ROUND 1 — rhyme fire: la riga della crew, la famiglia della rima */
 const CY_R1=[
   { a:"Grab the mic, take a breath, and let the words flow,", fam:"OW", key:"flow" },
+  { a:"Stand on the stage, let me put on a show,", fam:"OW", key:"show" },
   { a:"City lights burning bright in the middle of the night,", fam:"IGHT", key:"night" },
+  { a:"Snap your fingers, everybody, hold on tight,", fam:"IGHT", key:"tight" },
   { a:"Every single morning is a brand new chance to play,", fam:"AY", key:"play" },
+  { a:"Shout it out loud, hip-hop is here to stay,", fam:"AY", key:"stay" },
   { a:"Eyes on the prize, keep on chasing the dream,", fam:"EAM", key:"dream" },
   { a:"Kickflip, heelflip, tricks all over the place,", fam:"ACE", key:"place" },
   { a:"Tick-tock, tick-tock, we're running out of time,", fam:"IME", key:"time" },
   { a:"Boom-bap, boom-bap, can you feel the beat?", fam:"EAT", key:"beat" },
+  { a:"Sneakers on, I'm dancing down the street,", fam:"EAT", key:"street" },
   { a:"Turn it up, turn it up, can you hear that sound?", fam:"OUND", key:"sound" },
   { a:"Every single trick that I land is a work of art,", fam:"ART", key:"art" },
-  { a:"Stand up tall, we're gonna have a ball,", fam:"ALL", key:"ball" } ];
-/* ROUND 2 — chiudi la riga */
+  { a:"Stand up tall, we're gonna have a ball,", fam:"ALL", key:"ball" },
+  { a:"Graffiti colors running down the wall,", fam:"ALL", key:"wall" },
+  { a:"Wake up the block, make the whole city shake,", fam:"AKE", key:"shake" },
+  { a:"Step into the circle, let the microphone sing,", fam:"ING", key:"sing" },
+  { a:"Monday to Friday I'm the coolest kid in school,", fam:"OOL", key:"school" },
+  { a:"We don't stop, we keep climbing to the top,", fam:"OP", key:"top" },
+  { a:"Lights down low, now I'm deep in the zone,", fam:"ONE", key:"zone" },
+  { a:"Mic in my hand, I've got rhythm and soul,", fam:"OLE", key:"soul" },
+  { a:"Thoughts in my head running fast like a train,", fam:"AIN", key:"train" } ];
+/* ROUND 2 — chiudi la riga (ex = esempi, mostrati solo a round chiuso) */
 const CY_R2=[
   { a:"I'm new to the cypher, but I've got the flow,", b:"so turn up the music and", fam:"OW", key:"flow", ex:["watch me go","on with the show"] },
   { a:"I've been practicing hard every day and every night,", b:"and now that I'm ready,", fam:"IGHT", key:"night", ex:["my rhymes are tight","the future looks bright"] },
+  { a:"Skateboard wheels rolling under the light,", b:"we practice our tricks", fam:"IGHT", key:"light", ex:["all day and all night","until we get it right"] },
   { a:"Wake up, get up, it's a brand new day,", b:"I'm chasing my dreams and", fam:"AY", key:"day", ex:["nothing's in my way","I'm here to stay"] },
   { a:"We're not just a crew, we're a family, a team,", b:"we work every day and", fam:"EAM", key:"team", ex:["we're living the dream","we're chasing a dream"] },
   { a:"Skating so fast that I'm lost in space,", b:"I've got a big smile and", fam:"ACE", key:"space", ex:["the wind in my face","I'm winning the race"] },
+  { a:"Running so fast that I'm winning the race,", b:"I cross the line with", fam:"ACE", key:"race", ex:["a smile on my face","style and grace"] },
   { a:"Tick-tock, listen up, I don't waste any time,", b:"I open my mouth and", fam:"IME", key:"time", ex:["out comes a rhyme","I'm ready to climb"] },
   { a:"Boots on the concrete, I'm feeling the beat,", b:"the bass is so loud that", fam:"EAT", key:"beat", ex:["it's moving my feet","they hear it down the street"] },
-  { a:"From the top of the ramp to the bottom of the ground,", b:"turn up the speakers and", fam:"OUND", key:"ground", ex:["listen to the sound","pass it around"] } ];
+  { a:"From the top of the ramp to the bottom of the ground,", b:"turn up the speakers and", fam:"OUND", key:"ground", ex:["listen to the sound","pass it around"] },
+  { a:"Before the show, I can feel my heart,", b:"I take a deep breath and", fam:"ART", key:"heart", ex:["I'm ready to start","I play my part"] },
+  { a:"Every new day is a chance that I take,", b:"I give it my all and", fam:"AKE", key:"take", ex:["I don't make a mistake","I'm wide awake"] },
+  { a:"I walk in the park like I'm some kind of king,", b:"the birds start to whistle and", fam:"ING", key:"king", ex:["the people all sing","the church bells ring"] },
+  { a:"Backpack on, I'm walking to school,", b:"I'm learning a lot and", fam:"OOL", key:"school", ex:["I'm keeping it cool","I follow the rule"] },
+  { a:"Started at the bottom, now we're at the top,", b:"the music is loud and", fam:"OP", key:"top", ex:["it never will stop","the beat's gonna drop"] },
+  { a:"Late at night I'm on the phone,", b:"chatting with friends so", fam:"ONE", key:"phone", ex:["I'm never alone","I'm in the zone"] } ];
 /* ROUND 3 — la tua riga: tema, parola obbligatoria, rima */
 const CY_R3=[
   { topic:"school life", it:"la scuola", word:"homework", a:"Teachers on my case, they say: study all night!", fam:"IGHT", key:"night", ex:"I finish my homework and my future is bright" },
@@ -15449,21 +15493,95 @@ const CY_R3=[
   { topic:"your dreams", it:"i tuoi sogni", word:"never", a:"Close your eyes for a second and picture the dream,", fam:"EAM", key:"dream", ex:"I will never give up, I'm the captain of my team" },
   { topic:"friendship", it:"l'amicizia", word:"together", a:"Through the good and the bad, we've been friends all the way,", fam:"AY", key:"way", ex:"Together we're stronger every single day" },
   { topic:"music", it:"la musica", word:"music", a:"When the beat drops down, it's a work of art,", fam:"ART", key:"art", ex:"The music I make comes straight from my heart" },
-  { topic:"skating", it:"lo skate", word:"again", a:"I'm the king of the ramp, I'm the best of them all,", fam:"ALL", key:"all", ex:"I get up again every time that I fall" } ];
+  { topic:"skating", it:"lo skate", word:"again", a:"I'm the king of the ramp, I'm the best of them all,", fam:"ALL", key:"all", ex:"I get up again every time that I fall" },
+  { topic:"the future", it:"il futuro", word:"will", a:"Ten years from now, where will I go?", fam:"OW", key:"go", ex:"I will be a singer on a big TV show" },
+  { topic:"your family", it:"la famiglia", word:"always", a:"Mom and Dad, they're the reason I stand tall,", fam:"ALL", key:"tall", ex:"They always catch me every time I fall" },
+  { topic:"sport", it:"lo sport", word:"ball", a:"On the football pitch, I'm in full control,", fam:"OLE", key:"control", ex:"I run with the ball and I shoot for the goal" },
+  { topic:"food", it:"il cibo", word:"pizza", a:"Friday night, it's time for a treat,", fam:"EAT", key:"treat", ex:"A pizza with cheese is my favorite thing to eat" },
+  { topic:"holidays", it:"le vacanze", word:"summer", a:"No more homework, the teacher said: hooray!", fam:"AY", key:"hooray", ex:"This summer I'm going to the beach every day" },
+  { topic:"the weather", it:"il tempo atmosferico", word:"umbrella", a:"Look out the window, here comes the rain,", fam:"AIN", key:"rain", ex:"I open my umbrella and I run for the train" } ];
 const CY_HYPE=["Yo, that's fire!","Sheesh! Those bars are crazy!","Okay, okay, you got skills!","The crowd goes wild!","Bars! Straight bars!","Respect! That's how we do it!"];
 const CY_GLUE=new Set("i you he she we they it me my your our their his her its the a an is am are was were be been got get gets have has had can could will would to in on at of with and but so like all every never always don't can't won't just this that what when up down out no not do does did make take keep let i'm im you're we're they're it's that's i've i'll".split(" "));
 const CY_IT=/\b(il|lo|gli|che|sono|della|questo|perché|perche|anche|molto|io|noi|voi|loro|con|per|non|nel|una|uno|mia|mio|sempre|tutto)\b/g;
-const CYPHER={ on:false, npc:null, pts:0, perfect:true, tm:null, gen:0 };
+const CYPHER={ on:false, npc:null, pts:0, perfect:true, tm:null, gen:0, crew:null, circle:false, cgen:0 };
 const CY_K="et_cypher";
 function _cyState(){ let s=null; try{ s=Sync.get(CY_K,null); }catch(e){}
   s=(s && typeof s==="object")?s:{}; const d=new Date().toDateString();
   if(s.d!==d){ s.d=d; s.used=false; } s.best=s.best||0; return s; }
 function _cySave(s){ try{ Sync.set(CY_K,s); }catch(e){} }
 function _cyTeacher(){ try{ return !!Student.teacher; }catch(e){ return false; } }
-/* la crew rappa: voce americana, piu' veloce */
-function _cyRap(npc,text,rate){
+/* LA VOCE: americana; rate = null -> velocita' normale (frasi), CY_RATE
+   per le barre. Chi parla, se e' nel cerchio, gesticola (Interact). */
+function _cyVoice(npc,text,rate){
+  const D=SKATE.dancers.find(x=>x.n===npc);
+  const ges=!!(D && D.st==="cypher" && npc.anims && npc.anims["Interact"]);
+  if(ges) try{ npc.play("Interact"); }catch(e){}
   try{ speechSynthesis.resume(); }catch(e){}
-  try{ return TTS.say(text,{ accent:"us", rate:rate||1.22, gender:(npc&&npc.gender)||undefined }); }catch(e){ return Promise.resolve(false); }
+  let p; try{ p=TTS.say(text,{ accent:"us", rate:rate||undefined, gender:(npc&&npc.gender)||undefined }); }catch(e){ p=Promise.resolve(false); }
+  return p.then(r=>{ if(ges && D.st==="cypher") try{ npc.play("Idle"); }catch(e){} return r; });
+}
+function _cySay(npc,text){ return _cyVoice(npc,text,null); }
+function _cyRap(npc,text){ return _cyVoice(npc,text,CY_RATE); }
+/* una frase dopo l'altra, ma solo finche' si e' ancora nello stesso momento
+   del cypher (g = CYPHER.gen): se si va avanti, il resto non si dice */
+function _cySeq(g,steps){ let p=Promise.resolve(); steps.forEach(f=>{ p=p.then(()=>g===CYPHER.gen?f():null); }); return p; }
+/* chi rappa il round k: a turno, a partire da quello con cui hai parlato */
+function _cyRapper(k){ const c=CYPHER.crew; return (c && c.length)?c[k%c.length].n:CYPHER.npc; }
+/* IL CERCHIO: tu e la crew a distanza uguale su un cerchio di 1,55 m il
+   cui centro sta fra te e chi ti ha sfidato; tutti girati verso il centro */
+function _cyCircle(npc){
+  const all=SKATE.dancers.filter(D=>_pkVisible(D.n) && D.st!=="dance");
+  const mc=all.find(D=>D.n===npc);
+  const crew=mc?[mc].concat(all.filter(D=>D!==mc)):all;
+  CYPHER.crew=crew; CYPHER.circle=true; const cg=++CYPHER.cgen;
+  const P=player.position, M=npc.carrier.position, N=crew.length+1;
+  let dx=M.x-P.x, dz=M.z-P.z;
+  if(Math.hypot(dx,dz)<0.2){ dx=Math.sin(player.rotation.y); dz=Math.cos(player.rotation.y); }
+  /* un cerchio che stia tutto sul libero: verso chi ti ha sfidato se si
+     puo', se no girato attorno a te o un po' piu' stretto/largo. Prima il
+     posto di uno poteva cadere sulla panchina e restava li' a camminare
+     sul posto (blocked). */
+  const okAt=(x,z)=>!blocked(x,z) && skInZone(x,z,false) && !(SKATE.benches||[]).some(b=>Math.hypot(x-b.x,z-b.z)<1.0);
+  const base=Math.atan2(dx,dz); let best=null;
+  for(const R of [1.55,1.35,1.8]){
+    for(const da of [0,0.5,-0.5,1,-1,1.6,-1.6,2.3,-2.3,Math.PI]){
+      const an=base+da, cx=P.x+Math.sin(an)*R, cz=P.z+Math.cos(an)*R, a0=Math.atan2(P.x-cx,P.z-cz), sl=[];
+      for(let k=1;k<N;k++){ const a=a0+k*2*Math.PI/N; sl.push({ x:cx+Math.sin(a)*R, z:cz+Math.cos(a)*R }); }
+      if(okAt(cx,cz) && sl.every(q=>okAt(q.x,q.z))){ best={ cx, cz, sl }; break; } }
+    if(best) break; }
+  if(!best){ const R=1.55, cx=P.x+Math.sin(base)*R, cz=P.z+Math.cos(base)*R, a0=Math.atan2(P.x-cx,P.z-cz), sl=[];
+    for(let k=1;k<N;k++){ const a=a0+k*2*Math.PI/N; sl.push({ x:cx+Math.sin(a)*R, z:cz+Math.cos(a)*R }); }
+    best={ cx, cz, sl }; }
+  const cx=best.cx, cz=best.cz, free=best.sl;
+  CYPHER.cx=cx; CYPHER.cz=cz;
+  try{ player.rotation.y=Math.atan2(cx-P.x,cz-P.z); }catch(e){}
+  crew.forEach(D=>{
+    const c=D.n.carrier.position; let bi=0, bd=1e9;
+    free.forEach((s,i)=>{ const dd=Math.hypot(s.x-c.x,s.z-c.z); if(dd<bd){ bd=dd; bi=i; } });
+    const s=free.splice(bi,1)[0];
+    _skUnpose(D);
+    _skWalk(D,s.x,s.z,true,()=>{
+      if(!CYPHER.circle || cg!==CYPHER.cgen){ _cyBack(D); return; }    // la sfida e' gia' finita mentre arrivava
+      D.st="cypher"; D.n.carrier.rotation.y=Math.atan2(cx-s.x,cz-s.z);
+      try{ D.n.play("Idle"); }catch(e){} });
+  });
+}
+/* letto da skateTick (piu' su nel file): protetto, cosi' non dipende
+   dall'ordine in cui il motore incontra le costanti */
+function _cyCircleOn(){ try{ return !!CYPHER.circle; }catch(e){ return false; } }
+function _cyBack(D){ if(skPhase()==="dance") skGoDance(D,true,SKATE.beat); else skGoChill(D,true); }
+/* fine del cerchio: chi e' al suo posto nel cerchio torna alle chiacchiere
+   (o a ballare); chi stava ancora arrivando ci pensa da se' all'arrivo */
+function _cyDisband(){
+  if(!CYPHER.circle) return; CYPHER.circle=false; _cyStop();
+  (CYPHER.crew||[]).forEach(D=>{ if(D.st==="cypher") _cyBack(D); });
+}
+/* in skateTick: la finestra del cypher non c'e' piu' (Leave, chiusa, la
+   crew che riparte a ballare) -> si scioglie il cerchio */
+function _cyWatch(){
+  if(!CYPHER.circle) return;
+  const q=document.getElementById("quest-modal");
+  if(!(q && q.classList.contains("show") && q.__npc && q.__npc.__skDancer)) _cyDisband();
 }
 function _cyShuffle(a){ a=a.slice(); for(let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0, x=a[i]; a[i]=a[j]; a[j]=x; } return a; }
 function _cyPick(a){ return a[(Math.random()*a.length)|0]; }
@@ -15529,7 +15647,7 @@ function skCypherRisposta(ta,fb,typed){
     +'<div style="font-weight:800;">\u{1F7E2} '+_escHtml(R[0])+(got>0?' <span style="color:#a05a2c">⭐ +'+got+'</span>':'')+'</div>'
     +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">'+_escHtml(R[1])+'</div>'
     +(can?'<button type="button" class="qm-btn primary" id="cy-go" style="margin-top:10px">\u{1F3A4} Enter the cypher · \u{1F525} hard</button>':'');
-  _cyRap(npc,R[0],1.1);
+  _cySay(npc,R[0]);
   _askDone(ta,null);
   const b=document.getElementById("cy-go"); if(b) b.onclick=()=>cypherStart(npc);
 }
@@ -15540,15 +15658,17 @@ function cypherStart(npc){
   try{ TTS.stop(); }catch(e){}
   const r2=_cyPick(CY_R2), r3=_cyPick(CY_R3);
   const r1=_cyPick(CY_R1.filter(q=>q.fam!==r2.fam && q.fam!==r3.fam));
-  Object.assign(CYPHER,{ on:true, npc, pts:0, perfect:true, r1, r2, r3, gen:CYPHER.gen+1 });
+  Object.assign(CYPHER,{ on:true, npc, pts:0, perfect:true, r1, r2, r3 });
+  const g=++CYPHER.gen;
   DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:"The Cypher · \u{1F525} hard", autoSpeak:false,
     text:"Welcome to the cypher! Three rounds, no mercy. Round one: rhyme fire. Round two: finish my bar. Round three: drop your own bar. You ready?",
-    italian:"Il cypher è una sfida di freestyle per chi è bravo davvero, con un inglese più difficile delle unit. Tre round a tempo, e scrivi sempre TU: 1) tre parole in rima; 2) chiudi tu la riga della crew; 3) una riga tutta tua. Una sfida al giorno, fino a 80 ⭐.",
+    italian:"Il cypher è una sfida di freestyle per chi è bravo davvero, con un inglese più difficile delle unit. Tre round a tempo, e scrivi (o dici) sempre TU: 1) tre parole in rima; 2) chiudi tu la riga della crew; 3) una riga tutta tua. Ogni round lo rappa un ragazzo diverso. Una sfida al giorno, fino a 80 ⭐.",
     buttons:[{ label:"\u{1F525} Let's go!", cls:"primary", act:()=>_cyR1() }] });
-  _cyRap(npc,"Yo! Welcome to the cypher! Three rounds, no mercy. You ready?",1.15);
+  _cyCircle(npc);                                     // la crew si mette in cerchio con te
+  _cySeq(g,[()=>_cySay(npc,"Yo! Welcome to the cypher! Three rounds, no mercy. Gather round, crew! You ready?")]);
 }
 function _cyR1(){
-  const q=CYPHER.r1, g=++CYPHER.gen, npc=CYPHER.npc, F=CY_FAM[q.fam]; let done=false;
+  const q=CYPHER.r1, g=++CYPHER.gen, npc=_cyRapper(0), F=CY_FAM[q.fam]; let done=false;
   const judge=timeout=>{ if(done) return; const el=document.getElementById("cy-in"); const v=el?el.value.trim():"";
     if(!timeout && !v) return;
     done=true; _cyStop();
@@ -15563,10 +15683,11 @@ function _cyR1(){
     html:_cyBars([q.a])+_cyInput("word, word, word")+_cyTimeHtml(30),
     buttons:[{ label:"\u{1F3A4} Drop it", cls:"primary", keepOpen:true, act:()=>judge(false) }] });
   _cyFocus();
-  _cyRap(npc,q.a+" Three rhymes! Go!").then(()=>{ if(g===CYPHER.gen && !done) _cyTimer(30,()=>judge(true)); });
+  _cySeq(g,[()=>_cyRap(npc,q.a),()=>_cySay(npc,"Three rhymes! Go!")])
+    .then(()=>{ if(g===CYPHER.gen && !done) _cyTimer(30,()=>judge(true)); });
 }
 function _cyR1Res(q,res,timeout,dirty){
-  const npc=CYPHER.npc; ++CYPHER.gen;
+  const npc=_cyRapper(0), g=++CYPHER.gen;
   const good=res.filter(r=>r.ok).map(r=>r.w), ok=good.length>=3;
   if(ok) _cyGive(CY_PTS.r1); else CYPHER.perfect=false;
   const hype=_cyPick(CY_HYPE);
@@ -15577,10 +15698,11 @@ function _cyR1Res(q,res,timeout,dirty){
       :(ok?"Tre rime giuste!":"Servivano tre parole diverse in rima con «"+q.key+"» (suono "+CY_FAM[q.fam].snd+"): ne hai azzeccate "+good.length+"."),
     html:_cyBars([q.a])+'<div style="font-size:15px;line-height:1.8">'+list+'</div>',
     buttons:[{ label:"▶ Round 2", cls:"primary", act:()=>_cyR2() }] });
-  _cyRap(npc,ok?hype+" "+q.key+", "+good.slice(0,3).join(", ")+"!":"Come on, rookie! Next round!");
+  _cySeq(g,ok?[()=>_cySay(npc,hype),()=>_cyRap(npc,q.key+", "+good.slice(0,3).join(", ")+"!")]
+             :[()=>_cySay(npc,"Come on, rookie! Next round!")]);
 }
 function _cyR2(){
-  const q=CYPHER.r2, g=++CYPHER.gen, npc=CYPHER.npc, F=CY_FAM[q.fam]; let tries=0, done=false;
+  const q=CYPHER.r2, g=++CYPHER.gen, npc=_cyRapper(1); let tries=0, done=false;
   const finish=(ok,text,bad)=>{ if(done) return; done=true; _cyStop(); _cyR2Res(q,ok,tries,text,bad); };
   const judge=()=>{ if(done) return; const el=document.getElementById("cy-in"), fb=document.getElementById("cy-fb"); if(!el) return;
     const v=el.value.trim(); if(!v) return;
@@ -15591,14 +15713,15 @@ function _cyR2(){
     el.focus && el.select && el.select(); };
   DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:"Round 2/3 · Finish my bar · ⭐ "+CY_PTS.r2, autoSpeak:false,
     text:"Finish my bar! Rhyme with “"+q.key.toUpperCase()+"”.",
-    italian:"Chiudi tu la seconda riga: deve fare rima con «"+q.key+"» (suono "+F.snd+") e avere senso. Due tentativi, 60 secondi.",
+    italian:"Chiudi tu la seconda riga: deve fare rima con «"+q.key+"» (suono "+CY_FAM[q.fam].snd+") e avere senso. Due tentativi, 60 secondi.",
     html:_cyBars([q.a,q.b+" …"])+_cyInput(q.b+" …")+_cyTimeHtml(60),
     buttons:[{ label:"\u{1F3A4} Drop it", cls:"primary", keepOpen:true, act:judge }] });
   _cyFocus();
-  _cyRap(npc,q.a+" "+q.b+"...").then(()=>{ if(g===CYPHER.gen && !done) _cyTimer(60,()=>finish(false,"",null)); });
+  _cySeq(g,[()=>_cySay(npc,"My turn!"),()=>_cyRap(npc,q.a+" "+q.b+"..."),()=>_cySay(npc,"Finish it!")])
+    .then(()=>{ if(g===CYPHER.gen && !done) _cyTimer(60,()=>finish(false,"",null)); });
 }
 function _cyR2Res(q,ok,tries,text,bad){
-  ++CYPHER.gen; const npc=CYPHER.npc;
+  const npc=_cyRapper(1), g=++CYPHER.gen;
   const pts=ok?(tries?CY_PTS.r2b:CY_PTS.r2):0; _cyGive(pts); if(!ok||tries) CYPHER.perfect=false;
   const hype=_cyPick(CY_HYPE), line=q.b+" "+(ok?text.replace(/[.!?]+$/,""):q.ex[0])+(ok?"!":".");
   DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:ok?"\u{1F525} +"+pts+" ⭐":(text?"Ooooh!":"⏱ Time's up!"), autoSpeak:false,
@@ -15606,10 +15729,10 @@ function _cyR2Res(q,ok,tries,text,bad){
     italian:ok?"Rima chiusa! La crew te la rappa indietro.":((bad?bad.it+" ":(text?"":"Tempo scaduto. "))+"Per esempio: «"+q.b+" "+q.ex.join("» oppure «"+q.b+" ")+"»."),
     html:_cyBars([q.a,line]),
     buttons:[{ label:"▶ Round 3", cls:"primary", act:()=>_cyR3() }] });
-  _cyRap(npc,(ok?hype+" Listen: ":"Check it: ")+q.a+" "+line);
+  _cySeq(g,[()=>_cySay(npc,ok?hype+" Listen!":"Check it!"),()=>_cyRap(npc,q.a+" "+line)]);
 }
 function _cyR3(){
-  const q=CYPHER.r3, g=++CYPHER.gen, npc=CYPHER.npc, F=CY_FAM[q.fam]; let tries=0, done=false;
+  const q=CYPHER.r3, g=++CYPHER.gen, npc=_cyRapper(2); let tries=0, done=false;
   const finish=(ok,text,bad)=>{ if(done) return; done=true; _cyStop(); _cyR3Res(q,ok,tries,text,bad); };
   const judge=()=>{ if(done) return; const el=document.getElementById("cy-in"), fb=document.getElementById("cy-fb"); if(!el) return;
     const v=el.value.trim(); if(!v) return;
@@ -15620,14 +15743,15 @@ function _cyR3(){
     el.focus && el.select && el.select(); };
   DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:"Round 3/3 · Your own bar · ⭐ "+CY_PTS.r3, autoSpeak:false,
     text:"Your turn! Topic: "+q.topic+". Use the word “"+q.word+"” and rhyme with “"+q.key.toUpperCase()+"”.",
-    italian:"Tema: "+q.it+". Scrivi una riga TUTTA TUA (almeno 6 parole) che contenga «"+q.word+"» e finisca in rima con «"+q.key+"» (suono "+F.snd+"). Due tentativi, 90 secondi.",
+    italian:"Tema: "+q.it+". Scrivi (o di') una riga TUTTA TUA, almeno 6 parole, che contenga «"+q.word+"» e finisca in rima con «"+q.key+"» (suono "+CY_FAM[q.fam].snd+"). Due tentativi, 90 secondi.",
     html:_cyBars([q.a,"…"])+_cyInput("… "+q.word+" …")+_cyTimeHtml(90),
     buttons:[{ label:"\u{1F3A4} Drop it", cls:"primary", keepOpen:true, act:judge }] });
   _cyFocus();
-  _cyRap(npc,"Topic: "+q.topic+". "+q.a+" Your turn!").then(()=>{ if(g===CYPHER.gen && !done) _cyTimer(90,()=>finish(false,"",null)); });
+  _cySeq(g,[()=>_cySay(npc,"Last round! The topic is "+q.topic+"."),()=>_cyRap(npc,q.a),()=>_cySay(npc,"Your turn!")])
+    .then(()=>{ if(g===CYPHER.gen && !done) _cyTimer(90,()=>finish(false,"",null)); });
 }
 function _cyR3Res(q,ok,tries,text,bad){
-  ++CYPHER.gen; const npc=CYPHER.npc;
+  const npc=_cyRapper(2), g=++CYPHER.gen;
   const pts=ok?(tries?CY_PTS.r3b:CY_PTS.r3):0; _cyGive(pts); if(!ok||tries) CYPHER.perfect=false;
   const hype=_cyPick(CY_HYPE), line=ok?text.replace(/[.!?]+$/,"")+"!":q.ex+".";
   DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:ok?"\u{1F525} +"+pts+" ⭐":(text?"Ooooh!":"⏱ Time's up!"), autoSpeak:false,
@@ -15635,10 +15759,10 @@ function _cyR3Res(q,ok,tries,text,bad){
     italian:ok?"Rima tua, tema giusto, parola obbligatoria: la crew te la rappa!":((bad?bad.it+" ":(text?"":"Tempo scaduto. "))+"Per esempio: «"+q.ex+"»."),
     html:_cyBars([q.a,line]),
     buttons:[{ label:"\u{1F3C6} Results", cls:"primary", act:()=>_cyEnd() }] });
-  _cyRap(npc,(ok?hype+" Listen: ":"Check it: ")+q.a+" "+line);
+  _cySeq(g,[()=>_cySay(npc,ok?hype+" Listen!":"Check it!"),()=>_cyRap(npc,q.a+" "+line)]);
 }
 function _cyEnd(){
-  ++CYPHER.gen; const npc=CYPHER.npc;
+  const npc=CYPHER.npc, g=++CYPHER.gen;
   const perfect=CYPHER.perfect; if(perfect) _cyGive(CY_PTS.perfect);
   const tot=CYPHER.pts; CYPHER.on=false;
   const st=_cyState(); st.best=Math.max(st.best||0,tot); _cySave(st);
@@ -15649,7 +15773,7 @@ function _cyEnd(){
     italian:(perfect?"Cypher perfetto: tutti e tre i round al primo colpo, +"+CY_PTS.perfect+" ⭐ di bonus! ":"")
       +"Hai preso "+tot+" ⭐ su 80. Domani un nuovo cypher, con rime nuove.",
     buttons:[{ label:"✌️ Peace out", cls:"primary", act:()=>{} }] });
-  _cyRap(npc,en,1.15);
+  _cySeq(g,[()=>_cySay(npc,en)]);
 }
 /* chi e' in piedi parla a turno: gesticola, l'altro ascolta */
 function skChatTick(){
@@ -18148,12 +18272,17 @@ const TTS={
            quello, non il gusto, e' il pavimento vero. */
         if(opts.gender==="f"){ if(this.voiceF) v=this.voiceF; else if(opts.pitch==null) pit=1.18; }
         else if(opts.gender==="m"){ if(this.voiceM) v=this.voiceM; else if(opts.pitch==null) pit=0.72; }
-        /* v309h: accento americano richiesto. Se il dispositivo non ha una
-           voce en-US si lascia scegliere al sistema con lang en-US. */
-        const us=(opts.accent==="us");
-        if(us){ const g=(opts.gender==="f")?this.voiceUSF:(opts.gender==="m"?this.voiceUSM:null);
+        /* v309h: accento americano richiesto, o del personaggio con cui si
+           parla (npc.__accent: la crew dello skatepark), se chi chiama non
+           l'ha detto. Se il dispositivo non ha una voce en-US si lascia
+           scegliere al sistema con lang en-US. */
+        let acc=opts.accent, gen=opts.gender;
+        if(acc==null){ try{ const qm=document.getElementById("quest-modal"), np=(qm && qm.classList.contains("show"))?qm.__npc:null;
+          if(np && np.__accent){ acc=np.__accent; if(gen==null) gen=np.gender; } }catch(e){} }
+        const us=(acc==="us");
+        if(us){ const g=(gen==="f")?this.voiceUSF:(gen==="m"?this.voiceUSM:null);
           v=g||this.voiceUS||null;
-          if(g) pit=(opts.pitch!=null?opts.pitch:1); }
+          if(opts.pitch==null) pit=g?1:(gen==="f"?1.18:(gen==="m"?0.72:1)); }   // senza voce US per genere: lo scarto di tono di sempre
         let done=false; const fin=ok=>{ if(!done){ done=true; res(ok); } };
         /* tentativo 0: la voce scelta; 1: voce di sistema en-GB; 2: en-US */
         const parla=(voce,tent)=>{
