@@ -14761,11 +14761,15 @@ const _skQ=new BABYLON.Quaternion();
 /* come _skBlend, piu' lo strato delle braccia: se E porta una seconda
    coppia (A2,B2) la si fonde con lo stesso t e poi si mescolano le due di w */
 function _skBlendE(cur,E){
-  const dy=_skBlend(cur,E.A,E.B,E.t);
+  let dy=_skBlend(cur,E.A,E.B,E.t);
   if(E.A2 && E.B2 && E.w>0){
     const T=cur.__sk2||(cur.__sk2=cur.map(k=>({ p:k.p.clone(), q:k.q.clone() })));
-    _skBlend(T,E.A2,E.B2,E.t);
-    for(let i=0;i<cur.length;i++){ BABYLON.Quaternion.SlerpToRef(cur[i].q,T[i].q,E.w,cur[i].q); BABYLON.Vector3.LerpToRef(cur[i].p,T[i].p,E.w,cur[i].p); } }
+    /* v309l: anche l'altezza si mescola di w (nel braccio alzato le gambe
+       sono le stesse e non cambia nulla; nell'entrata e uscita del ballo
+       base si passa da gambe piegate a gambe dritte) */
+    const dy2=_skBlend(T,E.A2,E.B2,E.t);
+    for(let i=0;i<cur.length;i++){ BABYLON.Quaternion.SlerpToRef(cur[i].q,T[i].q,E.w,cur[i].q); BABYLON.Vector3.LerpToRef(cur[i].p,T[i].p,E.w,cur[i].p); }
+    dy=dy*(1-E.w)+dy2*E.w; }
   return dy;
 }
 /* fonde due pose dentro cur (stessi oggetti, ogni fotogramma) */
@@ -14813,9 +14817,20 @@ function _skEval(K,mv,b,sd){
     if(k===0 && fr<0.25) return _skArms(P,b,8,"stand",a,_skEase(fr/0.25),{ glide:1, hop:0 });
     const u0=k===0?0.25:0;
     return _skArms(P,b,8,a,ab,(fr-u0)/(0.7-u0),{ glide:1, hop:0 }); }
-  if(mv==="basic"){ const k=Math.floor(b), fr=b-k;
+  /* v309l (Giacomo: «tra original beat club move e la mossa successiva
+     c'e' uno scarto innaturale con le braccia, c'e' uno scatto»). Il ballo
+     base finiva (e cominciava) in bDn, con la mano destra a meta' e le
+     ginocchia piegate, mentre il saltello prima e dopo parte e arriva in
+     piedi (stand, braccia giu'): al cambio la posa saltava di colpo. Ora
+     nel primo battito si entra piano dalla posa in piedi e nell'ultimo ci
+     si torna (lo strato A2/B2/w di _skBlendE), con la mano che sale e
+     scende morbida. */
+  if(mv==="basic"){ const k=Math.floor(b), fr=b-k, D=SKATE_DUR("basic");
     const t=fr<0.5?_skEase(fr/0.5):1-_skEase((fr-0.5)/0.5);
-    return { A:P.bDn, B:P.bUp, t, glide:0, hop:0.1*Math.sin(Math.PI*fr), sway:0.16*Math.sin(Math.PI*b) }; }
+    const E={ A:P.bDn, B:P.bUp, t, glide:0, hop:0.1*Math.sin(Math.PI*fr), sway:0.16*Math.sin(Math.PI*b) };
+    const w=b<1?1-_skEase(b):(b>D-1?_skEase(b-(D-1)):0);
+    if(w>0){ E.A2=P.stand; E.B2=P.stand; E.w=w; }
+    return E; }
   if(mv==="toe"){
     if(b<0.5) return { A:P.stand, B:P.toe, t:_skEase(b/0.5), glide:0, hop:0 };
     /* v309g: sulle punte non si resta di sasso: due respiri del braccio
