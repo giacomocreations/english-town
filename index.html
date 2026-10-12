@@ -14586,9 +14586,14 @@ SK_ARMS.open={ up:(o,f,dn)=>dn.scale(0.85).add(o.scale(0.38)).add(f.scale(0.14))
    non mi piace, mettile stese naturali»): prima «stand» usava «swing», con
    gli avambracci in avanti quasi orizzontali. Ora le braccia pendono lungo
    i fianchi, un filo in fuori per non entrare nei fianchi, e il gomito
-   appena morbido (l'avambraccio va solo un poco avanti) */
-SK_ARMS.rest={ up:(o,f,dn)=>dn.scale(0.97).add(o.scale(0.15)).add(f.scale(0.03)),
-               fore:(o,f,dn)=>dn.scale(0.97).add(f.scale(0.13)).add(o.scale(0.07)) };
+   appena morbido (l'avambraccio va solo un poco avanti).
+   v309l (Giacomo: «le braccia devono stare piu' indietro, sono un po'
+   avanti in modo innaturale»): il busto e' inclinato in avanti (lean 0.12)
+   e le braccia dritte giu' nel mondo restavano davanti alla linea del
+   corpo. Ora il braccio va un poco indietro (-0.09) e l'avambraccio
+   resta quasi verticale (+0.02): le mani lungo le cosce, non davanti */
+SK_ARMS.rest={ up:(o,f,dn)=>dn.scale(0.97).add(o.scale(0.15)).subtract(f.scale(0.09)),
+               fore:(o,f,dn)=>dn.scale(0.98).add(f.scale(0.02)).add(o.scale(0.07)) };
 const SK_POSES={
   /* lean = busto in avanti (v308b, Giacomo: «leggermente, non troppo») */
   stand: { L:{t:0.03,s:0,p:0},       R:{t:0.03,s:0,p:0},       arms:"rest", lean:0.12 },
