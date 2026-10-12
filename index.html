@@ -16117,8 +16117,17 @@ function _etSnapGamma(ctx,w,h){
   for(let i=0;i<d.length;i+=4){ d[i]=L[d[i]]; d[i+1]=L[d[i+1]]; d[i+2]=L[d[i+2]]; }
   ctx.putImageData(im,0,0);
 }
+/* v309l (Giacomo: «modalita' concerto e facendo ballare l'avatar si
+   blocca», Maximum call stack size exceeded). Lo scatto automatico del
+   Beat Club parte da skPhotoTick, che gira in onBeforeRenderObservable; lo
+   scatto chiama scene.render(), che rilancia gli osservatori, quindi di
+   nuovo skPhotoTick e un altro scatto (la data non e' ancora salvata), e
+   cosi' via fino a esaurire lo stack, a ogni fotogramma. Ora uno scatto
+   alla volta (ETSNAP.busy): quello annidato non parte. */
 function etSnapshot(pos,look,o){
   o=o||{}; const W=o.w||720, H=o.h||450;
+  if(ETSNAP.busy) return "";
+  ETSNAP.busy=true;
   let out="", ppPrev=null; const prev=scene.activeCamera;
   try{
     const S=etSnapPrep(), c=S.cam, sc=scene.imageProcessingConfiguration, cfg=S.cfg;
@@ -16145,7 +16154,7 @@ function etSnapshot(pos,look,o){
     if(!ok) try{ _etSnapGamma(ctx,W,H); }catch(e){}
     out=cv.toDataURL("image/jpeg",o.q||0.72);
   }catch(e){ console.warn("[foto]",e); }
-  finally{ try{ scene.activeCamera=prev; }catch(e){} if(ppPrev!=null) scene.postProcessesEnabled=ppPrev; }
+  finally{ try{ scene.activeCamera=prev; }catch(e){} if(ppPrev!=null) scene.postProcessesEnabled=ppPrev; ETSNAP.busy=false; }
   return out.length>2000?out:"";
 }
 /* ---- LA FOTO SI INGRANDISCE (v309g, Giacomo: «fai in modo che si
@@ -16173,6 +16182,7 @@ function etZoomThumb(img){
 }
 const SKPH={ beatT:0, cineT:0 };
 function skPhotoTick(){
+  if(ETSNAP.busy) return;                              // v309l: dentro uno scatto non se ne fa un altro
   const now=performance.now(), today=new Date().toDateString();
   /* v309g: le foto scattate prima (scure, senza la versione 2) si rifanno
      alla prima occasione, anche se sono di oggi */
@@ -16183,14 +16193,16 @@ function skPhotoTick(){
     if(!SKPH.beatT) SKPH.beatT=now;
     if(now-SKPH.beatT>6000 && dBeat!==today && !_dlgOpen()){
       const I=INTERIORS[UNIT_MUSIC.area]; if(I){ const c=I.center;
-        _skShoot("beat",new BABYLON.Vector3(c.x+2.6,2.7,c.z+5.8),new BABYLON.Vector3(c.x,1.2,c.z-3.6)); } }
+        _skShoot("beat",new BABYLON.Vector3(c.x+2.6,2.7,c.z+5.8),new BABYLON.Vector3(c.x,1.2,c.z-3.6)); }
+      SKPH.beatT=now+24000; }                         // v309l: se non e' riuscita, si riprova fra 30 s, non a ogni fotogramma
   } else SKPH.beatT=0;
   /* cinema, seduti col film, dopo 8 s: tu che guardi il film */
   if(area==="cinema" && typeof SHOW!=="undefined" && SHOW.seated){
     if(!SKPH.cineT) SKPH.cineT=now;
     if(now-SKPH.cineT>8000 && dCine!==today){
       const p=player.position, a=player.rotation.y, f={ x:Math.sin(a), z:Math.cos(a) }, r={ x:Math.cos(a), z:-Math.sin(a) };
-      _skShoot("cinema",new BABYLON.Vector3(p.x+f.x*1.3+r.x*1.1,p.y+1.25,p.z+f.z*1.3+r.z*1.1),new BABYLON.Vector3(p.x,p.y+0.85,p.z)); }
+      _skShoot("cinema",new BABYLON.Vector3(p.x+f.x*1.3+r.x*1.1,p.y+1.25,p.z+f.z*1.3+r.z*1.1),new BABYLON.Vector3(p.x,p.y+0.85,p.z));
+      SKPH.cineT=now+22000; }                         // v309l: come sopra
   } else SKPH.cineT=0;
 }
 
