@@ -15015,6 +15015,13 @@ function _skSpeaker(x,z,ry){
   lm.emissiveColor=new BABYLON.Color3(0.1,0.5,1); led.material=lm; led.position.y=0.82; led.parent=r;
   SKATE.leds.push(lm);
   addSolid(x-0.3,x+0.3,z-0.25,z+0.25,"town");
+  (SKATE.spk||(SKATE.spk=[])).push({ r, sol:solids[solids.length-1] });
+}
+/* v309l (Giacomo: «quando non c'e' la crew togli le casse»): le casse sono
+   della crew e se ne vanno con lei (skCrewOpen): spariscono e non fanno
+   piu' da ostacolo (il solido passa a un'area che non esiste) */
+function _skSpeakersShow(on){
+  (SKATE.spk||[]).forEach(k=>{ try{ k.r.setEnabled(on); }catch(e){} if(k.sol) k.sol.area=on?"town":"town_off"; });
 }
 /* i ballerini: guardaroba hip hop della Teca (cappellino, occhiali, catena
    d'oro, bomber/pelle, cargo/joggers) */
@@ -15169,7 +15176,7 @@ function skateTick(){
   try{ _cyWatch(); }catch(e){}                         // v309h: il cerchio del cypher si scioglie a finestra chiusa
   /* v309g: la crew c'e' solo nel suo orario (skCrewOpen) */
   const here=skCrewOpen();
-  if(here!==SKATE.crewHere){ SKATE.crewHere=here; SKATE.dancers.forEach(D=>{ try{ setNPCPopVisible(D.n,here); }catch(e){} }); }
+  if(here!==SKATE.crewHere){ SKATE.crewHere=here; SKATE.dancers.forEach(D=>{ try{ setNPCPopVisible(D.n,here); }catch(e){} }); _skSpeakersShow(here); }
   /* v308e: un quarto d'ora si balla, un quarto d'ora si chiacchiera; senza
      la crew nessuna panchina e' occupata */
   const ph=skPhase(), phB=here?ph:"off";
@@ -44299,7 +44306,9 @@ const DESTS=[
    (z-84) al fondo del campo (z44). Proporzioni 240x144 = 1,67, cioe'
    quasi esattamente quelle della tela (1,63): meno deformazione di
    prima (1,85 su una tela 1,55). */
-const MAP_W=480, MAP_H=340, WX0=-100, WX1=140, WZ0=-96, WZ1=48;
+/* v309l: il bordo sud passa da z48 a z68, se no lo Skatepark (z 46..66,
+   a nord-est del Diner) restava fuori dalla mappa */
+const MAP_W=480, MAP_H=340, WX0=-100, WX1=140, WZ0=-96, WZ1=68;
 function worldToMap(x,z){ return { mx:(x-WX0)/(WX1-WX0)*MAP_W, my:(z-WZ0)/(WZ1-WZ0)*MAP_H }; }
 function _mapPct(x,z){ return { l:(x-WX0)/(WX1-WX0)*100, t:(z-WZ0)/(WZ1-WZ0)*100 }; }
 /* I LUOGHI DELLA MAPPA SI LEGGONO DA TOWN[], non da una seconda lista da
@@ -44339,6 +44348,9 @@ function mapPlaces(){
      avevano un nome da segnavia ("Station") al posto del nome del libro. */
   out.push({ ic:"🌳", name:"Park", hub:true, x:84, z:0, ax:84, az:0, open:true });
   out.push({ ic:"\u{1F354}", name:"Diner", hub:true, x:0, z:32, ax:0, az:22.6, open:true });   // v288
+  /* v309l (Giacomo: «metti skate park sulla mappa»): il taxi ti lascia sul
+     prato davanti al lato sud della pista, girato verso i ballerini */
+  out.push({ ic:"\u{1F6F9}", name:"Skatepark", hub:true, x:SKATE.C.x, z:SKATE.C.z, ax:SKATE.C.x, az:SKATE.C.z-11.5, face:0, open:true });
   return out;
 }
 function buildMapPins(){
