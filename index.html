@@ -14582,9 +14582,16 @@ SK_ARMS.hat2={ up:(o,f,dn,sd)=>sd==="R"?new BABYLON.Vector3(0,0.5,0).add(o.scale
 /* il raccordo sulle punte (rise): braccia aperte davanti, palmi verso il pubblico */
 SK_ARMS.open={ up:(o,f,dn)=>dn.scale(0.85).add(o.scale(0.38)).add(f.scale(0.14)),
                fore:(o,f,dn)=>dn.scale(0.25).add(o.scale(0.32)).add(f.scale(0.62)) };
+/* v309k (Giacomo: «nel ballo, la posa di riposo ha le braccia piegate,
+   non mi piace, mettile stese naturali»): prima «stand» usava «swing», con
+   gli avambracci in avanti quasi orizzontali. Ora le braccia pendono lungo
+   i fianchi, un filo in fuori per non entrare nei fianchi, e il gomito
+   appena morbido (l'avambraccio va solo un poco avanti) */
+SK_ARMS.rest={ up:(o,f,dn)=>dn.scale(0.97).add(o.scale(0.15)).add(f.scale(0.03)),
+               fore:(o,f,dn)=>dn.scale(0.97).add(f.scale(0.13)).add(o.scale(0.07)) };
 const SK_POSES={
   /* lean = busto in avanti (v308b, Giacomo: «leggermente, non troppo») */
-  stand: { L:{t:0.03,s:0,p:0},       R:{t:0.03,s:0,p:0},       arms:"swing", lean:0.12 },
+  stand: { L:{t:0.03,s:0,p:0},       R:{t:0.03,s:0,p:0},       arms:"rest", lean:0.12 },
   bUp:   { L:{t:0.04,s:0,p:0.3},     R:{t:0.04,s:0,p:0.3},     arms:"waveUp", lean:0.08 },
   bDn:   { L:{t:0.32,s:-0.36,p:0.1}, R:{t:0.32,s:-0.36,p:0.1}, arms:"waveMid", lean:0.16 },
   mwL:   { L:{t:0.45,s:-0.55,p:1.05}, R:{t:0,s:0,p:0},           arms:"mw", lean:0.14 },
