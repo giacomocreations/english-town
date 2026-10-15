@@ -16,7 +16,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="QuestTown">
-<script>window.ET_BUILD="242";</script>
+<script>window.ET_BUILD="243";</script>
 <script>
 /* =====================================================================
    APP INSTALLABILE (v217-218) — gira PRIMA di tutto il resto.
@@ -430,6 +430,7 @@
   .wt-slot.wt-hinted{outline:2px dashed #e8b04b;outline-offset:2px;}
   /* v310: PROMEMORIA DELLA CONSEGNA (vedi QuestNudge) */
   #quest-hud.nudge{animation:qhNudge 1.4s ease-in-out 3;}
+  #quest-hud.nudge-loop{animation:qhNudge 2.4s ease-in-out infinite;}
   @keyframes qhNudge{0%,100%{box-shadow:0 6px 18px rgba(20,30,40,.2);}50%{box-shadow:0 0 0 4px rgba(232,176,75,.85),0 6px 18px rgba(20,30,40,.2);}}
   #quest-nudge{left:50%;top:70px;transform:translateX(-50%) translateY(-6px);max-width:min(560px,calc(100vw - 32px));
     background:rgba(29,42,50,.92);color:#fff;border-radius:999px;padding:8px 16px;font-size:14px;font-weight:700;
@@ -439,7 +440,7 @@
   #quest-nudge b{color:var(--sun);}
   #quest-nudge .qn-ey{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--sun);margin-right:6px;}
   @keyframes qnBlink{0%,100%{opacity:1;}50%{opacity:.55;}}
-  @media (prefers-reduced-motion:reduce){#quest-nudge.show,#quest-hud.nudge,#qm-card .qm-btn.wt-hint{animation:none;}}
+  @media (prefers-reduced-motion:reduce){#quest-nudge.show,#quest-hud.nudge,#quest-hud.nudge-loop,#qm-card .qm-btn.wt-hint{animation:none;}}
   #qbtn{position:fixed;z-index:15;top:14px;right:14px;background:rgba(251,247,236,.94);border:none;border-radius:12px;
     padding:8px 12px;font:inherit;font-weight:800;font-size:12px;color:var(--ink);cursor:pointer;
     box-shadow:0 4px 14px rgba(20,30,40,.18);}
@@ -5651,7 +5652,8 @@ function qEtichetta(){
    prova su un tablet nuovo per capire a colpo d'occhio se un passo in
    giu' di risoluzione basta. Si aggiorna solo a pannello aperto. */
 function qInfo(){ const el=document.getElementById("qp-info"); if(!el) return;
-  try{ el.textContent=engine.getRenderWidth()+"\u00d7"+engine.getRenderHeight()+" px \u00b7 "+Math.round(engine.getFps())+" fps"; }catch(e){} }
+  try{ el.textContent=engine.getRenderWidth()+"\u00d7"+engine.getRenderHeight()+" px \u00b7 "+Math.round(engine.getFps())+" fps"
+    +" \u00b7 build "+(window.ET_BUILD||"?"); }catch(e){} }
 
 /* ============================================================================
    RILEVAMENTO AUTOMATICO DELLA QUALITA'
@@ -21067,16 +21069,33 @@ function questHudRefresh(){
    gli edifici e nelle quest all'aperto. Toccandola si sente la frase.
    ⚠️ Nessun nuovo testo da scrivere: e' la stessa riga dell'HUD (qhud.last),
    versione inglese, senza bottoni e senza la riga italiana. */
-const QN_FIRST=30000, QN_AGAIN=60000, QN_SHOW=8000;
+/* v311 (Giacomo, 15 ott, dopo la prova: «in Town Hall e al Corner Shop non
+   succede niente»). In prova la pillola usciva, ma DOPO 30 s di immobilita'
+   e per 8 s soltanto: chi si muove e parla con qualcuno azzera l'attesa e
+   non la vede mai. Ora:
+     · OGNI CONSEGNA NUOVA si mostra subito (appena non c'e' una finestra
+       aperta): dopo il «Let's go!» e dopo ogni oggetto trovato la pillola
+       dice cosa fare adesso;
+     · dopo QN_FIRST senza progressi torna, e l'HUD pulsa piano FINCHE' non
+       si fa un passo avanti nella quest (nudge-loop);
+     · poi si ripete ogni QN_AGAIN.
+   ET.promemoria() la mostra subito, per controllare senza aspettare. */
+const QN_FIRST=20000, QN_AGAIN=40000, QN_SHOW=9000, QN_NEW=6000;
 const QuestNudge=(function(){
   const el=document.getElementById("quest-nudge");
-  let last=Date.now(), volte=0, dal=0, testoOra="";
+  let last=Date.now(), volte=0, dal=0, durata=QN_SHOW, testoOra="", nuova=false, liberoDa=0, ultimoTesto="";
   function hide(){
     if(el) el.classList.remove("show");
     try{ qhud.box.classList.remove("nudge"); }catch(e){}
     dal=0;
   }
-  function reset(){ last=Date.now(); volte=0; hide(); }
+  function loop(on){ try{ qhud.box.classList.toggle("nudge-loop", !!on); }catch(e){} }
+  /* chiamata da questHudSet: se la consegna e' DIVERSA si annuncia */
+  function reset(){
+    last=Date.now(); volte=0; loop(false);
+    const t=testo();
+    if(t && t!==ultimoTesto){ ultimoTesto=t; nuova=true; hide(); }
+  }
   function testo(){
     const L=qhud.last; if(!L) return "";
     const o=L[1];
@@ -21101,24 +21120,31 @@ const QuestNudge=(function(){
     try{ if(LESSON.on) return true; }catch(e){}
     return false;
   }
-  function show(){
-    const t=testo(); if(!t || !el){ last=Date.now(); return; }
-    testoOra=t;
+  function show(quanto){
+    const t=testo(); if(!t || !el){ last=Date.now(); return false; }
+    testoOra=t; durata=quanto||QN_SHOW;
     el.innerHTML='<span class="qn-ey">\u{1F449} Your task</span>'+_escHtml(t)+' <span style="opacity:.75">\u{1F50A}</span>';
     el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
     try{ qhud.box.classList.remove("nudge"); void qhud.box.offsetWidth; qhud.box.classList.add("nudge"); }catch(e){}
-    dal=Date.now(); volte++;
+    dal=Date.now();
+    return true;
   }
   function tick(){
     const ora=Date.now();
-    if(!attiva() || occupato()){ last=ora; if(dal) hide(); return; }
-    if(dal){ if(ora-dal>QN_SHOW){ hide(); last=ora; } return; }
-    if(ora-last >= (volte?QN_AGAIN:QN_FIRST)) show();
+    if(!attiva()){ last=ora; liberoDa=0; loop(false); if(dal) hide(); return; }
+    if(occupato()){ last=ora; liberoDa=0; if(dal) hide(); return; }
+    if(!liberoDa) liberoDa=ora;
+    if(dal){ if(ora-dal>durata){ hide(); last=ora; } return; }
+    /* consegna nuova: un attimo dopo che si e' chiusa la finestra */
+    if(nuova && ora-liberoDa>=1200){ nuova=false; if(show(QN_NEW)) return; }
+    if(ora-last >= (volte?QN_AGAIN:QN_FIRST)){ if(show(QN_SHOW)){ volte++; loop(true); } }
   }
   if(el) el.onclick=function(e){ e.stopPropagation();
     try{ if(testoOra) TTS.say(testoOra); }catch(err){} };
   setInterval(function(){ try{ tick(); }catch(e){} }, 1000);
-  return { reset:reset, hide:hide, show:show, testo:testo };
+  return { reset:reset, hide:hide, show:show, testo:testo,
+           stato:function(){ return { attiva:attiva(), occupato:occupato(), fermoDa:Math.round((Date.now()-last)/1000)+" s",
+                                      volte:volte, consegna:testo() }; } };
 })();
 
 /* ---- utilità random (pool + shuffle, "livello 1") ---- */
@@ -65280,6 +65306,15 @@ ET.taglioDistanza=function(on){
 ET.ombreSeguono=function(on){
   if(on===false||on===true){ _oOn=on; if(!on) ombraFissa(); toast("Ombre attorno al giocatore "+(on?"accese":"spente")); }
   return { attivo:_oOn, riquadro:OMBRA_S*2+" m", ombre:sun.shadowEnabled }; };
+/* v311: ET.promemoria() mostra subito la pillola «Your task» (se c'e' una
+   quest in corso) e dice perche' non comparirebbe da sola. */
+ET.promemoria=function(){
+  const st=QuestNudge.stato();
+  if(st.attiva && !st.occupato) QuestNudge.show();
+  console.table(st);
+  return st.attiva ? (st.occupato ? "c'e' una finestra aperta: compare quando si chiude" : "mostrato: \u00ab"+st.consegna+"\u00bb")
+                   : "nessuna quest in corso (o unit gia' completata): niente da ricordare";
+};
 ET.presenzaSpegni=function(){ Presenza.spegni(); return "\u{1F465} presenza spenta su questa finestra"; };
 
 engine.runRenderLoop(()=>scene.render());
