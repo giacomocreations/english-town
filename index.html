@@ -16,7 +16,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="QuestTown">
-<script>window.ET_BUILD="244";</script>
+<script>window.ET_BUILD="245";</script>
 <script>
 /* =====================================================================
    APP INSTALLABILE (v217-218) — gira PRIMA di tutto il resto.
@@ -14554,10 +14554,12 @@ const SKATE={ C:{ x:30, z:56 }, gy:0, dancers:[], audio:null, songI:-1, near:fal
 /* v308b (Giacomo: «aggiungi anche il ballo base con la mano che si alza e
    salto a tempo originale del Beat Club»): e' il primo, sempre sbloccato */
 const SK_MOVES=[ { id:"basic",    en:"Beat Club dance", ic:"\u{1F64C}", stars:0, beats:16 },
-                 { id:"moonwalk", en:"Moonwalk",   ic:"\u{1F319}", stars:800,  beats:8 },
-                 { id:"sidewalk", en:"Sidewalk / Airwalk", ic:"↔️", stars:1200, beats:8 },
-                 { id:"toe",      en:"Toe stand (Billie Jean)", ic:"\u{1FA70}", stars:1600, beats:4 },
-                 { id:"ankle",    en:"Ankle breaker", ic:"\u{1F45F}", stars:2000, beats:4 } ];
+                 /* v312 (Giacomo, 15 ott): stesse soglie, ma Moonwalk e Airwalk in
+                    fondo — sono le mosse piu' ambite, e restano il traguardo */
+                 { id:"toe",      en:"Toe stand (Billie Jean)", ic:"\u{1FA70}", stars:800,  beats:4 },
+                 { id:"ankle",    en:"Ankle breaker", ic:"\u{1F45F}", stars:1200, beats:4 },
+                 { id:"moonwalk", en:"Moonwalk",   ic:"\u{1F319}", stars:1600, beats:8 },
+                 { id:"sidewalk", en:"Sidewalk / Airwalk", ic:"↔️", stars:2000, beats:8 } ];
 /* ---- le POSE chiave: angoli nel mondo (radianti, avanti = positivo).
    t = coscia, s = stinco, p = punta del piede verso il basso */
 const SK_ARMS={
@@ -16001,7 +16003,7 @@ function skDanceMenu(){
   if(club) ch.unshift({ label:"\u{1F64C} Just dance!", act:()=>danceStart() });
   DialogueBox.open({ name:club?"The Beat Club":"Skatepark", icon:club?"\u{1F3B5}":"\u{1F6F9}", sub:(club?"Dance to the music":"Dance with the crew")+" · ⭐ "+st,
     text:ok.length?"Choose a move and dance to the music! Walk to stop.":"You need more stars to learn the moves. Keep playing!",
-    italian:ok.length?"Scegli una mossa e balla a tempo! Per smettere, cammina.":"Ti servono piu' stelle per imparare le mosse: la prima, il Moonwalk, a "+SK_MOVES[0].stars+".",
+    italian:ok.length?"Scegli una mossa e balla a tempo! Per smettere, cammina.":(m=>"Ti servono piu' stelle per imparare le mosse: la prima, "+m.en+", a "+m.stars+".")(SK_MOVES.find(m=>!skMoveOk(m))||SK_MOVES[1]),
     choices:ch, buttons:[{ label:"Close", cls:"ghost", act:()=>{} }] });
 }
 function skDanceStart(list){
