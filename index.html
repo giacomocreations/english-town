@@ -16,7 +16,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="QuestTown">
-<script>window.ET_BUILD="243";</script>
+<script>window.ET_BUILD="244";</script>
 <script>
 /* =====================================================================
    APP INSTALLABILE (v217-218) — gira PRIMA di tutto il resto.
@@ -19629,6 +19629,17 @@ const STAR_RULES={
   cafeDaily:2,        // ordini premiati al giorno con LO STESSO barista
   cafeDailyCap:50,    // tetto ⭐ del caffe', separato da quello degli ambient
                       // e delle domande: e' gia' il massimo che cafeDaily consente
+  /* v312 (Giacomo, 15 ott: «dopo pochi giorni un alunno ha gia' 900 punti»)
+     — I CRISTALLI. Ogni cristallo dava 6 ⭐ (3 la scheda di scoperta) SENZA
+     TETTO, con 12 cristalli sempre in citta' che ricompaiono: era la fonte
+     piu' veloce di stelle del gioco, piu' delle quest, e svuotava la Teca in
+     un paio di settimane. Ora le stelle dei cristalli hanno un tetto
+     giornaliero come le altre fonti ripetibili. ⚠️ I CRISTALLI 💎 restano
+     SENZA limite (decisione del 12 set): continuano a contare per i colori
+     del guardaroba e per il lessico; oltre il tetto smettono solo di dare ⭐. */
+  gem:6,              // cristallo raccolto rispondendo
+  gemSeen:3,          // scheda di scoperta (guardarlo bene e' il lavoro, quel giro)
+  gemDailyCap:60,     // tetto ⭐ giornaliero dei cristalli = 10 risposte
 };
 /* Anni il cui curricolo e' DAVVERO tutto implementato: solo per questi ha
    senso il bonus di fine anno.
@@ -19665,6 +19676,7 @@ const Stars=(function(){
              dayNpc:s.dayNpc||{}, dayAsk:s.dayAsk||0, dayNpcAsk:s.dayNpcAsk||{},
              dayCafe:s.dayCafe||{}, dayCafeTot:s.dayCafeTot||0,
              dayShop:s.dayShop||0, dayShopDate:s.dayShopDate||"",      // v256 — spesa al Market
+             dayGem:s.dayGem||0, dayGemDate:s.dayGemDate||"",          // v312 — stelle dei cristalli
              master:!!s.master };
   }
   function total(){ return ledger().tot; }
@@ -19771,6 +19783,18 @@ const Stars=(function(){
     const give=firstTry?STAR_RULES.shopFirst:STAR_RULES.shopRetry;
     s.dayShop+=1; s.tot+=give; _save(s); flash(give,"spesa completa"); return give;
   }
+  /* v312 — CRISTALLI: tetto giornaliero con data propria, come la spesa.
+     Niente toast quando il tetto e' pieno: lo dice la scheda del cristallo
+     (gemTake), che si apre comunque. Ritorna le ⭐ date (0 = tetto pieno). */
+  function awardGem(discovered){
+    const s=ledger(), t=_today();
+    if(s.dayGemDate!==t){ s.dayGemDate=t; s.dayGem=0; }
+    const val=discovered?STAR_RULES.gemSeen:STAR_RULES.gem;
+    const give=Math.min(val, Math.max(0, STAR_RULES.gemDailyCap - s.dayGem));
+    s.dayGem+=give; s.tot+=give; _save(s);
+    if(give>0) flash(give, "cristallo");
+    return give;
+  }
   function awardFragment(fragId, missed){
     return award("f:"+fragId, missed?STAR_RULES.fragmentRetry:STAR_RULES.fragment, "frammento"); }
   function awardPhoto(id){ return award("p:"+id, STAR_RULES.photo, "foto"); }
@@ -19808,7 +19832,7 @@ const Stars=(function(){
   }
   function reset(){ _save({tot:0,given:{},day:"",dayAmb:0,dayNpc:{},master:false}); refreshStarHud(); }
   return { total, award, awardStep, awardAmbient, awardAmbientNPC, awardAskNPC,
-           awardCafeOrder, awardShopping, awardFragment, awardPhoto,
+           awardCafeOrder, awardShopping, awardGem, awardFragment, awardPhoto,
            checkYearBonus, setMaster, title, next, unitStars, ledger, reset };
 })();
 
@@ -34847,7 +34871,7 @@ const AUDIO=(function(){
 const PHONES=(function(){
   const VOL=0.30;
   let a=null, idx=-1, on=false, blocked=false, dead=false;
-  function wearing(){ try{ return Look.state().hat==="headphones"; }catch(e){ return false; } }
+  function wearing(){ try{ const h=Look.state().hat; return h==="headphones"||h==="headset"; }catch(e){ return false; } }   // v312: anche il Gaming headset
   function allowed(){
     if(typeof loginPending!=="undefined" && loginPending) return false;
     if(document.hidden) return false;
@@ -46512,7 +46536,7 @@ const SYNC_ULTIMO=["et_look",
    negano stelle guadagnate davvero. Conseguenza dichiarata: chi gioca a
    scuola e a casa lo stesso giorno puo' prendere due volte il tetto dei
    dialoghi ambientali. E' il male minore, e va in favore del ragazzo. */
-const STARS_LOCALI=["day","dayAmb","dayNpc","dayAsk","dayNpcAsk"];
+const STARS_LOCALI=["day","dayAmb","dayNpc","dayAsk","dayNpcAsk","dayGem","dayGemDate"];
 
 /* Fusione generica «tutto cresce». a = locale, b = cloud. */
 function fondiMax(a,b){
@@ -59646,6 +59670,8 @@ function dressShoes(meshes,kind,hex,holder){
      🏅 quest — una unit finita. SEMPRE con un'alternativa a stelle: chi e'
                 arrivato al gioco in seconda o in terza puo' non avere mai
                 fatto quella unit, e non deve restare fuori per sempre.
+                ⚠️ Unica eccezione, voluta: i premi dell'Anno 3 (y3:true,
+                v312), solo unit — vedi la nota su LOOK_COATS.
 
    COME SI VESTE (verificato a schermo prima di scriverlo qui):
    · la GAMBA si ridipinge sul modello animato, quindi si piega con la
@@ -60144,23 +60170,27 @@ const LOOK_ACC=[
   { id:"headband",  slot:"head", en:"Headband",       ic:"\u{1F3BD}", col:"#e0492f", req:{ quest:"u7",   stars:400 } },
   { id:"headphones",slot:"head", en:"Headphones",     ic:"\u{1F3A7}", col:"#23262b", req:{ quest:"u2_2", stars:800 } },
   { id:"bucket",    slot:"head", en:"Hiking hat",     ic:"\u{1F452}", col:"#8a7a52", req:{ quest:"u3_3", stars:1200 } },
+  /* v312 — PREMI DELL'ANNO 3 (y3:true). Vedi la nota su LOOK_COATS_Y3 */
+  { id:"headset",   slot:"head", en:"Gaming headset", ic:"\u{1F3AE}", col:"#2b2f36", req:{ quest:"u3_2" }, y3:true },
   /* slot occhi */
   { id:"shades",    slot:"face", en:"Sunglasses",     ic:"\u{1F576}️", col:"#1c1e22", req:{ quest:"u1", stars:300 } },
   /* v292: altri due occhiali da sole, sempre piu' di stile (vedi ACC_BUILD) */
   { id:"aviator",   slot:"face", en:"Aviator sunglasses",  ic:"\u{1F576}\uFE0F", col:"#d6ae3c", req:{ stars:1000 } },
-  { id:"designer",  slot:"face", en:"Designer sunglasses", ic:"\u{1F60E}", col:"#7a1f3d", req:{ stars:2000 } },
+  { id:"designer",  slot:"face", en:"Designer sunglasses", ic:"\u{1F60E}", col:"#7a1f3d", req:{ stars:2800 } },
   { id:"glasses",   slot:"face", en:"Round glasses",  ic:"\u{1F453}", col:"#6b3f24", req:{ gems:25 } },
   /* slot collo */
   { id:"necklace",  slot:"neck", en:"Necklace",       ic:"\u{1F4FF}", col:"#3f9fd0", req:{ stars:700 } },
   /* v291: altre due collane, medaglione piu' grande e piu' prezioso (vedi NECKLACES) */
-  { id:"medallion", slot:"neck", en:"Medallion necklace", ic:"\u{1F3C5}", col:"#2f64b0", req:{ stars:1500 } },
-  { id:"royal",     slot:"neck", en:"Royal medallion",    ic:"\u{1F451}", col:"#b3263a", req:{ stars:2500 } },
+  { id:"medallion", slot:"neck", en:"Medallion necklace", ic:"\u{1F3C5}", col:"#2f64b0", req:{ stars:2200 } },
+  { id:"royal",     slot:"neck", en:"Royal medallion",    ic:"\u{1F451}", col:"#b3263a", req:{ stars:3200 } },
+  { id:"earthmedal",slot:"neck", en:"Earth medallion",    ic:"\u{1F30D}", col:"#3d8a4e", req:{ quest:"u3_4" }, y3:true },
   { id:"scarf",     slot:"neck", en:"Scarf",          ic:"\u{1F9E3}", col:"#b3352e", req:{ quest:"u2_3", stars:600 } },
   /* v304: slot borsa — tre borse a tracolla, dalla piu' semplice alla piu'
      preziosa, come le tre collane (vedi BAGS e _accBag) */
   { id:"canvasbag", slot:"bag",  en:"Canvas bag",     ic:"\u{1F45C}", col:"#5d7a5a", req:{ stars:800 } },
   { id:"leatherbag",slot:"bag",  en:"Leather bag",    ic:"\u{1F45D}", col:"#7a4526", req:{ stars:1600 } },
-  { id:"designerbag",slot:"bag", en:"Designer bag",   ic:"\u{1F45B}", col:"#7a1f3d", req:{ stars:2600 } },
+  { id:"designerbag",slot:"bag", en:"Designer bag",   ic:"\u{1F45B}", col:"#7a1f3d", req:{ stars:3500 } },
+  { id:"workbag",   slot:"bag",  en:"Business bag",   ic:"\u{1F4BC}", col:"#2a2624", req:{ quest:"u3_1" }, y3:true },
 ];
 /* k = campo di Look con l'accessorio, kc = campo con il suo colore */
 const ACC_SLOTS=[ { id:"head", k:"hat",  kc:"hatc",  en:"Hats and headphones" },
@@ -60357,6 +60387,9 @@ const NECKLACES={
   necklace: { drop:0.045, chain:"plain", pend:1, r:0.010 },
   medallion:{ drop:0.056, chain:"ball",  pend:2, r:0.015 },
   royal:    { drop:0.076, chain:"link",  pend:3, r:0.029 },   // v292: piu' grande (5,8 cm)
+  /* v312 — premio di Climate & Fire Station (u3_4): il pianeta. Oceano blu
+     smaltato, i continenti del colore scelto (Original = verde), cornice */
+  earthmedal:{ drop:0.060, chain:"ball", pend:4, r:0.019 },
 };
 function _accNecklace(g,M,C,id){
   const K=NECKLACES[id], V=BABYLON.Vector3, nz=M.nz, a0=lookAcc(id);
@@ -60456,6 +60489,18 @@ function _accNecklace(g,M,C,id){
   if(K.pend===1){
     disc(rp*2,TH,gold,0); ring(rp*2,0.0022,gold,0);
     const s=BABYLON.MeshBuilder.CreateSphere("acc",{diameter:0.008,segments:8},scene); s.scaling.z=0.6; put(s,stone,0,0,TH/2);
+  } else if(K.pend===4){
+    disc(rp*2,TH,gold,0);
+    ring(rp*2,0.0032,gold,0);                                   // cornice
+    const sea=_accMat("#2f6fb8",0.9,"#0c2340");
+    const globe=BABYLON.MeshBuilder.CreateSphere("acc",{diameter:rp*1.7,segments:12},scene);
+    globe.scaling.z=0.42; put(globe,sea,0,0,TH/2);
+    /* le terre: macchie schiacciate sulla cupola del globo */
+    /* grandi: a distanza di gioco le macchie piccole sparivano nel blu */
+    [[-0.34,0.28,0.62,0.46],[0.32,0.14,0.44,0.62],[0.06,-0.42,0.58,0.34]].forEach(q=>{
+      const x=q[0]*rp, y=q[1]*rp, R=rp*0.85, dz=Math.sqrt(Math.max(0,R*R-x*x-y*y))*0.42;
+      const b=BABYLON.MeshBuilder.CreateSphere("acc",{diameter:rp*1.1,segments:6},scene);
+      b.scaling.set(q[2],q[3],0.10); put(b,stone,x,y,TH/2+dz+0.0004); });
   } else if(K.pend===2){
     disc(rp*2,TH,gold,0);
     ring(rp*2,0.0034,gold,0);                                   // cornice in rilievo
@@ -60650,7 +60695,7 @@ const ACC_BUILD={
      i capelli che sporgono finiscono DENTRO il guscio (che e' pieno) e
      restano visibili solo attorno, come sotto cuffie vere. L'archetto sopra
      la testa resta fuori dai capelli e scende dritto al guscio. */
-  headphones(g,M,C){ const zc=(M.front+M.back)/2-0.01, k=_accC(C,0.35), pad=_accMat("#1a1c20",0.1),
+  headphones(g,M,C,mic){ const zc=(M.front+M.back)/2-0.01, k=_accC(C,0.35), pad=_accMat("#1a1c20",0.1),
       plate=_accMat(_hexLum(C.hex)<0.2?"#3fa7c9":_hexMul(C.hex,0.7),0.3);
     const yE=-0.024, CUSH=0.016;
     /* il fianco della testa (la pelle) alla quota del padiglione, per lato */
@@ -60680,7 +60725,25 @@ const ACC_BUILD={
       const cup=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.084,height:0.026,tessellation:18},scene);
       cup.material=k; cup.rotation.z=Math.PI/2; cup.position.set(x0+s*(CUSH+0.013),yE,zc); cup.parent=g;
       const cap=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.056,height:0.006,tessellation:18},scene);
-      cap.material=plate; cap.rotation.z=Math.PI/2; cap.position.set(x0+s*(CUSH+0.028),yE,zc); cap.parent=g; }); },
+      cap.material=plate; cap.rotation.z=Math.PI/2; cap.position.set(x0+s*(CUSH+0.028),yE,zc); cap.parent=g; });
+    /* v312 — il microfono del Gaming headset: un'asta che parte dal guscio
+       sinistro, scende lungo la guancia e piega verso l'angolo della bocca,
+       con la capsula in spugna in punta. Resta fuori dalla pelle: ogni punto
+       dell'asta sta almeno 1,2 cm fuori dalla guancia misurata (M.SPL) alla
+       sua quota. Un tubo e una sfera, niente modelli. */
+    if(mic){ const V=BABYLON.Vector3, s=-1, x0=s*(sx[s]+CUSH+0.026), zF=Math.max(M.faceZ,0.015);
+      const cheek=(y,z)=>{ let x=0; (M.SPL||[]).forEach(l=>{ if(l.x>0 || Math.abs(l.y-y)>0.012 || Math.abs(l.z-z)>0.015) return; x=Math.max(x,-l.x); }); return x; };
+      const P=[]; const N=10;
+      for(let i=0;i<=N;i++){ const u=i/N, e=u*u*(3-2*u);
+        const y=yE-0.012-0.050*e, z=zc+0.012+(zF-0.004-zc-0.012)*Math.pow(u,0.8);
+        let x=x0+(s*0.040-x0)*Math.pow(u,1.6);
+        x=Math.min(x, -(cheek(y,z)+0.012));                 // fuori dalla guancia
+        P.push(new V(x,y,z)); }
+      const arm=BABYLON.MeshBuilder.CreateTube("acc",{path:P,radius:0.0034,tessellation:8,cap:BABYLON.Mesh.CAP_ALL},scene); arm.material=k; arm.parent=g;
+      const tip=BABYLON.MeshBuilder.CreateSphere("acc",{diameter:0.017,segments:8},scene);
+      tip.scaling.set(0.9,0.9,1.25); tip.material=pad; tip.position.copyFrom(P[N]); tip.parent=g; } },
+  /* v312 — Gaming headset (premio di TechLab, u3_2): le cuffie col microfono */
+  headset(g,M,C){ ACC_BUILD.headphones(g,M,C,true); },
   /* v292: il cappello da escursionista avvolge la testa come gli altri (i
      ricci lo bucavano): calotta a cima piatta, fascia piu' scura, tesa che
      segue il bordo della calotta e scende un poco */
@@ -60768,6 +60831,7 @@ const ACC_BUILD={
   necklace(g,M,C){ _accNecklace(g,M,C,"necklace"); },
   medallion(g,M,C){ _accNecklace(g,M,C,"medallion"); },
   royal(g,M,C){ _accNecklace(g,M,C,"royal"); },
+  earthmedal(g,M,C){ _accNecklace(g,M,C,"earthmedal"); },
   /* v281 (Giacomo: «la scarf e' da rifare, cosi' non si capisce, e' brutta»):
      era un salvagente rosso con due rettangoli appesi. Ora e' una sciarpa di
      lana: due giri morbidi attorno al collo che poggiano su quello che c'e'
@@ -60787,25 +60851,47 @@ const ACC_BUILD={
       const N=[]; BABYLON.VertexData.ComputeNormals(pos,I,N); vd.normals=N;
       const m=new BABYLON.Mesh("acc",scene); vd.applyToMesh(m,false); m.material=mat; m.parent=g; return m; };
     const radial=a=>({ n:new V(Math.sin(a),0,Math.cos(a)), s:new V(0,1,0) });
+    /* v312 (Giacomo, 15 ott: «la sciarpa ha uno spazio vuoto tra collo e
+       parte inferiore»). Sulla ragazza la maglia sul petto alto ha pochi
+       vertici, a triangoli grandi: per 4-6 cm sotto il collo rB valeva 0
+       (nessun vertice in quella fascia) e nodo e lembi si piazzavano a 1-3 cm
+       dall'asse, cioe' DENTRO il corpo. Si vedevano i giri, poi la felpa,
+       poi i lembi che spuntavano piu' in basso. rS riempie i buchi: allarga
+       lo spicchio e, se ancora non c'e' niente, interpola fra la fascia
+       piena sopra e quella sotto (la superficie fra due vertici e' piatta). */
+    const rS=(a,y)=>{ const w=(a,y)=>{ let r=0; for(let k=-3;k<=3;k++) r=Math.max(r,rB(a+k*0.131,y)); return r; };
+      const r0=rB(a,y); if(r0>0) return r0;
+      const r1=w(a,y); if(r1>0) return r1;
+      let up=0,dU=0,dn=0,dD=0;
+      for(let d=0.02;d<=0.12 && !(up&&dn);d+=0.02){ if(!up){ const r=w(a,y+d); if(r>0){ up=r; dU=d; } } if(!dn){ const r=w(a,y-d); if(r>0){ dn=r; dD=d; } } }
+      if(up&&dn) return up+(dn-up)*dU/(dU+dD);
+      return Math.max(up,dn,M.nr+0.02); };
     /* i due giri: quello basso poggia sul colletto, quello alto stringe il collo */
     /* ⚠️ il profilo a fascia STRETTA e un tetto a collo + 5,5 cm: con la fascia
        larga entravano le spalle e i giri diventavano due salvagenti */
+    let RLO=null;                                        // il giro basso: da li' partono i lembi
     [[M.neckY-0.012,0.05,0.036,0.0],[M.neckY+0.026,0.044,0.032,0.9]].forEach(L=>{
-      const N=40, path=[], R=[];
+      const N=40, path=[], R=[]; if(!RLO) RLO=R;
       for(let i=0;i<N;i++){ const a=i/N*Math.PI*2, y=L[0]+0.008*Math.cos(a+L[3]); R.push(Math.min(M.nr+0.055, Math.max(M.nr+0.016, rN(a,y)+L[2]*0.5))); }
       const R0=R.slice(); for(let k=0;k<6;k++){ const R2=R.map((r,i)=>Math.max(R0[i],(R[(i+N-1)%N]+r+R[(i+1)%N])/3)); for(let i=0;i<N;i++) R[i]=R2[i]; }
       for(let i=0;i<N;i++){ const a=i/N*Math.PI*2; path.push(at(a,L[0]+0.008*Math.cos(a+L[3]),R[i])); }
       sweep(path,i=>radial(i/N*Math.PI*2),L[1],L[2],main,true); });
-    /* nodo davanti, un po' a sinistra */
-    const ka=-0.28, ky=M.neckY-0.038, kn=at(ka,ky,rB(ka,ky)+0.03);
+    /* il raggio del giro basso all'angolo a (le 40 posizioni del giro) */
+    const rLo=a=>{ const N=RLO.length, f=((a/(2*Math.PI))%1+1)%1*N, i=Math.floor(f)%N, u=f-Math.floor(f); return RLO[i]*(1-u)+RLO[(i+1)%N]*u; };
+    /* nodo davanti, un po' a sinistra: appoggiato al giro basso e al petto */
+    const ka=-0.28, ky=M.neckY-0.038, kn=at(ka,ky,Math.max(rLo(ka)+0.004, rS(ka,ky)+0.03));
     const knot=BABYLON.MeshBuilder.CreateIcoSphere("acc",{radius:0.026,subdivisions:1,flat:true},scene);
     knot.scaling.set(1.2,1,0.8); knot.rotation.y=ka; knot.position.copyFrom(kn); knot.material=main; knot.parent=g;
     /* i lembi: seguono il petto, righe chiare verso il fondo, frange in fondo */
-    const tail=(a0,a1,len,lift,W)=>{ const n=14, pts=[], as=[];
-      const rr=[]; for(let i=0;i<=n;i++){ const t=i/n, a=a0+(a1-a0)*t, y=ky-0.01-len*t; as.push(a); rr.push(rB(a,y)+0.012+lift); }
+    /* v312: il lembo parte DA DENTRO il giro basso (y0 = quota del giro, sul
+       suo raggio), cosi' fra giri e lembi non resta mai luce */
+    const y0=M.neckY-0.018;
+    const tail=(a0,a1,len,lift,W)=>{ const n=14, pts=[], as=[], ys=[];
+      const rr=[]; for(let i=0;i<=n;i++){ const t=i/n, a=a0+(a1-a0)*t, y=y0-(y0-(ky-0.01-len))*t; as.push(a); ys.push(y);   // il fondo resta dov'era
+        rr.push(Math.max(rS(a,y)+0.012+lift, t<0.25?rLo(a)-0.006:0)); }
       /* lisciato: mai dentro il petto, ma senza le pieghe dei singoli vertici */
       const r0=rr.slice(); for(let k=0;k<6;k++){ const r2=rr.map((r,i)=>Math.max(r0[i],(rr[Math.max(0,i-1)]+r+rr[Math.min(n,i+1)])/3)); for(let i=0;i<=n;i++) rr[i]=r2[i]; }
-      for(let i=0;i<=n;i++){ const t=i/n; pts.push(at(as[i],ky-0.01-len*t,rr[i])); }
+      for(let i=0;i<=n;i++) pts.push(at(as[i],ys[i],rr[i]));
       const fr=i=>{ const a=as[Math.min(i,as.length-1)], nn=new V(Math.sin(a),0,Math.cos(a)); return { n:nn, s:new V(Math.cos(a),0,-Math.sin(a)) }; };
       const cut=[0,0.58,0.66,0.74,0.82,1], mats=[main,alt,main,alt,main];
       for(let s=0;s<5;s++){ const i0=Math.round(cut[s]*n), i1=Math.max(i0+1,Math.round(cut[s+1]*n)), sub=[], fs=[];
@@ -60889,7 +60975,7 @@ function dressAcc(meshes,acc,holder){
     const M=(env && S.id==="head")?Object.assign({},M0,env):Object.assign({},M0);
     /* v291: anche il cappellino si appoggia sulla testa vera (la calotta la avvolge) */
     /* v292: e tutti gli altri copricapo (i ricci bucavano berretto e cappello) */
-    if(S.id==="head" && /^(headband|cap|beanie|bucket|headphones)$/.test(want)){ const V3=BABYLON.Vector3, hs=(M0.SPL||[]).slice();
+    if(S.id==="head" && /^(headband|cap|beanie|bucket|headphones|headset)$/.test(want)){ const V3=BABYLON.Vector3, hs=(M0.SPL||[]).slice();
       const cm=(H.__cut&&H.__cut.meshes)||[];
       if(cm.length) cm.forEach(m=>{ const p=m.getVerticesData(BABYLON.VertexBuffer.PositionKind)||[];
         for(let i=0;i<p.length;i+=6){ const d=new V3(p[i],p[i+1],p[i+2]).subtract(M0.E); hs.push({ x:V3.Dot(d,M0.R)/M0.s, y:V3.Dot(d,M0.U)/M0.s, z:V3.Dot(d,M0.F)/M0.s }); } });
@@ -60930,9 +61016,13 @@ function dressAcc(meshes,acc,holder){
    Il colore scelto va su tela/cuoio; Gold e Silver cambiano il metallo.
    ===================================================================== */
 const BAGS={
-  canvasbag:  { W:0.150, H:0.118, D:0.034, sw:0.024, st:0.0040, chain:false, flap:0.62, n:5,  spec:0.04 },
-  leatherbag: { W:0.158, H:0.124, D:0.042, sw:0.019, st:0.0045, chain:false, flap:0.70, n:7,  spec:0.30, metal:"#c9a24a" },
-  designerbag:{ W:0.164, H:0.116, D:0.048, sw:0,     st:0,      chain:true,  flap:0.60, n:12, spec:0.22, metal:"#d6ae3c" },
+  canvasbag:  { W:0.150, H:0.118, D:0.034, sw:0.024, st:0.0040, chain:false, flap:0.62, n:5,  spec:0.04, kind:"canvas" },
+  leatherbag: { W:0.158, H:0.124, D:0.042, sw:0.019, st:0.0045, chain:false, flap:0.70, n:7,  spec:0.30, metal:"#c9a24a", kind:"leather" },
+  designerbag:{ W:0.164, H:0.116, D:0.048, sw:0,     st:0,      chain:true,  flap:0.60, n:12, spec:0.22, metal:"#d6ae3c", kind:"quilt" },
+  /* v312 — premio di Job Centre Tower (u3_1): la borsa da lavoro. E' la
+     borsa di cuoio (kind) piu' larga, piu' squadrata e con la patta corta,
+     e il metallo argento: a colpo d'occhio una cartella da ufficio. */
+  workbag:    { W:0.182, H:0.128, D:0.052, sw:0.020, st:0.0045, chain:false, flap:0.42, n:10, spec:0.36, metal:"#c9ccd2", kind:"leather" },
 };
 /* v306: il CORPO della borsa (prisma, patta, attacchi e dettagli del
    modello) in coordinate della borsa, figlio di gR: lo usano la borsa
@@ -60949,9 +61039,9 @@ function _accBagBody(gR,id,K,a0,C){
   /* corpo e patta: lo stesso prisma a superellisse delle lenti (_accLens) */
   put(_accLens(W,Hb,D,K.n,0),main,0,0,0);
   const fH=Hb*K.flap, fY=Hb/2-fH/2+0.002, fZ=D/2+0.0035;
-  put(_accLens(W+0.004,fH,0.006,K.n,0),id==="canvasbag"?dark:main,0,fY,fZ-0.002);
+  put(_accLens(W+0.004,fH,0.006,K.n,0),K.kind==="canvas"?dark:main,0,fY,fZ-0.002);
   /* la patta fa il giro sopra: una fascia sul bordo alto */
-  put(_accLens(W+0.004,0.010,D+0.008,K.n,0),id==="canvasbag"?dark:main,0,Hb/2-0.002,0.001);
+  put(_accLens(W+0.004,0.010,D+0.008,K.n,0),K.kind==="canvas"?dark:main,0,Hb/2-0.002,0.001);
   const fBot=fY-fH/2;
   /* gli attacchi della tracolla, ai due angoli in alto */
   const ring=[];
@@ -60959,11 +61049,11 @@ function _accBagBody(gR,id,K,a0,C){
     const r=BABYLON.MeshBuilder.CreateTorus("acc",{diameter:K.chain?0.013:0.016,thickness:K.chain?0.0032:0.0028,tessellation:12},scene);
     r.rotation.y=Math.PI/2; put(r,(K.metal||C.metal)?met:dark,x,y,0);
     ring.push(new V3(x,y+0.004,0)); });
-  if(id==="canvasbag"){
+  if(K.kind==="canvas"){
     /* bottone a pressione e la tasca davanti, cucita */
     const b=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.013,height:0.004,tessellation:16},scene); b.rotation.x=Math.PI/2; put(b,met,0,fBot+0.012,fZ+0.002);
     put(_accLens(W*0.62,Hb*0.30,0.004,5,0),dark,0,-Hb/2+Hb*0.21,D/2+0.001);
-  } else if(id==="leatherbag"){
+  } else if(K.kind==="leather"){
     /* cuciture lungo il bordo della patta, in rilievo e piu' chiare */
     const sc=_accMat(_hexMul(bodyHex,1.6),0.1), m=0.007, x0=W/2-m, y0=fY+fH/2-0.004, y1=fBot+m;
     const pth=[new V3(-x0,y0,fZ+0.0012),new V3(-x0,y1,fZ+0.0012),new V3(x0,y1,fZ+0.0012),new V3(x0,y0,fZ+0.0012)];
@@ -61154,7 +61244,7 @@ function _accBag(meshes,H,id,C){
       for(let k=0;k<NS;k++){ const t=k/NS*2*Math.PI; P.push(p.add(s.scale(Math.cos(t)*K.sw/2)).add(nn.scale(Math.sin(t)*K.st/2))); } });
     for(let i=0;i<n-1;i++) for(let k=0;k<NS;k++){ const a=i*NS+k, b=(i+1)*NS+k, c=i*NS+(k+1)%NS, d=(i+1)*NS+(k+1)%NS; I.push(a,b,d, a,d,c); }
     const pos=[]; P.forEach(p=>pos.push(p.x,p.y,p.z)); const vd=new BABYLON.VertexData(); vd.positions=pos; vd.indices=I;
-    const m=new BABYLON.Mesh("acc",scene); vd.applyToMesh(m,false); put(m,id==="leatherbag"?main:dark,0,0,0,gS);
+    const m=new BABYLON.Mesh("acc",scene); vd.applyToMesh(m,false); put(m,K.kind==="leather"?main:dark,0,0,0,gS);
   }
   /* ---- dal sistema della testa allo spazio del busto ---- */
   const jac=a=>{ if(a.J) return a.J; const e=M.s, p=a.p, f=(x,y,z)=>loc(a.cv(x,y,z,a.v)), o=a.l;
@@ -61570,6 +61660,26 @@ const LOOK_COATS=[
   { id:"raincoat", en:"Raincoat",       col:"#e0b62a", open:false, th:0.013, spec:0.35, buttons:4, req:{ quest:"u2_3", stars:500 } },
   { id:"bomber",   en:"Bomber jacket",  col:"#4b5a3b", open:false, th:0.016, zip:true, req:{ stars:1000 } },
   { id:"puffer",   en:"Puffer jacket",  col:"#c4432e", open:false, th:0.02, quilt:true, zip:true, req:{ quest:"u2_3", stars:700 } },
+  /* v312 — LOOK_COATS_Y3: I PREMI DELL'ANNO 3 (Giacomo, 15 ott: un ragazzo
+     di terza aveva 900 ⭐ dopo pochi giorni). Le terze entrano con l'Anno 1
+     e mezzo Anno 2 gia' aperti, quindi le sole quest aperte valgono ~2.650 ⭐
+     e svuotavano la Teca PRIMA delle unit dell'Anno 3: il programma vero
+     della terza non dava piu' niente da indossare. Qui un premio per unit
+     dell'Anno 3, uno per slot:
+       u3_1 Job Centre Tower -> Business bag     u3_2 TechLab  -> Gaming headset
+       u3_3 Hikers' Camp     -> Hiking jacket    u3_4 Climate  -> Earth medallion
+       u3_5 City Hospital    -> Doctor's coat
+     ⚠️ SOLO LA UNIT, NESSUNA ALTERNATIVA A STELLE (y3:true), a differenza di
+     tutti gli altri 🏅: l'alternativa serve a chi e' arrivato al gioco dopo
+     quella unit, ma l'Anno 3 e' l'ultimo e ci passano tutti. Non si
+     comprano: si indossano perche' hai fatto QUELLA unit.
+     ⚠️ Gli NPC non li sorteggiano (npcLookFor): restano dei ragazzi, e le
+     liste sorteggiate non cambiano lunghezza, quindi nessun passante in
+     citta' cambia vestito per via di queste righe.
+     Nessun modello nuovo: sono i costruttori di giacche, cuffie, collane e
+     borse che c'erano gia', con parametri diversi. */
+  { id:"softshell",en:"Hiking jacket",  col:"#2f6f73", open:false, th:0.012, spec:0.30, zip:true, req:{ quest:"u3_3" }, y3:true },
+  { id:"labcoat",  en:"Doctor's coat",  col:"#eceeed", open:true,  th:0.010, buttons:3, req:{ quest:"u3_5" }, y3:true },
 ];
 function lookCoat(id){ return LOOK_COATS.find(c=>c.id===id)||null; }
 const _coatM={};
@@ -62689,7 +62799,9 @@ function gemTake(g,it,discovered){
      costo del prossimo capo, gemCheckFits). Cambia solo il tetto: prima
      Stars.award partiva solo se r.paid, ora parte sempre. */
   const r=Gems.markGot(it.key);
-  try{ Stars.award(null, discovered?3:6, "cristallo"); }catch(e){}
+  /* v312: le ⭐ dei cristalli hanno un tetto giornaliero (STAR_RULES.gemDailyCap),
+     i cristalli no: oltre il tetto la scheda lo dice, e il cristallo conta lo stesso */
+  let stelle=-1; try{ stelle=Stars.awardGem(discovered); }catch(e){}
   try{ SFX.gemChime(); }catch(e){}
   /* ⚠️ Sul lessico si legge SOLO la parola inglese: gemSpeak(it.full)
      direbbe "sofa, divano" con la voce inglese sopra una parola
@@ -62705,7 +62817,9 @@ function gemTake(g,it,discovered){
                +_escHtml(nf.it)+' \u2014 a <b>\u{1F48E} '+nf.cost+'</b> (te ne mancano '
                +(nf.cost-r.tot)+')</div>'
              : '<div class="gem-note">Hai sbloccato <b>tutto il guardaroba</b>. '
-               +'Lo trovi nel Diario, scheda <b>Teca</b>.</div>'),
+               +'Lo trovi nel Diario, scheda <b>Teca</b>.</div>')
+        +(stelle===0 ? '<div class="gem-note">\u2B50 Per oggi i cristalli non danno pi\u00f9 stelle: '
+               +'il cristallo per\u00f2 conta lo stesso \u{1F48E}. Le stelle tornano domani.</div>' : ''),
     buttons:[{ label:"Next", cls:"primary", act:()=>{} }]
   });
   gemCheckFits(r.tot);
@@ -63290,11 +63404,11 @@ function npcLookFor(id,rig,opt){
     if(p100("t")<35) L.cut=pick(rig==="f" ? ["ponytail","short","bun"] : ["buzz","curly","buzz"],"tw");
     return L;                                    // niente giacca, cappello, occhiali, sciarpa
   }
-  if(p100("c")<38){ L.coat=pick(LOOK_COATS,"cw").id; L.coatc=col("cc"); }
+  if(p100("c")<38){ L.coat=pick(LOOK_COATS.filter(c=>!c.y3),"cw").id; L.coatc=col("cc"); }   // v312: i premi dell'Anno 3 sono dei ragazzi
   /* i tagli: al ragazzo soprattutto rasati e ricci, code e chignon piu' rari */
   if(p100("t")<35) L.cut=pick(rig==="f" ? ["short","ponytail","bun","curly","long"]
                                         : ["buzz","curly","buzz","curly","long","ponytail"],"tw");
-  const acc=slot=>LOOK_ACC.filter(a=>a.slot===slot && !(opt.counter && a.id==="headphones"));
+  const acc=slot=>LOOK_ACC.filter(a=>a.slot===slot && !a.y3 && !(opt.counter && a.id==="headphones"));
   if(p100("h")<40){ L.hat=pick(acc("head"),"hw").id; L.hatc=col("hc"); }
   if(p100("f")<28){ L.face=pick(acc("face"),"fw").id; L.facec=col("fc"); }
   if(p100("n")<24){ L.neck=pick(acc("neck"),"nw").id; L.neckc=col("nc"); }
