@@ -424,6 +424,22 @@
   .wt-feedback{margin-top:10px;font-size:13px;font-weight:700;min-height:18px;}
   .wt-feedback.ok{color:#2e7d46;}
   .wt-feedback.bad{color:var(--signal);}
+  /* v310: il 💡 Hint compare dopo qualche errore e pulsa piano per farsi trovare */
+  #qm-card .qm-btn.wt-hint{background:#fff3c4;color:#6b4e00;border:1px solid #e8b04b;animation:wtHint 1.6s ease-in-out 3;}
+  @keyframes wtHint{0%,100%{box-shadow:0 0 0 0 rgba(232,176,75,0);}50%{box-shadow:0 0 0 6px rgba(232,176,75,.45);}}
+  .wt-slot.wt-hinted{outline:2px dashed #e8b04b;outline-offset:2px;}
+  /* v310: PROMEMORIA DELLA CONSEGNA (vedi QuestNudge) */
+  #quest-hud.nudge{animation:qhNudge 1.4s ease-in-out 3;}
+  @keyframes qhNudge{0%,100%{box-shadow:0 6px 18px rgba(20,30,40,.2);}50%{box-shadow:0 0 0 4px rgba(232,176,75,.85),0 6px 18px rgba(20,30,40,.2);}}
+  #quest-nudge{left:50%;top:70px;transform:translateX(-50%) translateY(-6px);max-width:min(560px,calc(100vw - 32px));
+    background:rgba(29,42,50,.92);color:#fff;border-radius:999px;padding:8px 16px;font-size:14px;font-weight:700;
+    line-height:1.3;text-align:center;opacity:0;transition:opacity .4s,transform .4s;box-shadow:0 6px 18px rgba(0,0,0,.25);
+    pointer-events:none;cursor:pointer;}
+  #quest-nudge.show{opacity:1;transform:translateX(-50%);pointer-events:auto;animation:qnBlink 1.4s ease-in-out 3;}
+  #quest-nudge b{color:var(--sun);}
+  #quest-nudge .qn-ey{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--sun);margin-right:6px;}
+  @keyframes qnBlink{0%,100%{opacity:1;}50%{opacity:.55;}}
+  @media (prefers-reduced-motion:reduce){#quest-nudge.show,#quest-hud.nudge,#qm-card .qm-btn.wt-hint{animation:none;}}
   #qbtn{position:fixed;z-index:15;top:14px;right:14px;background:rgba(251,247,236,.94);border:none;border-radius:12px;
     padding:8px 12px;font:inherit;font-weight:800;font-size:12px;color:var(--ink);cursor:pointer;
     box-shadow:0 4px 14px rgba(20,30,40,.18);}
@@ -748,6 +764,7 @@
   <div class="qh-top"><span id="qh-icon">📋</span><b id="qh-strand">…</b><span id="qh-prog" class="qh-prog">1/6</span><button id="qh-help" class="qh-help" type="button" title="Stuck? Ask Miss Grace for a lesson" style="display:none">🏫 Help</button></div>
   <div id="qh-obj">…</div>
 </div>
+<div id="quest-nudge" class="hud" title="Tap to listen"></div>
 <div id="quest-modal"><div id="qm-card"></div></div>
 <div id="quest-compass" class="hud">
   <div class="qc-arrow" id="qc-arrow">&#x2B06;&#xFE0F;</div>
@@ -18900,6 +18917,16 @@ function tilesEquivalent(words,answer,alts){
   if(answer && answer.length && a===tilesCanon(answer.join(" "))) return true;
   return (alts||[]).some(x=>tilesCanon(Array.isArray(x)?x.join(" "):x)===a);
 }
+/* v310: dopo quanti controlli sbagliati compare il 💡 Hint delle tessere */
+const WT_HINT_AFTER=3;
+const WT_FAIL_TTL=20*60*1000;           // gli errori su una frase valgono per 20 minuti
+const _wtFails=Object.create(null);
+/* v310: i suggerimenti usati nello step di quest in corso (chiave unit:step).
+   Li legge Quest.complete per dare meno stelle (Stars.awardStep). */
+const QuestHints={ key:"", n:0,
+  _k(){ try{ return (Quest.unit && Quest.step) ? (Quest.unit.id+":"+Quest.step.id) : ""; }catch(e){ return ""; } },
+  use(){ const k=this._k(); if(!k) return; if(k!==this.key){ this.key=k; this.n=0; } this.n++; },
+  take(k){ const n=(k && k===this.key)?this.n:0; if(k===this.key){ this.key=""; this.n=0; } return n; } };
 const WordTiles=(function(){
   function shuf(a){ a=a.slice(); for(let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0;
     const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
@@ -18937,6 +18964,13 @@ const WordTiles=(function(){
     const built=[]; const usedIdx=new Set();
     let gapAt=-1;                       /* buco segnalato dall'ultimo controllo */
     let dragI=-1, mosso=false, sx=0, sy=0;
+    /* v310: controlli sbagliati, per il 💡 Hint. Si ricordano per FRASE
+       (non per finestra): qualche quest riapre il dialogo dopo un errore, e
+       con un contatore locale il suggerimento non arriverebbe mai. */
+    const fKey=answer.join(" ");
+    const fMem=_wtFails[fKey];
+    let fails=(fMem && Date.now()-fMem.t<WT_FAIL_TTL)?fMem.n:0;
+    const hinted=new Set();             /* v310: tessere messe dal suggerimento */
     const slots=document.createElement("div"); slots.className="wt-slots";
     const bank=document.createElement("div"); bank.className="wt-bank";
     const feedback=document.createElement("div"); feedback.className="wt-feedback";
@@ -18945,7 +18979,8 @@ const WordTiles=(function(){
     function slotEls(){ return Array.prototype.slice.call(slots.querySelectorAll(".wt-slot")); }
     function mkGap(){ const g=document.createElement("span"); g.className="wt-gap"; return g; }
     function mkSlot(pi,k){
-      const sEl=document.createElement("button"); sEl.type="button"; sEl.className="wt-slot";
+      const sEl=document.createElement("button"); sEl.type="button";
+      sEl.className="wt-slot"+(hinted.has(pi)?" wt-hinted":"");
       sEl.textContent=pool[pi];
       /* il tap toglie la tessera; il trascinamento la sposta. Li distingue
          `mosso`, che si azzera a ogni pointerdown: dopo un trascinamento
@@ -19030,6 +19065,8 @@ const WordTiles=(function(){
       if(res.ok && altOk) msg+="  "+(yrEnglish()?"Also correct: ":"Va bene anche: ")+"\u00ab"+answer.join(" ")+"\u00bb";
       gapAt=-1;
       if(!res.ok){
+        fails++; _wtFails[fKey]={ n:fails, t:Date.now() };
+        if(fails>=WT_HINT_AFTER && answer.length && !cfg.noHint) hintBtn.style.display="";
         const g=findGap(words,answer);
         /* il messaggio della unit (i suggerimenti dopo due tentativi, la
            riga della lista della spesa...) non si butta: si accoda. */
@@ -19044,10 +19081,46 @@ const WordTiles=(function(){
          un secondo clic rilanciava onSuccess sullo stato GIA' avanzato — allo
          sportello dimissioni dell'ospedale il «should» appena accettato veniva
          rivalutato come «shouldn't» e il paziente tornava indietro peggiorato. */
-      if(res.ok){ checkBtn.disabled=true; clearBtn.disabled=true; }
+      if(res.ok){ checkBtn.disabled=true; clearBtn.disabled=true; hintBtn.disabled=true; delete _wtFails[fKey]; }
       if(res.ok && cfg.onSuccess) setTimeout(()=>cfg.onSuccess(), 450);
     };
-    btnRow.appendChild(clearBtn); btnRow.appendChild(checkBtn);
+    /* v310 — IL SUGGERIMENTO (Giacomo, 15 ott: «se devono sistemare delle
+       tessere, dopo che sbagliano varie volte, metti un suggerimento, dando
+       ovviamente meno punti, ma cosi' non stanno stuck»).
+       Dopo WT_HINT_AFTER controlli sbagliati compare «💡 Hint». Ogni tocco
+       tiene la parte GIA' GIUSTA della riga (dall'inizio), rimette nel banco
+       il resto e aggiunge LA PAROLA GIUSTA SUCCESSIVA, evidenziata: una per
+       volta, cosi' il resto lo costruisce ancora lui. Il ✔ resta da premere.
+       ⚠️ Costa stelle: QuestHints conta i tocchi sullo step in corso e
+       Quest.complete li passa a Stars.awardStep. Fuori dalle quest (ambient,
+       caffe') il costo c'e' gia': dopo tre errori il chiamante paga la
+       tariffa «retry». */
+    const hintBtn=document.createElement("button"); hintBtn.type="button"; hintBtn.className="qm-btn wt-hint";
+    hintBtn.textContent="\u{1F4A1} Hint"; hintBtn.style.display="none";
+    hintBtn.onclick=()=>{
+      let k=0;
+      while(k<built.length && k<answer.length && pool[built[k]]===answer[k]) k++;
+      while(built.length>k) usedIdx.delete(built.pop());
+      gapAt=-1;
+      const en=yrEnglish();
+      if(k>=answer.length){ renderSlots(); renderBank();
+        feedback.textContent=en?"\u{1F4A1} All the words are in place: press \u2714!"
+                               :"\u{1F4A1} Le parole sono tutte al loro posto: premi \u2714!";
+        feedback.className="wt-feedback ok"; return; }
+      const w=answer[k]; let pi=-1;
+      for(let j=0;j<pool.length;j++) if(!usedIdx.has(j) && pool[j]===w){ pi=j; break; }
+      if(pi<0) return;
+      built.push(pi); usedIdx.add(pi); hinted.add(pi);
+      try{ QuestHints.use(); }catch(e){}
+      renderSlots(); renderBank();
+      const fine=(built.length===answer.length);
+      feedback.textContent=en
+        ? "\u{1F4A1} Hint: the next word is \u00ab"+w+"\u00bb."+(fine?" Now press \u2714!":"")+" (A hint costs some \u2b50)"
+        : "\u{1F4A1} Aiuto: la prossima parola \u00e8 \u00ab"+w+"\u00bb."+(fine?" Ora premi \u2714!":"")+" (Con l'aiuto prendi meno \u2b50)";
+      feedback.className="wt-feedback";
+    };
+    if(fails>=WT_HINT_AFTER && answer.length && !cfg.noHint) hintBtn.style.display="";
+    btnRow.appendChild(clearBtn); btnRow.appendChild(hintBtn); btnRow.appendChild(checkBtn);
     renderSlots(); renderBank();
   }
   return {render, findGap};
@@ -19513,6 +19586,7 @@ function submitProduzione(cfg){
    ===================================================================== */
 const STAR_RULES={
   step:20,            // step quest (lex, gram, func, listen, write)
+  hintCost:4,         // v310: ogni 💡 Hint delle tessere toglie 4 ⭐ allo step (mai sotto la meta')
   final:40,           // step "final" — doppio  → unit completa = 140
   fragment:30,        // frammento preso con la frase giusta al PRIMO colpo
   fragmentRetry:15,   // dopo un errore: meta', mai zero (stessa logica degli ambient)
@@ -19599,8 +19673,14 @@ const Stars=(function(){
     if(key){ if(s.given[key]) return 0; s.given[key]=amount; }
     s.tot+=amount; _save(s); flash(amount, why); return amount;
   }
-  function awardStep(unitId, stepId, isFinal){
-    return award("s:"+unitId+":"+stepId, isFinal?STAR_RULES.final:STAR_RULES.step, null);
+  /* v310: `hints` = tocchi su 💡 Hint nelle tessere di questo step. Ognuno
+     costa STAR_RULES.hintCost, ma lo step vale sempre almeno la meta':
+     l'aiuto serve a non restare bloccati, non e' una punizione. */
+  function awardStep(unitId, stepId, isFinal, hints){
+    const base=isFinal?STAR_RULES.final:STAR_RULES.step;
+    const h=Math.max(0, hints|0);
+    const val=h ? Math.max(Math.round(base/2), base-h*STAR_RULES.hintCost) : base;
+    return award("s:"+unitId+":"+stepId, val, h?("con "+h+" aiut"+(h===1?"o":"i")+" \u{1F4A1}"):null);
   }
   function awardAmbient(firstTry){
     const s=ledger(), t=_today();
@@ -20957,6 +21037,7 @@ function questHudSet(strand,objHtml,i,total){
   qhud.icon.textContent=m.ic; qhud.strand.textContent=strandLabel(strand);
   qhud.prog.textContent=(i+1)+"/"+total; qhud.obj.innerHTML=hudObjHtml(objHtml);
   try{ lessonHudUpdate(); }catch(e){}
+  try{ QuestNudge.reset(); }catch(e){}       // v310: la consegna e' cambiata = c'e' movimento
 }
 /* v252 — ridisegna la riga dell'HUD con la regola d'anno ATTUALE. Serve
    quando il docente cambia simulazione (1a/2a/3a): prima l'HUD restava con
@@ -20973,6 +21054,73 @@ function questHudRefresh(){
   return true;
 }
 
+/* =====================================================================
+   v310 — PROMEMORIA DELLA CONSEGNA (Giacomo, 15 ott: «alcuni alunni fanno
+   fatica a capire cosa devono fare nelle quest, anche dopo che e' iniziata
+   e hanno svolto una delle attivita'... qualcosa che lampeggia, non troppo
+   invasivo, che gli ricordi cosa devono fare in inglese»).
+   L'HUD in alto a sinistra c'era gia', ma chi e' perso non lo guarda.
+   Se per QN_FIRST la consegna non cambia (nessun progresso) e non c'e' una
+   finestra aperta, compare in alto al centro una pillola con la consegna IN
+   INGLESE che lampeggia piano tre volte, e l'HUD si illumina: poi sparisce
+   da sola. Se resta fermo, si ripete ogni QN_AGAIN. Vale ovunque: dentro
+   gli edifici e nelle quest all'aperto. Toccandola si sente la frase.
+   ⚠️ Nessun nuovo testo da scrivere: e' la stessa riga dell'HUD (qhud.last),
+   versione inglese, senza bottoni e senza la riga italiana. */
+const QN_FIRST=30000, QN_AGAIN=60000, QN_SHOW=8000;
+const QuestNudge=(function(){
+  const el=document.getElementById("quest-nudge");
+  let last=Date.now(), volte=0, dal=0, testoOra="";
+  function hide(){
+    if(el) el.classList.remove("show");
+    try{ qhud.box.classList.remove("nudge"); }catch(e){}
+    dal=0;
+  }
+  function reset(){ last=Date.now(); volte=0; hide(); }
+  function testo(){
+    const L=qhud.last; if(!L) return "";
+    const o=L[1];
+    const en=(o && typeof o==="object") ? (o.en||"") : String(o||"");
+    const d=document.createElement("div"); d.innerHTML=en;
+    Array.prototype.slice.call(d.querySelectorAll("button,.qh-it")).forEach(function(b){ b.remove(); });
+    return (d.textContent||"").replace(/\s+/g," ").trim();
+  }
+  function attiva(){
+    try{
+      if(!Quest.unit || !Quest.step) return false;
+      if(Quest.i<0 || Quest.i>=Quest.unit.steps.length) return false;   // unit finita: niente da ricordare
+      if(qhud.box.style.display==="none") return false;
+    }catch(e){ return false; }
+    return true;
+  }
+  function occupato(){
+    if(document.hidden) return true;
+    if(typeof started!=="undefined" && !started) return true;
+    const qm=document.getElementById("quest-modal");
+    if(qm && qm.classList.contains("show")) return true;    // dialogo o esercizio aperto: sta lavorando
+    try{ if(LESSON.on) return true; }catch(e){}
+    return false;
+  }
+  function show(){
+    const t=testo(); if(!t || !el){ last=Date.now(); return; }
+    testoOra=t;
+    el.innerHTML='<span class="qn-ey">\u{1F449} Your task</span>'+_escHtml(t)+' <span style="opacity:.75">\u{1F50A}</span>';
+    el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
+    try{ qhud.box.classList.remove("nudge"); void qhud.box.offsetWidth; qhud.box.classList.add("nudge"); }catch(e){}
+    dal=Date.now(); volte++;
+  }
+  function tick(){
+    const ora=Date.now();
+    if(!attiva() || occupato()){ last=ora; if(dal) hide(); return; }
+    if(dal){ if(ora-dal>QN_SHOW){ hide(); last=ora; } return; }
+    if(ora-last >= (volte?QN_AGAIN:QN_FIRST)) show();
+  }
+  if(el) el.onclick=function(e){ e.stopPropagation();
+    try{ if(testoOra) TTS.say(testoOra); }catch(err){} };
+  setInterval(function(){ try{ tick(); }catch(e){} }, 1000);
+  return { reset:reset, hide:hide, show:show, testo:testo };
+})();
+
 /* ---- utilità random (pool + shuffle, "livello 1") ---- */
 function shuffle(a){ a=a.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
 function pick(a,n){ return shuffle(a).slice(0, Math.max(0, Math.min(n, a.length))); }
@@ -20981,7 +21129,7 @@ function pick(a,n){ return shuffle(a).slice(0, Math.max(0, Math.min(n, a.length)
 const Quest={
   unit:null, i:-1, step:null, state:null, total:0, disposables:[],
   reg(fn){ this.disposables.push(fn); },
-  questInteract(o){ addInteract(o); this.reg(()=>removeInteract(o)); return o; },
+  questInteract(o){ o.__quest=true; addInteract(o); this.reg(()=>removeInteract(o)); return o; },
   dispose(){ while(this.disposables.length){ try{ this.disposables.pop()(); }catch(e){} }
     nearInter=null; promptEl.classList.remove("show"); },
   start(unit){ this.dispose(); this.unit=unit; this.total=unit.steps.length;
@@ -21028,7 +21176,8 @@ const Quest={
       buttons:[{ label: mech?"Let's go!":"OK", cls:"primary", act:()=>{ (mech||mechStub)(s); } }] });
   },
   complete(msg,score){ if(this.unit && this.step){ Progress.completeStep(this.unit.id, this.step.id, score!=null?score:100, this.i);
-      Stars.awardStep(this.unit.id, this.step.id, this.step.strand==="final");
+      Stars.awardStep(this.unit.id, this.step.id, this.step.strand==="final",
+        QuestHints.take(this.unit.id+":"+this.step.id));
       /* traccia per il bentornato: l'ultima unit su cui ha davvero lavorato.
          Sta QUI e non in Quest.start perche' aprire una porta non e' lavorare
          \u2014 conta lo step portato a termine. */
@@ -31831,6 +31980,32 @@ function buildSportsZone(cx,cz){
       } else if(Quest.unit===UNIT7){
         toast("\u{1F4CB} "+((Quest.step&&Quest.step.introObj)||"Continua la quest!"));
       } else { tryStartQuest(UNIT7); } } });
+  /* v310 — IL CAMPO SI AVVIA ANCHE DAI BORDI (Giacomo, 15 ott: «quando si
+     avvicinano al campo, quindi sono ai bordi, premendo E inizino la quest»,
+     e poi «anche sportsfield non puoi cliccarci»). Il punto d'interazione
+     non e' fisso: pos() e' il punto del PERIMETRO piu' vicino al giocatore,
+     quindi la E compare lungo tutto il bordo (dentro o fuori di qualche
+     metro). Il manto `pitch` e' il suo mesh: un clic sul campo porta al
+     bordo e avvia la quest.
+     ⚠️ Attivo SOLO finche' la quest non e' partita, la unit e' aperta e non
+     c'e' un'altra quest in corso: durante la quest il campo e' pieno di
+     attrezzi da cliccare e la E serve a loro, e un clic sul prato deve
+     tornare a voler dire «cammina fin li'». prio 0.5: la bacheca, Coach Dan
+     e gli atleti vincono sempre sul bordo. */
+  const PF_HW=15, PF_HD=10;            // meta' del manto (PFW=30, PFH=20)
+  const pfMesh=scene.getMeshByName("pitch");
+  const u7EdgeOn=function(){ try{ return !Quest.unit && !Progress.get(UNIT7.id).done && Gate.unlocked(UNIT7.id); }
+                             catch(e){ return false; } };
+  const pfEdge=addInteract({ id:"pitch_edge", area:"town", radius:3.2, prio:0.5, label:"Sports Field",
+    meshes:pfMesh?[pfMesh]:[],
+    pos:()=>{ const px=player.position.x-cx, pz=player.position.z-cz;
+      let x=Math.max(-PF_HW,Math.min(PF_HW,px)), z=Math.max(-PF_HD,Math.min(PF_HD,pz));
+      if(x===px && z===pz){             // dentro il campo: il bordo piu' vicino
+        if(PF_HW-Math.abs(px) < PF_HD-Math.abs(pz)) x=(px<0?-PF_HW:PF_HW); else z=(pz<0?-PF_HD:PF_HD); }
+      return new BABYLON.Vector3(cx+x, 0, cz+z); },
+    prompt:()=>"\u26bd <b>Sports Field</b> \u00b7 press <b>E</b> to start",
+    interact:()=>{ if(u7EdgeOn()) tryStartQuest(UNIT7); } });
+  Object.defineProperty(pfEdge,"enabled",{ configurable:true, get:u7EdgeOn, set:function(){} });
   setTimeout(buildSportNPCs,0);
 }
 function buildSportNPCs(){
@@ -43513,6 +43688,7 @@ function cycleInter(dir){
   interManual=true;                     // v221: scelta dello studente, non la si scavalca
   _promptHtml="";                       // forza il ridisegno del prompt
 }
+function _tocco(){ try{ return !!(window.matchMedia && window.matchMedia("(pointer:coarse)").matches); }catch(e){ return false; } }
 function updateProximity(){
   const eye=1.45;
   const list=[];
@@ -43563,6 +43739,11 @@ function updateProximity(){
   interSelId=interKeyOf(sel); nearInter=sel; interHilite(sel);
   const base=typeof sel.prompt==="function"?sel.prompt():sel.prompt;
   let html=base||"";
+  /* v310: sugli oggetti delle quest (e sul bordo del campo) si ricorda che
+     basta anche un clic / un tocco sull'oggetto. Solo dove c'e' davvero un
+     mesh cliccabile. */
+  if(html && (sel.__quest || sel.id==="pitch_edge") && sel.meshes && sel.meshes.length && /\bE\b/.test(html))
+    html+=' <span style="opacity:.75;font-size:.9em">\u00b7 or '+(_tocco()?"tap":"click")+' it</span>';
   if(list.length>1){
     html+='<span class="isel"><button type="button" class="iarr" data-dir="-1">\u25c0</button>'
        +  '<b>'+interLabel(sel)+'</b>'
@@ -43939,8 +44120,14 @@ scene.onPointerObservable.add(pi=>{
   const pick=scene.pick(scene.pointerX,scene.pointerY); if(!pick.hit||!pick.pickedPoint) return;
   let cur=pick.pickedMesh, inter=null; while(cur){ if(cur.__inter){ inter=cur.__inter; break; } cur=cur.parent; }
   if(inter&&inter.enabled&&inter.area===area){ const w=typeof inter.pos==="function"?inter.pos():inter.pos;
-    moveTarget=w.clone(); pendingInteract=inter; tapMark.setEnabled(false);
     interSelId=interKeyOf(inter); _promptHtml="";       // il tap sceglie ANCHE il bersaglio
+    tapMark.setEnabled(false);
+    /* v310 (Giacomo: «per identificare l'oggetto si puo' anche cliccarci
+       sopra»): se l'oggetto e' GIA' a portata della E, il clic vale come la
+       E, subito, senza camminare. */
+    if(Math.hypot(player.position.x-w.x, player.position.z-w.z) < inter.radius){
+      moveTarget=null; pendingInteract=null; inter.interact(); return; }
+    moveTarget=w.clone(); pendingInteract=inter;
     return; }
   const p=pick.pickedPoint; moveTarget=new BABYLON.Vector3(p.x,0,p.z); pendingInteract=null;
   tapMark.position.set(p.x,0.06,p.z); tapMark.setEnabled(true);
@@ -44068,7 +44255,14 @@ scene.registerBeforeRender(()=>{
       // ostacoli, come W) ma ci si ferma nello STESSO frame in cui quello
       // scivolamento smette di avvicinare davvero al bersaglio: niente inseguimento
       // del bordo di un ostacolo per piu' di un frame senza progresso reale.
-      if(nd>=d-0.001){ moveTarget=null; tapMark.setEnabled(false); tgtMove=false; } } }
+      if(nd>=d-0.001){ moveTarget=null; tapMark.setEnabled(false); tgtMove=false;
+        /* v310: fermati da un ostacolo (il bersaglio sta dentro un mobile, un
+           bancone, una rastrelliera)? Se l'oggetto cliccato e' comunque a
+           portata della E, il clic vale lo stesso. Prima si restava li' e
+           non succedeva niente: «cliccarci sopra non funziona». */
+        if(pendingInteract){ const pp=pendingInteract; pendingInteract=null;
+          try{ const w=typeof pp.pos==="function"?pp.pos():pp.pos;
+            if(pp.enabled && pp.area===area && Math.hypot(player.position.x-w.x, player.position.z-w.z)<pp.radius) pp.interact(); }catch(e){} } } } }
   /* 💃 chi balla e poi cammina smette di ballare (vedi PDANCE) */
   if(PDANCE.on && (kbMove||moveTarget)) danceStop();
   playAvatarAnim((kbMove||moveTarget) ? (running&&(kbMove||tgtMove)?"Run":"Walk") : (PDANCE.on?PDANCE.anim:IDLE_ANIM));
@@ -47028,7 +47222,32 @@ function ccPresRifletti(){
       +" \u00b7 presenza "+((v&&v.pres===true)?"accesa":"spenta")
       +" \u00b7 "+((v&&v.talk===false)?"zitti":"possono parlarsi")
       +" \u00b7 "+nn+" targhette</small>");
+    if(v && v.pres===true) ccNomiAggiorna(c, v.nomi||{});
   }
+}
+/* v310 — LE TARGHETTE SI RIALLINEANO DA SOLE. La tabella dei nomi si
+   scriveva SOLO spuntando «Presenza»: chi l'aveva accesa prima che esistesse
+   la tabella, o aveva aggiunto alunni dopo, restava con i compagni senza
+   nome — e nelle chiacchiere compariva «un compagno» (Giacomo, 15 ott).
+   Ora, ogni volta che il pannello mostra una classe con la presenza accesa,
+   si ricostruisce la tabella dall'anagrafica e, SE E' DIVERSA, si riscrive.
+   Una lettura dell'anagrafica per apertura del pannello: costa poco ed e'
+   il docente che la fa, non i venticinque Chromebook. */
+let _ccNomiFatti={};
+function ccNomiAggiorna(c, attuale){
+  if(!Student.teacher || !RE_CLASSE.test(c) || _ccNomiFatti[c]) return;
+  _ccNomiFatti[c]=1;
+  tabellaNomi(c).then(function(T){
+    if(!T.risposto || !T.righe.length){ delete _ccNomiFatti[c]; return; }
+    const a=attuale||{}, ka=Object.keys(a), kt=Object.keys(T.tab);
+    const uguale=(ka.length===kt.length) && kt.every(function(k){ return a[k]===T.tab[k]; });
+    if(uguale) return;
+    return Cloud.scrivi(ET_CLASSI+c+"/nomi", T.tab).then(function(){
+      ccMsg("\u2705 <b>"+esc(c)+"</b>: targhette aggiornate ("+T.righe.length+" nomi).<br><small style=\"opacity:.8\">"
+        +T.righe.map(function(x){ return esc(x.nome); }).join(" \u00b7 ")+"</small>");
+      try{ if(_ccVal && _ccVal[c]) _ccVal[c].nomi=T.tab; }catch(e){}
+    });
+  }).catch(function(){ delete _ccNomiFatti[c]; });
 }
 function ccParlato(on){
   const ci=document.getElementById("cc-cls");
@@ -63902,7 +64121,7 @@ const Presenza=(function(){
     try{ const qm=document.getElementById("quest-modal");
       occupata=!!(qm && qm.classList.contains("show")); }catch(err){}
     if(occupata){
-      toast("\u{1F4AC} "+(nome?(nome+": "):"")+en);
+      toast("\u{1F4AC} "+(nome||"A classmate")+": "+en);
       try{ TTS.say(en); }catch(err){}
       return;
     }
@@ -64794,7 +65013,11 @@ const Presenza=(function(){
    politica dell'italiano per anno (in prima si vede, dal secondo no) e il
    modo di navigare sono gia' quelli che i ragazzi conoscono — e che non c'e'
    un secondo pezzo di interfaccia da mantenere allineato al primo. */
-function _talkNome(key){ const n=Presenza.nomeDi(key); return n||"un compagno"; }
+/* v310 (Giacomo, 15 ott: «quando un compagno scrive ad un altro appare la
+   scritta "un compagno" in italiano, e non il nome»). Il nome viene dalla
+   tabella delle targhette (ccPresenza / ccNomiAggiorna); chi non c'e' resta
+   senza nome, ma la finestra e' tutta in inglese e cosi' anche il ripiego. */
+function _talkNome(key){ const n=Presenza.nomeDi(key); return n||"A classmate"; }
 /* ⚠️ VOCE DEL COMPAGNO (Giacomo, 3 set: «gli alunni hanno tutti voce
    femminile sia su tablet che computer»). Qui non e' un problema di tablet:
    queste finestre passano `name` e non `npc`, e DialogueBox legge il genere
