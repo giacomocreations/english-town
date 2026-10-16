@@ -16,7 +16,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="QuestTown">
-<script>window.ET_BUILD="247";</script>
+<script>window.ET_BUILD="248";</script>
 <script>
 /* =====================================================================
    APP INSTALLABILE (v217-218) — gira PRIMA di tutto il resto.
@@ -61669,11 +61669,24 @@ function dressFace(meshes,face,holder){
    il colore del capo.
    ===================================================================== */
 const LOOK_COATS=[
-  { id:"denim",    en:"Denim jacket",   col:"#4a6a92", open:true,  th:0.011, req:{ gems:20 } },
-  { id:"leather",  en:"Leather jacket", col:"#221e1d", open:true,  th:0.011, spec:0.45, zip:true, req:{ stars:600 } },
-  { id:"blazer",   en:"Blazer",         col:"#27314f", open:true,  th:0.009, buttons:1, req:{ quest:"u8", stars:800 } },
+  /* v313 (Giacomo, 16 ott: «cambiando denim jacket, blazer e cosi' via
+     rimangono sempre gli stessi»). Denim, pelle e blazer erano lo STESSO
+     guscio aperto con un colore diverso: bastava aver scelto un colore
+     (es. Blue) per vederli identici. Ora ognuno ha le sue rifiniture, come
+     smoking e giacca da trekking:
+       denim   — orlo e polsini piu' scuri, patte sul petto, bottoni di rame;
+       pelle   — revers larghi lucidi, cerniera d'argento sul lembo, orlo;
+       blazer  — revers della stessa stoffa ma piu' chiari e lucidi (sul blu
+                 notte un revers piu' scuro sparisce), due bottoni in vita,
+                 patte sui fianchi;
+       bomber  — collo, polsini e orlo a coste di un altro colore. */
+  { id:"denim",    en:"Denim jacket",   col:"#4a6a92", open:true,  th:0.011, band:true, tmul:0.72, tspec:0.06, buttons:4, btnY:[-0.24,-0.33,-0.42,-0.51], btn:"#b0702e",
+    flaps:[[-0.082,-0.272],[0.082,-0.272]], req:{ gems:20 } },
+  { id:"leather",  en:"Leather jacket", col:"#221e1d", open:true,  th:0.011, spec:0.45, zip:true, trim:"lapel", lapw:0.042, band:true, tmul:2.1, tspec:0.75, edgezip:true, req:{ stars:600 } },
+  { id:"blazer",   en:"Blazer",         col:"#27314f", open:true,  th:0.009, buttons:2, btnY:[-0.37,-0.44], trim:"lapel", lapw:0.036, tmul:1.8, tspec:0.40,
+    flaps:[[-0.075,-0.50],[0.075,-0.50]], req:{ quest:"u8", stars:800 } },
   { id:"raincoat", en:"Raincoat",       col:"#e0b62a", open:false, th:0.013, spec:0.35, buttons:4, req:{ quest:"u2_3", stars:500 } },
-  { id:"bomber",   en:"Bomber jacket",  col:"#4b5a3b", open:false, th:0.016, zip:true, req:{ stars:1000 } },
+  { id:"bomber",   en:"Bomber jacket",  col:"#4b5a3b", open:false, th:0.016, zip:true, band:true, collar:true, req:{ stars:1000 } },
   { id:"puffer",   en:"Puffer jacket",  col:"#c4432e", open:false, th:0.02, quilt:true, zip:true, req:{ quest:"u2_3", stars:700 } },
   /* v312 — LOOK_COATS_Y3: I PREMI DELL'ANNO 3 (Giacomo, 15 ott: un ragazzo
      di terza aveva 900 ⭐ dopo pochi giorni). Le terze entrano con l'Anno 1
@@ -61715,19 +61728,28 @@ function _coatMat(C,spec){ const k=C.hex+"|"+(C.metal?1:0)+"|"+(spec||0); if(_co
                     (le giacche tecniche da montagna);
      trim:"lapel" — i revers lucidi lungo la V aperta (lo smoking).
    Ritorna 1 se il triangolo (tre punti nel sistema della testa) e' rifinitura. */
+/* v313: it.band — fascia in fondo e polsini (bomber a coste, denim, pelle):
+   l'orlo e' a 4 cm dal fondo della giacca (M.__hemY), il polsino e' il pezzo
+   di avambraccio a meno di 6,5 cm dal polso (M.__wr), misurati in dressCoat */
 function _coatTrim(it,M,a,b,c,bn,gap){
-  if(!it.trim) return 0;
   const x=(a.x+b.x+c.x)/3, y=(a.y+b.y+c.y)/3, z=(a.z+b.z+c.z)/3;
+  if(it.band){ if(!/Arm|Shoulder/.test(bn) && y<(M.__hemY||-9)+0.040) return 1;
+    if(/LowerArm/.test(bn) && (M.__wr||[]).some(w=>Math.hypot(x-w.x,y-w.y,z-w.z)<0.065)) return 1; }
+  if(!it.trim) return 0;
   if(it.trim==="yoke") return (y>-0.235 || /LowerArm/.test(bn)) ? 1 : 0;
   if(it.trim==="lapel"){ if(it.shawl && bn==="Neck") return 1;          // il collo a scialle
     if(z<=M.nz+0.01 || y<-0.33 || y>-0.03) return 0;
-    const sg=x<0?-1:1; return (sg*x-gap(y))<(it.shawl?0.046:0.030) ? 1 : 0; }
+    const sg=x<0?-1:1; return (sg*x-gap(y))<(it.lapw||(it.shawl?0.046:0.030)) ? 1 : 0; }
   return 0; }
 /* la camicia: bianca anche in ombra (un filo di luce propria), se no sotto
    la giacca diventava grigia */
 function _coatShirtMat(){ const m=_coatMat({ hex:"#f6f6f2", metal:false },0.081);
   m.emissiveColor=new BABYLON.Color3(0.30,0.30,0.29); return m; }
 function _coatTrimMat(it,C){
+  /* v313: tmul = rifiniture della stessa stoffa, piu' scure o piu' chiare
+     (revers del blazer, orlo e patte del denim, revers lucidi della pelle) */
+  if(it.tmul){ const k=(it.tmul<1 && _hexLum(C.hex)<0.14) ? 1.7 : it.tmul;     // su un colore scuro, piu' scuro non si vede: si schiarisce
+    return _coatMat({ hex:_hexMul(C.hex,k), metal:false },it.tspec||it.spec); }
   if(it.trim==="lapel") return _coatMat({ hex:_hexLum(C.hex)<0.12?"#08080b":_hexMul(C.hex,0.35), metal:false },0.95);   // raso
   const L=_hexLum(C.hex);
   return _coatMat({ hex:L<0.18?"#7d868f":"#262d33", metal:false },0.25); }
@@ -61797,9 +61819,22 @@ function dressCoat(meshes,coatId,colId,holder){
      1 = le rifiniture, vedi _coatTrim) */
   const tri=(A,B,C,bn)=>{ emit(A); emit(B); emit(C); TF.push(_coatTrim(it,M,A.l,B.l,C.l,bn,gap)); };
   const triF=(A,B,C,fl)=>{ emit(A); emit(B); emit(C); TF.push(fl); };          // 2 = camicia
+  /* v313: prima un giro di misure, poi i triangoli: orlo e polsini (it.band)
+     hanno bisogno di sapere dov'e' il fondo della giacca e dove sono i polsi
+     PRIMA di colorare il primo triangolo. Il polso si cerca dall'osso Wrist
+     (non «la parte piu' bassa del braccio»), cosi' vale in qualunque posa di bind. */
+  const WR={};
+  let hemY=9;
   src.forEach(S=>{
-    const L=[], D=[], cv=S.cv, sB=M.s/cv.k, lh=(x,y,z,v)=>{ const h=cv(x,y,z,v); return loc(h.x,h.y,h.z); };
-    for(let v=0;v<S.p.length/3;v++){ L.push(lh(S.p[3*v],S.p[3*v+1],S.p[3*v+2],v)); D.push((S.top?okTop:okB)[dom(S,v)]===true); }
+    const cv=S.cv; S.lh=(x,y,z,v)=>{ const h=cv(x,y,z,v); return loc(h.x,h.y,h.z); };
+    S.L=[]; S.D=[];
+    for(let v=0;v<S.p.length/3;v++){ const l=S.lh(S.p[3*v],S.p[3*v+1],S.p[3*v+2],v), b=dom(S,v), bn=((S.sk.bones[b])||{}).name||"", d=(S.top?okTop:okB)[b]===true;
+      S.L.push(l); S.D.push(d);
+      if(/^Wrist\./.test(bn)){ const w=WR[bn]||(WR[bn]={x:0,y:0,z:0,n:0}); w.x+=l.x; w.y+=l.y; w.z+=l.z; w.n++; }
+      if(d && !/Arm|Shoulder/.test(bn)) hemY=Math.min(hemY,l.y); } });
+  M.__hemY=hemY; M.__wr=Object.keys(WR).map(k=>{ const w=WR[k]; return new V3(w.x/w.n,w.y/w.n,w.z/w.n); });
+  src.forEach(S=>{
+    const L=S.L, D=S.D, cv=S.cv, sB=M.s/cv.k, lh=S.lh;
     const rec=(v,ks)=>{ const k=kf(S.p[3*v],S.p[3*v+1],S.p[3*v+2]), a=NS.get(k), l=Math.hypot(a[0],a[1],a[2])||1;
       const th=it.th*(ks||1)*(it.quilt?(1+0.3*Math.cos(L[v].y*2*Math.PI/0.07)):1)*sB;
       const p=[S.p[3*v]+a[0]/l*th, S.p[3*v+1]+a[1]/l*th, S.p[3*v+2]+a[2]/l*th];
@@ -61855,13 +61890,16 @@ function dressCoat(meshes,coatId,colId,holder){
      vertice di giacca piu' vicino. Pesati sullo scheletro della testa si
      staccavano dal busto di qualche centimetro (visto di profilo): quello
      scheletro ha le ossa del busto in un'altra posa di bind. */
-  if(it.zip||it.buttons){
+  if(it.zip||it.buttons||it.flaps||it.edgezip){
     const sB=M.s/(_toHeadRaw(H,B0).k||1), nv=LP.length;
     /* vertice di giacca sul davanti: il piu' avanti vicino a (x0,y) */
-    const pick=(y,x0,w)=>{ let b=-1; for(let i=0;i<nv;i++){ const l=LP[i]; if(Math.abs(l.x-x0)<w && Math.abs(l.y-y)<w && (b<0||l.z>LP[b].z)) b=i; } return b; };
+    /* v313: solo sul davanti (z > nz): sulla pancia i triangoli sono grandi, e
+       se nella finestra non c'era un vertice davanti si prendeva quello dietro
+       (la patta del blazer finiva sulla schiena) */
+    const pick=(y,x0,w)=>{ let b=-1; for(let i=0;i<nv;i++){ const l=LP[i]; if(l.z>M.nz && Math.abs(l.x-x0)<w && Math.abs(l.y-y)<w && (b<0||l.z>LP[b].z)) b=i; } return b; };
     const at=(i,out)=>{ const n=new V3(N[3*i],N[3*i+1],N[3*i+2]).normalize(); return new V3(P[3*i],P[3*i+1],P[3*i+2]).add(n.scale(out*sB)); };
     let yTop=-9, yBot=9; LP.forEach(l=>{ if(Math.abs(l.x)<(it.open?0.2:0.03) && l.z>M.nz && l.y<-0.12){ yTop=Math.max(yTop,l.y); yBot=Math.min(yBot,l.y); } });
-    const bits=[], met=_accMat(it.zip?"#b9bcc2":"#2a2622",0.6);
+    const bits=[], met=_accMat(it.btn||(it.zip?"#b9bcc2":"#2a2622"),0.6);
     if(it.zip && !it.open){ const pts=[];
       /* sui «dossi»: sul piumino le trapuntature la spezzavano a tratti */
       for(let y=yTop-0.02;y>=yBot+0.01;y-=0.02){ let b=-1; for(let d=-0.035;d<=0.035;d+=0.0175){ const q=pick(y+d,0,0.02); if(q>=0&&(b<0||LP[q].z>LP[b].z)) b=q; }
@@ -61869,9 +61907,42 @@ function dressCoat(meshes,coatId,colId,holder){
       pts.sort((a,b)=>b.y-a.y);
       if(pts.length>1) bits.push(BABYLON.MeshBuilder.CreateTube("coatZip",{path:pts.map(q=>q.p),radius:0.0035*sB,tessellation:6},scene)); }
     const nb=it.buttons||0, ox=it.open?-(gap(-0.30)+0.012):0;     // aperta: i bottoni sul lembo sinistro
-    for(let k=0;k<nb;k++){ const y=(nb===1)?(yTop+yBot)/2:yTop-0.05-k*(yTop-yBot-0.09)/Math.max(1,nb-1), b=pick(y,ox,ox?0.04:0.02);
+    /* v313: btnY = quote scritte a mano (blazer in vita, denim lungo tutto il
+       lembo); sul lembo aperto il bottone segue il bordo della V. Le quote
+       sono misurate sul ragazzo (orlo a -0,636): sulla ragazza la giacca e'
+       piu' corta e si accorciano con lei (vale anche per le patte) */
+    const hy=y=>y*Math.min(1,(M.__hemY||-0.636)/-0.636);
+    for(let k=0;k<nb;k++){ const y=it.btnY?hy(it.btnY[k]):((nb===1)?(yTop+yBot)/2:yTop-0.05-k*(yTop-yBot-0.09)/Math.max(1,nb-1)),
+        x=(it.btnY&&it.open)?-(gap(y)+0.016):ox;
+      let b=pick(y,x,(ox&&!it.btnY)?0.04:0.02);
+      if(b<0 && it.btnY) b=pick(y,x,0.035);       // sulla pancia i triangoli sono grandi: si allarga la ricerca
       if(b<0) continue; const s=BABYLON.MeshBuilder.CreateSphere("coatBtn",{diameter:0.017*sB,segments:6},scene);
       s.position.copyFrom(at(b,0.003)); s.bakeCurrentTransformIntoVertices(); bits.push(s); }
+    /* v313: le patte delle tasche (denim sul petto, blazer sui fianchi): una
+       striscia sottile coricata sul guscio, della stoffa delle rifiniture,
+       col suo bottone se la giacca ha i bottoni di metallo (denim) */
+    (it.flaps||[]).forEach(([fx,fy0])=>{ const fy=hy(fy0); let b=pick(fy,fx,0.02); if(b<0) b=pick(fy,fx,0.035); if(b<0) return;
+      /* ⚠️ nello spazio del busto l'alto NON e' (0,1,0) (il modello e' ruotato)
+         e le normali del guscio possono guardare dentro (e' specchiato): alto
+         e fuori si prendono dal guscio stesso — un vertice 3 cm piu' su, e il
+         vertice dietro alla stessa quota, che sta dentro rispetto alla patta. */
+      const Pv=i=>new V3(P[3*i],P[3*i+1],P[3*i+2]), p0=Pv(b);
+      let bk=-1; for(let i=0;i<nv;i++){ const l=LP[i]; if(Math.abs(l.x-fx)<0.03 && Math.abs(l.y-fy)<0.03 && (bk<0||l.z<LP[bk].z)) bk=i; }
+      let n=new V3(N[3*b],N[3*b+1],N[3*b+2]).normalize(); if(bk>=0 && V3.Dot(n,Pv(bk).subtract(p0))>0) n=n.scale(-1);
+      const b2=pick(fy+0.03,fx,0.02), up=b2>=0?Pv(b2).subtract(p0):new V3(0,1,0);
+      const rx=V3.Cross(up,n).normalize(), uy=V3.Cross(n,rx).normalize(), c=p0.add(n.scale(0.003*sB));
+      /* coricata sul guscio: righe della matrice = larghezza, altezza, spessore */
+      const s=BABYLON.MeshBuilder.CreateBox("coatFlap",{width:0.042*sB,height:0.016*sB,depth:0.004*sB},scene);
+      s.bakeTransformIntoVertices(BABYLON.Matrix.FromValues(rx.x,rx.y,rx.z,0, uy.x,uy.y,uy.z,0, n.x,n.y,n.z,0, c.x,c.y,c.z,1));
+      s.__mat=_coatTrimMat(it,C); bits.push(s);
+      if(it.btn){ const q=BABYLON.MeshBuilder.CreateSphere("coatBtn",{diameter:0.011*sB,segments:6},scene);
+        q.position.copyFrom(c.add(n.scale(0.003*sB)).add(uy.scale(-0.003*sB))); q.bakeCurrentTransformIntoVertices(); bits.push(q); } });
+    /* v313: la cerniera lungo il bordo del lembo aperto (giubbotto di pelle da
+       motociclista), d'argento, dalla fine del revers all'orlo */
+    if(it.edgezip){ const pts=[];
+      for(let y=-0.335;y>=yBot+0.012;y-=0.02){ const b=pick(y,-(gap(y)+0.008),0.012); if(b>=0) pts.push({ p:at(b,0.002), y:LP[b].y }); }
+      pts.sort((a,b)=>b.y-a.y);
+      if(pts.length>1){ const z=BABYLON.MeshBuilder.CreateTube("coatZip",{path:pts.map(q=>q.p),radius:0.0032*sB,tessellation:6},scene); z.__mat=_accMat("#c9ccd2",0.8); bits.push(z); } }
     /* v312: i tre bottoncini neri della camicia dello smoking, sul davanti */
     if(it.shirt) for(let k=0;k<3;k++){ const b=pick(-0.205-k*0.045,0,0.02); if(b<0) continue;
       const s=BABYLON.MeshBuilder.CreateSphere("coatStud",{diameter:0.010*sB,segments:6},scene);
@@ -62257,7 +62328,11 @@ const Look=(function(){
   function setAcc(slot,id){ const s=state(), k=(slot==="head"?"hat":slot); s[k]=id||""; save(s); return id; }
   function setAccCol(slot,id){ const s=state(), k=(slot==="head"?"hat":slot)+"c"; s[k]=id||""; save(s); return id; }
   function setCut(id){ const s=state(); s.cut=id||""; save(s); return id; }
-  function setCoat(id){ const s=state(); s.coat=id||""; save(s); return id; }
+  /* v313: cambiando giacca il colore torna «Original». A differenza di
+     cappelli e collane (colore per slot, vedi ACC_COLS) il colore di una
+     giacca E' la giacca — denim blu, pelle nera, impermeabile giallo — e
+     tenendolo si vedevano tutte uguali. Si puo' sempre ritingere dopo. */
+  function setCoat(id){ const s=state(); if((s.coat||"")!==(id||"")) s.coatc=""; s.coat=id||""; save(s); return id; }
   function setCoatCol(id){ const s=state(); s.coatc=id||""; save(s); return id; }
   function setFace(part,id){ if(["eyes","eyec","nose","mouth"].indexOf(part)<0) return null;
     const s=state(); s[part]=id||""; save(s); return id; }
