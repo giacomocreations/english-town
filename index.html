@@ -16,7 +16,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="QuestTown">
-<script>window.ET_BUILD="248";</script>
+<script>window.ET_BUILD="249";</script>
 <script>
 /* =====================================================================
    APP INSTALLABILE (v217-218) — gira PRIMA di tutto il resto.
@@ -16692,6 +16692,15 @@ function parkSnap(sc){
 }
 function parkOnSit(b){
   if(!b || area!=="town") return;
+  /* Chiusura notturna (dopo le 22, townOpen): il parco e' vuoto, niente Park
+     watcher ne' storia di Mr. Oakley. Prima passava lo stesso, perche' le
+     scene "always" (foto del Beat Club e del cinema) non spariscono con la
+     gente: il Ranger arrivava e faceva le domande sulle foto a mezzanotte.
+     Ora arriva lo stesso, ma per mandarti a letto. */
+  if(typeof townOpen==="function" && !townOpen()){
+    if(b===PARKFUN.storyBench || (!b.noWatch && b.x>86 && b.x<152 && b.z>-60 && b.z<60)) parkRangerCome(b,true);
+    return;
+  }
   /* sulla panchina dello Story Tree: si siede e Mr. Oakley ti propone la storia */
   if(b===PARKFUN.storyBench){ if(!PARKFUN.busy) setTimeout(()=>{ if(BSIT.b===b && !PARKFUN.busy && !_dlgOpen() && PARKFUN.oakley) talkToOakley(PARKFUN.oakley); },700); return; }
   if(b.noWatch) return;
@@ -16717,6 +16726,7 @@ function parkOnSit(b){
   },1100);
 }
 function parkWatchAsk(){
+  if(typeof townOpen==="function" && !townOpen()) return;   // finestra aperta prima delle 22, cliccata dopo
   const s=parkState(), mode=parkWatchMode(); if(!mode) return;
   if(s.wN>=3){ toast("\u{1F440} That's all for today: come back tomorrow!"); return; }
   const here=sc=>{ const P=PARKFUN.people[sc.id];
@@ -16849,7 +16859,7 @@ function _pkRangerSpot(){
     return new BABYLON.Vector3(x,y,z); }
   return null;
 }
-function parkRangerCome(b){
+function parkRangerCome(b,night){
   if(typeof RANGER==="undefined" || !RANGER || RANGER_A.active) return false;
   const L=BSIT.L; if(!L) return false;
   RANGER_A.active=true; RANGER_A.mode="park"; PARKFUN.ranger=null;
@@ -16865,6 +16875,14 @@ function parkRangerCome(b){
     PARKFUN.ranger={ at:performance.now(), idle:performance.now() };
     RANGER.__noPin=false; RANGER.play("Idle"); RANGER.watch=true;
     RANGER.carrier.rotation.y=Math.atan2(player.position.x-RANGER.carrier.position.x, player.position.z-RANGER.carrier.position.z);
+    if(night){   // stessa battuta di talkToRanger a citta' chiusa
+      npcTouch(RANGER);
+      DialogueBox.open({ npc:RANGER, icon:"\u{1F9E5}", sub:"Town Ranger",
+        text:"It's time to go to bed, Kid!",
+        italian:"\u00c8 ora di andare a dormire!",
+        choices:[{label:"\u{1F642} OK", act:()=>{}}] });
+      return;
+    }
     const s=parkState(), g=greetTimeOfDay(), me=(Student.nome||"").split(" ")[0]||"";
     DialogueBox.open({ ..._pkSpk(), sub:"Town Ranger \u00b7 "+(3-s.wN)+" left today",
       text:g.en+(me?", "+me:"")+"! Lovely day in the park, isn't it? Look at the people around you. Can you tell me what they're doing?",
