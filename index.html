@@ -16,7 +16,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="QuestTown">
-<script>window.ET_BUILD="245";</script>
+<script>window.ET_BUILD="246";</script>
 <script>
 /* =====================================================================
    APP INSTALLABILE (v217-218) — gira PRIMA di tutto il resto.
@@ -60391,7 +60391,7 @@ const NECKLACES={
   royal:    { drop:0.076, chain:"link",  pend:3, r:0.029 },   // v292: piu' grande (5,8 cm)
   /* v312 — premio di Climate & Fire Station (u3_4): il pianeta. Oceano blu
      smaltato, i continenti del colore scelto (Original = verde), cornice */
-  earthmedal:{ drop:0.060, chain:"ball", pend:4, r:0.019 },
+  earthmedal:{ drop:0.095, chain:"ball", pend:4, r:0.036 },   // v312: «bello grande» (7,2 cm)
 };
 function _accNecklace(g,M,C,id){
   const K=NECKLACES[id], V=BABYLON.Vector3, nz=M.nz, a0=lookAcc(id);
@@ -61021,10 +61021,12 @@ const BAGS={
   canvasbag:  { W:0.150, H:0.118, D:0.034, sw:0.024, st:0.0040, chain:false, flap:0.62, n:5,  spec:0.04, kind:"canvas" },
   leatherbag: { W:0.158, H:0.124, D:0.042, sw:0.019, st:0.0045, chain:false, flap:0.70, n:7,  spec:0.30, metal:"#c9a24a", kind:"leather" },
   designerbag:{ W:0.164, H:0.116, D:0.048, sw:0,     st:0,      chain:true,  flap:0.60, n:12, spec:0.22, metal:"#d6ae3c", kind:"quilt" },
-  /* v312 — premio di Job Centre Tower (u3_1): la borsa da lavoro. E' la
-     borsa di cuoio (kind) piu' larga, piu' squadrata e con la patta corta,
-     e il metallo argento: a colpo d'occhio una cartella da ufficio. */
-  workbag:    { W:0.182, H:0.128, D:0.052, sw:0.020, st:0.0045, chain:false, flap:0.42, n:10, spec:0.36, metal:"#c9ccd2", kind:"leather" },
+  /* v312 — premio di Job Centre Tower (u3_1): la VENTIQUATTRORE. Prima era
+     la borsa di cuoio un po' piu' squadrata, e accanto alla Designer bag
+     (Giacomo, 16 ott) «sembra uguale». Ora e' un'altra sagoma: piu' larga e
+     sottile, spigoli vivi, patta ridotta a una fascia, MANICO in alto, due
+     chiusure a scatto in argento e la cucitura della tasca davanti. */
+  workbag:    { W:0.215, H:0.152, D:0.040, sw:0.020, st:0.0045, chain:false, flap:0.16, n:18, spec:0.32, metal:"#c9ccd2", kind:"brief" },
 };
 /* v306: il CORPO della borsa (prisma, patta, attacchi e dettagli del
    modello) in coordinate della borsa, figlio di gR: lo usano la borsa
@@ -61055,6 +61057,17 @@ function _accBagBody(gR,id,K,a0,C){
     /* bottone a pressione e la tasca davanti, cucita */
     const b=BABYLON.MeshBuilder.CreateCylinder("acc",{diameter:0.013,height:0.004,tessellation:16},scene); b.rotation.x=Math.PI/2; put(b,met,0,fBot+0.012,fZ+0.002);
     put(_accLens(W*0.62,Hb*0.30,0.004,5,0),dark,0,-Hb/2+Hb*0.21,D/2+0.001);
+  } else if(K.kind==="brief"){
+    /* il manico: un arco imbottito sopra il bordo, con due piastrine */
+    const hp=[]; for(let i=0;i<=16;i++){ const a=Math.PI*i/16; hp.push(new V3(Math.cos(a)*0.040, Hb/2+0.006+Math.sin(a)*0.030, 0)); }
+    put(BABYLON.MeshBuilder.CreateTube("acc",{path:hp,radius:0.0062,tessellation:8,cap:BABYLON.Mesh.CAP_ALL},scene),dark,0,0,0);
+    [-1,1].forEach(sg=>put(BABYLON.MeshBuilder.CreateBox("acc",{width:0.018,height:0.006,depth:0.016},scene),met,sg*0.040,Hb/2+0.004,0));
+    /* due chiusure a scatto sulla fascia, e la cucitura della tasca */
+    [-1,1].forEach(sg=>{ const x=sg*W*0.30;
+      put(BABYLON.MeshBuilder.CreateBox("acc",{width:0.026,height:0.020,depth:0.006},scene),met,x,fBot+0.002,fZ+0.002);
+      put(BABYLON.MeshBuilder.CreateBox("acc",{width:0.012,height:0.006,depth:0.004},scene),dark,x,fBot+0.002,fZ+0.0055); });
+    const sc=_accMat(_hexMul(bodyHex,1.7),0.1), yS=-Hb*0.08;
+    put(BABYLON.MeshBuilder.CreateTube("acc",{path:[new V3(-W/2+0.012,yS,D/2+0.0012),new V3(W/2-0.012,yS,D/2+0.0012)],radius:0.0011,tessellation:4},scene),sc,0,0,0);
   } else if(K.kind==="leather"){
     /* cuciture lungo il bordo della patta, in rilievo e piu' chiare */
     const sc=_accMat(_hexMul(bodyHex,1.6),0.1), m=0.007, x0=W/2-m, y0=fY+fH/2-0.004, y1=fBot+m;
@@ -61670,7 +61683,7 @@ const LOOK_COATS=[
      dell'Anno 3, uno per slot:
        u3_1 Job Centre Tower -> Business bag     u3_2 TechLab  -> Gaming headset
        u3_3 Hikers' Camp     -> Hiking jacket    u3_4 Climate  -> Earth medallion
-       u3_5 City Hospital    -> Doctor's coat
+       u3_5 City Hospital    -> Tuxedo jacket (era il camice: v312, vedi sotto)
      ⚠️ SOLO LA UNIT, NESSUNA ALTERNATIVA A STELLE (y3:true), a differenza di
      tutti gli altri 🏅: l'alternativa serve a chi e' arrivato al gioco dopo
      quella unit, ma l'Anno 3 e' l'ultimo e ci passano tutti. Non si
@@ -61680,8 +61693,11 @@ const LOOK_COATS=[
      citta' cambia vestito per via di queste righe.
      Nessun modello nuovo: sono i costruttori di giacche, cuffie, collane e
      borse che c'erano gia', con parametri diversi. */
-  { id:"softshell",en:"Hiking jacket",  col:"#2f6f73", open:false, th:0.012, spec:0.30, zip:true, req:{ quest:"u3_3" }, y3:true },
-  { id:"labcoat",  en:"Doctor's coat",  col:"#eceeed", open:true,  th:0.010, buttons:3, req:{ quest:"u3_5" }, y3:true },
+  { id:"softshell",en:"Hiking jacket",  col:"#2f7f7a", open:false, th:0.014, spec:0.30, zip:true, trim:"yoke", collar:true, req:{ quest:"u3_3" }, y3:true },
+  /* v312 (Giacomo, 16 ott): al posto del camice («non cosi' interessante per
+     i ragazzi»), una giacca elegante: lo smoking blu notte, revers di raso
+     e papillon, il fazzoletto bianco nel taschino */
+  { id:"tuxedo",   en:"Tuxedo jacket",  col:"#26357a", open:true,  th:0.011, spec:0.30, buttons:1, trim:"lapel", bow:true, pocket:true, req:{ quest:"u3_5" }, y3:true },
 ];
 function lookCoat(id){ return LOOK_COATS.find(c=>c.id===id)||null; }
 const _coatM={};
@@ -61690,6 +61706,50 @@ function _coatMat(C,spec){ const k=C.hex+"|"+(C.metal?1:0)+"|"+(spec||0); if(_co
   const s=C.metal?0.8:(spec||0.06); m.specularColor=new BABYLON.Color3(s,s,s); m.specularPower=s>0.3?64:20;
   if(C.metal) m.emissiveColor=BABYLON.Color3.FromHexString(_hexMul(C.hex,0.18));
   m.backFaceCulling=false; m.twoSidedLighting=true; return (_coatM[k]=m); }
+/* v312 — LE RIFINITURE (Giacomo, 16 ott: «hiking jacket e doctor's coat non
+   si vedono»). Si vedevano, ma un guscio di un solo colore sopra la felpa
+   ha la sagoma della felpa: da lontano la giacca da trekking sembrava una
+   felpa verde e il camice una felpa grigia. Le giacche vere si riconoscono
+   dalle rifiniture, e quelle si fanno coi triangoli del guscio stesso:
+     trim:"yoke"  — spalle, petto alto e avambracci di un'altra stoffa
+                    (le giacche tecniche da montagna);
+     trim:"lapel" — i revers lucidi lungo la V aperta (lo smoking).
+   Ritorna 1 se il triangolo (tre punti nel sistema della testa) e' rifinitura. */
+function _coatTrim(it,M,a,b,c,bn,gap){
+  if(!it.trim) return 0;
+  const x=(a.x+b.x+c.x)/3, y=(a.y+b.y+c.y)/3, z=(a.z+b.z+c.z)/3;
+  if(it.trim==="yoke") return (y>-0.235 || /LowerArm/.test(bn)) ? 1 : 0;
+  if(it.trim==="lapel"){ if(z<=M.nz+0.01 || y<-0.33 || y>-0.03) return 0;
+    const sg=x<0?-1:1; return (sg*x-gap(y))<0.030 ? 1 : 0; }
+  return 0; }
+function _coatTrimMat(it,C){
+  if(it.trim==="lapel") return _coatMat({ hex:_hexLum(C.hex)<0.12?"#08080b":_hexMul(C.hex,0.35), metal:false },0.95);   // raso
+  const L=_hexLum(C.hex);
+  return _coatMat({ hex:L<0.18?"#7d868f":"#262d33", metal:false },0.25); }
+/* il collo alto: una fascia che sale dal giro della giacca, aperta davanti
+   sulla cerniera, col bordo arrotondato */
+function _coatCollar(g,M,mat){
+  const V=BABYLON.Vector3, nz=M.nz, rN=_bodyRad(M,nz,true), N=36, H0=0.040, y0=M.neckY-0.008, A0=0.22;
+  const Rf=(a,y)=>Math.min(M.nr+0.06, Math.max(M.nr+0.014, rN(a,y)+0.010));
+  const R=[]; for(let i=0;i<=N;i++){ const a=A0+(2*Math.PI-2*A0)*i/N; R.push(Math.max(Rf(a,y0),Rf(a,y0+H0*0.5))); }
+  const R0=R.slice(); for(let k=0;k<5;k++){ const R2=R.map((r,i)=>Math.max(R0[i],(R[Math.max(0,i-1)]+r+R[Math.min(N,i+1)])/3)); for(let i=0;i<=N;i++) R[i]=R2[i]; }
+  const at=(a,y,r)=>new V(Math.sin(a)*r, y, nz+Math.cos(a)*r);
+  const pos=[], ind=[], top=[];
+  for(let i=0;i<=N;i++){ const a=A0+(2*Math.PI-2*A0)*i/N, y=y0+0.004*Math.cos(a);
+    const pb=at(a,y,R[i]), pt=at(a,y+H0,R[i]*0.94); pos.push(pb.x,pb.y,pb.z, pt.x,pt.y,pt.z); top.push(pt); }
+  for(let i=0;i<N;i++){ const k=2*i; ind.push(k,k+2,k+1, k+1,k+2,k+3); }
+  const vd=new BABYLON.VertexData(); vd.positions=pos; vd.indices=ind; const nn=[]; BABYLON.VertexData.ComputeNormals(pos,ind,nn); vd.normals=nn;
+  const m=new BABYLON.Mesh("acc",scene); vd.applyToMesh(m,false); m.material=mat; m.parent=g;
+  const rim=BABYLON.MeshBuilder.CreateTube("acc",{path:top,radius:0.005,tessellation:6,cap:BABYLON.Mesh.CAP_ALL},scene); rim.material=mat; rim.parent=g; }
+/* il papillon: nodo e due ali a piramide, nero lucido, davanti al collo */
+function _coatBow(g,M){
+  const V=BABYLON.Vector3, nz=M.nz, rN=_bodyRad(M,nz,true), y=M.neckY-0.006;
+  const r=Math.min(M.nr+0.06, Math.max(M.nr+0.016, rN(0,y)+0.012)), c=new V(0,y,nz+r);
+  const mat=_accMat("#121216",0.9,"#050507");
+  const k=BABYLON.MeshBuilder.CreateBox("acc",{width:0.014,height:0.016,depth:0.012},scene); k.position.copyFrom(c.add(new V(0,0,0.004))); k.material=mat; k.parent=g;
+  [-1,1].forEach(s=>{ const w=BABYLON.MeshBuilder.CreateCylinder("acc",{diameterTop:0.006,diameterBottom:0.034,height:0.034,tessellation:4},scene);
+    w.rotation.z=s*Math.PI/2; w.rotation.x=Math.PI/4; w.scaling.set(1,1,0.45);
+    w.position.copyFrom(c.add(new V(s*0.021,0,0))); w.material=mat; w.parent=g; }); }
 /* veste la giacca. Ritorna true se le mesh sono cambiate. */
 function dressCoat(meshes,coatId,colId,holder){
   if(!meshes||!meshes.length) return false;
@@ -61714,7 +61774,7 @@ function dressCoat(meshes,coatId,colId,holder){
   const NO=/^(Neck|Head|Wrist\.[LR]|(Index|Middle|Ring|Pinky|Thumb)\d\.[LR])$/, okTop=sk.bones.map(b=>!NO.test(b.name));
   const loc=(x,y,z)=>{ const d=new V3(x,y,z).subtract(M.E); return new V3(V3.Dot(d,M.R)/M.s, V3.Dot(d,M.U)/M.s, V3.Dot(d,M.F)/M.s); };
   const q=M.s*0.0005/(_toHeadRaw(H,B0).k||1), kf=(x,y,z)=>Math.round(x/q)+","+Math.round(y/q)+","+Math.round(z/q);
-  const src=body.map(m=>({ top:!/Skin/.test((m.material&&m.material.name)||""), cv:_toHeadRaw(H,m), p:m.getVerticesData(VB.PositionKind), n:m.getVerticesData(VB.NormalKind), i:m.getIndices(),
+  const src=body.map(m=>({ top:!/Skin/.test((m.material&&m.material.name)||""), cv:_toHeadRaw(H,m), sk:m.skeleton||sk, p:m.getVerticesData(VB.PositionKind), n:m.getVerticesData(VB.NormalKind), i:m.getIndices(),
                            mi:m.getVerticesData(VB.MatricesIndicesKind), mw:m.getVerticesData(VB.MatricesWeightsKind) }))
                  .filter(S=>S.p&&S.n&&S.i&&S.mi&&S.mw);
   /* normali saldate per posizione */
@@ -61723,8 +61783,11 @@ function dressCoat(meshes,coatId,colId,holder){
     const a=NS.get(k)||[0,0,0]; a[0]+=S.n[3*v]; a[1]+=S.n[3*v+1]; a[2]+=S.n[3*v+2]; NS.set(k,a); } });
   const dom=(S,v)=>{ let b=-1,w=-1; for(let k=0;k<4;k++) if(S.mw[4*v+k]>w){ w=S.mw[4*v+k]; b=S.mi[4*v+k]; } return b; };
   const gap=y=>0.024+Math.max(0,y+0.33)*0.42;                  // apertura a V, larga in alto
-  const P=[], MI=[], MW=[], LP=[];
+  const P=[], MI=[], MW=[], LP=[], TF=[];
   const emit=r=>{ P.push(r.p[0],r.p[1],r.p[2]); for(let k=0;k<4;k++){ MI.push(r.mi[k]); MW.push(r.mw[k]); } LP.push(r.l); };
+  /* v312: un triangolo alla volta, con la sua «stoffa» (TF: 0 = il capo,
+     1 = le rifiniture, vedi _coatTrim) */
+  const tri=(A,B,C,bn)=>{ emit(A); emit(B); emit(C); TF.push(_coatTrim(it,M,A.l,B.l,C.l,bn,gap)); };
   src.forEach(S=>{
     const L=[], D=[], cv=S.cv, sB=M.s/cv.k, lh=(x,y,z,v)=>{ const h=cv(x,y,z,v); return loc(h.x,h.y,h.z); };
     for(let v=0;v<S.p.length/3;v++){ L.push(lh(S.p[3*v],S.p[3*v+1],S.p[3*v+2],v)); D.push((S.top?okTop:okB)[dom(S,v)]===true); }
@@ -61734,14 +61797,14 @@ function dressCoat(meshes,coatId,colId,holder){
       return { p, l:lh(p[0],p[1],p[2],v), mi:[S.mi[4*v],S.mi[4*v+1],S.mi[4*v+2],S.mi[4*v+3]], mw:[S.mw[4*v],S.mw[4*v+1],S.mw[4*v+2],S.mw[4*v+3]] }; };
     for(let t=0;t<S.i.length;t+=3){ const a=S.i[t],b=S.i[t+1],c=S.i[t+2];
       if(!D[a]||!D[b]||!D[c]) continue;
-      const R3=[rec(a),rec(b),rec(c)];
+      const R3=[rec(a),rec(b),rec(c)], bn=((S.sk.bones[dom(S,a)])||{}).name||"";
       const cy=(L[a].y+L[b].y+L[c].y)/3, cxx=(L[a].x+L[b].x+L[c].x)/3, cz=(L[a].z+L[b].z+L[c].z)/3;
-      if(!it.open || !(cz>M.nz+0.01 && cy<-0.10)){ R3.forEach(emit); continue; }
+      if(!it.open || !(cz>M.nz+0.01 && cy<-0.10)){ tri(R3[0],R3[1],R3[2],bn); continue; }
       /* aperta: si RITAGLIA il triangolo lungo il bordo della V (|x| = gap(y)).
          Togliendo triangoli interi il bordo veniva a denti di sega, perche' i
          triangoli del busto sono grandi quanto il bottone di una giacca. */
       const sg=cxx<0?-1:1, f=R3.map(r=>sg*r.l.x-gap(r.l.y));
-      if(f.every(x=>x>=0)){ R3.forEach(emit); continue; }
+      if(f.every(x=>x>=0)){ tri(R3[0],R3[1],R3[2],bn); continue; }
       if(f.every(x=>x<0)) continue;
       const poly=[];
       for(let k=0;k<3;k++){ const A=R3[k], B=R3[(k+1)%3], fa=f[k], fb=f[(k+1)%3];
@@ -61749,19 +61812,30 @@ function dressCoat(meshes,coatId,colId,holder){
         if((fa>=0)!==(fb>=0)){ const u=fa/(fa-fb), near=u<0.5?A:B;
           poly.push({ p:[A.p[0]+(B.p[0]-A.p[0])*u, A.p[1]+(B.p[1]-A.p[1])*u, A.p[2]+(B.p[2]-A.p[2])*u],
                       l:BABYLON.Vector3.Lerp(A.l,B.l,u), mi:near.mi, mw:near.mw }); } }
-      for(let k=1;k+1<poly.length;k++){ emit(poly[0]); emit(poly[k]); emit(poly[k+1]); } }
+      for(let k=1;k+1<poly.length;k++) tri(poly[0],poly[k],poly[k+1],bn); }
   });
   if(!P.length) return false;
   const I=[]; for(let i=0;i<P.length/3;i++) I.push(i);
   const N=[]; BABYLON.VertexData.ComputeNormals(P,I,N);
   const vd=new BABYLON.VertexData(); vd.positions=P; vd.indices=I; vd.normals=N;
-  const m=new BABYLON.Mesh("coat",scene); vd.applyToMesh(m,false);
-  m.setVerticesData(VB.MatricesIndicesKind,MI,false,4); m.setVerticesData(VB.MatricesWeightsKind,MW,false,4);
-  m.parent=B0.parent; m.position.copyFrom(B0.position); m.rotation.copyFrom(B0.rotation);
-  if(B0.rotationQuaternion) m.rotationQuaternion=B0.rotationQuaternion.clone(); m.scaling.copyFrom(B0.scaling);
-  m.skeleton=sk; m.numBoneInfluencers=4; m.material=_coatMat(C,it.spec);
-  m.isPickable=false; m.alwaysSelectAsActiveMesh=true; m.__noTint=true;
-  const out=[m];
+  /* v312: il guscio si divide per stoffa — capo e rifiniture (revers, spalle)
+     sono due mesh, perche' hanno due materiali. I vertici non sono condivisi
+     (ogni triangolo ha i suoi tre), quindi dividerli non cambia le normali. */
+  const out=[];
+  [0,1].forEach(fl=>{ const p=[], mi=[], mw=[];
+    for(let tI=0;tI<TF.length;tI++){ if(TF[tI]!==fl) continue;
+      for(let v=3*tI;v<3*tI+3;v++){ p.push(P[3*v],P[3*v+1],P[3*v+2]); for(let k=0;k<4;k++){ mi.push(MI[4*v+k]); mw.push(MW[4*v+k]); } } }
+    if(!p.length) return;
+    const ii=[]; for(let i=0;i<p.length/3;i++) ii.push(i);
+    const nn=[]; BABYLON.VertexData.ComputeNormals(p,ii,nn);
+    const v2=new BABYLON.VertexData(); v2.positions=p; v2.indices=ii; v2.normals=nn;
+    const m=new BABYLON.Mesh("coat",scene); v2.applyToMesh(m,false);
+    m.setVerticesData(VB.MatricesIndicesKind,mi,false,4); m.setVerticesData(VB.MatricesWeightsKind,mw,false,4);
+    m.parent=B0.parent; m.position.copyFrom(B0.position); m.rotation.copyFrom(B0.rotation);
+    if(B0.rotationQuaternion) m.rotationQuaternion=B0.rotationQuaternion.clone(); m.scaling.copyFrom(B0.scaling);
+    m.skeleton=sk; m.numBoneInfluencers=4; m.material=fl?_coatTrimMat(it,C):_coatMat(C,it.spec);
+    m.isPickable=false; m.alwaysSelectAsActiveMesh=true; m.__noTint=true;
+    out.push(m); });
   /* cerniera o bottoni sulla linea davanti, che e' misurata sul guscio.
      ⚠️ SI COSTRUISCONO NELLO SPAZIO DEL BUSTO, sul suo scheletro, coi pesi del
      vertice di giacca piu' vicino. Pesati sullo scheletro della testa si
@@ -61784,15 +61858,32 @@ function dressCoat(meshes,coatId,colId,holder){
     for(let k=0;k<nb;k++){ const y=(nb===1)?(yTop+yBot)/2:yTop-0.05-k*(yTop-yBot-0.09)/Math.max(1,nb-1), b=pick(y,ox,ox?0.04:0.02);
       if(b<0) continue; const s=BABYLON.MeshBuilder.CreateSphere("coatBtn",{diameter:0.017*sB,segments:6},scene);
       s.position.copyFrom(at(b,0.003)); s.bakeCurrentTransformIntoVertices(); bits.push(s); }
+    /* v312: il fazzoletto nel taschino (smoking), sul petto dalla parte dei bottoni */
+    if(it.pocket){ const b=pick(-0.245,-0.118,0.03);
+      if(b>=0){ const n=new V3(N[3*b],N[3*b+1],N[3*b+2]).normalize(), c=at(b,0.002);
+        const s=BABYLON.MeshBuilder.CreateCylinder("coatPocket",{diameterTop:0,diameterBottom:0.044*sB,height:0.030*sB,tessellation:3},scene);
+        s.scaling.z=0.35; s.rotationQuaternion=BABYLON.Quaternion.FromLookDirectionRH(n,new V3(0,1,0));
+        s.position.copyFrom(c.add(new V3(0,0.004*sB,0))); s.bakeCurrentTransformIntoVertices(); s.__mat=_accMat("#f3f3ee",0.2,"#3a3a38"); bits.push(s); } }
     bits.forEach(x=>{ const pos=x.getVerticesData(VB.PositionKind), n=pos.length/3, mi=[], mw=[];
       for(let v=0;v<n;v++){ let best=0, bd=1e18; for(let i=0;i<nv;i+=2){ const dx=P[3*i]-pos[3*v], dy=P[3*i+1]-pos[3*v+1], dz=P[3*i+2]-pos[3*v+2], d=dx*dx+dy*dy+dz*dz; if(d<bd){ bd=d; best=i; } }
         for(let k=0;k<4;k++){ mi.push(MI[best*4+k]); mw.push(MW[best*4+k]); } }
       x.setVerticesData(VB.MatricesIndicesKind,mi,false,4); x.setVerticesData(VB.MatricesWeightsKind,mw,false,4);
       x.parent=B0.parent; x.position.copyFrom(B0.position); x.rotation.copyFrom(B0.rotation);
       if(B0.rotationQuaternion) x.rotationQuaternion=B0.rotationQuaternion.clone(); x.scaling.copyFrom(B0.scaling);
-      x.skeleton=sk; x.numBoneInfluencers=4; x.material=met; x.isPickable=false; x.alwaysSelectAsActiveMesh=true; x.__noTint=true; out.push(x); });
+      x.skeleton=sk; x.numBoneInfluencers=4; x.material=x.__mat||met; x.isPickable=false; x.alwaysSelectAsActiveMesh=true; x.__noTint=true; out.push(x); });
   }
   M.__coatPL=LP.filter((l,i)=>i%3===0 && Math.abs(l.x)<0.16 && l.y<0);
+  /* v312: collo alto (giacca da trekking) e papillon (smoking). Stanno sul
+     collo, quindi si fanno come sciarpa e collane: nel sistema della testa,
+     pesati sull'osso Neck dello scheletro della testa (_accSkin). */
+  if(it.collar||it.bow){ try{
+    const hsk=H.skeleton; let bi=-1; for(const n of ["Neck","Chest","Torso"]){ bi=hsk.bones.findIndex(b=>b.name===n); if(bi>=0) break; }
+    if(bi>=0){ const g=new BABYLON.TransformNode("coatNeck",scene);
+      if(it.collar) _coatCollar(g,M,_coatTrimMat(it,C));
+      if(it.bow) _coatBow(g,M);
+      try{ _accMerge(g); }catch(e){}
+      g.getChildMeshes().forEach(x=>{ try{ const s=_accSkin(x,H,M,bi); s.__noTint=true; out.push(s); }catch(e){ console.warn("coatNeck",e); } });
+      g.dispose(false,false); } }catch(e){ console.warn("coatNeck",e); } }
   if(holder) out.forEach(x=>holder.push(x));
   H.__coat={ key, meshes:out };
   _octDirty();
