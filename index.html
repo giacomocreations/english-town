@@ -16,7 +16,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="QuestTown">
-<script>window.ET_BUILD="249";</script>
+<script>window.ET_BUILD="250";</script>
 <script>
 /* =====================================================================
    APP INSTALLABILE (v217-218) — gira PRIMA di tutto il resto.
@@ -333,6 +333,21 @@
   #quest-compass.show{display:flex;}
   #quest-compass .qc-arrow{font-size:26px;line-height:1;transition:transform .15s linear;}
   #quest-compass .qc-dist{font-size:10.5px;font-weight:800;color:var(--plum);margin-top:1px;}
+  /* v312 (Giacomo, 17 ott: «quando stanno facendo una quest la bussola puo'
+     creare confusione... sostituirla con un riferimento a quello che devono
+     fare in quel momento»). Durante una quest il disco con la freccia lascia
+     il posto a una scheda «NOW»: la consegna di adesso (la stessa riga
+     dell'HUD, in inglese) e sotto DOVE, a parole — «About 25 m, on your
+     left». La freccia resta solo per la meta del Ranger (NAV). */
+  #quest-compass.task{width:auto;height:auto;max-width:min(250px,calc(100vw - 32px));border-radius:14px;
+    padding:8px 12px 9px;align-items:stretch;text-align:left;pointer-events:auto;cursor:pointer;}
+  #quest-compass.task .qc-arrow,#quest-compass.task .qc-dist{display:none;}
+  #quest-compass .qc-now{display:none;}
+  #quest-compass.task .qc-now{display:block;}
+  #quest-compass .qc-ey{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--plum);}
+  #quest-compass .qc-what{font-size:13px;font-weight:700;line-height:1.3;color:var(--ink);margin-top:2px;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+  #quest-compass .qc-where{font-size:12px;font-weight:800;color:var(--plum);margin-top:4px;}
   /* v297 (Giacomo, 1 ott: «il pop up non deve essere al centro e coprire
      lo schermo, ma sulla destra in basso, con un grado di trasparenza
      assicurandoti che rimanga leggibile»). Niente piu' velo scuro sul
@@ -770,6 +785,7 @@
 <div id="quest-compass" class="hud">
   <div class="qc-arrow" id="qc-arrow">&#x2B06;&#xFE0F;</div>
   <div class="qc-dist" id="qc-dist">&#x2013;</div>
+  <div class="qc-now"><div class="qc-ey">&#x1F3AF; Now</div><div class="qc-what" id="qc-what"></div><div class="qc-where" id="qc-where"></div></div>
 </div>
 <button id="qbtn" title="Graphics settings">⚙︎ <span id="qlab">Medium</span></button>
 <div id="qpanel" role="dialog" aria-label="Graphics settings">
@@ -21287,7 +21303,30 @@ function mechStub(s){ questHudSet(s.strand,HOBJ("🚧 Step under construction �
    (sinθ,cosθ) gia' usata per il facing degli NPC — positivo = target a
    destra = rotazione CSS oraria, coerente. ---- */
 const qcompass={ box:document.getElementById("quest-compass"),
-  arrow:document.getElementById("qc-arrow"), dist:document.getElementById("qc-dist") };
+  arrow:document.getElementById("qc-arrow"), dist:document.getElementById("qc-dist"),
+  what:document.getElementById("qc-what"), where:document.getElementById("qc-where"),
+  whatT:"", whereT:"", lastHud:null };
+/* v312: dove sta la meta, A PAROLE, rispetto a come la vedi sullo schermo
+   (la camera, non il busto dell'avatar: e' guardando lo schermo che si
+   sceglie dove andare). Fasce larghe (90° ciascuna) e metri arrotondati a
+   5/10: la scritta non sfarfalla camminando. */
+function qcWhere(dx,dz,dist){
+  if(dist<3) return "✅ You're here!";
+  let fx=0, fz=0;
+  try{ fx=camera.target.x-camera.position.x; fz=camera.target.z-camera.position.z; }catch(e){}
+  if(Math.hypot(fx,fz)<1e-3){ fx=Math.sin(player.rotation.y); fz=Math.cos(player.rotation.y); }
+  let a=Math.atan2(dx,dz)-Math.atan2(fx,fz);
+  while(a>Math.PI) a-=2*Math.PI; while(a<-Math.PI) a+=2*Math.PI;
+  const deg=a*180/Math.PI, ad=Math.abs(deg);
+  const side= ad<=45 ? "straight ahead" : (ad>=135 ? "behind you" : (deg>0 ? "on your right" : "on your left"));
+  const m= dist<20 ? Math.max(5,Math.round(dist/5)*5) : Math.round(dist/10)*10;
+  return "\u{1F4CD} About "+m+" m, "+side;
+}
+/* toccando la scheda si sente la consegna, come la pillola «Your task» */
+if(qcompass.box) qcompass.box.onclick=function(e){
+  if(!qcompass.box.classList.contains("task")) return;
+  e.stopPropagation();
+  try{ if(qcompass.whatT) TTS.say(qcompass.whatT); }catch(err){} };
 function updateQuestCompass(){
   const u=Quest.unit, s=Quest.step;
   /* DUE sorgenti: la quest open-world (prioritaria, la governa lo step) e la
@@ -21299,6 +21338,17 @@ function updateQuestCompass(){
   qcompass.box.classList.add("show");
   const dx=t.x-player.position.x, dz=t.z-player.position.z;
   const dist=Math.hypot(dx,dz);
+  /* v312: in quest niente freccia, la scheda «NOW» (vedi CSS #quest-compass.task) */
+  qcompass.box.classList.toggle("task", !nav);
+  if(!nav){
+    /* testo() analizza l'HTML dell'HUD: si rifa' solo quando l'HUD cambia */
+    if(qhud.last!==qcompass.lastHud){ qcompass.lastHud=qhud.last;
+      let what=""; try{ what=QuestNudge.testo(); }catch(e){}
+      qcompass.whatT=what; qcompass.what.textContent=what; }
+    const where=qcWhere(dx,dz,dist);
+    if(where!==qcompass.whereT){ qcompass.whereT=where; qcompass.where.textContent=where; }
+    return;
+  }
   const rel=Math.atan2(dx,dz)-player.rotation.y;
   qcompass.arrow.style.transform="rotate("+rel+"rad)";
   qcompass.dist.textContent = dist<2 ? "Sei arrivato!" : Math.round(dist)+" m";
@@ -64128,22 +64178,29 @@ function nomeLuogo(t){
      qui vince quella parlata. */
   return String(t||"").replace(/^\s*The\s+/i,"").replace(/\bStn\b/,"Station").trim();
 }
-/* I posti nominabili sono quelli del proprio anno e degli anni precedenti:
-   il vocabolario dei luoghi cresce con la citta', senza una tabella a parte. */
+/* I posti nominabili sono i posti di TUTTE LE QUEST APERTE (Gate.unlocked),
+   nell'ordine del curricolo.
+   ⚠️ v312 (Giacomo, 17 ott: «fai in modo che si possa scegliere tra tutte le
+   quest aperte, mi sembra che ora vengano scelte solo alcune»). Prima la
+   lista leggeva SOLO TOWN[] filtrato per anno: mancavano proprio le unit
+   open-world, che in TOWN[] non stanno (City Airport, Clock Tower, Sports
+   Field, Weather Station, Hikers' Camp), e invece comparivano edifici di
+   unit ancora chiuse per la classe. Ora la fonte e' SYLLABUS, l'unico
+   elenco del curricolo, con lo stesso gate delle porte.
+   ⚠️ La sigla resta quella di prima (siglaLuogo del titolo): i titoli di
+   SYLLABUS coincidono con i cartelli di TOWN[], quindi un Chromebook con
+   la build vecchia capisce ancora le frasi di uno con quella nuova. */
 function luoghiParlabili(){
-  const yr=(function(){ try{ return studentYear(); }catch(e){ return 1; } })();
   const out=[], visti=Object.create(null);
-  TOWN.forEach(function(b){
-    if(!b.t || (b.yr||1)>yr) return;
-    /* ⚠️ La casa fuori: «Let's go to the Home» non si dice, e in gioco la
-       casa e' quella del giocatore — non e' un posto dove ci si da'
-       appuntamento in due. */
-    if(b.role==="home") return;
-    const sg=siglaLuogo(b.t); if(!sg||visti[sg]) return;
-    visti[sg]=1; out.push({ sigla:sg, t:b.t, ic:b.ic||"" });
+  SYLLABUS.forEach(function(u){
+    /* ⚠️ La casa: «Let's go to the Home» non si dice, e in gioco la casa e'
+       quella del giocatore — non e' un posto dove ci si da' appuntamento in
+       due. Vale per tutte e due le unit che ci si giocano (u3 e u2_7). */
+    if(u.id==="u3" || u.id==="u2_7") return;
+    try{ if(!Gate.unlocked(u.id)) return; }catch(e){}
+    const sg=siglaLuogo(u.t); if(!sg||visti[sg]) return;
+    visti[sg]=1; out.push({ sigla:sg, t:u.t, ic:u.ic||"" });
   });
-  try{ if(STATION && (STATION.yr||1)<=yr){ const sg=siglaLuogo(STATION.t);
-    if(!visti[sg]){ visti[sg]=1; out.push({ sigla:sg, t:STATION.t, ic:STATION.ic||"" }); } } }catch(e){}
   return out;
 }
 function titoloLuogo(sg){
@@ -64153,6 +64210,7 @@ function titoloLuogo(sg){
      frase NON va buttata: si mostra comunque il titolo se lo conosco dalla
      mappa, e in ultima istanza si scrive la sigla. Perdere la frase sarebbe
      peggio che mostrarla imprecisa. */
+  for(let i=0;i<SYLLABUS.length;i++) if(siglaLuogo(SYLLABUS[i].t)===sg) return SYLLABUS[i].t;
   for(let i=0;i<TOWN.length;i++) if(siglaLuogo(TOWN[i].t)===sg) return TOWN[i].t;
   try{ if(siglaLuogo(STATION.t)===sg) return STATION.t; }catch(e){}
   return sg;
@@ -64183,6 +64241,7 @@ const PRES_RIPROVA=60000;   // ms fra due riletture dell'interruttore, finche' e
 const PRES_K_MAX = 160;     // v302: lunghezza massima del look (regole: k.length <= 160)
 const PRES_K_VECCHIO = 32;  // v302: il limite delle regole vecchie, ripiego automatico
 const PRES_H     = 1.65;    // altezza: i compagni sono ragazzi come il giocatore (AVATAR_HEIGHT)
+const PRES_SEP   = 0.62;    // v312: distanza minima fra i centri di due corpi disegnati (spalle ~0.45 m)
 const Presenza=(function(){
   let acceso=false, motivo="non avviato", classe="", mio="", pubblica=true, parla=true;
   let ref=null, radice=null, timer=null, t0=0;
@@ -64729,12 +64788,90 @@ const Presenza=(function(){
     for(const k in peers) if(ora-peers[k].ricev>PRES_TTL){ _via(k); n++; }
     return n;
   }
+  /* ---- NON SI INCASTRANO (v312) -----------------------------------------
+     Giacomo, 17 ott: «gli alunni che si vedono a volte si incastrano tra
+     loro se sono vicinissimi». Ognuno scrive la SUA posizione e nessuno
+     sa dove stanno gli altri, quindi due compagni fermi nello stesso punto
+     (davanti alla stessa porta, allo stesso NPC) si disegnavano uno dentro
+     l'altro. Qui, solo per il disegno, ogni corpo in piedi viene scostato
+     quanto basta a tenere PRES_SEP fra i centri: da un altro compagno
+     (meta' scostamento a testa) e dal giocatore (tutto lui: il giocatore
+     non lo sposta chi non lo comanda). Lo scostamento si calcola dalle
+     posizioni VERE, non da quelle gia' scostate, e si raggiunge con un
+     filtro: niente oscillazioni, niente scatti.
+     ⚠️ E' SOLO DISEGNO, NON COLLISIONE: la regola «gli avatar dei compagni
+     non collidono mai» (vedi in testa alla PRESENZA) resta intatta. Chi ti
+     cammina attraverso non si ferma: il corpo del compagno si fa da parte.
+     ⚠️ Lo scostamento non porta un corpo dentro un muro (blocked()): se il
+     passo intero ci finisce si prova a meta', se no si rinuncia — meglio due
+     spalle sovrapposte che un compagno disegnato dentro una vetrina.
+     ⚠️ I seduti no: la sedia e' il loro posto e il vicino di tavolo sta
+     legittimamente a 0,6 m. */
+  function _separa(dt){
+    const L=[];
+    for(const k in peers){
+      const e=peers[k];
+      if(!e.sep) e.sep={ x:0, z:0 };
+      e.sepTx=0; e.sepTz=0;
+      if(!e.corpo || !e.vista || e.zona!==area || e.siede) continue;
+      const q=dove(e); L.push({ e:e, k:k, x:q.x, z:q.z });
+    }
+    /* direzione stabile per due punti coincidenti (nessuna direzione vera):
+       dalla chiave, cosi' si aprono sempre nello stesso modo */
+    function dir(alt){ let h=0; for(let i=0;i<alt.length;i++) h=(h*31+alt.charCodeAt(i))|0;
+      const w=(Math.abs(h)%628)/100; return { x:Math.cos(w), z:Math.sin(w) }; }
+    /* qualche giro di rilassamento: si parte dalle posizioni vere e si
+       aprono le coppie troppo vicine (il giocatore resta fermo). Stesse
+       posizioni vere -> stesso risultato: niente tremolio. */
+    const S=L.map(function(o){ return { x:o.x, z:o.z }; });
+    const px=player.position.x, pz=player.position.z;
+    /* prima si aprono i compagni fra loro, poi li si scosta dal giocatore:
+       nell'ordine inverso, chi sta tutto addosso a te verrebbe spinto nella
+       stessa direzione e si metterebbe in fila invece di aprirsi a ventaglio */
+    for(let it=0; it<10; it++){
+      for(let i=0;i<S.length;i++){
+        for(let j=i+1;j<S.length;j++){
+          const ex=S[i].x-S[j].x, ez=S[i].z-S[j].z, dd=Math.hypot(ex,ez);
+          if(dd>=PRES_SEP) continue;
+          let u;
+          if(dd<1e-3){ const ord=L[i].k<L[j].k, w=dir(ord?L[i].k+L[j].k:L[j].k+L[i].k);
+            u=ord?w:{ x:-w.x, z:-w.z }; }
+          else u={ x:ex/dd, z:ez/dd };
+          const m=(PRES_SEP-dd)/2;
+          S[i].x+=u.x*m; S[i].z+=u.z*m;
+          S[j].x-=u.x*m; S[j].z-=u.z*m;
+        }
+      }
+      for(let i=0;i<S.length;i++){
+        const dx=S[i].x-px, dz=S[i].z-pz, d=Math.hypot(dx,dz);
+        if(d>=PRES_SEP) continue;
+        const u=(d<1e-3)?dir(L[i].k):{ x:dx/d, z:dz/d };
+        S[i].x+=u.x*(PRES_SEP-d); S[i].z+=u.z*(PRES_SEP-d);
+      }
+    }
+    for(let i=0;i<L.length;i++){ L[i].e.sepTx=S[i].x-L[i].x; L[i].e.sepTz=S[i].z-L[i].z; }
+    for(let i=0;i<L.length;i++){
+      const o=L[i], e=o.e; if(!e.sepTx && !e.sepTz) continue;
+      try{
+        if(blocked(o.x+e.sepTx, o.z+e.sepTz) && !blocked(o.x, o.z)){
+          if(!blocked(o.x+e.sepTx*0.5, o.z+e.sepTz*0.5)){ e.sepTx*=0.5; e.sepTz*=0.5; }
+          else { e.sepTx=0; e.sepTz=0; }
+        }
+      }catch(err){}
+    }
+    const k=Math.min(1, 8*dt);
+    for(const key in peers){
+      const e=peers[key]; if(!e.sep) continue;
+      e.sep.x+=(e.sepTx-e.sep.x)*k; e.sep.z+=(e.sepTz-e.sep.z)*k;
+    }
+  }
   function tick(){
     if(!acceso) return;
     const ora=Date.now();
     scaduti();
     if(ora-ultimaScelta>500){ ultimaScelta=ora; _scegli(); }
     const dt=Math.min(0.05,(engine.getDeltaTime()||16)/1000);
+    _separa(dt);
     for(const k in peers){
       const e=peers[k], b=e.corpo; if(!b) continue;
       const q=dove(e);
@@ -64761,6 +64898,7 @@ const Presenza=(function(){
         _siedi(b,q,e.siede,ora,e); continue; }
       if(e.tavola) _sparecchia(e);
       if(b.sit) _alza(b);
+      if(e.sep){ q.x+=e.sep.x; q.z+=e.sep.z; }            // v312: non si incastra (_separa)
       /* v309: i passi si ballano anche mentre scivola (moonwalk): niente Walk */
       if(e.mossa){ if(b.ballo) _fermaBallo(b); if(_passi(b,q,e.mossa,ora,dt)) continue; }
       if(b.sk) _fermaPassi(b);
