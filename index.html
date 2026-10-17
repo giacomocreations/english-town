@@ -16,7 +16,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="QuestTown">
-<script>window.ET_BUILD="250";</script>
+<script>window.ET_BUILD="251";</script>
 <script>
 /* =====================================================================
    APP INSTALLABILE (v217-218) — gira PRIMA di tutto il resto.
@@ -339,8 +339,21 @@
      il posto a una scheda «NOW»: la consegna di adesso (la stessa riga
      dell'HUD, in inglese) e sotto DOVE, a parole — «About 25 m, on your
      left». La freccia resta solo per la meta del Ranger (NAV). */
+  /* v313 (Giacomo, 17 ott: «appare solo se prima c'era la bussola, facciamo
+     che appare durante la quest, pero' un po' trasparente cosi' si vede lo
+     sfondo, si puo' restringere se si vuole»). La scheda c'e' per TUTTA la
+     quest, anche dentro gli edifici; la riga «dove» solo se c'e' una meta.
+     Fondo al 60%: il mondo si vede sotto, il testo scuro resta leggibile.
+     Il «–» la riduce alla sola etichetta (scelta ricordata sul dispositivo). */
   #quest-compass.task{width:auto;height:auto;max-width:min(250px,calc(100vw - 32px));border-radius:14px;
-    padding:8px 12px 9px;align-items:stretch;text-align:left;pointer-events:auto;cursor:pointer;}
+    padding:7px 10px 8px 12px;align-items:stretch;text-align:left;pointer-events:auto;cursor:pointer;
+    background:rgba(251,247,236,.6);box-shadow:0 4px 14px rgba(20,30,40,.14);}
+  #quest-compass.task.min{padding:5px 8px 5px 12px;border-radius:999px;}
+  #quest-compass.task.min .qc-what,#quest-compass.task.min .qc-where{display:none;}
+  #quest-compass .qc-hd{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  #quest-compass .qc-min{border:none;background:rgba(29,42,50,.1);color:var(--ink);font:inherit;font-weight:800;
+    font-size:13px;line-height:1;width:22px;height:22px;border-radius:50%;padding:0;cursor:pointer;flex:none;}
+  #quest-compass .qc-where:empty{display:none;}
   #quest-compass.task .qc-arrow,#quest-compass.task .qc-dist{display:none;}
   #quest-compass .qc-now{display:none;}
   #quest-compass.task .qc-now{display:block;}
@@ -785,7 +798,7 @@
 <div id="quest-compass" class="hud">
   <div class="qc-arrow" id="qc-arrow">&#x2B06;&#xFE0F;</div>
   <div class="qc-dist" id="qc-dist">&#x2013;</div>
-  <div class="qc-now"><div class="qc-ey">&#x1F3AF; Now</div><div class="qc-what" id="qc-what"></div><div class="qc-where" id="qc-where"></div></div>
+  <div class="qc-now"><div class="qc-hd"><span class="qc-ey">&#x1F3AF; Now</span><button type="button" class="qc-min" id="qc-min" title="Make smaller / bigger">&#x2013;</button></div><div class="qc-what" id="qc-what"></div><div class="qc-where" id="qc-where"></div></div>
 </div>
 <button id="qbtn" title="Graphics settings">⚙︎ <span id="qlab">Medium</span></button>
 <div id="qpanel" role="dialog" aria-label="Graphics settings">
@@ -21322,41 +21335,70 @@ function qcWhere(dx,dz,dist){
   const m= dist<20 ? Math.max(5,Math.round(dist/5)*5) : Math.round(dist/10)*10;
   return "\u{1F4CD} About "+m+" m, "+side;
 }
-/* toccando la scheda si sente la consegna, come la pillola «Your task» */
+/* v313: ridotta o no, la scelta resta sul dispositivo */
+const QC_MIN_KEY="et_now_min";
+function qcMin(v){
+  if(v===undefined){ try{ return localStorage.getItem(QC_MIN_KEY)==="1"; }catch(e){ return false; } }
+  try{ localStorage.setItem(QC_MIN_KEY, v?"1":"0"); }catch(e){}
+  qcompass.box.classList.toggle("min", !!v);
+  const b=document.getElementById("qc-min"); if(b) b.innerHTML=v?"+":"&#x2013;";
+  return v;
+}
+/* toccando la scheda si sente la consegna, come la pillola «Your task»;
+   se e' ridotta, il tocco la riapre */
 if(qcompass.box) qcompass.box.onclick=function(e){
   if(!qcompass.box.classList.contains("task")) return;
   e.stopPropagation();
+  if(e.target && e.target.id==="qc-min"){ qcMin(!qcompass.box.classList.contains("min")); return; }
+  if(qcompass.box.classList.contains("min")){ qcMin(false); return; }
   try{ if(qcompass.whatT) TTS.say(qcompass.whatT); }catch(err){} };
+try{ qcMin(qcMin()); }catch(e){}
+/* v313: la quest e' in corso (stessa regola del promemoria «Your task») */
+function qcQuestOn(){
+  try{
+    if(!Quest.unit || !Quest.step) return false;
+    if(Quest.i<0 || Quest.i>=Quest.unit.steps.length) return false;
+    if(qhud.box.style.display==="none") return false;
+  }catch(e){ return false; }
+  return true;
+}
 function updateQuestCompass(){
   const u=Quest.unit, s=Quest.step;
   /* DUE sorgenti: la quest open-world (prioritaria, la governa lo step) e la
      meta generica NAV indicata dal Town Ranger (FASE 4.8). */
   let t=null, nav=false;
   if(u && u.openWorld && s && typeof s.target==="function") t=s.target();
-  else if(typeof NAV!=="undefined" && NAV.target){ t=NAV.target; nav=true; }
-  if(!t){ qcompass.box.classList.remove("show"); return; }
+  if(!t && typeof NAV!=="undefined" && NAV.target){ t=NAV.target; nav=true; }
+  /* v313: in quest la scheda «NOW» c'e' sempre, meta o no (vedi CSS
+     #quest-compass.task); sparisce solo sotto una finestra aperta, che sta
+     nello stesso angolo e la coprirebbe a meta'. */
+  const task=qcQuestOn();
+  if(!t && !task){ qcompass.box.classList.remove("show"); return; }
+  if(task){
+    const qm=document.getElementById("quest-modal");
+    if(qm && qm.classList.contains("show")){ qcompass.box.classList.remove("show"); return; }
+  }
   qcompass.box.classList.add("show");
-  const dx=t.x-player.position.x, dz=t.z-player.position.z;
+  qcompass.box.classList.toggle("task", task);
+  const dx=t?t.x-player.position.x:0, dz=t?t.z-player.position.z:0;
   const dist=Math.hypot(dx,dz);
-  /* v312: in quest niente freccia, la scheda «NOW» (vedi CSS #quest-compass.task) */
-  qcompass.box.classList.toggle("task", !nav);
-  if(!nav){
+  if(task){
     /* testo() analizza l'HTML dell'HUD: si rifa' solo quando l'HUD cambia */
     if(qhud.last!==qcompass.lastHud){ qcompass.lastHud=qhud.last;
       let what=""; try{ what=QuestNudge.testo(); }catch(e){}
       qcompass.whatT=what; qcompass.what.textContent=what; }
-    const where=qcWhere(dx,dz,dist);
+    const where=t?qcWhere(dx,dz,dist):"";
     if(where!==qcompass.whereT){ qcompass.whereT=where; qcompass.where.textContent=where; }
-    return;
+  } else {
+    const rel=Math.atan2(dx,dz)-player.rotation.y;
+    qcompass.arrow.style.transform="rotate("+rel+"rad)";
+    qcompass.dist.textContent = dist<2 ? "Sei arrivato!" : Math.round(dist)+" m";
   }
-  const rel=Math.atan2(dx,dz)-player.rotation.y;
-  qcompass.arrow.style.transform="rotate("+rel+"rad)";
-  qcompass.dist.textContent = dist<2 ? "Sei arrivato!" : Math.round(dist)+" m";
   /* la meta del Ranger si spegne DA SOLA all'arrivo (raggio 6 m: gli edifici
      sono larghi e il bersaglio e' il loro centro). Quella delle quest
      open-world no: resta finche' lo step non cambia. */
   if(nav && dist<6){ const lab=NAV.label; NAV.target=null; NAV.label="";
-    qcompass.box.classList.remove("show");
+    if(!task) qcompass.box.classList.remove("show");
     if(typeof toast==="function") toast("\u{1F9ED} Sei arrivato" + (lab?": "+lab:"") + "!"); }
 }
 scene.onBeforeRenderObservable.add(updateQuestCompass);
