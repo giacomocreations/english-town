@@ -16,7 +16,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="QuestTown">
-<script>window.ET_BUILD="251";</script>
+<script>window.ET_BUILD="252";</script>
 <script>
 /* =====================================================================
    APP INSTALLABILE (v217-218) — gira PRIMA di tutto il resto.
@@ -309,18 +309,22 @@
   #fpsv{letter-spacing:.02em;text-transform:none;font-variant-numeric:tabular-nums;font-weight:800;}
   #fpsv.ok{color:#2e7d46;} #fpsv.mid{color:#b07a12;} #fpsv.bad{color:var(--signal);}
   /* ---- QUEST HUD + OVERLAY ---- */
-  #quest-hud{top:62px;left:14px;max-width:264px;background:rgba(251,247,236,.95);border-radius:12px;
-    padding:9px 13px;box-shadow:0 6px 18px rgba(20,30,40,.2);display:none;}
+  /* v314 (Giacomo, 18 ott: «il box a sinistra nell'angolo fallo con la
+     grafica del NOW: un po' trasparente, con i caratteri neri piu' grossi,
+     lasciandolo lampeggiante come e' adesso, con la traduzione italiana»).
+     Fondo al 60% come la scheda NOW della v313: il mondo si vede sotto. */
+  #quest-hud{top:62px;left:14px;max-width:300px;background:rgba(251,247,236,.6);border-radius:14px;
+    padding:9px 13px 10px;box-shadow:0 4px 14px rgba(20,30,40,.14);display:none;}
   #quest-hud .qh-top{display:flex;align-items:center;gap:7px;margin-bottom:3px;}
   #quest-hud .qh-help{margin-left:auto;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;border:1px solid rgba(0,0,0,.15);
     background:#fff;color:var(--ink);font:inherit;font-size:11px;font-weight:800;cursor:pointer;pointer-events:auto;}
   #quest-hud #qh-icon{font-size:16px;}
-  #quest-hud #qh-strand{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--plum);}
+  #quest-hud #qh-strand{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--plum);}
   #quest-hud .qh-prog{margin-left:auto;font-size:11px;font-weight:800;color:#fff;background:var(--signal);
     border-radius:999px;padding:1px 8px;}
-  #quest-hud #qh-obj{font-size:13.5px;line-height:1.35;color:var(--ink);}
+  #quest-hud #qh-obj{font-size:16px;font-weight:700;line-height:1.35;color:#111;}
   /* riga italiana della consegna: compare SOLO in prima (vedi hudObjHtml) */
-  #quest-hud .qh-it{margin-top:3px;font-size:11.5px;line-height:1.3;color:#7a6f60;font-style:italic;}
+  #quest-hud .qh-it{margin-top:4px;font-size:13.5px;font-weight:600;line-height:1.3;color:#2b2520;font-style:italic;}
   /* ---- BUSSOLA DIREZIONALE (FASE 4, Unit 1 «One world»): unica unit
      open-world finora — nessuna teleportazione/area dedicata, quindi lo
      studente ha bisogno di un indicatore per orientarsi nel terminal.
@@ -333,34 +337,12 @@
   #quest-compass.show{display:flex;}
   #quest-compass .qc-arrow{font-size:26px;line-height:1;transition:transform .15s linear;}
   #quest-compass .qc-dist{font-size:10.5px;font-weight:800;color:var(--plum);margin-top:1px;}
-  /* v312 (Giacomo, 17 ott: «quando stanno facendo una quest la bussola puo'
-     creare confusione... sostituirla con un riferimento a quello che devono
-     fare in quel momento»). Durante una quest il disco con la freccia lascia
-     il posto a una scheda «NOW»: la consegna di adesso (la stessa riga
-     dell'HUD, in inglese) e sotto DOVE, a parole — «About 25 m, on your
-     left». La freccia resta solo per la meta del Ranger (NAV). */
-  /* v313 (Giacomo, 17 ott: «appare solo se prima c'era la bussola, facciamo
-     che appare durante la quest, pero' un po' trasparente cosi' si vede lo
-     sfondo, si puo' restringere se si vuole»). La scheda c'e' per TUTTA la
-     quest, anche dentro gli edifici; la riga «dove» solo se c'e' una meta.
-     Fondo al 60%: il mondo si vede sotto, il testo scuro resta leggibile.
-     Il «–» la riduce alla sola etichetta (scelta ricordata sul dispositivo). */
-  #quest-compass.task{width:auto;height:auto;max-width:min(250px,calc(100vw - 32px));border-radius:14px;
-    padding:7px 10px 8px 12px;align-items:stretch;text-align:left;pointer-events:auto;cursor:pointer;
-    background:rgba(251,247,236,.6);box-shadow:0 4px 14px rgba(20,30,40,.14);}
-  #quest-compass.task.min{padding:5px 8px 5px 12px;border-radius:999px;}
-  #quest-compass.task.min .qc-what,#quest-compass.task.min .qc-where{display:none;}
-  #quest-compass .qc-hd{display:flex;align-items:center;justify-content:space-between;gap:10px;}
-  #quest-compass .qc-min{border:none;background:rgba(29,42,50,.1);color:var(--ink);font:inherit;font-weight:800;
-    font-size:13px;line-height:1;width:22px;height:22px;border-radius:50%;padding:0;cursor:pointer;flex:none;}
-  #quest-compass .qc-where:empty{display:none;}
-  #quest-compass.task .qc-arrow,#quest-compass.task .qc-dist{display:none;}
-  #quest-compass .qc-now{display:none;}
-  #quest-compass.task .qc-now{display:block;}
-  #quest-compass .qc-ey{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--plum);}
-  #quest-compass .qc-what{font-size:13px;font-weight:700;line-height:1.3;color:var(--ink);margin-top:2px;
-    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
-  #quest-compass .qc-where{font-size:12px;font-weight:800;color:var(--plum);margin-top:4px;}
+  /* v314 (Giacomo, 18 ott: «il riquadro NOW e' un doppione del primo,
+     possiamo mettere una bussola di nuovo ma che indica dove andare per il
+     prossimo step della quest»). La scheda NOW (v312-313) e' tolta: la
+     consegna sta nell'HUD in alto a sinistra. Qui torna la bussola, che
+     ora punta alla meta dello step per TUTTE le quest (vedi qcFindTarget). */
+  #quest-compass .qc-lab{font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#7a6f60;margin-bottom:1px;}
   /* v297 (Giacomo, 1 ott: «il pop up non deve essere al centro e coprire
      lo schermo, ma sulla destra in basso, con un grado di trasparenza
      assicurandoti che rimanga leggibile»). Niente piu' velo scuro sul
@@ -796,9 +778,9 @@
 <div id="quest-nudge" class="hud" title="Tap to listen"></div>
 <div id="quest-modal"><div id="qm-card"></div></div>
 <div id="quest-compass" class="hud">
+  <div class="qc-lab" id="qc-lab">Go</div>
   <div class="qc-arrow" id="qc-arrow">&#x2B06;&#xFE0F;</div>
   <div class="qc-dist" id="qc-dist">&#x2013;</div>
-  <div class="qc-now"><div class="qc-hd"><span class="qc-ey">&#x1F3AF; Now</span><button type="button" class="qc-min" id="qc-min" title="Make smaller / bigger">&#x2013;</button></div><div class="qc-what" id="qc-what"></div><div class="qc-where" id="qc-where"></div></div>
 </div>
 <button id="qbtn" title="Graphics settings">⚙︎ <span id="qlab">Medium</span></button>
 <div id="qpanel" role="dialog" aria-label="Graphics settings">
@@ -19102,9 +19084,9 @@ const WordTiles=(function(){
     function clearLast(){ if(!built.length) return; const pi=built.pop(); usedIdx.delete(pi);
       gapAt=-1; renderSlots(); renderBank(); }
     const clearBtn=document.createElement("button"); clearBtn.type="button"; clearBtn.className="qm-btn ghost";
-    clearBtn.textContent=uiEn("\u232b Cancella"); clearBtn.onclick=clearLast;
+    clearBtn.textContent=btnEn("\u232b Cancella"); clearBtn.onclick=clearLast;
     const checkBtn=document.createElement("button"); checkBtn.type="button"; checkBtn.className="qm-btn primary";
-    checkBtn.textContent=uiEn(cfg.checkLabel||"\u2714 Controlla");
+    checkBtn.textContent=btnEn(cfg.checkLabel||"\u2714 Controlla");
     checkBtn.onclick=()=>{
       const words=built.map(pi=>pool[pi]);
       /* un'altra forma giusta della stessa frase (vedi tilesCanon): a
@@ -19124,7 +19106,7 @@ const WordTiles=(function(){
         if(g){ gapAt=g.at; msg=gapMsg(g)+((res.msg && res.msg.indexOf("Riprova")<0)?("  "+res.msg):""); }
       }
       renderSlots();
-      feedback.textContent=uiEn(msg);
+      feedback.innerHTML=fbHtml(uiEn(msg));          // v314: <i>did</i> in corsivo, non a testo
       feedback.className="wt-feedback "+(res.ok?"ok":"bad");
       try{ res.ok?SFX.correct():SFX.wrong(); }catch(e){}
       /* v271 — UNA risposta giusta, UN onSuccess. Prima il bottone restava
@@ -19508,6 +19490,24 @@ function erroriFrequenti(text){
   }
   return out;
 }
+/* v314 — il testo e' l'esempio del segnaposto riscritto? (vedi phAvvio)
+   Si confrontano le terne di parole consecutive: se almeno il 70% di quelle
+   del ragazzo sta anche nell'esempio, l'ha ricopiato. Scrivere sullo stesso
+   tema con le stesse frasi d'avvio resta ben sotto la soglia (prova: una
+   routine scritta di suo sull'esempio della Clock Tower sta attorno al 50%).
+   L'esempio si trova dal campo stesso: la textarea con data-ex che contiene
+   proprio questo testo. */
+function _copiaEsempio(text){
+  let ex="";
+  try{ const L=document.querySelectorAll("textarea[data-ex]");
+    for(let i=0;i<L.length;i++) if(L[i].value.trim()===text){ ex=L[i].getAttribute("data-ex")||""; break; } }catch(e){}
+  if(!ex) return false;
+  const parole=function(t){ return (String(t).toLowerCase().replace(/\u2019/g,"'").match(/[a-z']+/g)||[]); };
+  const terne=function(w){ const o=[]; for(let i=0;i+2<w.length;i++) o.push(w[i]+" "+w[i+1]+" "+w[i+2]); return o; };
+  const mie=terne(parole(text)); if(mie.length<4) return false;
+  const sue=new Set(terne(parole(ex)));
+  return mie.filter(function(t){ return sue.has(t); }).length/mie.length >= 0.7;
+}
 function checkProduzione(text,req){
   req=req||{}; text=(text||"").trim();
   const checks=[];
@@ -19565,8 +19565,11 @@ function checkProduzione(text,req){
   const errs=erroriFrequenti(text).slice(0,ERR_MAX_MOSTRATI);
   errs.forEach(function(e){
     checks.push({ label:"\u2757 "+e.label, ok:false, detail:"si dice: "+e.fix, err:true }); });
+  /* v314: l'esempio riscritto (a mano, a memoria o al microfono) non passa */
+  const copia=_copiaEsempio(text);
+  if(copia) checks.push({ label:"\u270d\ufe0f Scrivi con parole tue: non ricopiare l'esempio", ok:false });
   const total=checks.length||1, passed=checks.filter(c=>c.ok).length, ratio=passed/total;
-  const band = ratio>=0.999?"green":(ratio>=0.5?"yellow":"red");
+  const band = copia ? "red" : (ratio>=0.999?"green":(ratio>=0.5?"yellow":"red"));
   const order={red:0,yellow:1,green:2}; const passBand=req.passBand||"yellow";
   return { band, pass:order[band]>=order[passBand], checks, passed, total,
     icon: band==="green"?"🟢":(band==="yellow"?"🟡":"🔴") };
@@ -20998,6 +21001,28 @@ const _UI_EN=[
   [/\bScrivi\b/g,"Write"], [/\bCancella\b/g,"Delete"] ];
 function uiEn(t){ if(t==null || !yrEnglish()) return t; let o=String(t);
   _UI_EN.forEach(p=>{ o=o.replace(p[0],p[1]); }); return o; }
+/* v314 (Giacomo, 18 ott: «la quest del cinema ha Chiedi, Cancella in
+   italiano!!»). I BOTTONI delle tessere sono interfaccia, non spiegazione:
+   in inglese PER TUTTI, anche in prima (la regola della v288: «le parti
+   facili per tutti, tipo Vai, i menu, in inglese»). uiEn() li traduceva
+   solo da seconda in su, e a pezzi: «Scrivi sull'orario» diventava «Write
+   sull'orario». Qui la frase intera, la piu' lunga per prima. */
+const _BTN_EN=[
+  ["Scrivi nel diario","Write in the diary"], ["Scrivi nel registro","Write in the book"],
+  ["Scrivi sull'orario","Write on the timetable"], ["Scrivi sul prototipo","Write on the prototype"],
+  ["Segna sull'appello","Mark the register"], ["Metti a verbale","Put it on record"],
+  ["Insegna a Bit","Teach Bit"], ["Dillo al fal\u00f2","Say it at the campfire"],
+  ["Dillo a Vik","Tell Vik"], ["Dillo a Sam","Tell Sam"], ["Dillo","Say it"],
+  ["Rispondi","Answer"], ["Chiedi","Ask"], ["Controlla","Check"], ["Scrivi","Write"],
+  ["Proponi","Suggest"], ["Scansiona","Scan"], ["Registra","Save"], ["Invita","Invite"],
+  ["Componi","Build it"], ["Cancella","Delete"] ];
+function btnEn(t){ if(t==null) return t; let o=String(t);
+  for(let i=0;i<_BTN_EN.length;i++) if(o.indexOf(_BTN_EN[i][0])>=0){ o=o.replace(_BTN_EN[i][0],_BTN_EN[i][1]); break; }
+  return o; }
+/* v314 (Giacomo: «i suggerimenti si vedono <i>did</i> con questi segni»).
+   I messaggi delle tessere usano <i>/<b> per la parola chiave, ma finivano
+   in textContent. Si scappa tutto e si lasciano passare SOLO quei due tag. */
+function fbHtml(t){ return _escHtml(String(t==null?"":t)).replace(/&lt;(\/?)(i|b)&gt;/g,"<$1$2>"); }
 /* sottotitoli dei dialoghi: «Funzioni — componi la frase (2/3)» ->
    «Functions (2/3)». La testa si traduce; la coda si tiene se e' inglese
    («have got», «spelling», «how often») e si toglie se e' italiano,
@@ -21315,45 +21340,9 @@ function mechStub(s){ questHudSet(s.strand,HOBJ("🚧 Step under construction �
    Angolo = bearing(target)-player.rotation.y, stessa convenzione
    (sinθ,cosθ) gia' usata per il facing degli NPC — positivo = target a
    destra = rotazione CSS oraria, coerente. ---- */
-const qcompass={ box:document.getElementById("quest-compass"),
-  arrow:document.getElementById("qc-arrow"), dist:document.getElementById("qc-dist"),
-  what:document.getElementById("qc-what"), where:document.getElementById("qc-where"),
-  whatT:"", whereT:"", lastHud:null };
-/* v312: dove sta la meta, A PAROLE, rispetto a come la vedi sullo schermo
-   (la camera, non il busto dell'avatar: e' guardando lo schermo che si
-   sceglie dove andare). Fasce larghe (90° ciascuna) e metri arrotondati a
-   5/10: la scritta non sfarfalla camminando. */
-function qcWhere(dx,dz,dist){
-  if(dist<3) return "✅ You're here!";
-  let fx=0, fz=0;
-  try{ fx=camera.target.x-camera.position.x; fz=camera.target.z-camera.position.z; }catch(e){}
-  if(Math.hypot(fx,fz)<1e-3){ fx=Math.sin(player.rotation.y); fz=Math.cos(player.rotation.y); }
-  let a=Math.atan2(dx,dz)-Math.atan2(fx,fz);
-  while(a>Math.PI) a-=2*Math.PI; while(a<-Math.PI) a+=2*Math.PI;
-  const deg=a*180/Math.PI, ad=Math.abs(deg);
-  const side= ad<=45 ? "straight ahead" : (ad>=135 ? "behind you" : (deg>0 ? "on your right" : "on your left"));
-  const m= dist<20 ? Math.max(5,Math.round(dist/5)*5) : Math.round(dist/10)*10;
-  return "\u{1F4CD} About "+m+" m, "+side;
-}
-/* v313: ridotta o no, la scelta resta sul dispositivo */
-const QC_MIN_KEY="et_now_min";
-function qcMin(v){
-  if(v===undefined){ try{ return localStorage.getItem(QC_MIN_KEY)==="1"; }catch(e){ return false; } }
-  try{ localStorage.setItem(QC_MIN_KEY, v?"1":"0"); }catch(e){}
-  qcompass.box.classList.toggle("min", !!v);
-  const b=document.getElementById("qc-min"); if(b) b.innerHTML=v?"+":"&#x2013;";
-  return v;
-}
-/* toccando la scheda si sente la consegna, come la pillola «Your task»;
-   se e' ridotta, il tocco la riapre */
-if(qcompass.box) qcompass.box.onclick=function(e){
-  if(!qcompass.box.classList.contains("task")) return;
-  e.stopPropagation();
-  if(e.target && e.target.id==="qc-min"){ qcMin(!qcompass.box.classList.contains("min")); return; }
-  if(qcompass.box.classList.contains("min")){ qcMin(false); return; }
-  try{ if(qcompass.whatT) TTS.say(qcompass.whatT); }catch(err){} };
-try{ qcMin(qcMin()); }catch(e){}
-/* v313: la quest e' in corso (stessa regola del promemoria «Your task») */
+const qcompass={ box:document.getElementById("quest-compass"), lab:document.getElementById("qc-lab"),
+  arrow:document.getElementById("qc-arrow"), dist:document.getElementById("qc-dist") };
+/* la quest e' in corso (stessa regola del promemoria «Your task») */
 function qcQuestOn(){
   try{
     if(!Quest.unit || !Quest.step) return false;
@@ -21362,43 +21351,80 @@ function qcQuestOn(){
   }catch(e){ return false; }
   return true;
 }
-function updateQuestCompass(){
+/* =====================================================================
+   v314 — DOVE ANDARE PER LO STEP DI ADESSO (Giacomo, 18 ott: «una bussola
+   che indica dove andare per il prossimo step della quest... per i piu'
+   sprovveduti, ti dirige dove andare»). Fino alla v311 la bussola c'era
+   solo nelle unit open-world con `target()`. Ora, in ordine:
+     1. lo step ha un `target()` -> quello (qualunque unit);
+     2. la quest e' in un edificio e tu sei in citta' -> la sua porta
+        (gazUnitTarget, la stessa del Ranger e della Gazette);
+     3. la consegna nomina un personaggio che sta nella tua stessa area
+        («Build the questions with Mr. Reed») -> lui;
+     4. nell'area c'e' UN SOLO punto della quest (un leggio, una console,
+        un tabellone) -> quello.
+   ⚠️ Se i punti della quest sono tanti (gli oggetti da trovare) la bussola
+   NON ne sceglie uno: cercarli e' l'esercizio, indicarne uno a caso
+   sarebbe la soluzione. Meglio niente freccia che la risposta.
+   Restituisce una funzione (la meta puo' muoversi: gli NPC camminano). */
+function qcFindTarget(){
+  if(!qcQuestOn()) return null;
   const u=Quest.unit, s=Quest.step;
-  /* DUE sorgenti: la quest open-world (prioritaria, la governa lo step) e la
-     meta generica NAV indicata dal Town Ranger (FASE 4.8). */
+  if(typeof s.target==="function") return function(){ return s.target(); };
+  if(u.area && u.area!==area){
+    if(area!=="town") return null;
+    const d=gazUnitTarget(u.id);
+    return d ? function(){ return d; } : null;
+  }
+  const txt=QuestNudge.testo();
+  if(txt){
+    for(let i=0;i<NPCS.length;i++){ const n=NPCS[i];
+      if(n.area!==area || !n.name || !n.carrier) continue;
+      try{ if(!n.carrier.isEnabled()) continue; }catch(e){}
+      const re=new RegExp("(^|[^A-Za-z])"+String(n.name).replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"(?![A-Za-z])");
+      if(re.test(txt)) return function(){ return n.carrier.getAbsolutePosition(); };
+    }
+  }
+  let one=null, quanti=0;
+  for(let i=0;i<interactables.length;i++){ const o=interactables[i];
+    if(!o.__quest || !o.enabled || o.area!==area) continue;
+    one=o; if(++quanti>1) break; }
+  if(quanti===1) return function(){ return (typeof one.pos==="function")?one.pos():one.pos; };
+  return null;
+}
+/* la ricerca si rifa' tre volte al secondo, la posizione a ogni fotogramma */
+const QC={ t:-1e9, get:null };
+function updateQuestCompass(){
+  const ora=performance.now();
+  if(ora-QC.t>300){ QC.t=ora; QC.get=null; try{ QC.get=qcFindTarget(); }catch(e){ QC.get=null; } }
+  /* DUE sorgenti: lo step della quest (prioritaria) e la meta generica NAV
+     indicata dal Town Ranger (FASE 4.8). */
   let t=null, nav=false;
-  if(u && u.openWorld && s && typeof s.target==="function") t=s.target();
+  if(QC.get){ try{ t=QC.get(); }catch(e){ t=null; } }
   if(!t && typeof NAV!=="undefined" && NAV.target){ t=NAV.target; nav=true; }
-  /* v313: in quest la scheda «NOW» c'e' sempre, meta o no (vedi CSS
-     #quest-compass.task); sparisce solo sotto una finestra aperta, che sta
-     nello stesso angolo e la coprirebbe a meta'. */
-  const task=qcQuestOn();
-  if(!t && !task){ qcompass.box.classList.remove("show"); return; }
-  if(task){
-    const qm=document.getElementById("quest-modal");
-    if(qm && qm.classList.contains("show")){ qcompass.box.classList.remove("show"); return; }
-  }
+  if(!t){ qcompass.box.classList.remove("show"); return; }
+  /* sotto una finestra aperta (stesso angolo) la bussola si toglie */
+  const qm=document.getElementById("quest-modal");
+  if(qm && qm.classList.contains("show")){ qcompass.box.classList.remove("show"); return; }
   qcompass.box.classList.add("show");
-  qcompass.box.classList.toggle("task", task);
-  const dx=t?t.x-player.position.x:0, dz=t?t.z-player.position.z:0;
+  const lab=nav?"Ranger":"Next step";
+  if(qcompass.lab.textContent!==lab) qcompass.lab.textContent=lab;
+  const dx=t.x-player.position.x, dz=t.z-player.position.z;
   const dist=Math.hypot(dx,dz);
-  if(task){
-    /* testo() analizza l'HTML dell'HUD: si rifa' solo quando l'HUD cambia */
-    if(qhud.last!==qcompass.lastHud){ qcompass.lastHud=qhud.last;
-      let what=""; try{ what=QuestNudge.testo(); }catch(e){}
-      qcompass.whatT=what; qcompass.what.textContent=what; }
-    const where=t?qcWhere(dx,dz,dist):"";
-    if(where!==qcompass.whereT){ qcompass.whereT=where; qcompass.where.textContent=where; }
-  } else {
-    const rel=Math.atan2(dx,dz)-player.rotation.y;
-    qcompass.arrow.style.transform="rotate("+rel+"rad)";
-    qcompass.dist.textContent = dist<2 ? "Sei arrivato!" : Math.round(dist)+" m";
-  }
+  /* v314: la freccia e' riferita alla VISUALE (camera), non al busto
+     dell'avatar: in alto = davanti a te sullo schermo. Stessa convenzione
+     di player.rotation.y (atan2(x,z)), quindi positivo = a destra. */
+  let fx=0, fz=0;
+  try{ fx=camera.target.x-camera.position.x; fz=camera.target.z-camera.position.z; }catch(e){}
+  const vista=(Math.hypot(fx,fz)<1e-3) ? player.rotation.y : Math.atan2(fx,fz);
+  const rel=Math.atan2(dx,dz)-vista;
+  qcompass.arrow.style.transform="rotate("+rel+"rad)";
+  qcompass.dist.textContent = dist<2.5 ? "You're here!" : Math.round(dist)+" m";
   /* la meta del Ranger si spegne DA SOLA all'arrivo (raggio 6 m: gli edifici
-     sono larghi e il bersaglio e' il loro centro). Quella delle quest
-     open-world no: resta finche' lo step non cambia. */
+     sono larghi e il bersaglio e' il loro centro). Quella delle quest no:
+     resta finche' lo step non cambia. */
   if(nav && dist<6){ const lab=NAV.label; NAV.target=null; NAV.label="";
-    if(!task) qcompass.box.classList.remove("show");
+    qcompass.box.classList.remove("show");
     if(typeof toast==="function") toast("\u{1F9ED} Sei arrivato" + (lab?": "+lab:"") + "!"); }
 }
 scene.onBeforeRenderObservable.add(updateQuestCompass);
@@ -34490,7 +34516,7 @@ function cinPressAnswer(npc,R){
   const pc=Quest.state.pc;
   DialogueBox.open({ npc, icon:"\ud83c\udfa5", sub:"Iris Kane answers", text:R.a, italian:"",
     html:cinNotebookHTML(pc.notes),
-    buttons:[{ label:(R.rec?"\ud83d\udcdd Scrivilo sul taccuino":"\ud83d\udcdd Segna sul taccuino"), cls:"primary",
+    buttons:[{ label:(R.rec?"\ud83d\udcdd Write it in the notebook":"\ud83d\udcdd Note it down"), cls:"primary",
       act:()=>{ if(R.rec){ cinPressRecord(npc,R); }
         else { pc.notes[pc.idx]=R.note[1]; pc.idx++; setTimeout(()=>runPressConference(npc), 320); } } }] });
 }
@@ -34637,8 +34663,8 @@ function runGuessTheFilm(npc,speak){
     text:"Listen \u2014 which film was it?",
     italian:"Chris racconta un film senza dirne n\u00e9 il titolo n\u00e9 il genere. Ascolta con il pulsante, poi vai alla locandina giusta e premi E.",
     html:rev,
-    buttons:[{label:"\ud83d\udd0a Ascolta", cls:"", keepOpen:true, act:()=>cinTaleSay()},
-             {label:"\u2714 Vado a cercarla", cls:"primary", act:()=>{}}] });
+    buttons:[{label:"\ud83d\udd0a Listen", cls:"", keepOpen:true, act:()=>cinTaleSay()},
+             {label:"\u2714 I'll find it", cls:"primary", act:()=>{}}] });
   if(speak!==false) setTimeout(cinTaleSay, 300);
 }
 MECH.guessTheFilm=function(s){
@@ -44607,6 +44633,55 @@ const Mic=(function(){
   }
   return { available:!!SR, stop, scan };
 })();
+/* =====================================================================
+   v314 — L'ESEMPIO NON SI RICOPIA (Giacomo, 18 ott: «quando in una quest
+   devi scrivere qualcosa, appare un esempio gia' pronto, basta ricopiarlo
+   o fare Speak ed e' pronto»). Il segnaposto delle <textarea> era un testo
+   intero e corretto: bastava trascriverlo, o leggerlo al microfono.
+   Ora, per TUTTI i campi di scrittura (un solo osservatore, come Mic):
+     · il segnaposto mostra solo l'INIZIO di ogni frase («I get up …   I
+       always have …»): dice come partire, il resto lo scrive il ragazzo;
+     · le domande guida («Where did you go last summer?»), le frasi gia'
+       lasciate a meta' («You should...») e i segnaposto gia' corti
+       («Answer in English...», «Because…») restano interi;
+     · l'esempio intero resta in data-ex: checkProduzione lo usa per
+       accorgersi di chi lo riscrive a memoria (vedi _copiaEsempio).
+   ⚠️ Nessun testo da riscrivere nelle 40 quest: si tocca solo cio' che
+   arriva sullo schermo. */
+const PH_APERTE=/^(because|to|so|be|been|had|got|seen|should|shouldn't|might|may|will|every|near|since|from|but|and|or|the|a|an|of|for|with|at|in|on|is|are|was|were)$/i;
+function phAvvio(ph){
+  const t=String(ph||"").replace(/\s+/g," ").trim();
+  if(!t || t.split(" ").length<=6) return t;
+  const parti=t.match(/[^.!?…]+[.!?…]*/g)||[t];
+  return parti.map(function(f){
+    f=f.trim(); if(!f) return "";
+    if(/\?$/.test(f)) return f;
+    const w=f.replace(/[.!…]+$/,"").trim().split(" ");
+    /* gia' lasciata a meta' dall'autore («You should...», «Next month I'm
+       going to...»): e' lei lo spunto grammaticale, resta intera. Conta
+       l'ULTIMA PAROLA, non i puntini: molti esempi li mettono anche in coda
+       a frasi complete («I eat pizza once a week...»), che vanno tagliate.
+       Restano intere anche le frasi di due-tre parole («Hi!», «Get well soon!»). */
+    if(w.length<=3 || (/(\.\.\.|…)$/.test(f) && w.length<=6 && PH_APERTE.test(w[w.length-1]))) return f;
+    return w.slice(0,3).join(" ")+" …";
+  }).filter(Boolean).join("   ");
+}
+(function(){
+  function fix(ta){
+    if(ta.__ph) return; ta.__ph=true;
+    const ph=ta.getAttribute("placeholder")||"", nuovo=phAvvio(ph);
+    if(nuovo!==ph){ ta.setAttribute("data-ex", ph); ta.setAttribute("placeholder", nuovo); }
+  }
+  function scan(n){
+    if(!n || n.nodeType!==1) return;
+    if(n.tagName==="TEXTAREA") fix(n);
+    else if(n.getElementsByTagName) Array.prototype.forEach.call(n.getElementsByTagName("textarea"), fix);
+  }
+  try{ new MutationObserver(function(ms){
+    ms.forEach(function(m){ m.addedNodes.forEach(scan); });
+  }).observe(document.body,{childList:true,subtree:true}); }catch(e){}
+  setTimeout(function(){ scan(document.body); },0);
+})();
 function toast(m,ms){ const e=document.getElementById("toast"); e.textContent=m; e.classList.add("show");
   clearTimeout(toastT); toastT=setTimeout(()=>e.classList.remove("show"),ms||2400); }
 /* v306 (Giacomo, 9 ott: «la scritta in inglese "sta piovendo, sta tuonando"
@@ -50728,7 +50803,7 @@ function jbInterviewAnswer(npc,R){
   const iv=Quest.state.iv;
   DialogueBox.open({ npc, icon:"\ud83d\udccb", sub:"Danny answers", text:R.a, italian:"",
     html:jbCardHTML(iv.notes),
-    buttons:[{ label:(R.rec?"\u270d\ufe0f Scrivilo sulla scheda":"\u270d\ufe0f Segna sulla scheda"), cls:"primary",
+    buttons:[{ label:(R.rec?"\u270d\ufe0f Write it on the card":"\u270d\ufe0f Note it down"), cls:"primary",
       act:()=>{ if(R.rec){ jbInterviewRecord(npc,R); }
         else { iv.notes[iv.idx]=R.note[1]; iv.idx++; setTimeout(()=>jbRunInterview(npc), 320); } } }] });
 }
