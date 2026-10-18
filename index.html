@@ -16,7 +16,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="QuestTown">
-<script>window.ET_BUILD="253";</script>
+<script>window.ET_BUILD="254";</script>
 <script>
 /* =====================================================================
    APP INSTALLABILE (v217-218) — gira PRIMA di tutto il resto.
@@ -38307,122 +38307,172 @@ function salonFace(c,W,H,o){
   /* ⚠️⚠️ -0.30 di luminosita' va bene per capelli scuri/castani/neri, ma un
      BIONDO scurito del 30% smette di leggersi come "biondo" e diventa
      "castano" — e' un limite percettivo (il giallo scuro si legge come
-     marrone), non un errore nel calcolo del colore: la tinta e' matematicamente
-     corretta, il cervello la classifica diversamente. Sui capelli lunghi LISCI
-     questa e' l'UNICA tinta usata per l'intera massa (niente ciocche chiare
-     sopra, quelle esistono solo per riccio/ondulato): Nell e Wanda avevano
-     "tutta" la chioma dietro castana. Per biondo (e per lo stesso motivo,
-     rosa/grigio: chiari e desaturati) si scurisce molto meno. */
+     marrone), non un errore nel calcolo del colore. Per biondo (e per lo
+     stesso motivo, rosa/grigio: chiari e desaturati) si scurisce molto meno. */
   const DARK_K={ blonde:-0.13, pink:-0.16, grey:-0.16 };
   const hairD=salonTint(hairC, DARK_K[o.hairCol]!=null?DARK_K[o.hairCol]:-0.30);
-  const hairL=salonTint(hairC,0.18);
+  const hairL=salonTint(hairC,0.22);
   const len=o.len||"short", curl=o.curl||"straight";
   const long=(len==="long"), bald=(len==="bald"), pony=!!o.ponytail&&!bald;
   const cx=W*0.5, cy=H*0.455, rx=W*0.205, ry=H*0.235;
+  const lw=Math.max(1,W*0.007);                       // spessore dei contorni morbidi
   function dot(x,y,r){ c.beginPath(); c.arc(x,y,r,0,Math.PI*2); c.fill(); }
   function ell(x,y,a,b,rot){ c.beginPath(); c.ellipse(x,y,a,b,rot||0,0,Math.PI*2); c.fill(); }
+  function rg(x,y,r0,r1,a,b){ const g=c.createRadialGradient(x,y,r0,x,y,r1); g.addColorStop(0,a); g.addColorStop(1,b); return g; }
+  function ciocca(x0,y0,x1,y1,x2,y2,col,w){            // una ciocca di luce: un tratto curvo
+    c.strokeStyle=col; c.lineWidth=w; c.lineCap="round";
+    c.beginPath(); c.moveTo(x0,y0); c.quadraticCurveTo(x1,y1,x2,y2); c.stroke(); }
+  c.save();
 
-  /* --- fondo da studio fotografico --- */
-  c.fillStyle=o.bg||"#efe7dc"; c.fillRect(0,0,W,H);
-  c.fillStyle=o.bg2||"#e0d4c2"; c.fillRect(0,Math.round(H*0.70),W,Math.round(H*0.30));
+  /* --- fondo da studio: luce morbida al centro, pavimento in basso --- */
+  const bg=o.bg||"#efe7dc";
+  c.fillStyle=rg(cx,cy-ry*0.2,W*0.05,W*0.85,salonTint(bg,0.45),salonTint(bg,-0.06));
+  c.fillRect(0,0,W,H);
+  c.fillStyle=o.bg2||salonTint(bg,-0.10); c.fillRect(0,Math.round(H*0.70),W,Math.round(H*0.30));
 
-  /* --- capelli DIETRO --- */
-  if(!bald && long){
-    const wide = pony ? 1.10 : 1.34;                 // con la coda la massa e' raccolta
+  /* --- capelli DIETRO (solo lunghi SCIOLTI) ---
+     ⚠️ v315 (Giacomo, 18 ott: «Nell ha una ponytail ma anche i capelli
+     lunghi che le scendono sulle spalle!»). Con la coda i capelli sono
+     RACCOLTI: niente massa che scende ai lati del collo. Dietro la testa
+     resta solo la nuca, e tutta la lunghezza sta nella coda. */
+  if(!bald && long && !pony){
+    const wide=1.30;
     c.fillStyle=hairD;
     c.beginPath();
     c.moveTo(cx-rx*wide, cy-ry*0.30);
-    c.quadraticCurveTo(cx-rx*(wide+0.20), cy+ry*1.10, cx-rx*(wide-0.30), cy+ry*1.52);
-    c.lineTo(cx+rx*(wide-0.30), cy+ry*1.52);
-    c.quadraticCurveTo(cx+rx*(wide+0.20), cy+ry*1.10, cx+rx*wide, cy-ry*0.30);
+    c.quadraticCurveTo(cx-rx*(wide+0.22), cy+ry*1.05, cx-rx*(wide-0.18), cy+ry*1.50);
+    c.quadraticCurveTo(cx-rx*0.70, cy+ry*1.62, cx-rx*0.46, cy+ry*1.30);
+    c.lineTo(cx+rx*0.46, cy+ry*1.30);
+    c.quadraticCurveTo(cx+rx*0.70, cy+ry*1.62, cx+rx*(wide-0.18), cy+ry*1.50);
+    c.quadraticCurveTo(cx+rx*(wide+0.22), cy+ry*1.05, cx+rx*wide, cy-ry*0.30);
     c.closePath(); c.fill();
     ell(cx, cy-ry*0.10, rx*wide, ry*1.10);
-    if(curl==="curly"){ c.fillStyle=hairC;
-      for(let i=0;i<16;i++){ const t=i/15, a=Math.PI*(0.05+0.90*t);
-        dot(cx-Math.cos(a)*rx*(wide+0.06), cy-ry*0.10+Math.sin(a)*ry*1.12, W*0.048); } }
-    else if(curl==="wavy"){ c.fillStyle=hairC;
-      for(let i=0;i<6;i++){ const t=i/5;
-        dot(cx-rx*(wide+0.02)+((i%2)?W*0.022:0), cy-ry*0.30+t*ry*1.65, W*0.042);
-        dot(cx+rx*(wide+0.02)-((i%2)?W*0.022:0), cy-ry*0.30+t*ry*1.65, W*0.042); } }
+    if(curl==="curly"){
+      for(let i=0;i<18;i++){ const t=i/17, a=Math.PI*(0.04+0.92*t);
+        const x=cx-Math.cos(a)*rx*(wide+0.04), y=cy-ry*0.12+Math.sin(a)*ry*1.18;
+        c.fillStyle=hairC; dot(x,y,W*0.050);
+        c.fillStyle=hairD; dot(x+W*0.012,y+W*0.014,W*0.014); } }
+    else if(curl==="wavy"){
+      for(let i=0;i<6;i++){ const t=i/5, y=cy-ry*0.30+t*ry*1.60, k=(i%2)?W*0.022:0;
+        c.fillStyle=hairC; dot(cx-rx*(wide+0.02)+k, y, W*0.044); dot(cx+rx*(wide+0.02)-k, y, W*0.044); } }
+    else {                                             // lisci: due ciocche di luce che scendono
+      ciocca(cx-rx*1.18,cy-ry*0.10, cx-rx*1.34,cy+ry*0.75, cx-rx*1.06,cy+ry*1.38, hairC, W*0.030);
+      ciocca(cx+rx*1.18,cy-ry*0.10, cx+rx*1.34,cy+ry*0.75, cx+rx*1.06,cy+ry*1.38, hairC, W*0.030);
+    }
   }
-  /* --- coda di cavallo: sporge dal profilo, altrimenti sparisce nella massa --- */
+  /* --- coda di cavallo: nuca + coda che pende DIETRO il collo, a destra ---
+     Sporge dal profilo della testa (se no sparirebbe dietro il viso) e
+     scende fino all'attaccatura della spalla, non oltre. */
   if(pony){
-    c.fillStyle=hairL;
+    c.fillStyle=hairD; ell(cx, cy-ry*0.12, rx*1.08, ry*1.04);          // nuca
+    const tx=cx+rx*1.00, ty=cy-ry*0.66;                                 // dove la lega l'elastico
+    c.fillStyle=hairC;
     c.beginPath();
-    c.moveTo(cx+rx*0.80, cy-ry*0.40);
-    c.quadraticCurveTo(cx+rx*1.90, cy-ry*0.45, cx+rx*1.72, cy+ry*0.60);
-    c.quadraticCurveTo(cx+rx*1.58, cy+ry*1.20, cx+rx*1.10, cy+ry*0.98);
-    c.quadraticCurveTo(cx+rx*1.40, cy+ry*0.25, cx+rx*0.86, cy+ry*0.05);
+    c.moveTo(tx-rx*0.06, ty-ry*0.10);
+    c.quadraticCurveTo(cx+rx*1.72, ty-ry*0.12, cx+rx*1.66, cy+ry*0.40);
+    c.quadraticCurveTo(cx+rx*1.60, cy+ry*1.00, cx+rx*1.22, cy+ry*1.26);
+    c.quadraticCurveTo(cx+rx*1.30, cy+ry*0.80, cx+rx*1.06, cy+ry*0.20);
+    c.quadraticCurveTo(cx+rx*0.98, cy-ry*0.20, tx-rx*0.06, ty+ry*0.12);
     c.closePath(); c.fill();
-    if(curl==="curly"){ for(let i=0;i<5;i++)
-      dot(cx+rx*(1.75-i*0.06), cy+ry*(-0.15+i*0.26), W*0.040); }
+    c.strokeStyle=hairD; c.lineWidth=lw; c.stroke();
+    if(curl==="curly"){
+      for(let i=0;i<6;i++){ const x=cx+rx*(1.50-i*0.05), y=cy+ry*(-0.30+i*0.26);
+        c.fillStyle=hairC; dot(x,y,W*0.044); c.fillStyle=hairD; dot(x+W*0.010,y+W*0.012,W*0.012); } }
+    else {
+      ciocca(tx+rx*0.12,ty, cx+rx*1.56,cy-ry*0.20, cx+rx*1.36,cy+ry*1.06, hairL, W*0.022);
+      ciocca(tx+rx*0.04,ty+ry*0.10, cx+rx*1.30,cy+ry*0.05, cx+rx*1.26,cy+ry*0.88, hairD, W*0.010);
+    }
   }
 
   /* --- collo, ombra sotto il mento, spalle ---
-     ⚠️⚠️ IL COLLO DEVE ARRIVARE SOTTO LA LINEA DELLE SPALLE. Il collo
-     finiva a 0.72H, la curva delle spalle culminava a 0.80H: in mezzo restava
-     una striscia di SFONDO alta l'8% dell'immagine e ogni cliente aveva la
-     testa staccata dal corpo. Non si vede rileggendo il codice — le due
-     misure stanno in due righe diverse, una in unita' di ry e una in unita'
-     di H — e nemmeno nei test: si vede solo guardando il disegno.
-     Il collo ora scende a 0.87H, ~9 punti SOTTO la spalla. Regola: quando due
-     forme devono combaciare, si fanno accavallare, non toccare. */
+     ⚠️⚠️ IL COLLO DEVE ARRIVARE SOTTO LA LINEA DELLE SPALLE (le due forme si
+     accavallano, non si toccano): se no resta una striscia di sfondo e la
+     testa si stacca dal corpo. */
   const shPeak=H*0.775, neckBot=H*0.87;
   c.fillStyle=salonTint(skin,-0.20);
   c.fillRect(cx-W*0.078, cy+ry*0.55, W*0.156, neckBot-(cy+ry*0.55));
-  c.fillStyle=skin;
+  c.fillStyle=salonTint(skin,-0.05);                  // un filo piu' scuro del viso (che e' in luce)
   c.fillRect(cx-W*0.066, cy+ry*0.70, W*0.132, neckBot-(cy+ry*0.70));
-  c.fillStyle=o.top||"#6f87a3";
+  const top=o.top||"#6f87a3";
+  c.fillStyle=top;
   c.beginPath(); c.moveTo(W*0.01,H); c.lineTo(W*0.13,H*0.835);
   c.quadraticCurveTo(cx,H*0.715,W*0.87,H*0.835); c.lineTo(W*0.99,H); c.closePath(); c.fill();
-  c.fillStyle=salonTint(o.top||"#6f87a3",-0.20);
-  c.beginPath(); c.moveTo(cx-W*0.090,shPeak+H*0.020);
-  c.quadraticCurveTo(cx,H*0.900,cx+W*0.090,shPeak+H*0.020);
-  c.lineTo(cx+W*0.090,H); c.lineTo(cx-W*0.090,H); c.closePath(); c.fill();
+  /* scollatura e colletto: la maglia ha un bordo, non e' una macchia di colore */
+  c.fillStyle=salonTint(top,-0.22);
+  c.beginPath(); c.moveTo(cx-W*0.095,shPeak+H*0.012);
+  c.quadraticCurveTo(cx,H*0.905,cx+W*0.095,shPeak+H*0.012);
+  c.quadraticCurveTo(cx,H*0.940,cx-W*0.095,shPeak+H*0.012); c.closePath(); c.fill();
+  c.fillStyle=salonTint(skin,-0.05);
+  c.beginPath(); c.moveTo(cx-W*0.066,shPeak+H*0.010);
+  c.quadraticCurveTo(cx,H*0.885,cx+W*0.066,shPeak+H*0.010); c.lineTo(cx+W*0.066,shPeak); c.lineTo(cx-W*0.066,shPeak); c.closePath(); c.fill();
 
-  /* --- orecchie e viso --- */
+  /* --- orecchie e viso, con un'ombra morbida sul lato --- */
   c.fillStyle=skin;
   dot(cx-rx*1.00, cy+ry*0.12, W*0.037); dot(cx+rx*1.00, cy+ry*0.12, W*0.037);
+  c.fillStyle=salonTint(skin,-0.12);
+  dot(cx-rx*1.00, cy+ry*0.12, W*0.018); dot(cx+rx*1.00, cy+ry*0.12, W*0.018);
+  c.fillStyle=rg(cx-rx*0.30,cy-ry*0.30,rx*0.15,rx*1.35,salonTint(skin,0.10),salonTint(skin,-0.08));
   c.beginPath(); c.ellipse(cx,cy,rx,ry,0,0,Math.PI*2); c.fill();
-  c.strokeStyle=salonTint(skin,-0.22); c.lineWidth=Math.max(1,W*0.008);
+  c.strokeStyle=salonTint(skin,-0.24); c.lineWidth=lw;
   c.beginPath(); c.ellipse(cx,cy,rx,ry,0,0,Math.PI*2); c.stroke();
+  /* guance rosate: e' quello che rende il viso simpatico invece che piatto */
+  c.fillStyle="rgba(232,110,110,0.18)";
+  ell(cx-rx*0.56, cy+ry*0.36, rx*0.22, ry*0.11); ell(cx+rx*0.56, cy+ry*0.36, rx*0.22, ry*0.11);
 
   /* --- capigliatura sopra: calotta con attaccatura CURVA (non un caschetto) --- */
   if(!bald){
     c.fillStyle=hairC;
     c.beginPath();
     c.moveTo(cx-rx*1.04, cy-ry*0.08);
-    c.quadraticCurveTo(cx-rx*1.12, cy-ry*1.18, cx, cy-ry*1.14);
-    c.quadraticCurveTo(cx+rx*1.12, cy-ry*1.18, cx+rx*1.04, cy-ry*0.08);
+    c.quadraticCurveTo(cx-rx*1.12, cy-ry*1.20, cx, cy-ry*1.16);
+    c.quadraticCurveTo(cx+rx*1.12, cy-ry*1.20, cx+rx*1.04, cy-ry*0.08);
     c.quadraticCurveTo(cx+rx*0.58, cy-ry*0.74, cx, cy-ry*0.64);
     c.quadraticCurveTo(cx-rx*0.58, cy-ry*0.74, cx-rx*1.04, cy-ry*0.08);
     c.closePath(); c.fill();
-    if(curl==="curly"){ for(let i=0;i<12;i++){ const a=Math.PI*(0.03+0.94*i/11);
-      dot(cx-Math.cos(a)*rx*1.02, cy-ry*0.28-Math.sin(a)*ry*0.72, W*0.046); } }
+    c.strokeStyle=hairD; c.lineWidth=lw; c.stroke();
+    if(curl==="curly"){
+      for(let i=0;i<12;i++){ const a=Math.PI*(0.03+0.94*i/11);
+        const x=cx-Math.cos(a)*rx*1.02, y=cy-ry*0.28-Math.sin(a)*ry*0.74;
+        c.fillStyle=hairC; dot(x,y,W*0.047); c.fillStyle=hairD; dot(x+W*0.010,y+W*0.012,W*0.012); } }
+    else if(pony){
+      /* tirati indietro verso l'elastico: righe dall'attaccatura alla coda */
+      for(let i=0;i<3;i++) ciocca(cx-rx*(0.70-i*0.45), cy-ry*(0.80-i*0.03),
+        cx+rx*(0.05+i*0.20), cy-ry*(1.18-i*0.04), cx+rx*0.92, cy-ry*0.66, hairL, W*0.012);
+    }
+    if(pony){                                    // l'elastico, sopra la calotta
+      c.fillStyle=o.tie||"#e2557a"; ell(cx+rx*1.02, cy-ry*0.66, W*0.030, W*0.046, -0.6);
+      c.fillStyle="rgba(255,255,255,0.35)"; ell(cx+rx*1.00, cy-ry*0.72, W*0.010, W*0.016, -0.6); }
     else if(len==="short"){ c.fillStyle=hairL;   // ciuffo laterale
       c.beginPath(); c.moveTo(cx-rx*0.98, cy-ry*0.40);
       c.quadraticCurveTo(cx-rx*0.30, cy-ry*1.05, cx+rx*0.92, cy-ry*0.66);
       c.quadraticCurveTo(cx+rx*0.20, cy-ry*0.80, cx-rx*0.98, cy-ry*0.40);
       c.closePath(); c.fill(); }
-    /* FRANGIA: banda mossa che si ferma SOPRA le sopracciglia */
+    else {                                       // lunghi lisci/mossi: riga e riflesso
+      ciocca(cx-rx*0.15,cy-ry*1.12, cx-rx*0.70,cy-ry*1.02, cx-rx*0.98,cy-ry*0.30, hairL, W*0.016);
+      ciocca(cx+rx*0.05,cy-ry*1.12, cx+rx*0.60,cy-ry*1.04, cx+rx*0.92,cy-ry*0.50, hairL, W*0.010);
+    }
+    /* FRANGIA: banda mossa che si ferma SOPRA le sopracciglia (mai sotto
+       cy-0.28*ry: li' cominciano le sopracciglia), fatta di ciocche tonde
+       invece che di un blocco unico — il blocco faceva l'effetto casco. */
     if(o.fringe){ c.fillStyle=hairC;
       c.beginPath();
-      c.moveTo(cx-rx*1.03, cy-ry*0.42);
-      c.quadraticCurveTo(cx-rx*0.95, cy-ry*1.10, cx+rx*0.10, cy-ry*1.06);
-      c.quadraticCurveTo(cx+rx*1.03, cy-ry*1.02, cx+rx*1.03, cy-ry*0.40);
-      c.quadraticCurveTo(cx+rx*0.55, cy-ry*0.62, cx+rx*0.05, cy-ry*0.52);
-      c.quadraticCurveTo(cx-rx*0.50, cy-ry*0.44, cx-rx*1.03, cy-ry*0.42);
+      c.moveTo(cx-rx*1.03, cy-ry*0.36);
+      c.quadraticCurveTo(cx-rx*0.95, cy-ry*1.10, cx+rx*0.10, cy-ry*1.08);
+      c.quadraticCurveTo(cx+rx*1.03, cy-ry*1.04, cx+rx*1.03, cy-ry*0.36);
+      const punte=5, x0=cx-rx*1.03, dx=(2.06*rx)/punte;
+      c.lineTo(x0+dx*punte, cy-ry*0.38);
+      for(let i=punte;i>0;i--){ const xa=x0+dx*i, xb=x0+dx*(i-1);
+        c.quadraticCurveTo((xa+xb)/2, cy-ry*0.66, xb, cy-ry*0.38-((i===1)?0:ry*0.02)); }
       c.closePath(); c.fill();
-      c.fillStyle=hairL;
-      c.beginPath();
-      c.moveTo(cx-rx*0.20, cy-ry*1.02);
-      c.quadraticCurveTo(cx+rx*0.55, cy-ry*0.95, cx+rx*0.86, cy-ry*0.46);
-      c.quadraticCurveTo(cx+rx*0.40, cy-ry*0.66, cx-rx*0.20, cy-ry*1.02);
-      c.closePath(); c.fill(); }
+      c.strokeStyle=hairD; c.lineWidth=lw; c.stroke();
+      ciocca(cx-rx*0.40,cy-ry*1.00, cx-rx*0.10,cy-ry*0.80, cx+rx*0.05,cy-ry*0.52, hairL, W*0.012);
+      ciocca(cx+rx*0.30,cy-ry*1.00, cx+rx*0.52,cy-ry*0.80, cx+rx*0.60,cy-ry*0.52, hairL, W*0.012); }
   } else {
     c.fillStyle=hairD;
     c.beginPath(); c.ellipse(cx-rx*0.86, cy-ry*0.06, rx*0.26, ry*0.30, 0.3, 0, Math.PI*2); c.fill();
     c.beginPath(); c.ellipse(cx+rx*0.86, cy-ry*0.06, rx*0.26, ry*0.30,-0.3, 0, Math.PI*2); c.fill();
+    c.fillStyle="rgba(255,255,255,0.28)";                                  // la luce sulla testa
+    ell(cx-rx*0.30, cy-ry*0.72, rx*0.30, ry*0.12, -0.35);
   }
 
   /* --- barba: PRIMA di bocca e baffi --- */
@@ -38434,58 +38484,77 @@ function salonFace(c,W,H,o){
     c.quadraticCurveTo(cx+rx*0.70, cy+ry*0.30, cx+rx*0.62, cy+ry*0.62);
     c.quadraticCurveTo(cx, cy+ry*0.40, cx-rx*0.62, cy+ry*0.62);
     c.quadraticCurveTo(cx-rx*0.70, cy+ry*0.30, cx-rx*0.99, cy-ry*0.02);
-    c.closePath(); c.fill(); }
-
-  /* --- occhi, sopracciglia --- */
-  const ey=cy+ry*0.06, exo=rx*0.44, er=W*0.039;
-  c.fillStyle="#ffffff"; ell(cx-exo,ey,er,er*0.86); ell(cx+exo,ey,er,er*0.86);
-  c.fillStyle=o.eyes||"#4a3520"; dot(cx-exo,ey,er*0.52); dot(cx+exo,ey,er*0.52);
-  c.fillStyle="#1a1410"; dot(cx-exo,ey,er*0.24); dot(cx+exo,ey,er*0.24);
-  c.fillStyle="#ffffff"; dot(cx-exo+er*0.20,ey-er*0.24,er*0.14); dot(cx+exo+er*0.20,ey-er*0.24,er*0.14);
-  c.strokeStyle=hairD; c.lineWidth=Math.max(2,W*0.019); c.lineCap="round";
-  c.beginPath(); c.moveTo(cx-exo-er*1.05,ey-er*1.55); c.quadraticCurveTo(cx-exo,ey-er*2.45,cx-exo+er*1.05,ey-er*1.60); c.stroke();
-  c.beginPath(); c.moveTo(cx+exo-er*1.05,ey-er*1.60); c.quadraticCurveTo(cx+exo,ey-er*2.45,cx+exo+er*1.05,ey-er*1.55); c.stroke();
-
-  /* --- naso --- */
-  c.strokeStyle=salonTint(skin,-0.35); c.lineWidth=Math.max(2,W*0.015); c.lineJoin="round";
-  c.beginPath(); c.moveTo(cx+W*0.004,ey+er*0.85);
-  c.quadraticCurveTo(cx-W*0.028,ey+er*2.20,cx+W*0.004,ey+er*2.45);
-  c.quadraticCurveTo(cx+W*0.020,ey+er*2.50,cx+W*0.026,ey+er*2.30); c.stroke();
-
-  /* --- bocca --- */
-  const my=cy+ry*0.54;
-  if(o.smile===false){
-    c.strokeStyle="#a8443f"; c.lineWidth=Math.max(2,W*0.022);
-    c.beginPath(); c.moveTo(cx-W*0.058,my); c.quadraticCurveTo(cx,my+W*0.010,cx+W*0.058,my); c.stroke();
-  } else {
-    c.fillStyle="#a8443f";
-    c.beginPath(); c.moveTo(cx-W*0.078,my-W*0.012);
-    c.quadraticCurveTo(cx,my+W*0.070,cx+W*0.078,my-W*0.012);
-    c.quadraticCurveTo(cx,my+W*0.014,cx-W*0.078,my-W*0.012);
     c.closePath(); c.fill();
-    c.fillStyle="#f6f1e2";
-    c.beginPath(); c.moveTo(cx-W*0.058,my-W*0.004);
-    c.quadraticCurveTo(cx,my+W*0.020,cx+W*0.058,my-W*0.004);
-    c.quadraticCurveTo(cx,my-W*0.002,cx-W*0.058,my-W*0.004);
+    c.strokeStyle=hairD; c.lineWidth=lw; c.stroke();
+    ciocca(cx-rx*0.50,cy+ry*0.80, cx,cy+ry*1.02, cx+rx*0.50,cy+ry*0.80, hairL, W*0.010); }
+
+  /* --- occhi: piu' grandi, palpebra, iride con due riflessi --- */
+  const ey=cy+ry*0.06, exo=rx*0.44, er=W*0.044;
+  c.fillStyle="#ffffff"; ell(cx-exo,ey,er,er*0.92); ell(cx+exo,ey,er,er*0.92);
+  c.fillStyle=o.eyes||"#5a3d22"; dot(cx-exo,ey+er*0.06,er*0.62); dot(cx+exo,ey+er*0.06,er*0.62);
+  c.fillStyle="#1a1410"; dot(cx-exo,ey+er*0.06,er*0.32); dot(cx+exo,ey+er*0.06,er*0.32);
+  c.fillStyle="#ffffff"; dot(cx-exo+er*0.24,ey-er*0.20,er*0.17); dot(cx+exo+er*0.24,ey-er*0.20,er*0.17);
+  dot(cx-exo-er*0.18,ey+er*0.30,er*0.08); dot(cx+exo-er*0.18,ey+er*0.30,er*0.08);
+  c.strokeStyle="#2a1f18"; c.lineWidth=Math.max(1.5,W*0.012); c.lineCap="round";
+  c.beginPath(); c.ellipse(cx-exo,ey,er,er*0.92,0,Math.PI*1.08,Math.PI*1.92); c.stroke();
+  c.beginPath(); c.ellipse(cx+exo,ey,er,er*0.92,0,Math.PI*1.08,Math.PI*1.92); c.stroke();
+  if(o.she){                                                             // ciglia
+    c.lineWidth=Math.max(1.2,W*0.008);
+    [[-1,1],[1,1]].forEach(function(s){ const x0=cx+s[0]*exo;
+      c.beginPath(); c.moveTo(x0+s[0]*er*0.92,ey-er*0.32); c.lineTo(x0+s[0]*er*1.22,ey-er*0.62); c.stroke();
+      c.beginPath(); c.moveTo(x0+s[0]*er*0.62,ey-er*0.70); c.lineTo(x0+s[0]*er*0.82,ey-er*1.02); c.stroke(); }); }
+  c.strokeStyle=hairD; c.lineWidth=Math.max(2,W*0.018);
+  c.beginPath(); c.moveTo(cx-exo-er*1.00,ey-er*1.50); c.quadraticCurveTo(cx-exo,ey-er*2.25,cx-exo+er*1.00,ey-er*1.62); c.stroke();
+  c.beginPath(); c.moveTo(cx+exo-er*1.00,ey-er*1.62); c.quadraticCurveTo(cx+exo,ey-er*2.25,cx+exo+er*1.00,ey-er*1.50); c.stroke();
+
+  /* --- naso: piccolo e tondo --- */
+  c.strokeStyle=salonTint(skin,-0.32); c.lineWidth=Math.max(1.5,W*0.012);
+  c.beginPath(); c.moveTo(cx-W*0.020,ey+er*2.10);
+  c.quadraticCurveTo(cx,ey+er*2.55,cx+W*0.020,ey+er*2.10); c.stroke();
+  c.fillStyle="rgba(255,255,255,0.35)"; dot(cx+W*0.004,ey+er*1.75,W*0.008);
+
+  /* --- bocca (piu' in basso del naso: ci deve stare anche il baffo) --- */
+  const my=cy+ry*0.58;
+  if(o.smile===false){
+    c.strokeStyle="#a8443f"; c.lineWidth=Math.max(2,W*0.018);
+    c.beginPath(); c.moveTo(cx-W*0.050,my); c.quadraticCurveTo(cx,my+W*0.014,cx+W*0.050,my); c.stroke();
+  } else {
+    c.fillStyle="#9c3b3a";
+    c.beginPath(); c.moveTo(cx-W*0.070,my-W*0.010);
+    c.quadraticCurveTo(cx,my+W*0.066,cx+W*0.070,my-W*0.010);
+    c.quadraticCurveTo(cx,my+W*0.012,cx-W*0.070,my-W*0.010);
+    c.closePath(); c.fill();
+    c.fillStyle="#fbf6ea";
+    c.beginPath(); c.moveTo(cx-W*0.052,my-W*0.003);
+    c.quadraticCurveTo(cx,my+W*0.018,cx+W*0.052,my-W*0.003);
+    c.quadraticCurveTo(cx,my-W*0.001,cx-W*0.052,my-W*0.003);
     c.closePath(); c.fill();
   }
+  /* baffo: FRA naso e bocca (prima saliva sul naso) */
   if(o.moustache){ c.fillStyle=hairC;
-    c.beginPath(); c.moveTo(cx-W*0.088,my-W*0.052);
-    c.quadraticCurveTo(cx,my-W*0.098,cx+W*0.088,my-W*0.052);
-    c.quadraticCurveTo(cx,my-W*0.026,cx-W*0.088,my-W*0.052);
+    const mt=my-W*0.026;
+    c.beginPath(); c.moveTo(cx-W*0.082,mt+W*0.012);
+    c.quadraticCurveTo(cx-W*0.040,mt-W*0.022,cx,mt-W*0.008);
+    c.quadraticCurveTo(cx+W*0.040,mt-W*0.022,cx+W*0.082,mt+W*0.012);
+    c.quadraticCurveTo(cx,mt+W*0.010,cx-W*0.082,mt+W*0.012);
     c.closePath(); c.fill(); }
-  if(o.freckles){ c.fillStyle="#c47a4e";
-    [[-0.40,0.24],[-0.28,0.34],[-0.50,0.36],[0.40,0.24],[0.28,0.34],[0.50,0.36],[-0.13,0.28],[0.13,0.28]]
-      .forEach(p=>dot(cx+rx*p[0], cy+ry*p[1], W*0.012)); }
+  if(o.freckles){ c.fillStyle="rgba(176,98,58,0.85)";
+    [[-0.42,0.22],[-0.30,0.32],[-0.52,0.34],[-0.38,0.40],[0.42,0.22],[0.30,0.32],[0.52,0.34],[0.38,0.40],[-0.12,0.26],[0.12,0.26]]
+      .forEach(p=>dot(cx+rx*p[0], cy+ry*p[1], W*0.011)); }
   if(o.glasses){
-    c.fillStyle="rgba(210,235,245,0.28)";
-    dot(cx-exo,ey,er*1.58); dot(cx+exo,ey,er*1.58);
-    c.strokeStyle=o.glassCol||"#2f3a44"; c.lineWidth=Math.max(3,W*0.021);
-    c.beginPath(); c.arc(cx-exo,ey,er*1.58,0,Math.PI*2); c.stroke();
-    c.beginPath(); c.arc(cx+exo,ey,er*1.58,0,Math.PI*2); c.stroke();
-    c.beginPath(); c.moveTo(cx-exo+er*1.58,ey-er*0.15); c.lineTo(cx+exo-er*1.58,ey-er*0.15); c.stroke();
-    c.beginPath(); c.moveTo(cx-exo-er*1.58,ey-er*0.10); c.lineTo(cx-rx*0.99,ey+er*0.30); c.stroke();
-    c.beginPath(); c.moveTo(cx+exo+er*1.58,ey-er*0.10); c.lineTo(cx+rx*0.99,ey+er*0.30); c.stroke(); }
+    const gr=er*1.50;
+    c.fillStyle="rgba(210,235,245,0.25)";
+    dot(cx-exo,ey,gr); dot(cx+exo,ey,gr);
+    c.strokeStyle=o.glassCol||"#2f3a44"; c.lineWidth=Math.max(3,W*0.019);
+    c.beginPath(); c.arc(cx-exo,ey,gr,0,Math.PI*2); c.stroke();
+    c.beginPath(); c.arc(cx+exo,ey,gr,0,Math.PI*2); c.stroke();
+    c.beginPath(); c.moveTo(cx-exo+gr,ey-er*0.15); c.quadraticCurveTo(cx,ey-er*0.55,cx+exo-gr,ey-er*0.15); c.stroke();
+    c.beginPath(); c.moveTo(cx-exo-gr,ey-er*0.10); c.lineTo(cx-rx*0.99,ey+er*0.30); c.stroke();
+    c.beginPath(); c.moveTo(cx+exo+gr,ey-er*0.10); c.lineTo(cx+rx*0.99,ey+er*0.30); c.stroke();
+    c.strokeStyle="rgba(255,255,255,0.55)"; c.lineWidth=Math.max(1.5,W*0.009);   // riflesso sulle lenti
+    c.beginPath(); c.arc(cx-exo,ey,gr*0.70,Math.PI*1.15,Math.PI*1.45); c.stroke();
+    c.beginPath(); c.arc(cx+exo,ey,gr*0.70,Math.PI*1.15,Math.PI*1.45); c.stroke(); }
+  c.restore();
 }
 
 /* ---- i sei clienti del muro delle foto.
@@ -38525,6 +38594,7 @@ const SALON_PHOTOS=[
     len:"long",  curl:"straight", col:"blonde", extra:"fringe",
     face:{ len:"long", curl:"straight", hairCol:"blonde", fringe:true, skin:"#8d5a3b", top:"#d4a03c", smile:true } },
 ];
+SALON_PHOTOS.forEach(function(p){ if(p.she) p.face.she=true; });   // v315: ciglia alle clienti (salonFace)
 function salonPhoto(k){ for(let i=0;i<SALON_PHOTOS.length;i++) if(SALON_PHOTOS[i].key===k) return SALON_PHOTOS[i]; return null; }
 
 /* =====================================================================
@@ -49692,12 +49762,12 @@ const JB_APPS=[
         +"in the children's ward, and next month I'm going to start a new course.",
     note:"Ken is a nurse. Nurses are men and women \u2014 half of my nurses here are men." },
   { key:"priya", name:"PRIYA", emo:"\u{1F4D0}", job:"engineer",
-    face:{ len:"long", curl:"straight", hairCol:"dark", ponytail:true, skin:"#d8a97a", top:"#8a5f7c", smile:true },
+    face:{ len:"long", curl:"straight", hairCol:"dark", ponytail:true, skin:"#d8a97a", top:"#8a5f7c", smile:true, she:true },
     clue:"I design bridges and machines on a computer. Next month I'm going to visit a new bridge "
         +"in Scotland, and next summer I'm going to work on a tunnel.",
     note:"Priya is an engineer. Girls are good at maths too \u2014 look at her bridges!" },
   { key:"alba", name:"ALBA", emo:"\u{1F527}", job:"mechanic",
-    face:{ len:"short", curl:"curly", hairCol:"red", skin:"#f2d3b8", top:"#3f6b5c", smile:true },
+    face:{ len:"short", curl:"curly", hairCol:"red", skin:"#f2d3b8", top:"#3f6b5c", smile:true, she:true },
     clue:"I repair cars and motorbikes all day. This weekend I'm going to fix my brother's van, "
         +"and next summer I'm going to open my own garage.",
     note:"Alba is a mechanic. Her garage is going to be the first one in New District." },
