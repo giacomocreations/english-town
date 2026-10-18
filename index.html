@@ -16,7 +16,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="QuestTown">
-<script>window.ET_BUILD="252";</script>
+<script>window.ET_BUILD="253";</script>
 <script>
 /* =====================================================================
    APP INSTALLABILE (v217-218) — gira PRIMA di tutto il resto.
@@ -44639,32 +44639,32 @@ const Mic=(function(){
    o fare Speak ed e' pronto»). Il segnaposto delle <textarea> era un testo
    intero e corretto: bastava trascriverlo, o leggerlo al microfono.
    Ora, per TUTTI i campi di scrittura (un solo osservatore, come Mic):
-     · il segnaposto mostra solo l'INIZIO di ogni frase («I get up …   I
-       always have …»): dice come partire, il resto lo scrive il ragazzo;
-     · le domande guida («Where did you go last summer?»), le frasi gia'
-       lasciate a meta' («You should...») e i segnaposto gia' corti
-       («Answer in English...», «Because…») restano interi;
+     · v315 (Giacomo, 18 ott: «non si deve vedere nessun testo di
+       suggerimento, magari solo l'inizio della frase, invece c'e' tutta»):
+       il segnaposto mostra SOLO L'INIZIO DELLA PRIMA FRASE, tre parole al
+       massimo («I get up …»). La v314 mostrava l'inizio di ogni frase e
+       teneva intere le frasi corte o lasciate a meta': messi in fila, era
+       ancora quasi tutto l'esempio;
+     · restano intatte solo le istruzioni («Answer in English...», «Write
+       your answer...») e le domande guida («Where did you go last
+       summer?»): non sono esempi da ricopiare;
      · l'esempio intero resta in data-ex: checkProduzione lo usa per
        accorgersi di chi lo riscrive a memoria (vedi _copiaEsempio).
    ⚠️ Nessun testo da riscrivere nelle 40 quest: si tocca solo cio' che
    arriva sullo schermo. */
-const PH_APERTE=/^(because|to|so|be|been|had|got|seen|should|shouldn't|might|may|will|every|near|since|from|but|and|or|the|a|an|of|for|with|at|in|on|is|are|was|were)$/i;
 function phAvvio(ph){
   const t=String(ph||"").replace(/\s+/g," ").trim();
-  if(!t || t.split(" ").length<=6) return t;
-  const parti=t.match(/[^.!?…]+[.!?…]*/g)||[t];
-  return parti.map(function(f){
-    f=f.trim(); if(!f) return "";
-    if(/\?$/.test(f)) return f;
-    const w=f.replace(/[.!…]+$/,"").trim().split(" ");
-    /* gia' lasciata a meta' dall'autore («You should...», «Next month I'm
-       going to...»): e' lei lo spunto grammaticale, resta intera. Conta
-       l'ULTIMA PAROLA, non i puntini: molti esempi li mettono anche in coda
-       a frasi complete («I eat pizza once a week...»), che vanno tagliate.
-       Restano intere anche le frasi di due-tre parole («Hi!», «Get well soon!»). */
-    if(w.length<=3 || (/(\.\.\.|…)$/.test(f) && w.length<=6 && PH_APERTE.test(w[w.length-1]))) return f;
-    return w.slice(0,3).join(" ")+" …";
-  }).filter(Boolean).join("   ");
+  if(!t) return t;
+  if(/^(write|answer)\b/i.test(t)) return t;                       // istruzione
+  if(/\?$/.test(t) && (t.match(/[.!?]/g)||[]).length===1) return t;  // una domanda guida
+  const w=t.split(" "), out=[];
+  for(let i=0;i<w.length && out.length<3;i++){
+    if(/^([\/|\u2026]+|\.+)$/.test(w[i])) break;        // «…» o «/» da soli: l'autore si fermava qui
+    out.push(w[i]);
+    if(/(\.\.\.|\u2026)$/.test(w[i])) break;          // idem, attaccati alla parola
+  }
+  if(!out.length || out.join(" ")===t) return t;         // gia' corto («Because…»)
+  return out.join(" ").replace(/[.,;:!?\u2026]+$/,"")+" \u2026";
 }
 (function(){
   function fix(ta){
