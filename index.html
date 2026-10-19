@@ -16,7 +16,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="QuestTown">
-<script>window.ET_BUILD="257";</script>
+<script>window.ET_BUILD="258";</script>
 <script>
 /* =====================================================================
    APP INSTALLABILE (v217-218) — gira PRIMA di tutto il resto.
@@ -384,6 +384,23 @@
     #quest-modal{padding:8px;}
     #qm-card{width:100%;max-width:none;max-height:62vh;padding:16px 16px;}
   }
+  /* v402 (Giacomo, 20 ott: «quasi tutti, alcune volte, non vedevano la domanda
+     intera alla Town School»). Due cose insieme:
+     · le finestre della lezione sono piu' grandi (qm-wide): la card normale
+       sta in 72vh, cioe' ~470 px su un Chromebook, e testo + immagine +
+       risposte non ci stavano;
+     · il corpo che scorre si VEDE: su ChromeOS la barra e' a scomparsa e
+       nessuno capiva che sotto c'era altro. La barra e' disegnata (le regole
+       ::-webkit-scrollbar la rendono fissa) e finche' resta testo sotto
+       compare «▼ scroll down» in fondo al corpo (classe more, vedi open). */
+  #quest-modal #qm-card.qm-wide{width:min(660px,94vw);max-width:none;max-height:90vh;background:rgba(251,247,236,.97);}
+  @media (max-width:640px){ #quest-modal #qm-card.qm-wide{max-height:86vh;} }
+  #qm-card .qm-body::-webkit-scrollbar{width:9px;}
+  #qm-card .qm-body::-webkit-scrollbar-track{background:rgba(0,0,0,.06);border-radius:9px;}
+  #qm-card .qm-body::-webkit-scrollbar-thumb{background:#c8a45a;border-radius:9px;}
+  #qm-card .qm-body.more::after{content:"\25BC  scroll down";position:sticky;bottom:0;display:block;margin-top:6px;padding:12px 0 4px;
+    font-size:12px;font-weight:800;color:#8a6a1e;text-align:center;pointer-events:none;
+    background:linear-gradient(rgba(251,247,236,0),rgba(251,247,236,.97) 55%);}
   /* NON SI CHIUDE MENTRE PARLA (v297): finche' la voce legge, i bottoni
      sono spenti (anche da tastiera: vedi SpeakLock) e compare «Listen…». */
   #qm-card.speaking .qm-btn{opacity:.42;pointer-events:none;cursor:not-allowed;filter:grayscale(.35);}
@@ -19173,7 +19190,15 @@ const WordTiles=(function(){
 function _modalPlace(el){ try{ el.classList.toggle("centered", typeof started==="undefined" || !started); }catch(e){} }
 const DialogueBox=(function(){
   const el=document.getElementById("quest-modal"), card=document.getElementById("qm-card");
-  function close(){ el.classList.remove("show"); card.innerHTML=""; el.__npc=null; try{ TTS.stop(); }catch(e){} try{ SpeakLock.unlock(); }catch(e){} }
+  function close(){ el.classList.remove("show"); card.innerHTML=""; card.classList.remove("qm-wide"); el.__npc=null; try{ TTS.stop(); }catch(e){} try{ SpeakLock.unlock(); }catch(e){} }
+  /* v402: «▼ scroll down» finche' nel corpo resta testo da vedere sotto */
+  function _segnaSotto(b){
+    const upd=()=>{ if(b.isConnected) b.classList.toggle("more", b.scrollHeight-b.scrollTop-b.clientHeight>8); };
+    b.addEventListener("scroll",upd,{ passive:true });
+    try{ requestAnimationFrame(upd); }catch(e){}
+    setTimeout(upd,350);                                 // immagini che arrivano dopo
+    b.querySelectorAll("img").forEach(im=>im.addEventListener("load",upd));
+  }
   /* v301 (Giacomo, 2 ott: «se premi INVIO vale come OK / Send it»): nelle
      caselle di testo dei dialoghi il tasto Invio preme il bottone principale
      (Send it, Say it, Hand it in, OK next…). Per andare a capo: Maiusc+Invio.
@@ -19196,6 +19221,7 @@ const DialogueBox=(function(){
   }
   function open(cfg){
     cfg=cfg||{}; card.innerHTML=""; SpeakLock.sync();
+    card.classList.toggle("qm-wide",!!cfg.wide);          // v402: finestre grandi della lezione
     /* v309g (Giacomo: «quando parli con la crew metti il tasto Leave per
        finire la discussione»): nelle finestre con un ballerino (Ask me,
        domanda scritta, tessere, risposta) c'era solo «Back». Se manca un
@@ -19281,6 +19307,7 @@ const DialogueBox=(function(){
     }
     _modalPlace(el);
     el.classList.add("show");
+    _segnaSotto(body);
   }
   return {open, close};
 })();
@@ -21068,6 +21095,7 @@ const QModal=(function(){
   });
   function open(cfg){
     cfg=cfg||{}; card.innerHTML=""; SpeakLock.sync();
+    card.classList.remove("qm-wide");                     // v402: la card e' la stessa di DialogueBox
     if(cfg.title){ const h=document.createElement("div"); h.className="qm-title"; h.innerHTML=cfg.title; card.appendChild(h); }
     if(cfg.sub){ const s=document.createElement("div"); s.className="qm-sub"; s.innerHTML=cfg.sub; card.appendChild(s); }
     if(cfg.html){ const b=document.createElement("div"); b.className="qm-body"; b.innerHTML=cfg.html; card.appendChild(b); }
@@ -26658,7 +26686,7 @@ function noHintTxt(t){ return String(t).replace(/\s*\([^)]*\)\s*$/,""); }
 function _lessonPupil(id){ return LESSON.pupils[id]||{ name:id==="pupil_lily"?"Lily":(id==="pupil_ben"?"Ben":"Tim"), gender:id==="pupil_lily"?"f":"m" }; }
 function _say(who,text,it,next,label,html){
   if(LESSON.paused){ _lessonAuto(who,text,()=>{ if(LESSON.on && next) next(); }); return; }   // v307: in piedi
-  DialogueBox.open({ npc:who, icon:who===GRACE?"\u{1F34E}":"\u{1F64B}", sub:who===GRACE?"Teacher":"Classmate",
+  DialogueBox.open({ npc:who, icon:who===GRACE?"\u{1F34E}":"\u{1F64B}", sub:who===GRACE?"Teacher":"Classmate", wide:true,
     text, italian:it||undefined, html:html||undefined,
     buttons:[{ label:label||"OK", cls:"primary", act:()=>{ if(LESSON.on && next) next(); } }, _lessonStandBtn()] });
 }
@@ -26671,14 +26699,14 @@ function _ask(text,it,html,answer,wrong,full,next,kws){
     _lessonAuto(who, noHintTxt(full||answer), ()=>{ if(LESSON.on) next(); });
     return; }
   const opts=shuffle([answer].concat(wrong.slice(0,2)));
-  DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Your turn!", text, italian:it||undefined, html:html||undefined,
+  DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Your turn!", wide:true, text, italian:it||undefined, html:html||undefined,
     buttons:[_lessonStandBtn()],
     choices:opts.map(o=>({ label:o, act:()=>{
       if(!LESSON.on) return;
       const ok=(o===answer); LESSON.total++; if(ok) LESSON.score++;
       LESSON.curDone=true;
       const praise=["Well done!","Excellent!","That's right!","Very good!","Perfect!"][Math.floor(Math.random()*5)];
-      DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:ok?"✅ Correct":"Not quite",
+      DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:ok?"✅ Correct":"Not quite", wide:true,
         text:ok?praise:"Not quite. Look at the right answer.",
         html:ok ? lesCard("les-ok","\u2705 "+praise,'<div class="les-rule">'+lesMark(full||answer,kws||[answer.toLowerCase()])+'</div>')
                 : lesCard("les-no","\u{1F4A1} Correct answer",'<div class="gem-recast" style="text-align:left">Non <s>'+_escHtml(o)+'</s> \u2014 <b>'+_escHtml(answer)+'</b></div>'
@@ -26772,21 +26800,29 @@ function _ripTre(giusta,altre){
   return out;
 }
 
-/* ---- la frase con lo spazio da rifare ----------------------------------------
-   Si mostra la riga (o, se la riga e' lunga, la frase) che contiene lo spazio
-   bi; gli altri spazi della stessa frase sono gia' riempiti con la risposta
-   giusta, cosi' si lavora su uno solo. full = la stessa frase risolta. */
-function _ripPezzo(text,bi,corrects){
+/* ---- il testo con lo spazio da rifare ----------------------------------------
+   v402 (Giacomo, 20 ott: «non vedevano la domanda intera, non si capiva»):
+   si mostra TUTTO il testo dell'esercizio, non piu' la sola frase, e lo
+   spazio da rifare e' evidenziato in giallo. Solo un testo molto lungo
+   (oltre ~900 caratteri) si riduce alla riga che contiene lo spazio.
+   Gli altri spazi: quelli gia' giusti nel test sono riempiti con la
+   risposta; quelli sbagliati (aperti) restano _____ in grigio, cosi' la
+   soluzione di una domanda che arriva dopo non si legge prima.
+   full = la riga dello spazio risolta, per la correzione. */
+function _ripPezzo(text,bi,corrects,aperti){
   const inl={}; let k=0;
   const tok=String(text||"").replace(_RIP_BLANK,(m,inner)=>{ const n=k++; if(inner!==undefined) inl[n]=inner; return "\u0000"+n+"\u0000"; });
   if(bi>=k) return null;
   const tag="\u0000"+bi+"\u0000";
-  let piece=tok.split("\n").find(l=>l.indexOf(tag)>=0)||tok;
-  if(piece.length>160){ const fr=piece.match(/[^.!?]+[.!?]*\s*/g)||[piece]; piece=fr.find(f=>f.indexOf(tag)>=0)||piece; }
+  const corta=t=>{ if(t.length<=900) return t; const fr=t.match(/[^.!?]+[.!?]*\s*/g)||[t]; return fr.find(f=>f.indexOf(tag)>=0)||t; };
+  const riga=(tok.split("\n").find(l=>l.indexOf(tag)>=0)||tok).trim();
+  const tutto=tok.trim().length<=900 ? tok.trim() : corta(riga);
   const giusta=g=>_ripAlts(corrects[g])[0]||"";
-  const draw=mid=>_ripRich(piece.trim()).replace(/\u0000(\d+)\u0000/g,(m,g)=>
-    (+g===bi)?mid:'<span style="font-weight:800">'+_escHtml(giusta(+g))+'</span>');
-  return { prompt:draw("<b>_____</b>"), full:draw('<span class="les-hl">'+_escHtml(giusta(bi))+'</span>'),
+  const altro=g=>(aperti && aperti.indexOf(g)>=0) ? '<span style="color:#a39a8c">_____</span>'
+                                                  : '<span style="font-weight:800">'+_escHtml(giusta(g))+'</span>';
+  const draw=(src,mid)=>_ripRich(src).replace(/\u0000(\d+)\u0000/g,(m,g)=>(+g===bi)?mid:altro(+g));
+  return { prompt:draw(tutto,'<b style="background:#ffe08a;color:#5a3d00;border-radius:6px;padding:0 6px;white-space:nowrap">\u2753 _____</b>'),
+           full:draw(corta(riga),'<span class="les-hl">'+_escHtml(giusta(bi))+'</span>'),
            inline:inl[bi], giusta:giusta(bi) };
 }
 /* la consegna in testa (prima riga senza spazi di un testo su piu' righe) */
@@ -26818,13 +26854,17 @@ function _ripPezzi(q,a){
       const L=text.split("\n"); text=(L.length>1?L.slice(1).join("\n"):L[0])+" ___"; }
     const corrects=_ripArr(q.answers), A=_ripArr(a);
     const bank=dd?_ripArr(q.words):(Array.isArray(q.wordBank)?q.wordBank:_ripArr(q.wordBank));
-    const head=dd?(q.text||"Complete the sentence."):(_ripConsegna(q.text)||"Complete the sentence.");
+    const cons=dd?"":_ripConsegna(q.text);
+    const head=dd?(q.text||"Complete the text."):(cons||"Complete the text.");
+    if(cons) text=text.split("\n").slice(1).join("\n");     // la consegna sta gia' in testa (e non ha spazi)
+    const sbagliato=bi=>{ const g=A[bi], corr=corrects[bi];
+      if(!_ripAlts(corr).length) return false;
+      return !(dd ? (g && _ripLow(g)===_ripLow(corr)) : _ripOk(g,corr)); };
+    const aperti=corrects.map((c,bi)=>bi).filter(sbagliato);
     corrects.forEach((corr,bi)=>{
-      if(!_ripAlts(corr).length) return;
+      if(aperti.indexOf(bi)<0) return;
       const g=A[bi];
-      const ok=dd ? (g && _ripLow(g)===_ripLow(corr)) : _ripOk(g,corr);
-      if(ok) return;
-      const P=_ripPezzo(text,bi,corrects); if(!P) return;
+      const P=_ripPezzo(text,bi,corrects,aperti); if(!P) return;
       const was=(g!=null && String(g).trim())?String(g):null;
       const it={ head, prompt:P.prompt, full:P.full, show:_ripAlts(corr).join(" / "), was };
       if(P.inline!==undefined){                          // [[a|b|c]]: si sceglie, come nel test
@@ -26928,7 +26968,7 @@ async function _ripTest(sc,e){
     let img=(typeof q.image==="string" && q.image)?q.image:((q.imageKey && typeof media[q.imageKey]==="string")?media[q.imageKey]:"");
     if(img && !/^(data:image|https?:)/.test(img)) img="";
     const tag=String(q.tag||"").toLowerCase();
-    P.forEach(p=>{ p.img=img; p.tag=tag; if(q.hint) p.hint=String(q.hint); });
+    P.forEach(p=>{ p.img=img; p.tag=tag; if(q.hint) p.hint=String(q.hint); if(q.referenceTable) p.ref=String(q.referenceTable); });
     liste.push(P);
   });
   /* al massimo RIP_MAX domande e RIP_PER_Q per esercizio, distribuite a giro
@@ -26982,7 +27022,11 @@ function _ripTilesReset(){
    massimo pochi secondi: di solito e' gia' pronto), poi passa a cb gli step
    del ripasso da infilare prima delle parole. */
 function ripassoSteps(next,cb){
-  const pronto=ripassoCarica(), attesa=new Promise(r=>setTimeout(()=>r(null),5000));
+  /* v402: fino a 10 s (l'attivita' puo' essere pesante: foto, audio del
+     listening); se tarda, un avviso, cosi' non sembra una lezione ferma */
+  const pronto=ripassoCarica(), attesa=new Promise(r=>setTimeout(()=>r(null),10000));
+  let pronta=false; pronto.then(()=>{ pronta=true; });
+  setTimeout(()=>{ if(!pronta && LESSON.on) try{ toast("\u{1F4DD} Miss Grace is checking your last test\u2026",4000); }catch(e){} },1200);
   Promise.race([pronto,attesa]).then(d=>{
     if(!LESSON.on) return;
     const steps=[];
@@ -27020,9 +27064,12 @@ function _ripAsk(it,n,st,next){
   /* in piedi: le domande del TUO test non le prende un compagno, si saltano */
   if(LESSON.paused){ LESSON.curDone=true; next(); return; }
   const tags={ grammar:"Grammar", vocabulary:"Vocabulary", functions:"Functions", reading:"Reading", writing:"Writing" };
-  const body=(it.img?'<img src="'+_escHtml(it.img)+'" alt="" style="display:block;max-width:100%;max-height:150px;margin:2px auto 6px;border-radius:8px">':'')
-    +(it.head?'<div style="max-height:30vh;overflow:auto;font-size:15px;margin-bottom:4px">'+_ripRich(it.head)+'</div>':'')
-    +(it.prompt?'<div class="gem-cloze">'+it.prompt+'</div>':'')
+  /* v402: niente piu' riquadro scorrevole dentro la finestra (max-height 30vh):
+     era una seconda barra invisibile e la domanda restava tagliata */
+  const body=(it.img?'<img src="'+_escHtml(it.img)+'" alt="" style="display:block;max-width:100%;max-height:200px;margin:2px auto 6px;border-radius:8px">':'')
+    +(it.head?'<div style="font-size:15px;font-weight:700;margin-bottom:6px">'+_ripRich(it.head)+'</div>':'')
+    +(it.ref?'<div style="font-size:13px;background:#fff;border-radius:8px;padding:6px 9px;margin:4px 0">\u{1F4D8} '+_ripRich(it.ref)+'</div>':'')
+    +(it.prompt?'<div style="font-size:17px;line-height:1.7;text-align:left;background:#fff;border-radius:10px;padding:8px 11px">'+it.prompt+'</div>':'')
     +(it.hint?'<div style="font-size:13px;color:#6b6358;margin-top:4px">\u{1F4A1} '+_escHtml(it.hint)+'</div>':'')
     +(it.kind!=="choice" && it.was?'<div style="font-size:13px;color:#8a7f72;margin-top:6px">In the test: <s>'+_escHtml(it.was)+'</s></div>':'');
   const card=lesCard("les-g","\u{1F4DD} Test · "+n+" / "+st.tot+(tags[it.tag]?" · "+tags[it.tag]:""),body);
@@ -27030,7 +27077,7 @@ function _ripAsk(it,n,st,next){
     if(!LESSON.on) return;
     LESSON.curDone=true; st.done++; if(ok) st.ok++;
     const praise=["Well done!","Excellent!","That's right!","Very good!","Perfect!"][Math.floor(Math.random()*5)];
-    DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:ok?"✅ Fixed!":"Not quite",
+    DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:ok?"✅ Fixed!":"Not quite", wide:true,
       text:ok?praise+" This time it's right.":"Not quite. Look at the right answer.",
       italian:ok?"Giusto: questa volta l'hai corretto.":"Non ancora: guarda la risposta giusta.",
       html:ok ? lesCard("les-ok","✅ "+praise,'<div class="les-rule">'+(it.full||_escHtml(it.show))+'</div>')
@@ -27043,13 +27090,13 @@ function _ripAsk(it,n,st,next){
               type:["Write the missing word.","Scrivi la parola che manca."],
               tiles:["Put the words in the right order.","Rimetti le parole in ordine: tocca le tessere."] }[it.kind];
   if(it.kind==="choice"){
-    DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Your test", text:say[0], italian:say[1], html:card,
+    DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Your test", wide:true, text:say[0], italian:say[1], html:card,
       buttons:[_lessonStandBtn()],
       choices:shuffle(it.opts).map(o=>({ label:o, act:()=>fine(o===it.answer,o) })) });
     return;
   }
   if(it.kind==="type"){
-    DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Your test", text:say[0], italian:say[1],
+    DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Your test", wide:true, text:say[0], italian:say[1],
       html:card+'<input id="rip-in" class="gem-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="…">',
       buttons:[{ label:"✔ Check", cls:"primary", keepOpen:true, act:()=>{
           const el=document.getElementById("rip-in"), v=el?el.value.trim():"";
@@ -27059,7 +27106,7 @@ function _ripAsk(it,n,st,next){
     return;
   }
   const chip=w=>'<span onclick="_ripTile(this)" style="display:inline-block;margin:3px;padding:6px 11px;border-radius:10px;background:#fff;border:2px solid #cdd6dc;font-weight:800;cursor:pointer">'+_escHtml(w)+'</span>';
-  DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Your test", text:say[0], italian:say[1],
+  DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Your test", wide:true, text:say[0], italian:say[1],
     html:card+'<div id="rip-zone" style="min-height:44px;margin-top:8px;padding:4px;border:2px dashed #c8a45a;border-radius:12px;background:#fffdf6"></div>'
       +'<div id="rip-pool" style="margin-top:6px;text-align:center">'+it.words.map(chip).join("")+'</div>',
     buttons:[{ label:"✔ Check", cls:"primary", keepOpen:true, act:()=>{
@@ -27088,31 +27135,48 @@ const PIANO_TIPI={ recovery_scritto:{ ic:"\u{1F4DD}", en:"Recovery", ord:0 },
                    recovery_orale:{ ic:"\u{1F5E3}️", en:"Oral recovery", ord:1 },
                    consolidamento:{ ic:"\u{1F4DA}", en:"Practice", ord:2 },
                    approfondimento:{ ic:"⭐", en:"Challenge", ord:3 } };
+/* ⚠️ v402 (Giacomo, 20 ott: «ad alcuni il piano non e' apparso»). Prima si
+   leggeva livelearn/recovery_sessions/<codice> INTERO: ogni piano li' dentro
+   porta l'attivita' completa, foto comprese, e con tre o quattro piani sono
+   megabyte. Sul wi-fi della scuola la lettura sforava, l'attesa di 3 s
+   finiva e Miss Grace chiudeva la lezione senza dire niente. Ora:
+   · si legge solo studentapp/personal_plan/<codice> (piccolo) e, per le
+     attivita' non ancora completate, tre foglie a testa di
+     recovery_sessions (status, lastScore, attemptCount);
+   · si rilegge alla chiusura della lezione e si aspetta fino a 10 s; se
+     la rete non risponde vale l'ultima lettura buona (quella dell'ingresso).
+   Restituisce null solo se non si e' potuto leggere; senza piano {att:[],orali:[]}. */
 async function _pianoCarica(code){
-  const [P,R]=await Promise.all([Cloud.leggi("studentapp/personal_plan/"+code,8000),
-                                 Cloud.leggi("livelearn/recovery_sessions/"+code,8000)]);
-  if(!P.val) return null;                                // nessun piano
-  const rs=R.val||{}, att=[], orali=[];
-  Object.keys(P.val).map(k=>Object.assign({ _key:k },P.val[k]||{}))
+  const P=await Cloud.leggi("studentapp/personal_plan/"+code,8000);
+  if(!P.risposto) return null;
+  const att=[], orali=[], cand=[];
+  Object.keys(P.val||{}).map(k=>Object.assign({ _key:k },P.val[k]||{}))
     .filter(p=>PIANO_TIPI[p.type])
     .sort((a,b)=>(PIANO_TIPI[a.type].ord-PIANO_TIPI[b.type].ord)||((b.createdAt||0)-(a.createdAt||0)))
     .forEach(p=>{
       const titolo=String(p.unitName||p.title||"");
       if(p.type==="recovery_orale"){ if(p.text && !p.readAt) orali.push({ titolo, text:String(p.text) }); return; }
-      if(!p.code) return;
-      const r=rs[p.code]||{};
-      if((r.status||p.status||"pending")==="completed") return;
-      att.push({ type:p.type, code:String(p.code), titolo, score:r.lastScore, tries:r.attemptCount||0 });
+      if(!p.code || p.status==="completed") return;
+      cand.push(p);
     });
+  const foglia=(c,f)=>Cloud.leggi("livelearn/recovery_sessions/"+code+"/"+c+"/"+f,6000).then(r=>r.val);
+  const stati=await Promise.all(cand.map(p=>Promise.all(["status","lastScore","attemptCount"].map(f=>foglia(p.code,f)))));
+  cand.forEach((p,i)=>{
+    const st=stati[i][0], sc=stati[i][1], n=stati[i][2];
+    if((st||p.status||"pending")==="completed") return;
+    att.push({ type:p.type, code:String(p.code), titolo:String(p.unitName||p.title||""),
+               score:(sc!=null?sc:p.lastScore), tries:(n!=null?n:p.attemptCount)||0 });
+  });
   return { att:att.slice(0,5), orali:orali.slice(0,2) };
 }
-function pianoCarica(){
+/* force: rilegge anche se c'e' una lettura recente (alla fine della lezione) */
+function pianoCarica(force){
   let code=""; try{ code=String(Student.code||"").trim().toUpperCase(); }catch(e){}
   if(!code || Student.ospite || typeof Cloud==="undefined") return Promise.resolve(null);
-  if(PIANO.prom && PIANO.code===code && Date.now()-PIANO.at<RIP_TTL) return PIANO.prom;
+  if(PIANO.prom && PIANO.code===code && Date.now()-PIANO.at<(force?15000:RIP_TTL)) return PIANO.prom;
   PIANO.code=code; PIANO.at=Date.now();
   const p=PIANO.prom=_pianoCarica(code).catch(e=>{ console.warn("[piano]",e); return null; });
-  p.then(d=>{ if(!d && PIANO.prom===p) PIANO.prom=null; });
+  p.then(d=>{ if(d) PIANO.last={ code, d }; else if(PIANO.prom===p) PIANO.prom=null; });
   return p;
 }
 /* dopo il «Thank you, Miss Grace!» della chiusura: done() chiude la lezione */
@@ -27120,9 +27184,11 @@ function pianoAllaFine(done){
   if(!LESSON.on) return;
   /* anche a chi e' in piedi: la lezione e' finita, la finestra non
      interrompe niente (chi esce dall'aula non arriva fin qui) */
-  const attesa=new Promise(r=>setTimeout(()=>r(null),3000));
-  Promise.race([pianoCarica(),attesa]).then(d=>{
+  const last=(PIANO.last && PIANO.last.code===PIANO.code)?PIANO.last.d:null;
+  const attesa=new Promise(r=>setTimeout(()=>r(null), last?3000:10000));
+  Promise.race([pianoCarica(true),attesa]).then(d=>{
     if(!LESSON.on) return;
+    d=d||last;
     if(!d || (!d.att.length && !d.orali.length)){ done(); return; }
     const righe=d.att.map(a=>{ const T=PIANO_TIPI[a.type];
       const url=PIANO_LL+"?code="+encodeURIComponent(a.code);
@@ -27140,7 +27206,7 @@ function pianoAllaFine(done){
     DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Your personal plan",
       text:"One more thing: don't forget your personal plan! "+(d.att.length?"Tap an activity to do it now.":"Read it carefully."),
       italian:"Ricordati il tuo piano personalizzato: "+(d.att.length?"tocca un'attività per svolgerla (si apre LiveLearn).":"leggilo con attenzione."),
-      html:lesCard("les-p","\u{1F4CB} Your personal plan · "+n,righe),
+      html:lesCard("les-p","\u{1F4CB} Your personal plan · "+n,righe), wide:true,
       buttons:[{ label:"OK, I'll do it!", cls:"primary", act:done }] });
   });
 }
@@ -27219,6 +27285,7 @@ function lessonStart(id){
   /* 4 — CHIUSURA: com'e' andata, e da dove si riparte */
   steps.push(()=>{
     const n=LESSON.score, t=LESSON.total, task=lessonNextTask(id);
+    try{ pianoCarica(true); }catch(e){}                  // v402: il piano aggiornato, pronto per dopo il saluto
     const stars=Math.max(2,n*2);
     try{ Stars.award(null,stars,"lezione"); }catch(e){}
     const taskEn=task&&task.en?_lesPlain(task.en):"";
