@@ -16,7 +16,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="QuestTown">
-<script>window.ET_BUILD="256";</script>
+<script>window.ET_BUILD="257";</script>
 <script>
 /* =====================================================================
    APP INSTALLABILE (v217-218) — gira PRIMA di tutto il resto.
@@ -27118,7 +27118,8 @@ function pianoCarica(){
 /* dopo il «Thank you, Miss Grace!» della chiusura: done() chiude la lezione */
 function pianoAllaFine(done){
   if(!LESSON.on) return;
-  if(LESSON.paused){ done(); return; }                  // in piedi: niente finestre nuove
+  /* anche a chi e' in piedi: la lezione e' finita, la finestra non
+     interrompe niente (chi esce dall'aula non arriva fin qui) */
   const attesa=new Promise(r=>setTimeout(()=>r(null),3000));
   Promise.race([pianoCarica(),attesa]).then(d=>{
     if(!LESSON.on) return;
