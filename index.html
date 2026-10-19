@@ -16,7 +16,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="QuestTown">
-<script>window.ET_BUILD="255";</script>
+<script>window.ET_BUILD="256";</script>
 <script>
 /* =====================================================================
    APP INSTALLABILE (v217-218) — gira PRIMA di tutto il resto.
@@ -26396,6 +26396,7 @@ function lessonOnSchoolEnter(){
     LESSON.pending=pid; LESSON.greetAt=0;
     lessonGreetWhenFree(pid);
     try{ ripassoCarica(); }catch(e){}            // v400: gli errori dell'ultimo test, mentre Miss Grace saluta
+    try{ pianoCarica(); }catch(e){}              // v401: il piano personalizzato, per la fine della lezione
   }
   lessonPupilsSync();
   lessonWatchInit();
@@ -27070,6 +27071,79 @@ function _ripAsk(it,n,st,next){
       { label:"↺ Again", cls:"ghost", keepOpen:true, act:_ripTilesReset }, _lessonStandBtn()] });
 }
 
+/* ==== v401 — IL PIANO PERSONALIZZATO A FINE LEZIONE (Giacomo, 19 ott 2026:
+   «alla fine della lezione Miss Grace ricorda il piano personalizzato
+   dell'alunno, se c'e', con il link cliccabile per svolgerlo»).
+   Stesse letture del riquadro «Il tuo piano personalizzato» di StudentApp:
+     studentapp/personal_plan/<codice>     le attivita' del piano
+     livelearn/recovery_sessions/<codice>  com'e' andata (stato, ultimo %)
+   Solo letture: il «letto» dei recuperi orali lo segna StudentApp, non qui.
+   Il link e' quello di openRecoveryActivity(): LiveLearn col codice
+   dell'attivita' gia' inserito. Si ricordano solo le attivita' non ancora
+   completate e i recuperi orali non ancora letti; se non c'e' niente da
+   fare, Miss Grace non dice niente. ==== */
+const PIANO_LL="https://giacomocreations.github.io/myclass/LiveLearn.html";
+const PIANO={ prom:null, code:null, at:0 };
+const PIANO_TIPI={ recovery_scritto:{ ic:"\u{1F4DD}", en:"Recovery", ord:0 },
+                   recovery_orale:{ ic:"\u{1F5E3}️", en:"Oral recovery", ord:1 },
+                   consolidamento:{ ic:"\u{1F4DA}", en:"Practice", ord:2 },
+                   approfondimento:{ ic:"⭐", en:"Challenge", ord:3 } };
+async function _pianoCarica(code){
+  const [P,R]=await Promise.all([Cloud.leggi("studentapp/personal_plan/"+code,8000),
+                                 Cloud.leggi("livelearn/recovery_sessions/"+code,8000)]);
+  if(!P.val) return null;                                // nessun piano
+  const rs=R.val||{}, att=[], orali=[];
+  Object.keys(P.val).map(k=>Object.assign({ _key:k },P.val[k]||{}))
+    .filter(p=>PIANO_TIPI[p.type])
+    .sort((a,b)=>(PIANO_TIPI[a.type].ord-PIANO_TIPI[b.type].ord)||((b.createdAt||0)-(a.createdAt||0)))
+    .forEach(p=>{
+      const titolo=String(p.unitName||p.title||"");
+      if(p.type==="recovery_orale"){ if(p.text && !p.readAt) orali.push({ titolo, text:String(p.text) }); return; }
+      if(!p.code) return;
+      const r=rs[p.code]||{};
+      if((r.status||p.status||"pending")==="completed") return;
+      att.push({ type:p.type, code:String(p.code), titolo, score:r.lastScore, tries:r.attemptCount||0 });
+    });
+  return { att:att.slice(0,5), orali:orali.slice(0,2) };
+}
+function pianoCarica(){
+  let code=""; try{ code=String(Student.code||"").trim().toUpperCase(); }catch(e){}
+  if(!code || Student.ospite || typeof Cloud==="undefined") return Promise.resolve(null);
+  if(PIANO.prom && PIANO.code===code && Date.now()-PIANO.at<RIP_TTL) return PIANO.prom;
+  PIANO.code=code; PIANO.at=Date.now();
+  const p=PIANO.prom=_pianoCarica(code).catch(e=>{ console.warn("[piano]",e); return null; });
+  p.then(d=>{ if(!d && PIANO.prom===p) PIANO.prom=null; });
+  return p;
+}
+/* dopo il «Thank you, Miss Grace!» della chiusura: done() chiude la lezione */
+function pianoAllaFine(done){
+  if(!LESSON.on) return;
+  if(LESSON.paused){ done(); return; }                  // in piedi: niente finestre nuove
+  const attesa=new Promise(r=>setTimeout(()=>r(null),3000));
+  Promise.race([pianoCarica(),attesa]).then(d=>{
+    if(!LESSON.on) return;
+    if(!d || (!d.att.length && !d.orali.length)){ done(); return; }
+    const righe=d.att.map(a=>{ const T=PIANO_TIPI[a.type];
+      const url=PIANO_LL+"?code="+encodeURIComponent(a.code);
+      return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #eadfca">'
+        +'<div style="flex:1;min-width:0"><div style="font-weight:800">'+T.ic+' '+_escHtml(a.titolo||T.en)+'</div>'
+        +'<div style="font-size:12px;color:#6b6358">'+T.en+(a.tries&&a.score!=null?' · last time '+_escHtml(a.score)+'%':'')+'</div></div>'
+        +'<a href="'+_escHtml(url)+'" target="_blank" rel="noopener" style="flex:0 0 auto;background:#c2572e;color:#fff;text-decoration:none;'
+        +'border-radius:10px;padding:8px 13px;font-weight:800;font-size:14px;white-space:nowrap">▶ '+(a.tries?"Try again":"Do it")+'</a></div>';
+    }).join("")
+    + d.orali.map(o=>{ const t=o.text.length>220?o.text.slice(0,217)+"…":o.text;
+      return '<div style="padding:7px 0;border-bottom:1px solid #eadfca"><div style="font-weight:800">'+PIANO_TIPI.recovery_orale.ic+' '
+        +_escHtml(o.titolo||PIANO_TIPI.recovery_orale.en)+'</div><div style="font-size:13px;color:#6b6358;margin-top:2px">'+_escHtml(t)+'</div></div>';
+    }).join("");
+    const n=d.att.length+d.orali.length;
+    DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Your personal plan",
+      text:"One more thing: don't forget your personal plan! "+(d.att.length?"Tap an activity to do it now.":"Read it carefully."),
+      italian:"Ricordati il tuo piano personalizzato: "+(d.att.length?"tocca un'attività per svolgerla (si apre LiveLearn).":"leggilo con attenzione."),
+      html:lesCard("les-p","\u{1F4CB} Your personal plan · "+n,righe),
+      buttons:[{ label:"OK, I'll do it!", cls:"primary", act:done }] });
+  });
+}
+
 function lessonStart(id){
   const L=LESSONS[id]; if(!L || !GRACE) return;
   LESSON.on=true; LESSON.id=id; LESSON.lastId=id; LESSON.score=0; LESSON.total=0; lessonWantClear();
@@ -27150,7 +27224,7 @@ function lessonStart(id){
     lessonBoard("Well done, class!",[n+" / "+t+" correct","Homework: "+(taskEn||"practise at home!")]);
     const msg=(n===t?"Fantastic! You got everything right. ":(n>=t-1?"Very good work today! ":"Good effort! Don't worry, practice makes perfect. "))
       +(taskEn?"Now go back to "+(task.where||"your quest")+".":"See you next time!");
-    _say(GRACE,msg,(task&&task.it?"Ora torna alla quest. Il prossimo compito: "+_lesPlain(task.it):"Alla prossima!"),()=>lessonEnd(false),"Thank you, Miss Grace!",
+    _say(GRACE,msg,(task&&task.it?"Ora torna alla quest. Il prossimo compito: "+_lesPlain(task.it):"Alla prossima!"),()=>pianoAllaFine(()=>lessonEnd(false)),"Thank you, Miss Grace!",
       lesCard("les-end","\u2B50 Your result",'<div class="les-score">'+n+' / '+t+' \u2B50</div>'
         +'<div style="text-align:center;font-size:13px;color:#6b6358">+'+stars+' stars</div>'
         +(taskEn?'<div class="les-task">\u{1F3AF} <b>Next task</b>'+(task.where?' \u00b7 '+_escHtml(task.where):'')+'<br>'+_escHtml(taskEn)+'</div>':'')));
