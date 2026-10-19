@@ -16,7 +16,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="QuestTown">
-<script>window.ET_BUILD="254";</script>
+<script>window.ET_BUILD="255";</script>
 <script>
 /* =====================================================================
    APP INSTALLABILE (v217-218) — gira PRIMA di tutto il resto.
@@ -26239,7 +26239,9 @@ function lessonDefaultUnit(){
 function lessonUnitId(){
   const w=lessonWanted();
   if(w && lessonUnitObj(w)) return w;
-  if(!lessonDone("u0")) return null;            // lo Starter si fa con la sua quest
+  /* v400 (Giacomo, 19 ott): in prima lo Starter si fa con la sua quest prima
+     della lezione; dalla seconda la lezione c'e' anche a Starter non finito */
+  if(!lessonDone("u0") && studentYear()<2) return null;
   return lessonDefaultUnit();
 }
 function lessonTitle(id){ const s=Gate.info(id);
@@ -26377,14 +26379,23 @@ function lessonThemeClear(){
 const LESSON_AGAIN_MS=15*60000;
 const LESSON_FETCH_MS=20000;      // dopo il saluto, quanto si puo' girare prima che Miss Grace venga
 const LESSON_STAND_MS=60000;      // v307: a lezione in corso, quanto si puo' stare in piedi in classe
+/* la lezione che ti aspetta entrando adesso (null: nessuna). Serve anche a
+   tryEnterUnit, che deve saperlo PRIMA di aprire la porta. */
+function lessonEntryId(){
+  const id=lessonUnitId();
+  LESSON.doneAt=LESSON.doneAt||{};
+  if(id && !(LESSON.doneAt[id] && Date.now()-LESSON.doneAt[id]<LESSON_AGAIN_MS && lessonWanted()!==id)) return id;
+  return null;
+}
 function lessonOnSchoolEnter(){
   LESSON.pending=null; LESSON.fetching=false;
   const id=lessonUnitId();
   if(id && id!=="u0") lessonThemeApply(id); else lessonThemeClear();
-  LESSON.doneAt=LESSON.doneAt||{};
-  if(id && !(LESSON.doneAt[id] && Date.now()-LESSON.doneAt[id]<LESSON_AGAIN_MS && lessonWanted()!==id)){
-    LESSON.pending=id; LESSON.greetAt=0;
-    lessonGreetWhenFree(id);
+  const pid=lessonEntryId();
+  if(pid){
+    LESSON.pending=pid; LESSON.greetAt=0;
+    lessonGreetWhenFree(pid);
+    try{ ripassoCarica(); }catch(e){}            // v400: gli errori dell'ultimo test, mentre Miss Grace saluta
   }
   lessonPupilsSync();
   lessonWatchInit();
@@ -26460,7 +26471,7 @@ function lessonGraceHome(){
 }
 /* ---- i compagni: muti durante lo Starter (non rubano la E agli oggetti sui
    banchi) e durante la lezione; dopo si chiacchiera ---- */
-function lessonPupilsFree(){ return lessonDone("u0") && !LESSON.on && !LESSON.pending; }
+function lessonPupilsFree(){ return (lessonDone("u0") || Quest.unit!==UNIT0) && !LESSON.on && !LESSON.pending; }
 function lessonPupilsSync(){
   const on=lessonPupilsFree();
   Object.keys(LESSON.pupils).forEach(k=>{ const n=LESSON.pupils[k]; if(n && n.inter) n.inter.enabled=on; });
@@ -26706,6 +26717,359 @@ function lesSayBtn(text){ _lesSayQ.push(String(text)); if(_lesSayQ.length>40) _l
   return '<button type="button" class="les-say" title="Listen" onclick="lesSpeak('+(_lesSayQ.length-1)+')">\u{1F50A}</button>'; }
 function lesSpeak(i){ const t=_lesSayQ[i]; if(t) try{ TTS.say(t,{gender:"f"}); }catch(e){} }
 function _lesPlain(h){ const d=document.createElement("div"); d.innerHTML=String(h||""); return (d.textContent||"").trim(); }
+/* ==== v400 — IL RIPASSO DELL'ULTIMO TEST (Giacomo, 19 ott 2026: «quando
+   entri alla School, se sei in seconda o in terza segui la lezione anche se
+   non hai finito la quest; all'inizio, per una volta, l'insegnante ti fa le
+   domande che hai sbagliato nell'ultimo test disponibile, a parte il
+   listening»).
+   DA DOVE VENGONO I DATI. Solo letture, e solo i nodi che StudentApp legge
+   gia' per far vedere all'alunno il PDF della sua verifica:
+     livelearn/history_priv/<codice>/sessions   i suoi test (titolo, data, respKey)
+     livelearn/responses/<sessione>/<respKey>    le SUE risposte: un record, mai la classe
+     livelearn/sessions/<sessione>               attivita', file A/B/DSA, noListening
+     livelearn/activities/<id>                   le domande
+   Nessuna scrittura su Firebase, nessuna regola nuova. Il «gia' ripassato»
+   e' una chiave locale (et_ripasso_fatto) che NON e' negli elenchi di
+   Sincro: resta sul dispositivo e non sale nel cloud.
+   ⚠️ La correzione e' quella di evaluateAnswer di LiveLearn (come in
+   StudentApp), e conta il voto del docente: una domanda che il prof ha
+   corretto a mano dandola per buona (manualScores/aiScores pieni) o tolto
+   dalla valutazione (excludedQuestions, massimo 0) qui non torna. Restano
+   fuori il listening e le risposte aperte, che non si correggono da sole.
+   «Ultimo test» = l'ultima sessione in modalita' Test; se di quella mancano
+   i dati (risposte cancellate, attivita' tolta) si guarda la precedente. ==== */
+const RIP_K="et_ripasso_fatto";
+const RIP_MAX=8, RIP_PER_Q=3, RIP_TTL=10*60000;
+const RIP={ prom:null, code:null, at:0 };
+const _RIP_BLANK=/___|\[\[([^\[\]\n]*\|[^\[\]\n]*)\]\]/g;
+/* come fbArr di LiveLearn: conserva le posizioni ({0:a,2:c} -> [a,null,c]) */
+function _ripArr(v){
+  if(Array.isArray(v)) return v;
+  if(v && typeof v==="object"){
+    const ks=Object.keys(v).map(Number).filter(n=>isFinite(n));
+    if(!ks.length) return Object.values(v);
+    const a=new Array(Math.max.apply(null,ks)+1).fill(null);
+    Object.keys(v).forEach(k=>{ const n=Number(k); if(isFinite(n)) a[n]=v[k]; });
+    return a; }
+  return [];
+}
+function _ripNorm(s){ return String(s==null?"":s).normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase()
+  .replace(/[-–—]/g,"").replace(/[.,!?;:'"()]/g,"").replace(/\s+/g," ").trim(); }
+function _ripAlts(c){ return String(c==null?"":c).split("|").map(x=>x.trim()).filter(Boolean); }
+function _ripOk(g,c){ const n=_ripNorm(g); return _ripAlts(c).some(a=>_ripNorm(a)===n); }
+function _ripLow(s){ return String(s==null?"":s).replace(/\s+/g," ").trim().toLowerCase(); }
+function _ripRich(s){
+  return _escHtml(String(s==null?"":s))
+    .replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/\*([^\n*]+?)\*/g,"<i>$1</i>")
+    .replace(/\[(red|blue|green|orange|purple|big)\]([\s\S]+?)\[\/\1\]/gi,"<b>$2</b>")
+    .replace(/___/g,"<b>_____</b>").replace(/\n/g,"<br>");
+}
+/* tre opzioni senza doppioni: la giusta, poi le altre nell'ordine dato */
+function _ripTre(giusta,altre){
+  const out=[giusta];
+  altre.forEach(o=>{ if(o!=null && String(o).trim() && out.length<3 && !out.some(x=>_ripLow(x)===_ripLow(o))) out.push(String(o)); });
+  return out;
+}
+
+/* ---- la frase con lo spazio da rifare ----------------------------------------
+   Si mostra la riga (o, se la riga e' lunga, la frase) che contiene lo spazio
+   bi; gli altri spazi della stessa frase sono gia' riempiti con la risposta
+   giusta, cosi' si lavora su uno solo. full = la stessa frase risolta. */
+function _ripPezzo(text,bi,corrects){
+  const inl={}; let k=0;
+  const tok=String(text||"").replace(_RIP_BLANK,(m,inner)=>{ const n=k++; if(inner!==undefined) inl[n]=inner; return "\u0000"+n+"\u0000"; });
+  if(bi>=k) return null;
+  const tag="\u0000"+bi+"\u0000";
+  let piece=tok.split("\n").find(l=>l.indexOf(tag)>=0)||tok;
+  if(piece.length>160){ const fr=piece.match(/[^.!?]+[.!?]*\s*/g)||[piece]; piece=fr.find(f=>f.indexOf(tag)>=0)||piece; }
+  const giusta=g=>_ripAlts(corrects[g])[0]||"";
+  const draw=mid=>_ripRich(piece.trim()).replace(/\u0000(\d+)\u0000/g,(m,g)=>
+    (+g===bi)?mid:'<span style="font-weight:800">'+_escHtml(giusta(+g))+'</span>');
+  return { prompt:draw("<b>_____</b>"), full:draw('<span class="les-hl">'+_escHtml(giusta(bi))+'</span>'),
+           inline:inl[bi], giusta:giusta(bi) };
+}
+/* la consegna in testa (prima riga senza spazi di un testo su piu' righe) */
+function _ripConsegna(text){
+  const L=String(text||"").split("\n");
+  if(L.length<2 || (L[0].match(_RIP_BLANK)||[]).length) return "";
+  return L[0].replace(/^\*\*Consegna\*\*\s*/i,"").trim();
+}
+
+/* ---- da una domanda sbagliata alle domande del ripasso -----------------------
+   Una domanda puo' dare piu' «pezzi» (gli spazi sbagliati di un cloze, le
+   coppie sbagliate di un matching): ognuno e' una domanda di Miss Grace.
+   kind: "choice" (tre bottoni), "type" (si riscrive, come nel test),
+         "tiles" (si rimettono in ordine le parole). */
+function _ripPezzi(q,a){
+  const t=q.type, out=[];
+  if(t==="multiple-choice"){
+    const opts=_ripArr(q.options).map(o=>String(o==null?"":o)), c=Number(q.correct);
+    if(!(c>=0 && c<opts.length) || a===q.correct) return out;   // stesso confronto stretto di LiveLearn
+    out.push({ kind:"choice", head:q.text, opts:opts.filter(o=>o.trim()), answer:opts[c], show:opts[c],
+      full:'<span class="les-hl">'+_escHtml(opts[c])+'</span>' });
+    return out;
+  }
+  if(t==="cloze" || t==="fill-blanks" || t==="drag-drop"){
+    const dd=(t==="drag-drop");
+    if(dd && q.unordered) return out;                  // gruppi senza ordine: non c'e' «uno» spazio sbagliato
+    let text=dd?_ripArr(q.sentences).join("\n"):String(q.text||"");
+    if(!dd && !(text.match(_RIP_BLANK)||[]).length){      // fill-blanks senza spazi: LiveLearn ne aggiunge uno in fondo
+      const L=text.split("\n"); text=(L.length>1?L.slice(1).join("\n"):L[0])+" ___"; }
+    const corrects=_ripArr(q.answers), A=_ripArr(a);
+    const bank=dd?_ripArr(q.words):(Array.isArray(q.wordBank)?q.wordBank:_ripArr(q.wordBank));
+    const head=dd?(q.text||"Complete the sentence."):(_ripConsegna(q.text)||"Complete the sentence.");
+    corrects.forEach((corr,bi)=>{
+      if(!_ripAlts(corr).length) return;
+      const g=A[bi];
+      const ok=dd ? (g && _ripLow(g)===_ripLow(corr)) : _ripOk(g,corr);
+      if(ok) return;
+      const P=_ripPezzo(text,bi,corrects); if(!P) return;
+      const was=(g!=null && String(g).trim())?String(g):null;
+      const it={ head, prompt:P.prompt, full:P.full, show:_ripAlts(corr).join(" / "), was };
+      if(P.inline!==undefined){                          // [[a|b|c]]: si sceglie, come nel test
+        const opts=P.inline.split("|").map(x=>x.trim()).filter(Boolean);
+        const ans=opts.find(o=>_ripOk(o,corr))||P.giusta;
+        Object.assign(it,{ kind:"choice", opts:_ripTre(ans,shuffle(opts)), answer:ans });
+      } else if(bank.length){                            // banca parole: la giusta, la tua di allora, un'altra
+        Object.assign(it,{ kind:"choice", answer:P.giusta,
+          opts:_ripTre(P.giusta,[was].concat(shuffle(bank.map(String)))) });
+      } else Object.assign(it,{ kind:"type", answer:corr });
+      out.push(it);
+    });
+    return out;
+  }
+  if(t==="matching"){
+    const L=_ripArr(q.left), R=_ripArr(q.right).map(x=>String(x==null?"":x)), A=_ripArr(a);
+    L.forEach((l,li)=>{
+      const giusto=R[li]; if(l==null || !giusto) return;
+      const ch=A[li], scelto=(ch!=null && R[ch]!=null)?R[ch]:null;
+      if(scelto!=null && _ripLow(scelto) && _ripLow(scelto)===_ripLow(giusto)) return;
+      out.push({ kind:"choice", head:q.text||"Match the two columns.",
+        prompt:'«'+_escHtml(l)+'» → <b>?</b>', answer:giusto, show:giusto,
+        opts:_ripTre(giusto,[scelto].concat(shuffle(R))),
+        full:'«'+_escHtml(l)+'» → <span class="les-hl">'+_escHtml(giusto)+'</span>' });
+    });
+    return out;
+  }
+  if(t==="categorization"){
+    const C=_ripArr(q.categories).map(x=>String(x==null?"":x)), I=_ripArr(q.items), ANS=_ripArr(q.answers), A=_ripArr(a);
+    ANS.forEach((corr,ii)=>{
+      const g=A[ii];
+      if(g!==null && g!==undefined && Number(g)===Number(corr)) return;
+      const giusta=C[Number(corr)]; if(!giusta || I[ii]==null) return;
+      const opts=C.length<=4 ? C.filter(x=>x.trim()) : _ripTre(giusta,[C[Number(g)]].concat(shuffle(C)));
+      out.push({ kind:"choice", head:q.text||"Put the words in the right group.",
+        prompt:'Where does «'+_escHtml(I[ii])+'» go?', answer:giusta, show:giusta, opts,
+        full:'«'+_escHtml(I[ii])+'» → <span class="les-hl">'+_escHtml(giusta)+'</span>' });
+    });
+    return out;
+  }
+  if(t==="reorder"){
+    const SS=_ripArr(q.sentences), A=_ripArr(a);
+    SS.forEach((s,si)=>{
+      s=String(s||"").trim(); const g=A[si];
+      if(!s || (g && _ripLow(g)===_ripLow(s))) return;
+      const w=s.split(" ").filter(Boolean); if(w.length<2) return;
+      let sh=shuffle(w); for(let i=0;i<5 && sh.join(" ")===w.join(" ");i++) sh=shuffle(w);
+      out.push({ kind:"tiles", head:q.text||"Put the words in the right order.", words:sh, answer:s, show:s,
+        was:(g && String(g).trim())?String(g):null, full:'<span class="les-hl">'+_escHtml(s)+'</span>' });
+    });
+    return out;
+  }
+  return out;                                            // listening, risposte aperte: fuori
+}
+/* la versione (fila A/B, DSA...) dell'alunno: come _resolveStudentQuestions di StudentApp */
+function _ripVersione(r,base,vers,sv,nomi){
+  const usa=v=>{ const x=(v && v!=="originale")?_ripArr(vers[v]):[]; return x.length?x:null; };
+  let x=usa(r.studentVersion); if(x) return x;
+  if(!Object.keys(sv).length || !Object.keys(vers).length) return base;
+  const nrm=s=>String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[_\s]+/g," ").trim();
+  let ver=null;
+  nomi.some(n=>{ if(!n) return false; const k=Object.keys(sv).find(k=>nrm(k)===nrm(n)); if(k) ver=sv[k]; return !!ver; });
+  return usa(ver)||base;
+}
+/* il record delle risposte: prima la respKey della cronologia, poi le varianti
+   del nome (come _leggiMiaRisposta di StudentApp): letture sul singolo record */
+async function _ripRisposta(sc,respKey){
+  const out=[], push=v=>{ if(v && out.indexOf(v)<0) out.push(v); };
+  push(respKey);
+  const b=String(Student.nome||"").trim().replace(/\s+/g," "), pl=v=>v.replace(/[.#$\[\]\/]/g,"_");
+  if(b){ push(pl(b)); push(pl(b).replace(/ /g,"_"));
+    const p=b.split(" "); if(p.length===2){ const inv=p[1]+" "+p[0]; push(pl(inv)); push(pl(inv).replace(/ /g,"_")); } }
+  for(const k of out){
+    const r=await Cloud.leggi("livelearn/responses/"+sc+"/"+k,6000);
+    if(r.val) return { r:r.val, key:k };
+  }
+  return null;
+}
+async function _ripTest(sc,e){
+  const S=await Cloud.leggi("livelearn/sessions/"+sc,8000);
+  const sess=S.val; if(!sess || !sess.activityId) return null;
+  const R=await _ripRisposta(sc,e.respKey); if(!R || R.r.aiScoringPending) return null;
+  const AC=await Cloud.leggi("livelearn/activities/"+sess.activityId,15000);
+  const act=AC.val; if(!act) return null;
+  let base=_ripArr(act.questions); const vers={};
+  Object.keys(act.versions||{}).forEach(k=>{ vers[k]=_ripArr(act.versions[k]); });
+  if(sess.noListening){                                  // «Escludi listening»: risposte indicizzate sulla lista filtrata
+    const via=qs=>qs.filter(q=>!q || q.type!=="listening");
+    base=via(base); Object.keys(vers).forEach(k=>{ vers[k]=via(vers[k]); if(!vers[k].length) delete vers[k]; }); }
+  const r=R.r, qs=_ripVersione(r,base,vers,sess.studentVersions||{},[Student.nome,r.name,r.aliasOf,R.key]);
+  const ans=_ripArr(r.answers), ms=r.manualScores||{}, as=r.aiScores||{}, qmo=r.questionMaxOverrides||{}, ex=r.excludedQuestions||{};
+  const media=act.media||{}, liste=[];
+  qs.forEach((q,i)=>{
+    if(!q || ex[i]) return;
+    const max=(qmo[i]!=null)?Number(qmo[i]):(q.points||1);
+    if(!(max>0)) return;                                 // esercizio tolto dalla valutazione
+    const voto=(ms[i]!=null)?Number(ms[i]):((as[i]!=null)?Number(as[i]):null);
+    if(voto!=null && voto>=max) return;                  // il docente l'ha data per buona
+    let P=[]; try{ P=_ripPezzi(q,ans[i]); }catch(err){ P=[]; }
+    if(!P.length) return;
+    let img=(typeof q.image==="string" && q.image)?q.image:((q.imageKey && typeof media[q.imageKey]==="string")?media[q.imageKey]:"");
+    if(img && !/^(data:image|https?:)/.test(img)) img="";
+    const tag=String(q.tag||"").toLowerCase();
+    P.forEach(p=>{ p.img=img; p.tag=tag; if(q.hint) p.hint=String(q.hint); });
+    liste.push(P);
+  });
+  /* al massimo RIP_MAX domande e RIP_PER_Q per esercizio, distribuite a giro
+     cosi' entrano piu' esercizi diversi; poi si rimettono in ordine di test */
+  const quote=liste.map(()=>0); let tot=0;
+  for(let g=0; g<RIP_PER_Q; g++) liste.forEach((L,qi)=>{ if(L.length>g && tot<RIP_MAX){ quote[qi]++; tot++; } });
+  const items=[]; liste.forEach((L,qi)=>L.slice(0,quote[qi]).forEach(p=>items.push(p)));
+  return { code:sc, title:String(e.activityTitle||sess.title||""), ts:e.ts||r.submittedAt||0, items,
+           perfetto:Number(e.pct)>=100 };
+}
+async function _ripCarica(code){
+  const h=await Cloud.leggi("livelearn/history_priv/"+code+"/sessions",9000);
+  if(!h.val) return null;
+  const tests=Object.keys(h.val).map(k=>Object.assign({ _k:k },h.val[k]||{}))
+    .filter(e=>(e.mode||"test")==="test")
+    .sort((a,b)=>(b.ts||0)-(a.ts||0));
+  const fatto=Sync.get(RIP_K,null);
+  for(let n=0;n<Math.min(3,tests.length);n++){
+    const sc=String(tests[n].sessionCode||tests[n]._k);
+    if(fatto && fatto.code===sc) return { code:sc, fatto:true };
+    const d=await _ripTest(sc,tests[n]);
+    if(d) return d;
+  }
+  return null;
+}
+/* parte all'ingresso a scuola (mentre Miss Grace saluta) e si ricorda per
+   qualche minuto; un «non lo so» (rete, ospite) non si ricorda */
+function ripassoCarica(){
+  let code=""; try{ code=String(Student.code||"").trim().toUpperCase(); }catch(e){}
+  if(!code || Student.ospite || typeof Cloud==="undefined") return Promise.resolve(null);
+  if(RIP.prom && RIP.code===code && Date.now()-RIP.at<RIP_TTL) return RIP.prom;
+  RIP.code=code; RIP.at=Date.now();
+  const p=RIP.prom=_ripCarica(code).catch(e=>{ console.warn("[ripasso]",e); return null; });
+  p.then(d=>{ if(!d && RIP.prom===p) RIP.prom=null; });
+  return p;
+}
+function ripassoFatto(code){ try{ Sync.set(RIP_K,{ code, t:Date.now() }); }catch(e){} RIP.prom=null; }
+
+/* ---- le tessere del riordino ------------------------------------------------- */
+function _ripTile(el){
+  const z=document.getElementById("rip-zone"), p=document.getElementById("rip-pool"); if(!z || !p || !el) return;
+  (el.parentNode===p?z:p).appendChild(el);
+}
+function _ripTilesReset(){
+  const z=document.getElementById("rip-zone"), p=document.getElementById("rip-pool"); if(!z || !p) return;
+  while(z.firstChild) p.appendChild(z.firstChild);
+}
+
+/* ---- dentro la lezione ----------------------------------------------------------
+   Uno step della lezione, subito dopo il saluto: aspetta il caricamento (al
+   massimo pochi secondi: di solito e' gia' pronto), poi passa a cb gli step
+   del ripasso da infilare prima delle parole. */
+function ripassoSteps(next,cb){
+  const pronto=ripassoCarica(), attesa=new Promise(r=>setTimeout(()=>r(null),5000));
+  Promise.race([pronto,attesa]).then(d=>{
+    if(!LESSON.on) return;
+    const steps=[];
+    if(!d || d.fatto){ cb(steps); return; }
+    const tit=d.title?'«'+d.title+'»':"your last test";
+    const quando=d.ts?new Date(d.ts).toLocaleDateString("en-GB",{ day:"numeric", month:"long" }):"";
+    const testCard=body=>lesCard("les-x","\u{1F4DD} Your last test",
+      '<div class="les-title">'+_escHtml(d.title||"Test")+'</div>'+(quando?'<div style="font-size:13px;color:#6b6358">'+_escHtml(quando)+'</div>':'')+(body||""));
+    if(!d.items.length){
+      /* niente da rifare: se il test era senza errori, i complimenti */
+      if(d.perfetto) steps.push(()=>_say(GRACE,"I've checked "+tit+": no mistakes at all. Well done!",
+        "Ho guardato il tuo ultimo test: nessun errore. Bravo!",()=>{ ripassoFatto(d.code); next(); },"Thank you!",
+        testCard('<div class="les-score">⭐ 100%</div>')));
+      else ripassoFatto(d.code);
+      cb(steps); return;
+    }
+    const st={ code:d.code, tot:d.items.length, done:0, ok:0 };
+    steps.push(()=>_say(GRACE,"Before we start, let's look at "+tit+". You made some mistakes: let's try those questions again!",
+      "Prima di cominciare guardiamo il tuo ultimo test: riproviamo le domande che hai sbagliato.",next,"OK, let's try!",
+      testCard('<div style="margin-top:6px;font-weight:800">✏️ '+st.tot+' question'+(st.tot>1?"s":"")+' to try again</div>')));
+    d.items.forEach((it,i)=>steps.push(()=>_ripAsk(it,i+1,st,next)));
+    steps.push(()=>{
+      if(st.done<st.tot){ next(); return; }              // in piedi qualcuna e' saltata: si riproporra'
+      ripassoFatto(st.code);
+      const stars=st.ok; if(stars) try{ Stars.award("rip:"+st.code,stars,"ripasso"); }catch(e){}
+      _say(GRACE,(st.ok===st.tot?"Brilliant! You fixed all your mistakes.":"Good work! You fixed "+st.ok+" out of "+st.tot+".")+" Now, on to today's lesson!",
+        st.ok===st.tot?"Hai corretto tutti gli errori!":"Hai corretto "+st.ok+" errori su "+st.tot+". Ora la lezione di oggi.",next,"Great!",
+        lesCard("les-end","⭐ Test review",'<div class="les-score">'+st.ok+' / '+st.tot+' ⭐</div>'
+          +(stars?'<div style="text-align:center;font-size:13px;color:#6b6358">+'+stars+' stars</div>':'')));
+    });
+    cb(steps);
+  });
+}
+function _ripAsk(it,n,st,next){
+  /* in piedi: le domande del TUO test non le prende un compagno, si saltano */
+  if(LESSON.paused){ LESSON.curDone=true; next(); return; }
+  const tags={ grammar:"Grammar", vocabulary:"Vocabulary", functions:"Functions", reading:"Reading", writing:"Writing" };
+  const body=(it.img?'<img src="'+_escHtml(it.img)+'" alt="" style="display:block;max-width:100%;max-height:150px;margin:2px auto 6px;border-radius:8px">':'')
+    +(it.head?'<div style="max-height:30vh;overflow:auto;font-size:15px;margin-bottom:4px">'+_ripRich(it.head)+'</div>':'')
+    +(it.prompt?'<div class="gem-cloze">'+it.prompt+'</div>':'')
+    +(it.hint?'<div style="font-size:13px;color:#6b6358;margin-top:4px">\u{1F4A1} '+_escHtml(it.hint)+'</div>':'')
+    +(it.kind!=="choice" && it.was?'<div style="font-size:13px;color:#8a7f72;margin-top:6px">In the test: <s>'+_escHtml(it.was)+'</s></div>':'');
+  const card=lesCard("les-g","\u{1F4DD} Test · "+n+" / "+st.tot+(tags[it.tag]?" · "+tags[it.tag]:""),body);
+  const fine=(ok,given)=>{
+    if(!LESSON.on) return;
+    LESSON.curDone=true; st.done++; if(ok) st.ok++;
+    const praise=["Well done!","Excellent!","That's right!","Very good!","Perfect!"][Math.floor(Math.random()*5)];
+    DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:ok?"✅ Fixed!":"Not quite",
+      text:ok?praise+" This time it's right.":"Not quite. Look at the right answer.",
+      italian:ok?"Giusto: questa volta l'hai corretto.":"Non ancora: guarda la risposta giusta.",
+      html:ok ? lesCard("les-ok","✅ "+praise,'<div class="les-rule">'+(it.full||_escHtml(it.show))+'</div>')
+              : lesCard("les-no","\u{1F4A1} Correct answer",'<div class="gem-recast" style="text-align:left">'
+                  +(given?'Non <s>'+_escHtml(given)+'</s> — ':'')+'<b>'+_escHtml(it.show)+'</b></div>'
+                  +(it.full?'<div class="les-rule" style="margin-top:6px">'+it.full+'</div>':'')),
+      buttons:[{ label:"Next", cls:"primary", act:()=>{ if(LESSON.on) next(); } }] });
+  };
+  const say={ choice:["Choose the right answer.","Scegli la risposta giusta."],
+              type:["Write the missing word.","Scrivi la parola che manca."],
+              tiles:["Put the words in the right order.","Rimetti le parole in ordine: tocca le tessere."] }[it.kind];
+  if(it.kind==="choice"){
+    DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Your test", text:say[0], italian:say[1], html:card,
+      buttons:[_lessonStandBtn()],
+      choices:shuffle(it.opts).map(o=>({ label:o, act:()=>fine(o===it.answer,o) })) });
+    return;
+  }
+  if(it.kind==="type"){
+    DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Your test", text:say[0], italian:say[1],
+      html:card+'<input id="rip-in" class="gem-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="…">',
+      buttons:[{ label:"✔ Check", cls:"primary", keepOpen:true, act:()=>{
+          const el=document.getElementById("rip-in"), v=el?el.value.trim():"";
+          if(!v){ if(el) el.focus(); return; }
+          fine(_ripOk(v,it.answer),v); } }, _lessonStandBtn()] });
+    setTimeout(()=>{ const el=document.getElementById("rip-in"); if(el && !(navigator.maxTouchPoints>0)) el.focus(); },80);
+    return;
+  }
+  const chip=w=>'<span onclick="_ripTile(this)" style="display:inline-block;margin:3px;padding:6px 11px;border-radius:10px;background:#fff;border:2px solid #cdd6dc;font-weight:800;cursor:pointer">'+_escHtml(w)+'</span>';
+  DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Your test", text:say[0], italian:say[1],
+    html:card+'<div id="rip-zone" style="min-height:44px;margin-top:8px;padding:4px;border:2px dashed #c8a45a;border-radius:12px;background:#fffdf6"></div>'
+      +'<div id="rip-pool" style="margin-top:6px;text-align:center">'+it.words.map(chip).join("")+'</div>',
+    buttons:[{ label:"✔ Check", cls:"primary", keepOpen:true, act:()=>{
+        const z=document.getElementById("rip-zone"), p=document.getElementById("rip-pool");
+        if(!z) return;
+        if(p && p.children.length){ try{ toast("\u{1F9E9} Use all the words!"); }catch(e){} return; }
+        const v=[...z.children].map(c=>c.textContent).join(" ");
+        fine(_ripLow(v)===_ripLow(it.answer),v); } },
+      { label:"↺ Again", cls:"ghost", keepOpen:true, act:_ripTilesReset }, _lessonStandBtn()] });
+}
+
 function lessonStart(id){
   const L=LESSONS[id]; if(!L || !GRACE) return;
   LESSON.on=true; LESSON.id=id; LESSON.lastId=id; LESSON.score=0; LESSON.total=0; lessonWantClear();
@@ -26735,6 +27099,13 @@ function lessonStart(id){
         +'<div class="les-plan"><span>\u{1F4D7} Words<small>parole</small></span>'
         +'<span>\u{1F4D8} Grammar<small>'+_escHtml(L.g)+'</small></span>'
         +'<span>\u{1F4AC} Phrases<small>'+_escHtml(L.fn)+'</small></span></div>')); });
+  /* 0 — v400: una volta per test, le domande sbagliate nell'ultimo test.
+     Gli step del ripasso si infilano qui quando i dati sono pronti. Se ci
+     si alza mentre si caricano, lessonStand rilancia questo step: il
+     secondo giro non fa niente, va avanti la risposta del primo. */
+  let ripVia=false;
+  steps.push(()=>{ if(ripVia) return; ripVia=true; const at=k;
+    ripassoSteps(next,extra=>{ if(!LESSON.on || k!==at) return; if(extra.length) steps.splice(k,0,...extra); next(); }); });
   /* 1 — PAROLE: Lily fa la prima, poi tocca a te */
   if(W.length){ const w0=W[0];
     steps.push(()=>{ lessonBoard("Words",W.map(w=>(w[2]?w[2]+" ":"")+w[0]+" = "+w[1]));
@@ -43732,6 +44103,12 @@ function tryEnterUnit(u){
     try{ toast("\u{1F319} \u00c8 notte: puoi girare per casa, ma le attivit\u00e0 riprendono domattina."); }catch(e){}
     return;
   }
+  /* v400: alla Town School con una lezione pronta e lo Starter non finito
+     (seconde e terze, o chi ha chiesto aiuto da un'altra quest) si entra
+     SENZA avviare lo Starter: le sue finestre, Miss Grace che viene ad
+     aiutare e i compagni muti si pesterebbero i piedi con la lezione.
+     Rientrando quando la lezione non c'e' (15 minuti), lo Starter riparte. */
+  if(u===UNIT0 && !lessonDone("u0") && lessonEntryId()){ enterUnit(u,true); return; }
   enterUnit(u);
 }
 function shopClosed(u){
