@@ -16,7 +16,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="QuestTown">
-<script>window.ET_BUILD="258";</script>
+<script>window.ET_BUILD="259";</script>
 <script>
 /* =====================================================================
    APP INSTALLABILE (v217-218) — gira PRIMA di tutto il resto.
@@ -27203,12 +27203,135 @@ function pianoAllaFine(done){
         +_escHtml(o.titolo||PIANO_TIPI.recovery_orale.en)+'</div><div style="font-size:13px;color:#6b6358;margin-top:2px">'+_escHtml(t)+'</div></div>';
     }).join("");
     const n=d.att.length+d.orali.length;
+    /* v403: le attivita' restano nel riquadro fisso (#piano-pin) anche se si
+       chiude questa finestra o si esce dalla scuola */
+    if(d.att.length) pianoPinSegna(d.att);
+    const premio=d.att.length?'<div style="margin-top:8px;padding:7px 9px;background:#fff8e6;border-radius:9px;font-size:13px;font-weight:700;color:#7a5a12">'
+      +_escHtml(PIANO_PREMIO_EN)+'<div style="font-weight:500;color:#8a7f72;margin-top:2px">\u{1F4CC} The links stay on your screen, top right.</div></div>':'';
     DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Your personal plan",
       text:"One more thing: don't forget your personal plan! "+(d.att.length?"Tap an activity to do it now.":"Read it carefully."),
-      italian:"Ricordati il tuo piano personalizzato: "+(d.att.length?"tocca un'attività per svolgerla (si apre LiveLearn).":"leggilo con attenzione."),
-      html:lesCard("les-p","\u{1F4CB} Your personal plan · "+n,righe), wide:true,
-      buttons:[{ label:"OK, I'll do it!", cls:"primary", act:done }] });
+      italian:"Ricordati il tuo piano personalizzato: "+(d.att.length?"tocca un'attività per svolgerla (si apre LiveLearn). "+PIANO_PREMIO_IT:"leggilo con attenzione."),
+      html:lesCard("les-p","\u{1F4CB} Your personal plan · "+n,righe+premio), wide:true,
+      buttons:[{ label:"OK, I'll do it!", cls:"primary", act:done }, { label:"Later", cls:"ghost", act:done }] });
   });
+}
+
+/* ==== v403 — IL PIANO RESTA SULLO SCHERMO, E VALE STELLE (Giacomo, 20 ott:
+   «il piano personale dato da Miss Grace non si deve poter chiudere: rimanga
+   il link anche se rifiuti ed esci; metti l'avviso: se lo finisci con il 60%
+   avrai stelle, 50 al 60% fino a 200 al 100%. Non incidono sul limite
+   giornaliero. Una volta sola su QuestTown, su LiveLearn lo rifai quanto vuoi»).
+   · Le attivita' che Miss Grace ha presentato finiscono in un riquadro fisso
+     (#piano-pin, a destra sotto il nome): si puo' rimpicciolire, non chiudere.
+     Restano finche' non danno le stelle o finche' il docente non le toglie.
+   · Il riquadro ricontrolla i risultati all'avvio, ogni 90 s e quando si
+     torna sul gioco dalla scheda di LiveLearn: attivita' completata con
+     almeno il 60% (il miglior tentativo) = stelle, con Stars.award a chiave
+     «piano:<codice>», cioe' una volta nella vita e fuori da ogni tetto
+     giornaliero (i tetti stanno solo negli award* a contatore).
+   · Quali attivita': solo quelle presentate da Miss Grace, quindi non ancora
+     completate in quel momento — un piano finito mesi fa non regala niente.
+     L'elenco (et_piano_pin) resta sul dispositivo e NON sale nel cloud: i
+     codici dei piani dicono chi e' in recupero. Su un altro dispositivo lo
+     ripresenta Miss Grace alla lezione dopo; le stelle date restano date
+     ovunque, perche' il registro delle stelle si sincronizza.
+   · Letture: studentapp/personal_plan/<codice> e tre foglie a attivita' di
+     livelearn/recovery_sessions/<codice> (+ i % dei tentativi, solo se
+     l'ultimo e' sotto il 60%). Nessuna scrittura su Firebase. ==== */
+const PIANO_PIN_K="et_piano_pin", PIANO_PIN_MIN_K="et_piano_pin_min", PIANO_PIN_MS=90000;
+const PIANO_PREMIO_EN="⭐ Finish it with at least 60% and you get stars: 50 at 60%, up to 200 at 100% (once in QuestTown).";
+const PIANO_PREMIO_IT="Se lo finisci con almeno il 60% ricevi stelle: 50 con il 60%, fino a 200 con il 100% (una volta sola in QuestTown; su LiveLearn puoi rifarlo quanto vuoi).";
+const PIN={ stato:{}, busy:false, timer:null, ultimo:0 };
+function pianoStelle(pct){
+  pct=Number(pct); if(!(pct>=60)) return 0;
+  return Math.round(50+(Math.min(100,pct)-60)*150/40);
+}
+function _pinChi(){
+  try{ if(!Student.code || Student.ospite || Student.teacher) return ""; return String(Student.code).trim().toUpperCase(); }catch(e){ return ""; }
+}
+function _pinElenco(){ const m=Sync.get(PIANO_PIN_K,{}); return (m && typeof m==="object")?m:{}; }
+/* chiamata da pianoAllaFine appena Miss Grace mostra il piano */
+function pianoPinSegna(att){
+  if(!_pinChi() || !att || !att.length) return;
+  const m=_pinElenco();
+  att.forEach(a=>{ if(!m[a.code]) m[a.code]={ t:Date.now(), type:a.type, titolo:a.titolo||"" }; });
+  Sync.set(PIANO_PIN_K,m);
+  pianoPinDisegna();
+}
+function pianoPinGira(){ Sync.set(PIANO_PIN_MIN_K,!Sync.get(PIANO_PIN_MIN_K,false)); pianoPinDisegna(); }
+function pianoPinDisegna(){
+  let el=document.getElementById("piano-pin");
+  const m=_pinChi()?_pinElenco():{}, codes=Object.keys(m);
+  if(!codes.length){ if(el) el.remove(); return; }
+  if(!el){
+    el=document.createElement("div"); el.id="piano-pin";
+    el.style.cssText="position:fixed;z-index:15;top:198px;right:14px;width:270px;max-width:46vw;box-sizing:border-box;"
+      +"background:rgba(255,255,255,.95);color:#1c1f24;border-radius:12px;padding:8px 10px;"
+      +"font:600 13px/1.3 system-ui,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.28)";
+    document.body.appendChild(el);
+  }
+  const mini=!!Sync.get(PIANO_PIN_MIN_K,false);
+  let h='<div style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="pianoPinGira()">'
+    +'<span style="flex:1">\u{1F4CB} <b>Your personal plan</b> · '+codes.length+'</span>'
+    +'<span style="font-size:15px;color:#8a7f72">'+(mini?"▸":"▾")+'</span></div>';
+  if(!mini){
+    codes.forEach(c=>{
+      const it=m[c], T=PIANO_TIPI[it.type]||{ ic:"\u{1F4CB}", en:"Activity" }, st=PIN.stato[c]||{};
+      const fatto=(st.st==="completed");
+      const sub=fatto ? ("Last time "+_escHtml(st.score)+"% · reach 60% for ⭐")
+                      : (T.en+" · up to 200 ⭐");
+      h+='<div style="display:flex;align-items:center;gap:8px;margin-top:7px;padding-top:7px;border-top:1px solid #eee">'
+        +'<div style="flex:1;min-width:0"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+T.ic+' '+_escHtml(it.titolo||T.en)+'</div>'
+        +'<div style="font-size:11px;font-weight:500;color:#6b6358">'+sub+'</div></div>'
+        +'<a href="'+_escHtml(PIANO_LL+"?code="+encodeURIComponent(c))+'" target="_blank" rel="noopener" '
+        +'style="flex:0 0 auto;background:#c2572e;color:#fff;text-decoration:none;border-radius:9px;padding:6px 10px;font-weight:800;font-size:12.5px;white-space:nowrap">'
+        +'▶ '+(fatto||st.tries?"Again":"Do it")+'</a></div>';
+    });
+    h+='<div style="margin-top:7px;font-size:11px;font-weight:500;color:#6b6358">⭐ 60% = 50 · 100% = 200 stars · once</div>';
+  }
+  el.innerHTML=h;
+}
+async function pianoPinControlla(){
+  const chi=_pinChi();
+  if(!chi || PIN.busy || typeof Cloud==="undefined"){ pianoPinDisegna(); return; }
+  const m=_pinElenco(), codes=Object.keys(m);
+  if(!codes.length){ pianoPinDisegna(); return; }
+  PIN.busy=true; PIN.ultimo=Date.now();
+  try{
+    const base="livelearn/recovery_sessions/"+chi+"/";
+    const P=await Cloud.leggi("studentapp/personal_plan/"+chi,8000);
+    for(const c of codes){
+      if(P.risposto && !(P.val && P.val[c])){ delete m[c]; continue; }      // tolto dal docente
+      const f=k=>Cloud.leggi(base+c+"/"+k,6000).then(r=>r.val);
+      const v=await Promise.all([f("status"),f("lastScore"),f("attemptCount")]);
+      const st=v[0], n=Number(v[2])||0;
+      let best=Number(v[1]);
+      if(st==="completed" && !(best>=60) && n>1){
+        const A=await Promise.all(Array.from({ length:Math.min(n,20) },(x,i)=>f("attempts/"+i+"/pct")));
+        A.forEach(x=>{ if(Number(x)>best || !(best>=0)) best=Number(x); });
+      }
+      PIN.stato[c]={ st, score:v[1], tries:n };
+      if(st==="completed" && best>=60){
+        const stelle=pianoStelle(best);
+        let got=0; try{ got=Stars.award("piano:"+c, stelle, "piano personalizzato"); }catch(e){}
+        const tit=(m[c]||{}).titolo||"Personal plan";
+        delete m[c];
+        if(got) try{ toast("\u{1F389} "+tit+": "+Math.round(best)+"% → +"+got+" ⭐",7000); }catch(e){}
+      }
+    }
+    Sync.set(PIANO_PIN_K,m);
+  }catch(e){ console.warn("[piano pin]",e); }
+  finally{ PIN.busy=false; pianoPinDisegna(); }
+}
+/* da welcomeStudent: disegna, controlla, e tiene d'occhio il ritorno da LiveLearn */
+function pianoPinAvvia(){
+  pianoPinDisegna();
+  pianoPinControlla();
+  if(PIN.timer) return;
+  PIN.timer=setInterval(()=>{ if(document.visibilityState!=="hidden") pianoPinControlla(); }, PIANO_PIN_MS);
+  const torna=()=>{ if(document.visibilityState!=="hidden" && Date.now()-PIN.ultimo>5000) pianoPinControlla(); };
+  document.addEventListener("visibilitychange",torna);
+  window.addEventListener("focus",torna);
 }
 
 function lessonStart(id){
@@ -47790,6 +47913,7 @@ function welcomeStudent(){
      ed e' il caso predefinito — avvia() si ferma alla prima lettura e non
      apre nessuna sessione. */
   try{ Presenza.avvia(); }catch(e){}
+  try{ pianoPinAvvia(); }catch(e){}            // v403: il piano di Miss Grace, con i link, resta sullo schermo
 }
 /* Marchietto dell'ospite. ⚠️ Sempre visibile, non un toast che passa: nessuno
    deve giocare un'ora e scoprire alla fine che non e' rimasto niente. */
@@ -48485,7 +48609,9 @@ function switchStudent(){
      ultimi secondi di chi esce finirebbero spinti sotto il codice di chi
      entra, o non finirebbero da nessuna parte. */
   try{ Sincro.spingi(); Sincro.scollega(); }catch(e){}
-  Student.logout(); teacherBadge(); guestBadge(); badgeSincro(); refreshStarHud(); loginPending=true; askCode();
+  Student.logout(); teacherBadge(); guestBadge(); badgeSincro(); refreshStarHud(); loginPending=true;
+  try{ pianoPinDisegna(); }catch(e){}           // v403: il piano del ragazzo che esce se ne va con lui
+  askCode();
 }
 
 /* =====================================================================
@@ -66020,17 +66146,51 @@ const Presenza=(function(){
       parla=(r.val.talk!==false);
     });
   }
+  /* ⚠️ v403 (Giacomo, 20 ott: «quando tolgo la presenza dopo che sono gia'
+     entrati, continuano a vedersi»). Il controllo qui sopra gira una volta
+     al minuto, e una lettura che non risponde (wi-fi della scuola) rimanda
+     tutto al minuto dopo: in aula sembrava che spegnere non servisse a
+     niente. Ora si ASCOLTA il campo `pres` della classe in tempo reale
+     (una sola foglia, pochi byte): spento dal pannello, i compagni spariscono
+     subito su tutti i Chromebook; acceso, compaiono subito. Il controllo al
+     minuto resta come rete di sicurezza, se l'ascolto non parte.
+     `inCorso`: l'ascolto e la vigilanza possono chiedere un avvio nello
+     stesso momento; senza questo si collegavano due volte (ascoltatori
+     doppi sul nodo della presenza). */
+  let ascoltoRef=null, ascoltoCls="", inCorso=null;
+  function _ascolta(c){
+    if(ascoltoRef && ascoltoCls===c) return;
+    _nonAscoltare(); ascoltoCls=c;
+    Cloud.attendi(8000).then(function(ok){ return ok ? Cloud.carica() : false; }).then(function(ok){
+      if(!ok || ascoltoCls!==c || ascoltoRef) return;
+      const r=firebase.database().ref(ET_CLASSI+c+"/pres");
+      ascoltoRef=r;
+      r.on("value", function(sn){
+        const on=(sn.val()===true);
+        if(!on && acceso && classe===c){ _stacca(); motivo="spenta dal docente"; }
+        else if(on && !acceso && !inCorso) avvia(c);
+      }, function(){ if(ascoltoRef===r) ascoltoRef=null; });   // rifiutato: resta il controllo al minuto
+    }).catch(function(){});
+  }
+  function _nonAscoltare(){ try{ if(ascoltoRef) ascoltoRef.off(); }catch(e){} ascoltoRef=null; ascoltoCls=""; }
   function avvia(cls){
     const c=normClasse(cls||Student.cls||"");
     if(acceso && classe===c) return Promise.resolve(true);
     if(!c || !RE_CLASSE.test(c)){ motivo="nessuna classe valida"; return Promise.resolve(false); }
     if(Student.ospite){ motivo="ospite: niente presenza"; return Promise.resolve(false); }
+    if(inCorso) return inCorso;
+    const p=inCorso=_avvia(c);
+    p.then(function(){ if(inCorso===p) inCorso=null; }, function(){ if(inCorso===p) inCorso=null; });
+    return p;
+  }
+  function _avvia(c){
     /* ⚠️ L'INTERRUTTORE STA NEL PROGETTO PRINCIPALE, accanto al cursore di
        classe: una lettura sola, ~60 byte, nessun nodo nuovo e nessuna regola
        nuova di la'. Spento e' il caso predefinito — un nodo senza `pres` non
        accende niente. */
     return Cloud.leggi(ET_CLASSI+c, 6000).then(function(r){
       _vigila();
+      _ascolta(c);                                // v403: on/off in tempo reale
       if(!r.risposto){ motivo="interruttore non letto ("+r.motivo+")"; return false; }
       if(!r.val || r.val.pres!==true){ motivo="presenza spenta per "+c+" (ricontrollo ogni minuto)";
         return false; }
@@ -66156,6 +66316,7 @@ const Presenza=(function(){
      durerebbe sessanta secondi e poi si riaccenderebbe da solo. */
   function spegni(){
     _stacca();
+    _nonAscoltare();                              // v403: se no l'ascolto la riaccenderebbe
     if(vigilaT){ clearInterval(vigilaT); vigilaT=null; }
     motivo="spenta a mano";
     return true;
