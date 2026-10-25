@@ -302,6 +302,23 @@
   #toast{left:50%;top:18px;transform:translateX(-50%) translateY(-8px);background:var(--ink);color:var(--paper);
     padding:10px 18px;border-radius:10px;font-size:14px;font-weight:600;opacity:0;transition:.25s;max-width:90vw;text-align:center;}
   #toast.show{opacity:1;transform:translateX(-50%);}
+  /* v320: quello che ti dice un compagno — non blocca, sparisce da solo */
+  #pres-msg{position:fixed;z-index:40;right:14px;top:112px;width:min(320px,calc(100vw - 28px));box-sizing:border-box;
+    background:rgba(251,247,236,.97);color:var(--ink);border-radius:14px;padding:10px 12px 10px 14px;
+    box-shadow:0 8px 24px rgba(20,30,40,.28);border-left:5px solid #7d5a8c;opacity:0;transform:translateX(16px);
+    transition:opacity .25s,transform .25s;pointer-events:none;}
+  #pres-msg.show{opacity:1;transform:none;pointer-events:auto;}
+  #pres-msg .pm-who{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#7d5a8c;font-weight:800;padding-right:26px;}
+  #pres-msg .pm-en{font-size:16px;font-weight:800;line-height:1.3;margin-top:3px;}
+  #pres-msg .pm-it{font-size:12.5px;color:#6b7780;margin-top:2px;line-height:1.35;}
+  #pres-msg .pm-row{display:flex;gap:8px;margin-top:8px;align-items:center;}
+  #pres-msg .pm-row button{border:none;border-radius:10px;padding:7px 12px;cursor:pointer;font:800 13px/1 system-ui,sans-serif;
+    background:var(--ink);color:#fff;}
+  #pres-msg .pm-row small{font-size:11px;color:#8a949a;}
+  #pres-msg .pm-x{position:absolute;top:6px;right:6px;width:28px;height:28px;border:none;border-radius:14px;background:transparent;
+    color:#7a8790;font-size:16px;cursor:pointer;}
+  #pres-msg .pm-bar{position:absolute;left:0;right:0;bottom:0;height:3px;border-radius:0 0 14px 14px;background:#7d5a8c;opacity:.35;
+    transform-origin:left;}
   #badge{top:14px;left:14px;background:rgba(251,247,236,.94);border-radius:12px;padding:9px 14px;
     box-shadow:0 6px 18px rgba(20,30,40,.2);font-size:13px;}
   #badge .ey{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--plum);font-weight:700;}
@@ -45158,12 +45175,17 @@ function povToggle(){ return povSet(!POV.on); }
    un Chromebook a 20 fps si gira come su un PC a 60. I limiti di beta sono
    quelli della camera (la ArcRotateCamera li riapplica da sola). */
 const CAM_KEYS={ turn:1.7, tilt:0.9 };
+function _camTurnSign(){ return (typeof POV!=="undefined" && POV.on) ? -1 : 1; }
 function _camKeys(){
   const L=keys["arrowleft"], R=keys["arrowright"], U=keys["arrowup"], D=keys["arrowdown"];
   if(!(L||R||U||D)) return;
   const dt=Math.min(0.1,engine.getDeltaTime()/1000);
-  if(L) camera.alpha-=CAM_KEYS.turn*dt;
-  if(R) camera.alpha+=CAM_KEYS.turn*dt;
+  /* ⚠️ in prima persona il verso e' l'opposto (Giacomo: «su O first person
+     destra e sinistra sono invertiti»): girare la camera ATTORNO a te
+     sposta lo sguardo da una parte, girarla negli OCCHI dall'altra */
+  const sg=_camTurnSign();
+  if(L) camera.alpha-=sg*CAM_KEYS.turn*dt;
+  if(R) camera.alpha+=sg*CAM_KEYS.turn*dt;
   if(U) camera.beta=Math.min(camera.upperBetaLimit,camera.beta+CAM_KEYS.tilt*dt);
   if(D) camera.beta=Math.max(camera.lowerBetaLimit,camera.beta-CAM_KEYS.tilt*dt);
 }
@@ -45431,8 +45453,8 @@ scene.registerBeforeRender(()=>{
   const dlgLock=(typeof _dlgOpen==="function") && _dlgOpen();
   _camKeys();                                    // v320: le frecce girano la visuale, sempre (anche col popup)
   if(dlgLock){
-    if(keys["a"]) camera.alpha-=0.028;
-    if(keys["d"]) camera.alpha+=0.028;
+    if(keys["a"]) camera.alpha-=_camTurnSign()*0.028;            // v320: in prima persona il verso e' l'opposto
+    if(keys["d"]) camera.alpha+=_camTurnSign()*0.028;
     moveTarget=null; pendingInteract=null;
   } else {
   if(keys["w"]){mx+=fwd.x;mz+=fwd.z;} if(keys["s"]){mx-=fwd.x;mz-=fwd.z;}
@@ -65915,7 +65937,8 @@ const Presenza=(function(){
   }
   /* Una frase e' arrivata: nuvoletta sopra la testa, voce, e si tiene da
      parte per il ventaglio delle risposte. */
-  /* ⚠️ FINESTRA, NON NUVOLETTA (chiesto da Giacomo dopo la prima prova).
+  /* (storia) ⚠️ FINESTRA, NON NUVOLETTA (chiesto da Giacomo dopo la prima prova).
+     ⚠️ v320: la finestra ora si apre solo con ↩ Reply — vedi mostraSentito.
      La nuvoletta stava troppo in alto e si confondeva con la targhetta del
      nome. Ora si apre la stessa finestra degli NPC: testo grande, pulsante
      🔊, italiano sotto in prima, e le risposte gia' li' pronte — lo scambio
@@ -65928,17 +65951,14 @@ const Presenza=(function(){
     const f=frasePer(fid); if(!f) return;
     e.detto={ id:fid, sigla:sig }; e.dettoT=Date.now();
     if(!e.vista) return;          // frase dal nulla: confonde e basta
-    const en=componiFrase(fid, sig, "en");
     const nome=nomi[key]||"";
-    let occupata=false;
-    try{ const qm=document.getElementById("quest-modal");
-      occupata=!!(qm && qm.classList.contains("show")); }catch(err){}
-    if(occupata){
-      toast("\u{1F4AC} "+(nome||"A classmate")+": "+en);
-      try{ TTS.say(en); }catch(err){}
-      return;
-    }
-    apriSentito(key, fid, sig);
+    /* v320 (Giacomo: «se un compagno ti scrive, tu possa ignorare il
+       messaggio senza bisogno di premere OK»). La finestra degli NPC
+       fermava il gioco finche' non la chiudevi: ora la frase arriva in un
+       riquadro che non blocca niente e sparisce da solo (mostraSentito).
+       Per rispondere: ↩ Reply nel riquadro, oppure E vicino al compagno
+       (apriParlato mette in cima le risposte a quello che ha detto). */
+    mostraSentito(key, fid, sig, nome);
   }
   function dove(e){
     const t=Math.max(0, Math.min(1,(Date.now()-e.t0)/(e.dur||400)));
@@ -66955,8 +66975,40 @@ function _talkNome(key){ const n=Presenza.nomeDi(key); return n||"A classmate"; 
 function _talkVoce(key){
   try{ return { gender:(Presenza.rigDi(key)==="f"?"f":"m") }; }catch(e){ return null; }
 }
-/* La finestra che si apre quando un compagno ti dice qualcosa: e' la stessa
-   di un NPC, con le risposte gia' pronte sotto. */
+/* v320 — IL RIQUADRO DI CHI TI PARLA. Nome, frase in inglese (a voce, se in
+   quel momento non parla un NPC), italiano sotto, e ↩ Reply che apre la
+   finestra delle risposte (apriSentito). Non ferma il gioco: si cammina,
+   si ignora, e dopo PRES_MSG_MS sparisce. Una frase nuova prende il posto
+   della vecchia. */
+const PRES_MSG_MS=9000;
+let _presMsgT=null;
+function mostraSentito(key, fid, sig, nome){
+  const en=componiFrase(fid, sig, "en"), it=componiFrase(fid, sig, "it");
+  let el=document.getElementById("pres-msg");
+  if(!el){ el=document.createElement("div"); el.id="pres-msg"; el.setAttribute("role","status");
+    el.innerHTML='<button type="button" class="pm-x" aria-label="Close">\u2715</button><div class="pm-who"></div>'
+      +'<div class="pm-en"></div><div class="pm-it"></div>'
+      +'<div class="pm-row"><button type="button" class="pm-re">\u21a9\ufe0e Reply</button><small>or just keep playing</small></div>'
+      +'<div class="pm-bar"></div>';
+    document.body.appendChild(el);
+    el.querySelector(".pm-x").onclick=()=>chiudiSentito(); }
+  el.querySelector(".pm-who").textContent="\u{1F4AC} "+(nome||"A classmate")+" says";
+  el.querySelector(".pm-en").textContent=en;
+  el.querySelector(".pm-it").textContent=it||"";
+  el.querySelector(".pm-re").onclick=()=>{ chiudiSentito(); apriSentito(key, fid, sig); };
+  /* la barretta che si accorcia: quanto manca prima che sparisca */
+  const bar=el.querySelector(".pm-bar");
+  bar.style.transition="none"; bar.style.transform="scaleX(1)"; void bar.offsetWidth;
+  bar.style.transition="transform "+PRES_MSG_MS+"ms linear"; bar.style.transform="scaleX(0)";
+  el.classList.add("show");
+  clearTimeout(_presMsgT); _presMsgT=setTimeout(chiudiSentito, PRES_MSG_MS);
+  /* ⚠️ la voce non taglia mai la battuta di un NPC (TTS.say zittisce quella in corso) */
+  try{ if(!_dlgOpen()) TTS.say(en, _talkVoce(key)||{}); }catch(e){}
+}
+function chiudiSentito(){ clearTimeout(_presMsgT); _presMsgT=null;
+  const el=document.getElementById("pres-msg"); if(el) el.classList.remove("show"); }
+/* La finestra che si apre quando rispondi a un compagno: e' la stessa di un
+   NPC, con le risposte gia' pronte sotto. */
 function apriSentito(key, fid, sig){
   const nome=_talkNome(key);
   const scelte=[];
