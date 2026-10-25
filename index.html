@@ -65059,10 +65059,14 @@ function mirShoot(){
        lo specchio usciva vuoto */
     ETSNAP.mir=true;
     for(let i=0;i<ms.length;i++) ms[i].layerMask=MIR_BIT;
-    const bb=root.getHierarchyBoundingVectors(true), g=bb.min.y, H=AVATAR_HEIGHT;
-    const cx=(bb.min.x+bb.max.x)/2, cz=(bb.min.z+bb.max.z)/2;
-    /* corpo: dai piedi alla punta del cappello; viso: testa, cappello, collo */
-    const top=Math.max(bb.max.y,g+H), fov=0.5,
+    /* ⚠️ NON dalle bounding box delle mesh: quelle del rig femminile
+       (Animated_Woman) sono di un'altra scala, ~180 m di altezza, e la
+       camera finiva lontanissima (Giacomo: «boy si vede ok, ma girl non
+       appare»). buildAvatar mette i piedi alla quota del giocatore e
+       l'avatar e' alto AVATAR_HEIGHT con ogni corpo: si inquadra da li'.
+       corpo: dai piedi alla punta del cappello; viso: testa, cappello, collo */
+    const pp=player.position, g=pp.y, H=AVATAR_HEIGHT, cx=pp.x, cz=pp.z;
+    const top=g+H+0.12, fov=0.5,
           cy=MIR.face ? g+H*0.89 : (g+top)/2,
           half=MIR.face ? H*0.18 : (top-g)*0.56,
           d=half/Math.tan(fov/2), a=player.rotation.y+MIR.a;
