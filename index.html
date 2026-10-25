@@ -4316,6 +4316,33 @@ function carryPoseFor(root,fwd){
   saved.forEach(k=>{ if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); k.tn.position.copyFrom(k.p); });
   return { pins:res, hand };
 }
+/* v321 — IL GIOCATORE SPINGE IL CARRELLO. Braccia avanti fino alla
+   maniglia: per ogni lato il punto del POLSO (grip(o,sd), nel mondo) e il
+   gomito dalla cinematica inversa a due ossa (come _sitRestArm), un po'
+   in fuori e in giu'; mani coi palmi sulla maniglia. Ritorna le pin delle
+   braccia (solo braccia: le gambe camminano con l'animazione). */
+function pushPoseFor(root,fwd,grip){
+  const V=BABYLON.Vector3, f=new V(fwd.x,0,fwd.z).normalize(), up=new V(0,1,0), dn=new V(0,-1,0);
+  /* ⚠️ anche i POLSI: senza, camminando l'animazione piegava le mani
+     all'insu' e restavano sopra la maniglia (visto a schermo) */
+  const pins=_restPinsFor(root,/^(Shoulder\.[LR]|UpperArm\.[LR]|LowerArm\.[LR]|Wrist\.[LR])$/); if(!pins.length) return null;
+  const saved=pins.map(k=>({tn:k.tn, q:k.tn.rotationQuaternion?k.tn.rotationQuaternion.clone():null, p:k.tn.position.clone()}));
+  _applyPins(pins); _sitRefresh(root);
+  const ik=(o,sd,ctx)=>{ if(ctx.push) return ctx.push;
+    const w=grip(o,sd), d=w.subtract(ctx.pU), L=Math.min(d.length(),ctx.l1+ctx.l2-0.004), dir=d.normalizeToNew();
+    const A=(ctx.l1*ctx.l1-ctx.l2*ctx.l2+L*L)/(2*L), h=Math.sqrt(Math.max(0,ctx.l1*ctx.l1-A*A));
+    let pole=o.scale(0.45).add(dn.scale(0.9)); pole=pole.subtract(dir.scale(V.Dot(pole,dir)));
+    if(pole.length()<1e-4) pole=o.clone(); pole.normalize();
+    const e=ctx.pU.add(dir.scale(A)).add(pole.scale(h));
+    return (ctx.push={ e, w:ctx.pU.add(dir.scale(L)) }); };
+  const out=_armPose(root,pins.map(k=>k.tn),f,
+    (o,sd,ctx)=>{ const k=ik(o,sd,ctx); return k.e.subtract(ctx.pU); },
+    (o,sd,ctx)=>{ const k=ik(o,sd,ctx); return k.w.subtract(k.e); },
+    ()=>({ d:f.scale(0.85).add(dn.scale(0.5)), n:dn.clone() }));     // dita avanti e in giu', palmo sulla maniglia
+  const res=pins.map(k=>({ tn:k.tn, p:k.p.clone(), s:k.s.clone(), q:(out.get(k.tn)||k.q).clone() }));
+  saved.forEach(k=>{ if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); k.tn.position.copyFrom(k.p); });
+  return res;
+}
 function sitPoseFor(root,pins,fwd,seatY,groundY,arms){
   if(!pins||!pins.length||!root) return null;
   const V=BABYLON.Vector3, up=new V(0,1,0), f=new V(fwd.x,0,fwd.z).normalize();
@@ -22884,11 +22911,37 @@ function shopTakeCart(){
   const cart=LEXPROPS.trolley("shopCart"); cart.parent=player; cart.position.set(0,0,0.95); cart.rotation.set(0,0,0);
   cart.getChildMeshes().forEach(m=>{ m.__dyn=true; m.isPickable=false; });
   SHOP.cart=cart; SHOP.items=[];
+  shopPushOn();
   if(MARKET.bay){ const t=MARKET.bay.getChildren().filter(n=>/t2$/.test(n.name))[0]; if(t) t.setEnabled(false); }
   toast(yrEnglish()?"\u{1F6D2} You've got a trolley! Take the food you want, then go to the checkout.":"\u{1F6D2} Hai il carrello! Prendi quello che vuoi, poi vai alla cassa (checkout).");
   mktHud(); shopTick(true);
 }
-function shopReturnCart(){ if(!SHOP.cart) return; cartClear(SHOP.cart); try{ SHOP.cart.dispose(); }catch(e){} SHOP.cart=null; SHOP.items=[];
+/* v321 (Giacomo: «quando prende il trolley deve avere le mani sul carrello,
+   in avanti sulla maniglia»). Prima camminava con le braccia che
+   dondolavano e il carrello gli scivolava davanti da solo. Le pin si
+   calcolano una volta sola (pushPoseFor) e si rimettono a ogni fotogramma
+   DOPO l'animazione, come il vassoio di Ray (dinerCarry). Se il corpo si
+   ricostruisce (cambio dalla Teca) si ricalcolano. */
+function shopPushOn(){
+  shopPushOff();
+  if(!SHOP.cart || typeof avatarRoot==="undefined" || !avatarRoot) return;
+  const V=BABYLON.Vector3, ry=player.rotation.y, f=new V(Math.sin(ry),0,Math.cos(ry));
+  player.computeWorldMatrix(true); SHOP.cart.computeWorldMatrix(true); _sitRefresh(avatarRoot);
+  /* la maniglia del carrello (LEXPROPS.trolley: impugnatura a y 1,16, z -0,52) */
+  const bar=V.TransformCoordinates(new V(0,1.16,-0.52),SHOP.cart.getWorldMatrix());
+  const pins=pushPoseFor(avatarRoot,f,o=>bar.add(o.scale(0.19)).subtract(f.scale(0.055)).add(new V(0,0.035,0)));
+  if(!pins) return;
+  SHOP.pushPins=pins; SHOP.pushOf=avatarRoot;
+  SHOP.pushObs=scene.onBeforeRenderObservable.add(()=>{
+    if(!SHOP.pushPins) return;
+    if(SHOP.pushOf!==avatarRoot){ setTimeout(shopPushOn,0); SHOP.pushPins=null; return; }
+    _applyPins(SHOP.pushPins); });
+}
+function shopPushOff(){
+  if(SHOP.pushObs){ scene.onBeforeRenderObservable.remove(SHOP.pushObs); SHOP.pushObs=null; }
+  SHOP.pushPins=null; SHOP.pushOf=null;
+}
+function shopReturnCart(){ if(!SHOP.cart) return; shopPushOff(); cartClear(SHOP.cart); try{ SHOP.cart.dispose(); }catch(e){} SHOP.cart=null; SHOP.items=[];
   if(MARKET.bay){ const t=MARKET.bay.getChildren().filter(n=>/t2$/.test(n.name))[0]; if(t) t.setEnabled(true); } mktHud(); }
 function shopAdd(e){
   if(!SHOP.cart || SHOP.paying) return;
