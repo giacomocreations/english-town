@@ -770,7 +770,20 @@
   #av-mir-ov{position:fixed;inset:0;z-index:9985;display:none;align-items:center;justify-content:center;padding:14px;
     background:rgba(8,12,16,.86);}
   #av-mir-ov.on{display:flex;}
-  .avm-card{position:relative;display:flex;flex-direction:column;align-items:center;gap:8px;max-width:100%;}
+  .avm-card{position:relative;display:flex;align-items:stretch;gap:14px;max-width:100%;max-height:calc(100vh - 28px);}
+  .avm-main{display:flex;flex-direction:column;align-items:center;gap:8px;}
+  /* v320: accanto allo specchio grande, i pezzi da cambiare (viso o corpo) */
+  .avm-opts{width:min(380px,38vw);overflow-y:auto;background:var(--paper);border-radius:14px;padding:4px 14px 14px;
+    box-shadow:0 10px 30px rgba(0,0,0,.35);}
+  .avm-ot{position:sticky;top:-4px;z-index:2;margin:0 -14px;padding:10px 14px 8px;background:var(--paper);
+    font-size:15px;font-weight:800;color:var(--ink);border-bottom:1px solid #e7e0cd;}
+  .avm-ot span{font-weight:600;color:#7a8790;font-size:12.5px;}
+  .avm-opts .dy-sec{margin-top:12px;}
+  @media (max-width:760px){
+    .avm-card{flex-direction:column;align-items:center;width:100%;gap:8px;}
+    .avm-main .avm-pic{height:min(40vh,calc((100vw - 28px)*4/3));}
+    .avm-opts{width:100%;box-sizing:border-box;flex:1 1 auto;min-height:0;max-height:40vh;}
+  }
   .avm-pic{height:min(76vh,calc((100vw - 28px)*4/3));aspect-ratio:3/4;border-radius:14px;overflow:hidden;
     border:4px solid #fbf7ec;background:#6b7885;cursor:grab;touch-action:none;user-select:none;}
   .avm-pic:active{cursor:grabbing;}
@@ -778,7 +791,7 @@
   .avm-pic img:not([src]){visibility:hidden;}
   .avm-hint{font-size:12px;color:#d6dde2;}
   .avm-bar{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;}
-  .avm-x{position:absolute;top:-6px;right:-6px;z-index:1;width:40px;height:40px;border-radius:20px;border:0;
+  .avm-x{position:absolute;top:-6px;right:-6px;z-index:5;width:40px;height:40px;border-radius:20px;border:0;
     background:#fbf7ec;color:#1d2a32;font-size:20px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.4);}
   .gem-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:6px 4px;
     border-bottom:1px solid #f0ebdd;font-size:13px;align-items:baseline;}
@@ -65057,34 +65070,31 @@ function _tcCard(attr,on,off,sw,name,state,sub){
   return '<div class="gem-fit'+(off?" off":"")+(on?" on":"")+'"'+(off?'':' '+attr)+'>'+sw
     +'<b>'+_escHtml(name)+'</b>'+(sub?'<small>'+sub+'</small>':'')+'<i>'+state+'</i></div>'; }
 function _tcSw(bg,bd,inner){ return '<span class="gem-sw" style="background:'+bg+';border-color:'+(bd||bg)+'">'+(inner||"")+'</span>'; }
-function buildTeca(){
-  const el=document.getElementById("diary-body"); if(!el) return;
-  const st=Gems.state(), got=st.got, tot=st.tot, prof=lookProf();
-  const nV=GEM_VERBS.filter(v=>got["v1:"+v[0]]||got["v2:"+v[0]]).length;
-  const nA=GEM_ADJ.filter(a=>got["c:"+a[0]]||got["s:"+a[0]]).length;
-  let stars=0; try{ stars=Stars.total(); }catch(e){}
-  let h='<div class="dy-hero"><div class="dy-tot">\u{1F48E} '+tot+'</div>'
-    +'<div class="dy-title">La Teca <span>· quello che hai raccolto in città</span></div>'
-    +'<div class="dy-next">⭐ <b>'+stars+'</b> stelle · Verbi: <b>'+nV+'/'+GEM_VERBS.length+'</b> · '
-    +'Aggettivi: <b>'+nA+'/'+GEM_ADJ.length+'</b></div>'
-    +(prof?'<div class="tc-prof">\u{1F469}‍\u{1F3EB} Docente: tutto il guardaroba è aperto</div>'
-          :'<div class="tc-how">\u{1F513} Si sblocca con \u{1F48E} cristalli · ⭐ stelle · \u{1F3C5} una unit finita. <b>Non si spende niente</b>: basta arrivarci.</div>')
-    +'</div>';
-  h+='<div class="tc-tabs">'+TECA_TABS.map(function(t){
-      return '<button type="button" class="tc-tab'+(_tecaTab===t[0]?" on":"")+'" data-ttab="'+t[0]+'"><span>'+t[1]+'</span>'+t[2]+'</button>'; }).join("")+'</div>';
-  if(_tecaTab!=="words") h+=mirStrip();            // v316: lo specchio, sopra il guardaroba
-
-  const _L=Look.state(), _rig=(_L.rig==="f"?"f":"m");
-  if(_tecaTab==="me"){
+/* v320 — IL GUARDAROBA A PEZZI. Ogni sezione della Teca e' un pezzo con
+   un nome: la Teca li mette insieme per scheda (TECA_PARTS) e lo specchio
+   grande per inquadratura (MIR_PARTS: viso o corpo). Stesse schede, stessi
+   lucchetti, stessi clic (_tecaWire): una sola copia da tenere allineata. */
+const TECA_PARTS={ me:["body","skin","face"], hair:["cut","hcol"], clothes:["top","coat","bottom","shoes"],
+                   acc:["acc:head","acc:face","acc:neck","acc:bag"] };
+function _tecaParts(ids){
+  const st=Gems.state(), tot=st.tot, prof=lookProf(), _L=Look.state(), _rig=(_L.rig==="f"?"f":"m");
+  let h="";
+  (ids||[]).forEach(function(id){
+  if(id==="body"){
     /* ⚠️ CORPO e PELLE senza prezzo: assomigliare a se stessi non si guadagna. */
     h+='<div class="dy-sec">Your body · <span style="font-weight:400">free</span></div><div class="gem-fits">';
     LOOK_BODY.forEach(function(b){ const on=(_L.rig===b.id);
       h+=_tcCard('data-body="'+b.id+'"',on,false,_tcSw("#cdd6dc","#8b97a1",(b.id==="f"?"\u{1F9CD}‍♀️":"\u{1F9CD}‍♂️")),
         b.en,on?"that's you":"tap to choose"); });
-    h+='</div><div class="dy-sec">Your skin · <span style="font-weight:400">free</span></div><div class="gem-fits">';
+    h+='</div>';
+  }
+  else if(id==="skin"){
+    h+='<div class="dy-sec">Your skin · <span style="font-weight:400">free</span></div><div class="gem-fits">';
     LOOK_SKIN.forEach(function(k,i){ const on=(_L.skin===k.id);
       h+=_tcCard('data-skin="'+k.id+'"',on,false,_tcSw(k.hex),"Skin "+(i+1),on?"chosen":"tap to choose"); });
     h+='</div>';
+  }
+  else if(id==="face"){
     /* v302: il viso, gratis come corpo e pelle. Ogni campione e' disegnato
        sulla TUA pelle e, per gli occhi, col TUO colore degli occhi. */
     const _skx=(LOOK_SKIN.find(function(x){return x.id===_L.skin;})||LOOK_SKIN[2]).hex,
@@ -65104,26 +65114,32 @@ function buildTeca(){
     _fc("nose",LOOK_NOSES,_L.nose,"Nose");
     _fc("mouth",LOOK_MOUTHS,_L.mouth,"Mouth");
   }
-  else if(_tecaTab==="hair"){
+  else if(id==="cut"){
     const cc=lookCut(_rig,_L.cut);
     h+='<div class="dy-sec">1 · Haircut</div><div class="gem-fits">';
     lookCutsFor(_rig).forEach(function(c){ const r=lookReq(c.req), on=(cc.id===c.id);
       h+=_tcCard('data-cut="'+c.id+'"',on,!r.open,_tcSw("#cdd6dc","#8b97a1",c.ic),c.en,
         on?"you've got it":(r.open?"tap to try it":r.label)); });
-    h+='</div><div class="dy-sec">2 · Hair colour</div><div class="gem-fits">';
+    h+='</div>';
+  }
+  else if(id==="hcol"){
+    h+='<div class="dy-sec">2 · Hair colour</div><div class="gem-fits">';
     LOOK_HAIR.forEach(function(hr){ const open=Look.hairOpen(hr), on=(_L.hair===hr.id);
       h+=_tcCard('data-hair="'+hr.id+'"',on,!open,_tcSw(hr.hex),hr.en,
         on?"you've got it":(open?"tap to try it":"\u{1F48E} "+hr.cost)); });
     h+='</div>';
   }
-  else if(_tecaTab==="clothes"){
+  else if(id==="top"){
     h+='<div class="dy-sec">Top</div><div class="gem-fits">';
     GEM_FITS.forEach(function(f){ const open=Gems.fitOpen(f), on=(st.fit===f.id);
       h+=_tcCard('data-fit="'+f.id+'"',on,!open,'<span class="gem-sw" style="background:'+f.hood+';border-color:'+f.legs+'"></span>',f.en,
         on?"you're wearing it":(open?"tap to wear it":"\u{1F48E} "+f.cost)); });
+    h+='</div>';
+  }
+  else if(id==="coat"){
     /* v280: giacche e giubbotti, sopra il capo; sotto quella che porti, il colore */
     const _co=lookCoat(_L.coat);
-    h+='</div><div class="dy-sec">Jackets and coats \u00b7 <span style="font-weight:400">on top</span></div><div class="gem-fits">';
+    h+='<div class="dy-sec">Jackets and coats \u00b7 <span style="font-weight:400">on top</span></div><div class="gem-fits">';
     h+=_tcCard('data-coat=""',!_co,false,_tcSw("#eef1f3","#b9c2c8","\u2715"),"None",_co?"tap to take it off":"nothing on");
     LOOK_COATS.forEach(function(c){ const r=lookReq(c.req), on=(_co&&_co.id===c.id);
       h+=_tcCard('data-coat="'+c.id+'"',on,!r.open,_tcSw(c.col,c.col,"\u{1F9E5}"),c.en,
@@ -65134,6 +65150,8 @@ function buildTeca(){
       ACC_COLS.forEach(function(k){ const r=lookReq(k.req);
         h+=_tcCol('data-coatc="'+k.id+'"',cid===k.id,!r.open,k.hex||_co.col,k.en,r.label); });
       h+='</div>'; }
+  }
+  else if(id==="bottom"){
     const _bcur=lookBottom(_rig,_L.bottom);
     h+='<div class="dy-sec">Trousers, shorts and skirts</div><div class="gem-fits">';
     lookBottomsFor(_rig).forEach(function(b){ const r=lookReq(b.req), on=(_bcur.id===b.id);
@@ -65143,17 +65161,20 @@ function buildTeca(){
     const _hood=(GEM_FITS.find(function(x){return x.id===st.fit;})||GEM_FITS[0]);
     LOOK_BCOL.forEach(function(k){ const r=lookReq(k.req), on=((_L.bcol||"auto")===k.id);
       h+=_tcCol('data-bcol="'+k.id+'"',on,!r.open,k.hex||_hood.legs,k.en,r.label); });
-    h+='</div><div class="dy-sec">Shoes</div><div class="gem-fits">';
+    h+='</div>';
+  }
+  else if(id==="shoes"){
+    h+='<div class="dy-sec">Shoes</div><div class="gem-fits">';
     LOOK_SHOES.forEach(function(k){ const open=(prof||k.cost<=0||tot>=k.cost), on=(_L.shoes===k.id);
       h+=_tcCard('data-shoes="'+k.id+'"',on,!open,_tcSw(k.hex||"#cdd6dc",k.hex||"#8b97a1",(k.kind==="boots"?"\u{1F97E}":"\u{1F45F}")),k.en,
         on?"you're wearing them":(open?"tap to wear them":"\u{1F48E} "+k.cost)); });
     h+='</div>';
   }
-  else if(_tecaTab==="acc"){
+  else if(id.indexOf("acc:")===0){ const slot=id.slice(4);
     /* uno per slot, «None» sempre libero e per primo; sotto l'accessorio che
        porti, la riga dei suoi colori */
     const SIC={ head:"\u{1F9E2}", face:"\u{1F576}️", neck:"\u{1F9E3}", bag:"\u{1F45C}" };
-    ACC_SLOTS.forEach(function(S){
+    ACC_SLOTS.filter(function(S){ return S.id===slot; }).forEach(function(S){
       const cur=_L[S.k]||"", a=lookAcc(cur);
       h+='<div class="dy-sec">'+SIC[S.id]+' '+_escHtml(S.en)+'</div><div class="gem-fits">';
       h+=_tcCard('data-acc="'+S.id+':"',!cur,false,_tcSw("#eef1f3","#b9c2c8","✕"),"None",cur?"tap to take it off":"nothing on");
@@ -65168,6 +65189,39 @@ function buildTeca(){
         h+='</div>'; }
     });
   }
+  });
+  return h;
+}
+/* i clic del guardaroba: a cambio riuscito si chiama after() (ridisegna) */
+function _tecaWire(el,after){
+  const W={ "data-fit":v=>setPlayerFit(v), "data-body":v=>setPlayerBody(v), "data-skin":v=>setPlayerSkin(v),
+    "data-hair":v=>setPlayerHair(v), "data-cut":v=>setPlayerCut(v), "data-shoes":v=>setPlayerShoes(v),
+    "data-bottom":v=>setPlayerBottom(v), "data-bcol":v=>setPlayerBcol(v),
+    "data-acc":v=>{ const p=v.split(":"); return setPlayerAcc(p[0],p[1]); },
+    "data-acol":v=>{ const p=v.split(":"); return setPlayerAccCol(p[0],p[1]); },
+    "data-coat":v=>setPlayerCoat(v), "data-coatc":v=>setPlayerCoatCol(v),
+    "data-face":v=>{ const p=v.split(":"); return setPlayerFace(p[0],p[1]); } };
+  Object.keys(W).forEach(function(attr){ const rs=el.querySelectorAll("["+attr+"]");
+    for(let i=0;i<rs.length;i++) rs[i].onclick=(function(v){ return ()=>{ if(W[attr](v)) after(); }; })(rs[i].getAttribute(attr)); });
+}
+function buildTeca(){
+  const el=document.getElementById("diary-body"); if(!el) return;
+  const st=Gems.state(), got=st.got, tot=st.tot, prof=lookProf();
+  const nV=GEM_VERBS.filter(v=>got["v1:"+v[0]]||got["v2:"+v[0]]).length;
+  const nA=GEM_ADJ.filter(a=>got["c:"+a[0]]||got["s:"+a[0]]).length;
+  let stars=0; try{ stars=Stars.total(); }catch(e){}
+  let h='<div class="dy-hero"><div class="dy-tot">\u{1F48E} '+tot+'</div>'
+    +'<div class="dy-title">La Teca <span>· quello che hai raccolto in città</span></div>'
+    +'<div class="dy-next">⭐ <b>'+stars+'</b> stelle · Verbi: <b>'+nV+'/'+GEM_VERBS.length+'</b> · '
+    +'Aggettivi: <b>'+nA+'/'+GEM_ADJ.length+'</b></div>'
+    +(prof?'<div class="tc-prof">\u{1F469}‍\u{1F3EB} Docente: tutto il guardaroba è aperto</div>'
+          :'<div class="tc-how">\u{1F513} Si sblocca con \u{1F48E} cristalli · ⭐ stelle · \u{1F3C5} una unit finita. <b>Non si spende niente</b>: basta arrivarci.</div>')
+    +'</div>';
+  h+='<div class="tc-tabs">'+TECA_TABS.map(function(t){
+      return '<button type="button" class="tc-tab'+(_tecaTab===t[0]?" on":"")+'" data-ttab="'+t[0]+'"><span>'+t[1]+'</span>'+t[2]+'</button>'; }).join("")+'</div>';
+  if(_tecaTab!=="words") h+=mirStrip();            // v316: lo specchio, sopra il guardaroba
+
+  if(_tecaTab!=="words") h+=_tecaParts(TECA_PARTS[_tecaTab]);
   else {
     h+='<div class="dy-sec">Verbi irregolari · base — past — participle</div>';
     h+='<div class="gem-tab">';
@@ -65200,19 +65254,7 @@ function buildTeca(){
   function wire(attr,fn){ const rs=el.querySelectorAll("["+attr+"]");
     for(let i=0;i<rs.length;i++) rs[i].onclick=(function(v){ return ()=>{ if(fn(v)) buildTeca(); }; })(rs[i].getAttribute(attr)); }
   wire("data-ttab",   v=>{ _tecaTab=v; el.scrollTop=0; return true; });
-  wire("data-fit",    v=>setPlayerFit(v));
-  wire("data-body",   v=>setPlayerBody(v));
-  wire("data-skin",   v=>setPlayerSkin(v));
-  wire("data-hair",   v=>setPlayerHair(v));
-  wire("data-cut",    v=>setPlayerCut(v));
-  wire("data-shoes",  v=>setPlayerShoes(v));
-  wire("data-bottom", v=>setPlayerBottom(v));
-  wire("data-bcol",   v=>setPlayerBcol(v));
-  wire("data-acc",    v=>{ const p=v.split(":"); return setPlayerAcc(p[0],p[1]); });
-  wire("data-acol",   v=>{ const p=v.split(":"); return setPlayerAccCol(p[0],p[1]); });
-  wire("data-coat",   v=>setPlayerCoat(v));
-  wire("data-coatc",  v=>setPlayerCoatCol(v));
-  wire("data-face",   v=>{ const p=v.split(":"); return setPlayerFace(p[0],p[1]); });
+  _tecaWire(el, buildTeca);
   wire("data-mir",    v=>mirAct(v));
   if(_tecaTab!=="words") mirRefresh();
 }
@@ -65254,7 +65296,7 @@ function mirStrip(){
 function mirAct(v){
   if(v==="l"||v==="r"){ MIR.a+=(v==="l"?-1:1)*Math.PI/4; mirRefresh(); return false; }
   if(v==="front"){ MIR.a=0; mirRefresh(); return false; }
-  if(v==="body"||v==="face"){ MIR.face=(v==="face"); _mirSyncBtns(); mirRefresh(); return false; }
+  if(v==="body"||v==="face"){ MIR.face=(v==="face"); _mirSyncBtns(); if(_mirBig()) _mirOpts(true); mirRefresh(); return false; }
   if(v==="big"){ mirOpenBig(); return false; }
   if(v==="hide"||v==="show"){ MIR.off=(v==="hide"); try{ localStorage.setItem("et_mirror_off",MIR.off?"1":"0"); }catch(e){} return true; }
   return false;
@@ -65330,12 +65372,13 @@ function mirRefresh(){
 function mirOpenBig(){
   let o=document.getElementById("av-mir-ov");
   if(!o){ o=document.createElement("div"); o.id="av-mir-ov";
-    o.innerHTML='<div class="avm-card"><button type="button" class="avm-x" aria-label="Close">✕</button>'
+    o.innerHTML='<div class="avm-card"><button type="button" class="avm-x" aria-label="Close">✕</button><div class="avm-main">'
       +'<div class="avm-pic"><img id="av-mir-img" alt="Your avatar" draggable="false"></div>'
       +'<div class="avm-hint">↔️ Drag to turn</div>'
       +'<div class="avm-bar"><button type="button" data-mir="l" title="Turn">↺</button><button type="button" data-mir="r" title="Turn">↻</button>'
       +'<button type="button" data-mir="front">Front</button>'
-      +'<button type="button" data-mir="body">\u{1F9CD} Body</button><button type="button" data-mir="face">\u{1F642} Face</button></div></div>';
+      +'<button type="button" data-mir="body">\u{1F9CD} Body</button><button type="button" data-mir="face">\u{1F642} Face</button></div></div>'
+      +'<div class="avm-opts" id="av-mir-opts"></div></div>';
     document.body.appendChild(o);
     const close=()=>{ o.classList.remove("on"); };
     o.querySelector(".avm-x").onclick=close;
@@ -65353,7 +65396,22 @@ function mirOpenBig(){
     const up=()=>{ if(MIR.drag){ MIR.drag=null; mirRefresh(); } };
     pic.addEventListener("pointerup",up); pic.addEventListener("pointercancel",up);
   }
-  o.classList.add("on"); _mirSyncBtns(); mirRefresh();
+  o.classList.add("on"); _mirSyncBtns(); _mirOpts(true); mirRefresh();
+}
+/* v320 (Giacomo: «quando zoomi su mirror appaiono le features da cambiare
+   anche li', distinguendo tra body e face»). Con 🙂 Face: viso, capelli,
+   cappelli, occhiali e collo; con 🧍 Body: corpo, pelle, vestiti, scarpe,
+   collo e borsa. Sono gli stessi pezzi della Teca (_tecaParts): si prova
+   e lo specchio si riscatta; sotto, la Teca si ridisegna da sola. */
+const MIR_PARTS={ face:["face","cut","hcol","acc:head","acc:face","acc:neck"],
+                  body:["body","skin","top","coat","bottom","shoes","acc:neck","acc:bag"] };
+function _mirOpts(reset){
+  const o=document.getElementById("av-mir-opts"); if(!o) return;
+  const sc=reset?0:o.scrollTop;
+  o.innerHTML='<div class="avm-ot">'+(MIR.face?"\u{1F642} Face":"\u{1F9CD} Body")+' \u00b7 <span>tap to try it on</span></div>'
+    +_tecaParts(MIR_PARTS[MIR.face?"face":"body"]);
+  _tecaWire(o, function(){ _mirOpts(); try{ if(diaryOpen && diaryTab==="gems") buildTeca(); }catch(e){} mirRefresh(); });
+  o.scrollTop=sc;
 }
 /* v302 — i disegnini del viso nei campioni della Teca (viewBox 20x20) */
 function _tcFaceIc(part,id,eye,skin){
