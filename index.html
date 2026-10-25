@@ -34413,6 +34413,26 @@ function beatDrawWindow(){
   }
   dt.update();
 }
+/* v319: un verso del muro LED in DUE righe equilibrate, spezzato se si
+   puo' dopo la punteggiatura («Are you wearing a skirt? / Yes, I am!»):
+   riempiendo la prima riga restavano orfani come «Yes, I / am!» */
+function _beatSplit2(c,txt,maxW){
+  const t=String(txt||""); if(c.measureText(t).width<=maxW) return [t];
+  const w=t.split(/\s+/); let best=null;
+  for(let k=1;k<w.length;k++){ const a=w.slice(0,k).join(" "), b=w.slice(k).join(" "), wa=c.measureText(a).width, wb=c.measureText(b).width;
+    if(wa>maxW || wb>maxW) continue;
+    const sc=Math.max(wa,wb)-(/[?!,.;:\u2014]$/.test(a)?maxW*0.3:0);
+    if(!best || sc<best.sc) best={ sc, r:[a,b] }; }
+  return best ? best.r : _beatLines(c,t,maxW);
+}
+/* le righe in cui _beatWrap spezzerebbe il testo, senza disegnarle */
+function _beatLines(c,txt,maxW){
+  const words=String(txt||"").split(/\s+/), out=[]; let line="";
+  for(let i=0;i<words.length;i++){ const t=line?(line+" "+words[i]):words[i];
+    if(c.measureText(t).width>maxW && line){ out.push(line); line=words[i]; } else line=t; }
+  if(line) out.push(line);
+  return out;
+}
 function _beatWrap(c,txt,cx,y,maxW,lh){
   const words=String(txt||"").split(/\s+/); let line="", yy=y;
   for(let i=0;i<words.length;i++){
@@ -37220,8 +37240,9 @@ const GIG_SONGS=[
      ritornello); in classe e su English Drill e' «I'm wearing a T-shirt» */
   { f:"im_wearing_a_tshirt.mp3", t:"I'm Wearing a T-shirt", yr:1, u:"Anno 1 \u00b7 Unit 8",
     gram:"present continuous \u00b7 clothes", sec:118, bpm:90,
-    lines:["Are you wearing a cap?","Yes, I am!","Is he wearing shorts? Yes, he is!",
-           "I'm wearing a T-shirt,","I'm wearing my jeans,","Look at my clothes,","What about you?"],
+    lines:["Are you wearing a skirt? Yes, I am!","Is he wearing a hoodie? Yes, he is!",
+           "I'm wearing a T-shirt,","I'm wearing my jeans,","I'm wearing my trainers,","Red, blue and green!",
+           "Look at my clothes,","What about you?"],
     chat:{ en:"Look at my clothes! I'm wearing a T-shirt and jeans. What about you?",
            it:"Guarda i miei vestiti! Ho una maglietta e i jeans. E tu?" } },
   { f:"from_present_to_past.mp3", t:"To the Past", yr:2, u:"Anno 2 \u00b7 Unit 3",
@@ -37250,8 +37271,9 @@ const GIG_SONGS=[
            it:"Quante persone ci sono stasera? Tantissime!" } },
   { f:"i_have_to.mp3", t:"I Have To", yr:2, u:"Anno 2 \u00b7 Unit 7",
     gram:"have to \u00b7 don't have to \u00b7 must / mustn't", sec:145, bpm:90,
-    lines:["Do you have to stand up again?","Yes, I do!","I have to build my future,",
-           "I mustn't judge the others,","I don't have to be so perfect,","We have to walk together!"],
+    lines:["Do you have to follow your dreams? Yes, I do!","Does she have to speak her own mind? Yes, she does!",
+           "I have to build my future,","I must try to do my best!","I mustn't judge the others,",
+           "I don't have to be so perfect,","We have to walk together,","So please, don't give it up!"],
     chat:{ en:"I have to go home at ten, but I don't have to go now!",
            it:"Devo tornare a casa alle dieci, ma non devo andare adesso!" } },
   { f:"cars_will_fly.mp3", t:"Cars Will Fly", yr:3, u:"Anno 3 \u00b7 Unit 2-4",
@@ -37360,13 +37382,28 @@ function gigDrawLED(){
     c.fillText(GIG.failed?"tonight's gig is cancelled \u2014 the band is late!"
                          :"live music every night \u00b7 doors 8 p.m.", W/2, 176);
   } else {
-    c.fillStyle="#8fb3d9"; c.font="600 30px Segoe UI";
-    c.fillText(S.t.toUpperCase()+"   \u00b7   "+S.gram, W/2, 52);
+    /* v319: l'intestazione si stringe se non ci sta (When I Say Go… e
+       Count It Up uscivano dai bordi) */
+    const hd=S.t.toUpperCase()+"   \u00b7   "+S.gram; let hs=30;
+    for(;hs>20;hs-=2){ c.font="600 "+hs+"px Segoe UI"; if(c.measureText(hd).width<=W-60) break; }
+    c.fillStyle="#8fb3d9"; c.font="600 "+hs+"px Segoe UI";
+    c.fillText(hd, W/2, 52);
+    /* v319 (Giacomo: i versi interi): un verso lungo andava a capo e la
+       seconda riga finiva SOPRA quella del verso dopo (si vedeva gia' con
+       Yes, You Can e Count It Up). Ora il verso grande sta su una o due
+       righe (se serve il carattere cala fino a 44 px) e il verso dopo,
+       piccolo, si sposta sotto e si stringe finche' sta su una riga sola. */
     const L=S.lines, i=GIG.line%L.length;
-    c.fillStyle="#ffd977"; c.font="bold 56px Segoe UI";
-    _beatWrap(c, L[i], W/2, 132, W-120, 60);
-    c.fillStyle="#6f6288"; c.font="34px Segoe UI";
-    _beatWrap(c, L[(i+1)%L.length], W/2, 214, W-160, 40);
+    let fs=56, ml=null;
+    for(;fs>=44;fs-=2){ c.font="bold "+fs+"px Segoe UI"; ml=_beatSplit2(c,L[i],W-120); if(ml.length<=2) break; }
+    if(fs<44) fs=44;
+    const two=ml.length>1, lh=fs+4, y0=two?112:132;
+    c.fillStyle="#ffd977"; c.font="bold "+fs+"px Segoe UI";
+    ml.forEach((t,k)=>c.fillText(t,W/2,y0+k*lh));
+    let ns=two?28:34; const nx=L[(i+1)%L.length];
+    for(;ns>20;ns-=2){ c.font=ns+"px Segoe UI"; if(c.measureText(nx).width<=W-160) break; }
+    c.fillStyle="#6f6288"; c.font=ns+"px Segoe UI";
+    c.fillText(nx, W/2, two?226:214);
   }
   dt.update();
 }
