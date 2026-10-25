@@ -2402,7 +2402,7 @@ const UNIT8={ id:"u8", area:"clothes", areaName:"Clothes Shop",
        (passaggio "a imbuto" segnalato in aula). Ora il varco e' 1.59 m. */
     { prop:"clothesRail", w:2.6, x: 0.90, z:-3.00, seed:5 },
     { prop:"clothesRail", w:2.2, x: 2.90, z: 1.20, yaw:-Math.PI/2, seed:11 },
-    { prop:"fittingRoom", x: 3.40, z: 4.70, yaw:Math.PI },
+    { prop:"fittingRoom", x: 3.40, z: 4.70, yaw:Math.PI, solid:false },   // v323d: si ENTRA (pareti solide in clothesFitWalls)
     { prop:"mannequin",   x:-2.60, z: 4.60, yaw:Math.PI },
     /* ARREDO (mai nella corsia di servizio ovest) */
     { prop:"plant",  x:-3.80, z:-4.90 },
@@ -4325,7 +4325,12 @@ function pushPoseFor(root,fwd,grip){
   const V=BABYLON.Vector3, f=new V(fwd.x,0,fwd.z).normalize(), up=new V(0,1,0), dn=new V(0,-1,0);
   /* ⚠️ anche i POLSI: senza, camminando l'animazione piegava le mani
      all'insu' e restavano sopra la maniglia (visto a schermo) */
-  const pins=_restPinsFor(root,/^(Shoulder\.[LR]|UpperArm\.[LR]|LowerArm\.[LR]|Wrist\.[LR])$/); if(!pins.length) return null;
+  /* v323d (Giacomo: «sta sul carrello storto, una mano sta fuori»): anche il
+     BUSTO (addome, torace, petto) resta dritto, nella posa di riposo. Prima
+     l'animazione lo faceva girare e le braccia, attaccate alle spalle,
+     giravano con lui: una mano finiva fuori dalla maniglia. Le anche no:
+     muovono le gambe che camminano. */
+  const pins=_restPinsFor(root,/^(Abdomen|Torso|Chest|Shoulder\.[LR]|UpperArm\.[LR]|LowerArm\.[LR]|Wrist\.[LR])$/); if(!pins.length) return null;
   const saved=pins.map(k=>({tn:k.tn, q:k.tn.rotationQuaternion?k.tn.rotationQuaternion.clone():null, p:k.tn.position.clone()}));
   _applyPins(pins); _sitRefresh(root);
   /* ⚠️ «IN FUORI» DALLA SPALLA VERA (Giacomo: «le braccia incrociate al
@@ -22991,7 +22996,8 @@ function shopPushOn(){
   /* il polso sta dietro e sopra la maniglia: cosi' il palmo ci si appoggia
      sopra col dorso in su (Giacomo: «il dorso delle mani deve essere verso
      l'alto»); prima le dita penzolavano dietro la sbarra */
-  const pins=pushPoseFor(avatarRoot,f,o=>bar.add(o.scale(0.19)).subtract(f.scale(0.05)).add(new V(0,0.045,0)));
+  /* v323d (Giacomo: «le mani sul carrello vanno leggermente indietro»): 9 cm dietro la sbarra, non 5 */
+  const pins=pushPoseFor(avatarRoot,f,o=>bar.add(o.scale(0.19)).subtract(f.scale(0.09)).add(new V(0,0.045,0)));
   if(!pins) return;
   SHOP.pushPins=pins; SHOP.pushOf=avatarRoot;
   SHOP.pushObs=scene.onBeforeRenderObservable.add(()=>{
@@ -23298,7 +23304,7 @@ function clothesHud(){
   el.style.display="block";
   const nm=_escHtml((CSHOP.it&&CSHOP.it.en||"").toLowerCase());
   el.innerHTML=CSHOP.stage==="fitting"
-    ? "\u{1F6AA} Go to the <b>fitting room</b> and try on the <b>"+nm+"</b>"
+    ? "\u{1F6AA} Go into the <b>fitting room</b> and try on the <b>"+nm+"</b>"
     : "\u{1F457} You're wearing the <b>"+nm+"</b> · go back to <b>Nina</b>";
 }
 function clothesTick(){
@@ -23306,10 +23312,24 @@ function clothesTick(){
   clothesHud();
 }
 /* la cabina (UNIT8.props: fittingRoom a x 3.40, z 4.70, aperta verso il negozio) */
+/* v323d (Giacomo: «fai in modo che si possa entrare davvero nel camerino»).
+   Prima la cabina era UN blocco solido: si restava fuori. Ora sono solide
+   solo le tre pareti (fondo e fianchi; la cabina e' 1,7 x 1,2 a x 3.40,
+   z 4.70, girata verso il negozio); la tenda copre meta' dell'apertura e si
+   attraversa come una tenda vera. La prova con E si fa da DENTRO. */
+let _fitWalls=false;
+function clothesFitWalls(){
+  if(_fitWalls) return; const I=INTERIORS[UNIT8.area]; if(!I) return; _fitWalls=true;
+  const x=I.center.x+3.40, z=I.center.z+4.70, hw=0.85, hd=0.60, t=0.09;
+  addSolid(x-hw-t,x+hw+t,z+hd-t,z+hd+t,UNIT8.area);                 // fondo
+  addSolid(x-hw-t,x-hw+t,z-hd,z+hd,UNIT8.area);                     // fianco
+  addSolid(x+hw-t,x+hw+t,z-hd,z+hd,UNIT8.area);                     // fianco
+}
 function clothesFitInit(){
+  clothesFitWalls();
   if(CSHOP.inter) return; const I=INTERIORS[UNIT8.area]; if(!I) return; const C=I.center;
-  CSHOP.inter=addInteract({ id:"cshop_fit", area:UNIT8.area, radius:2.0, enabled:false,
-    pos:()=>new BABYLON.Vector3(C.x+3.40,1.0,C.z+4.15), meshes:[],
+  CSHOP.inter=addInteract({ id:"cshop_fit", area:UNIT8.area, radius:1.0, enabled:false,
+    pos:()=>new BABYLON.Vector3(C.x+3.40,1.0,C.z+4.85), meshes:[],
     prompt:'Press <b>E</b> to <b>try it on</b> in the fitting room', interact:clothesFitting });
 }
 function clothesReset(){ shopTryOff(); CSHOP.on=false; CSHOP.stage=null; CSHOP.cat=null; CSHOP.it=null; clothesTick(); }
@@ -23357,7 +23377,7 @@ function clothesTry(c,it){
   CSHOP.it=it;
   const toFit=line=>{ CSHOP.stage="fitting"; clothesTick();
     DialogueBox.open({ npc, icon, sub:"Shopping with Nina", text:line,
-      italian:"Vai nel camerino (la cabina con la tenda) e premi E per provar"+(P?"li":"lo")+".",
+      italian:"Entra nel camerino (la cabina con la tenda) e premi E per provar"+(P?"li":"lo")+".",
       buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] }); };
   shopLine({ npc, icon, sub:"Shopping with Nina", text:"Here you are: the "+it.en.toLowerCase()+". "+(P?"They're":"It's")+" very nice!",
     italian:"Chiedi se puoi provar"+(P?"li":"lo")+".",
@@ -23473,20 +23493,85 @@ function cornerInit(){
         try{ const cp=cartAdd(CORNER.basket,{ en:e.en, mesh:e.mesh }); if(cp) [cp].concat(cp.getChildMeshes()).forEach(m=>{ m.alwaysSelectAsActiveMesh=true; }); }catch(err){}
         toast("\u{1F9FA} "+e.en+" — in your basket"); cornerTick(); } })); });
 }
-/* il cestino appeso alla mano: segue il polso a ogni fotogramma, dritto
-   (pende), un filo in fuori perche' non entri nella gamba */
+/* il cestino in mano. v323d (Giacomo: «le mani un po' piu' su sulla
+   maniglia nera, il dorso deve star davanti: nella foto sembra appeso al
+   dorso e non al palmo»). Prima pendeva dal POLSO, con la mano aperta e la
+   maniglia davanti alle dita. Ora:
+   · il polso e' girato col DORSO IN AVANTI e le dita in giu' (basketGripPins);
+   · le dita si chiudono (tre falangi per dito) attorno alla sbarra;
+   · la sbarra nera, di traverso, sta dentro la mano chiusa (centro del palmo
+     + 3 cm verso dove guarda il palmo); il cestino pende dritto sotto.
+   Le pin sono LOCALI (polso e dita rispetto al braccio): camminando la mano
+   dondola col braccio e il cestino con lei. */
+/* il verso VERO del palmo: hb.n, girato se il pollice sta dall'altra parte */
+function _palmoVero(H,hb){
+  const T=H.getDescendants(false).find(d=>/(^|_)Thumb3\.[LR]$/.test(d.name))||H.getDescendants(false).find(d=>/Thumb/.test(d.name));
+  if(!T) return hb.n.clone();
+  T.computeWorldMatrix(true);
+  return BABYLON.Vector3.Dot(T.getAbsolutePosition().subtract(hb.c),hb.n)>=0 ? hb.n.clone() : hb.n.scale(-1);
+}
+function basketGripPins(root,f){
+  const V=BABYLON.Vector3, dn=new V(0,-1,0);
+  const H=root.getDescendants(false).find(d=>/(^|_)Wrist\.R$/.test(d.name)); if(!H) return null;
+  const save=[], keep=t=>{ if(!t.rotationQuaternion) t.rotationQuaternion=BABYLON.Quaternion.FromEulerVector(t.rotation); save.push({ t, q:t.rotationQuaternion.clone() }); };
+  _sitRefresh(root);
+  /* il BRACCIO un po' staccato dal fianco (Giacomo: «il basket entra dentro
+     la gamba, mettilo laterale»): giu', in fuori di ~20 gradi, gomito appena
+     piegato. Il lato «in fuori» dalla spalla vera (come in pushPoseFor). */
+  const arm=_restPinsFor(root,/^(UpperArm\.R|LowerArm\.R)$/), out=[];
+  if(arm.length){
+    arm.forEach(k=>keep(k.tn)); _applyPins(arm); _sitRefresh(root);
+    const cen=root.getAbsolutePosition().clone();
+    const fuori=ctx=>{ let v=ctx.pU.subtract(cen); v.y=0; v=v.subtract(f.scale(V.Dot(v,f))); return v.length()>1e-4?v.normalize():new V(0,0,0); };
+    const m=_armPose(root,arm.map(k=>k.tn),f,(o,sd,ctx)=>dn.add(fuori(ctx).scale(0.42)),(o,sd,ctx)=>dn.add(fuori(ctx).scale(0.3)).add(f.scale(0.12)));
+    arm.forEach(k=>{ const q=m.get(k.tn); if(q) out.push({ tn:k.tn, q:q.clone() }); });
+    _sitRefresh(root); }
+  keep(H);
+  let hb=_handBasis(H); if(!hb) return null;
+  const pW=H.getAbsolutePosition().clone();
+  /* ⚠️ POLSO DRITTO (Giacomo: «la mano piegata e' innaturale»): la mano
+     prosegue l'avambraccio, non punta per forza giu'; si gira solo attorno
+     all'avambraccio, quel tanto che basta a mettere il palmo indietro.
+     ⚠️ IL PALMO SI RICONOSCE DAL POLLICE (Giacomo: «si sono piegate al
+     contrario!»): con le dita dritte il verso di hb.n e' a caso. Il pollice
+     sta sempre dalla parte del palmo: _palmoVero gira hb.n se serve. */
+  const Lw=root.getDescendants(false).find(d=>/(^|_)LowerArm\.R$/.test(d.name));
+  let fa=dn.clone(); if(Lw){ Lw.computeWorldMatrix(true); const v=pW.subtract(Lw.getAbsolutePosition()); if(v.length()>1e-3) fa=v.normalize(); }
+  _sitWorldRot(H,pW,hb.d,fa); _sitRefresh(root);                   // dita nella direzione dell'avambraccio
+  hb=_handBasis(H);
+  let pn=hb?_palmoVero(H,hb):null;
+  if(pn){ const bk=f.scale(-1), a=pn.subtract(fa.scale(V.Dot(pn,fa))), b=bk.subtract(fa.scale(V.Dot(bk,fa)));
+    if(a.length()>1e-3 && b.length()>1e-3){ _sitWorldRot(H,pW,a,b); _sitRefresh(root); } }   // palmo indietro = dorso avanti
+  out.push({ tn:H, q:H.rotationQuaternion.clone() });
+  hb=_handBasis(H); pn=hb?_palmoVero(H,hb):null;
+  const ds=H.getDescendants(false), ANG=[0.95,1.05,0.8];
+  if(pn) ["Index","Middle","Ring","Pinky"].forEach(fn=>{ for(let k=1;k<=3;k++){
+    const t=ds.find(d=>new RegExp("(^|_)"+fn+k+"\\.R$").test(d.name)), c=ds.find(d=>new RegExp("(^|_)"+fn+(k+1)+"\\.R$").test(d.name));
+    if(!t||!c) continue; keep(t); t.computeWorldMatrix(true); c.computeWorldMatrix(true);
+    const p=t.getAbsolutePosition().clone(), dir=c.getAbsolutePosition().subtract(p).normalize();
+    const n=pn.subtract(dir.scale(V.Dot(pn,dir))); if(n.length()<1e-4) continue; n.normalize();   // le dita si chiudono verso il palmo
+    _sitWorldRot(t,p,dir,dir.scale(Math.cos(ANG[k-1])).add(n.scale(Math.sin(ANG[k-1])))); _sitRefresh(root);
+    out.push({ tn:t, q:t.rotationQuaternion.clone() }); } });
+  save.forEach(k=>k.t.rotationQuaternion.copyFrom(k.q));
+  out.orig=save;                                                     // per riaprire la mano posando il cestino
+  return out;
+}
 function cornerCarry(){
   if(CORNER.carryObs) scene.onBeforeRenderObservable.remove(CORNER.carryObs);
-  let H=null, of=null;
+  let H=null, of=null, pins=null;
   CORNER.carryObs=scene.onBeforeRenderObservable.add(()=>{
     const b=CORNER.basket; if(!b || typeof avatarRoot==="undefined" || !avatarRoot) return;
-    if(of!==avatarRoot || !H){ of=avatarRoot; H=avatarRoot.getDescendants(false).find(d=>/(^|_)Wrist\.R$/.test(d.name))||null; }
+    if(of!==avatarRoot || !H){ of=avatarRoot; H=avatarRoot.getDescendants(false).find(d=>/(^|_)Wrist\.R$/.test(d.name))||null;
+      const ry=player.rotation.y; try{ pins=basketGripPins(avatarRoot,new BABYLON.Vector3(Math.sin(ry),0,Math.cos(ry))); }catch(e){ pins=null; }
+      CORNER.grip=pins; }
     if(!H) return;
+    if(pins) pins.forEach(k=>{ k.tn.rotationQuaternion.copyFrom(k.q); });
     H.computeWorldMatrix(true);
-    const p=H.getAbsolutePosition(), ry=player.rotation.y, rt=new BABYLON.Vector3(Math.cos(ry),0,-Math.sin(ry));
-    const sd=((p.x-player.position.x)*rt.x+(p.z-player.position.z)*rt.z)>=0?1:-1;
-    b.position.set(p.x+rt.x*sd*0.07, p.y-0.42, p.z+rt.z*sd*0.07);
-    b.rotation.y=ry; });
+    const hb=_handBasis(H);
+    if(!hb){ const p=H.getAbsolutePosition(); b.position.set(p.x,p.y-0.44,p.z); b.rotation.y=player.rotation.y; return; }
+    const grip=hb.c.add(_palmoVero(H,hb).scale(0.03));               // la sbarra dalla parte del palmo
+    b.position.set(grip.x, grip.y-0.36, grip.z);                      // l'impugnatura (y 0,36 del cestino) dentro la mano
+    b.rotation.y=player.rotation.y; });
 }
 function cornerTakeBasket(){
   if(CORNER.on || !shopOpenFor(UNIT4)) return;
@@ -23500,6 +23585,8 @@ function cornerTakeBasket(){
 }
 function cornerDropBasket(){
   if(CORNER.carryObs){ scene.onBeforeRenderObservable.remove(CORNER.carryObs); CORNER.carryObs=null; }
+  try{ if(CORNER.grip && CORNER.grip.orig) CORNER.grip.orig.forEach(k=>{ if(!k.t.isDisposed()) k.t.rotationQuaternion.copyFrom(k.q); }); }catch(e){}
+  CORNER.grip=null;
   if(CORNER.basket){ try{ cartClear(CORNER.basket); CORNER.basket.dispose(); }catch(e){} CORNER.basket=null; }
   try{ const top=CORNER.stack&&CORNER.stack.getChildren().filter(n=>/b3$/.test(n.name))[0]; if(top) top.setEnabled(true); }catch(e){}
   CORNER.on=false; CORNER.items=[]; cornerTick();
@@ -23825,13 +23912,20 @@ const LEXPROPS={
      ponte lungo z. Origine sul fondo; r.__basket = dove cartAdd appoggia la
      merce (come nel carrello). */
   handBasket(id){ const r=new BABYLON.TransformNode(id,scene);
-    const W=0.30, D=0.42, H=0.20, t=0.012, red="#c8323a";
-    lpBox(r,W,t,D,red,0,t/2,0);                                          // fondo
-    lpBox(r,W,H,t,red,0,H/2,-D/2); lpBox(r,W,H,t,red,0,H/2,D/2);          // testate
-    lpBox(r,t,H,D,red,-W/2,H/2,0); lpBox(r,t,H,D,red,W/2,H/2,0);          // fianchi
-    lpBox(r,W+0.02,0.02,D+0.02,"#a8262d",0,H,0);                          // bordo
-    lpBox(r,0.02,0.16,0.02,"#2b2b30",0,H+0.08,-0.15); lpBox(r,0.02,0.16,0.02,"#2b2b30",0,H+0.08,0.15);   // aste del manico
-    lpBox(r,0.03,0.03,0.33,"#2b2b30",0,H+0.16,0);                         // impugnatura (a y 0,36)
+    /* v323d (Giacomo: «sembra una scatola: dev'essere un basket cavo»):
+       pareti a LISTELLI con le fessure in mezzo (si vede dentro), fondo piu'
+       scuro, bordo pieno in cima. Piu' stretto di prima (24 cm). */
+    const W=0.24, D=0.40, H=0.20, t=0.012, red="#c8323a", dark="#7a1a20";
+    lpBox(r,W,t,D,dark,0,t/2,0);                                         // fondo
+    [[-1,-1],[-1,1],[1,-1],[1,1]].forEach(q=>lpBox(r,0.022,H,0.022,red,q[0]*W/2,H/2,q[1]*D/2));   // spigoli
+    [0.035,0.085,0.135].forEach(y=>{                                     // listelli, con le fessure fra l'uno e l'altro
+      lpBox(r,W,0.026,0.012,red,0,y,-D/2); lpBox(r,W,0.026,0.012,red,0,y,D/2);
+      lpBox(r,0.012,0.026,D,red,-W/2,y,0); lpBox(r,0.012,0.026,D,red,W/2,y,0); });
+    lpBox(r,W+0.02,0.03,0.02,"#a8262d",0,H-0.01,-D/2); lpBox(r,W+0.02,0.03,0.02,"#a8262d",0,H-0.01,D/2);   // bordo
+    lpBox(r,0.02,0.03,D+0.02,"#a8262d",-W/2,H-0.01,0); lpBox(r,0.02,0.03,D+0.02,"#a8262d",W/2,H-0.01,0);
+    /* il manico di TRAVERSO (lungo x): la mano lo stringe col dorso in avanti */
+    lpBox(r,0.018,0.16,0.018,"#2b2b30",-W/2+0.01,H+0.08,0); lpBox(r,0.018,0.16,0.018,"#2b2b30",W/2-0.01,H+0.08,0);
+    lpBox(r,W,0.028,0.028,"#2b2b30",0,H+0.16,0);                          // impugnatura (a y 0,36)
     r.__basket={ y:t, w:W-0.04, d:D-0.04 };
     return r; },
   /* la pila dei cestini all'ingresso, col cartello */
@@ -34029,6 +34123,7 @@ function buildClothesNPCs(){
     x:C.x-0.6, z:C.z+2.2, face:0, height:1.66, interact:talkToHolly,
     tint:{ Purple:"#e8b53a", LightBlue:"#3a5a8e", Hair:"#d8b45a" } });   // maglia GIALLA + jeans BLU
   guiLabel(anchorMesh(I.root, C.x-2.6, 2.15, C.z+4.6), "\u{1fa9f} Shop window", null, true, UNIT8.area);
+  try{ clothesFitWalls(); }catch(e){}                                 // v323d: nel camerino si entra
   initClothesAssist();
 }
 /* payoff della vetrina: i capi indossati dal manichino si "accendono"
