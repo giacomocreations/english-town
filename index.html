@@ -23132,7 +23132,14 @@ function shopCheckout(){
 }
 function teacherFreeShop(){
   if(!Student.teacher) return;
-  if(!marketActive()){ toast("\u{1F469}\u200D\u{1F3EB} Entra nel Market e premi 3 per provare la spesa libera."); return; }
+  /* v323b: il 3 apre lo shopping anche al Clothes Shop (Nina) e al Corner Shop (Sam) */
+  if(typeof area!=="undefined" && (area===UNIT8.area || area===UNIT4.area)){
+    try{ DialogueBox.close(); QModal.close(); }catch(e){}
+    Quest.stop();
+    if(area===UNIT8.area){ buildClothesNPCs(); if(NINA) startClothesShop(NINA); }
+    else { buildShopNPCs(); if(SAM) startCornerShop(SAM); }
+    return; }
+  if(!marketActive()){ toast("\u{1F469}\u200D\u{1F3EB} Entra nel Market, nel Clothes Shop o nel Corner Shop e premi 3 per provare lo shopping."); return; }
   try{ DialogueBox.close(); QModal.close(); }catch(e){}
   Quest.stop(); MARKET.teacherFree=true; marketRestock(); cartClear(MARKET.oscarCart); shopTick(true);
   toast("\u{1F6D2} Spesa libera (prova docente): prendi un carrello all'ingresso.");
@@ -23192,18 +23199,24 @@ function shopReceiptHtml(title,sub,rows,tot){
    Sam, fuori dalle quest. Ritorna true se ha aperto il menu. */
 function freeShopMenu(npc,U,icon,who,start,talk){
   if(npc.__talk){ npc.__talk=false; return false; }
-  if(!npc.metPlayer) return false;
-  if(Quest.unit===U && Quest.step) return false;
-  const open=shopOpenFor(U);
-  DialogueBox.open({ npc, icon, sub:who, text:"Hello again! What can I do for you?",
-    italian:open?"Vuoi fare shopping o fare due chiacchiere?":"Lo shopping si apre quando finisci la quest di questo negozio.",
+  /* v323b (Giacomo: «non vedo le modifiche nei negozi»). Il menu compariva
+     solo dal secondo saluto (metPlayer si azzera a ogni apertura del gioco)
+     e mai a quest in corso: al docente, che entrando fa partire la quest,
+     non compariva proprio. Ora c'e' anche al primo saluto, e a quest in
+     corso solo per chi puo' gia' comprare (il docente), con la voce per
+     continuare la quest. Agli alunni a meta' quest resta la quest e basta. */
+  const open=shopOpenFor(U), inQuest=(Quest.unit===U && !!Quest.step);
+  if(inQuest && !open) return false;
+  const first=!npc.metPlayer; npc.metPlayer=true;
+  DialogueBox.open({ npc, icon, sub:who, text:(first?"Hi! I'm "+(npc.name||who)+". ":"Hello again! ")+"What can I do for you?",
+    italian:open?"Vuoi fare shopping o "+(inQuest?"continuare la quest":"fare due chiacchiere")+"?":"Lo shopping si apre quando finisci la quest di questo negozio.",
     choices:[
-      { label:(open?"\u{1F6CD}️ ":"\u{1F512} ")+"I'd like to buy something.", act:()=>{
+      { label:(open?"\u{1F6CD}\uFE0F ":"\u{1F512} ")+"I'd like to buy something.", act:()=>{
         if(open) return start(npc);
-        DialogueBox.open({ npc, icon, sub:who, text:"Come back when you finish your work here — then you can go shopping!",
+        DialogueBox.open({ npc, icon, sub:who, text:"Come back when you finish your work here \u2014 then you can go shopping!",
           italian:"\u{1F512} Prima finisci la quest di "+(U.areaName||"questo negozio")+" ("+(U.title||"")+"): poi puoi comprare qui.",
           buttons:[{ label:"OK!", cls:"primary", act:()=>{} }] }); } },
-      { label:"\u{1F4AC} Let's chat.", act:()=>{ npc.__talk=true; talk(); } },
+      { label:inQuest?"\u{1F4CB} Let's go on with the quest.":"\u{1F4AC} Let's chat.", act:()=>{ npc.__talk=true; talk(); } },
       { label:"Bye!", cls:"ghost", act:()=>{} } ] });
   return true;
 }
@@ -25176,7 +25189,7 @@ function samStepLine(){
   }
 }
 function talkToSam(npc){
-  if(CORNER.on && !(Quest.unit===UNIT4 && Quest.step)){ cornerCheckout(npc); return; }                      // v323: si paga
+  if(CORNER.on){ cornerCheckout(npc); return; }                                 // v323: col cestino si paga (si apre solo a chi puo' comprare)
   if(freeShopMenu(npc,UNIT4,"\u{1F6D2}","Shopkeeper",startCornerShop,()=>talkToSam(npc))) return;
   if(ambientReady(npc,UNIT4)){ openAmbient(npc,UNIT4.id,"🛒","Shopkeeper"); return; }
   if(Quest.unit===UNIT4 && Quest.step && Quest.step.id==="gram"){ runShopping(npc); return; }
