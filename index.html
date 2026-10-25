@@ -23137,6 +23137,284 @@ function teacherFreeShop(){
   Quest.stop(); MARKET.teacherFree=true; marketRestock(); cartClear(MARKET.oscarCart); shopTick(true);
   toast("\u{1F6D2} Spesa libera (prova docente): prendi un carrello all'ingresso.");
 }
+/* =====================================================================
+   v323 — SHOPPING LIBERO AL CLOTHES SHOP E AL CORNER SHOP (Giacomo, 25
+   ott: «nel clothes shop dev'essere possibile comprare un vestito cosi'
+   gli alunni si esercitano sulle formule e i prezzi; idem nel corner
+   shop». Decisioni: 1) si compra SOLO DOPO la quest del negozio, come al
+   Market (v256); 2) quello che compri e' esercizio: nel camerino lo provi
+   addosso, ma non resta nella Teca, che resta legata a cristalli, stelle
+   e unit).
+   · Prima della quest la voce c'e' lo stesso, col lucchetto: un
+     obiettivo, non un muro. Il docente compra sempre.
+   · Le formule sono quelle del libro: Can I help you? · I'm looking for…
+     · Can I try it/them on? · What size are you? · Is it OK? / Are they
+     OK? · How much is it / are they? · What do you think? · I'll take /
+     leave it · How are you paying? · Here you are.
+   · Anno 1: tre frasi, se ne sceglie quella giusta (gli errori sono quelli
+     veri: «Can I try on it?», «How many is it?»). Anni 2-3: si SCRIVE,
+     come alla cassa del Market (mktTyped).
+   · Il prezzo si ASCOLTA e si sceglie fra tre (pricePick, v322).
+   · Stelle: le stesse della spesa al Market, con lo stesso tetto del
+     giorno (Stars.awardShopping).
+   ===================================================================== */
+function shopOpenFor(U){
+  try{ if(Student.teacher) return true; }catch(e){}
+  try{ return !!Progress.get(U.id).done; }catch(e){ return false; }
+}
+/* una battuta dello studente. o = { npc, icon, sub, text (chi vende),
+   italian, right:[frasi giuste], wrong:[frasi sbagliate], ok(v) per chi
+   scrive, ph, model, hint, next(frase scelta o scritta, errori) } */
+function shopLine(o){
+  if(yrEnglish()){
+    let last="";
+    return mktTyped({ npc:o.npc, icon:o.icon, sub:o.sub, text:o.text, italian:o.italian, ph:o.ph, model:o.model, hint:o.hint,
+      ok:v=>{ last=v; return o.ok(v); }, next:e=>o.next(last, e?1:0) });
+  }
+  let errs=0;
+  const ask=()=>DialogueBox.open({ npc:o.npc, icon:o.icon, sub:o.sub, text:o.text, italian:o.italian,
+    choices:shuffle(o.right.concat(o.wrong||[])).map(fr=>({ label:fr, act:()=>{
+      if(o.right.indexOf(fr)>=0){ o.next(fr.toLowerCase(), errs); return; }
+      errs++;
+      if(errs>=2){ toast("✓ OK! We say: “"+o.model+"”"); o.next(o.right[0].toLowerCase(), errs); return; }
+      toast("❌ Not quite! \u{1F4A1} "+o.hint.replace(/<[^>]+>/g,"")); ask(); } })) });
+  ask();
+}
+/* lo scontrino (stesso aspetto di quello del Market) */
+function shopReceiptHtml(title,sub,rows,tot){
+  return "<div style='font:14px/1.5 ui-monospace,monospace;background:#fffef8;border:1px dashed #b9b2a0;padding:10px 14px;max-width:320px;margin:0 auto'>"
+    +"<div style='text-align:center;font-weight:700'>"+title+"</div><div style='text-align:center;font-size:12px'>"+sub+"</div><hr>"
+    +"<table style='width:100%;border-collapse:collapse'>"+rows.map(r=>"<tr><td style='text-align:left'>"+_escHtml(r[0])+"</td><td style='text-align:right'>"+gbp(r[1])+"</td></tr>").join("")+"</table><hr>"
+    +"<table style='width:100%'><tr><td style='text-align:left'><b>TOTAL</b></td><td style='text-align:right'><b>"+gbp(tot)+"</b></td></tr></table><hr>"
+    +"<div style='text-align:center;font-size:12px'>Thank you for shopping with us!</div></div>";
+}
+/* La voce «🛍️ I'd like to buy something» in cima al dialogo di Nina e di
+   Sam, fuori dalle quest. Ritorna true se ha aperto il menu. */
+function freeShopMenu(npc,U,icon,who,start,talk){
+  if(npc.__talk){ npc.__talk=false; return false; }
+  if(!npc.metPlayer) return false;
+  if(Quest.unit===U && Quest.step) return false;
+  const open=shopOpenFor(U);
+  DialogueBox.open({ npc, icon, sub:who, text:"Hello again! What can I do for you?",
+    italian:open?"Vuoi fare shopping o fare due chiacchiere?":"Lo shopping si apre quando finisci la quest di questo negozio.",
+    choices:[
+      { label:(open?"\u{1F6CD}️ ":"\u{1F512} ")+"I'd like to buy something.", act:()=>{
+        if(open) return start(npc);
+        DialogueBox.open({ npc, icon, sub:who, text:"Come back when you finish your work here — then you can go shopping!",
+          italian:"\u{1F512} Prima finisci la quest di "+(U.areaName||"questo negozio")+" ("+(U.title||"")+"): poi puoi comprare qui.",
+          buttons:[{ label:"OK!", cls:"primary", act:()=>{} }] }); } },
+      { label:"\u{1F4AC} Let's chat.", act:()=>{ npc.__talk=true; talk(); } },
+      { label:"Bye!", cls:"ghost", act:()=>{} } ] });
+  return true;
+}
+
+/* ---- IL CLOTHES SHOP: Nina, i capi della Teca, il camerino ---------- */
+/* il catalogo: le categorie che si possono cercare, coi capi VERI del
+   guardaroba (si vedono addosso esattamente come nella Teca) */
+function clothesCats(){
+  const rig=Look.rig(), B=lookBottomsFor(rig);
+  const acc=re=>LOOK_ACC.filter(x=>re.test(x.slot+":"+x.en));
+  const C=[
+    { id:"hoodie",  en:"a hoodie",       noun:"hoodie",   pl:false, size:"clothes", base:1800, items:GEM_FITS.map(f=>({ en:f.en, id:"fit:"+f.id, tryo:{ fit:f.id } })) },
+    { id:"jacket",  en:"a jacket",       noun:"jacket",   pl:false, size:"clothes", base:3500, items:LOOK_COATS.map(c=>({ en:c.en, id:"coat:"+c.id, tryo:{ coat:c.id, coatc:"" } })) },
+    { id:"trousers",en:"some trousers",  noun:"trousers", pl:true,  size:"clothes", base:2200, items:B.filter(b=>/trousers|joggers/i.test(b.en)).map(b=>({ en:b.en, id:"bottom:"+b.id, tryo:{ bottom:b.id } })) },
+    { id:"shorts",  en:"some shorts",    noun:"shorts",   pl:true,  size:"clothes", base:1500, items:B.filter(b=>/shorts/i.test(b.en)).map(b=>({ en:b.en, id:"bottom:"+b.id, tryo:{ bottom:b.id } })) },
+    { id:"skirt",   en:"a skirt",        noun:"skirt",    pl:false, size:"clothes", base:2000, items:B.filter(b=>b.skirt).map(b=>({ en:b.en, id:"bottom:"+b.id, tryo:{ bottom:b.id } })) },
+    { id:"trainers",en:"some trainers",  noun:"trainers", pl:true,  size:"shoes",   base:3000, items:LOOK_SHOES.filter(k=>k.kind!=="boots").map(k=>({ en:k.en, id:"shoes:"+k.id, tryo:{ shoes:k.id } })) },
+    { id:"boots",   en:"some boots",     noun:"boots",    pl:true,  size:"shoes",   base:4200, items:LOOK_SHOES.filter(k=>k.kind==="boots").map(k=>({ en:k.en, id:"shoes:"+k.id, tryo:{ shoes:k.id } })) },
+    { id:"hat",     en:"a hat",          noun:"hat",      pl:false, size:"",        base:1200, items:acc(/^head:.*(hat|cap|headband)/i).map(x=>({ en:x.en, id:"acc:"+x.id, tryo:{ hat:x.id, hatc:"" } })) },
+    { id:"glasses", en:"some sunglasses",noun:"sunglasses",pl:true, size:"",        base:1400, items:acc(/^face:/).map(x=>({ en:x.en, id:"acc:"+x.id, tryo:{ face:x.id, facec:"" } })) },
+    { id:"scarf",   en:"a scarf",        noun:"scarf",    pl:false, size:"",        base:900,  items:acc(/^neck:.*scarf/i).map(x=>({ en:x.en, id:"acc:"+x.id, tryo:{ neck:x.id, neckc:"" } })) },
+    { id:"necklace",en:"a necklace",     noun:"necklace", pl:false, size:"",        base:1600, items:acc(/^neck:.*(necklace|medallion)/i).map(x=>({ en:x.en, id:"acc:"+x.id, tryo:{ neck:x.id, neckc:"" } })) },
+    { id:"bag",     en:"a bag",          noun:"bag",      pl:false, size:"",        base:2000, items:acc(/^bag:/).map(x=>({ en:x.en, id:"acc:"+x.id, tryo:{ bag:x.id, bagc:"" } })) } ];
+  return C.filter(c=>c.items.length);
+}
+/* il prezzo di un capo: fisso per capo (si ritrova uguale), .00 / .50 / .99 */
+function clothesPrice(cat,item){
+  let h=0; const t=item.id; for(let i=0;i<t.length;i++) h=(h*31+t.charCodeAt(i))>>>0;
+  const tail=[0,50,99][h%3];
+  return cat.base+(h%6)*200+(tail===99?-1:tail);
+}
+const CSHOP={ on:false, prev:null };
+function shopTryOn(o){ try{ Look.tryOn(o); applyLook(); }catch(e){ console.warn("[camerino]",e); } }
+function shopTryOff(){ try{ if(Look.trying()){ Look.tryOn(null); applyLook(); } }catch(e){} }
+/* la foto del camerino: lo specchio della Teca (mirShoot), a figura intera */
+function shopMirrorShot(cb){
+  const t0=performance.now();
+  const step=()=>{
+    if(!_mirReady() && performance.now()-t0<1500){ requestAnimationFrame(step); return; }
+    const sv={ a:MIR.a, face:MIR.face }; MIR.a=0; MIR.face=false;
+    let img=""; try{ img=mirShoot(); }catch(e){}
+    MIR.a=sv.a; MIR.face=sv.face; cb(img); };
+  requestAnimationFrame(step);
+}
+function startClothesShop(npc){
+  CSHOP.on=true; let errors=0;
+  const icon="\u{1F457}", sub=n=>"Shopping with Nina ("+n+"/7)";
+  const cats=clothesCats(), add=e=>{ errors+=e||0; };
+  const bye=line=>{ shopTryOff(); CSHOP.on=false;
+    DialogueBox.open({ npc, icon, sub:"Shopping with Nina", text:line, italian:"",
+      buttons:[{ label:"Bye!", cls:"primary", act:()=>{} }] }); };
+  /* 1 · Can I help you? -> I'm looking for… */
+  const pickCat=()=>DialogueBox.open({ npc, icon, sub:"Shopping with Nina", text:"What are you looking for today?",
+    italian:"Scegli che cosa cerchi: poi lo chiedi a Nina in inglese.",
+    choices:cats.map(c=>({ label:c.en.replace(/^(a|some) /,""), act:()=>step1(c) })).concat([{ label:"Nothing, thanks.", cls:"ghost", act:()=>bye("No problem! Have a nice day!") }]) });
+  const step1=c=>{
+    const ok="I'm looking for "+c.en+".";
+    shopLine({ npc, icon, sub:sub(1), text:"Hello! Can I help you?",
+      italian:"Rispondi: stai cercando "+c.en+".",
+      right:["Yes, I'm looking for "+c.en+"."], wrong:["Yes, I look for "+c.en+".","Yes, I'm looking "+c.en+"."],
+      ok:v=>/looking for/.test(v) && v.indexOf(c.noun.toLowerCase())>=0, ph:"Yes, I'm looking for ...", model:ok,
+      hint:"I'm <b>looking for</b> "+c.en+".", next:(v,e)=>{ add(e); step2(c); } }); };
+  /* 2 · Nina mostra tre capi */
+  const step2=c=>{
+    const show=shuffle(c.items.slice()).slice(0,3);
+    DialogueBox.open({ npc, icon, sub:sub(2), text:"We've got these "+(c.pl?c.noun:(c.noun==="scarf"?"scarves":c.noun+"s"))+". Which one do you like?",
+      italian:"Scegli il capo che ti piace.",
+      choices:show.map(it=>({ label:it.en, act:()=>step3(c,it) })) }); };
+  /* 3 · Can I try it / them on? -> il camerino */
+  const step3=(c,it)=>{
+    const P=c.pl, ok="Can I try "+(P?"them":"it")+" on?";
+    shopLine({ npc, icon, sub:sub(3), text:"Here you are: the "+it.en.toLowerCase()+". "+(P?"They're":"It's")+" very nice!",
+      italian:"Chiedi se puoi provar"+(P?"li":"lo")+".",
+      right:[ok], wrong:["Can I try on "+(P?"them":"it")+"?","Can I trying "+(P?"them":"it")+" on?"],
+      ok:v=>new RegExp("can i try "+(P?"them":"it")+" on").test(v), ph:"Can I ...", model:ok,
+      hint:"Can I <b>try "+(P?"them":"it")+" on</b>?", next:(v,e)=>{ add(e);
+        shopTryOn(it.tryo);
+        DialogueBox.open({ npc, icon, sub:sub(3), text:"Of course. The fitting room is over there.",
+          italian:"Vai in camerino: il capo ce l'hai addosso.", buttons:[{ label:"Thank you!", cls:"primary", act:()=>step4(c,it) }] }); } }); };
+  /* 4 · What size are you? (non per gli accessori) */
+  const step4=(c,it)=>{
+    if(!c.size) return step5(c,it);
+    const shoes=c.size==="shoes";
+    const R=shoes?["I'm a size four.","I'm a size five.","I'm a size six."]:["I'm a small.","I'm a medium.","I'm a large."];
+    shopLine({ npc, icon, sub:sub(4), text:"What size are you?",
+      italian:shoes?"Di' il tuo numero di scarpe (I'm a size…).":"Di' la tua taglia: small, medium o large.",
+      right:R, wrong:[shoes?"I have size five.":"I have a medium."],
+      ok:v=>shoes?/i'?m a size|i am a size|size \w+/.test(v):/\b(small|medium|large)\b/.test(v), ph:"I'm a ...",
+      model:shoes?"I'm a size five.":"I'm a medium.", hint:shoes?"<b>I'm a size</b> five.":"<b>I'm a</b> medium.",
+      next:(v,e)=>{ add(e);
+        const m=/size (\w+)/.exec(v), z=/\b(small|medium|large)\b/.exec(v);
+        c.__size=shoes?(m?"size "+m[1]:""):(z?z[1][0].toUpperCase():""); step5(c,it); } }); };
+  /* 5 · Is it OK? / Are they OK? — con la foto del camerino */
+  const step5=(c,it)=>{
+    const P=c.pl;
+    shopMirrorShot(img=>{
+      const html=img?'<div style="text-align:center;margin:2px 0 6px"><img alt="" src="'+img+'" style="height:190px;border-radius:12px;border:3px solid #fbf7ec;box-shadow:0 3px 10px rgba(0,0,0,.3)"><div style="font-size:12px;color:#7a8790">\u{1FA9E} In the fitting room</div></div>':"";
+      DialogueBox.open({ npc, icon, sub:sub(5), text:(P?"Are they OK?":"Is it OK?"), italian:"Guardati allo specchio del camerino e rispondi.",
+        html, choices:[
+          { label:"\u{1F60D} Yes, I love "+(P?"them":"it")+"!", act:()=>step6(c,it) },
+          { label:"\u{1F615} No, I don't like "+(P?"them":"it")+".", act:()=>step6(c,it) },
+          { label:"\u{1F504} Can I see another one?", act:()=>{ shopTryOff(); step2(c); } } ] }); }); };
+  /* 6 · How much is it / are they? -> il prezzo si ascolta */
+  const step6=(c,it)=>{
+    const P=c.pl, ok=P?"How much are they?":"How much is it?", price=clothesPrice(c,it);
+    shopLine({ npc, icon, sub:sub(6), text:"So, "+(P?"do you want them":"do you want it")+"?",
+      italian:"Prima chiedi quanto cost"+(P?"ano":"a")+".",
+      right:[ok], wrong:P?["How many are they?","How much they are?"]:["How many is it?","How much it is?"],
+      ok:v=>(P?/how much are they/:/how much is it/).test(v), ph:"How much ...", model:ok, hint:"<b>"+ok+"</b>",
+      next:(v,e)=>{ add(e);
+        pricePick({ npc, icon:"\u{1F4B7}", sub:sub(6), said:(P?"They're ":"It's ")+priceWords(price)+".", price,
+          next:t=>{ add(t?1:0); step7(c,it,price); } }); } }); };
+  /* 7 · What do you think? -> I'll take it / I'll leave it */
+  const step7=(c,it,price)=>{
+    const P=c.pl, O=P?"them":"it";
+    shopLine({ npc, icon, sub:sub(7), text:"What do you think?",
+      italian:"Decidi tu: lo prendi (I'll take…) o lo lasci (I'll leave…)?",
+      right:["I'll take "+O+".","I'll leave "+O+"."], wrong:["I'll taking "+O+"."],
+      ok:v=>new RegExp("(i'?ll|i will) (take|leave) "+O).test(v), ph:"I'll ...", model:"I'll take "+O+".",
+      hint:"<b>I'll take "+O+"</b> / <b>I'll leave "+O+"</b>.",
+      next:(v,e)=>{ add(e);
+        if(/leave/.test(v)) return bye("No problem! Come back soon!");
+        pay(c,it,price); } }); };
+  /* 8 · How are you paying? */
+  const pay=(c,it,price)=>{
+    shopLine({ npc, icon:"\u{1F4B3}", sub:"Shopping with Nina — paying", text:"Great! How are you paying?",
+      italian:"Di' come paghi: con la carta o in contanti.",
+      right:["I'm paying by card.","I'm paying with cash."], wrong:["I'm pay by card."],
+      ok:v=>/\b(card|cash)\b/.test(v), ph:"I'm paying ...", model:"I'm paying by card.", hint:"<b>I'm paying</b> by card / with cash.",
+      next:(v,e)=>{ add(e);
+        let got=0; try{ got=Stars.awardShopping(errors===0); refreshStarHud(true); }catch(err){}
+        const html=shopReceiptHtml("THE CLOTHES SHOP","style for everyone",[[it.en+(c.__size?" ("+c.__size+")":""),price]],price);
+        shopTryOff(); CSHOP.on=false;
+        QModal.open({ title:"\u{1F9FE} Your receipt", sub:"",
+          html:html+'<div style="text-align:center;margin-top:10px;font-size:13px;color:#6b7780">\u{1F6CD}️ Shopping in inglese fatto! Per indossarlo in città, sbloccalo nella \u{1F48E} Teca.</div>',
+          buttons:[{ label:"Thank you, bye!", cls:"primary" }] }); } }); };
+  pickCat();
+}
+
+/* ---- IL CORNER SHOP: il cestino e la cassa di Sam -------------------- */
+const CORNER_PRICES={ "schoolbag":1899, "comic":350, "watch":2500, "camera":4599, "mobile phone":8999,
+                      "headphones":2999, "skateboard":2000, "guitar":7500 };
+const CORNER={ on:false, items:[], inters:[] };
+function cornerActive(){ return typeof area!=="undefined" && area===UNIT4.area; }
+function cornerHud(){
+  let el=document.getElementById("cornerHud");
+  if(!el){ el=document.createElement("div"); el.id="cornerHud";
+    el.style.cssText="position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:30;background:#fffdf6;"
+      +"border:2px solid #3d5a80;border-radius:12px;padding:6px 14px;font:600 15px system-ui,sans-serif;color:#2b2318;"
+      +"box-shadow:0 3px 10px rgba(0,0,0,.18);pointer-events:none;display:none";
+    document.body.appendChild(el); }
+  if(!CORNER.on || !cornerActive()){ el.style.display="none"; return; }
+  const n=CORNER.items.length; el.style.display="block";
+  el.innerHTML="\u{1F9FA} "+n+(n===1?" thing":" things")+" · "
+    +(n?"<span style='color:#3d5a80'>go to Sam to pay</span>":"<span style='color:#6b5d4a'>take what you want from the shelves</span>");
+}
+function cornerTick(){
+  const on=CORNER.on && cornerActive();
+  CORNER.inters.forEach(o=>{ o.enabled=on; });
+  cornerHud();
+}
+function cornerInit(){
+  if(CORNER.inters.length || !UNIT4.items) return;
+  UNIT4.items.forEach(e=>{ if(CORNER_PRICES[e.en]==null) return;
+    CORNER.inters.push(addInteract({ id:"corner_"+e.en, area:UNIT4.area, radius:2.2, enabled:false,
+      pos:()=>e.pos, meshes:[e.mesh].filter(Boolean),
+      prompt:'Press <b>E</b> to put the <b>'+e.en+'</b> in your basket',
+      interact:()=>{ if(!CORNER.on) return;
+        if(CORNER.items.length>=8){ toast("\u{1F9FA} Your basket is full! Go to Sam."); return; }
+        CORNER.items.push(e); toast("\u{1F9FA} "+e.en+" — in your basket"); cornerTick(); } })); });
+}
+function startCornerShop(npc){
+  cornerInit(); CORNER.on=true; CORNER.items=[]; cornerTick();
+  DialogueBox.open({ npc, icon:"\u{1F9FA}", sub:"Shopping at the Corner Shop", text:"Sure! Take a basket and choose what you want. Then come back to me.",
+    italian:"Prendi dagli scaffali quello che vuoi (E), poi torna da Sam a pagare.",
+    buttons:[{ label:"OK, thanks!", cls:"primary", act:()=>{} }] });
+}
+function cornerCheckout(npc){
+  const its=CORNER.items.slice(), n=its.length, icon="\u{1F6D2}";
+  if(!n){ DialogueBox.open({ npc, icon:"\u{1F9FA}", sub:"Shopping", text:"Your basket is empty! Take something from the shelves.",
+      italian:"Il cestino è vuoto: prendi qualcosa dagli scaffali (E).",
+      buttons:[{ label:"OK!", cls:"primary", act:()=>{} }, { label:"Put the basket back", cls:"ghost", act:()=>{ CORNER.on=false; cornerTick(); } }] }); return; }
+  const tot=its.reduce((a,e)=>a+CORNER_PRICES[e.en],0), P=n>1;
+  let errors=0; const add=e=>{ errors+=e||0; };
+  shopLine({ npc, icon, sub:"Corner Shop (1/4)", text:"Hello! Have you got everything?", italian:"Rispondi di sì con la risposta breve (have got).",
+    right:["Yes, I have."], wrong:["Yes, I've.","Yes, I got."], ok:v=>/\byes\b.*\bi have\b/.test(v)||/^yes,? i have/.test(v),
+    ph:"Yes, ...", model:"Yes, I have.", hint:"Yes, <b>I have</b>.", next:(v,e)=>{ add(e);
+    const ok=P?"How much are they?":"How much is it?";
+    shopLine({ npc, icon, sub:"Corner Shop (2/4)", text:"Great!", italian:"Chiedi quanto cost"+(P?"ano":"a")+".",
+      right:[ok], wrong:P?["How many are they?","How much they are?"]:["How many is it?","How much it is?"],
+      ok:v=>(P?/how much are they/:/how much is it/).test(v), ph:"How much ...", model:ok, hint:"<b>"+ok+"</b>", next:(v,e)=>{ add(e);
+      pricePick({ npc, icon:"\u{1F4B7}", sub:"Corner Shop (3/4)", said:"That's "+priceWords(tot)+", please.", price:tot, next:t=>{ add(t?1:0);
+        shopLine({ npc, icon, sub:"Corner Shop (4/4)", text:"That's "+gbp(tot)+", please.", italian:"Dai i soldi a Sam: che cosa dici?",
+          right:["Here you are."], wrong:["Here are you.","There you is."], ok:v=>/here you are/.test(v),
+          ph:"Here ...", model:"Here you are.", hint:"<b>Here you are</b>.", next:(v,e)=>{ add(e);
+          let got=0; try{ got=Stars.awardShopping(errors===0); refreshStarHud(true); }catch(err){}
+          const rows={}; its.forEach(x=>{ rows[x.en]=(rows[x.en]||0)+1; });
+          const R=Object.keys(rows).map(k=>[(rows[k]>1?rows[k]+" x ":"")+k, CORNER_PRICES[k]*rows[k]]);
+          CORNER.on=false; CORNER.items=[]; cornerTick();
+          QModal.open({ title:"\u{1F9FE} Your receipt", sub:"", html:shopReceiptHtml("CORNER SHOP","my things · since 2026",R,tot),
+            buttons:[{ label:"Thanks, bye!", cls:"primary" }] }); } }); } }); } }); } });
+}
+/* uscendo dal negozio: si toglie il capo del camerino, il cestino torna a posto */
+setInterval(()=>{
+  try{
+    if(typeof area==="undefined") return;
+    if(Look.trying() && area!==UNIT8.area){ shopTryOff(); CSHOP.on=false; }
+    if(CORNER.on && area!==UNIT4.area){ CORNER.on=false; CORNER.items=[]; }
+    if(CORNER.inters.length) cornerTick();
+  }catch(e){}
+},1000);
 /* col carrello davanti, anche il muso del carrello deve restare fuori dagli scaffali */
 function cartBlocked(x,z,nx,nz){ if(!SHOP.cart) return false; const L=Math.hypot(nx,nz)||1;
   return blocked(x+nx/L*1.05, z+nz/L*1.05) || blocked(x+nx/L*0.6, z+nz/L*0.6); }
@@ -24898,6 +25176,8 @@ function samStepLine(){
   }
 }
 function talkToSam(npc){
+  if(CORNER.on && !(Quest.unit===UNIT4 && Quest.step)){ cornerCheckout(npc); return; }                      // v323: si paga
+  if(freeShopMenu(npc,UNIT4,"\u{1F6D2}","Shopkeeper",startCornerShop,()=>talkToSam(npc))) return;
   if(ambientReady(npc,UNIT4)){ openAmbient(npc,UNIT4.id,"🛒","Shopkeeper"); return; }
   if(Quest.unit===UNIT4 && Quest.step && Quest.step.id==="gram"){ runShopping(npc); return; }
   const line=samStepLine();
@@ -33632,6 +33912,7 @@ function ninaStepLine(){
   }
 }
 function talkToNina(npc){
+  if(freeShopMenu(npc,UNIT8,"\u{1f457}","Shop Assistant",startClothesShop,()=>talkToNina(npc))) return;   // v323
   if(ambientReady(npc,UNIT8)){ openAmbient(npc,UNIT8.id,"\u{1f457}","Shop Assistant"); return; }
   if(Quest.unit===UNIT8 && Quest.step){
     if(Quest.step.id==="gram"){ runWearing(npc); return; }
@@ -63774,7 +64055,15 @@ const Look=(function(){
      vince l'ultima scelta fatta. Si legge ancora dalla vecchia posizione come
      ripiego (Gems.fit), cosi' chi aveva gia' scelto un capo non se lo vede
      tornare viola al primo aggiornamento. */
-  function state(){ const s=Sync.get(K,{})||{};
+  /* v323 — LA PROVA IN CAMERINO (Clothes Shop). TRY si sovrappone allo
+     stato salvato: chi legge state() vede il capo addosso, ma nessun
+     setter lo salva (scrivono su raw()). Vive solo in memoria: chiudendo
+     il gioco o uscendo dal negozio sparisce (shopTryOff). */
+  let TRY=null;
+  function state(){ const s=raw(); return TRY?Object.assign(s,TRY):s; }
+  function tryOn(o){ TRY=o?Object.assign({},o):null; }
+  function trying(){ return !!TRY; }
+  function raw(){ const s=Sync.get(K,{})||{};
     return { rig:(s.rig==="f"?"f":"m"), skin:s.skin||"s3", hair:s.hair||"h1",
              /* ⚠️ MIGRAZIONE: k0 non esiste piu'. Tutti quelli che hanno
                 gia' giocato ce l'hanno scritto in et_look (era il default),
@@ -63795,31 +64084,32 @@ const Look=(function(){
   function rig(){ return state().rig; }
   function skin(){ return state().skin; }
   function hair(){ return state().hair; }
-  function setRig(id){ const s=state(); s.rig=(id==="f"?"f":"m"); save(s); return s.rig; }
-  function setSkin(id){ const s=state(); s.skin=id; save(s); return id; }
-  function setHair(id){ const s=state(); s.hair=id; save(s); return id; }
+  function setRig(id){ const s=raw(); s.rig=(id==="f"?"f":"m"); save(s); return s.rig; }
+  function setSkin(id){ const s=raw(); s.skin=id; save(s); return id; }
+  function setHair(id){ const s=raw(); s.hair=id; save(s); return id; }
   function shoes(){ return state().shoes; }
-  function setShoes(id){ const s=state(); s.shoes=id; save(s); return id; }
+  function setShoes(id){ const s=raw(); s.shoes=id; save(s); return id; }
   function fit(){ return state().fit; }
-  function setFit(id){ const s=state(); s.fit=id; save(s); return id; }
-  function setBottom(id){ const s=state(); s.bottom=id; save(s); return id; }
-  function setBcol(id){ const s=state(); s.bcol=id; save(s); return id; }
+  function setFit(id){ const s=raw(); s.fit=id; save(s); return id; }
+  function setBottom(id){ const s=raw(); s.bottom=id; save(s); return id; }
+  function setBcol(id){ const s=raw(); s.bcol=id; save(s); return id; }
   function setAcc(slot,id){ const s=state(), k=(slot==="head"?"hat":slot); s[k]=id||""; save(s); return id; }
   function setAccCol(slot,id){ const s=state(), k=(slot==="head"?"hat":slot)+"c"; s[k]=id||""; save(s); return id; }
-  function setCut(id){ const s=state(); s.cut=id||""; save(s); return id; }
+  function setCut(id){ const s=raw(); s.cut=id||""; save(s); return id; }
   /* v313: cambiando giacca il colore torna «Original». A differenza di
      cappelli e collane (colore per slot, vedi ACC_COLS) il colore di una
      giacca E' la giacca — denim blu, pelle nera, impermeabile giallo — e
      tenendolo si vedevano tutte uguali. Si puo' sempre ritingere dopo. */
-  function setCoat(id){ const s=state(); if((s.coat||"")!==(id||"")) s.coatc=""; s.coat=id||""; save(s); return id; }
-  function setCoatCol(id){ const s=state(); s.coatc=id||""; save(s); return id; }
+  function setCoat(id){ const s=raw(); if((s.coat||"")!==(id||"")) s.coatc=""; s.coat=id||""; save(s); return id; }
+  function setCoatCol(id){ const s=raw(); s.coatc=id||""; save(s); return id; }
   function setFace(part,id){ if(["eyes","eyec","nose","mouth"].indexOf(part)<0) return null;
-    const s=state(); s[part]=id||""; save(s); return id; }
+    const s=raw(); s[part]=id||""; save(s); return id; }
   function hairOpen(h){ return lookProf() || h.cost<=0 || Gems.count()>=h.cost; }
   function reset(){ save({rig:"m",skin:"s3",hair:"h1",shoes:"k1",fit:"purple",bottom:"",bcol:"auto",hat:"",face:"",neck:"",
                           hatc:"",facec:"",neckc:"",bag:"",bagc:"",cut:"",coat:"",coatc:"",eyes:"",eyec:"",nose:"",mouth:""}); }
   return { state, rig, skin, hair, shoes, fit, setRig, setSkin, setHair,
-           setShoes, setFit, setBottom, setBcol, setAcc, setAccCol, setCut, setCoat, setCoatCol, setFace, hairOpen, reset };
+           setShoes, setFit, setBottom, setBcol, setAcc, setAccCol, setCut, setCoat, setCoatCol, setFace, hairOpen, reset,
+           tryOn, trying };
 })();
 
 const GEM_KINDS={
