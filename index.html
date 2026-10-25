@@ -10213,10 +10213,10 @@ function dinerDebtAsk(){
   const d=DINER.debt, w=DINER.waiter; if(!d||!w) return;
   const p=w.pos(); w.carrier.rotation.y=Math.atan2(player.position.x-p.x,player.position.z-p.z)+NPC_FACE_OFFSET; w.watch=true;
   d.asking=true; DINER.o=d.o;
-  const tot=dinerTotal(d.o).toFixed(2);
-  dinerAsk("pay",v=>dinerPaid(v,true),
-    "Excuse me! You forgot to pay the bill! That's £"+tot+", please. How would you like to pay?",
-    "Scusa! Hai dimenticato di pagare il conto! Sono £"+tot+". Come vuoi pagare?");
+  const c=Math.round(dinerTotal(d.o)*100);                          // v322: il totale si ascolta
+  pricePick({ npc:w, icon:"\u{1F9FE}", sub:DINER.name+" \u2014 the bill",
+    said:"Excuse me! You forgot to pay the bill! That's "+priceWords(c)+", please.", price:c,
+    next:()=>dinerAsk("pay",v=>dinerPaid(v,true),"How would you like to pay?","Come vuoi pagare?") });
 }
 /* hai gia' mangiato e rientri nella veranda */
 function dinerStillHungry(){
@@ -10515,8 +10515,10 @@ function dinerBill(){
     DialogueBox.open({ npc:w, icon:"\u{1F354}", sub:DINER.name, text:"Sure! I'll bring it right away.", italian:"Certo! Te lo porto subito.",
       buttons:[{ label:"Thanks!", cls:"primary", act:()=>{} }] });
     const go=()=>{ dinerCarry("bill"); dinerWaiterTo(s.t,()=>{ dinerEmptyTray();
-      const tot=dinerTotal(o).toFixed(2);
-      dinerAsk("pay",v=>dinerPaid(v,false),"Here's your bill. That's £"+tot+", please. How would you like to pay?");
+      /* v322: il totale si ASCOLTA (pricePick), poi «How would you like to pay?» */
+      const c=Math.round(dinerTotal(o)*100);
+      pricePick({ npc:w, icon:"\u{1F9FE}", sub:DINER.name+" \u2014 the bill", said:"Here's your bill. That's "+priceWords(c)+", please.", price:c,
+        next:()=>dinerAsk("pay",v=>dinerPaid(v,false),"How would you like to pay?","Come vuoi pagare?") });
     }); };
     /* il conto si va a PRENDERE: prima al bancone, poi al tavolo col vassoio */
     const fetch=()=>dinerWaiterHome(()=>dinerLater(900,go));
@@ -11408,8 +11410,12 @@ function talkToNewsagent(npc){
       { label:"Goodbye", cls:"ghost", act:()=>{} } ] });
 }
 /* v291: il giornale te lo da' davvero, e ti resta in mano (vedi NEWS) */
-function buyGazette(npc){
-  const had=NEWS.has; newsGive();
+function buyGazette(npc,paid){
+  const had=NEWS.has;
+  /* v322: si paga anche il giornale, e il prezzo si ASCOLTA (pricePick) */
+  if(!had && !paid) return pricePick({ npc, icon:"\u{1F4F0}", sub:"Newsagent", said:"Here you are. That's one pound twenty, please.",
+    price:120, next:()=>buyGazette(npc,true) });
+  newsGive();
   DialogueBox.open({ npc, icon:"\u{1F4F0}", sub:"Newsagent \u2014 High Street",
     text:had?"You've already got one! Here's today's Gazette anyway. Enjoy it!":"Here you are! Today's Gazette. Enjoy your reading!",
     italian:had?"Ce l'hai gia'! Eccoti comunque la Gazette di oggi. Buona lettura!":"Ecco a te! La Gazette di oggi. Buona lettura! (Siediti su una panchina per leggerla.)",
@@ -22751,6 +22757,46 @@ function _numW(n){ const o=["zero","one","two","three","four","five","six","seve
 function priceWords(p){ const L=Math.floor(p/100), P=p%100;
   if(!L) return _numW(P)+" p";
   return _numW(L)+(L===1?" pound":" pounds")+(P?" "+_numW(P):""); }
+/* =====================================================================
+   v322 — IL PREZZO SI ASCOLTA (Giacomo, 25 ott: «quando viene detto il
+   prezzo, non viene scritto ma deve essere indovinato con una risposta
+   multipla — in tutti i posti dove compri»). Come alla cassa del Market
+   (shopCheckout, passo 3): chi vende dice il prezzo SOLO A VOCE, sullo
+   schermo «Listen: how much is it?», un 🔊 per riascoltare e tre prezzi
+   fra cui scegliere. Le alternative sono quelle che si confondono
+   ascoltando: thirteen/thirty, fifteen/fifty… e qualche sterlina in piu' o
+   in meno. Nessun muro: al secondo errore si dice il prezzo e si va avanti.
+   Senza voce sul dispositivo (e solo allora) il prezzo si legge.
+   o = { npc, icon, sub, said (la frase col prezzo a parole), price (in
+         pence), voice, next(errori) }
+   ===================================================================== */
+function priceOptions(c){
+  const L=Math.floor(c/100), P=c%100, alts=[];
+  const SW={13:30,14:40,15:50,16:60,17:70,18:80,19:90,30:13,40:14,50:15,60:16,70:17,80:18,90:19};
+  if(SW[L]!=null) alts.push(SW[L]*100+P);                 // thirteen pounds / thirty pounds
+  if(P && SW[P]!=null) alts.push(L*100+SW[P]);            // four pounds fifteen / four pounds fifty
+  alts.push(c+100, c>=200?c-100:c+200, c+50, c>=80?c-50:c+150, c+20);
+  const out=[c]; for(let i=0;i<alts.length && out.length<3;i++){ const v=alts[i]; if(v>0 && out.indexOf(v)<0) out.push(v); }
+  return shuffle(out);
+}
+function pricePick(o){
+  let tries=0; const opts=priceOptions(o.price);
+  const noVoice=(function(){ try{ return !TTS.available()||((speechSynthesis.getVoices()||[]).length===0); }catch(e){ return true; } })();
+  const play=()=>{ try{ TTS.say(o.said,o.voice||((o.npc&&o.npc.gender)?{gender:o.npc.gender}:{})); }catch(e){} };
+  const ask=()=>{
+    DialogueBox.open({ npc:o.npc, icon:"\u{1F50A}", sub:(o.sub||"")+" \u2014 listening", autoSpeak:false,
+      text: noVoice ? o.said : "\u{1F50A} Listen: how much is it?",
+      italian:"Ascolta il prezzo e tocca quello giusto (\u{1F50A} per riascoltare).",
+      html:'<div style="text-align:center;margin:4px 0 8px"><button type="button" id="pricePickReplay" class="qm-btn ghost" style="padding:6px 16px">\u{1F50A} Listen again</button></div>',
+      choices:opts.map(v=>({ label:gbp(v), act:()=>{
+        if(v===o.price){ o.next(tries); return; }
+        tries++;
+        if(tries>=2){ toast("\u{1F50E} It's "+gbp(o.price)+" \u2014 "+priceWords(o.price)+"."); o.next(tries); return; }
+        toast("\u274C Listen again! \u{1F50A}"); ask(); } })) });
+    const rb=document.getElementById("pricePickReplay"); if(rb) rb.onclick=play;
+    if(!noVoice) setTimeout(play,250); };
+  ask();
+}
 function marketDisplay(lines){ const dt=MARKET.dispTex; if(!dt) return;
   const c=dt.getContext(); c.fillStyle="#0e2a1a"; c.fillRect(0,0,256,120);
   c.fillStyle="#7dffb0"; c.font="bold 26px monospace"; c.textAlign="left"; c.textBaseline="middle";
@@ -25997,10 +26043,14 @@ function runTicket(npc){
 function ticketAnswer(npc,e){
   let en,it;
   if(e.kind==="time"){ en="The next train leaves at 10:40, from platform 1."; it="Tom ti dà l'orario e il binario."; }
-  else if(e.kind==="single"){ en="A single to "+e.dest+". That's £12, please. Platform 2."; it="Sola andata per "+e.dest+": £12, binario 2."; }
-  else { en="A return to "+e.dest+". That's £20, please. Platform 1."; it="Andata e ritorno per "+e.dest+": £20, binario 1."; }
-  DialogueBox.open({ npc, icon:"🎫", sub:"Tom risponde", text:en, italian:it,
+  else if(e.kind==="single"){ en="Here's your ticket: a single to "+e.dest+". It's £12. Platform 2."; it="Sola andata per "+e.dest+": £12, binario 2."; }
+  else { en="Here's your ticket: a return to "+e.dest+". It's £20. Platform 1."; it="Andata e ritorno per "+e.dest+": £20, binario 1."; }
+  const show=()=>DialogueBox.open({ npc, icon:"🎫", sub:"Tom risponde", text:en, italian:it,
     buttons:[{label:"Thanks!", cls:"primary", act:()=>ticketNext(npc)}] });
+  /* v322: il prezzo del biglietto si ASCOLTA prima (pricePick) */
+  if(e.kind==="time") return show();
+  const c=(e.kind==="single")?1200:2000;
+  pricePick({ npc, icon:"🎫", sub:"Tom", said:(e.kind==="single"?"A single to ":"A return to ")+e.dest+". That's "+priceWords(c)+", please.", price:c, next:show });
 }
 function ticketNext(npc){
   const tk=Quest.state.tk; tk.idx++; tk.tries=0; ticketHud();
@@ -31529,14 +31579,15 @@ function runCafeOrder(){
     const anno=(function(){ try{ return studentYear(); }catch(e){ return 1; } })();
     const kind=(anno<=1)?"cafeOrderReady":(o.sbagli?"cafeOrderRetry":"cafeOrder");
     let got=0; try{ got=Stars.awardCafeOrder(npcCardId(npc), kind); }catch(e){}
-    const tot=cafeTotale(o).toFixed(2);
-    const chiusura="Perfect! That's \u00a3"+tot+", please. Here you are \u2014 enjoy!";
-    DialogueBox.open({ npc, icon:"\u2615", sub:o.luogo.nome+" \u2014 order complete"
-        +(got>0?"  \u2b50 +"+got:""),
-      text:chiusura,
-      italian:"Ordine completo! Fanno "+tot+" sterline. Te lo prepara e lo posa sul bancone: vai a prenderlo (E).",
-      html: cafeSlipHtml(o),
-      buttons:[{ label:"Thank you!", cls:"primary", act:function(){ _CAFE=null; cafeServe(npc,o); } }] });
+    const tot=cafeTotale(o).toFixed(2), c=Math.round(cafeTotale(o)*100);
+    /* v322: il totale prima si ASCOLTA (pricePick), poi lo scontrino */
+    pricePick({ npc, icon:"\u2615", sub:o.luogo.nome, said:"Perfect! That's "+priceWords(c)+", please.", price:c, next:function(){
+      DialogueBox.open({ npc, icon:"\u2615", sub:o.luogo.nome+" \u2014 order complete"
+          +(got>0?"  \u2b50 +"+got:""),
+        text:"Here you are \u2014 enjoy!",
+        italian:"Ordine completo! Fanno "+tot+" sterline. Te lo prepara e lo posa sul bancone: vai a prenderlo (E).",
+        html: cafeSlipHtml(o),
+        buttons:[{ label:"Thank you!", cls:"primary", act:function(){ _CAFE=null; cafeServe(npc,o); } }] }); } });
     return;
   }
   const t=CAFE_TURNS[o.idx];
@@ -33789,26 +33840,18 @@ function runClothesShop(npc){
         act:()=>u8ShopDone(npc,"No problem! Come back for the sales next week!") },
     ] });
 }
+/* v322: il prezzo SOLO a voce (pricePick): prima era scritto a parole
+   («It's twenty-two pounds») e bastava leggerlo */
 function u8PriceQuiz(npc,it){
   const inf=u8Info(it.en);
-  TTS.say("It's "+inf.say+".");
-  const others=Object.keys(U8_INFO).map(k=>U8_INFO[k].price).filter(p=>p!==inf.price);
-  const opts=shuffle([inf.price].concat(pick(others,2)));
-  DialogueBox.open({ npc, icon:"\u{1f4b7}", sub:"Prezzi \u2014 abbina la parola al numero",
-    text:"It's "+inf.say+".",
-    italian:"Nina ha detto il prezzo A PAROLE (\u{1f50a}): tocca il cartellino in CIFRE giusto. Il listino \u00e8 appeso al muro ovest.",
-    choices: opts.map(p=>({ label:"\u{1f4b7} "+p, act:()=>{
-      if(p===inf.price){
-        DialogueBox.open({ npc, icon:"\u{1f4b7}", sub:"Right!",
-          text:"That's right \u2014 "+inf.price+".",
-          italian:"\u201c"+inf.say+"\u201d = "+inf.price+".",
-          buttons:[{label:"Ok!", cls:"primary", act:()=>{
-            const cs=Quest.state.cs; if(cs){ cs.idx=2; cs.tries=0; } runClothesShop(npc); }}] });
-      } else {
-        toast("\u274c Not "+p+" \u2014 listen again \u{1f50a}");
-        TTS.say("It's "+inf.say+".");
-        u8PriceQuiz(npc,it);
-      } } })) });
+  pricePick({ npc, icon:"\u{1f4b7}", sub:"Prezzi", said:"It's "+inf.say+".",
+    price:Math.round(parseFloat(String(inf.price).replace(/[^0-9.]/g,""))*100),
+    next:()=>{
+      DialogueBox.open({ npc, icon:"\u{1f4b7}", sub:"Right!",
+        text:"That's right \u2014 "+inf.price+".",
+        italian:"\u201c"+inf.say+"\u201d = "+inf.price+".",
+        buttons:[{label:"Ok!", cls:"primary", act:()=>{
+          const cs=Quest.state.cs; if(cs){ cs.idx=2; cs.tries=0; } runClothesShop(npc); }}] }); } });
 }
 function u8ShopDone(npc,line){
   DialogueBox.open({ npc, icon:"\u{1f389}", sub:"Grazie!", text:line,
@@ -42949,7 +42992,12 @@ function ecoOrderAnswer(npc){
   let en,it;
   if(oc.idx===0){ en=oc.dish.reply; it="Mila ti serve nella stoviglia vera."; }
   else if(oc.idx===1){ en=oc.ask.reply; it=""; }
-  else { en="Two pounds, please. And it's free if you bring your own container!"; it="Due sterline \u2014 gratis se porti il tuo contenitore."; }
+  else {
+    /* v322: il prezzo si ASCOLTA prima (pricePick), poi la frase intera */
+    if(!oc.prezzo){ oc.prezzo=true;
+      return pricePick({ npc:npc||MILA, icon:"\u{1F372}", sub:"Mila", said:"Two pounds, please.", price:200, next:()=>ecoOrderAnswer(npc) }); }
+    oc.prezzo=false;
+    en="That's right: two pounds. And it's free if you bring your own container!"; it="Due sterline \u2014 gratis se porti il tuo contenitore."; }
   DialogueBox.open({ npc:npc||MILA, icon:"\u{1F372}", sub:"Mila risponde", text:en, italian:it,
     buttons:[{label:"Thank you!", cls:"primary", act:()=>{
       oc.idx++; oc.tries=0; ecoOrderHud();
