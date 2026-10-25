@@ -4338,7 +4338,10 @@ function pushPoseFor(root,fwd,grip){
   const out=_armPose(root,pins.map(k=>k.tn),f,
     (o,sd,ctx)=>{ const k=ik(o,sd,ctx); return k.e.subtract(ctx.pU); },
     (o,sd,ctx)=>{ const k=ik(o,sd,ctx); return k.w.subtract(k.e); },
-    ()=>({ d:f.scale(0.85).add(dn.scale(0.5)), n:dn.clone() }));     // dita avanti e in giu', palmo sulla maniglia
+    /* v321b: mano ORIZZONTALE, dita avanti, palmo GIU' sulla maniglia e
+       dorso in su (Giacomo). Verificato di lato: le dita, un po' piegate a
+       riposo, si curvano verso il basso, attorno alla sbarra. */
+    ()=>({ d:f.add(dn.scale(0.12)), n:dn.clone() }));
   const res=pins.map(k=>({ tn:k.tn, p:k.p.clone(), s:k.s.clone(), q:(out.get(k.tn)||k.q).clone() }));
   saved.forEach(k=>{ if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); k.tn.position.copyFrom(k.p); });
   return res;
@@ -22908,7 +22911,8 @@ function mktHud(){
 }
 function shopTakeCart(){
   if(SHOP.cart || !shopAvailable()) return;
-  const cart=LEXPROPS.trolley("shopCart"); cart.parent=player; cart.position.set(0,0,0.95); cart.rotation.set(0,0,0);
+  /* v321: 0,82 m davanti (era 0,95): piu' lontano le braccia, tese del tutto, non arrivavano sopra la maniglia */
+  const cart=LEXPROPS.trolley("shopCart"); cart.parent=player; cart.position.set(0,0,0.82); cart.rotation.set(0,0,0);
   cart.getChildMeshes().forEach(m=>{ m.__dyn=true; m.isPickable=false; });
   SHOP.cart=cart; SHOP.items=[];
   shopPushOn();
@@ -22929,7 +22933,10 @@ function shopPushOn(){
   player.computeWorldMatrix(true); SHOP.cart.computeWorldMatrix(true); _sitRefresh(avatarRoot);
   /* la maniglia del carrello (LEXPROPS.trolley: impugnatura a y 1,16, z -0,52) */
   const bar=V.TransformCoordinates(new V(0,1.16,-0.52),SHOP.cart.getWorldMatrix());
-  const pins=pushPoseFor(avatarRoot,f,o=>bar.add(o.scale(0.19)).subtract(f.scale(0.055)).add(new V(0,0.035,0)));
+  /* il polso sta dietro e sopra la maniglia: cosi' il palmo ci si appoggia
+     sopra col dorso in su (Giacomo: «il dorso delle mani deve essere verso
+     l'alto»); prima le dita penzolavano dietro la sbarra */
+  const pins=pushPoseFor(avatarRoot,f,o=>bar.add(o.scale(0.19)).subtract(f.scale(0.05)).add(new V(0,0.045,0)));
   if(!pins) return;
   SHOP.pushPins=pins; SHOP.pushOf=avatarRoot;
   SHOP.pushObs=scene.onBeforeRenderObservable.add(()=>{
