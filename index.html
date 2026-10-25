@@ -878,7 +878,8 @@
 <button id="povBtn" aria-pressed="false" title="First person">👁️</button>
 <button id="map-btn" title="Town map (M)">🗺️</button>
 <div id="kbhelp">
-  <span><b>WASD</b> / <b>&#8593;&#8595;&#8592;&#8594;</b> move</span>
+  <span><b>WASD</b> move</span>
+  <span><b>&#8593;&#8595;&#8592;&#8594;</b> look around</span>
   <span><b>Shift</b> run</span>
   <span><b>E</b> interact</span>
   <span><b>Q</b> next object</span>
@@ -4900,14 +4901,14 @@ const camera=new BABYLON.ArcRotateCamera("cam",-Math.PI/2,VIEW.beta,VIEW.radius,
    inclinazione dal basso da' piu' fastidio di quanto serva. Non riaprire. */
 camera.lowerBetaLimit=0.35; camera.upperBetaLimit=1.45; camera.lowerRadiusLimit=4; camera.upperRadiusLimit=40;
 camera.wheelDeltaPercentage=0.01; camera.panningSensibility=0; camera.attachControl(canvas,true);
-/* ⚠️ LE FRECCE MUOVONO, NON RUOTANO (Giacomo, 30 set: «con le frecce vorrei
-   muovermi come con WASD, senza cambiare prospettiva»). L'ArcRotateCamera
-   di Babylon aggancia di serie anche la TASTIERA: ←/→ giravano la visuale e
-   ↑/↓ la inclinavano, NELLO STESSO momento in cui il gioco usava le stesse
-   frecce per camminare. Risultato: premendo ← l'avatar andava a sinistra e
-   la camera gli girava attorno. Il movimento con le frecce e' gia' quello di
-   WASD (vedi il loop di gioco): basta togliere alla camera il suo ingresso
-   da tastiera. La visuale si gira col mouse/dito, come prima. */
+/* ⚠️ L'ArcRotateCamera di Babylon aggancia di serie anche la TASTIERA:
+   ←/→ giravano la visuale e ↑/↓ la inclinavano, NELLO STESSO momento in cui
+   il gioco usava le frecce per camminare (30 set). Il suo ingresso da
+   tastiera resta tolto.
+   v320 (Giacomo, 25 ott: «le frecce su giu destra e sinistra cambiano la
+   prospettiva, lasciamo solo wasd per spostarsi»): ora le frecce sono
+   SOLO della visuale e le guida il loop di gioco (vedi _camKeys), con una
+   velocita' sua, uguale a ogni frame rate; WASD cammina. */
 try{ camera.inputs.removeByType("ArcRotateCameraKeyboardMoveInput"); }catch(e){}
 // --- INPUT CAMERA ---
 // desktop = orbita col tasto DESTRO (sinistro libero per tap-to-move)
@@ -45150,6 +45151,22 @@ function povSet(on,silent){
   return POV.on;
 }
 function povToggle(){ return povSet(!POV.on); }
+/* v320 — LE FRECCE GUARDANO. ← → girano la visuale attorno a te (in prima
+   persona: giri la testa, e il corpo con lei), ↑ alza lo sguardo, ↓ lo
+   abbassa (in terza persona: la camera scende verso l'orizzonte o sale a
+   volo d'uccello). Velocita' in radianti al secondo, non per fotogramma: su
+   un Chromebook a 20 fps si gira come su un PC a 60. I limiti di beta sono
+   quelli della camera (la ArcRotateCamera li riapplica da sola). */
+const CAM_KEYS={ turn:1.7, tilt:0.9 };
+function _camKeys(){
+  const L=keys["arrowleft"], R=keys["arrowright"], U=keys["arrowup"], D=keys["arrowdown"];
+  if(!(L||R||U||D)) return;
+  const dt=Math.min(0.1,engine.getDeltaTime()/1000);
+  if(L) camera.alpha-=CAM_KEYS.turn*dt;
+  if(R) camera.alpha+=CAM_KEYS.turn*dt;
+  if(U) camera.beta=Math.min(camera.upperBetaLimit,camera.beta+CAM_KEYS.tilt*dt);
+  if(D) camera.beta=Math.max(camera.lowerBetaLimit,camera.beta-CAM_KEYS.tilt*dt);
+}
 /* gli occhi: sopra il giocatore, un filo davanti. v291: 4 cm e non 10 — col
    corpo visibile, a 10 cm guardando in basso il petto restava dietro la
    camera e si vedevano solo le scarpe; la testa e' fuori camera, non taglia */
@@ -45412,13 +45429,14 @@ scene.registerBeforeRender(()=>{
      trascinamento sullo schermo ruota la visuale come sempre (il velo
      trasparente del popup non ferma piu' il puntatore: vedi #quest-modal). */
   const dlgLock=(typeof _dlgOpen==="function") && _dlgOpen();
+  _camKeys();                                    // v320: le frecce girano la visuale, sempre (anche col popup)
   if(dlgLock){
-    if(keys["a"]||keys["arrowleft"])  camera.alpha-=0.028;
-    if(keys["d"]||keys["arrowright"]) camera.alpha+=0.028;
+    if(keys["a"]) camera.alpha-=0.028;
+    if(keys["d"]) camera.alpha+=0.028;
     moveTarget=null; pendingInteract=null;
   } else {
-  if(keys["w"]||keys["arrowup"]){mx+=fwd.x;mz+=fwd.z;} if(keys["s"]||keys["arrowdown"]){mx-=fwd.x;mz-=fwd.z;}
-  if(keys["d"]||keys["arrowright"]){mx+=right.x;mz+=right.z;} if(keys["a"]||keys["arrowleft"]){mx-=right.x;mz-=right.z;}
+  if(keys["w"]){mx+=fwd.x;mz+=fwd.z;} if(keys["s"]){mx-=fwd.x;mz-=fwd.z;}
+  if(keys["d"]){mx+=right.x;mz+=right.z;} if(keys["a"]){mx-=right.x;mz-=right.z;}
   if(stickVec.x||stickVec.y){mx+=fwd.x*(-stickVec.y)+right.x*stickVec.x; mz+=fwd.z*(-stickVec.y)+right.z*stickVec.x;}
   }
   const len=Math.hypot(mx,mz); let kbMove=false;
@@ -45472,7 +45490,9 @@ scene.registerBeforeRender(()=>{
     player.position.y += (ty-player.position.y)*0.45;
   }
   // camera dietro le spalle SOLO andando avanti (W/stick su): strafe (A/D) e retro (S) NON ruotano la camera
-  const fFwd = keys["w"]||keys["arrowup"]||(stickVec.y<-0.35);
+  /* v320: le frecce non camminano, ma se le stai usando per girarti la
+     ricentratura automatica non deve tirarti indietro (restano in fOther) */
+  const fFwd = keys["w"]||(stickVec.y<-0.35);
   const fOther = keys["a"]||keys["d"]||keys["s"]||keys["arrowleft"]||keys["arrowright"]||keys["arrowdown"]||(Math.abs(stickVec.x)>0.35)||(stickVec.y>0.35);
   if(kbMove && fFwd && !fOther && !POV.on){ const ta=-player.rotation.y-Math.PI/2;
     let d=((ta-camera.alpha+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI; camera.alpha+=d*0.09; }
