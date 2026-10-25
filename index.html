@@ -60717,21 +60717,43 @@ const LOOK_HAIR=[
    piu'. I colori ora escono uguali al campione: vedi applyPlayerFit. */
 const LOOK_SHOES=[
   { id:"k1", en:"White trainers",it:"bianche",       hex:"#e8e6e1", cost:0,  kind:"trainers" },
-  { id:"k2", en:"Black boots",   it:"nere",          hex:"#26232a", cost:10, kind:"boots" },
+  { id:"k2", en:"Black boots",   it:"nere",          hex:"#26232a", cost:10, kind:"boots", boot:"riding" },
   { id:"k3", en:"Red trainers",  it:"rosse",         hex:"#b2402f", cost:20, kind:"trainers" },
-  { id:"k7", en:"Brown boots",   it:"marroni",       hex:"#7a4a26", cost:28, kind:"boots" },
+  { id:"k7", en:"Brown boots",   it:"marroni",       hex:"#7a4a26", cost:28, kind:"boots", boot:"buckle" },
   { id:"k4", en:"Blue trainers", it:"blu",           hex:"#2f5a94", cost:36, kind:"trainers" },
   { id:"k8", en:"Pink trainers", it:"rosa",          hex:"#e07aa6", cost:46, kind:"trainers" },
-  { id:"k5", en:"Green boots",   it:"verdi",         hex:"#3d7a4a", cost:58, kind:"boots" },
+  { id:"k5", en:"Green boots",   it:"verdi",         hex:"#3d7a4a", cost:58, kind:"boots", boot:"wellies" },
   { id:"k6", en:"Gold trainers", it:"dorate",        hex:"#c9a03c", cost:88, kind:"trainers" },
 ];
-/* v301 — il GAMBALE dello stivale. Si misura sul corpo vero, in posa di
-   riposo (come pantaloni e accessori): caviglia = osso Foot, ginocchio =
-   osso LowerLeg; il raggio e' quello della gamba fra caviglia e meta'
-   stinco (+1 cm) e mai piu' stretto della bocca della scarpa. Il pezzo e'
-   rigido e si appende all'osso LowerLeg di ogni lato: segue lo stinco
-   quando si cammina, si corre o ci si siede. Con i pantaloni lunghi il
-   gambale sta sotto la stoffa: non si costruisce. */
+/* v301 — il GAMBALE dello stivale. Con i pantaloni lunghi disegnati
+   (_botTube) il gambale sta sotto la stoffa: non si costruisce.
+   v317 — STIVALI VERI (Giacomo, 25 ott: «gli stivali per girl sono
+   terribili! Due cilindri sopra le scarpe!! Rendili piu' realistici e
+   carini, sia i verdi che i neri che i marroni»). Il gambale v301 era un
+   cilindro RIGIDO appeso allo stinco, largo quanto il punto piu' largo
+   della gamba, con un salvagente in cima: un secchio sopra la scarpa,
+   staccato dalla scarpa (fra i due si vedeva la caviglia) e, sulla
+   ragazza, largo quanto i jeans.
+   Ora e' un guscio SKINNED, con lo stesso metodo dei pantaloni veri:
+   · anelli dal collo della scarpa (3 cm SOTTO il suo bordo: la scarpa ci
+     entra dentro, niente fessura) fin sotto al ginocchio; a ogni quota e per
+     ogni spicchio il raggio VERO di gamba e scarpa in posa di riposo, piu'
+     qualche millimetro, lisciato in giro e in altezza;
+   · ogni vertice prende i pesi dei quattro campioni piu' vicini (gamba o
+     scarpa): in basso segue il piede, in alto lo stinco, e alla caviglia si
+     piega invece di restare dritto;
+   · in cima lo spessore vero (orlo + parete interna scura).
+   Tre modelli, uno per colore (LOOK_SHOES.boot, misure in BOOT_STY):
+     riding  (nere)    alti, aderenti, cerniera sul lato interno
+     buckle  (marroni) a meta' polpaccio, risvolto chiaro, cinturino con fibbia
+     wellies (verdi)   da pioggia, lucidi, piu' larghi in cima, bordino e linguetta
+   ⚠️ Materiali PROPRI (non _coatMat): lo stivale si butta con
+   dispose(false,true), e i materiali della cache sono di tutti. */
+const BOOT_STY={
+  riding: { h:0.86, gap:0.007, flare:0.04, sl:0.16, spec:0.34, pw:46 },
+  buckle: { h:0.70, gap:0.008, flare:0.06, sl:0.14, spec:0.14, pw:22 },
+  wellies:{ h:0.64, gap:0.010, flare:0.18, sl:0.05, spec:0.60, pw:90 },   // gomma: un tubo dritto, non segue le pieghe
+};
 function dressShoes(meshes,kind,hex,holder){
   if(!meshes) return false;
   const old=meshes.__boots||[];
@@ -60741,50 +60763,161 @@ function dressShoes(meshes,kind,hex,holder){
   if(kind!=="boots" || !hex) return old.length>0;
   const tube=meshes.find(m=>m.__tube && m.__tube.meshes && m.__tube.meshes.some(x=>x.isEnabled()));
   if(tube) return old.length>0;
-  const F=meshes.find(m=>m.skeleton && m.material && /_avFeet/.test(m.material.name||"")); if(!F) return old.length>0;
-  const V3=BABYLON.Vector3, sk=F.skeleton, up=new V3(0,1,0);
-  _botRest(sk); F.computeWorldMatrix(true);
-  const tn=n=>{ const b=sk.bones.find(x=>new RegExp("(^|_)"+n.replace(".","\\.")+"$").test(x.name)); return b&&b.getTransformNode?b.getTransformNode():null; };
-  /* vertici in posa di riposo (scarpa + gambe), nel mondo */
-  const pts=m=>{ try{ m.computeWorldMatrix(true); const W=m.getWorldMatrix(), lp=m.getPositionData(true,false), o=[];
-      for(let i=0;i<lp.length;i+=3) o.push(V3.TransformCoordinates(new V3(lp[i],lp[i+1],lp[i+2]),W)); return o; }catch(e){ return []; } };
-  const feetP=pts(F), legP=[]; meshes.filter(m=>/Casual_Legs/.test(m.name)&&m.skeleton&&m.isEnabled()).forEach(m=>{ if(m.skeleton!==sk) _botRest(m.skeleton); pts(m).forEach(p=>legP.push(p)); });
-  const side={};
-  ["L","R"].forEach(sd=>{ const K=tn("LowerLeg."+sd), A=tn("Foot."+sd); if(!K||!A) return;
-    K.computeWorldMatrix(true); A.computeWorldMatrix(true);
-    side[sd]={ K, k:K.getAbsolutePosition().clone(), a:A.getAbsolutePosition().clone() }; });
-  if(!side.L || !side.R) return old.length>0;
-  const dAx=(p,S)=>{ const d=S.k.subtract(S.a), t=Math.max(0,Math.min(1,V3.Dot(p.subtract(S.a),d)/d.lengthSquared())); return { t, r:V3.Distance(p,S.a.add(d.scale(t))) }; };
-  const mat=new BABYLON.StandardMaterial("bootM",scene); const c=BABYLON.Color3.FromHexString(hex);
-  mat.diffuseColor=c; mat.specularColor=new BABYLON.Color3(0.12,0.12,0.12); mat.specularPower=40; mat.emissiveColor=c.scale(0.12);
-  const made=[];
-  ["L","R"].forEach(sd=>{ const S=side[sd], O=side[sd==="L"?"R":"L"], len=V3.Distance(S.k,S.a), dir=S.k.subtract(S.a).normalize();
-    /* bocca della scarpa: i vertici della scarpa di questo lato vicino alla caviglia */
-    let shoeTop=S.a.y, rShoe=0.045;
-    feetP.forEach(p=>{ if(V3.Distance(p,S.a)>V3.Distance(p,O.a)) return; if(p.y>shoeTop) shoeTop=p.y; });
-    feetP.forEach(p=>{ if(V3.Distance(p,S.a)>V3.Distance(p,O.a)) return; if(p.y>shoeTop-0.025){ const r=Math.hypot(p.x-S.a.x,p.z-S.a.z); if(r>rShoe && r<0.12) rShoe=r; } });
-    let rLeg=0; legP.forEach(p=>{ const a=dAx(p,S), b=dAx(p,O); if(a.r>b.r) return; if(a.t<0.04||a.t>0.5) return; if(a.r>rLeg && a.r<0.11) rLeg=a.r; });
-    const r=Math.max(rLeg+0.012, rShoe*0.92, 0.045);
-    const y0=Math.min(shoeTop, S.a.y+0.06)-0.015, h=Math.max(0.12, len*0.48);
-    const base=S.a.add(dir.scale((y0-S.a.y)/Math.max(0.3,dir.y)));
-    const shaft=BABYLON.MeshBuilder.CreateCylinder("bootShaft",{height:h,diameterTop:2*(r+0.006),diameterBottom:2*Math.max(r,rShoe),tessellation:22,cap:BABYLON.Mesh.NO_CAP},scene);
-    const cuff=BABYLON.MeshBuilder.CreateTorus("bootCuff",{diameter:2*(r+0.008),thickness:0.016,tessellation:22},scene);
-    cuff.position.y=h/2; cuff.parent=shaft;
-    /* ⚠️ v302 (Giacomo: «i boots scompaiono se cambi scarpe»): come cappelli e
-       occhiali, sempre selezionati. Senza, la scena (che sceglie cosa
-       disegnare con l'octree) li vedeva solo dopo una ricostruzione
-       dell'albero: da stivale a stivale il gambale nuovo restava invisibile. */
-    [shaft,cuff].forEach(m=>{ m.material=mat; m.isPickable=false; m.__noTint=true; m.alwaysSelectAsActiveMesh=true; m.applyFog=true; });
-    mat.backFaceCulling=false;
-    shaft.position.copyFrom(base.add(dir.scale(h/2)));
-    shaft.rotationQuaternion=BABYLON.Quaternion.FromUnitVectorsToRef(up,dir,new BABYLON.Quaternion());
-    shaft.computeWorldMatrix(true); shaft.setParent(S.K);
-    made.push(shaft,cuff); });
+  const V3=BABYLON.Vector3, VB=BABYLON.VertexBuffer, up=new V3(0,1,0);
+  const Ls=meshes.filter(m=>/Casual_Legs/.test(m.name)&&m.skeleton&&m.getTotalVertices()>0),
+        Fs=meshes.filter(m=>/Casual_Feet/.test(m.name)&&m.skeleton&&m.getTotalVertices()>0);
+  if(!Ls.length || !Fs.length) return old.length>0;
+  const R=Ls[0], sk=R.skeleton;
+  const ST=BOOT_STY[(LOOK_SHOES.find(x=>x.kind==="boots"&&x.hex===hex)||{}).boot]||BOOT_STY.riding,
+        sty=Object.keys(BOOT_STY).find(k=>BOOT_STY[k]===ST);
+  /* campioni in posa di riposo: posizione nel mondo, pesi tradotti sulle ossa
+     di R, lato (osso dominante .L/.R), e se e' scarpa (la pelle della
+     caviglia della ragazza sta nella mesh dei piedi, ma e' gamba) */
+  const S=[];
+  [].concat(Ls,Fs).forEach(m=>{ const skm=m.skeleton; _botRest(skm); m.computeWorldMatrix(true);
+    const Wm=m.getWorldMatrix(), lp=m.getPositionData(true,false), mi=m.getVerticesData(VB.MatricesIndicesKind), mw=m.getVerticesData(VB.MatricesWeightsKind);
+    if(!lp||!mi||!mw) return;
+    const map=skm.bones.map(b=>sk.bones.findIndex(x=>x.name===b.name));
+    const shoe=/Casual_Feet/.test(m.name) && !(m.material && /^Skin/.test(m.material.name||""));
+    for(let v=0;v<lp.length/3;v++){ let d=0,w=-1; for(let k=0;k<4;k++) if(mw[4*v+k]>w){ w=mw[4*v+k]; d=mi[4*v+k]; }
+      const nm=skm.bones[d]?skm.bones[d].name:"", side=/\.L$/.test(nm)?1:(/\.R$/.test(nm)?-1:0);
+      S.push({ p:V3.TransformCoordinates(new V3(lp[3*v],lp[3*v+1],lp[3*v+2]),Wm),
+               mi:[0,1,2,3].map(k=>Math.max(0,map[mi[4*v+k]])), mw:[0,1,2,3].map(k=>mw[4*v+k]), side, shoe }); } });
+  _botRest(sk); R.computeWorldMatrix(true);
+  const W=R.getWorldMatrix(), TM=sk.getTransformMatrices(R);
+  const hz=q=>new V3(q.x,0,q.z), cen=l=>{ const c=new V3(0,0,0); l.forEach(s=>c.addInPlace(s.p)); return c.scale(1/Math.max(1,l.length)); };
+  const SL=S.filter(s=>s.side===1&&!s.shoe), SR=S.filter(s=>s.side===-1&&!s.shoe);
+  if(!SL.length || !SR.length) return old.length>0;
+  const D=hz(cen(SL).subtract(cen(SR))).normalize();                 // verso la gamba sinistra
+  let Fw=V3.Cross(D,up).normalize();                                 // il davanti: verso le punte
+  { const sh=S.filter(s=>s.shoe), lg=S.filter(s=>!s.shoe); let yb=1e9; lg.forEach(s=>{ if(s.p.y<yb) yb=s.p.y; });
+    if(sh.length && V3.Dot(hz(cen(sh).subtract(cen(lg.filter(s=>s.p.y<yb+0.05)))),Fw)<0) Fw=Fw.scale(-1); }
+  const bw=n=>{ const b=sk.bones.find(x=>x.name===n), t=b&&b.getTransformNode&&b.getTransformNode(); if(!t) return null; t.computeWorldMatrix(true); return t.getAbsolutePosition().clone(); };
+  const NA=24, arr=new Float32Array(16), made=[];
+  const col=BABYLON.Color3.FromHexString(hex);
+  const mkMat=(c,spec,pw,nm)=>{ const m=new BABYLON.StandardMaterial(nm||"bootM",scene); m.diffuseColor=c;
+    m.specularColor=new BABYLON.Color3(spec,spec,spec); m.specularPower=pw; m.emissiveColor=c.scale(0.12);
+    m.backFaceCulling=false; m.twoSidedLighting=true; return m; };
+  const matMain=mkMat(col,ST.spec,ST.pw), matIn=mkMat(col.scale(0.35),0.02,8,"bootInM");
+  const at=(c,a,r,y)=>new V3(c.x,y,c.z).add(Fw.scale(Math.cos(a)*r)).add(D.scale(Math.sin(a)*r));
+  ["L","R"].forEach(nm=>{ const sd=nm==="L"?1:-1, A=bw("Foot."+nm), Kn=bw("LowerLeg."+nm); if(!A||!Kn) return;
+    const mine=S.filter(s=>s.side===sd), leg=mine.filter(s=>!s.shoe), shoe=mine.filter(s=>s.shoe);
+    if(leg.length<10) return;
+    /* ⚠️ il centro dai vertici, non dalle ossa: sulla ragazza non combaciano (vedi _botTube) */
+    let yl=1e9; leg.forEach(s=>{ if(s.p.y<yl) yl=s.p.y; });
+    const cA=cen(leg.filter(s=>s.p.y<yl+0.04));
+    let yShoe=yl; shoe.forEach(s=>{ if(hz(s.p.subtract(cA)).length()<0.08 && s.p.y>yShoe) yShoe=s.p.y; });
+    const yB=yShoe-0.03, yT=Math.max(yB+0.12, A.y+(Kn.y-A.y)*ST.h);
+    const N=Math.max(8,Math.round((yT-yB)/0.018)), ys=[]; for(let j=0;j<=N;j++) ys.push(yB+(yT-yB)*j/N);
+    /* l'asse: la retta che passa meglio per i baricentri della gamba (minimi
+       quadrati). ⚠️ Non i baricentri uno per uno: seguivano le pieghe dei
+       jeans e lo stivale veniva storto, a onde (visto a schermo). */
+    const cs=ys.map(y=>{ const b=leg.filter(s=>Math.abs(s.p.y-y)<0.02); return b.length?cen(b):null; }).filter(Boolean);
+    let C;
+    { const n=cs.length||1, my=cs.reduce((t,c)=>t+c.y,0)/n, mx=cs.reduce((t,c)=>t+c.x,0)/n, mz=cs.reduce((t,c)=>t+c.z,0)/n;
+      let syy=0, sxy=0, szy=0; cs.forEach(c=>{ syy+=(c.y-my)**2; sxy+=(c.x-mx)*(c.y-my); szy+=(c.z-mz)*(c.y-my); });
+      const kx=(cs.length>2&&syy>1e-6)?sxy/syy:0, kz=(cs.length>2&&syy>1e-6)?szy/syy:0;
+      C=cs.length?ys.map(y=>new V3(mx+kx*(y-my),y,mz+kz*(y-my))):ys.map(y=>new V3(cA.x,y,cA.z)); }
+    /* i raggi: per spicchio il punto piu' lontano di gamba e collo della scarpa
+       (la punta della scarpa resta fuori: oltre 8,5 cm non conta) */
+    let RR=ys.map((y,j)=>{ const c=C[j], rr=new Array(NA).fill(0);
+      mine.forEach(s=>{ if(Math.abs(s.p.y-y)>0.016) return; const d=hz(s.p.subtract(c)), r=d.length(); if(r>0.085) return;
+        const a=Math.atan2(V3.Dot(d,D),V3.Dot(d,Fw)), i=((Math.round(a/(2*Math.PI)*NA))%NA+NA)%NA; if(r>rr[i]) rr[i]=r; });
+      let cl=rr.map((r,i)=>{ let m=0; for(let k=-2;k<=2;k++) m=Math.max(m,rr[(i+k+NA)%NA]); return m; });
+      const full=cl.filter(r=>r>0), avg=full.length?full.reduce((a,b)=>a+b,0)/full.length:0.045;
+      return cl.map(r=>Math.max(0.03,r>0?r:avg)); });
+    /* ⚠️ liscio ma MAI dentro la gamba: lisciando e basta il polpaccio
+       bucava lo stivale (visto a schermo). In altezza un inviluppo a
+       pendenza limitata: scendendo dal polpaccio al massimo ST.sl (1,6 cm
+       ogni 10 cm per i riding: il gambale scende dritto), salendo dal tallone molto di piu'
+       (se no il tallone allargava tutto il fondo: una gonnellina sopra la
+       scarpa, visto a schermo). Poi un filo di lisciatura in giro, sempre
+       col pavimento della misura vera. */
+    const RAW=RR.map(r=>r.slice());
+    RR=ys.map((y,j)=>{ const o=new Array(NA).fill(0); for(let k=0;k<ys.length;k++){ const dy=(ys[k]>y)?(ys[k]-y)*ST.sl:(y-ys[k])*0.9;
+      for(let i=0;i<NA;i++){ const v=RAW[k][i]-dy; if(v>o[i]) o[i]=v; } } return o; });
+    for(let p=0;p<2;p++) RR=RR.map((cl,j)=>cl.map((r,i)=>Math.max(RAW[j][i],(cl[(i+NA-1)%NA]+2*r+cl[(i+1)%NA])/4)));
+    /* lo stivale non si stringe salendo: dal polpaccio in su scende dritto o si allarga */
+    const jC=Math.round(N*0.45); for(let j=jC+1;j<=N;j++) for(let i=0;i<NA;i++) RR[j][i]=Math.max(RR[j][i],RR[j-1][i]*0.995);
+    RR=RR.map((r,j)=>{ const t=j/N; return r.map(x=>(x+ST.gap)*(1+ST.flare*Math.pow(t,1.6))); });
+    const rAt=(y,a)=>{ let j=Math.round((y-yB)/(yT-yB)*N); j=Math.max(0,Math.min(N,j)); const i=((Math.round(a/(2*Math.PI)*NA))%NA+NA)%NA; return { c:C[j], r:RR[j][i] }; };
+    /* pesi: i quattro campioni piu' vicini, pesati con la distanza (la piega alla caviglia e' morbida) */
+    const pool=mine.filter(s=>s.p.y<yT+0.1);
+    const mk=(pts,tris,mat,name)=>{ const V=[],MI=[],MW=[];
+      pts.forEach(p=>{ const best=[];
+        for(let q=0;q<pool.length;q++){ const s=pool[q], d=V3.DistanceSquared(p,s.p);
+          if(best.length<4 || d<best[3].d){ best.push({ s, d }); best.sort((u,v)=>u.d-v.d); if(best.length>4) best.pop(); } }
+        const acc=new Map(); best.forEach(b=>{ const w0=1/(Math.sqrt(b.d)+0.004); for(let k=0;k<4;k++){ const w=b.s.mw[k]*w0; if(w>0) acc.set(b.s.mi[k],(acc.get(b.s.mi[k])||0)+w); } });
+        let ent=[...acc.entries()].sort((u,v)=>v[1]-u[1]).slice(0,4); const tw=ent.reduce((t,e)=>t+e[1],0)||1;
+        ent=ent.map(e=>[e[0],e[1]/tw]); while(ent.length<4) ent.push([0,0]);
+        arr.fill(0); ent.forEach(e=>{ if(e[1]) for(let q=0;q<16;q++) arr[q]+=TM[e[0]*16+q]*e[1]; });
+        const l=V3.TransformCoordinates(p,BABYLON.Matrix.FromArray(arr).multiply(W).invert());
+        V.push(l.x,l.y,l.z); ent.forEach(e=>{ MI.push(e[0]); MW.push(e[1]); }); });
+      const I=[]; tris.forEach(t=>I.push(t[0],t[1],t[2])); const Nn=[]; BABYLON.VertexData.ComputeNormals(V,I,Nn);
+      const vd=new BABYLON.VertexData(); vd.positions=V; vd.indices=I; vd.normals=Nn;
+      const m=new BABYLON.Mesh(name||"bootShaft",scene); vd.applyToMesh(m,false);
+      m.setVerticesData(VB.MatricesIndicesKind,MI,false,4); m.setVerticesData(VB.MatricesWeightsKind,MW,false,4);
+      m.parent=R.parent; m.position.copyFrom(R.position); m.rotation.copyFrom(R.rotation);
+      if(R.rotationQuaternion) m.rotationQuaternion=R.rotationQuaternion.clone(); m.scaling.copyFrom(R.scaling);
+      m.skeleton=sk; m.numBoneInfluencers=4; m.material=mat; m.isPickable=false; m.applyFog=true;
+      /* ⚠️ v302: come cappelli e occhiali, sempre selezionati (l'octree non li
+         vede finche' l'albero non si ricostruisce) */
+      m.alwaysSelectAsActiveMesh=true; m.__npcCast=!!R.__npcCast; m.__noTint=true;
+      made.push(m); return m; };
+    /* un pezzo fatto di anelli: ogni anello = [quota, scarto sul raggio] */
+    const loft=(rows,mat,a0,a1,name)=>{ const P=[], T=[], n=(a0==null)?NA:Math.max(2,Math.round((a1-a0)/(2*Math.PI)*NA*2)+1);
+      rows.forEach(rw=>{ for(let i=0;i<n;i++){ const a=(a0==null)?i/NA*2*Math.PI:a0+(a1-a0)*i/(n-1), g=rAt(rw[0],a);
+        P.push(at(g.c,a,g.r+rw[1],rw[0])); } });
+      const closed=(a0==null);
+      for(let j=0;j<rows.length-1;j++) for(let i=0;i<(closed?n:n-1);i++){ const a=j*n+i, b=j*n+(i+1)%n, c=a+n, d=b+n; T.push([a,b,d],[a,d,c]); }
+      return mk(P,T,mat,name); };
+    const box=(o,ax,ay,az,hx,hy,hzz,mat)=>{ const P=[], T=[];
+      [-1,1].forEach(sx=>[-1,1].forEach(sy=>[-1,1].forEach(sz=>P.push(o.add(ax.scale(sx*hx)).add(ay.scale(sy*hy)).add(az.scale(sz*hzz))))));
+      [[0,1,3,2],[4,6,7,5],[0,4,5,1],[2,3,7,6],[0,2,6,4],[1,5,7,3]].forEach(f=>T.push([f[0],f[1],f[2]],[f[0],f[2],f[3]]));
+      return mk(P,T,mat,"bootBit"); };
+    const dirA=a=>Fw.scale(Math.cos(a)).add(D.scale(Math.sin(a)));
+    const aOut=sd*Math.PI/2, aIn=-sd*Math.PI/2;                       // lato esterno / interno della gamba
+    /* il gambale + l'orlo che rientra (spessore), poi la parete interna scura.
+       In fondo il bordo rientra verso la scarpa: niente scalino visibile. */
+    const rows=[[yB-0.004,-ST.gap-0.004]].concat(ys.map(y=>[y,0])); rows.push([yT+0.002,-0.002]); rows.push([yT+0.002,-0.006]);
+    loft(rows,matMain);
+    loft([[yT+0.002,-0.006],[yT-0.04,-0.007]],matIn,null,null,"bootIn");
+    const yM=(y,dy)=>Math.min(yT,Math.max(yB,y+dy));
+    if(sty==="riding"){
+      /* la cerniera sul lato interno, col tiretto in cima */
+      const zip=mkMat(new BABYLON.Color3(0.55,0.56,0.6),0.7,64,"bootZipM");
+      loft(ys.filter(y=>y>yShoe-0.005&&y<yT-0.008).map(y=>[y,0.0022]),zip,aIn-0.07,aIn+0.07,"bootZip");
+      const g=rAt(yT-0.02,aIn), o=at(g.c,aIn,g.r+0.004,yT-0.026), n=dirA(aIn), s2=V3.Cross(up,n).normalize();
+      box(o,s2,up,n,0.0045,0.009,0.002,zip);
+    }
+    if(sty==="buckle"){
+      /* il risvolto chiaro in cima e il cinturino con la fibbia alla caviglia */
+      const cuffM=mkMat(BABYLON.Color3.FromHexString(_hexMul(hex,1.45)),0.08,16,"bootCuffM");
+      loft([[yT-0.046,0.001],[yT-0.041,0.007],[yT+0.004,0.007],[yT+0.004,-0.005]],cuffM,null,null,"bootCuff");
+      const strapM=mkMat(BABYLON.Color3.FromHexString(_hexMul(hex,0.62)),0.18,30,"bootStrapM");
+      const yS=yM(yShoe,0.022);
+      loft([[yS-0.01,0.0005],[yS-0.009,0.0045],[yS+0.009,0.0045],[yS+0.01,0.0005]],strapM,null,null,"bootStrap");
+      const gold=mkMat(BABYLON.Color3.FromHexString("#d6b25e"),0.9,64,"bootGoldM");
+      const g=rAt(yS,aOut), o=at(g.c,aOut,g.r+0.008,yS), n=dirA(aOut), s2=V3.Cross(up,n).normalize();
+      box(o,s2,up,n,0.011,0.012,0.0025,gold);
+    }
+    if(sty==="wellies"){
+      /* il bordino chiaro in cima e la linguetta con la fibbia sul lato esterno */
+      const rimM=mkMat(BABYLON.Color3.FromHexString(_hexMul(hex,1.35)),0.6,90,"bootRimM");
+      loft([[yT-0.016,0.0005],[yT-0.014,0.004],[yT+0.004,0.004],[yT+0.004,-0.005]],rimM,null,null,"bootRim");
+      const tabM=mkMat(BABYLON.Color3.FromHexString(_hexMul(hex,0.75)),0.5,80,"bootTabM");
+      loft([[yT-0.062,0.003],[yT-0.06,0.006],[yT-0.03,0.006],[yT-0.028,0.003]],tabM,aOut-0.42,aOut+0.42,"bootTab");
+      const gold=mkMat(BABYLON.Color3.FromHexString("#cfd3d8"),0.9,64,"bootBuckM");
+      const g=rAt(yT-0.045,aOut), o=at(g.c,aOut,g.r+0.0085,yT-0.045), n=dirA(aOut), s2=V3.Cross(up,n).normalize();
+      box(o,s2,up,n,0.008,0.009,0.002,gold);
+    }
+  });
+  if(!made.length) return old.length>0;
   meshes.__boots=made;
   if(holder) made.forEach(m=>{ if(holder.indexOf(m)<0) holder.push(m); });
   /* ⚠️ l'octree si ricostruisce da solo solo se cambia il NUMERO di mesh:
-     da stivale a stivale se ne tolgono 4 e se ne mettono 4, il conto torna
-     uguale e il gambale nuovo restava fuori dall'albero, invisibile */
+     da stivale a stivale il conto puo' tornare uguale e il gambale nuovo
+     restava fuori dall'albero, invisibile */
   try{ _octDirty(); }catch(e){}
   return true;
 }
