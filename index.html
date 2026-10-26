@@ -27453,6 +27453,7 @@ function lessonOnSchoolEnter(){
     try{ ripassoCarica(); }catch(e){}            // v400: gli errori dell'ultimo test, mentre Miss Grace saluta
     try{ pianoCarica(); }catch(e){}              // v401: il piano personalizzato, per la fine della lezione
   }
+  try{ pianoAllIngresso(); }catch(e){}         // v404: il piano personalizzato, subito, a tutti gli alunni
   lessonPupilsSync();
   lessonWatchInit();
 }
@@ -27462,7 +27463,7 @@ function lessonGreetWhenFree(id){
   let tries=0;
   const t=()=>{ if(LESSON.pending!==id || LESSON.on || area!=="school") return;
     const qm=document.getElementById("quest-modal");
-    if((qm && qm.classList.contains("show")) || !GRACE){ if(tries++<200) setTimeout(t,400); return; }
+    if((qm && qm.classList.contains("show")) || !GRACE || PIANO.ingresso){ if(tries++<200) setTimeout(t,400); return; }
     lessonInvite(GRACE,id); };
   setTimeout(t,1200);
 }
@@ -28157,7 +28158,7 @@ function _ripAsk(it,n,st,next){
    completate e i recuperi orali non ancora letti; se non c'e' niente da
    fare, Miss Grace non dice niente. ==== */
 const PIANO_LL="https://giacomocreations.github.io/myclass/LiveLearn.html";
-const PIANO={ prom:null, code:null, at:0 };
+const PIANO={ prom:null, code:null, at:0, ingresso:false };
 const PIANO_TIPI={ recovery_scritto:{ ic:"\u{1F4DD}", en:"Recovery", ord:0 },
                    recovery_orale:{ ic:"\u{1F5E3}️", en:"Oral recovery", ord:1 },
                    consolidamento:{ ic:"\u{1F4DA}", en:"Practice", ord:2 },
@@ -28206,6 +28207,37 @@ function pianoCarica(force){
   p.then(d=>{ if(d) PIANO.last={ code, d }; else if(PIANO.prom===p) PIANO.prom=null; });
   return p;
 }
+/* v404 (Giacomo, 26 ott: «quando un alunno entra in Town School, se c'e' un
+   piano personalizzato che lo riguarda, appaia subito, a prescindere dalla
+   lezione o dalla quest»). Entrando a scuola si legge il piano e Miss Grace
+   lo consegna PRIMA del saluto della lezione (lessonGreetWhenFree aspetta
+   PIANO.ingresso). Le attivita' finiscono nel riquadro fisso (#piano-pin),
+   quindi la finestra esce quando c'e' qualcosa di NUOVO: attivita' non
+   ancora nel riquadro o recuperi orali non ancora mostrati in questa
+   sessione. Le altre sono gia' sullo schermo, in alto a destra. */
+function pianoAllIngresso(){
+  if(!_pinChi() || PIANO.ingresso) return;
+  const fine=()=>{ PIANO.ingresso=false; };
+  PIANO.ingresso=true;
+  const attesa=new Promise(r=>setTimeout(()=>r(null),10000));
+  Promise.race([pianoCarica(true),attesa]).then(d=>{
+    if(area!=="school" || LESSON.on || !d){ fine(); return; }
+    const pin=_pinElenco(), visti=PIANO.oraliVisti||(PIANO.oraliVisti={});
+    const nuove=d.att.filter(a=>!pin[a.code]), orali=d.orali.filter(o=>!visti[o.titolo+"|"+o.text.slice(0,40)]);
+    if(!nuove.length && !orali.length){ pianoPinDisegna(); fine(); return; }
+    let tries=0;
+    const apri=()=>{ if(area!=="school" || LESSON.on){ fine(); return; }
+      const qm=document.getElementById("quest-modal");
+      if((qm && qm.classList.contains("show")) || !GRACE){ if(tries++<60){ setTimeout(apri,400); return; } if(!GRACE){ fine(); return; } }
+      orali.forEach(o=>{ visti[o.titolo+"|"+o.text.slice(0,40)]=1; });
+      /* il saluto della lezione aspetta comunque che la finestra si chiuda
+         (anche con Esc, che non passa dai bottoni) */
+      fine();
+      _pianoFinestra({ att:d.att, orali },"Hello! Before anything else, here's your personal plan. ",
+        "Ecco il tuo piano personalizzato: ",()=>{}); };
+    apri();
+  });
+}
 /* dopo il «Thank you, Miss Grace!» della chiusura: done() chiude la lezione */
 function pianoAllaFine(done){
   if(!LESSON.on) return;
@@ -28217,30 +28249,34 @@ function pianoAllaFine(done){
     if(!LESSON.on) return;
     d=d||last;
     if(!d || (!d.att.length && !d.orali.length)){ done(); return; }
-    const righe=d.att.map(a=>{ const T=PIANO_TIPI[a.type];
-      const url=PIANO_LL+"?code="+encodeURIComponent(a.code);
-      return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #eadfca">'
-        +'<div style="flex:1;min-width:0"><div style="font-weight:800">'+T.ic+' '+_escHtml(a.titolo||T.en)+'</div>'
-        +'<div style="font-size:12px;color:#6b6358">'+T.en+(a.tries&&a.score!=null?' · last time '+_escHtml(a.score)+'%':'')+'</div></div>'
-        +'<a href="'+_escHtml(url)+'" target="_blank" rel="noopener" style="flex:0 0 auto;background:#c2572e;color:#fff;text-decoration:none;'
-        +'border-radius:10px;padding:8px 13px;font-weight:800;font-size:14px;white-space:nowrap">▶ '+(a.tries?"Try again":"Do it")+'</a></div>';
-    }).join("")
-    + d.orali.map(o=>{ const t=o.text.length>220?o.text.slice(0,217)+"…":o.text;
-      return '<div style="padding:7px 0;border-bottom:1px solid #eadfca"><div style="font-weight:800">'+PIANO_TIPI.recovery_orale.ic+' '
-        +_escHtml(o.titolo||PIANO_TIPI.recovery_orale.en)+'</div><div style="font-size:13px;color:#6b6358;margin-top:2px">'+_escHtml(t)+'</div></div>';
-    }).join("");
-    const n=d.att.length+d.orali.length;
-    /* v403: le attivita' restano nel riquadro fisso (#piano-pin) anche se si
-       chiude questa finestra o si esce dalla scuola */
-    if(d.att.length) pianoPinSegna(d.att);
-    const premio=d.att.length?'<div style="margin-top:8px;padding:7px 9px;background:#fff8e6;border-radius:9px;font-size:13px;font-weight:700;color:#7a5a12">'
-      +_escHtml(PIANO_PREMIO_EN)+'<div style="font-weight:500;color:#8a7f72;margin-top:2px">\u{1F4CC} The links stay on your screen, top right.</div></div>':'';
-    DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Your personal plan",
-      text:"One more thing: don't forget your personal plan! "+(d.att.length?"Tap an activity to do it now.":"Read it carefully."),
-      italian:"Ricordati il tuo piano personalizzato: "+(d.att.length?"tocca un'attività per svolgerla (si apre LiveLearn). "+PIANO_PREMIO_IT:"leggilo con attenzione."),
-      html:lesCard("les-p","\u{1F4CB} Your personal plan · "+n,righe+premio), wide:true,
-      buttons:[{ label:"OK, I'll do it!", cls:"primary", act:done }, { label:"Later", cls:"ghost", act:done }] });
+    _pianoFinestra(d,"One more thing: don't forget your personal plan! ","Ricordati il tuo piano personalizzato: ",done);
   });
+}
+/* la finestra di Miss Grace col piano (fine lezione e, v404, ingresso a scuola) */
+function _pianoFinestra(d,en,it,done){
+  const righe=d.att.map(a=>{ const T=PIANO_TIPI[a.type];
+    const url=PIANO_LL+"?code="+encodeURIComponent(a.code);
+    return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #eadfca">'
+      +'<div style="flex:1;min-width:0"><div style="font-weight:800">'+T.ic+' '+_escHtml(a.titolo||T.en)+'</div>'
+      +'<div style="font-size:12px;color:#6b6358">'+T.en+(a.tries&&a.score!=null?' · last time '+_escHtml(a.score)+'%':'')+'</div></div>'
+      +'<a href="'+_escHtml(url)+'" target="_blank" rel="noopener" style="flex:0 0 auto;background:#c2572e;color:#fff;text-decoration:none;'
+      +'border-radius:10px;padding:8px 13px;font-weight:800;font-size:14px;white-space:nowrap">▶ '+(a.tries?"Try again":"Do it")+'</a></div>';
+  }).join("")
+  + d.orali.map(o=>{ const t=o.text.length>220?o.text.slice(0,217)+"…":o.text;
+    return '<div style="padding:7px 0;border-bottom:1px solid #eadfca"><div style="font-weight:800">'+PIANO_TIPI.recovery_orale.ic+' '
+      +_escHtml(o.titolo||PIANO_TIPI.recovery_orale.en)+'</div><div style="font-size:13px;color:#6b6358;margin-top:2px">'+_escHtml(t)+'</div></div>';
+  }).join("");
+  const n=d.att.length+d.orali.length;
+  /* v403: le attivita' restano nel riquadro fisso (#piano-pin) anche se si
+     chiude questa finestra o si esce dalla scuola */
+  if(d.att.length) pianoPinSegna(d.att);
+  const premio=d.att.length?'<div style="margin-top:8px;padding:7px 9px;background:#fff8e6;border-radius:9px;font-size:13px;font-weight:700;color:#7a5a12">'
+    +_escHtml(PIANO_PREMIO_EN)+'<div style="font-weight:500;color:#8a7f72;margin-top:2px">\u{1F4CC} The links stay on your screen, top right.</div></div>':'';
+  DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Your personal plan",
+    text:en+(d.att.length?"Tap an activity to do it now.":"Read it carefully."),
+    italian:it+(d.att.length?"tocca un'attività per svolgerla (si apre LiveLearn). "+PIANO_PREMIO_IT:"leggilo con attenzione."),
+    html:lesCard("les-p","\u{1F4CB} Your personal plan · "+n,righe+premio), wide:true,
+    buttons:[{ label:"OK, I'll do it!", cls:"primary", act:done }, { label:"Later", cls:"ghost", act:done }] });
 }
 
 /* ==== v403 — IL PIANO RESTA SULLO SCHERMO, E VALE STELLE (Giacomo, 20 ott:
