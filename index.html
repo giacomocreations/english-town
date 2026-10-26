@@ -7567,15 +7567,20 @@ function _treePitTemplate(){
   flw.forEach((a,i)=>fuse(a, lpMat(fc[i]), "tpitFlw"+i));
   T.used=false;
   return (_pitTpl=T); }
-function treePit(x,z){
-  const T=_treePitTemplate(), yaw=((Math.abs(Math.round(x*7+z*13))%4))*Math.PI/2;
+/* v404 (Giacomo, 26 ott: «metti le fioriere in questi alberi che sorgono dal
+   nulla e dal cemento»): gy = quota del pavimento sotto l'albero, se non e'
+   quella dei marciapiedi (0,04): la promenade del parco sta a 0,20, e li'
+   l'aiuola finiva SOTTO le lastre. */
+function treePit(x,z,gy){
+  const T=_treePitTemplate(), yaw=((Math.abs(Math.round(x*7+z*13))%4))*Math.PI/2, off=(gy==null?0:gy-0.04);
   T.meshes.forEach(m=>{
+    if(m.__by===undefined) m.__by=m.position.y;
     let n=m;
     if(T.used){ n=m.createInstance(m.name+"_i"); n.parent=townRoot; n.isPickable=false; }
-    n.position.x=x; n.position.z=z; n.rotation.y=yaw; });
+    n.position.x=x; n.position.z=z; n.position.y=m.__by+off; n.rotation.y=yaw; });
   T.used=true; }
 function tree(x,z,pit){ if(insideSolid(x,z,2.4)) return;   // viali/marciapiedi: SOLO latifoglia
-  if(pit){ try{ treePit(x,z); }catch(e){ console.warn("[aiuola]",e); } }   // v307: tree pit con cordolo, pacciame ed edera
+  if(pit||pit===0){ try{ treePit(x,z,typeof pit==="number"?pit:null); }catch(e){ console.warn("[aiuola]",e); } }   // pit numero = quota del pavimento   // v307: tree pit con cordolo, pacciame ed edera
   /* TRONCO SOLIDO: il giocatore non attraversa l'albero, ma DEVE poter
      camminare sull'aiuola. Misurato sui vertici di Tree_single.glb
      (dequantizzato KHR_mesh_quantization, scala di gioco 0.826): la colonna
@@ -12406,9 +12411,9 @@ function buildProps(){
   // parcheggio ovest (vicino a Eco Point/Beat Club)
   [-45,-42,-39].forEach(x=>car(x,BLZ,Math.PI/2));
   // tasca verde ovest
-  tree(-16,BLZ); streetBench(-16,BLZ-1.6,0); planter(-13,BLZ+1.6);
+  tree(-16,BLZ,0); streetBench(-16,BLZ-1.6,0); planter(-13,BLZ+1.6);   // v404: aiuola (sull'asfalto, quota 0)
   // tasca verde est
-  tree(16,BLZ); streetBench(16,BLZ-1.6,0); planter(13,BLZ+1.6);
+  tree(16,BLZ,0); streetBench(16,BLZ-1.6,0); planter(13,BLZ+1.6);
   // parcheggio est (vicino a Style Salon/Town Hall)
   [39,42,45].forEach(x=>car(x,BLZ,Math.PI/2));
 
@@ -12560,7 +12565,7 @@ function buildStation(){
      notte (porta-quest lasciata libera) e insegna fisica sulla facciata */
   dressBuilding(root,{ name:S.t, front:[0,dir], door:[stDX,doorZ], accent:_mixHex(ST_HEX,"#1c1a18",0.42).toHexString() });
   facilitySign(root.position.x, Math.min(b.max.y*0.42,7.2), doorZ+dir*0.45, S.ic, S.t);
-  lamp(S.x-12,S.z+12); lamp(S.x-12,S.z-12); tree(S.x-13,S.z); 
+  lamp(S.x-12,S.z+12); lamp(S.x-12,S.z-12); tree(S.x-13,S.z,true);    // v404: sul piazzale, con l'aiuola
   stationFront(root,b,stDX,doorZ);      // v304: pensilina, orologio, scritta sul tetto
 }
 /* =====================================================================
@@ -14350,7 +14355,7 @@ function buildPark(){
   pkCurb.material=mat("parkCurbm","#c7ccd1"); pkCurb.position.set(GREENX,0.205,PZ); pkCurb.parent=townRoot; pkCurb.__ground=true;
   // lampioni + alberelli in fila lungo il nuovo marciapiede
   for(let z=-54; z<=54; z+=18) lamp(GREENX-4, z);
-  for(let z=-45; z<=45; z+=18) tree(GREENX-6, z);
+  for(let z=-45; z<=45; z+=18) tree(GREENX-6, z, 0.20);       // v404: con l'aiuola, alla quota della promenade
   /* VIALETTI ACCIOTTOLATI (25 set, richiesta di Giacomo). Prima erano
      rettangoli color sabbia che passavano SOTTO il lago e il campo da calcio:
      sott'acqua non si vedevano, ma attraversavano la riva sabbiosa e
@@ -14639,7 +14644,10 @@ function buildPark(){
   buildClockSquare(PX-30,PZ-30);   // targhe-routine, cartello-quest e NPC di Unit 5
   // alberi & panchine sparsi
   [[PX-30,PZ+30],[PX-26,PZ+10],[PX-26,PZ-10],[PX+34,PZ+10],[PX+34,PZ-10],[PX+30,PZ+50],[PX-20,PZ-50],[PX+38,PZ-44]]
-    .forEach(t=>tree(t[0],t[1]));
+    /* v404: quelli sulla promenade (prima del verde) con l'aiuola; e niente
+       doppioni a 2 m dagli alberi in fila (le due aiuole si accavallavano) */
+    .filter(t=>!(t[0]<GREENX && [-45,-27,-9,9,27,45].some(z=>Math.hypot(t[0]-(GREENX-6),t[1]-z)<3)))
+    .forEach(t=>tree(t[0],t[1],t[0]<GREENX?0.20:false));
   // striscia di 8 unita' tra l'ultimo filler (bordo x=48) e la promenade
   // del parco (RDX0=56): niente spazio per un altro edificio, la si chiude
   // con verde + arredo urbano invece di forzare un palazzo che sovrapporrebbe
