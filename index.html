@@ -23057,6 +23057,11 @@ function shopPushOn(){
      rimette cosi' a ogni fotogramma, fermi o camminando. */
   const abd=avatarRoot.getDescendants(false).find(t=>_boneKey(t.name)==="Abdomen"&&t.parent);
   if(!abd) return;
+  /* v323g (Giacomo: «senza carrello rimane col busto un po' girato»): l'addome
+     NON e' animato, quindi la correzione restava anche dopo. Si salva lo
+     stato di tutte le ossa che il carrello tocca e shopPushOff lo rimette. */
+  const orig=avatarRoot.getDescendants(false).filter(t=>t.rotationQuaternion!==undefined&&/^(Root|Body|Hips|Abdomen|Torso|Chest|Shoulder\.[LR]|UpperArm\.[LR]|LowerArm\.[LR]|Wrist\.[LR]|UpperLeg\.[LR]|LowerLeg\.[LR]|Foot\.[LR]|PT\.[LR])$/.test(_boneKey(t.name)))
+    .map(tn=>({tn, p:tn.position.clone(), q:tn.rotationQuaternion?tn.rotationQuaternion.clone():null, s:tn.scaling.clone()}));
   const chain=[]; for(let t=abd.parent;t;t=t.parent){ chain.unshift(t); if(t===avatarRoot) break; }
   const body=_restPinsFor(avatarRoot,/^(Hips|Abdomen|Torso|Chest)$/), stand=_standPoseFromWalk(avatarRoot);
   const touched=new Set(body.map(k=>k.tn)); (_legPins||[]).forEach(k=>touched.add(k.tn)); (stand||[]).forEach(k=>touched.add(k.tn));
@@ -23068,7 +23073,7 @@ function shopPushOn(){
   const pins=pushPoseFor(avatarRoot,f,o=>bar.add(o.scale(0.19)).subtract(f.scale(0.09)).add(new V(0,0.045,0)));
   save.forEach(k=>{ k.tn.position.copyFrom(k.p); if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); k.tn.scaling.copyFrom(k.s); });
   if(!pins) return;
-  SHOP.pushPins=pins; SHOP.pushOf=avatarRoot; SHOP.pushLock=L; SHOP.pushStand=stand;
+  SHOP.pushPins=pins; SHOP.pushOf=avatarRoot; SHOP.pushLock=L; SHOP.pushStand=stand; SHOP.pushOrig=orig;
   SHOP.pushObs=scene.onBeforeRenderObservable.add(()=>{
     if(!SHOP.pushPins) return;
     if(SHOP.pushOf!==avatarRoot){ setTimeout(shopPushOn,0); SHOP.pushPins=null; return; }
@@ -23079,7 +23084,9 @@ function shopPushOn(){
 }
 function shopPushOff(){
   if(SHOP.pushObs){ scene.onBeforeRenderObservable.remove(SHOP.pushObs); SHOP.pushObs=null; }
-  SHOP.pushPins=null; SHOP.pushOf=null;
+  if(SHOP.pushOrig && SHOP.pushOf===avatarRoot) SHOP.pushOrig.forEach(k=>{ k.tn.position.copyFrom(k.p);
+    if(k.q){ if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion(); k.tn.rotationQuaternion.copyFrom(k.q); } k.tn.scaling.copyFrom(k.s); });
+  SHOP.pushPins=null; SHOP.pushOf=null; SHOP.pushOrig=null;
 }
 function shopReturnCart(){ if(!SHOP.cart) return; shopPushOff(); cartClear(SHOP.cart); try{ SHOP.cart.dispose(); }catch(e){} SHOP.cart=null; SHOP.items=[];
   if(MARKET.bay){ const t=MARKET.bay.getChildren().filter(n=>/t2$/.test(n.name))[0]; if(t) t.setEnabled(true); } mktHud(); }
@@ -23350,7 +23357,7 @@ function clothesPrice(cat,item){
      5 torni da Nina col capo addosso: «How much is it?» (il prezzo si
        ascolta) -> «What do you think?» -> «How are you paying?» -> scontrino.
    CSHOP.stage: null · "fitting" (vai al camerino) · "back" (torna da Nina). */
-const CSHOP={ on:false, stage:null, cat:null, it:null, npc:null, errors:0, inter:null };
+const CSHOP={ on:false, stage:null, cat:null, it:null, npc:null, errors:0, inter:null, asked:false, tried:[] };
 function shopTryOn(o){ try{ Look.tryOn(o); applyLook(); }catch(e){ console.warn("[camerino]",e); } }
 function shopTryOff(){ try{ if(Look.trying()){ Look.tryOn(null); applyLook(); } }catch(e){} }
 /* la foto del camerino: lo specchio della Teca (mirShoot), a figura intera */
@@ -23404,7 +23411,7 @@ function clothesFitInit(){
     pos:()=>new BABYLON.Vector3(C.x+3.40,1.0,C.z+4.85), meshes:[],
     prompt:'Press <b>E</b> to <b>try it on</b> in the fitting room', interact:clothesFitting });
 }
-function clothesReset(){ shopTryOff(); CSHOP.on=false; CSHOP.stage=null; CSHOP.cat=null; CSHOP.it=null; clothesTick(); }
+function clothesReset(){ shopTryOff(); CSHOP.on=false; CSHOP.stage=null; CSHOP.cat=null; CSHOP.it=null; CSHOP.asked=false; CSHOP.tried=[]; clothesTick(); }
 /* che cosa cerca chi scrive: il nome della categoria nella frase */
 function clothesCatFrom(v,cats){
   const syn={ hoodie:/hoodie|sweatshirt/, jacket:/jacket|coat|blazer|raincoat/, trousers:/trousers|jeans|joggers|pants/,
@@ -23414,7 +23421,7 @@ function clothesCatFrom(v,cats){
 }
 function startClothesShop(npc){
   clothesFitInit(); shopTryOff();
-  Object.assign(CSHOP,{ on:true, stage:null, cat:null, it:null, npc, errors:0 }); clothesTick();
+  Object.assign(CSHOP,{ on:true, stage:null, cat:null, it:null, npc, errors:0, asked:false, tried:[] }); clothesTick();
   const icon="\u{1F457}", cats=clothesCats();
   const ask=c=>{ const ok="I'm looking for "+c.en+".";
     shopLine({ npc, icon, sub:"Shopping with Nina", text:"\u{1F4AC} Your answer:", italian:"Rispondi a Nina: stai cercando "+c.en+".",
@@ -23436,7 +23443,9 @@ function startClothesShop(npc){
 }
 /* 2 · Nina mostra tre capi */
 function clothesShow(c){
-  const npc=CSHOP.npc, show=shuffle(c.items.slice()).slice(0,3);
+  /* v323g: dopo «Can I see another one?» non si ripropongono i capi gia' provati */
+  const nuovi=c.items.filter(it=>CSHOP.tried.indexOf(it.id)<0);
+  const npc=CSHOP.npc, show=shuffle((nuovi.length?nuovi:c.items).slice()).slice(0,3);
   CSHOP.cat=c;
   DialogueBox.open({ npc, icon:"\u{1F457}", sub:"Shopping with Nina",
     text:"We've got these "+(c.pl?c.noun:(c.noun==="scarf"?"scarves":c.noun+"s"))+". Which one do you like?",
@@ -23451,11 +23460,15 @@ function clothesTry(c,it){
     DialogueBox.open({ npc, icon, sub:"Shopping with Nina", text:line,
       italian:"Entra nel camerino (la cabina con la tenda) e premi E per provar"+(P?"li":"lo")+".",
       buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] }); };
+  /* v323g (Giacomo: «Can I try them on e altre domande, anche se ho
+     cliccato una volta, vengono riproposte»): dal secondo capo in poi
+     «Can I try it on?» e la taglia non si richiedono, Nina lo da' e basta */
+  if(CSHOP.asked) return toFit("Here you are: the "+it.en.toLowerCase()+(c.__size?", in a "+(c.size==="shoes"?c.__size:({S:"small",M:"medium",L:"large"}[c.__size]||"your size")):"")+". Go and try "+O+" on!");
   shopLine({ npc, icon, sub:"Shopping with Nina", text:"Here you are: the "+it.en.toLowerCase()+". "+(P?"They're":"It's")+" very nice!",
     italian:"Chiedi se puoi provar"+(P?"li":"lo")+".",
     right:[ok], wrong:["Can I try on "+O+"?","Can I trying "+O+" on?"],
     ok:v=>new RegExp("can i try "+O+" on").test(v), ph:"Can I ...", model:ok, hint:"Can I <b>try "+O+" on</b>?",
-    next:(v,e)=>{ CSHOP.errors+=e||0;
+    next:(v,e)=>{ CSHOP.errors+=e||0; CSHOP.asked=true;
       if(!c.size) return toFit("Of course. The fitting room is over there.");
       const shoes=c.size==="shoes";
       shopLine({ npc, icon, sub:"Shopping with Nina", text:"Of course. What size are you?",
@@ -23480,8 +23493,20 @@ function clothesFitting(){
       italian:"Nina ti chiede da fuori: come ti sta"+(P?"nno":"")+"? Guardati allo specchio e rispondi.", html,
       choices:[
         { label:"\u{1F60D} Yes, I love "+O+"!", act:()=>clothesBackTo() },
-        { label:"\u{1F615} No, I don't like "+O+".", act:()=>clothesBackTo() },
-        { label:"\u{1F504} Can I see another one?", act:()=>{ shopTryOff(); CSHOP.stage=null; CSHOP.it=null; clothesTick(); clothesShow(c); } } ] }); });
+        { label:"\u{1F615} No, I don't like "+O+".", act:()=>clothesNoLike() },
+        { label:"\u{1F504} Can I see another one?", act:()=>clothesAnother() } ] }); });
+}
+/* v323g: se non piace, Nina non chiede il prezzo: propone un altro capo */
+function clothesAnother(){ const c=CSHOP.cat; if(CSHOP.it) CSHOP.tried.push(CSHOP.it.id);
+  shopTryOff(); CSHOP.stage=null; CSHOP.it=null; clothesTick(); clothesShow(c); }
+function clothesNoLike(){
+  const npc=CSHOP.npc, P=CSHOP.cat&&CSHOP.cat.pl;
+  DialogueBox.open({ npc, icon:"\u{1F457}", sub:"Shopping with Nina", text:"Oh, what a pity! Would you like to see another one?",
+    italian:"Nina ti propone un altro capo: vuoi vederne un altro?",
+    choices:[ { label:"Yes, please.", act:()=>clothesAnother() },
+              { label:"No, thank you.", act:()=>{ clothesReset();
+                DialogueBox.open({ npc, icon:"\u{1F457}", sub:"Shopping with Nina", text:"No problem! Come back soon!", italian:"",
+                  buttons:[{ label:"Bye!", cls:"primary", act:()=>{} }] }); } } ] });
 }
 function clothesBackTo(){
   CSHOP.stage="back"; clothesTick();
