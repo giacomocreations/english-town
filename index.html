@@ -22997,12 +22997,22 @@ function shopPushOn(){
      sopra col dorso in su (Giacomo: «il dorso delle mani deve essere verso
      l'alto»); prima le dita penzolavano dietro la sbarra */
   /* v323d (Giacomo: «le mani sul carrello vanno leggermente indietro»): 9 cm dietro la sbarra, non 5 */
+  /* v323e (Giacomo, foto dal gioco: «il corpo e' ancora storto rispetto al
+     carrello»): anche il BACINO resta dritto, ma solo come rotazione — la
+     sua posizione la decide l'animazione (il passo, il su e giu'). Il
+     bacino girava con l'Idle e si portava dietro busto e braccia. */
+  const hips=_restPinsFor(avatarRoot,/^Hips$/);
+  const hq=hips.map(k=>({ tn:k.tn, q:k.tn.rotationQuaternion?k.tn.rotationQuaternion.clone():null }));
+  hips.forEach(k=>{ if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion(); k.tn.rotationQuaternion.copyFrom(k.q); });
+  _sitRefresh(avatarRoot);
   const pins=pushPoseFor(avatarRoot,f,o=>bar.add(o.scale(0.19)).subtract(f.scale(0.09)).add(new V(0,0.045,0)));
+  hq.forEach(k=>{ if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); });
   if(!pins) return;
-  SHOP.pushPins=pins; SHOP.pushOf=avatarRoot;
+  SHOP.pushPins=pins; SHOP.pushOf=avatarRoot; SHOP.pushHips=hips;
   SHOP.pushObs=scene.onBeforeRenderObservable.add(()=>{
     if(!SHOP.pushPins) return;
     if(SHOP.pushOf!==avatarRoot){ setTimeout(shopPushOn,0); SHOP.pushPins=null; return; }
+    SHOP.pushHips.forEach(k=>{ if(k.tn.rotationQuaternion) k.tn.rotationQuaternion.copyFrom(k.q); });
     _applyPins(SHOP.pushPins); });
 }
 function shopPushOff(){
@@ -23510,9 +23520,30 @@ function _palmoVero(H,hb){
   T.computeWorldMatrix(true);
   return BABYLON.Vector3.Dot(T.getAbsolutePosition().subtract(hb.c),hb.n)>=0 ? hb.n.clone() : hb.n.scale(-1);
 }
+/* ⚠️ OGNI PEZZO DELL'AVATAR HA IL SUO SCHELETRO (busto, gambe, testa, e
+   anche la giacca: vedi _toHeadRaw / dressCoat), quindi «il polso destro»
+   sono PIU' nodi con lo stesso nome. Prima si girava il primo trovato: nel
+   collaudo era quello della mano visibile, nel gioco vero (con la giacca)
+   un altro, e la mano restava aperta sopra la maniglia (Giacomo, foto). Si
+   calcola sulla catena che ha le dita e si copia su TUTTE le omonime. */
+function _boneKey(n){ const m=/(?:^|_)([A-Za-z]+[0-9]*\.[LR]|[A-Za-z]+)$/.exec(n); return m?m[1]:n; }
+function _pinsOmonime(root,pins){
+  const all=root.getDescendants(false), out=[];
+  pins.forEach(k=>{ const key=_boneKey(k.tn.name);
+    all.forEach(d=>{ if(d.rotationQuaternion!==undefined && _boneKey(d.name)===key){
+      if(!d.rotationQuaternion) d.rotationQuaternion=BABYLON.Quaternion.FromEulerVector(d.rotation);
+      out.push({ tn:d, q:k.q }); } }); });
+  return out;
+}
+function _polsoConDita(root,sd){
+  let best=null, bn=-1;
+  root.getDescendants(false).forEach(d=>{ if(!new RegExp("(^|_)Wrist\\."+sd+"$").test(d.name)) return;
+    const n=d.getDescendants(false).length; if(n>bn){ bn=n; best=d; } });
+  return best;
+}
 function basketGripPins(root,f){
   const V=BABYLON.Vector3, dn=new V(0,-1,0);
-  const H=root.getDescendants(false).find(d=>/(^|_)Wrist\.R$/.test(d.name)); if(!H) return null;
+  const H=_polsoConDita(root,"R"); if(!H) return null;
   const save=[], keep=t=>{ if(!t.rotationQuaternion) t.rotationQuaternion=BABYLON.Quaternion.FromEulerVector(t.rotation); save.push({ t, q:t.rotationQuaternion.clone() }); };
   _sitRefresh(root);
   /* il BRACCIO un po' staccato dal fianco (Giacomo: «il basket entra dentro
@@ -23544,33 +23575,45 @@ function basketGripPins(root,f){
     if(a.length()>1e-3 && b.length()>1e-3){ _sitWorldRot(H,pW,a,b); _sitRefresh(root); } }   // palmo indietro = dorso avanti
   out.push({ tn:H, q:H.rotationQuaternion.clone() });
   hb=_handBasis(H); pn=hb?_palmoVero(H,hb):null;
-  const ds=H.getDescendants(false), ANG=[0.95,1.05,0.8];
+  /* ⚠️ In questo modello «Middle1» e' l'osso del PALMO (parte dal polso), le
+     dita vere sono 2 e 3 (4 e' la punta). Piegare anche l'1 girava di 70
+     gradi tutta la mano: e' cosi' che il palmo finiva sopra la maniglia
+     (visto con le sfere di prova sulle ossa). Si chiudono solo 2 e 3. */
+  const ds=H.getDescendants(false), ANG=[0,1.45,1.25];
   if(pn) ["Index","Middle","Ring","Pinky"].forEach(fn=>{ for(let k=1;k<=3;k++){
     const t=ds.find(d=>new RegExp("(^|_)"+fn+k+"\\.R$").test(d.name)), c=ds.find(d=>new RegExp("(^|_)"+fn+(k+1)+"\\.R$").test(d.name));
-    if(!t||!c) continue; keep(t); t.computeWorldMatrix(true); c.computeWorldMatrix(true);
+    if(!t||!c||!ANG[k-1]) continue; keep(t); t.computeWorldMatrix(true); c.computeWorldMatrix(true);
     const p=t.getAbsolutePosition().clone(), dir=c.getAbsolutePosition().subtract(p).normalize();
     const n=pn.subtract(dir.scale(V.Dot(pn,dir))); if(n.length()<1e-4) continue; n.normalize();   // le dita si chiudono verso il palmo
     _sitWorldRot(t,p,dir,dir.scale(Math.cos(ANG[k-1])).add(n.scale(Math.sin(ANG[k-1])))); _sitRefresh(root);
     out.push({ tn:t, q:t.rotationQuaternion.clone() }); } });
   save.forEach(k=>k.t.rotationQuaternion.copyFrom(k.q));
-  out.orig=save;                                                     // per riaprire la mano posando il cestino
-  return out;
+  /* le stesse rotazioni su tutte le copie del polso e delle dita */
+  const tutte=_pinsOmonime(root,out.filter(k=>!/UpperArm|LowerArm/.test(k.tn.name))).concat(out.filter(k=>/UpperArm|LowerArm/.test(k.tn.name)));
+  tutte.orig=_pinsOmonime(root,save.map(k=>({ tn:k.t, q:k.q }))).map(k=>({ t:k.tn, q:k.q }));
+  return tutte;
 }
 function cornerCarry(){
   if(CORNER.carryObs) scene.onBeforeRenderObservable.remove(CORNER.carryObs);
   let H=null, of=null, pins=null;
   CORNER.carryObs=scene.onBeforeRenderObservable.add(()=>{
     const b=CORNER.basket; if(!b || typeof avatarRoot==="undefined" || !avatarRoot) return;
-    if(of!==avatarRoot || !H){ of=avatarRoot; H=avatarRoot.getDescendants(false).find(d=>/(^|_)Wrist\.R$/.test(d.name))||null;
+    if(of!==avatarRoot || !H){ of=avatarRoot; H=_polsoConDita(avatarRoot,"R");
       const ry=player.rotation.y; try{ pins=basketGripPins(avatarRoot,new BABYLON.Vector3(Math.sin(ry),0,Math.cos(ry))); }catch(e){ pins=null; }
       CORNER.grip=pins; }
     if(!H) return;
     if(pins) pins.forEach(k=>{ k.tn.rotationQuaternion.copyFrom(k.q); });
     H.computeWorldMatrix(true);
-    const hb=_handBasis(H);
-    if(!hb){ const p=H.getAbsolutePosition(); b.position.set(p.x,p.y-0.44,p.z); b.rotation.y=player.rotation.y; return; }
-    const grip=hb.c.add(_palmoVero(H,hb).scale(0.03));               // la sbarra dalla parte del palmo
-    b.position.set(grip.x, grip.y-0.36, grip.z);                      // l'impugnatura (y 0,36 del cestino) dentro la mano
+    /* ⚠️ la sbarra DENTRO IL PUGNO (Giacomo, foto dal gioco: «il palmo e'
+       ancora sopra la maniglia»): non piu' sotto il centro del palmo, ma nel
+       mezzo fra le nocche e le seconde falangi chiuse, cioe' dove una mano
+       vera stringe il manico (nocche = 2, falange chiusa = 3) */
+    const ds=H.getDescendants(false), V=BABYLON.Vector3, pts=[];
+    ["Index","Middle","Ring","Pinky"].forEach(fn=>[2,3].forEach(k=>{ const t=ds.find(d=>new RegExp("(^|_)"+fn+k+"\\.R$").test(d.name));
+      if(t){ t.computeWorldMatrix(true); pts.push(t.getAbsolutePosition()); } }));
+    if(pts.length<4){ const p=H.getAbsolutePosition(); b.position.set(p.x,p.y-0.44,p.z); b.rotation.y=player.rotation.y; return; }
+    const grip=new V(0,0,0); pts.forEach(q=>grip.addInPlace(q)); grip.scaleInPlace(1/pts.length);
+    b.position.set(grip.x, grip.y-0.36, grip.z);                      // l'impugnatura (y 0,36 del cestino) nel pugno
     b.rotation.y=player.rotation.y; });
 }
 function cornerTakeBasket(){
