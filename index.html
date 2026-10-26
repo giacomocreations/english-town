@@ -4330,7 +4330,9 @@ function pushPoseFor(root,fwd,grip){
      l'animazione lo faceva girare e le braccia, attaccate alle spalle,
      giravano con lui: una mano finiva fuori dalla maniglia. Le anche no:
      muovono le gambe che camminano. */
-  const pins=_restPinsFor(root,/^(Abdomen|Torso|Chest|Shoulder\.[LR]|UpperArm\.[LR]|LowerArm\.[LR]|Wrist\.[LR])$/); if(!pins.length) return null;
+  /* v323f: l'ADDOME no: lo tiene dritto chi chiama (shopPushOn, _lockAbd),
+     nel mondo, perche' il bacino sotto di lui cambia fra fermo e camminata */
+  const pins=_restPinsFor(root,/^(Torso|Chest|Shoulder\.[LR]|UpperArm\.[LR]|LowerArm\.[LR]|Wrist\.[LR])$/); if(!pins.length) return null;
   const saved=pins.map(k=>({tn:k.tn, q:k.tn.rotationQuaternion?k.tn.rotationQuaternion.clone():null, p:k.tn.position.clone()}));
   _applyPins(pins); _sitRefresh(root);
   /* ⚠️ «IN FUORI» DALLA SPALLA VERA (Giacomo: «le braccia incrociate al
@@ -4359,6 +4361,57 @@ function pushPoseFor(root,fwd,grip){
   const res=pins.map(k=>({ tn:k.tn, p:k.p.clone(), s:k.s.clone(), q:(out.get(k.tn)||k.q).clone() }));
   saved.forEach(k=>{ if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); k.tn.position.copyFrom(k.p); });
   return res;
+}
+/* v323f (Giacomo, col carrello: «e' sempre storto! anche da fermo»).
+   Misurato: la posa delle gambe da fermo (la bind) ha il piede sinistro
+   33 cm dietro il destro e il bacino girato di 27 gradi; camminando le
+   gambe sono dritte ma il busto, attaccato al bacino, girava di 28.
+   GAMBE DA FERMO: si prendono dalla camminata, per ogni lato il fotogramma
+   in cui quel piede e' a terra e piu' sotto la sua anca (meta' appoggio):
+   i due piedi pari, ginocchia appena morbide. Ritorna le pin o null. */
+function _standPoseFromWalk(root){
+  const g=avatarAnims&&avatarAnims.Walk; if(!g||!g.targetedAnimations) return null;
+  const V=BABYLON.Vector3, RE=/^(Root|Body|Hips|UpperLeg\.[LR]|LowerLeg\.[LR]|Foot\.[LR]|PT\.[LR])$/;
+  const tas=g.targetedAnimations.filter(ta=>ta.target&&ta.target.name&&ta.animation&&ta.animation.evaluate
+    &&RE.test(_boneKey(ta.target.name))&&/^(position|rotationQuaternion|scaling)$/.test(ta.animation.targetProperty)
+    &&ta.target.isDescendantOf&&ta.target.isDescendantOf(root));
+  if(!tas.length) return null;
+  const tns=[...new Set(tas.map(ta=>ta.target))], key=t=>_boneKey(t.name);
+  const save=tns.map(tn=>({tn, p:tn.position.clone(), q:tn.rotationQuaternion?tn.rotationQuaternion.clone():null, s:tn.scaling.clone()}));
+  const get=k=>tns.find(t=>key(t)===k)||root.getDescendants(false).find(t=>key(t)===k);
+  const inv=player.getWorldMatrix().clone().invert(), loc=t=>V.TransformCoordinates(t.getAbsolutePosition(),inv);
+  const hipL=get("UpperLeg.L"), hipR=get("UpperLeg.R"), ftL=get("Foot.L"), ftR=get("Foot.R");
+  if(!hipL||!hipR||!ftL||!ftR) return null;
+  const N=40, fr=[];
+  for(let i=0;i<N;i++){
+    const f=g.from+(g.to-g.from)*i/N, vals=new Map();
+    tas.forEach(ta=>{ const v=ta.animation.evaluate(f); if(!v||!v.clone) return;
+      const tn=ta.target, pr=ta.animation.targetProperty;
+      if(pr==="rotationQuaternion"&&!tn.rotationQuaternion) tn.rotationQuaternion=new BABYLON.Quaternion();
+      tn[pr].copyFrom(v); vals.set(tn.uniqueId+pr,v.clone()); });
+    _sitRefresh(root);
+    fr.push({ vals, L:{h:loc(hipL),f:loc(ftL)}, R:{h:loc(hipR),f:loc(ftR)} });
+  }
+  save.forEach(k=>{ k.tn.position.copyFrom(k.p); if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); k.tn.scaling.copyFrom(k.s); });
+  _sitRefresh(root);
+  const best=sd=>{ const minY=Math.min(...fr.map(x=>x[sd].f.y)); let b=null, bc=1e9;
+    fr.forEach(x=>{ const h=x[sd].h, ft=x[sd].f, c=Math.abs(ft.z-h.z)+0.5*Math.abs(ft.x-h.x)+4*(ft.y-minY); if(c<bc){ bc=c; b=x; } });
+    return b; };
+  const fL=best("L"), fR=best("R"); if(!fL||!fR) return null;
+  return save.map(k=>{ const x=/\.R$/.test(key(k.tn))?fR:fL, id=k.tn.uniqueId, v=n=>x.vals.get(id+n);
+    return { tn:k.tn, p:(v("position")||k.p).clone(), q:(v("rotationQuaternion")||k.q||new BABYLON.Quaternion()).clone(), s:(v("scaling")||k.s).clone() }; });
+}
+/* il BUSTO dritto verso il carrello qualunque cosa faccia il bacino: la
+   rotazione dell'addome nel mondo, rispetto al giocatore, e' sempre quella
+   salvata (L.rel). Serve la catena del bacino aggiornata (L.chain). */
+function _lockAbd(L){
+  L.chain.forEach(t=>t.computeWorldMatrix(true));
+  const M=BABYLON.Matrix, tgt=L.rel.multiply(L.root.getWorldMatrix());
+  const lm=tgt.multiply(M.Invert(L.abd.parent.getWorldMatrix()));
+  const sc=new BABYLON.Vector3(), q=new BABYLON.Quaternion(), t=new BABYLON.Vector3(); lm.decompose(sc,q,t);
+  if(!L.abd.rotationQuaternion) L.abd.rotationQuaternion=new BABYLON.Quaternion();
+  L.abd.rotationQuaternion.copyFrom(q);
+  L.abd.computeWorldMatrix(true);
 }
 function sitPoseFor(root,pins,fwd,seatY,groundY,arms){
   if(!pins||!pins.length||!root) return null;
@@ -22997,22 +23050,31 @@ function shopPushOn(){
      sopra col dorso in su (Giacomo: «il dorso delle mani deve essere verso
      l'alto»); prima le dita penzolavano dietro la sbarra */
   /* v323d (Giacomo: «le mani sul carrello vanno leggermente indietro»): 9 cm dietro la sbarra, non 5 */
-  /* v323e (Giacomo, foto dal gioco: «il corpo e' ancora storto rispetto al
-     carrello»): anche il BACINO resta dritto, ma solo come rotazione — la
-     sua posizione la decide l'animazione (il passo, il su e giu'). Il
-     bacino girava con l'Idle e si portava dietro busto e braccia. */
-  const hips=_restPinsFor(avatarRoot,/^Hips$/);
-  const hq=hips.map(k=>({ tn:k.tn, q:k.tn.rotationQuaternion?k.tn.rotationQuaternion.clone():null }));
-  hips.forEach(k=>{ if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion(); k.tn.rotationQuaternion.copyFrom(k.q); });
-  _sitRefresh(avatarRoot);
+  /* v323f: vedi _standPoseFromWalk. Il busto si raddrizza nella posa in cui
+     e' gia' dritto (gambe alla bind + bacino, addome, torace a riposo: le
+     spalle sono parallele alla maniglia, misurato) e se ne salva la
+     rotazione dell'addome rispetto al giocatore; da li' in poi l'addome si
+     rimette cosi' a ogni fotogramma, fermi o camminando. */
+  const abd=avatarRoot.getDescendants(false).find(t=>_boneKey(t.name)==="Abdomen"&&t.parent);
+  if(!abd) return;
+  const chain=[]; for(let t=abd.parent;t;t=t.parent){ chain.unshift(t); if(t===avatarRoot) break; }
+  const body=_restPinsFor(avatarRoot,/^(Hips|Abdomen|Torso|Chest)$/), stand=_standPoseFromWalk(avatarRoot);
+  const touched=new Set(body.map(k=>k.tn)); (_legPins||[]).forEach(k=>touched.add(k.tn)); (stand||[]).forEach(k=>touched.add(k.tn));
+  const save=[...touched].map(tn=>({tn, p:tn.position.clone(), q:tn.rotationQuaternion?tn.rotationQuaternion.clone():null, s:tn.scaling.clone()}));
+  if(_legPins) _applyPins(_legPins); _applyPins(body); _sitRefresh(avatarRoot);
+  const L={ abd, chain, root:avatarRoot, rel:abd.getWorldMatrix().multiply(BABYLON.Matrix.Invert(avatarRoot.getWorldMatrix())) };
+  if(stand) _applyPins(stand);
+  _lockAbd(L); _sitRefresh(avatarRoot);
   const pins=pushPoseFor(avatarRoot,f,o=>bar.add(o.scale(0.19)).subtract(f.scale(0.09)).add(new V(0,0.045,0)));
-  hq.forEach(k=>{ if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); });
+  save.forEach(k=>{ k.tn.position.copyFrom(k.p); if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); k.tn.scaling.copyFrom(k.s); });
   if(!pins) return;
-  SHOP.pushPins=pins; SHOP.pushOf=avatarRoot; SHOP.pushHips=hips;
+  SHOP.pushPins=pins; SHOP.pushOf=avatarRoot; SHOP.pushLock=L; SHOP.pushStand=stand;
   SHOP.pushObs=scene.onBeforeRenderObservable.add(()=>{
     if(!SHOP.pushPins) return;
     if(SHOP.pushOf!==avatarRoot){ setTimeout(shopPushOn,0); SHOP.pushPins=null; return; }
-    SHOP.pushHips.forEach(k=>{ if(k.tn.rotationQuaternion) k.tn.rotationQuaternion.copyFrom(k.q); });
+    /* fermo (le anim «in piedi» mettono _pinLegs): gambe pari; camminando le muove la Walk */
+    if(SHOP.pushStand && _pinLegs) _applyPins(SHOP.pushStand);
+    _lockAbd(SHOP.pushLock);
     _applyPins(SHOP.pushPins); });
 }
 function shopPushOff(){
