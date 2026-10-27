@@ -16813,7 +16813,7 @@ function parkStoryToday(s){
 function talkToOakley(npc){
   if(PARKFUN.busy) return;
   const s=parkState(), t=parkStoryToday(s);
-  const me=(Student.nome||"").split(" ")[0]||"";
+  const me=Student.proprio;
   if(s.sDone){
     DialogueBox.open({ npc, icon:"\u{1F4D6}", sub:"Storyteller",
       text:"That's today's story"+(me?", "+me:"")+"! Come back tomorrow for a new one. Do you want to hear it again?",
@@ -17116,7 +17116,7 @@ function parkRangerCome(b,night){
         choices:[{label:"\u{1F642} OK", act:()=>{}}] });
       return;
     }
-    const s=parkState(), g=greetTimeOfDay(), me=(Student.nome||"").split(" ")[0]||"";
+    const s=parkState(), g=greetTimeOfDay(), me=Student.proprio;
     DialogueBox.open({ ..._pkSpk(), sub:"Town Ranger \u00b7 "+(3-s.wN)+" left today",
       text:g.en+(me?", "+me:"")+"! Lovely day in the park, isn't it? Look at the people around you. Can you tell me what they're doing?",
       italian:"Il Ranger ti chiede di descrivere che cosa succede nel parco: fino a 3 domande al giorno.",
@@ -20994,7 +20994,28 @@ const Student=(function(){
     const k=String(d.className||"").trim().toUpperCase().replace(/\s+/g,"");
     if(n && n!==nome){ nome=n; Sync.set("et_name", nome); }
     if(k && k!==cls){ setClass(k); cambiata=true; }
+    _leggiProprio(d);
     return cambiata;
+  }
+  /* v405 — IL NOME VERO, NON INDOVINATO (Giacomo, 27 ott: «gli alunni a
+     volte mi dicono che invece del nome viene messo il cognome»). `nome` e'
+     «COGNOME NOME» in una stringa sola; LiveLearn, importando MyClass, ora
+     tiene da parte il solo nome (livelearn/classes/<id>/battesimo, vedi
+     nomeDiBattesimo). Una lettura piccola al login; finche' non arriva — o
+     se la classe e' stata importata prima della v405 — si indovina. */
+  function _leggiProprio(d){
+    const per=nome, cid=String(d.classId||"");
+    if(!per || !cid) return;
+    Cloud.leggi("livelearn/classes/"+cid+"/battesimo/"+chiaveNome(per), 8000).then(function(r){
+      if(!r.risposto || nome!==per) return;
+      const v=r.val?nomeDiBattesimo(per, { [chiaveNome(per)]:String(r.val) }):"";
+      if(v) Sync.set("et_proprio", { per:per, n:v }); else Sync.del("et_proprio");
+    });
+  }
+  function proprio(){
+    if(!nome) return "";
+    const p=Sync.get("et_proprio",null);
+    return (p && p.per===nome && p.n) ? p.n : nomeDiBattesimo(nome);
   }
   /* OSPITE — nessun codice, nessun punto, niente su disco. Serve a chi il
      codice non ce l'ha addosso, e a far provare il gioco a un collega senza
@@ -21010,7 +21031,7 @@ const Student=(function(){
   function setDocente(v){ docOk=v; return v; }
   return { boot, setCode, setClass, setIdentita, entraOspite, logout, setDocente,
            get code(){ return code; }, get cls(){ return cls || (isCollaudo(code)?COLLAUDO_CLASSE:""); },
-           get nome(){ return nome; }, get ospite(){ return ospite; },
+           get nome(){ return nome; }, get proprio(){ return proprio(); }, get ospite(){ return ospite; },
            get digitato(){ return digitato; },
            get teacher(){ return isTeacher(); } };
 })();
@@ -27476,7 +27497,7 @@ function lessonGreetWhenFree(id){
   setTimeout(t,1200);
 }
 function lessonInvite(npc,id){
-  const g=greetTimeOfDay(), me=(Student.nome||"").split(" ")[0]||"";
+  const g=greetTimeOfDay(), me=Student.proprio;
   LESSON.greetAt=Date.now();
   DialogueBox.open({ npc:npc||GRACE, icon:"\u{1F34E}", sub:"Teacher",
     text:g.en+(me?", "+me:"")+"! You're just in time: our lesson on "+lessonTitle(id)+" is starting. Come in and sit down, please!",
@@ -27512,7 +27533,7 @@ function lessonFetch(){
   LESSON.graceHome=GRACE.carrier.position.clone(); LESSON.graceYaw=GRACE.carrier.rotation.y;
   const arrive=()=>{
     GRACE.watch=true;
-    const me=(Student.nome||"").split(" ")[0]||"";
+    const me=Student.proprio;
     DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Teacher",
       text:resume?("Come on"+(me?", "+me:"")+"! The lesson isn't over yet. Please, sit down at your desk.")
                  :("Come on"+(me?", "+me:"")+"! The lesson is starting. Please, sit down at your desk."),
@@ -28412,7 +28433,7 @@ function lessonStart(id){
   if(LESSON.fetching){ LESSON.fetching=false; lessonGraceHome(); }
   if(id!=="u0") lessonThemeApply(id);
   lessonSit();
-  const me=(Student.nome||"").split(" ")[0]||"";
+  const me=Student.proprio;
   const toYou=me?(", "+me):"";                                   // senza nome: «your turn!», non «your turn, you»
   const lily=_lessonPupil("pupil_lily"), ben=_lessonPupil("pupil_ben"), tim=TIM||_lessonPupil("tim");
   const title=lessonTitle(id), kws=lesKeywords(L);
@@ -68146,26 +68167,57 @@ ET.presenzaProva=function(n,r){ const k=Presenza.prova(n,r);
    ⚠️ E si rimette la maiuscola solo all'iniziale: l'anagrafica e' in
    stampatello e una targhetta che URLA sopra la testa di un ragazzino sta
    male. */
-function nomeDiBattesimo(intero){
+/* v405 — IL NOME SEPARATO ARRIVA DA LIVELEARN. Importando il backup di
+   MyClass, LiveLearn tiene ora in livelearn/classes/<id>/battesimo il solo
+   nome di ogni alunno, con la chiave fatta da chiaveNome() sulla stringa
+   «COGNOME NOME» (la stessa funzione sta in LiveLearn: se si cambia qui va
+   cambiata anche li'). Con quella mappa il nome e' quello del registro,
+   cognomi composti compresi.
+   ⚠️ Senza mappa (classe importata prima della v405) si indovina, ma meglio
+   di prima: le particelle dei cognomi (De, Di, Da, Del, Della, La, Lo,
+   D', Mc, Van...) restano attaccate al cognome, quindi «DE LUCA MARCO» da'
+   «Marco». Restano sbagliati i doppi cognomi senza particella («ROSSI
+   BIANCHI MARCO») — e per quelli serve reimportare MyClass in LiveLearn. */
+function chiaveNome(intero){
+  return String(intero||"").trim().replace(/\s+/g," ").toUpperCase().replace(/[.#$\[\]\/]/g,"_");
+}
+const _PARTICELLE=["DE","DI","DA","DEL","DELLA","DELLO","DELLE","DEI","DEGLI","DAL","DALLA","DALLO",
+  "DALLE","DAI","DAGLI","LA","LO","LE","LI","D'","DELL'","DALL'","MC","MAC","VAN","VON","DER","DEN",
+  "TEN","TER","SAN","SANTA","SANTO","SANT'","DOS","DAS","DO","DU","DES","EL","AL","BEN","IBN","ABU","BIN"];
+function _maiuscole(w){
+  return String(w||"").toLowerCase().replace(/(^|[\s'\-])([a-zà-þ])/g, function(m,a,c){ return a+c.toUpperCase(); });
+}
+function nomeDiBattesimo(intero, mappa){
   const t=String(intero||"").trim().replace(/\s+/g," ");
   if(!t) return "";
+  const m=mappa && mappa[chiaveNome(t)];
+  if(m && String(m).trim()) return _maiuscole(String(m).trim().replace(/\s+/g," ")).slice(0,18);
   const p=t.split(" ");
-  const resto=(p.length>1)?p.slice(1):p;
-  return resto.map(function(w){
-    return w?(w.charAt(0).toUpperCase()+w.slice(1).toLowerCase()):w;
-  }).join(" ").slice(0,18);
+  let i=0;
+  while(i<p.length-2 && _PARTICELLE.indexOf(p[i].toUpperCase())>=0) i++;   // De / Della / La ...
+  const resto=(p.length>1)?p.slice(Math.min(i+1,p.length-1)):p;
+  return _maiuscole(resto.join(" ")).slice(0,18);
+}
+/* le mappe di tutte le classi (le legge solo il docente): classId -> battesimo */
+function leggiBattesimi(ms){
+  return Cloud.leggi("livelearn/classes", ms||12000).then(function(r){
+    const o={}; if(r.risposto && r.val) Object.keys(r.val).forEach(function(id){
+      const c=r.val[id]; if(c && c.battesimo) o[id]=c.battesimo; });
+    return o;
+  }, function(){ return {}; });
 }
 /* Costruisce la tabella impronta -> nome per una classe, SENZA scriverla.
    La usano sia il pannello sia la console: una logica sola, un difetto solo
    da correggere se sbaglia. */
 function tabellaNomi(c, ms){
-  return Cloud.leggi(LL_STUDENTS.replace(/\/$/,""), ms||12000).then(function(A){
+  return Promise.all([ Cloud.leggi(LL_STUDENTS.replace(/\/$/,""), ms||12000), leggiBattesimi(ms) ]).then(function(R){
+    const A=R[0], B=R[1];
     if(!A.risposto) return { risposto:false, motivo:(A.motivo||"nessuna risposta"), tab:{}, righe:[] };
     const ana=A.val||{}, tab={}, righe=[];
     Object.keys(ana).forEach(function(code){
       const d=ana[code]||{};
       if(String(d.className||"").toUpperCase().replace(/\s+/g,"")!==c) return;
-      const n=nomeDiBattesimo(d.name);
+      const n=nomeDiBattesimo(d.name, B[d.classId]);
       if(!n) return;
       tab[Presenza.impronta(code)]=n;
       righe.push({ code:code, intero:String(d.name||""), nome:n });
@@ -68347,15 +68399,15 @@ function profEntra(){
   _pdMsg("entro…");
   /* UNA lettura dell'anagrafica (classi e targhette di tutti) e una dei
      nodi di classe (chi ha gia' la presenza accesa) */
-  Promise.all([ Cloud.leggi(LL_STUDENTS.replace(/\/$/,""), 12000), elencoCursori(8000) ]).then(function(R){
-    const A=R[0], C=R[1];
+  Promise.all([ Cloud.leggi(LL_STUDENTS.replace(/\/$/,""), 12000), elencoCursori(8000), leggiBattesimi(12000) ]).then(function(R){
+    const A=R[0], C=R[1], B=R[2];
     if(!A.risposto){ _pdMsg("<span style=\"color:#c33\">"+ccSpiega(A.motivo)+"</span>"); return; }
     const val=(C.risposto && C.val)||{}, tab={}, cl=[];
     Object.keys(A.val||{}).forEach(function(code){
       const d=A.val[code]||{}, c=normClasse(d.className||"");
       if(!RE_CLASSE.test(c)) return;
       if(!tab[c]){ tab[c]={}; cl.push(c); }
-      const n=nomeDiBattesimo(d.name); if(n) tab[c][Presenza.impronta(code)]=n;
+      const n=nomeDiBattesimo(d.name, B[d.classId]); if(n) tab[c][Presenza.impronta(code)]=n;
     });
     cl.sort();
     if(!cl.length){ _pdMsg("<span style=\"color:#c33\">Nessuna classe in anagrafica.</span>"); return; }
