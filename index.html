@@ -49149,6 +49149,7 @@ function openTeacherPanel(){
        +"<b>3</b> nel Market: prova la spesa libera.</span>",
     buttons:[ btn("Tutto aperto",null), btn("Come una 1\u00aa","1"),
               btn("Come una 2\u00aa","2"), btn("Come una 3\u00aa","3"),
+              { label:"\u{1F440} Presenza"+(Presenza.acceso?" \u2713":"")+"\u2026", act:openPresenzaDocente },     // v404
               { label:"\u{1F3EB} Cursore di classe\u2026", act:openCursorePanel },
               { label:"\u{1F3C6} Graduatoria\u2026", act:openGraduatoriaPanel } ] });
 }
@@ -66550,6 +66551,28 @@ const PRES_K_MAX = 160;     // v302: lunghezza massima del look (regole: k.lengt
 const PRES_K_VECCHIO = 32;  // v302: il limite delle regole vecchie, ripiego automatico
 const PRES_H     = 1.65;    // altezza: i compagni sono ragazzi come il giocatore (AVATAR_HEIGHT)
 const PRES_SEP   = 0.62;    // v312: distanza minima fra i centri di due corpi disegnati (spalle ~0.45 m)
+/* v404 — IL DOCENTE IN CITTA' (Giacomo, 27 ott: «che io possa vedere gli
+   alunni mentre giocano, e loro mi vedano come un NPC col nome Mrs.
+   Jackson»). Il docente entra nella presenza di una classe come chiunque
+   altro, ma chi lo riceve non disegna un compagno: disegna un'ADULTA col
+   modello degli NPC, targhetta «Mrs. Jackson» (solo il nome, niente
+   sottotitolo: deciso da Giacomo), nessun guardaroba.
+   ⚠️ CHI E' IL DOCENTE LO DICE LA CHIAVE, non il pacchetto: la chiave e'
+   l'impronta di un codice di DOCENTI (non dei codici di collaudo, che
+   servono a giocare DA ALUNNI). Un ragazzo smanettone potrebbe scrivere su
+   quella chiave (vedi «le regole non possono dire scrivi solo il tuo»):
+   comparirebbe una Mrs. Jackson in piu' per un terzo di secondo, e si
+   ricorregge alla scrittura successiva del docente.
+   ⚠️ Il look che il docente pubblica e' un look da ragazza QUALSIASI e
+   corto (sta nei 32 caratteri delle regole vecchie): i Chromebook con la
+   build vecchia in cache vedono una figura femminile senza nome invece di
+   un ragazzo a caso. */
+const MRSJ_NOME = "Mrs. Jackson";
+const MRSJ_H    = 1.70;     // un'adulta: piu' alta dei ragazzi (PRES_H), come Miss Grace
+const MRSJ_LOOK = "f|s3|h1|k1|purple";
+const MRSJ_RIG  = ["npcWomanB","npcWoman","avatarW"];   // il primo caricato; avatarW = ripiego
+const MRSJ_TINTA= { Purple:"#2f4a6e", Shirt:"#2f4a6e", Jacket:"#2f4a6e", Red:"#2f4a6e",
+                    LightBlue:"#2a2f3a", Pants:"#2a2f3a", LimeGreen:"#2a2f3a" };
 const Presenza=(function(){
   let acceso=false, motivo="non avviato", classe="", mio="", pubblica=true, parla=true;
   let ref=null, radice=null, timer=null, t0=0;
@@ -66580,7 +66603,12 @@ const Presenza=(function(){
      il look si taglia su un «|», cosi' i primi campi restano validi
      (corpo, pelle, capelli, scarpe, vestito...) e i compagni si vedono lo
      stesso, magari senza gli ultimi accessori. */
-  function _look(){ const s=_lookPieno().replace(/\|+$/,"");
+  /* v404: le chiavi che si disegnano come Mrs. Jackson (vedi MRSJ_NOME) */
+  const _chiaviProf=DOCENTI.map(function(c){ return _impronta(c); });
+  function _eProf(key){ return _chiaviProf.indexOf(String(key||""))>=0; }
+  function _sonoProf(){ try{ return Student.teacher && !isCollaudo(Student.code); }catch(e){ return false; } }
+  function _look(){ if(_sonoProf()) return MRSJ_LOOK;
+    const s=_lookPieno().replace(/\|+$/,"");
     if(s.length<=kMax) return s;
     const i=s.lastIndexOf("|",kMax); return i>0?s.slice(0,i):s.slice(0,kMax); }
   function _lookPieno(){
@@ -66751,10 +66779,12 @@ const Presenza=(function(){
     if(mioM && ora-mioMt<TALK_VITA) pac.m=mioM; else mioM="";
     /* v302: un rifiuto delle regole prima si vedeva solo come avviso di
        Firebase in console; ora si conta e finisce in ET.presenza(). */
-    try{ ref.set(pac).catch(function(err){ nRifiutate++;
+    const dove_=multi.length?multi.map(function(x){ return x.ref; }):[ref];   // v404: il docente scrive in ogni classe
+    dove_.forEach(function(r){
+    try{ r.set(pac).catch(function(err){ nRifiutate++;
       ultimoRifiuto=((err&&(err.code||err.message))||"rifiutata")+" (look "+pac.k.length+" caratteri, zona "+pac.a.length+")";
       /* regole vecchie: si riprova subito col look accorciato */
-      if(pac.k.length>PRES_K_VECCHIO && kMax>PRES_K_VECCHIO){ kMax=PRES_K_VECCHIO; ultimoStato=""; } }); }catch(e){}
+      if(pac.k.length>PRES_K_VECCHIO && kMax>PRES_K_VECCHIO){ kMax=PRES_K_VECCHIO; ultimoStato=""; } }); }catch(e){} });
     return true;
   }
   /* ---- LETTURA ---------------------------------------------------------
@@ -66770,9 +66800,10 @@ const Presenza=(function(){
     nRic++; byteRic += String(v.p||"").length+String(v.k||"").length
                       +String(v.a||"").length+key.length+60;
     let e=peers[key];
-    if(!e) e=peers[key]={ zona:"", look:"", p0:p, p1:p, t0:ora, dur:400,
+    if(e && !e.cls) try{ e.cls=(sn.ref&&sn.ref.parent&&sn.ref.parent.key)||""; }catch(err){}
+    if(!e) e=peers[key]={ cls:(function(){ try{ return (sn.ref&&sn.ref.parent&&sn.ref.parent.key)||""; }catch(err){ return ""; } })(), zona:"", look:"", p0:p, p1:p, t0:ora, dur:400,
                           ricev:ora, corpo:null, vel:0, vista:false,
-                          m:"", mseq:"", detto:null, dettoT:0 };
+                          m:"", mseq:"", detto:null, dettoT:0, prof:_eProf(key) };
     /* ⚠️ Si riparte da DOVE SI VEDE ADESSO, non dall'ultimo campione
        ricevuto: se un pacchetto si perde, l'avatar scivola dal punto in cui
        sta al punto nuovo invece di saltare indietro e poi avanti. */
@@ -66792,7 +66823,7 @@ const Presenza=(function(){
       if(p.invito>now && p.invito-now<=SK_CYCLE+60000 && p.invito>(SKATE.reqUntil||0)){
         const prima=skPhase(); SKATE.reqUntil=p.invito;
         if(prima!=="dance" && area==="town" && Math.hypot(player.position.x-SKATE.C.x,player.position.z-SKATE.C.z)<60)
-          toast("\u{1F6F9} "+(nomi[key]?nomi[key]+" asked the crew to dance! ":"The crew is dancing! ")+"\u{1F3B6}",3200); } } }catch(err){}
+          toast("\u{1F6F9} "+(_nomeDi(key)?_nomeDi(key)+" asked the crew to dance! ":"The crew is dancing! ")+"\u{1F3B6}",3200); } } }catch(err){}
     e.cameriere=p.cameriere;                           // v302: dove sta il suo Ray (dinerMirror)
     /* ⚠️ Il numero di sequenza distingue una frase NUOVA da una che e'
        semplicemente ancora nel nodo: senza, ogni aggiornamento di posizione
@@ -66808,7 +66839,7 @@ const Presenza=(function(){
     if(nk && nk!==e.look){
       const cambiaRig=(_leggiLook(nk).rig!==_leggiLook(e.look).rig);
       e.look=nk;
-      if(e.corpo){ if(cambiaRig) _rilascia(e); else _vesti(e.corpo, nk); }
+      if(e.corpo && !e.prof){ if(cambiaRig) _rilascia(e); else _vesti(e.corpo, nk); }
     }
   }
   /* Una frase e' arrivata: nuvoletta sopra la testa, voce, e si tiene da
@@ -66827,7 +66858,7 @@ const Presenza=(function(){
     const f=frasePer(fid); if(!f) return;
     e.detto={ id:fid, sigla:sig }; e.dettoT=Date.now();
     if(!e.vista) return;          // frase dal nulla: confonde e basta
-    const nome=nomi[key]||"";
+    const nome=_nomeDi(key);
     /* v320 (Giacomo: «se un compagno ti scrive, tu possa ignorare il
        messaggio senza bisogno di premere OK»). La finestra degli NPC
        fermava il gioco finche' non la chiudevi: ora la frase arriva in un
@@ -66848,8 +66879,9 @@ const Presenza=(function(){
      subito: creare costa ~50 ms piu' una ricostruzione dell'octree da ~38,
      e senza isteresi un compagno che cammina sul bordo del raggio farebbe
      scattare la citta' a ogni passo. */
-  function _creaCorpo(rig){
+  function _creaCorpo(rig, prof){
     const c=containers[rig]||containers.avatar;
+    const alt=prof?MRSJ_H:PRES_H;
     if(!c || c.__placeholder) return null;
     const id="pres"+(corpi.length+1)+"_"+Math.floor(Math.random()*1e6);
     /* true = materiali CLONATI: si tingono senza vestire meta' citta'. */
@@ -66862,7 +66894,7 @@ const Presenza=(function(){
       glRoot.getChildMeshes().forEach(function(m){ m.computeWorldMatrix(true); }); };
     fix();
     let bb=holder.getHierarchyBoundingVectors(true);
-    const h=(bb.max.y-bb.min.y)||1; holder.scaling.setAll(PRES_H/h); fix();
+    const h=(bb.max.y-bb.min.y)||1; holder.scaling.setAll(alt/h); fix();
     bb=holder.getHierarchyBoundingVectors(true);
     holder.position.set(-(bb.min.x+bb.max.x)/2, -bb.min.y, -(bb.min.z+bb.max.z)/2);
     const carrier=new BABYLON.TransformNode(id+"_carrier",scene);
@@ -66920,7 +66952,13 @@ const Presenza=(function(){
         m.skeleton.bones.forEach(function(b2){ if(!LEG_BONE_RE.test(b2.name)) return; addBone(b2);
           const par=b2.getParent&&b2.getParent(); if(par&&!LEG_BONE_RE.test(par.name)) addBone(par); }); } });
     }
-    const b={ rig:rig, id:id, carrier:carrier, holder:holder, meshes:meshes, anims:anims,
+    /* v404: Mrs. Jackson ha il suo tailleur, sempre lo stesso: niente
+       _vesti (i nomi dei materiali dei rig NPC non sono quelli del
+       giocatore), solo la tinta, una volta, alla nascita */
+    if(prof && rig!=="avatarW") meshes.forEach(function(m){ const mt=m.material; if(!mt||!mt.name) return;
+      for(const k in MRSJ_TINTA) if(mt.name.indexOf(k)>=0){ const col=BABYLON.Color3.FromHexString(MRSJ_TINTA[k]);
+        if(mt.albedoColor) mt.albedoColor=col; else if(mt.diffuseColor) mt.diffuseColor=col; break; } });
+    const b={ rig:rig, prof:!!prof, id:id, carrier:carrier, holder:holder, meshes:meshes, anims:anims,
       pins:pins, pinsStand:pins, holderY0:holder.position.y, sit:null, cur:null, anim:null, noPin:false, usato:false, libero:Date.now(), look:"",
       play:function(nm){ const g=this.anims[nm]; if(!g||this.cur===g) return;
         for(const k in this.anims) this.anims[k].stop(); g.start(true); this.cur=g; } };
@@ -66930,7 +66968,7 @@ const Presenza=(function(){
        compagno cambia stanza mentre la targhetta esiste — gli NPC no, e per
        loro il campo e' fisso. */
     try{
-      const anc=anchorMesh(carrier,0,PRES_H+0.25,0);
+      const anc=anchorMesh(carrier,0,alt+0.25,0);
       /* anchorMesh chiama "anc" qualunque ancora: con una cinquantina di
          targhette in scena non si capisce piu' quale sia di chi. Qui costa
          una riga e serve sia a diagnosticare sia al collaudo. */
@@ -67028,10 +67066,15 @@ const Presenza=(function(){
     if(b.cur){ try{ b.cur.stop(); }catch(err){} b.cur=null; }
     e.corpo=null; e.vista=false;
   }
+  function _rigProf(){
+    for(let i=0;i<MRSJ_RIG.length;i++){ const c=containers[MRSJ_RIG[i]]; if(c && !c.__placeholder) return MRSJ_RIG[i]; }
+    return "avatarW";
+  }
   function _assegna(e){
-    const rig=(_leggiLook(e.look).rig==="f")?"avatarW":"avatar";
+    const prof=!!e.prof;
+    const rig=prof?_rigProf():((_leggiLook(e.look).rig==="f")?"avatarW":"avatar");
     let b=null;
-    for(let i=0;i<corpi.length;i++) if(!corpi[i].usato && corpi[i].rig===rig){ b=corpi[i]; break; }
+    for(let i=0;i<corpi.length;i++) if(!corpi[i].usato && corpi[i].rig===rig && corpi[i].prof===prof){ b=corpi[i]; break; }
     if(!b){
       /* ⚠️ Se la scorta e' piena e non c'e' un corpo libero del rig giusto,
          si BUTTA un corpo libero dell'altro rig e se ne fa uno nuovo. Non si
@@ -67041,11 +67084,12 @@ const Presenza=(function(){
         for(let i=corpi.length-1;i>=0;i--) if(!corpi[i].usato){
           _distruggi(corpi[i]); corpi.splice(i,1); break; }
       }
-      if(corpi.length<PRES_POOL) b=_creaCorpo(rig);
+      if(corpi.length<PRES_POOL) b=_creaCorpo(rig, prof);
     }
     if(!b) return;
     b.usato=true; b.anim=null; b.noPin=false;
-    if(b.look!==e.look) _vesti(b, e.look);
+    if(prof){ if(rig==="avatarW" && b.look!==MRSJ_LOOK) _vesti(b, MRSJ_LOOK); }   // v404: ripiego senza rig NPC
+    else if(b.look!==e.look) _vesti(b, e.look);
     try{ b.carrier.setEnabled(false); }catch(err){}
     e.corpo=b; e.vista=false;
     /* ⚠️ IL NOME SEGUE IL COMPAGNO, NON IL CORPO. I corpi si riusano: senza
@@ -67058,7 +67102,7 @@ const Presenza=(function(){
     if(!b.inter){
       b.inter=addInteract({ area:area, radius:3.2, prio:1,
         pos:function(){ const q=dove(e); return { x:q.x, y:1.2, z:q.z }; },
-        prompt:function(){ const n=nomi[_chiaveDi(e)]||"";
+        prompt:function(){ const n=_nomeDi(_chiaveDi(e));
           return "<b>E</b> \u2014 \u{1F4AC} parla" + (n?(" con "+n):"") ; },
         interact:function(){ apriParlato(_chiaveDi(e)); } });
     }
@@ -67611,7 +67655,7 @@ const Presenza=(function(){
     }, PRES_RIPROVA);
   }
   function _controlla(){
-    if(!classe) return;
+    if(!classe || multi.length) return;            // v404: il docente in tutte le classi si governa da se'
     Cloud.leggi(ET_CLASSI+classe, 6000).then(function(r){
       if(!r.risposto) return;                     // muta: non si tocca niente
       if(!r.val || r.val.pres!==true){
@@ -67632,6 +67676,16 @@ const Presenza=(function(){
      stesso momento; senza questo si collegavano due volte (ascoltatori
      doppi sul nodo della presenza). */
   let ascoltoRef=null, ascoltoCls="", inCorso=null;
+  /* v404: il docente non ha una classe in anagrafica: quella che sceglie da
+     console (ET.presenza("2F")) resta qui, cosi' la vigilanza (che chiama avvia() senza
+     argomenti) sa dove ricollegarsi se la presenza si spegne e si riaccende. */
+  let scelta="";
+  /* v404: il docente sta in TUTTE le classi insieme (Giacomo: «io entro e
+     devo vedere tutti quelli collegati, non una classe»). I nodi restano
+     uno per classe — i ragazzi di classi diverse continuano a non vedersi
+     fra loro — e solo il docente li ascolta tutti e scrive se stesso in
+     ognuno. [{c, radice, ref}] */
+  let multi=[];
   function _ascolta(c){
     if(ascoltoRef && ascoltoCls===c) return;
     _nonAscoltare(); ascoltoCls=c;
@@ -67648,10 +67702,15 @@ const Presenza=(function(){
   }
   function _nonAscoltare(){ try{ if(ascoltoRef) ascoltoRef.off(); }catch(e){} ascoltoRef=null; ascoltoCls=""; }
   function avvia(cls){
-    const c=normClasse(cls||Student.cls||"");
+    const c=normClasse(cls||scelta||Student.cls||"");
     if(acceso && classe===c) return Promise.resolve(true);
     if(!c || !RE_CLASSE.test(c)){ motivo="nessuna classe valida"; return Promise.resolve(false); }
     if(Student.ospite){ motivo="ospite: niente presenza"; return Promise.resolve(false); }
+    if(cls) scelta=c;
+    /* ⚠️ v404: passando a un'altra classe ci si STACCA dalla prima. Prima
+       non succedeva mai (un alunno ha una classe sola) e _collega avrebbe
+       lasciato in ascolto anche il nodo vecchio: due classi in scena. */
+    if(acceso && classe!==c && ref){ _stacca(); for(const k in nomi) delete nomi[k]; }
     if(inCorso) return inCorso;
     const p=inCorso=_avvia(c);
     p.then(function(){ if(inCorso===p) inCorso=null; }, function(){ if(inCorso===p) inCorso=null; });
@@ -67669,9 +67728,9 @@ const Presenza=(function(){
       if(!r.val || r.val.pres!==true){ motivo="presenza spenta per "+c+" (ricontrollo ogni minuto)";
         return false; }
       _nomi(r.val.nomi);
-      /* Il docente vede senza farsi vedere: sta quasi sempre al proiettore e
-         il suo avatar in giro confonderebbe. ET.presenza(true) per comparire. */
-      if(Student.teacher) pubblica=false;
+      /* v404: il docente compare come Mrs. Jackson (MRSJ_NOME).
+         ET.presenza(false) per guardare senza comparire. */
+      if(Student.teacher) pubblica=true;
       /* v302: i codici di collaudo invece si mostrano: servono a provare la
          presenza in due, e da invisibili non si vedrebbero fra loro. */
       if(isCollaudo(Student.code)) pubblica=true;
@@ -67701,7 +67760,45 @@ const Presenza=(function(){
     _invia(true);
     return "ok";
   }
-  function chiudi(){ try{ if(ref) ref.remove(); }catch(e){} }
+  function chiudi(){ try{ if(ref) ref.remove(); }catch(e){}
+    multi.forEach(function(x){ try{ x.ref.remove(); }catch(e){} }); }
+  /* v404 — IL DOCENTE IN TUTTE LE CLASSI (vedi `multi`). Stesso
+     collegamento di _collega, ripetuto per ogni nodo di classe. */
+  function avviaTutte(cl){
+    cl=(cl||[]).map(normClasse).filter(function(c){ return RE_CLASSE.test(c); });
+    if(!cl.length){ motivo="nessuna classe"; return Promise.resolve(false); }
+    if(inCorso) return inCorso;
+    if(acceso) _stacca();
+    _nonAscoltare();
+    if(vigilaT){ clearInterval(vigilaT); vigilaT=null; }
+    const p=inCorso=Cloud.carica().then(function(ok){
+      if(!ok){ motivo="SDK non disponibile"; return false; }
+      let app;
+      try{ app=firebase.app("pres"); }
+      catch(err){ app=firebase.initializeApp(PRES_CFG,"pres"); }
+      return app.auth().signInAnonymously().then(function(){
+        mio=_impronta(Student.code||"");
+        multi=cl.map(function(c){
+          const R=app.database().ref("presence/"+c), me=R.child(mio);
+          try{ me.onDisconnect().remove(); }catch(err){}
+          R.on("child_added", _campione);
+          R.on("child_changed", _campione);
+          R.on("child_removed", function(sn){ if(sn&&sn.key) _via(sn.key); });
+          return { c:c, radice:R, ref:me };
+        });
+        radice=multi[0].radice; ref=multi[0].ref; classe=cl.join(" ");
+        try{ app.database().ref(".info/serverTimeOffset").on("value", function(sn){
+          const v=+(sn&&sn.val()); if(isFinite(v) && Math.abs(v)<864e5) RADIO.off=v; }); }catch(err){}
+        acceso=true; motivo="ok"; t0=Date.now(); pubblica=true; parla=true;
+        _invia(true);
+        if(!timer) timer=setInterval(function(){ try{ _invia(false); }catch(err){} }, 250);
+        try{ window.addEventListener("pagehide", chiudi); }catch(err){}
+        return true;
+      }, function(err){ motivo=(err&&(err.code||err.message))||"accesso rifiutato"; return false; });
+    }, function(){ motivo="SDK non disponibile"; return false; });
+    p.then(function(){ if(inCorso===p) inCorso=null; }, function(){ if(inCorso===p) inCorso=null; });
+    return p;
+  }
   /* ---- I NOMI ------------------------------------------------------------
      ⚠️ LA TABELLA NON STA NEL PROGETTO PRESENZA. Sta accanto al cursore di
      classe, in englishtown/classi/<CLASSE>/nomi, cioe' nel progetto con le
@@ -67722,9 +67819,11 @@ const Presenza=(function(){
     for(const k in peers) if(peers[k].corpo) _scriviNome(peers[k], k);
     return Object.keys(nomi).length;
   }
+  /* v404: il docente si chiama sempre Mrs. Jackson, per tutte le classi */
+  function _nomeDi(key){ return _eProf(key)?MRSJ_NOME:(nomi[key]||""); }
   function _scriviNome(e,key){
     const b=e&&e.corpo; if(!b||!b.label) return;
-    const n=nomi[key]||"";
+    const n=_nomeDi(key);
     b.label.hidden=!n;
     if(n && b.label.t1 && b.label.t1.text!==n) b.label.t1.text=n;
   }
@@ -67780,6 +67879,7 @@ const Presenza=(function(){
   function _stacca(){
     chiudi();
     try{ if(radice) radice.off(); }catch(e){}
+    multi.forEach(function(x){ try{ x.radice.off(); }catch(e){} }); multi=[];
     if(timer){ clearInterval(timer); timer=null; }
     for(const k in peers) _via(k);
     for(let i=corpi.length-1;i>=0;i--){ _distruggi(corpi[i]); corpi.splice(i,1); }
@@ -67808,19 +67908,28 @@ const Presenza=(function(){
       kB_ricevuti:Math.round(byteRic/1024*10)/10,
       kB_al_minuto:Math.round(byteRic/1024/min*10)/10 };
   }
-  return { avvia:avvia, spegni:spegni, chiudi:chiudi, tick:tick, pin:pin, stato:stato,
+  return { avvia:avvia, avviaTutte:avviaTutte, spegni:spegni, chiudi:chiudi, tick:tick, pin:pin, stato:stato,
            vicini:vicini, camerieri:camerieri, get io(){ return mio; },
            hz:hz, dove:dove,
            /* porte aperte per il collaudo: sono funzioni pure o quasi, e
               provarle dal di fuori evita di riprodurre l'algoritmo nel test
               (l'errore che il 28 ago aveva fatto passare un ciclo tolto). */
            campione:_campione, scaduti:scaduti, scegli:_scegli, prova:prova,
-           nomi:_nomi, quantiNomi:function(){ return Object.keys(nomi).length; },
-           dire:dire, nomeDi:function(k){ return nomi[k]||""; },
+           nomi:_nomi, aggiungiNomi:function(t){ return _nomi(Object.assign({}, nomi, t||{})); }, quantiNomi:function(){ return Object.keys(nomi).length; },
+           dire:dire, nomeDi:_nomeDi, eProf:_eProf,
            /* il genere del compagno c'e' gia': e' il primo campo del look
               che pubblica lui stesso ("m"/"f"). Serve solo una porta. */
-           rigDi:function(k){ const e=peers[k];
+           rigDi:function(k){ if(_eProf(k)) return "f"; const e=peers[k];
              return (e&&e.look)?_leggiLook(e.look).rig:"m"; },
+           /* v404: per il pannello del docente — chi c'e', dove, e quanto e' lontano */
+           elenco:function(){ const o=[];
+             for(const k in peers){ const e=peers[k], q=dove(e);
+               o.push({ key:k, nome:_nomeDi(k), zona:e.zona, prof:!!e.prof, cls:e.cls||"",
+                        d:(e.zona===area)?Math.hypot(player.position.x-q.x, player.position.z-q.z):-1 }); }
+             return o; },
+           posDi:function(k){ const e=peers[k]; if(!e) return null; const q=dove(e);
+             return { zona:e.zona, x:q.x, z:q.z, y:q.y, r:q.r }; },
+           get pubblico(){ return pubblica; },
            sentito:function(k){ const e=peers[k]; return (e&&e.detto)?e.detto:null; },
            vicino:function(k){ return !!(peers[k] && peers[k].corpo && peers[k].vista); },
            get parla(){ return parla; },
@@ -68145,6 +68254,162 @@ ET.promemoria=function(){
                    : "nessuna quest in corso (o unit gia' completata): niente da ricordare";
 };
 ET.presenzaSpegni=function(){ Presenza.spegni(); return "\u{1F465} presenza spenta su questa finestra"; };
+
+/* =====================================================================
+   v404 — LA PRESENZA DEL DOCENTE. Giacomo, 27 ott: «che io possa vedere
+   gli alunni mentre giocano, e loro mi vedano come un NPC col nome Mrs.
+   Jackson»; «io entro e devo vedere tutti quelli collegati, non una
+   classe»; «se non voglio vederli, togli pulsante presenza».
+   ---------------------------------------------------------------------
+   UN INTERRUTTORE SOLO, nel pannello della modalita' docente:
+     · ACCESO: entri in tutte le classi insieme (Presenza.avviaTutte), vedi
+       tutti gli alunni collegati e loro vedono te come Mrs. Jackson. Le
+       classi con la presenza spenta si accendono (senza, i loro ragazzi non
+       pubblicano niente e non ci sarebbe nessuno da vedere) e si ricordano;
+     · SPENTO: esci, non vedi piu' nessuno, e le classi accese da qui
+       tornano spente. Quelle che erano gia' accese restano come le avevi.
+   ⚠️ L'elenco delle classi accese dall'interruttore sta in localStorage:
+   se chiudi la scheda senza spegnere, al prossimo «spento» si rimettono
+   a posto lo stesso.
+   L'elenco di chi e' collegato (nome, classe, luogo) si aggiorna da solo e
+   «Vai» ti porta accanto all'alunno, anche dentro un edificio.
+   ===================================================================== */
+const K_PROF_ACCESE="et_prof_accese";
+function _profAccese(){ try{ return JSON.parse(localStorage.getItem(K_PROF_ACCESE)||"[]")||[]; }catch(e){ return []; } }
+function _profAcceseSet(a){ try{ if(a&&a.length) localStorage.setItem(K_PROF_ACCESE, JSON.stringify(a));
+  else localStorage.removeItem(K_PROF_ACCESE); }catch(e){} }
+/* il nome del luogo come lo scrive il cartello in alto (vedi enterArea) */
+function nomeZona(z){
+  const N={ town:"Town", home:"Home", cinema:"ODEON Cinema", subway:"Underground" };
+  if(N[z]) return N[z];
+  try{ const I=INTERIORS[z]; if(I) return I.def.areaName||I.def.title||z; }catch(e){}
+  try{ for(const k in QUESTS){ const u=QUESTS[k]; if(u && u.area===z) return u.title||z; } }catch(e){}
+  return z||"?";
+}
+function _unitDiZona(z){
+  try{ for(const k in QUESTS){ const u=QUESTS[k]; if(u && u.area===z) return u; } }catch(e){}
+  return null;
+}
+/* Ti porta accanto a un alunno: un metro e mezzo davanti a lui, girata
+   verso di lui. ⚠️ Mai dentro un muro: si prova tutt'intorno e, se non c'e'
+   posto, si sta proprio dove sta lui (i corpi dei compagni non collidono). */
+function profVaiDa(key){
+  const p=Presenza.posDi(key);
+  if(!p){ toast("\u{1F440} Non è più collegato"); return false; }
+  if(p.zona!==area){
+    if(p.zona==="town"){
+      try{ Quest.stop(); }catch(e){} try{ gigStop(); }catch(e){}
+      enterArea("town");
+    } else {
+      const u=_unitDiZona(p.zona);
+      if(!u){ toast("\u{1F440} È in "+nomeZona(p.zona)+": lì non posso portarti"); return false; }
+      enterUnit(u, true, true);              // senza quest e senza chiedere: sei il docente
+    }
+  }
+  let x=p.x, z=p.z;
+  for(let i=0;i<8;i++){
+    const a=p.r+i*Math.PI/4, nx=p.x+Math.sin(a)*1.5, nz=p.z+Math.cos(a)*1.5;
+    let ko=false; try{ ko=blocked(nx,nz); }catch(e){}
+    if(!ko){ x=nx; z=nz; break; }
+  }
+  player.position.set(x, p.y, z);
+  player.rotation.y=Math.atan2(p.x-x, p.z-z);
+  camera.target.copyFrom(player.position); camera.target.y+=2.0;
+  try{ updateProximity(); }catch(e){}
+  const n=Presenza.nomeDi(key);
+  toast("\u{1F440} "+(n?("Sei da "+n):"Sei da un alunno senza targhetta")+" · "+nomeZona(p.zona));
+  return true;
+}
+function _pdMsg(html){ const e=document.getElementById("pd-msg"); if(e) e.innerHTML=html||""; }
+function openPresenzaDocente(){
+  if(!Student.teacher){ toast("Solo in modalità docente"); return; }
+  const on=Presenza.acceso;
+  QModal.open({
+    title:"\u{1F440} Presenza",
+    sub:"Vedi tutti gli alunni collegati. Loro vedono te come <b>"+esc(MRSJ_NOME)+"</b>.",
+    html:"<div style=\"text-align:left;font:14px/1.45 system-ui,sans-serif\">"
+      +"<label style=\"display:flex;align-items:center;gap:9px;margin:2px 0 0;"
+      +"padding:9px 10px;border-radius:9px;background:#0000000d;cursor:pointer\">"
+      +"<input type=\"checkbox\" id=\"pd-on\" style=\"width:17px;height:17px;flex:0 0 auto\""+(on?" checked":"")+">"
+      +"<span><b>Presenza</b><br><small style=\"opacity:.75\">Accesa: sei in città con tutti. "
+      +"Spenta: non vedi nessuno e nessuno vede te.</small></span></label>"
+      +"<div id=\"pd-msg\" style=\"margin-top:10px;min-height:18px\"></div>"
+      +"<div id=\"pd-list\" style=\"margin-top:6px;max-height:42vh;overflow:auto\"></div></div>",
+    buttons:[ { label:"Close", cls:"primary" } ] });
+  const c=document.getElementById("pd-on");
+  if(c) c.onchange=function(){ if(c.checked) profEntra(); else profEsci(); };
+  profElenco();
+  /* l'elenco si ridisegna da solo finche' il pannello e' aperto */
+  const t=setInterval(function(){ if(!document.getElementById("pd-list")){ clearInterval(t); return; }
+    profElenco(); }, 2000);
+}
+function profEntra(){
+  _pdMsg("entro…");
+  /* UNA lettura dell'anagrafica (classi e targhette di tutti) e una dei
+     nodi di classe (chi ha gia' la presenza accesa) */
+  Promise.all([ Cloud.leggi(LL_STUDENTS.replace(/\/$/,""), 12000), elencoCursori(8000) ]).then(function(R){
+    const A=R[0], C=R[1];
+    if(!A.risposto){ _pdMsg("<span style=\"color:#c33\">"+ccSpiega(A.motivo)+"</span>"); return; }
+    const val=(C.risposto && C.val)||{}, tab={}, cl=[];
+    Object.keys(A.val||{}).forEach(function(code){
+      const d=A.val[code]||{}, c=normClasse(d.className||"");
+      if(!RE_CLASSE.test(c)) return;
+      if(!tab[c]){ tab[c]={}; cl.push(c); }
+      const n=nomeDiBattesimo(d.name); if(n) tab[c][Presenza.impronta(code)]=n;
+    });
+    cl.sort();
+    if(!cl.length){ _pdMsg("<span style=\"color:#c33\">Nessuna classe in anagrafica.</span>"); return; }
+    const accese=_profAccese(), scritture=[];
+    cl.forEach(function(c){
+      const v=val[c]||{};
+      /* ⚠️ Si scrive SOLO `pres` (come ccPresenza): un set() sul nodo
+         intero cancellerebbe il cursore della classe. */
+      if(v.pres!==true){ scritture.push(Cloud.scrivi(ET_CLASSI+c+"/pres", true));
+        if(accese.indexOf(c)<0) accese.push(c); }
+      /* le targhette, riscritte solo se sono cambiate */
+      const a=v.nomi||{}, t=tab[c], ka=Object.keys(a), kt=Object.keys(t);
+      if(kt.length && !(ka.length===kt.length && kt.every(function(k){ return a[k]===t[k]; })))
+        scritture.push(Cloud.scrivi(ET_CLASSI+c+"/nomi", t));
+    });
+    _profAcceseSet(accese);
+    let tutti={}; cl.forEach(function(c){ Object.assign(tutti, tab[c]); });
+    return Promise.all(scritture).then(function(){ return Presenza.avviaTutte(cl); }).then(function(ok){
+      if(!ok){ _pdMsg("<span style=\"color:#c33\">Non sono entrata: "+esc(Presenza.stato().motivo)+"</span>");
+        const c=document.getElementById("pd-on"); if(c) c.checked=false; return; }
+      Presenza.nomi(tutti);
+      _pdMsg("✅ Sei in città come <b>"+esc(MRSJ_NOME)+"</b> · "+cl.length+" classi");
+      profElenco();
+    });
+  }).catch(function(e){ _pdMsg("<span style=\"color:#c33\">"+esc(e&&e.message||e)+"</span>"); });
+}
+function profEsci(){
+  Presenza.spegni();
+  /* le classi accese dall'interruttore tornano spente, con le loro targhette */
+  const accese=_profAccese();
+  Promise.all(accese.map(function(c){
+    return Cloud.scrivi(ET_CLASSI+c+"/pres", false).then(function(){ return Cloud.scrivi(ET_CLASSI+c+"/nomi", null); });
+  })).then(function(){ _profAcceseSet([]); }).catch(function(){});
+  _pdMsg("✅ Presenza spenta: non vedi più nessuno.");
+  profElenco();
+}
+function profElenco(){
+  const el=document.getElementById("pd-list"); if(!el) return;
+  const st=Presenza.stato();
+  if(!st.acceso){ el.innerHTML=""; return; }
+  const L=Presenza.elenco().filter(function(o){ return !o.prof; })
+    .sort(function(a,b){ return (a.nome||"\uffff").localeCompare(b.nome||"\uffff","it"); });
+  if(!L.length){ el.innerHTML="<small style=\"opacity:.7\">Nessun alunno in gioco in questo momento.</small>"; return; }
+  el.innerHTML="<div style=\"opacity:.8;margin-bottom:4px\"><b>"+L.length+"</b> in gioco</div>"
+    +L.map(function(o){
+      const dove=(o.cls?o.cls+" \u00b7 ":"")+nomeZona(o.zona)+(o.d>=0?(" \u00b7 "+Math.round(o.d)+" m"):"");
+      return "<div style=\"display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid #0001\">"
+        +"<span style=\"flex:1\"><b>"+esc(o.nome||"(senza targhetta)")+"</b><br><small style=\"opacity:.7\">"
+        +esc(dove)+"</small></span>"
+        +"<button type=\"button\" class=\"qm-btn\" data-k=\""+esc(o.key)+"\" style=\"padding:6px 12px\">Vai</button></div>";
+    }).join("");
+  el.querySelectorAll("button[data-k]").forEach(function(b){
+    b.onclick=function(){ const k=b.getAttribute("data-k"); QModal.close(); profVaiDa(k); }; });
+}
 
 engine.runRenderLoop(()=>scene.render());
 window.addEventListener("resize",()=>{
