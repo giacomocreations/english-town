@@ -12428,7 +12428,13 @@ function buildProps(){
    [-13,9.4],[13,9.4],[-13,-9.5],[13,-9.5]].forEach((p,i)=>planter(p[0],p[1]));
 
   // ---- CESTINI sui marciapiedi (spostati a z=±7.0 come gli idranti: liberi dal muro)
-  [[-9.5,7.0],[10,7.0],[-9.6,-7.0],[25,-7.0],[43,7.0]].forEach(p=>bin(p[0],p[1]));
+  /* v405 (Giacomo, 27 ott: «c'e' un secchio incastrato su un albero vicino al
+     cinema»). I tre cestini dell'incrocio stavano a 0,5-1 m dagli alberi
+     d'angolo (±9, ±7) e quello a x 43 a 1,4 m dall'albero (44, 8): dentro
+     l'aiuola (2,3 m di lato), addosso al tronco.
+     bin() non se ne accorgeva perche' insideSolid ignora apposta i tronchi
+     (flag tree, vedi tree()). Ora stanno a ~2 m, fuori dal cordolo. */
+  [[-11.5,7.0],[11.0,7.0],[-11.5,-7.0],[25,-7.0],[41,7.0]].forEach(p=>bin(p[0],p[1]));
 
   // ---- (v274: TOLTI i paletti a z ±5.6 che delimitavano l'attraversamento
   //      della Park Ave. L'attraversamento non c'e' piu' (v273), e fra la fila
