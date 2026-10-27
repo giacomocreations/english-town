@@ -11136,17 +11136,20 @@ const NEWS={ has:false, fold:null, open:null, mat:null, hands:null, handsOf:null
    giornale largo 56 cm. Avambraccio un po' in fuori: ~55 cm, le mani sui
    bordi; il giornale poi si allarga/stringe sulla distanza vera (newsTick). */
 /* v405 (Giacomo, 27 ott: «da seduto le mie mani sono davanti al
-   giornale»): le dita puntavano AVANTI per 20 cm e bucavano le pagine, che
-   stavano all'altezza dei polsi. Ora le dita salgono lungo il bordo, un po'
-   verso l'interno, e il palmo guarda la pagina (inclinata come in newsTick,
-   NEWS_TILT): il giornale si appoggia sui palmi (vedi newsTick). */
+   giornale»; poi: «occhio che lo tiene con i palmi!»). Le dita puntavano
+   AVANTI per 20 cm e bucavano le pagine. Ora e' la presa vera: il bordo del
+   giornale fra pollice e dita — le dita DIETRO le pagine, verso il centro,
+   il palmo e il pollice dal lato di chi legge (pagina inclinata come in
+   newsTick, NEWS_TILT). Il giornale si allarga fino alle nocche (newsTick). */
 const NEWS_TILT=0.30;
 const NEWS_ARMS={
   up:(o,f,dn)=>dn.scale(0.95).add(f.scale(0.26)).add(o.scale(0.15)),
-  fore:(o,f,dn)=>f.scale(0.80).subtract(dn.scale(0.30)).add(o.scale(0.32)),   // v405: piu' in fuori, i palmi ai bordi
+  fore:(o,f,dn)=>f.scale(0.80).subtract(dn.scale(0.30)).add(o.scale(0.32)),   // v405: piu' in fuori, le mani ai bordi
   hand:(o,f,dn)=>{ const up=dn.scale(-1), c=Math.cos(NEWS_TILT), sn=Math.sin(NEWS_TILT);
     const pn=f.scale(c).add(up.scale(sn)), pu=up.scale(c).subtract(f.scale(sn));
-    return { d:pu.scale(0.9).subtract(o.scale(0.3)).normalize(), n:pn }; } };
+    /* come si tiene un libro per i lati: palmo verso il centro, dita in su
+       lungo il bordo (dietro le pagine), pollice dal lato di chi legge */
+    return { d:pu, n:o.scale(-1) }; } };
 function _newsMat(){
   if(NEWS.mat) return NEWS.mat;
   /* una texture sola: a sinistra la prima pagina, a destra una pagina interna */
@@ -11229,15 +11232,23 @@ function newsTick(){
   const H=_newsHands(), ry=player.rotation.y, f=new BABYLON.Vector3(Math.sin(ry),0,Math.cos(ry));
   if(reading){
     const a=_newsHandPos(H.L), b=_newsHandPos(H.R); if(!a||!b) return;
-    /* v405: i palmi veri (_handBasis), non i polsi: il giornale si appoggia
-       davanti ai palmi, con i bordi appena oltre le mani */
+    /* v405: la presa vera (vedi NEWS_ARMS): ogni bordo sta nella forcella
+       fra pollice e indice, appena davanti alle dita (lato di chi legge) */
     const ha=H.L[0]?_handBasis(H.L[0]):null, hb=H.R[0]?_handBasis(H.R[0]):null;
-    const pa=ha?ha.c:a, pb=hb?hb.c:b, mid=pa.add(pb).scale(0.5);
-    const k=Math.max(0.6,Math.min(1.3,BABYLON.Vector3.Distance(pa,pb)/0.46));
+    /* il bordo: sulla superficie del palmo, e in profondita' appena davanti
+       alle dita (1,2 cm verso chi legge dall'indice), cosi' le dita restano
+       dietro le pagine e il pollice davanti */
+    const pnW=new BABYLON.Vector3(f.x*Math.cos(NEWS_TILT),Math.sin(NEWS_TILT),f.z*Math.cos(NEWS_TILT));
+    const presa=(B,w,ix)=>{ if(!B) return w; let g=B.c.add(B.n.scale(0.015));
+      if(ix){ const q=ix.getAbsolutePosition(); g=g.add(pnW.scale(BABYLON.Vector3.Dot(q.subtract(g),pnW)-0.012)); }
+      return g; };
+    const ixOf=list=>{ const w=list[0]; return w?w.getDescendants(false).find(d=>/(^|_)Index2\.[LR]$/.test(d.name)):null; };
+    const pa=presa(ha,a,ixOf(H.L)), pb=presa(hb,b,ixOf(H.R)), mid=pa.add(pb).scale(0.5);
+    const k=Math.max(0.6,Math.min(1.3,BABYLON.Vector3.Distance(pa,pb)/(2*NEWS_MEZZO*Math.cos(0.22))));
     NEWS.open.scaling.set(k,1,1);
     NEWS.open.rotation.set(-NEWS_TILT,ry,0);          // la pagina un po' inclinata verso chi legge
-    /* il punto della pagina che sta sui palmi: un po' sotto il centro, sul
-       lato di chi legge della V (i bordi vengono avanti di ~5 cm) */
+    /* il punto fra i due bordi, un po' sotto il centro: i bordi della V
+       stanno ~6 cm piu' vicini a chi legge della piega */
     NEWS.open.position.set(0,0,0); NEWS.open.computeWorldMatrix(true);
     const g=BABYLON.Vector3.TransformCoordinates(NEWS_PRESA, NEWS.open.getWorldMatrix());
     NEWS.open.position.set(mid.x-g.x, mid.y-g.y, mid.z-g.z);
@@ -11274,9 +11285,10 @@ function newsTick(){
   NEWS.fold.position.set(r.x-rx*0.035+f.x*0.03, r.y-0.11, r.z-rz*0.035+f.z*0.03);
   NEWS.fold.rotation.set(0,ry,0.06);
 }
-/* v405: il punto della pagina aperta (spazio di NEWS.open) che si appoggia
-   sui palmi: sotto il centro e sul lato di chi legge (vedi newsTick) */
-const NEWS_PRESA=new BABYLON.Vector3(0,-0.07,-0.095);
+/* v405: il punto della pagina aperta (spazio di NEWS.open) a meta' fra i
+   due bordi tenuti in mano, un po' sotto il centro (vedi newsTick) */
+const NEWS_MEZZO=0.29;                                // meta' larghezza del giornale aperto (una pagina)
+const NEWS_PRESA=new BABYLON.Vector3(0,-0.07,-NEWS_MEZZO*Math.sin(0.22));
 
 function buildTownCafe(){
   const y=(typeof _pedGroundY==="function")?_pedGroundY(CAFE_XZ.x,CAFE_XZ.z):0;
