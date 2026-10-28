@@ -16258,7 +16258,10 @@ function _cyR1(){
     const seen=new Set(), res=[];
     _cyWords(v).forEach(w=>{ if(seen.has(w)) return; seen.add(w);
       res.push({ w, ok:clean && w!==q.key && w.length>1 && _cyRhymes(w,F) }); });
-    _cyR1Res(q,res.slice(0,6),!v,!clean); };
+    /* v326 (Giacomo: «ho scritto scheme, stream e beam in una frase ma ne
+       riconosce solo una parte»): si guardavano solo le prime SEI parole,
+       e in una frase le rime stanno spesso in fondo. Ora tutte. */
+    _cyR1Res(q,res,!v,!clean); };
   DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:"Round 1/3 · Rhyme fire · ⭐ "+CY_PTS.r1, autoSpeak:false,
     text:"Rhyme fire! Give me three words that rhyme with “"+q.key.toUpperCase()+"”. Go!",
     italian:"Scrivi (o di' al microfono) TRE parole diverse che fanno rima con «"+q.key+"» (suono "+F.snd+"). Non vale «"+q.key+"». Un tentativo, 30 secondi!",
@@ -16273,7 +16276,10 @@ function _cyR1Res(q,res,timeout,dirty){
   const good=res.filter(r=>r.ok).map(r=>r.w), ok=good.length>=3;
   if(ok) _cyGive(CY_PTS.r1); else CYPHER.perfect=false;
   const hype=_cyPick(CY_HYPE);
-  const list=res.length?res.map(r=>(r.ok?"✅ ":"❌ ")+_escHtml(r.w)).join(" &nbsp; "):"—";
+  /* v326: prima le rime trovate, poi (piu' piccole) le altre parole */
+  const bad=res.filter(r=>!r.ok).map(r=>_escHtml(r.w));
+  const list=!res.length?"—":(good.map(w=>"✅ "+_escHtml(w)).join(" &nbsp; ")||"—")
+    +(bad.length?'<div style="font-size:12.5px;line-height:1.5;color:#8a8f93;margin-top:4px">❌ '+bad.slice(0,15).join(", ")+(bad.length>15?" …":"")+'</div>':"");
   DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:ok?"\u{1F525} +"+CY_PTS.r1+" ⭐":(timeout?"⏱ Time's up!":"Ooooh!"), autoSpeak:false,
     text:ok?hype:(timeout?_cyT("slow"):"Ooooh, not enough rhymes!"),
     italian:dirty?"Keep it clean! Nel cypher niente parolacce."
