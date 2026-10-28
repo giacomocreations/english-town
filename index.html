@@ -49034,7 +49034,19 @@ function rainTick(){
     if(Math.abs(f-rainLast)>0.02){
       rainLast=f;
       const n=rainPS.getCapacity();
-      rainPS.emitRate=n*(0.35+0.65*f);
+      /* v328 (Giacomo, 28 ott: «drizzling e' veramente poca pioggia? vedo
+         pioggia forte, mi aspettavo pioggerellina»). Prima le gocce erano
+         sempre le stesse strisce grosse e il loro numero partiva dal 35%:
+         con «It's drizzling» (forza sotto 0,42) cadeva gia' piu' di meta'
+         della pioggia piena. Ora il numero cresce piu' che in proporzione
+         (pioviggine ~10-30%, «It's raining» ~30-65%, «pouring» oltre) e
+         con la forza crescono anche le gocce: nella pioviggine sono sottili,
+         corte e trasparenti, nel rovescio le strisce lunghe di sempre. */
+      rainPS.emitRate=n*(0.08+0.92*Math.pow(f,1.6));
+      const k=Math.max(0,Math.min(1,(f-0.06)/0.69)), K=k*k*(3-2*k);
+      rainPS.minSize=0.028+0.027*K; rainPS.maxSize=0.05+0.05*K;
+      rainPS.minScaleY=3.0+4.0*K;   rainPS.maxScaleY=5.5+7.5*K;
+      rainPS.color1.a=0.30+0.25*K;  rainPS.color2.a=0.22+0.18*K;
       const sl=rainSlant();
       rainPS.direction1.x=-0.6-sl; rainPS.direction2.x=0.6-sl;
     }
