@@ -15924,7 +15924,7 @@ const CY_PTS={ r1:10, r2:20, r2b:10, r3:30, r3b:15, perfect:20 };
 const CY_RATE=1.1;                                      // le barre: un po' piu' veloci (era 1,22: troppo)
 /* le famiglie di rime: elenco scritto a mano + (dove e' sicuro) la desinenza */
 const CY_FAM={
-  OW:  { snd:"-OW (come flow)", w:"flow go show know slow glow grow low below though although pro radio video studio tornado tomorrow row throw snow blow toe pillow shadow window hello ago solo logo piano photo zero hero ego combo bro dough so no oh whoa stereo rodeo overflow plateau yo own" },
+  OW:  { snd:"-OW (come flow)", w:"flow go show know slow glow grow low below though although pro radio video studio tornado tomorrow row throw snow blow toe pillow shadow window hello ago solo logo piano photo zero hero ego combo bro dough so no oh whoa stereo rodeo overflow plateau yo own crow mow tow sew bow rainbow elbow arrow borrow potato tomato mango volcano hippo" },
   IGHT:{ snd:"-IGHT (come night)", re:/ight$/, w:"write white kite bite quite polite excite ignite site spite invite unite despite satellite appetite dynamite recite alright" },
   AY:  { snd:"-AY (come day)", re:/ay$/, w:"they hey obey grey weigh sleigh prey ballet buffet eh" },
   EAM: { snd:"-EAM (come dream)", re:/(eam|eme)$/, w:"seem esteem redeem regime meme" },
@@ -15935,10 +15935,10 @@ const CY_FAM={
   ART: { snd:"-ART (come art)", re:/art$/, w:"heart" },
   ALL: { snd:"-ALL (come all)", re:/all$/, no:/^shall$/, w:"crawl brawl haul y'all yall sprawl drawl install" },
   AKE: { snd:"-AKE (come take)", re:/ake$/, w:"break steak awake ache" },
-  ING: { snd:"-ING (come king)", w:"king thing ring sing bring swing spring wing sting string anything everything something cling fling sling bling" },
+  ING: { snd:"-ING (come king)", w:"king thing ring sing bring swing spring wing sting string anything everything something cling fling sling bling ping ding zing" },
   OOL: { snd:"-OOL (come school)", re:/ool$/, w:"rule cruel jewel mule duel fuel" },
   OP:  { snd:"-OP (come top)", re:/op$/, no:/^(develop|gallop|scallop|wallop)$/, w:"swap hip-hop hiphop nonstop" },
-  ONE: { snd:"-ONE (come phone)", w:"phone zone own alone stone bone known grown shown throne microphone tone cone blown flown thrown loan moan groan postpone unknown cyclone ozone smartphone headphone headphones" },
+  ONE: { snd:"-ONE (come phone)", re:/one$/, no:/^(done|gone|none|one|someone|anyone|everyone|noone)$/, w:"phone zone own alone stone bone known grown shown throne microphone tone cone blown flown thrown loan moan groan postpone unknown cyclone ozone smartphone headphone headphones" },
   OLE: { snd:"-OLE (come goal)", re:/(ole|oal|oll)$/, no:/^(doll|atoll)$/, w:"soul control bowl patrol" },
   AIN: { snd:"-AIN (come rain)", re:/(ain|ane)$/, no:/^(again|captain|mountain|certain|curtain|fountain|bargain|britain|villain|chaplain)$/, w:"reign vein" } };
 /* ROUND 1 — rhyme fire: la riga della crew, la famiglia della rima */
@@ -47050,8 +47050,15 @@ const Mic=(function(){
       const r=new SR(); rec=r;
       r.lang="en-GB"; r.interimResults=true; r.continuous=false; r.maxAlternatives=1;
       r.onresult=function(ev){
-        let t=""; for(let i=0;i<ev.results.length;i++) t+=ev.results[i][0].transcript;
-        t=t.trim(); if(!t) return; c.heard=true;
+        /* v324b: i pezzi si uniscono con lo SPAZIO. Sul telefono (Android) il
+           secondo pezzo arriva senza lo spazio davanti: «light» + «right
+           bright» diventava «lightright bright», una parola sola, e il giudice
+           del cypher ne riconosceva una. Se un pezzo ripete quelli di prima
+           (succede, sempre su Android), vale l'ultimo e non si raddoppia. */
+        let t="";
+        for(let i=0;i<ev.results.length;i++){ const p=String(ev.results[i][0].transcript||"").replace(/\s+/g," ").trim(); if(!p) continue;
+          t=(t && p.toLowerCase().indexOf(t.toLowerCase())===0) ? p : (t?t+" "+p:p); }
+        if(!t) return; c.heard=true;
         if(area){
           /* in coda, con la maiuscola e il punto se la frase ne e' senza */
           let f=t.charAt(0).toUpperCase()+t.slice(1);
