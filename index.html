@@ -11325,16 +11325,33 @@ function newsTick(){
        l'indice, misurati sulle ossa: il pollice davanti, le dita dietro. */
     const tl=newsTilt(), pnW=new BABYLON.Vector3(f.x*Math.cos(tl),Math.sin(tl),f.z*Math.cos(tl));
     const D=p=>BABYLON.Vector3.Dot(p,pnW);
-    const presa=(B,w,list)=>{ if(!B) return w; let g=B.c.add(B.n.scale(0.005));
+    /* v406b (Giacomo, 28 ott: «l'indice sbuca da dentro il foglio»): le
+       dita si chiudono verso il centro del giornale, e li' la pagina della V
+       e' gia' piu' lontana da chi legge (la piega sta dietro i bordi): la
+       punta dell'indice usciva davanti. Ora la profondita' della pagina si
+       misura su TUTTE le falangi delle quattro dita, tenendo conto di quanto
+       la pagina arretra verso il centro: stanno tutte dietro, almeno 1 cm. */
+    const lato=(B,w)=>B?B.c.add(B.n.scale(0.005)):w;
+    const la=lato(ha,a), lb=lato(hb,b);
+    const k=Math.max(0.6,Math.min(1.3,BABYLON.Vector3.Distance(la,lb)/(2*NEWS_MEZZO*Math.cos(0.22))));
+    const pend=Math.tan(0.22)/k;                      // quanto arretra la pagina per ogni metro verso il centro
+    const presa=(B,g,altro,list)=>{ if(!B) return g;
       const ds=list[0]?list[0].getDescendants(false):[], osso=re=>ds.find(d=>re.test(d.name));
       const ix=osso(/(^|_)Index2\.[LR]$/), th=osso(/(^|_)Thumb3\.[LR]$/)||osso(/(^|_)Thumb2\.[LR]$/);
-      if(ix){ const zi=D(ix.getAbsolutePosition()), zt=th?D(th.getAbsolutePosition()):zi;
-        /* pollice davanti all'indice (lato di chi legge): in mezzo, ma almeno a 9 mm dall'indice */
-        const z=(zt<zi-0.004)?Math.min((zi+zt)/2,zi-0.009):zi-0.012;
-        g=g.add(pnW.scale(z-D(g))); }
-      return g; };
-    const pa=presa(ha,a,H.L), pb=presa(hb,b,H.R), mid=pa.add(pb).scale(0.5);
-    const k=Math.max(0.6,Math.min(1.3,BABYLON.Vector3.Distance(pa,pb)/(2*NEWS_MEZZO*Math.cos(0.22))));
+      if(!ix) return g;
+      const zi=D(ix.getAbsolutePosition()), zt=th?D(th.getAbsolutePosition()):zi;
+      /* pollice davanti all'indice (lato di chi legge): in mezzo, ma almeno a 9 mm dall'indice */
+      let z=(zt<zi-0.004)?Math.min((zi+zt)/2,zi-0.009):zi-0.012;
+      let dentro=altro.subtract(g); dentro=dentro.subtract(pnW.scale(D(dentro))); dentro.normalize();
+      ds.forEach(d=>{ if(!/(^|_)(Index|Middle|Ring|Pinky)[234]\.[LR]$/.test(d.name) || !d.getAbsolutePosition) return;
+        const ch=[]; for(let n=d;n;n=n.parent) ch.unshift(n); ch.forEach(n=>n.computeWorldMatrix&&n.computeWorldMatrix(true));
+        const q0=d.getAbsolutePosition(), pp=d.parent&&d.parent.getAbsolutePosition?d.parent.getAbsolutePosition():q0;
+        /* l'ultima falange: anche la punta del polpastrello, oltre l'osso */
+        [q0].concat(/4\.[LR]$/.test(d.name)?[q0.add(q0.subtract(pp).scale(0.8))]:[]).forEach(q=>{
+          const x=Math.max(0,BABYLON.Vector3.Dot(q.subtract(g),dentro));
+          z=Math.min(z, D(q)-0.010-x*pend); }); });
+      return g.add(pnW.scale(z-D(g))); };
+    const pa=presa(ha,la,lb,H.L), pb=presa(hb,lb,la,H.R), mid=pa.add(pb).scale(0.5);
     NEWS.open.scaling.set(k,1,1);
     NEWS.open.rotation.set(-tl,ry,0);                 // la pagina inclinata verso lo sguardo (newsTilt)
     /* il punto fra i due bordi, un po' sotto il centro: i bordi della V
