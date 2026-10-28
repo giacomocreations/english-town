@@ -4265,6 +4265,11 @@ function _armPose(root,tns,f,upDir,foreDir,handFn){
   return out;
 }
 const SIT_THIGH={};
+/* v406: il corpo durante sitPoseFor e' ancora IN PIEDI e non ancora spostato
+   sulla seduta (lo si abbassa di drop e lo si sposta dopo, vedi playerSit):
+   chi calcola le braccia rispetto a un oggetto vero (il tavolo, vedi
+   NEWS_ARMS) passa da qui — hip = le anche in questo momento */
+const SIT_FRAME={ drop:0, hip:null };
 const SIT_THIGH_R={ m:0.075, f:0.088 };          // raggio coscia (il corpo femminile ha cosce piu' piene)
 function _sitRestArm(o,f,sd,ctx){
   const T=SIT_THIGH[sd]; if(!T||!ctx) return null;
@@ -4487,6 +4492,7 @@ function sitPoseFor(root,pins,fwd,seatY,groundY,arms){
   const restHand=(o,sd,ctx)=>(ctx&&ctx.restW)?{ d:f.add(o.scale(-0.12)).normalize(), n:dn.clone() }:null;
   /* v298: arms.lean = il busto si piega in avanti (radianti), PRIMA delle
      braccia: le spalle vanno avanti col busto e il braccio parte da li' */
+  SIT_FRAME.drop=Math.max(0,drop); SIT_FRAME.hip=hn?hip.scale(1/hn):null;
   if(arms && arms.lean){ const tl=all.map(k=>k.tn), a=arms.lean(root,tl,f)||0;
     if(a>0.001){ const lu=up.scale(Math.cos(a)).add(f.scale(Math.sin(a))), sp=_sitSpineTop(tl);
       sp.forEach(S=>_sitWorldRot(S,S.getAbsolutePosition().clone(),up,lu)); _sitRefresh(root);
@@ -4725,12 +4731,13 @@ function eatFingers(t){
   if(!EAT.fing || EAT.fingOf!==avatarRoot){ EAT.fingOf=avatarRoot; EAT.fing=_eatFingList(avatarRoot); }
   EAT.fingT=_eatCurl(EAT.fing,EAT.hand,t);
 }
-/* v309: le falangi di un corpo qualsiasi (anche i compagni) */
-function _eatFingList(root){ const L=[];
-  root.getDescendants(false).forEach(d=>{ const m=/(^|_)(Index|Middle|Ring|Pinky|Thumb)([23])\.R$/.exec(d.name);
+/* v309: le falangi di un corpo qualsiasi (anche i compagni)
+   v406: sd = la mano (destra se manca), cu/cuT = quanto si chiudono */
+function _eatFingList(root,sd,cu,cuT){ const L=[], re=new RegExp("(^|_)(Index|Middle|Ring|Pinky|Thumb)([23])\\."+(sd||"R")+"$");
+  root.getDescendants(false).forEach(d=>{ const m=re.exec(d.name);
     if(m && d.computeWorldMatrix){ if(!d.rotationQuaternion) d.rotationQuaternion=BABYLON.Quaternion.FromEulerVector(d.rotation);
       const kid=d.getChildren().find(c=>c.getAbsolutePosition);
-      if(kid) L.push({ tn:d, kid, base:d.rotationQuaternion.clone(), ang:(m[2]==="Thumb"?EAT_CURL_THUMB:EAT_CURL)[m[3]] }); } });
+      if(kid) L.push({ tn:d, kid, base:d.rotationQuaternion.clone(), ang:(m[2]==="Thumb"?(cuT||EAT_CURL_THUMB):(cu||EAT_CURL))[m[3]] }); } });
   /* dalla radice in giu': prima le falangi 2, poi le 3 */
   L.sort((a,b)=>a.tn.name.slice(-3).localeCompare(b.tn.name.slice(-3)));
   return L; }
@@ -11006,7 +11013,7 @@ function dinerDrop(){
    Lo puoi ripiegare, rileggere, o lasciare sulla panchina.
    ===================================================================== */
 const BENCHES=[];
-const BSIT={ b:null, L:null, S:null, f:null, seatY:0, gy:0, reading:false, meInter:null };
+const BSIT={ b:null, L:null, S:null, f:null, seatY:0, gy:0, reading:false, meInter:null, tab:null, scoot:0 };
 /* lines: [{ cx,cz, ax,az (lungo la fila), fx,fz (sguardo), half, seatY (assoluta, null = si misura),
              hip (anca dietro il punto), stand (+1 davanti, -1 dietro), slots (posti fissi, facoltativo) }] */
 function regBench(kind,x,z,lines,o){ o=o||{};
@@ -11034,6 +11041,18 @@ function _benchSeatY(b,x,z,gy){
   const ms=b.root.getChildMeshes(), hits=scene.multiPickWithRay(new BABYLON.Ray(new BABYLON.Vector3(x,gy+0.8,z),new BABYLON.Vector3(0,-1,0),1.2),m=>ms.indexOf(m)>=0);
   let y=null; (hits||[]).forEach(h=>{ const hy=h.pickedPoint.y; if(hy>gy+0.15 && (y===null||hy>y)) y=hy; });
   return y===null?gy+0.52*((b.lines[0]&&b.lines[0].k)||1):y; }
+/* v406: il piano del tavolo davanti alla seduta (solo i tavoli da picnic, i
+   GLB): d = dove comincia il piano, in avanti dal punto della seduta; y =
+   la sua quota. null se davanti non c'e' un tavolo. */
+function _benchTable(b,S,f,seatY){
+  if(!b || !b.root) return null;
+  const ms=b.root.getChildMeshes(); ms.forEach(m=>m.computeWorldMatrix(true));
+  for(let d=0.05; d<=0.9; d+=0.02){
+    const hits=scene.multiPickWithRay(new BABYLON.Ray(new BABYLON.Vector3(S.x+f.x*d,seatY+1.2,S.z+f.z*d),new BABYLON.Vector3(0,-1,0),1.2),m=>ms.indexOf(m)>=0);
+    let y=null; (hits||[]).forEach(h=>{ const hy=h.pickedPoint.y; if(hy>seatY+0.15 && (y===null||hy>y)) y=hy; });
+    if(y!==null) return { d, y };
+  }
+  return null; }
 function benchSit(b){
   if(BSIT.b || (typeof DINER!=="undefined" && DINER.seat) || area!=="town") return;
   if(typeof SHOW!=="undefined" && SHOW.seated) return;
@@ -11053,6 +11072,7 @@ function benchSit(b){
   const seatY=(L.seatY!=null)?L.seatY:_benchSeatY(b,best.x,best.z,gy);
   moveTarget=null; pendingInteract=null; try{ tapMark.setEnabled(false); }catch(e){}
   Object.assign(BSIT,{ b, L, S:new BABYLON.Vector3(best.x,0,best.z), f, seatY, gy, reading:false });
+  BSIT.tab=_benchTable(b,BSIT.S,f,seatY);
   _benchPose();
   BSIT.meInter.enabled=true;
   if(NEWS.has){ toast("\u{1FA91} You sit down and open the newspaper…"); setTimeout(()=>{ if(BSIT.b===b) benchRead(); },700); }
@@ -11066,8 +11086,10 @@ function _benchPose(){
   player.position.set(S.x,BSIT.gy,S.z); player.rotation.y=Math.atan2(f.x,f.z);
   player.computeWorldMatrix(true);
   playAvatarAnim(IDLE_ANIM);
-  const off=playerSit(f,BSIT.seatY,BSIT.gy,BSIT.reading?NEWS_ARMS:null);
-  if(off){ player.position.x=S.x-f.x*L.hip-off.x; player.position.z=S.z-f.z*L.hip-off.z; }
+  /* v406: leggendo al tavolo ci si siede sul davanti della panca (vedi NEWS_ARMS) */
+  BSIT.scoot=(BSIT.reading && BSIT.tab)?NEWS_TAV.scoot:0;
+  const off=playerSit(f,BSIT.seatY,BSIT.gy,BSIT.reading?NEWS_ARMS:null), hp=L.hip-BSIT.scoot;
+  if(off){ player.position.x=S.x-f.x*hp-off.x; player.position.z=S.z-f.z*hp-off.z; }
   BSIT.px=player.position.x; BSIT.pz=player.position.z;
 }
 function benchResit(){ if(BSIT.b) _benchPose(); }
@@ -11128,7 +11150,7 @@ function initBenches(){
 }
 
 /* ---- IL GIORNALE IN MANO ---------------------------------------------- */
-const NEWS={ has:false, fold:null, open:null, mat:null, hands:null, handsOf:null, left:null, leftT:0 };
+const NEWS={ has:false, fold:null, open:null, mat:null, hands:null, handsOf:null, left:null, leftT:0, fing:null, fingOf:null, fingOn:false };
 /* le braccia da seduti mentre si legge: gomiti in giu', mani davanti al petto */
 /* ⚠️ v307e (Giacomo, 10 ott: «da seduto non afferra il giornale alle
    estremita'»). Misurato: con l'avambraccio rivolto verso l'interno
@@ -11142,11 +11164,58 @@ const NEWS={ has:false, fold:null, open:null, mat:null, hands:null, handsOf:null
    il palmo e il pollice dal lato di chi legge (pagina inclinata come in
    newsTick, NEWS_TILT). Il giornale si allarga fino alle nocche (newsTick). */
 const NEWS_TILT=0.30;
+/* v406 (Giacomo, 28 ott: «il giornale ora e' troppo vicino alla faccia [...]
+   le mani possono stare sopra il tavolo, cosi' com'e' adesso e'
+   innaturale»). Al tavolo da picnic gli avambracci passavano DENTRO il bordo
+   del piano e il giornale stava a una spanna dagli occhi. Ora ci si legge
+   come a un tavolo vero: il busto un po' avanti, i GOMITI APPOGGIATI sul
+   piano appena oltre il bordo, gli avambracci che salgono verso il giornale
+   (che cosi' si allontana dalla faccia). Il giornale sta piu' in basso degli
+   occhi: la cima si inclina all'indietro, verso lo sguardo (NEWS_TILT_TAVOLO).
+   Senza tavolo (panchine, fermata del bus) la posa resta quella di prima. */
+const NEWS_TAV={
+  scoot:0.12,                          // ci si siede 12 cm piu' avanti sulla panca
+  lean:0.20,                           // il busto si piega al massimo di tanto (rad)
+  su:0.045, oltre:0.04, fuori:0.05,    // il gomito: sopra il piano, oltre il bordo, un po' in fuori
+  ang:0.61, sopra:0.10,                // l'avambraccio sale di ~35 gradi; il polso almeno 10 cm sopra il piano
+  aperto:0.30,                         // ... e si apre un po': le mani ai bordi del giornale
+  tilt:0.0,                            // la pagina dritta: il centro sta all'altezza degli occhi
+  presaY:-0.04 };                      // la presa sui bordi, appena sotto il centro della pagina
+function newsTilt(){ return (BSIT.b && BSIT.tab)?NEWS_TAV.tilt:NEWS_TILT; }
+/* il tavolo nel sistema del corpo che si sta calcolando (vedi SIT_FRAME):
+   edge = il bordo del piano lungo f, y = la quota del piano */
+function _newsTab(f){ const T=BSIT.b && BSIT.tab, F=SIT_FRAME; if(!T || !F.hip) return null;
+  return { edge:BABYLON.Vector3.Dot(F.hip,f)+T.d+BSIT.L.hip-BSIT.scoot, y:T.y+F.drop }; }
+/* fin dove arriva in avanti (lungo f) il gomito appoggiato sul piano, dalla spalla pU */
+function _newsElbowReach(pU,l1,t,f){
+  const dy=pU.y-(t.y+NEWS_TAV.su), q=l1*l1-dy*dy-NEWS_TAV.fuori*NEWS_TAV.fuori;
+  return q>0 ? BABYLON.Vector3.Dot(pU,f)+Math.sqrt(q) : null; }
 const NEWS_ARMS={
-  up:(o,f,dn)=>dn.scale(0.95).add(f.scale(0.26)).add(o.scale(0.15)),
-  fore:(o,f,dn)=>f.scale(0.80).subtract(dn.scale(0.30)).add(o.scale(0.32)),   // v405: piu' in fuori, le mani ai bordi
-  hand:(o,f,dn)=>{ const up=dn.scale(-1), c=Math.cos(NEWS_TILT), sn=Math.sin(NEWS_TILT);
-    const pn=f.scale(c).add(up.scale(sn)), pu=up.scale(c).subtract(f.scale(sn));
+  /* il busto si piega quanto basta perche' i gomiti arrivino sul piano */
+  lean:(root,tl,f)=>{ const t=_newsTab(f); if(!t) return 0;
+    const V=BABYLON.Vector3, end=(n,s)=>new RegExp("(^|_)"+s+"$").test(n.name);
+    const U=tl.find(n=>end(n,"UpperArm\\.[LR]")), Lw=U&&U.getDescendants(false).find(n=>end(n,"LowerArm\\.[LR]"));
+    const sp=U&&(_sitSpineTop(tl).find(S=>U.isDescendantOf(S))||_sitSpineTop(tl)[0]); if(!U||!Lw||!sp) return 0;
+    const P=sp.getAbsolutePosition(), pU=U.getAbsolutePosition(), l1=V.Distance(pU,Lw.getAbsolutePosition());
+    const v=pU.subtract(P), vf=V.Dot(v,f), side=v.subtract(f.scale(vf)); side.y=0;
+    for(let a=0; a<=NEWS_TAV.lean; a+=0.01){
+      const q=P.add(side).add(f.scale(vf*Math.cos(a)+v.y*Math.sin(a))); q.y=P.y+v.y*Math.cos(a)-vf*Math.sin(a);
+      const r=_newsElbowReach(q,l1,t,f); if(r!==null && r>=t.edge+NEWS_TAV.oltre) return a; }
+    return NEWS_TAV.lean; },
+  up:(o,f,dn,sd,ctx)=>{ const t=ctx&&_newsTab(f), r=t?_newsElbowReach(ctx.pU,ctx.l1,t,f):null;
+    if(ctx) ctx.newsE=null;
+    /* senza tavolo: v406, il gomito piu' avanti (era f*0,26): il giornale
+       stava a una spanna dagli occhi */
+    if(r===null) return dn.scale(0.72).add(f.scale(0.66)).add(o.scale(0.15));
+    const E=ctx.pU.add(o.scale(NEWS_TAV.fuori)).add(f.scale(r-BABYLON.Vector3.Dot(ctx.pU,f))); E.y=t.y+NEWS_TAV.su;
+    ctx.newsE=E; ctx.newsT=t; return E.subtract(ctx.pU); },
+  fore:(o,f,dn,sd,ctx)=>{ const E=ctx&&ctx.newsE;
+    if(!E) return f.scale(0.80).subtract(dn.scale(0.30)).add(o.scale(0.32));   // v405: piu' in fuori, le mani ai bordi
+    const need=(ctx.newsT.y+NEWS_TAV.sopra-E.y)/ctx.l2;
+    const b=Math.max(NEWS_TAV.ang, Math.asin(Math.max(0,Math.min(0.95,need))));
+    return dn.scale(-Math.sin(b)).add(f.scale(Math.cos(b))).add(o.scale(NEWS_TAV.aperto)); },
+  hand:(o,f,dn)=>{ const up=dn.scale(-1), tl=newsTilt(), c=Math.cos(tl), sn=Math.sin(tl);
+    const pu=up.scale(c).subtract(f.scale(sn));
     /* come si tiene un libro per i lati: palmo verso il centro, dita in su
        lungo il bordo (dietro le pagine), pollice dal lato di chi legge */
     return { d:pu, n:o.scale(-1) }; } };
@@ -11222,35 +11291,56 @@ function _newsHands(){
 function _newsHandPos(list){ if(!list.length) return null; const p=new BABYLON.Vector3(0,0,0);
   list.forEach(n=>{ const ch=[]; for(let q=n;q;q=q.parent) ch.unshift(q); ch.forEach(q=>q.computeWorldMatrix(true)); p.addInPlace(n.getAbsolutePosition()); });
   return p.scale(1/list.length); }
+/* v406: leggendo le dita si chiudono DIETRO la pagina (verso il palmo, cioe'
+   verso il centro del giornale) e il pollice resta davanti: prima la mano
+   era aperta e piatta, e il giornale sembrava stretto fra i palmi */
+const NEWS_CURL={ "2":0.80, "3":0.70 }, NEWS_CURL_THUMB={ "2":0.25, "3":0.20 };
+function _newsFingers(on){
+  if(NEWS.fingOf!==avatarRoot){ NEWS.fingOf=avatarRoot; NEWS.fing=null; NEWS.fingOn=false; }
+  if(!on){ if(NEWS.fingOn && NEWS.fing) ["L","R"].forEach(sd=>NEWS.fing[sd].forEach(F=>F.tn.rotationQuaternion.copyFrom(F.base)));
+    NEWS.fingOn=false; return; }
+  if(!avatarRoot) return;
+  if(!NEWS.fing) NEWS.fing={ L:_eatFingList(avatarRoot,"L",NEWS_CURL,NEWS_CURL_THUMB), R:_eatFingList(avatarRoot,"R",NEWS_CURL,NEWS_CURL_THUMB) };
+  const H=_newsHands(); ["L","R"].forEach(sd=>{ if(H[sd][0]) _eatCurl(NEWS.fing[sd],H[sd][0],1); });
+  NEWS.fingOn=true; }
 function newsTick(){
   if(NEWS.left && performance.now()-NEWS.leftT>90000){ try{ NEWS.left.dispose(false,false); }catch(e){} NEWS.left=null; }
   if(!NEWS.fold) return;
   const vis=NEWS.has && avatarRoot && avatarRoot.isEnabled() && !(typeof SHOW!=="undefined" && SHOW.seated);
   const reading=vis && BSIT.b && BSIT.reading;
   NEWS.open.setEnabled(!!reading); NEWS.fold.setEnabled(!!vis && !reading);
+  _newsFingers(!!reading);
   if(!vis) return;
   const H=_newsHands(), ry=player.rotation.y, f=new BABYLON.Vector3(Math.sin(ry),0,Math.cos(ry));
   if(reading){
     const a=_newsHandPos(H.L), b=_newsHandPos(H.R); if(!a||!b) return;
     /* v405: la presa vera (vedi NEWS_ARMS): ogni bordo sta nella forcella
-       fra pollice e indice, appena davanti alle dita (lato di chi legge) */
+       fra pollice e indice */
     const ha=H.L[0]?_handBasis(H.L[0]):null, hb=H.R[0]?_handBasis(H.R[0]):null;
-    /* il bordo: sulla superficie del palmo, e in profondita' appena davanti
-       alle dita (1,2 cm verso chi legge dall'indice), cosi' le dita restano
-       dietro le pagine e il pollice davanti */
-    const pnW=new BABYLON.Vector3(f.x*Math.cos(NEWS_TILT),Math.sin(NEWS_TILT),f.z*Math.cos(NEWS_TILT));
-    const presa=(B,w,ix)=>{ if(!B) return w; let g=B.c.add(B.n.scale(0.015));
-      if(ix){ const q=ix.getAbsolutePosition(); g=g.add(pnW.scale(BABYLON.Vector3.Dot(q.subtract(g),pnW)-0.012)); }
+    /* v406 (Giacomo, 28 ott: «non e' tra il pollice e l'indice, ma tra
+       l'indice e il medio»): il piano della pagina stava 1,2 cm davanti
+       all'indice, ma il bordo si fermava sulla superficie del palmo e non
+       entrava nella mano. Ora il bordo entra fino a meta' della mano, e in
+       profondita' la pagina passa A META' fra la punta del pollice e
+       l'indice, misurati sulle ossa: il pollice davanti, le dita dietro. */
+    const tl=newsTilt(), pnW=new BABYLON.Vector3(f.x*Math.cos(tl),Math.sin(tl),f.z*Math.cos(tl));
+    const D=p=>BABYLON.Vector3.Dot(p,pnW);
+    const presa=(B,w,list)=>{ if(!B) return w; let g=B.c.add(B.n.scale(0.005));
+      const ds=list[0]?list[0].getDescendants(false):[], osso=re=>ds.find(d=>re.test(d.name));
+      const ix=osso(/(^|_)Index2\.[LR]$/), th=osso(/(^|_)Thumb3\.[LR]$/)||osso(/(^|_)Thumb2\.[LR]$/);
+      if(ix){ const zi=D(ix.getAbsolutePosition()), zt=th?D(th.getAbsolutePosition()):zi;
+        /* pollice davanti all'indice (lato di chi legge): in mezzo, ma almeno a 9 mm dall'indice */
+        const z=(zt<zi-0.004)?Math.min((zi+zt)/2,zi-0.009):zi-0.012;
+        g=g.add(pnW.scale(z-D(g))); }
       return g; };
-    const ixOf=list=>{ const w=list[0]; return w?w.getDescendants(false).find(d=>/(^|_)Index2\.[LR]$/.test(d.name)):null; };
-    const pa=presa(ha,a,ixOf(H.L)), pb=presa(hb,b,ixOf(H.R)), mid=pa.add(pb).scale(0.5);
+    const pa=presa(ha,a,H.L), pb=presa(hb,b,H.R), mid=pa.add(pb).scale(0.5);
     const k=Math.max(0.6,Math.min(1.3,BABYLON.Vector3.Distance(pa,pb)/(2*NEWS_MEZZO*Math.cos(0.22))));
     NEWS.open.scaling.set(k,1,1);
-    NEWS.open.rotation.set(-NEWS_TILT,ry,0);          // la pagina un po' inclinata verso chi legge
+    NEWS.open.rotation.set(-tl,ry,0);                 // la pagina inclinata verso lo sguardo (newsTilt)
     /* il punto fra i due bordi, un po' sotto il centro: i bordi della V
        stanno ~6 cm piu' vicini a chi legge della piega */
     NEWS.open.position.set(0,0,0); NEWS.open.computeWorldMatrix(true);
-    const g=BABYLON.Vector3.TransformCoordinates(NEWS_PRESA, NEWS.open.getWorldMatrix());
+    const g=BABYLON.Vector3.TransformCoordinates(BSIT.tab?new BABYLON.Vector3(0,NEWS_TAV.presaY,NEWS_PRESA.z):NEWS_PRESA, NEWS.open.getWorldMatrix());
     NEWS.open.position.set(mid.x-g.x, mid.y-g.y, mid.z-g.z);
     return;
   }
