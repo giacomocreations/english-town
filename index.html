@@ -14911,7 +14911,9 @@ function buildPark(){
        moonwalk  — un tallone su e l'altro piede che scivola, si va indietro;
        sidewalk  — la stessa alternanza, ma si scivola di lato;
        toe stand — sulle punte, la mano al cappello (Billie Jean);
-       ankle taps— i talloni che battono veloci, a mezzo tempo.
+       cabbage patch — i pugni uniti davanti al petto girano in tondo, un
+                   giro per battito, e le ginocchia molleggiano (v325: al
+                   posto dell'«ankle breaker», i talloni che battevano).
      Fra una mossa e l'altra un SALTELLO (piega, stacco, atterraggio) in cui
      ci si gira: le mosse non si attaccano mai una all'altra.
    · IL TEMPO: l'orologio e' il brano che suona dalle casse (currentTime x
@@ -14930,7 +14932,7 @@ const SK_MOVES=[ { id:"basic",    en:"Beat Club dance", ic:"\u{1F64C}", stars:0,
                  /* v312 (Giacomo, 15 ott): stesse soglie, ma Moonwalk e Airwalk in
                     fondo — sono le mosse piu' ambite, e restano il traguardo */
                  { id:"toe",      en:"Toe stand (Billie Jean)", ic:"\u{1FA70}", stars:800,  beats:4 },
-                 { id:"ankle",    en:"Ankle breaker", ic:"\u{1F45F}", stars:1200, beats:4 },
+                 { id:"cabbage",  en:"Cabbage Patch", ic:"\u{1F96C}", stars:1200, beats:8 },
                  { id:"moonwalk", en:"Moonwalk",   ic:"\u{1F319}", stars:1600, beats:8 },
                  { id:"sidewalk", en:"Sidewalk / Airwalk", ic:"↔️", stars:2000, beats:8 } ];
 /* ---- le POSE chiave: angoli nel mondo (radianti, avanti = positivo).
@@ -14988,6 +14990,35 @@ SK_ARMS.open={ up:(o,f,dn)=>dn.scale(0.85).add(o.scale(0.38)).add(f.scale(0.14))
    resta quasi verticale (+0.02): le mani lungo le cosce, non davanti */
 SK_ARMS.rest={ up:(o,f,dn)=>dn.scale(0.97).add(o.scale(0.15)).subtract(f.scale(0.09)),
                fore:(o,f,dn)=>dn.scale(0.98).add(f.scale(0.02)).add(o.scale(0.07)) };
+/* v325 (Giacomo, 28 ott: «ankle breaker non mi piace, qualcosa in cui
+   muovono anche le braccia con le gambe» -> il cabbage patch). I pugni
+   stanno uniti davanti al petto e girano INSIEME in tondo, come a
+   mescolare un pentolone: a destra, avanti, a sinistra, indietro verso il
+   petto. Qui non bastano due direzioni a occhio come nelle altre pose: la
+   mano deve stare in un punto preciso (lo stesso spostamento per le due
+   mani), quindi braccio e avambraccio vengono dalla cinematica inversa a
+   due ossa, come _sitRestArm, col gomito in fuori e un po' giu'. th =
+   l'angolo sul giro; le misure sono frazioni del braccio (L), cosi'
+   valgono per ogni corpo. */
+function _skCabbageArms(th){
+  const V=BABYLON.Vector3;
+  const ik=(o,f,dn,sd,ctx)=>{
+    const L=ctx.l1+ctx.l2, rt=sd==="R"?o:o.scale(-1);
+    const w=ctx.pU.add(dn.scale(0.3*L)).add(f.scale(0.5*L)).subtract(o.scale(0.16*L))
+      .add(rt.scale(0.16*L*Math.cos(th))).add(f.scale(0.14*L*Math.sin(th)));
+    const d=w.subtract(ctx.pU), D=Math.min(d.length(),L-0.002), dir=d.normalizeToNew();
+    const A=(ctx.l1*ctx.l1-ctx.l2*ctx.l2+D*D)/(2*D), h=Math.sqrt(Math.max(0,ctx.l1*ctx.l1-A*A));
+    let pole=o.scale(0.8).add(dn.scale(0.45)).subtract(f.scale(0.1)); pole=pole.subtract(dir.scale(V.Dot(pole,dir)));
+    if(pole.length()<1e-4) pole=o.clone(); pole.normalize();
+    const e=ctx.pU.add(dir.scale(A)).add(pole.scale(h));
+    return { e, w:ctx.pU.add(dir.scale(D)) }; };
+  /* le mani: col polso dritto le dita continuavano verso il centro e le
+     due mani si accavallavano; si piegano avanti, palmo in giu' */
+  return { up:(o,f,dn,sd,ctx)=>ik(o,f,dn,sd,ctx).e.subtract(ctx.pU),
+           fore:(o,f,dn,sd,ctx)=>{ const r=ik(o,f,dn,sd,ctx); return r.w.subtract(r.e); },
+           hand:(o,f,dn)=>({ d:f.scale(0.9).add(dn.scale(0.08)).subtract(o.scale(0.3)), n:dn.scale(0.9).subtract(o.scale(0.35)) }) };
+}
+[0,1,2,3].forEach(i=>{ SK_ARMS["cp"+i]=_skCabbageArms(i*Math.PI/2); });
 const SK_POSES={
   /* lean = busto in avanti (v308b, Giacomo: «leggermente, non troppo») */
   stand: { L:{t:0.03,s:0,p:0},       R:{t:0.03,s:0,p:0},       arms:"rest", lean:0.12 },
@@ -15017,11 +15048,17 @@ const SK_POSES={
   toe2:  { L:{t:0.05,s:0,p:0.8},     R:{t:0.05,s:0,p:0.8},     arms:"hat2", lift:0.07, lean:0.08 },
   rise:  { L:{t:0.05,s:0,p:0.75},    R:{t:0.05,s:0,p:0.75},    arms:"open", lift:0.06, lean:0.05 },
   crouch:{ L:{t:0.62,s:-0.5,p:0.05}, R:{t:0.62,s:-0.5,p:0.05}, arms:"load", lean:0.2 },
-  tapL:  { L:{t:0.24,s:-0.32,p:0.8}, R:{t:0.03,s:0,p:0},       arms:"mw", lean:0.14 },
-  tapR:  { L:{t:0.03,s:0,p:0},       R:{t:0.24,s:-0.32,p:0.8}, arms:"mw", lean:0.14 } };
+  /* v325: il cabbage patch, quattro punti del giro dei pugni (vedi
+     _skCabbageArms). Le ginocchia piu' piegate quando i pugni spingono
+     avanti (cp1) e piu' dritte quando tornano al petto (cp3): un
+     molleggio a ogni giro. Piedi un filo larghi (a). */
+  cp0:   { L:{t:0.2,s:-0.26,p:0.05,a:-0.05}, R:{t:0.2,s:-0.26,p:0.05,a:0.05}, arms:"cp0", lean:0.16 },
+  cp1:   { L:{t:0.3,s:-0.38,p:0.08,a:-0.05}, R:{t:0.3,s:-0.38,p:0.08,a:0.05}, arms:"cp1", lean:0.2 },
+  cp2:   { L:{t:0.2,s:-0.26,p:0.05,a:-0.05}, R:{t:0.2,s:-0.26,p:0.05,a:0.05}, arms:"cp2", lean:0.16 },
+  cp3:   { L:{t:0.1,s:-0.13,p:0.03,a:-0.05}, R:{t:0.1,s:-0.13,p:0.03,a:0.05}, arms:"cp3", lean:0.12 } };
 /* le versioni con un avambraccio alzato (stesse gambe: legs = la posa da
    cui prendono l'altezza misurata, vedi _skSoles/_skHmix) */
-["mwL","mwR","mwLb","mwRb","swLp","swRp","swRn","swLn","tapL","tapR"].forEach(nm=>{
+["mwL","mwR","mwLb","mwRb","swLp","swRp","swRn","swLn"].forEach(nm=>{
   SK_POSES[nm+"r"]=Object.assign({},SK_POSES[nm],{ arms:"mwFR", legs:nm });
   SK_POSES[nm+"l"]=Object.assign({},SK_POSES[nm],{ arms:"mwFL", legs:nm }); });
 /* una posa di ballo sulle ossa (come sitPoseFor): gambe per angoli,
@@ -15086,7 +15123,8 @@ function dancePoseFor(root,pins,fwd,spec){
     sp.forEach(S=>_sitWorldRot(S,S.getAbsolutePosition().clone(),up,lu)); _sitRefresh(root);
     sp.forEach(S=>out.set(S,S.rotationQuaternion.clone())); }
   const AR=SK_ARMS[spec.arms||"swing"];
-  try{ _armPose(root,all.map(k=>k.tn),f,(o,sd)=>AR.up(o,f,dn,sd),(o,sd)=>AR.fore(o,f,dn,sd),null).forEach((q,tn)=>out.set(tn,q)); }catch(e){}
+  try{ _armPose(root,all.map(k=>k.tn),f,(o,sd,ctx)=>AR.up(o,f,dn,sd,ctx),(o,sd,ctx)=>AR.fore(o,f,dn,sd,ctx),
+    AR.hand?((o,sd,ctx)=>AR.hand(o,f,dn,sd,ctx)):null).forEach((q,tn)=>out.set(tn,q)); }catch(e){}
   const res=all.map(k=>({ tn:k.tn, p:(outP.get(k.tn)||k.p).clone(), s:k.s.clone(), q:(out.get(k.tn)||k.q).clone() }));
   saved.forEach(k=>{ if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); k.tn.position.copyFrom(k.p); });
   return { pins:res, drop:Math.max(0,Math.min(loss.L||0,loss.R||0)), lift:spec.lift||0 };
@@ -15140,7 +15178,7 @@ function _skSoles(root,K){
 }
 /* le coppie di pose che _skEval fonde fra loro */
 const SK_PAIRS=[["stand","crouch"],["bDn","bUp"],["mwL","mwLb"],["mwLb","mwR"],["mwR","mwRb"],["mwRb","mwL"],["stand","mwL"],["mwRb","stand"],
-  ["mwL","swLp"],["swLp","mwR"],["mwR","swRp"],["swRp","mwL"],["mwL","swLn"],["swLn","mwR"],["mwR","swRn"],["swRn","mwL"],["swRp","stand"],["swRn","stand"],["stand","toe"],["toe","toe2"],["stand","rise"],["tapL","tapR"]];
+  ["mwL","swLp"],["swLp","mwR"],["mwR","swRp"],["swRp","mwL"],["mwL","swLn"],["swLn","mwR"],["mwR","swRn"],["swRn","mwL"],["swRp","stand"],["swRn","stand"],["stand","toe"],["toe","toe2"],["stand","rise"],["cp0","cp1"],["cp1","cp2"],["cp2","cp3"],["cp3","cp0"]];
 /* di quanto si alza (o si abbassa) il corpo in questa posa */
 function _skH(P){ return (P.off!=null)?P.off:((P.lift||0)-(P.drop||0)); }
 /* ...e a meta' strada fra due pose (tabella misurata in _skSoles, se c'e') */
@@ -15237,8 +15275,15 @@ function _skEval(K,mv,b,sd){
     if(b<0.5) return { A:P.stand, B:R, t:_skEase(b/0.5), glide:0, hop:0 };
     if(b<1.35) return { A:R, B:R, t:0, glide:0, hop:0 };
     return { A:R, B:P.stand, t:_skEase((b-1.35)/0.6), glide:0, hop:0 }; }
-  if(mv==="ankle"){ const h=b*2, k=Math.floor(h), fr=h-k;
-    return _skArms(P,b,4,k%2?"tapR":"tapL",k%2?"tapL":"tapR",_skEase((fr-0.45)/0.45),{ glide:0, hop:0 }); }
+  /* v325: il cabbage patch, un giro dei pugni per battito a velocita'
+     costante (cp0 -> cp1 -> cp2 -> cp3 -> cp0), il busto che segue il giro
+     (sway). Entra dalla posa in piedi nel primo mezzo battito ed esce
+     nell'ultimo, come il ballo base (strato A2/B2/w di _skBlendE). */
+  if(mv==="cabbage"){ const D=SKATE_DUR("cabbage"), c=(b-Math.floor(b))*4, k=Math.floor(c)%4;
+    const E={ A:P["cp"+k], B:P["cp"+((k+1)%4)], t:c-Math.floor(c), glide:0, hop:0, sway:0.09*Math.sin(Math.PI*2*b) };
+    const w=b<0.5?1-_skEase(b/0.5):(b>D-0.5?_skEase((b-(D-0.5))/0.5):0);
+    if(w>0){ E.A2=P.stand; E.B2=P.stand; E.w=w; }
+    return E; }
   /* il saltello: piega, stacco, in aria, atterraggio, su */
   if(b<0.4)  return { A:P.stand, B:P.crouch, t:_skEase(b/0.4), glide:0, hop:0, turn:0 };
   /* v309g: 12 cm e non 20: in un saltello di mezzo battito (0,3 s a 120
@@ -15637,7 +15682,7 @@ function skateTick(){
    l'altra il saltello, che riporta ognuno al suo posto; il moonwalk scivola
    indietro e il sidewalk una volta a destra e una a sinistra, tutti
    insieme, cosi' le distanze restano quelle della fila. */
-const SK_ROUTINE=["basic","moonwalk","basic","sidewalk","toe","ankle","basic","sidewalk","moonwalk","ankle","toe"];
+const SK_ROUTINE=["basic","moonwalk","basic","sidewalk","toe","cabbage","basic","sidewalk","moonwalk","cabbage","toe"];
 const SK_GLIDE=1.0;                                   // metri di scivolata per ogni moonwalk/sidewalk (sempre nello stesso verso)
 /* v309g: il raccordo fra la mossa i e la successiva. Si alternano il
    saltello e il «rise» sulle punte (braccia aperte); accanto al toe stand
@@ -67284,11 +67329,13 @@ const Presenza=(function(){
      i PASSI (SKDANCE, skatepark e Beat Club) non viaggiavano: il compagno
      ti vedeva fermo in piedi, o scivolare nel moonwalk. Ora il quinto campo
      e' «m<mossa><battiti x10>» (h saltello, b ballo base, m moonwalk, s/S
-     sidewalk a destra/sinistra, t punte, a talloni, r pausa fra due brani)
+     sidewalk a destra/sinistra, t punte, c cabbage patch, r pausa fra due
+     brani; v325: «a» erano i talloni, tolti — chi li manda ancora, con una
+     versione vecchia, si vede fare il cabbage patch)
      con l'imbardata senza l'ondeggiare; chi guarda rifa' la stessa posa
      sulle ossa (dancePoseFor) e fa avanzare i battiti col suo orologio. */
-  const _MOSSA={ hop:"h", basic:"b", moonwalk:"m", sidewalk:"s", toe:"t", ankle:"a" };
-  const _MOSSA_DA={ h:"hop", b:"basic", m:"moonwalk", s:"sidewalk", S:"sidewalk", t:"toe", a:"ankle", r:"rest" };
+  const _MOSSA={ hop:"h", basic:"b", moonwalk:"m", sidewalk:"s", toe:"t", cabbage:"c" };
+  const _MOSSA_DA={ h:"hop", b:"basic", m:"moonwalk", s:"sidewalk", S:"sidewalk", t:"toe", c:"cabbage", a:"cabbage", r:"rest" };
   function _posa(){
     try{ if(typeof SKDANCE!=="undefined" && SKDANCE.on && SKDANCE.area===area){
       const S=SKDANCE, B=_skDanceClock().beat;
