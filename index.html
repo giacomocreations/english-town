@@ -16052,6 +16052,7 @@ function _cyTeacher(){ try{ return !!Student.teacher; }catch(e){ return false; }
 function _cyVoice(npc,text,rate){
   const D=SKATE.dancers.find(x=>x.n===npc);
   const ges=!!(D && D.st==="cypher" && npc.anims && npc.anims["Interact"]);
+  try{ if(Mic.listening()) return Promise.resolve(false); }catch(e){}   // v324: si trascriverebbe la crew
   if(ges) try{ npc.play("Interact"); }catch(e){}
   try{ speechSynthesis.resume(); }catch(e){}
   let p; try{ p=TTS.say(text,{ accent:"us", rate:rate||undefined, gender:(npc&&npc.gender)||undefined }); }catch(e){ p=Promise.resolve(false); }
@@ -16153,8 +16154,8 @@ function _cyTimeHtml(sec){
   return '<div id="cy-time" style="display:flex;align-items:center;gap:8px;margin-top:8px"><span style="flex:1;height:7px;background:#e3ddd0;border-radius:4px;overflow:hidden">'
     +'<i style="display:block;height:100%;width:100%;background:#e4572e"></i></span><b style="font-size:12px;min-width:30px;text-align:right">'+sec+'s</b></div>';
 }
-function _cyInput(ph){
-  return '<input id="cy-in" class="gem-input" data-mic="1" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="'+_escHtml(ph)+'">'
+function _cyInput(ph,mic){
+  return '<input id="cy-in" class="gem-input" data-mic="'+(mic||"add")+'" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="'+_escHtml(ph)+'">'
     +'<div id="cy-fb" style="min-height:18px;margin-top:6px;font-size:13px;color:#b5452f"></div>';
 }
 function _cyFocus(){ setTimeout(()=>{ const el=document.getElementById("cy-in"); if(el && !(navigator.maxTouchPoints>0)) el.focus(); },60); }
@@ -16216,7 +16217,7 @@ function _cyR1(){
   DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:"Round 1/3 · Rhyme fire · ⭐ "+CY_PTS.r1, autoSpeak:false,
     text:"Rhyme fire! Give me three words that rhyme with “"+q.key.toUpperCase()+"”. Go!",
     italian:"Scrivi (o di' al microfono) TRE parole diverse che fanno rima con «"+q.key+"» (suono "+F.snd+"). Non vale «"+q.key+"». Un tentativo, 30 secondi!",
-    html:_cyBars([q.a])+_cyInput("word, word, word")+_cyTimeHtml(30),
+    html:_cyBars([q.a])+_cyInput("word, word, word","list")+_cyTimeHtml(30),
     buttons:[{ label:"\u{1F3A4} Drop it", cls:"primary", keepOpen:true, act:()=>judge(false) }] });
   _cyFocus();
   _cySeq(g,[()=>_cyRap(npc,q.a),()=>_cySay(npc,_cyT("r1go"))])
@@ -47014,6 +47015,16 @@ let toastT;
      stesso.
    · Nelle textarea la frase si AGGIUNGE in coda (si detta una frase alla
      volta); nel campo di una parola sola SOSTITUISCE.
+   · v324 (Giacomo, 28 ott: «nella sfida rap, la prima prova: quando provo a
+     parlare non stampa tutto quello che dico»). Il riconoscimento si ferma
+     alla prima pausa: «go… show… know» dava solo «go», e ripremendo Speak
+     la parola nuova CANCELLAVA le altre (campo di una parola sola). I campi
+     del cypher ora sono data-mic="list" (round 1: le parole si mettono in
+     fila con la virgola) e data-mic="add" (round 2 e 3: la frase continua):
+     si AGGIUNGE, e il microfono resta aperto finche' si parla — riparte da
+     solo dopo ogni pausa e si chiude con ⏹ Stop, a fine round o dopo
+     qualche secondo di silenzio. Mentre ascolta, la crew non parla
+     (Mic.listening, vedi _cyVoice): se no si trascriverebbe la sua voce.
    ===================================================================== */
 const Mic=(function(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -47021,41 +47032,61 @@ const Mic=(function(){
   function ok(el){
     if(!el || el.__mic) return false;
     if(el.tagName==="TEXTAREA") return true;
-    return el.tagName==="INPUT" && (el.id==="gem-write" || el.id==="wxFinT" || el.dataset.mic==="1");
+    return el.tagName==="INPUT" && (el.id==="gem-write" || el.id==="wxFinT" || /^(1|list|add)$/.test(el.dataset.mic||""));
   }
-  function stop(){ try{ if(rec) rec.stop(); }catch(e){} }
+  function stop(){ if(cur) cur.stopped=true; try{ if(rec) rec.stop(); }catch(e){} }
   function setBtn(b,on){ if(!b) return; b.classList.toggle("on",on);
     b.textContent=on?"⏹ Stop":"\u{1F3A4} Speak"; }
   function start(el,btn){
     if(cur){ const same=cur.el===el; stop(); if(same) return; }
     try{ speechSynthesis.cancel(); }catch(e){}
-    const r=new SR(); rec=r; cur={ el, btn };
-    r.lang="en-GB"; r.interimResults=true; r.continuous=false; r.maxAlternatives=1;
-    const area=el.tagName==="TEXTAREA";
-    const base=area ? el.value.replace(/\s+$/,"") : "";
-    r.onresult=function(ev){
-      let t=""; for(let i=0;i<ev.results.length;i++) t+=ev.results[i][0].transcript;
-      t=t.trim(); if(!t) return;
-      if(area){
-        /* in coda, con la maiuscola e il punto se la frase ne e' senza */
-        let f=t.charAt(0).toUpperCase()+t.slice(1);
-        const fin=ev.results[ev.results.length-1].isFinal;
-        if(fin && !/[.!?]$/.test(f)) f+=".";
-        el.value=(base?base+" ":"")+f;
-      } else el.value=t;
-      try{ el.dispatchEvent(new Event("input",{bubbles:true})); }catch(e){}
+    const area=el.tagName==="TEXTAREA", m=el.dataset.mic, keep=(m==="list"||m==="add");
+    const sep=m==="list"?", ":" ";
+    const c={ el, btn, stopped:false, heard:false, n:0 }; cur=c;
+    let base=area ? el.value.replace(/\s+$/,"") : (keep ? el.value.replace(/[\s,]+$/,"") : "");
+    const done=function(){ if(cur===c){ cur=null; rec=null; } setBtn(btn,false);
+      try{ el.focus(); }catch(e){} };
+    const run=function(){
+      const r=new SR(); rec=r;
+      r.lang="en-GB"; r.interimResults=true; r.continuous=false; r.maxAlternatives=1;
+      r.onresult=function(ev){
+        let t=""; for(let i=0;i<ev.results.length;i++) t+=ev.results[i][0].transcript;
+        t=t.trim(); if(!t) return; c.heard=true;
+        if(area){
+          /* in coda, con la maiuscola e il punto se la frase ne e' senza */
+          let f=t.charAt(0).toUpperCase()+t.slice(1);
+          const fin=ev.results[ev.results.length-1].isFinal;
+          if(fin && !/[.!?]$/.test(f)) f+=".";
+          el.value=(base?base+" ":"")+f;
+        } else if(keep){
+          /* in coda; nel round delle rime una parola dopo l'altra, con la virgola */
+          if(m==="list") t=t.replace(/[\s,.!?;]+/g,sep).replace(/[,\s]+$/,"");
+          el.value=(base?base+sep:"")+t;
+        } else el.value=t;
+        try{ el.dispatchEvent(new Event("input",{bubbles:true})); }catch(e){}
+      };
+      r.onerror=function(ev){
+        const e=ev&&ev.error;
+        c.stopped=true;
+        if(e==="no-speech" && keep && c.heard) return;     // ha finito di parlare
+        if(e==="not-allowed"||e==="service-not-allowed")
+          toast("\u{1F3A4} Il microfono è bloccato: consentilo dall'icona accanto all'indirizzo.");
+        else if(e==="no-speech") toast("\u{1F3A4} Non ho sentito niente: riprova, parla vicino al microfono.");
+        else if(e==="network") toast("\u{1F3A4} Il riconoscimento vocale ha bisogno di internet.");
+      };
+      r.onend=function(){
+        if(rec!==r && cur!==c) { setBtn(btn,false); return; }
+        /* dopo una pausa riparte e continua in coda, finche' il campo c'e' */
+        if(keep && cur===c && !c.stopped && document.body.contains(el) && ++c.n<40){
+          base=el.value.replace(/[\s,]+$/,"");
+          try{ run(); return; }catch(e){}
+        }
+        done();
+      };
+      r.start();
     };
-    r.onerror=function(ev){
-      const e=ev&&ev.error;
-      if(e==="not-allowed"||e==="service-not-allowed")
-        toast("\u{1F3A4} Il microfono è bloccato: consentilo dall'icona accanto all'indirizzo.");
-      else if(e==="no-speech") toast("\u{1F3A4} Non ho sentito niente: riprova, parla vicino al microfono.");
-      else if(e==="network") toast("\u{1F3A4} Il riconoscimento vocale ha bisogno di internet.");
-    };
-    r.onend=function(){ if(rec===r){ rec=null; const c=cur; cur=null; if(c) setBtn(c.btn,false);
-      try{ el.focus(); }catch(e){} } };
-    try{ r.start(); setBtn(btn,true); }
-    catch(e){ rec=null; cur=null; setBtn(btn,false); }
+    try{ run(); setBtn(btn,true); }
+    catch(e){ done(); }
   }
   function attach(el){
     if(!SR || !ok(el) || !el.parentNode) return; el.__mic=true;
@@ -47081,7 +47112,7 @@ const Mic=(function(){
     }).observe(document.body,{childList:true,subtree:true}); }catch(e){}
     setTimeout(function(){ scan(document.body); },0);
   }
-  return { available:!!SR, stop, scan };
+  return { available:!!SR, stop, scan, listening:()=>!!cur };
 })();
 /* =====================================================================
    v314 — L'ESEMPIO NON SI RICOPIA (Giacomo, 18 ott: «quando in una quest
