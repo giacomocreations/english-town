@@ -14913,7 +14913,10 @@ function buildPark(){
        toe stand — sulle punte, la mano al cappello (Billie Jean);
        cabbage patch — i pugni uniti davanti al petto girano in tondo, un
                    giro per battito, e le ginocchia molleggiano (v325: al
-                   posto dell'«ankle breaker», i talloni che battevano).
+                   posto dell'«ankle breaker», i talloni che battevano);
+       running man — si corre sul posto: un ginocchio sale mentre il piede a
+                   terra scivola indietro, le braccia pompano in senso
+                   opposto alle gambe (v327).
      Fra una mossa e l'altra un SALTELLO (piega, stacco, atterraggio) in cui
      ci si gira: le mosse non si attaccano mai una all'altra.
    · IL TEMPO: l'orologio e' il brano che suona dalle casse (currentTime x
@@ -14933,6 +14936,7 @@ const SK_MOVES=[ { id:"basic",    en:"Beat Club dance", ic:"\u{1F64C}", stars:0,
                     fondo — sono le mosse piu' ambite, e restano il traguardo */
                  { id:"toe",      en:"Toe stand (Billie Jean)", ic:"\u{1FA70}", stars:800,  beats:4 },
                  { id:"cabbage",  en:"Cabbage Patch", ic:"\u{1F96C}", stars:1200, beats:8 },
+                 { id:"running",  en:"Running Man", ic:"\u{1F3C3}", stars:1400, beats:8 },
                  { id:"moonwalk", en:"Moonwalk",   ic:"\u{1F319}", stars:1600, beats:8 },
                  { id:"sidewalk", en:"Sidewalk / Airwalk", ic:"↔️", stars:2000, beats:8 } ];
 /* ---- le POSE chiave: angoli nel mondo (radianti, avanti = positivo).
@@ -15019,6 +15023,18 @@ function _skCabbageArms(th){
            hand:(o,f,dn)=>({ d:f.scale(0.9).add(dn.scale(0.08)).subtract(o.scale(0.3)), n:dn.scale(0.9).subtract(o.scale(0.35)) }) };
 }
 [0,1,2,3].forEach(i=>{ SK_ARMS["cp"+i]=_skCabbageArms(i*Math.PI/2); });
+/* v327 — il RUNNING MAN (Giacomo, 28 ott: «ora aggiungiamo il running man
+   nei balli»). Le braccia corrono come le gambe, in senso opposto: col
+   ginocchio sinistro su va avanti il braccio destro (gomito a 90 gradi,
+   pugno all'altezza della spalla) e il sinistro va indietro, la mano
+   all'altezza del fianco. side = il braccio che va avanti. Nei passi a terra le
+   braccia passano per il mezzo: lungo i fianchi, avambracci in avanti. */
+function _skRunArms(side){
+  return { up:(o,f,dn,sd)=>sd===side?dn.scale(0.68).add(f.scale(0.73)).add(o.scale(0.06)):dn.scale(0.64).subtract(f.scale(0.77)).add(o.scale(0.14)),
+           fore:(o,f,dn,sd)=>sd===side?f.scale(0.7).subtract(dn.scale(0.7)).subtract(o.scale(0.12)):f.scale(0.72).add(dn.scale(0.68)).add(o.scale(0.04)) }; }
+SK_ARMS.rmFR=_skRunArms("R"); SK_ARMS.rmFL=_skRunArms("L");
+SK_ARMS.rmMid={ up:(o,f,dn)=>dn.scale(0.97).add(o.scale(0.12)),
+                fore:(o,f,dn)=>f.scale(0.85).subtract(dn.scale(0.1)).add(o.scale(0.02)) };
 const SK_POSES={
   /* lean = busto in avanti (v308b, Giacomo: «leggermente, non troppo») */
   stand: { L:{t:0.03,s:0,p:0},       R:{t:0.03,s:0,p:0},       arms:"rest", lean:0.12 },
@@ -15055,7 +15071,16 @@ const SK_POSES={
   cp0:   { L:{t:0.2,s:-0.26,p:0.05,a:-0.05}, R:{t:0.2,s:-0.26,p:0.05,a:0.05}, arms:"cp0", lean:0.16 },
   cp1:   { L:{t:0.3,s:-0.38,p:0.08,a:-0.05}, R:{t:0.3,s:-0.38,p:0.08,a:0.05}, arms:"cp1", lean:0.2 },
   cp2:   { L:{t:0.2,s:-0.26,p:0.05,a:-0.05}, R:{t:0.2,s:-0.26,p:0.05,a:0.05}, arms:"cp2", lean:0.16 },
-  cp3:   { L:{t:0.1,s:-0.13,p:0.03,a:-0.05}, R:{t:0.1,s:-0.13,p:0.03,a:0.05}, arms:"cp3", lean:0.12 } };
+  cp3:   { L:{t:0.1,s:-0.13,p:0.03,a:-0.05}, R:{t:0.1,s:-0.13,p:0.03,a:0.05}, arms:"cp3", lean:0.12 },
+  /* v327: il running man, quattro tempi (vedi _skEval). rmUL: ginocchio
+     sinistro su (coscia quasi orizzontale, piede sotto il ginocchio, punta
+     giu'), la gamba destra dritta sotto il corpo. rmDL: il sinistro e'
+     sceso davanti, il destro e' scivolato indietro col tallone su. Poi lo
+     stesso con l'altra gamba. Il corpo resta sul posto. */
+  rmUL:  { L:{t:1.15,s:-0.15,p:0.5},  R:{t:0,s:0,p:0},          arms:"rmFR", lean:0.1 },
+  rmDL:  { L:{t:0.22,s:0.06,p:0},     R:{t:-0.3,s:-0.42,p:0.55}, arms:"rmMid", lean:0.12 },
+  rmUR:  { L:{t:0,s:0,p:0},           R:{t:1.15,s:-0.15,p:0.5}, arms:"rmFL", lean:0.1 },
+  rmDR:  { L:{t:-0.3,s:-0.42,p:0.55}, R:{t:0.22,s:0.06,p:0},    arms:"rmMid", lean:0.12 } };
 /* le versioni con un avambraccio alzato (stesse gambe: legs = la posa da
    cui prendono l'altezza misurata, vedi _skSoles/_skHmix) */
 ["mwL","mwR","mwLb","mwRb","swLp","swRp","swRn","swLn"].forEach(nm=>{
@@ -15178,7 +15203,7 @@ function _skSoles(root,K){
 }
 /* le coppie di pose che _skEval fonde fra loro */
 const SK_PAIRS=[["stand","crouch"],["bDn","bUp"],["mwL","mwLb"],["mwLb","mwR"],["mwR","mwRb"],["mwRb","mwL"],["stand","mwL"],["mwRb","stand"],
-  ["mwL","swLp"],["swLp","mwR"],["mwR","swRp"],["swRp","mwL"],["mwL","swLn"],["swLn","mwR"],["mwR","swRn"],["swRn","mwL"],["swRp","stand"],["swRn","stand"],["stand","toe"],["toe","toe2"],["stand","rise"],["cp0","cp1"],["cp1","cp2"],["cp2","cp3"],["cp3","cp0"]];
+  ["mwL","swLp"],["swLp","mwR"],["mwR","swRp"],["swRp","mwL"],["mwL","swLn"],["swLn","mwR"],["mwR","swRn"],["swRn","mwL"],["swRp","stand"],["swRn","stand"],["stand","toe"],["toe","toe2"],["stand","rise"],["cp0","cp1"],["cp1","cp2"],["cp2","cp3"],["cp3","cp0"],["rmUL","rmDL"],["rmDL","rmUR"],["rmUR","rmDR"],["rmDR","rmUL"]];
 /* di quanto si alza (o si abbassa) il corpo in questa posa */
 function _skH(P){ return (P.off!=null)?P.off:((P.lift||0)-(P.drop||0)); }
 /* ...e a meta' strada fra due pose (tabella misurata in _skSoles, se c'e') */
@@ -15261,6 +15286,15 @@ function _skEval(K,mv,b,sd){
     const t=fr<0.5?_skEase(fr/0.5):1-_skEase((fr-0.5)/0.5);
     const E={ A:P.bDn, B:P.bUp, t, glide:0, hop:0.1*Math.sin(Math.PI*fr), sway:0.16*Math.sin(Math.PI*b) };
     const w=b<1?1-_skEase(b):(b>D-1?_skEase(b-(D-1)):0);
+    if(w>0){ E.A2=P.stand; E.B2=P.stand; E.w=w; }
+    return E; }
+  /* v327: il running man, un passo per battito (due battiti per gamba):
+     ginocchio su -> giu' davanti mentre l'altro piede scivola indietro ->
+     l'altro ginocchio su... Entrata e uscita dalla posa in piedi come il
+     cabbage patch. */
+  if(mv==="running"){ const D=SKATE_DUR("running"), c=(b-Math.floor(b/2)*2)*2, k=Math.floor(c)%4, S=["rmUL","rmDL","rmUR","rmDR"];
+    const E={ A:P[S[k]], B:P[S[(k+1)%4]], t:_skEase(c-Math.floor(c)), glide:0, hop:0 };
+    const w=b<0.5?1-_skEase(b/0.5):(b>D-0.5?_skEase((b-(D-0.5))/0.5):0);
     if(w>0){ E.A2=P.stand; E.B2=P.stand; E.w=w; }
     return E; }
   if(mv==="toe"){
@@ -15682,7 +15716,7 @@ function skateTick(){
    l'altra il saltello, che riporta ognuno al suo posto; il moonwalk scivola
    indietro e il sidewalk una volta a destra e una a sinistra, tutti
    insieme, cosi' le distanze restano quelle della fila. */
-const SK_ROUTINE=["basic","moonwalk","basic","sidewalk","toe","cabbage","basic","sidewalk","moonwalk","cabbage","toe"];
+const SK_ROUTINE=["basic","moonwalk","basic","sidewalk","toe","cabbage","running","basic","sidewalk","moonwalk","running","cabbage","toe"];
 const SK_GLIDE=1.0;                                   // metri di scivolata per ogni moonwalk/sidewalk (sempre nello stesso verso)
 /* v309g: il raccordo fra la mossa i e la successiva. Si alternano il
    saltello e il «rise» sulle punte (braccia aperte); accanto al toe stand
@@ -67342,13 +67376,14 @@ const Presenza=(function(){
      i PASSI (SKDANCE, skatepark e Beat Club) non viaggiavano: il compagno
      ti vedeva fermo in piedi, o scivolare nel moonwalk. Ora il quinto campo
      e' «m<mossa><battiti x10>» (h saltello, b ballo base, m moonwalk, s/S
-     sidewalk a destra/sinistra, t punte, c cabbage patch, r pausa fra due
+     sidewalk a destra/sinistra, t punte, c cabbage patch, n running man
+     (v327), r pausa fra due
      brani; v325: «a» erano i talloni, tolti — chi li manda ancora, con una
      versione vecchia, si vede fare il cabbage patch)
      con l'imbardata senza l'ondeggiare; chi guarda rifa' la stessa posa
      sulle ossa (dancePoseFor) e fa avanzare i battiti col suo orologio. */
-  const _MOSSA={ hop:"h", basic:"b", moonwalk:"m", sidewalk:"s", toe:"t", cabbage:"c" };
-  const _MOSSA_DA={ h:"hop", b:"basic", m:"moonwalk", s:"sidewalk", S:"sidewalk", t:"toe", c:"cabbage", a:"cabbage", r:"rest" };
+  const _MOSSA={ hop:"h", basic:"b", moonwalk:"m", sidewalk:"s", toe:"t", cabbage:"c", running:"n" };
+  const _MOSSA_DA={ h:"hop", b:"basic", m:"moonwalk", s:"sidewalk", S:"sidewalk", t:"toe", c:"cabbage", n:"running", a:"cabbage", r:"rest" };
   function _posa(){
     try{ if(typeof SKDANCE!=="undefined" && SKDANCE.on && SKDANCE.area===area){
       const S=SKDANCE, B=_skDanceClock().beat;
