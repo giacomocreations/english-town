@@ -42226,6 +42226,64 @@ function wxBoardDraw(card){
   WX_BOARD_DT.update();
 }
 function wxCardGet(){ try{ return Sync.get("et_weather_card",null); }catch(e){ return null; } }
+/* v408 — I BAGAGLI DI OTTO (procedurali, 0 KB). Gli spigoli tondi si
+   fanno con due scatole incrociate e quattro cilindri sugli angoli: in
+   pianta e' un rettangolo arrotondato, non un mattone. */
+function _lugRound(r,w,h,d,rad,m,x,y,z,ax){
+  /* ax="y": angoli tondi visti dall'alto; ax="z": visti di fronte */
+  if(ax==="z"){ hm7Box(r,w-2*rad,h,d,m,x,y,z); hm7Box(r,w,h-2*rad,d,m,x,y,z);
+    [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(q=>hm7Cyl(r,2*rad,2*rad,d,m,x+q[0]*(w/2-rad),y+q[1]*(h/2-rad),z,14,Math.PI/2,0));
+    return; }
+  hm7Box(r,w-2*rad,h,d,m,x,y,z); hm7Box(r,w,h,d-2*rad,m,x,y,z);
+  [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(q=>hm7Cyl(r,2*rad,2*rad,h,m,x+q[0]*(w/2-rad),y,z+q[1]*(d/2-rad),14));
+}
+function wxLuggage(){
+  const gy=_benchGround(106.8,-16.9,0);
+  /* --- il trolley rigido, in piedi (davanti = +z locale) --- */
+  { const r=new BABYLON.TransformNode("wxTrolley",scene); r.parent=townRoot;
+    r.position.set(106.62,gy,-17.12); r.rotation.y=0.9+Math.PI/2;
+    const shell=hm7Mat("#2c6a8f",0.35,48), rib=hm7Mat("#24597a",0.30,40), dark=hm7Mat("#23262b",0.20,24),
+          metal=hm7Mat("#b8bfc7",0.70,80), tag=hm7Mat("#f2c14e",0.10,16,"#3a2c08");
+    const W=0.40, H=0.58, D=0.25, R=0.045, y0=0.075, yc=y0+H/2;
+    _lugRound(r,W,H,D,R,shell,0,yc,0,"z");                                    // la scocca, spigoli tondi di fronte
+    [-0.12,-0.04,0.04,0.12].forEach(dx=>{ hm7Box(r,0.022,H-0.10,0.010,rib,dx,yc,D/2+0.003);
+                                          hm7Box(r,0.022,H-0.10,0.010,rib,dx,yc,-D/2-0.003); });   // nervature
+    hm7Box(r,W+0.006,H-2*R+0.006,0.016,dark,0,yc,-0.015);                      // cerniera tutt'intorno (fianchi)
+    hm7Box(r,W-2*R+0.006,H+0.006,0.016,dark,0,yc,-0.015);                      // ... e sopra e sotto
+    [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(q=>{                                 // quattro rotelle piroettanti
+      const x=q[0]*(W/2-0.05), z=q[1]*(D/2-0.045);
+      hm7Box(r,0.045,0.03,0.045,dark,x,y0-0.012,z);
+      hm7Cyl(r,0.05,0.05,0.022,dark,x,0.026,z,12,0,Math.PI/2); });
+    [-0.105,0.105].forEach(dx=>{ hm7Box(r,0.03,0.02,0.04,dark,dx,y0+H+0.008,-D/2+0.03);   // manico telescopico estratto
+                                 hm7Box(r,0.016,0.42,0.016,metal,dx,y0+H+0.21,-D/2+0.03); });
+    hm7Box(r,0.25,0.03,0.035,dark,0,y0+H+0.43,-D/2+0.03);
+    hm7Box(r,0.14,0.022,0.028,dark,0,y0+H+0.035,0.035);                        // maniglia sopra
+    [-0.06,0.06].forEach(dx=>hm7Box(r,0.02,0.035,0.028,dark,dx,y0+H+0.015,0.035));
+    hm7Box(r,0.025,0.12,0.03,dark,W/2+0.012,yc+0.02,0);                        // maniglia di fianco
+    hm7Box(r,0.012,0.06,0.006,dark,0.05,y0+H+0.0,0.035);                       // laccetto dell'etichetta
+    hm7Box(r,0.075,0.10,0.006,tag,0.05,y0+H-0.06,D/2+0.012);                   // etichetta gialla
+    hm7Box(r,0.04,0.03,0.008,metal,-0.13,yc+0.10,-0.025+0.018);               // lucchetto
+    etMergeByMat(r); r.getChildMeshes().forEach(m=>{ m.isPickable=false; m.__occluder=true; });
+    addSolid(106.62-0.3,106.62+0.3,-17.12-0.3,-17.12+0.3,"town"); }
+  /* --- la valigia classica di cuoio, coricata (lunga lungo x locale) --- */
+  { const r=new BABYLON.TransformNode("wxCase",scene); r.parent=townRoot;
+    r.position.set(107.25,gy,-16.55); r.rotation.y=0.9+0.35;
+    const lea=hm7Mat("#8a5530",0.18,24), seam=hm7Mat("#5e3a20",0.12,20), strap=hm7Mat("#4a2e1a",0.15,20),
+          brass=hm7Mat("#c9a24a",0.75,70), tag=hm7Mat("#efe6cf",0.05,8);
+    const L=0.66, T=0.21, Wd=0.44, R=0.05, yc=T/2+0.012;
+    _lugRound(r,L,T,Wd,R,lea,0,yc,0,"y");                                      // il corpo, angoli tondi in pianta
+    hm7Box(r,L-2*R+0.006,0.014,Wd+0.006,seam,0,T*0.66,0);                      // la riga del coperchio
+    hm7Box(r,L+0.006,0.014,Wd-2*R+0.006,seam,0,T*0.66,0);
+    [-0.19,0.19].forEach(dx=>{ hm7Box(r,0.045,T+0.010,Wd+0.010,strap,dx,yc,0);   // due cinghie
+                               hm7Box(r,0.055,0.04,0.012,brass,dx,T*0.72,Wd/2+0.008); });  // le fibbie
+    [-0.09,0.09].forEach(dx=>hm7Box(r,0.04,0.028,0.012,brass,dx,T*0.66,Wd/2+0.007));   // le chiusure
+    [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(q=>hm7Cyl(r,2*R+0.012,2*R+0.012,0.035,brass,q[0]*(L/2-R),T+0.002-0.0155,q[1]*(Wd/2-R),14));   // paraspigoli
+    hm7Box(r,0.15,0.026,0.032,strap,0,T*0.80,Wd/2+0.03);                      // la maniglia
+    [-0.065,0.065].forEach(dx=>hm7Box(r,0.022,0.035,0.03,brass,dx,T*0.76,Wd/2+0.016));
+    hm7Box(r,0.07,0.005,0.045,tag,0.02,T+0.015,Wd/2-0.04);                     // il cartellino sul coperchio
+    etMergeByMat(r); r.getChildMeshes().forEach(m=>{ m.isPickable=false; m.__occluder=true; });
+    addSolid(107.25-0.38,107.25+0.38,-16.55-0.38,-16.55+0.38,"town"); }
+}
 function wxRestoreBoard(){ try{ wxBoardDraw(wxCardGet()); }catch(e){} }
 function wxSaveCard(place,title,text){
   let by=""; try{ by=Student.code||""; }catch(e){}
@@ -42325,9 +42383,14 @@ function buildWeatherStation(){
                  : "\u{1F4EE} Summer in Riverside \u2014 il tabellone aspetta la tua cartolina."); } });
   /* panchina e valigia di Otto, sulla riva */
   streetBench(104.8,-16.6,Math.PI/2);
-  const bag=BABYLON.MeshBuilder.CreateBox("wxbag",{width:0.52,height:0.40,depth:0.28},scene);
-  bag.material=mat("wxbagm","#7a3b2e"); bag.position.set(105.6,0.20,-17.2); bag.rotation.y=0.4;
-  bag.parent=townRoot; bag.__occluder=true;
+  /* v408 (Giacomo, 28 ott: «la valigia di Otto e' incastrata dentro la
+     panchina [...] e' solo un parallelepipedo: mettigli un trolley e una
+     valigia un po' piu' realistica»). Il blocco marrone stava a (105,6,
+     -17,2), DENTRO il tavolo da picnic (misurato: x 103,98..105,62, z
+     -17,6..-15,6). Ora i bagagli stanno alla destra di Otto, fuori dal
+     tavolo: il trolley in piedi col manico estratto, la valigia di cuoio
+     coricata per terra accanto. */
+  wxLuggage();
   /* insegne: nomi di luogo, MAI il lessico dell'esercizio */
   facilitySign(114,3.4,-16.6,"\u{1F326}\uFE0F","WEATHER STATION");
   facilitySign(114,3.0,-6.0,"\u{1F5FA}\uFE0F","OUR REGION");
