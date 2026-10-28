@@ -27512,6 +27512,13 @@ function greetTimFirstTime(npc){
    unit e di quelle prima (come le quest: niente will in u3_1, niente
    should prima di u3_5, niente present perfect prima di u3_3).
    ===================================================================== */
+/* ⚠️ v409 (Giacomo, 28 ott): in ogni quiz UNA SOLA risposta deve stare in
+   piedi. Rivisti tutti: «It's ___ orange pencil case» con «the» (giusto
+   anche quello), «The audience ___» con «were» (inglese britannico), «There
+   ___ two drummers» con «are», «At four o'clock I ___» con «read»,
+   «Have you called them ___?» con «already», «Can I help you?» con «Yes,
+   you can.»... I distrattori ora sono SBAGLIATI davvero, o la frase dice il
+   tempo che toglie il dubbio. */
 const LESSONS={
   u0:{ g:"this / that / these / those · a / an",
     rule:"THIS and THESE are for things near you. THAT and THOSE are for things far from you. Use A before a consonant sound and AN before a vowel sound.",
@@ -27519,7 +27526,7 @@ const LESSONS={
     ex:["This is my pen.","Those are your books.","It's an exercise book."],
     quiz:[["___ is my pencil. (here, in my hand)","This","These","Those"],
           ["___ are Tim's books. (over there)","Those","That","This"],
-          ["It's ___ orange pencil case.","an","a","the"]],
+          ["It's ___ orange pencil case.","an","a","some"]],
     fn:"Spelling and colours",
     phr:[["How do you spell your name?","M-A-R-C-O.","I'm fine, thanks.","It's blue."],
          ["What colour is your bag?","It's red.","It's a bag.","Yes, it is."]] },
@@ -27578,10 +27585,10 @@ const LESSONS={
     ruleIt:"some nelle frasi positive, any in domande e negative. How many + cose che si contano, how much + cose che non si contano.",
     ex:["There are some apples on the table.","Have you got any milk? — Yes, we have.","How many eggs do you need?"],
     quiz:[["I haven't got ___ bread.","any","some","a"],
-          ["Do you have ___ bananas?","any","some","much"],
+          ["Do you have ___ bananas?","any","much","a"],
           ["How ___ water do you drink every day?","much","many","often"]],
     fn:"Shopping for food",
-    phr:[["Can I help you?","Yes, I'd like some cheese, please.","Yes, you can.","I like cheese."],
+    phr:[["Can I help you?","Yes, I'd like some cheese, please.","Yes, I can.","I like cheese."],
          ["How often do you eat pizza?","Once a week.","Some pizza.","Yes, I eat."]] },
   u7:{ g:"can / can't · adverbs of manner",
     rule:"CAN + verb for abilities: I can swim. Questions: Can you ski? — Yes, I can. / No, I can't. Adverbs say HOW you do something: quick → quickly, good → well.",
@@ -27602,7 +27609,7 @@ const LESSONS={
           ["They ___ wearing coats today.","aren't","isn't","don't"]],
     fn:"Shopping for clothes",
     phr:[["Can I help you?","Yes, I'm looking for a T-shirt.","Yes, I'm wearing a T-shirt.","It's ten pounds."],
-         ["Here you are. Anything else?","How much is it?","It's medium.","It's red."]] },
+         ["Here you are. Anything else?","No, thanks. How much is it?","It's medium.","It's red."]] },
   u2_1:{ g:"present simple or present continuous",
     rule:"Present simple for habits (every day, usually). Present continuous for things happening now (now, at the moment) and for plans (this afternoon).",
     ruleIt:"Present simple per le abitudini, present continuous per adesso e per i programmi gia' fissati.",
@@ -27617,8 +27624,8 @@ const LESSONS={
     rule:"The past of BE: I, he, she, it WAS; you, we, they WERE. THERE WAS + one thing, THERE WERE + two or more.",
     ruleIt:"Passato di be: was con I/he/she/it, were con you/we/they. there was + una cosa, there were + piu' cose.",
     ex:["The concert was amazing.","There were a lot of people.","Was the singer good? — Yes, she was."],
-    quiz:[["There ___ two drummers on stage.","were","was","are"],
-          ["The audience ___ very excited.","was","were","be"],
+    quiz:[["Last night there ___ two drummers on stage.","were","was","is"],
+          ["The singer ___ very excited last night.","was","were","be"],
           ["___ you at the concert last night?","Were","Was","Did"]],
     fn:"Talking about feelings",
     phr:[["How does this song make you feel?","It makes me feel happy.","It's a song.","I feel it."],
@@ -27629,7 +27636,7 @@ const LESSONS={
     ex:["Last summer we went to the lake.","It rained a lot.","Did you swim? — No, I didn't."],
     quiz:[["Yesterday I ___ to the beach.","went","go","goed"],
           ["We ___ see the mountains. It was foggy.","didn't","don't","wasn't"],
-          ["___ you have a good holiday?","Did","Were","Do"]],
+          ["___ you have a good holiday last summer?","Did","Were","Do"]],
     fn:"Talking about holidays and the weather",
     phr:[["What was the weather like?","It was sunny and hot.","It is sunny.","I like the weather."],
          ["Where did you go on holiday?","I went to Sardinia.","I go to Sardinia.","Yes, I did."]] },
@@ -27639,7 +27646,7 @@ const LESSONS={
     ex:["When did you make the film?","Did the actors enjoy it?","Was the ending happy?"],
     quiz:[["___ did you film it? — In London.","Where","When","Who"],
           ["Did you ___ the trailer?","see","saw","seen"],
-          ["I ___ like the ending. It was sad.","didn't","don't","wasn't"]],
+          ["I ___ like the ending. It was sad.","didn't","wasn't","not"]],
     fn:"Giving your opinion about a film",
     phr:[["Did you like the film?","Yes, it was really funny!","Yes, I like.","It's a cinema."],
          ["What kind of films do you like?","I like science fiction.","I liked it.","At the cinema."]] },
@@ -27677,7 +27684,7 @@ const LESSONS={
     rule:"WAS / WERE + verb-ING for an action in progress at a moment in the past: At four o'clock I was reading.",
     ruleIt:"was/were + verbo in -ing per un'azione in corso in un momento del passato.",
     ex:["At four o'clock Sara was walking her dog.","We were having lunch.","What were you doing at four? — I was shopping."],
-    quiz:[["At four o'clock I ___ a book.","was reading","were reading","read"],
+    quiz:[["At four o'clock yesterday I ___ a book.","was reading","were reading","am reading"],
           ["They ___ waiting for the bus.","were","was","did"],
           ["What ___ you doing at 4 pm yesterday?","were","did","was"]],
     fn:"Giving directions",
@@ -27718,7 +27725,7 @@ const LESSONS={
     ruleIt:"just = appena, already = gia', yet = in domande (gia'?) e negative (non ancora), in fondo alla frase.",
     ex:["The firefighters have just arrived.","I've already checked the alarm.","Has the rain stopped yet? — No, not yet."],
     quiz:[["We've ___ cleaned the hoses. Look, they're still wet!","just","yet","ever"],
-          ["Have you called the volunteers ___?","yet","already","just"],
+          ["Have you called the volunteers ___?","yet","just","ever"],
           ["I've ___ done it. I did it this morning.","already","yet","never"]],
     fn:"Apologising",
     phr:[["Sorry I'm late. The bus was late.","Don't worry, it's OK.","I'm late too, sorry you.","Yes, I am."],
@@ -28904,7 +28911,25 @@ function lessonStart(id){
   /* le parole: tre della unit (non extra), con l'emoji o con la frase */
   const pool=shuffle((GEM_LEX[id]||[]).filter(w=>w[4]!=="x" && (w[2]||w[3])));
   const W=pool.slice(0,3);
-  const alts=w=>shuffle((GEM_LEX[id]||[]).filter(x=>x[0]!==w[0] && x[4]!=="x")).slice(0,2).map(x=>x[0]);
+  /* v409 (Giacomo, 28 ott: «mi fa una domanda le cui risposte erano tutte
+     giuste e mi dice che e' sbagliata»: «My ___ has got a big garden» con
+     grandfather, grandmother, mother). I distrattori venivano dalla STESSA
+     unit, cioe' dallo stesso campo semantico: nella frase col buco ci
+     stanno quasi sempre anche loro (ogni parente ha un giardino, ogni
+     stanza ha una finestra). Ora come nei cristalli (gemLexAltsCloze):
+     parole delle altre unit aperte, dello stesso tipo, e mai una che nella
+     sua frase ha la stessa cornice. Solo se non bastano, quelle di prima. */
+  const mine={}; (GEM_LEX[id]||[]).forEach(x=>{ mine[String(x[0]).toLowerCase()]=1; });
+  const alts=w=>{
+    if(!w[3]) return shuffle((GEM_LEX[id]||[]).filter(x=>x[0]!==w[0] && x[4]!=="x")).slice(0,2).map(x=>x[0]);   // con il disegno la risposta e' una
+    let a=[]; try{ a=gemLexAltsCloze({ unit:id, word:w[0], cloze:w[3], wrong:[] }).filter(x=>!mine[String(x).toLowerCase()]); }catch(e){ console.warn("[lesson] alts",e); }
+    /* a inizio anno (aperta solo questa unit) gemLexAltsCloze ripiega sulle
+       parole della stessa unit: qui no, si prendono quelle delle altre unit
+       del libro, sempre con una cornice diversa */
+    if(a.length<2){ const fr=_gemFrame(w[3]), more=[];
+      Object.keys(GEM_LEX).forEach(u=>{ if(u!==id) (GEM_LEX[u]||[]).forEach(x=>{ if(x[4]!=="x" && !mine[String(x[0]).toLowerCase()] && _gemFrame(x[3]||"")!==fr) more.push(x[0]); }); });
+      shuffle(more).forEach(x=>{ if(a.length<2 && a.indexOf(x)<0) a.push(x); }); }
+    return a.slice(0,2); };
   const qWord=(w)=>{
     if(w[3]) return { text:"Which word completes the sentence?", html:'<div class="gem-cloze">'+_escHtml(w[3]).replace("___","<b>_____</b>")+'</div>' };
     return { text:"What's this in English?", html:'<div class="gem-pic">'+w[2]+'</div>' };
