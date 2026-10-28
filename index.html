@@ -17598,10 +17598,10 @@ function buildParkFun(){
       snap:()=>{ const p=player.position, a=player.rotation.y;
         return { cam:new BABYLON.Vector3(p.x-Math.sin(a)*1.5,p.y+1.6,p.z-Math.cos(a)*1.5),
                  look:new BABYLON.Vector3(p.x+Math.sin(a)*12,p.y+3.0,p.z+Math.cos(a)*12) }; } };
-    /* il corridore: avanti e indietro sul vialetto est (x 124..128) */
+    /* il corridore: v408, un giro vero (PK_CAST.jogger.loop); la foto lo
+       prende di fronte, da dove sta andando */
     const jg=N("jogger");
-    if(jg){ PARKFUN.jog={ n:jg, z0:-12, z1:20, dir:1, wait:false };
-      PARKFUN.people.jogger={ npc:jg, view:{x:1,z:0}, sideZ:-1.2 }; }
+    if(jg) PARKFUN.people.jogger={ npc:jg, sideZ:0.0, viewFn:()=>{ const a=jg.carrier.rotation.y; return { x:Math.sin(a), z:Math.cos(a) }; } };
     /* chi a quest'ora non c'e', non c'e' (chi c'e' e' gia' al suo posto) */
     for(const k in PARKFUN.cast){ const P=PARKFUN.cast[k]; if(!_pkWant(P.c)) _pkGone(P); }
     scene.onBeforeRenderObservable.add(parkJogTick);
@@ -17641,6 +17641,13 @@ const PK_LANE=1.8;
 const PK_CAST=[
   { key:"reader", id:"pk_reader", name:"Mr. Grant", sub:"Book lover", icon:"\u{1F4D6}", model:"npcMan2", height:1.76, gate:"s",
     seat:{ bench:"R", t:-0.42, arms:"read", prop:"rbook" }, front:[134.1,-3.9], viaX:133.0,
+    ask:[[/\b(what|which)\b.*\b(book|reading|read)\b|\b(title|name)\b.*\bbook\b|\bbook\b.*\b(title|called)\b/,
+          "I'm reading \u00abTreasure Island\u00bb by Robert Louis Stevenson. It's my favourite book!", "Sto leggendo \u00abL'isola del tesoro\u00bb di Robert Louis Stevenson. \u00c8 il mio libro preferito!"],
+         [/\bwho\b.*\b(wrote|write|writer|author)\b|\bauthor\b/, "Robert Louis Stevenson. He was a Scottish writer.", "Robert Louis Stevenson, uno scrittore scozzese."],
+         [/\bwhat\b.*\b(about|story)\b|\bstory\b/, "It's about a boy, Jim, a treasure map, a ship and some terrible pirates!", "Parla di un ragazzo, Jim, di una mappa del tesoro, di una nave e di pirati terribili!"],
+         [/\bhow many pages\b|\bwhat page\b|\bwhich page\b/, "About two hundred and fifty. I'm on page ninety!", "Circa duecentocinquanta. Sono a pagina novanta!"],
+         [/\b(like|love|enjoy)\b.*\b(it|book|story|reading)\b|\bis it (good|nice|interesting|boring|exciting)\b/, "Yes, I love it! It's very exciting.", "S\u00ec, mi piace tantissimo! \u00c8 molto avvincente."],
+         [/\bwhy\b.*\b(park|here|bench|outside)\b/, "Because it's quiet here, and I love the fresh air!", "Perch\u00e9 qui c'\u00e8 silenzio, e adoro l'aria fresca!"]],
     visits:[[PK_H(8,30),PK_H(11,0)],[PK_H(13,50),PK_H(17,0)]], topics:["u0","u5","u2_4"],
     hi:{ en:"I'm Mr. Grant.", it:"Sono il signor Grant." },
     there:{ en:"I'm reading a great book about the sea. I come to this bench every day.", it:"Sto leggendo un bel libro sul mare. Vengo su questa panchina tutti i giorni." },
@@ -17649,6 +17656,10 @@ const PK_CAST=[
   { key:"lunch", id:"pk_lunch", name:"Olivia", sub:"Office worker", icon:"\u{1F96A}", model:"npcWomanB", height:1.6, gate:"n",
     tint:{ Purple:"#c0442e", LightBlue:"#2f4a6a" },
     seat:{ bench:"R", t:0.45, arms:"eat", prop:"sand" }, front:[135.1,-3.9], viaX:136.0,
+    ask:[[/\bwhat\b.*\b(eat|eating|sandwich|lunch|food|in it)\b/, "I'm eating a cheese and tomato sandwich. Yum!", "Sto mangiando un panino con formaggio e pomodoro. Buono!"],
+         [/\b(job|work|office)\b/, "I work in an office near the High Street. I'm a secretary.", "Lavoro in un ufficio vicino alla High Street. Sono segretaria."],
+         [/\b(like|love)\b.*\b(it|sandwich)\b|\bis it (good|nice|tasty|delicious)\b/, "Yes, it's delicious! I make it at home every morning.", "S\u00ec, \u00e8 buonissimo! Lo preparo a casa ogni mattina."],
+         [/\bwhy\b.*\b(park|here|bench)\b/, "Because my office is near here, and the park is lovely at lunchtime!", "Perch\u00e9 il mio ufficio \u00e8 qui vicino, e all'ora di pranzo il parco \u00e8 bellissimo!"]],
     visits:[[PK_H(12,20),PK_H(13,50)],[PK_H(16,30),PK_H(17,40)]], topics:["u0","u6","u5"],
     hi:{ en:"I'm Olivia.", it:"Sono Olivia." },
     there:{ en:"I'm eating a cheese sandwich. It's my lunch break!", it:"Sto mangiando un panino al formaggio. E' la mia pausa pranzo!" },
@@ -17656,20 +17667,30 @@ const PK_CAST=[
     leave:{ en:"I'm going back to the office now. See you!", it:"Adesso torno in ufficio. Ci vediamo!" } },
   { key:"guitar", id:"pk_guitar", name:"Jess", sub:"Busker", icon:"\u{1F3B8}", model:"npcWoman", height:1.66, gate:"n",
     seat:{ bench:"G", t:0.0, prop:"gtr" }, front:[134.6,4.7], viaX:133.4,
+    ask:[[/\b(what|which)\b.*\b(song|playing|music)\b/, "I'm playing my own song. It's called \u00abSunny Day in the Park\u00bb!", "Sto suonando una canzone mia. Si intitola \u00abSunny Day in the Park\u00bb!"],
+         [/\b(can|do) you sing\b/, "Yes, I can! I sing and play at the same time.", "S\u00ec! Canto e suono insieme."],
+         [/\b(guitar|instrument)\b/, "It's an old acoustic guitar. It was my grandad's!", "\u00c8 una vecchia chitarra acustica. Era di mio nonno!"],
+         [/\bwhy\b.*\b(park|here|play)\b/, "Because people are happy here, and they listen!", "Perch\u00e9 qui la gente \u00e8 contenta, e ascolta!"]],
     visits:[[PK_H(9,50),PK_H(12,30)],[PK_H(16,0),PK_H(19,30)]], topics:["u0","u2_2","u4"],
     hi:{ en:"I'm Jess.", it:"Sono Jess." },
     there:{ en:"I'm playing the guitar. Do you like my song?", it:"Sto suonando la chitarra. Ti piace la mia canzone?" },
     walk:{ en:"I'm walking to my bench. I play music there every day.", it:"Sto andando alla mia panchina: li' suono tutti i giorni." },
     leave:{ en:"I'm going home now. My fingers are tired!", it:"Adesso vado a casa. Ho le dita stanche!" } },
   { key:"fan1", id:"pk_clap1", name:"Pete", sub:"Music fan", icon:"\u{1F44F}", model:"npcMan2", height:1.7, gate:"s",
-    spot:[137.0,3.2], look:[134.6,6.0], viaX:136.4,
+    spot:[137.0,3.2], faceTo:[134.6,6.0], viaX:136.4,
+    ask:[[/\b(what|who)\b.*\b(listening|listen)\b/, "I'm listening to Jess. She plays here every day.", "Sto ascoltando Jess. Suona qui tutti i giorni."],
+         [/\b(favourite|kind of|what) music\b/, "Rock music! But I like Jess's songs too.", "Il rock! Ma mi piacciono anche le canzoni di Jess."],
+         [/\b(like|love|enjoy)\b.*\b(song|music|it|jess|her)\b/, "Yes, I love it! She's brilliant.", "S\u00ec, mi piace tantissimo! \u00c8 bravissima."]],
     visits:[[PK_H(10,30),PK_H(11,50)],[PK_H(17,0),PK_H(18,40)]], topics:["u0","u2_2","u7"],
     hi:{ en:"I'm Pete.", it:"Sono Pete." },
     there:{ en:"I'm listening to Jess. She's a great singer!", it:"Sto ascoltando Jess. Canta benissimo!" },
     walk:{ en:"I'm going to listen to the busker. She's very good!", it:"Vado ad ascoltare la musicista di strada. E' bravissima!" },
     leave:{ en:"I'm going to the gym now. Bye!", it:"Adesso vado in palestra. Ciao!" } },
   { key:"fan2", id:"pk_clap2", name:"Amy", sub:"Music fan", icon:"\u{1F44F}", model:"npcWoman", height:1.62, gate:"n",
-    spot:[138.2,4.3], look:[134.6,6.0], viaX:138.0,
+    spot:[138.2,4.3], faceTo:[134.6,6.0], viaX:138.0,
+    ask:[[/\b(what|who)\b.*\b(listening|listen)\b/, "I'm listening to Jess, the busker. Her songs are great!", "Sto ascoltando Jess, la musicista di strada. Le sue canzoni sono bellissime!"],
+         [/\b(favourite|kind of|what) music\b/, "Pop music. I listen to it every day!", "Il pop. Lo ascolto tutti i giorni!"],
+         [/\b(like|love|enjoy)\b.*\b(song|music|it|jess|her)\b/, "Yes, I really like it!", "S\u00ec, mi piace davvero!"]],
     visits:[[PK_H(10,40),PK_H(12,10)],[PK_H(16,50),PK_H(18,20)]], topics:["u0","u2_2","u8"],
     hi:{ en:"I'm Amy.", it:"Sono Amy." },
     there:{ en:"I'm listening to the music. I love this song!", it:"Sto ascoltando la musica. Adoro questa canzone!" },
@@ -17677,13 +17698,18 @@ const PK_CAST=[
     leave:{ en:"I'm going shopping now. See you!", it:"Adesso vado a fare spese. Ci vediamo!" } },
   { key:"wave", id:"pk_wave", name:"Ella", sub:"Neighbour", icon:"\u{1F44B}", model:"npcWomanB", height:1.58, gate:"n",
     spot:[146.0,1.0], face:-Math.PI/2,
+    ask:[[/\b(who|why)\b.*\b(wav|hello|hi|saying|greet)/, "I'm saying hello to my friends, Mr. Grant and Jess. I know everyone in this park!", "Saluto i miei amici, il signor Grant e Jess. Conosco tutti in questo parco!"],
+         [/\bwhy\b.*\b(walk|walking|park)\b/, "Because walking is good for you, and the park is beautiful!", "Perch\u00e9 camminare fa bene, e il parco \u00e8 bellissimo!"]],
     visits:[[PK_H(9,0),PK_H(10,30)],[PK_H(13,15),PK_H(14,45)],[PK_H(18,0),PK_H(19,10)]], topics:["u0","u3","u2_3"],
     hi:{ en:"I'm Ella.", it:"Sono Ella." },
     there:{ en:"I'm walking in the park and saying hello to my friends.", it:"Sto passeggiando nel parco e saluto i miei amici." },
     walk:{ en:"I'm going for a walk in the park.", it:"Vado a fare una passeggiata al parco." },
     leave:{ en:"I'm going home to cook dinner. Bye!", it:"Torno a casa a preparare la cena. Ciao!" } },
   { key:"talk1", id:"pk_talk1", name:"Ollie", sub:"Student", icon:"\u{1F4AC}", model:"avatar", height:1.62, gate:"s",
-    spot:[129.7,6.3], look:[130.8,7.0], viaX:128.6,
+    spot:[129.7,6.3], faceTo:[130.8,7.0], viaX:128.6,
+    ask:[[/\bwhat\b.*\b(talking|talk|chatting)\b/, "We're talking about the weekend. We're going to the cinema on Saturday!", "Parliamo del fine settimana: sabato andiamo al cinema!"],
+         [/\bwho\b.*\b(talking|friend|with|waiting)\b/, "My friend Hannah. She's in my class.", "La mia amica Hannah. \u00c8 nella mia classe."],
+         [/\b(what|which) film\b|\bcinema\b/, "A funny film about a dog and a robot!", "Un film divertente su un cane e un robot!"]],
     visits:[[PK_H(11,0),PK_H(12,10)],[PK_H(15,0),PK_H(16,20)],[PK_H(19,0),PK_H(20,30)]], topics:["u0","u7","u4"],
     hi:{ en:"I'm Ollie.", it:"Sono Ollie." },
     there:{ en:"I'm talking to my friend Hannah. We're planning the weekend!", it:"Sto parlando con la mia amica Hannah: organizziamo il fine settimana!" },
@@ -17691,7 +17717,10 @@ const PK_CAST=[
     walk:{ en:"I'm going to meet my friend in the park.", it:"Sto andando a incontrare la mia amica al parco." },
     leave:{ en:"I'm going home to do my homework. Bye!", it:"Torno a casa a fare i compiti. Ciao!" } },
   { key:"talk2", id:"pk_talk2", name:"Hannah", sub:"Student", icon:"\u{1F4AC}", model:"npcWomanB", height:1.58, gate:"n",
-    spot:[130.8,7.0], look:[129.7,6.3], viaX:130.6,
+    spot:[130.8,7.0], faceTo:[129.7,6.3], viaX:130.6,
+    ask:[[/\bwhat\b.*\b(talking|talk|chatting)\b/, "We're talking about the weekend. We're going to the cinema!", "Parliamo del fine settimana: andiamo al cinema!"],
+         [/\bwho\b.*\b(talking|friend|with|waiting)\b/, "Ollie. We're in the same class.", "Ollie. Siamo nella stessa classe."],
+         [/\b(what|which) film\b|\bcinema\b/, "A funny film about a dog and a robot. I can't wait!", "Un film divertente su un cane e un robot. Non vedo l'ora!"]],
     visits:[[PK_H(11,10),PK_H(12,15)],[PK_H(15,10),PK_H(16,30)],[PK_H(19,5),PK_H(20,40)]], topics:["u0","u8","u2_1"],
     hi:{ en:"I'm Hannah.", it:"Sono Hannah." },
     there:{ en:"I'm talking to Ollie. He's my best friend.", it:"Sto parlando con Ollie. E' il mio migliore amico." },
@@ -17706,6 +17735,19 @@ const PK_CAST=[
   { key:"jogger", id:"pk_jogger", name:"Ryan", sub:"Runner", icon:"\u{1F3C3}", model:"avatar", height:1.74, gate:"s", run:true,
     tint:{ Purple:"#ef6a1f", LightBlue:"#1f2228" }, look:{ bottom:"shorts", hat:"headband", hatc:"white", face:"shades", facec:"" },
     spot:[126.0,null], face:0, viaX:126.0, anim:"Run",
+    /* v408 (Giacomo, 28 ott: «il runner fa avanti e indietro e non ha molto
+       senso: fagli fare un percorso piu' lungo, da vero corridore»): su per
+       il vialetto est fino al campo sportivo, il giro COMPLETO del campo
+       (fuori dalle linee: x 90..125, z 21,5..47; a x 126-128, z 31-37 ci sono due
+       ostacoli, si passa a x 125,2) e giu' di nuovo al
+       vialetto della fontana. ~190 m, poco piu' di un minuto a giro. Finita
+       l'ora, chiude il giro in corso e poi se ne va. */
+    loop:[[126.0,null],[126.0,21.5],[125.2,24.0],[125.2,47.0],[90.0,47.0],[90.0,21.5],[126.0,21.5]],
+    ask:[[/\bhow far\b|\bhow many (kilometres|kilometers|km|miles|laps)\b/, "Ten kilometres! That's a lot of laps round the football pitch.", "Dieci chilometri! Sono tanti giri del campo da calcio."],
+         [/\bhow long\b/, "About an hour. Then I have a big breakfast!", "Circa un'ora. Poi faccio una bella colazione!"],
+         [/\bwhy\b.*\b(run|running|train|training)\b/, "Because I'm training for the city marathon in May!", "Perch\u00e9 mi alleno per la maratona della citt\u00e0 di maggio!"],
+         [/\bhow often\b|\bevery day\b/, "Every day, rain or sun!", "Tutti i giorni, con la pioggia o col sole!"],
+         [/\btired\b/, "A little bit, but I feel great!", "Un pochino, ma mi sento benissimo!"]],
     visits:[[PK_H(7,40),PK_H(9,40)],[PK_H(11,20),PK_H(12,10)],[PK_H(17,30),PK_H(20,0)]], topics:["u0","u7","u2_3"],
     hi:{ en:"I'm Ryan.", it:"Sono Ryan." },
     there:{ en:"I'm running! I run ten kilometres every day.", it:"Sto correndo! Corro dieci chilometri al giorno." },
@@ -17730,7 +17772,10 @@ function _pkMake(c,BEN,PROP,ARMS){
   let n=null, bench=null;
   if(c.seat){ bench=BEN[c.seat.bench];
     n=_pkSitNpc(Object.assign(base,{ arms:c.seat.arms?ARMS[c.seat.arms]:null }), bench, c.seat.t, c.seat.prop?PROP[c.seat.prop]:null); }
-  else { const S=_pkSpot(c), f=c.look?Math.atan2(c.look[0]-S.x,c.look[1]-S.z):(c.face||0);
+  /* ⚠️ faceTo (dove guarda), NON look: look sono i VESTITI (npcDressLater).
+     Con look il runner prendeva un angolo NaN, e con l'angolo NaN il
+     guardaroba misurava una testa vuota: fascia e occhiali giganti. */
+  else { const S=_pkSpot(c), f=c.faceTo?Math.atan2(c.faceTo[0]-S.x,c.faceTo[1]-S.z):(c.face||0);
     n=_pkStandNpc(base, S.x, S.z, f, c.anim||"Idle"); }
   if(!n) return null;
   if(c.run) n.__noPin=true;
@@ -17763,10 +17808,9 @@ function _pkArrive(P){ const c=P.c, n=P.n;
   P.state="there"; P.path=null; P.hold=false; setNPCPopVisible(n,true);
   if(c.seat){ _pkSeatNow(P); n.__noPin=false; _pkPlay(n,"Idle"); }
   else { const S=_pkSpot(c); n.carrier.position.set(S.x,_pedGroundY(S.x,S.z),S.z);
-    n.carrier.rotation.y=c.look?Math.atan2(c.look[0]-S.x,c.look[1]-S.z):(c.face||0);
+    n.carrier.rotation.y=c.faceTo?Math.atan2(c.faceTo[0]-S.x,c.faceTo[1]-S.z):(c.face||0);
     n.__noPin=!!c.run; _pkPlay(n,c.anim||"Idle"); }
   if(c.key==="wave" && PARKFUN.walker) Object.assign(PARKFUN.walker,{ i:0, mode:"wait", t:performance.now()+2500, act:null, blocked:false });
-  if(c.key==="jogger" && PARKFUN.jog) Object.assign(PARKFUN.jog,{ dir:1, wait:false });
   if((c.key==="fan1"||c.key==="fan2") && PARKFUN.fans) PARKFUN.fans.forEach(F=>{ if(F.n===n) F.on=false; });
 }
 function _pkDepart(P){ const c=P.c, n=P.n, sg=_pkSg(c), g=c.gate||"n", cur=n.carrier.position;
@@ -17808,9 +17852,36 @@ function parkCastTick(){
   for(const k in C){ const P=C[k], want=_pkWant(P.c);
     if(P.state==="away"){ if(want){ if(inTown) _pkComeIn(P); else _pkArrive(P); } }
     else if(P.state==="in"){ if(!want) _pkDepart(P); else if(!inTown || _pkStep(P,dt)) _pkArrive(P); }
+    else if(P.state==="there" && P.c.loop){ if(!want) P.leaving=true; _pkRun(P,dt,inTown); }
     else if(P.state==="there"){ if(!want){ if(inTown) _pkDepart(P); else _pkGone(P); } }
     else if(P.state==="out"){ if(!inTown || _pkStep(P,dt)) _pkGone(P); }
   }
+}
+/* il giro del corridore: dal punto d'arrivo, tutto il giro, di nuovo li' */
+function _pkRun(P,dt,inTown){
+  if(!inTown){ if(P.leaving){ P.leaving=false; P.path=null; _pkGone(P); } return; }
+  const c=P.c, sg=_pkSg(c);
+  if(!P.path){ const pts=c.loop.map(q=>({ x:q[0], z:(q[1]===null?sg*PK_LANE:q[1]) })); pts.push(pts[0]);
+    P.path=_pkPath(pts); P.i=1; }
+  if(_pkStep(P,dt)){
+    if(P.leaving){ P.leaving=false; P.path=null; _pkDepart(P); return; }
+    P.i=1; }
+}
+/* v408 (Giacomo, 28 ott: «gli ho chiesto che libro stava leggendo e mi ha
+   detto: Non sono sicuro»). La domanda libera rispondeva coi cassetti
+   generici («what» -> «Hmm... I'm not sure»). Ora chi sta al parco sa
+   rispondere su quello che sta facendo: PK_CAST[].ask = [regola, en, it],
+   provate PRIMA delle risposte generiche. «What are you doing?» e «Where
+   are you going?» dipendono da dove lo trovi. */
+function parkAsk(P,typed){
+  const t=" "+String(typed||"").toLowerCase().replace(/[\u2018\u2019`]/g,"'").replace(/[?!.,;:]/g," ").replace(/\s+/g," ")+" ";
+  /* niente filtro su «you»: «Who wrote it?» parla del libro che ha in mano */
+  const c=P.c, here=P.state==="in"?c.walk:(P.state==="out"?c.leave:c.there);
+  if(/\bwhat\b.*\byou\s+doing\b/.test(t)) return { en:here.en, it:here.it };
+  if(/\bwhere\b.*\byou\s+going\b/.test(t)) return P.state==="there"
+    ? { en:"Nowhere! I'm staying here for a while.", it:"Da nessuna parte! Resto qui ancora un po'." } : { en:here.en, it:here.it };
+  for(const a of (c.ask||[])) if(a[0].test(t)) return { en:a[1], it:a[2] };
+  return null;
 }
 /* parlarci: come ai pedoni (la presentazione, poi le domande della sua
    carta); quello che dice dipende da dove lo trovi */
@@ -17878,17 +17949,6 @@ function parkJogTick(){
     if(P.node.isEnabled()!==v) P.node.setEnabled(v); }
   try{ parkCastTick(); }catch(e){ console.warn("[park] cast",e); }
   if(area==="town"){ try{ parkFansTick(); }catch(e){} try{ parkWalkTick(); }catch(e){} try{ parkTalkTick(); }catch(e){} try{ parkRangerTick(); }catch(e){} }
-  const J=PARKFUN.jog; if(!J || area!=="town" || !_pkVisible(J.n)) return;
-  const c=J.n.carrier, dt=Math.min(0.05,engine.getDeltaTime()/1000);
-  /* qualcuno davanti sul vialetto: si ferma e aspetta (corsa sul posto no, Idle) */
-  const px=player.position.x-c.position.x, pz=player.position.z-c.position.z;
-  const ahead=pz*J.dir;
-  if(Math.abs(px)<1.0 && ahead>0 && ahead<1.6){ if(!J.wait){ J.wait=true; J.n.__noPin=false; J.n.play("Idle"); } return; }
-  if(J.wait){ J.wait=false; J.n.__noPin=true; J.n.play("Run"); }
-  c.position.z+=J.dir*3.0*dt;
-  if(c.position.z>J.z1){ c.position.z=J.z1; J.dir=-1; }
-  if(c.position.z<J.z0){ c.position.z=J.z0; J.dir=1; }
-  c.rotation.y=J.dir>0?0:Math.PI;
 }
 
 /* ---- INTERNO: casa MULTI-STANZA (placeholder, mobili .glb in arrivo) ---- */
@@ -30445,7 +30505,7 @@ function linguaccia(text){
    un confine. Restituisce l'HTML pronto per il riquadro di feedback. */
 function linguacciaHtml(){
   const en="I don't like that word. Let's start again!";
-  try{ speechSynthesis.resume(); TTS.say(en); }catch(e){}
+  _npcTTS(_ASKFREE.npc,en);
   return '<div style="font-weight:800;color:#a05a2c;">\u{1F7E1} '+_escHtml(en)+'</div>'
     +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">'
     +_trSpan(en,"Qui si gioca in inglese, ma non con quelle parole. Riscrivi la frase.")+'</div>';
@@ -30495,6 +30555,21 @@ function submitAskFree(){
      dance?» e' una sfida, non un ballo. */
   if(_ASKFREE.npc && _ASKFREE.npc.__skDancer && skRapInvito(typed)){ skCypherRisposta(ta,fb,typed); return; }
   if(_ASKFREE.npc && _ASKFREE.npc.__skDancer && skInvito(typed)){ skInvitoRisposta(ta,fb,typed); return; }
+  /* v408: la gente del parco sa rispondere su quello che sta facendo (il
+     libro di Mr. Grant, il panino di Olivia, la canzone di Jess...) */
+  const pkA=(_ASKFREE.npc && _ASKFREE.npc.__pk && typeof parkAsk==="function")?parkAsk(_ASKFREE.npc.__pk,typed):null;
+  if(pkA){
+    npcTouch(_ASKFREE.npc);
+    const badP=askFormCheck(typed, ftLevel());
+    const gotP=Stars.awardAskNPC(npcCardId(_ASKFREE.npc), badP?"retry":"first");
+    fb.innerHTML=(badP?'<div style="opacity:.72;font-size:.93em;margin-bottom:6px;">\u{1F7E1} '+badP.it+'</div>':'')
+      +'<div style="font-weight:800;">\u{1F7E2} '+_escHtml(pkA.en)
+      +(gotP>0?' <span style="color:#a05a2c">\u2b50 +'+gotP+'</span>':'')+'</div>'
+      +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">'+_escHtml(pkA.it)+'</div>';
+    _npcTTS(_ASKFREE.npc,pkA.en);
+    _askDone(ta,null);
+    return;
+  }
   const bio=npcBio(_ASKFREE.npc);
   const arch=askArchitect(typed,bio);
   if(arch){
@@ -30505,7 +30580,7 @@ function submitAskFree(){
       +'<div style="font-weight:800;">\u{1F7E2} '+_escHtml(arch.en)
       +(gotA>0?' <span style="color:#a05a2c">\u2b50 +'+gotA+'</span>':'')+'</div>'
       +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">'+_escHtml(arch.it)+'</div>';
-    try{ speechSynthesis.resume(); TTS.say(arch.en); }catch(e){}
+    _npcTTS(_ASKFREE.npc,arch.en);
     _askDone(ta,null);
     return;
   }
@@ -30522,7 +30597,7 @@ function submitAskFree(){
         +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">'
         +'Non sembra una domanda. Comincia con <b>What / Where / When / Why / Who / How</b> '
         +'oppure con <b>Do / Did / Can / Are / Have</b>\u2026</div>';
-      try{ speechSynthesis.resume(); TTS.say(line); }catch(e){}
+      _npcTTS(_ASKFREE.npc,line);
       return;
     }
     askLogMiss(typed); npcTouch(_ASKFREE.npc);
@@ -30538,7 +30613,7 @@ function submitAskFree(){
       +'<div style="font-weight:800;">\u{1F7E2} '+_escHtml(gen.en)
       +(got0>0?' <span style="color:#a05a2c">\u2b50 +'+got0+'</span>':'')+'</div>'
       +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">'+_escHtml(gen.it)+'</div>';
-    try{ speechSynthesis.resume(); TTS.say(gen.en+(b0?" "+b0.en:"")); }catch(e){}
+    _npcTTS(_ASKFREE.npc,gen.en+(b0?" "+b0.en:""));
     _askDone(ta,b0);
     return;
   }
@@ -30562,8 +30637,12 @@ function submitAskFree(){
     +'<div style="font-weight:800;">\u{1F7E2} '+_escHtml(ans.en)
     +(got>0?' <span style="color:#a05a2c">\u2b50 +'+got+'</span>':'')+'</div>'
     +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">'+_escHtml(ans.it)+'</div>';
-  try{ speechSynthesis.resume();
-       TTS.say(bad?("Sorry? "+q.q+" "+ans.en):(ans.en+(b?" "+b.en:""))); }catch(e){}
+  /* v408 (Giacomo, 28 ott: «Mr. Grant ha cambiato voce dopo che gli ho
+     fatto una domanda»): queste risposte non passano da DialogueBox, e
+     senza il genere TTS prendeva la voce di sistema (quasi sempre
+     femminile). Ora tutte le risposte della domanda libera parlano con la
+     voce del personaggio, come le battute dell'allenamento (_npcTTS). */
+  _npcTTS(_ASKFREE.npc,bad?("Sorry? "+q.q+" "+ans.en):(ans.en+(b?" "+b.en:"")));
   _askDone(ta,b);
 }
 /* Chiude lo scambio: blocca il campo (una domanda, una risposta) e trasforma
