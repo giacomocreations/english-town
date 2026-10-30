@@ -16106,15 +16106,13 @@ function skateTick(){
    insieme, cosi' le distanze restano quelle della fila. */
 const SK_ROUTINE=["basic","moonwalk","basic","sidewalk","toe","cabbage","running","basic","sidewalk","moonwalk","running","cabbage","toe"];
 const SK_GLIDE=1.0;                                   // metri di scivolata per ogni moonwalk/sidewalk (sempre nello stesso verso)
-/* v309g: il raccordo fra la mossa i e la successiva. Si alternano il
-   saltello e il «rise» sulle punte (braccia aperte); accanto al toe stand
-   sempre il saltello, se no sarebbero tre volte sulle punte di fila. */
-function _skConn(i){
-  const a=SK_ROUTINE[i], z=SK_ROUTINE[i+1];
-  if(i<0 || a==="toe" || z==="toe") return "hop";
-  if(a==="moonwalk" || z==="moonwalk") return "hop";   // ci si gira nel saltello (vedi _skCrewFace)
-  return "rise";
-}
+/* v309g: il raccordo fra la mossa i e la successiva. Si alternavano il
+   saltello e il «rise» sulle punte (braccia aperte).
+   v331 (Giacomo, 30 ott: «c'e' una transizione nel ballo che non mi piace:
+   rimane quasi un secondo con le braccia aperte»): era il «rise», fermo
+   sulle punte per quasi un battito con le braccia aperte. Tolto: fra una
+   mossa e l'altra sempre il saltello (le pose rise/open restano, non usate). */
+function _skConn(i){ return "hop"; }
 /* v309g (Giacomo: «il moonwalk della crew in modo che si veda laterale di
    fronte alla panchina»). Visto di fronte, chi scivola indietro sembra solo
    allontanarsi: il trucco del moonwalk si capisce DI PROFILO. La crew balla
