@@ -7404,16 +7404,19 @@ function _hwMats(){ if(_hwM) return _hwM;
   /* v331 (Giacomo: «le parti intagliate sono sospese sopra la zucca, non
      incollate come cavità»). La faccia NON e' piu' un piano davanti alla
      zucca: e' disegnata nella sua buccia. Sfera di Babylon: u=0,25 / v=0,5
-     guarda verso -z locale (misurato), quindi la faccia sta li' e la zucca
+     guarda verso -z locale (misurato; in verticale vedi holes), quindi la faccia sta li' e la zucca
      si gira con la facciata. Buccia: arancio con le scanalature degli
      spicchi (u = k/10, le stesse di _hwPumpkinMesh); i fori sono scuri
      nella diffusa e gialli nell'emissiva: di giorno sembrano cavita' con la
      candela dentro, di notte brillano. */
-  const holes=(c,col)=>{ c.fillStyle=col;
+  /* v332 (Giacomo: «le zucche sono a faccia in giu'»): sulla sfera la tela
+     arriva capovolta in verticale (il bordo alto della tela va in fondo
+     alla zucca): i fori si disegnano a testa in giu' */
+  const holes=(c,col)=>{ c.save(); c.translate(0,256); c.scale(1,-1); c.fillStyle=col;
     [[100,124],[156,124]].forEach(e=>{ c.beginPath(); c.moveTo(e[0]-17,e[1]); c.lineTo(e[0]+17,e[1]); c.lineTo(e[0],e[1]-28); c.closePath(); c.fill(); });
     c.beginPath(); c.moveTo(120,140); c.lineTo(136,140); c.lineTo(128,128); c.closePath(); c.fill();
     c.beginPath(); c.moveTo(84,150); for(let i=0;i<=8;i++) c.lineTo(84+i*11,(i%2)?162:153); c.lineTo(172,150);
-    c.quadraticCurveTo(128,196,84,150); c.fill(); };
+    c.quadraticCurveTo(128,196,84,150); c.fill(); c.restore(); };
   const skin=_dnTex("hwSkinT",512,256,(c,w,h)=>{
     const gr=c.createLinearGradient(0,0,0,h); gr.addColorStop(0,"#b8500f"); gr.addColorStop(0.45,"#ef7f1f"); gr.addColorStop(1,"#a84a0e");
     c.fillStyle=gr; c.fillRect(0,0,w,h);
