@@ -7196,7 +7196,281 @@ function _dressBuilding(root,o){
     byMat(/window|trim/i).forEach(g=>{ const mt=g.m.material; if(mt && mt.__nightEmissive && !mt.__nightFull){
       mt.__nightFull=mt.__nightEmissive.clone(); mt.__nightEmissive=mt.__nightFull.scale(0.14); } });
   }
+
+  /* ---- 5. VETRINA DA NEGOZIO (o.shop) e 6. HALLOWEEN (o.halloween) ----
+     Vedi SHOP_FRONT e HALLOWEEN qui sotto. I pezzi solidi finiscono di nuovo
+     in UNA mesh a colori per-vertice; le scritte sono piani a parte. */
+  if((o.shop||o.halloween) && frontF && isFinite(gx0)){
+    parts.length=0;   // quelli dello zoccolo sono gia' fusi (e dismessi)
+    const C={ F:F, frontF:frontF, doorF:doorF, groups:groups, comps:comps, onFace:onFace,
+              box:box, cyl:cyl, colorize:colorize, parts:parts, toW:toW, rnd:rnd, Y1:Y1 };
+    if(o.shop){ try{ _shopFront(C,o.shop); F.__shopSign=true; }catch(e){ console.warn("[shopFront]",o.name,e); } }
+    if(o.halloween){ try{ _halloweenFront(C); }catch(e){ console.warn("[halloween]",o.name,e); } }
+    if(parts.length){ const mg=parts.length===1?parts[0]:BABYLON.Mesh.MergeMeshes(parts,true,true,undefined,false,false);
+      if(mg){ mg.material=K.vc; mg.parent=F; mg.__occluder=true; mg.isPickable=false; } }
+  }
   F.__dressFor=root; return F;
+}
+
+/* =====================================================================
+   v330 — VETRINE DA NEGOZIO (Giacomo, 30 ott: «rendere Clothes Shop,
+   Market e Corner Shop più riconoscibili come negozi, con delle scritte»).
+   Solo FUORI: gli interni non si toccano. Per ogni negozio, sulla facciata
+   principale:
+     · INSEGNA A FASCIA sopra le vetrine (colori e nome come il cartello
+       dell'interno, UNIT4/UNIT6/UNIT8) — sostituisce il cartellino scuro
+       generico di facilitySign, che ripeteva lo stesso nome;
+     · INSEGNA A BANDIERA perpendicolare al muro, con l'icona, che si legge
+       arrivando lungo il marciapiede;
+     · ADESIVI in vetrina (OPEN, SALE, FRESH!…): inglese vero da leggere;
+     · un paio di oggetti sul marciapiede, addossati alla facciata (lavagna
+       a cavalletto, banco della frutta, stender dei saldi, edicola).
+   Misure dalla geometria del GLB (vetrine e porta del piano terra, finestre
+   del primo piano), non a mano: l'insegna sta fra le due file.
+   ⚠️ COLLISIONI: gli oggetti a terra hanno il loro solido (addSolid). Stanno
+   entro 1,3 m dal muro e a 1,5 m dalla porta: i percorsi dei pedoni
+   (PED_ROUTES, z 8,9..9,9 davanti a Market e Corner Shop) restano liberi.
+   ===================================================================== */
+const SHOP_FRONT={
+  "Corner Shop":{ bg:"#3d5a80", ink:"#f2e8d2", trim:"#e8b04b", font:"Arial, Helvetica, sans-serif",
+    l1:"CORNER SHOP", l2:"snacks · drinks · newspapers", blade:"\u{1F6D2}",
+    glass:[["OPEN","Mon-Sat 9-17","#c8323a"]],
+    board:["TODAY","Ice cream","Cold drinks","Comics","Sweets"], props:["board","news"] },
+  "The Market":{ bg:"#5a7a3a", ink:"#f6f1e2", trim:"#f2c93e", font:"Georgia, 'Times New Roman', serif",
+    l1:"THE MARKET", l2:"fresh food every day", blade:"\u{1F34E}",
+    glass:[["FRESH!","fruit & vegetables","#d98a1c"],["OPEN","Mon-Sat 8-19","#c8323a"]],
+    board:["TODAY","Apples","Bananas","Carrots","Fresh bread"], props:["fruit","fruit","board"] },
+  "Clothes Shop":{ bg:"#7a3f6a", ink:"#f6f1e2", trim:"#e8b04b", font:"italic Georgia, 'Times New Roman', serif",
+    l1:"Clothes Shop", l2:"fashion · shoes · accessories", blade:"\u{1F455}",
+    glass:[["SALE","up to -50%","#c8323a"],["NEW","collection","#2d6f8f"]],
+    board:["SALE -50%","T-shirts","Jeans","Hoodies","Jackets"], props:["rail","board"] },
+};
+/* =====================================================================
+   v330 — HALLOWEEN (Giacomo, 30 ott: «decorazioni di Halloween in città
+   fino al 2 novembre, che poi spariscono»). Si decide all'AVVIO con
+   l'orologio del dispositivo: dal 20 ottobre al 2 novembre compreso, ogni
+   anno. Dal 3 novembre al primo caricamento non ci sono più; non serve
+   toccare il codice. Su tutti gli edifici della città (TOWN[], tranne il
+   cinema che ha l'ingresso di lato): zucche intagliate ai lati della porta
+   (la faccia è accesa, di notte si vede), festone arancio/nero/viola,
+   pipistrelli sulla facciata, ragnatele sulla porta, un adesivo in inglese
+   in vetrina. Per provarlo fuori stagione: ?halloween=1 (o =0 per toglierlo).
+   ===================================================================== */
+const HALLOWEEN=(()=>{ let on=null;
+  try{ const q=new URLSearchParams(location.search).get("halloween"); if(q==="1"||q==="0") on=(q==="1"); }catch(e){}
+  if(on==null){ const d=new Date(), m=d.getMonth(), g=d.getDate(); on=(m===9&&g>=20)||(m===10&&g<=2); }
+  return { on:on }; })();
+
+/* geometria della facciata principale nel frame F di _dressBuilding */
+function _frontGeo(C){ if(C.g) return C.g;
+  const fc=C.frontF, fx=fc.ax==="x", n=fc.n, s=fx?n[1]:n[0];
+  const at=(a,d)=>fx?[a,fc.c+s*d]:[fc.c+s*d,a];          // punto: «a» lungo la facciata, «d» in fuori
+  const along=b=>fx?[b[0],b[3]]:[b[2],b[5]];
+  const glass=b=>(fx?(s<0?b[2]:b[5]):(s<0?b[0]:b[3]))-fc.c;
+  /* sporgenza massima del modello fra y0 e y1 (cornici, marcapiano, pensiline) */
+  const out=(y0,y1,a0,a1)=>{ let m=0; Object.keys(C.groups).forEach(k=>C.groups[k].forEach(gr=>{ const p=gr.p;
+    for(let i=0;i<p.length;i+=3){ const y=p[i+1]; if(y<y0||y>y1) continue; const a=fx?p[i]:p[i+2];
+      if(a0!=null&&(a<a0||a>a1)) continue; const d=((fx?p[i+2]:p[i])-fc.c)*s; if(d>m&&d<2.5) m=d; } })); return m; };
+  const op=C.comps(/window|door/i).filter(b=>b[1]<1.0 && b[4]>1.5 && C.onFace(b,fc,1.4))
+    .map(b=>{ const a=along(b); return {a0:a[0],a1:a[1],y0:b[1],y1:b[4],d:glass(b)*s}; });
+  const gfTop=op.length?Math.max(...op.map(q=>q.y1)):3.0;
+  const ups=C.comps(/window/i).filter(b=>C.onFace(b,fc,1.4) && b[1]>gfTop+0.2).map(b=>b[1]);
+  const upY=ups.length?Math.min(...ups):gfTop+2.2;
+  const dc=C.doorF?(fx?C.doorF[0]:C.doorF[1]):null;
+  const wins=C.comps(/window/i).filter(b=>b[1]<1.2 && b[4]>1.5 && C.onFace(b,fc,1.4))
+    .map(b=>{ const a=along(b); return {a0:a[0],a1:a[1],y0:b[1],y1:b[4],d:glass(b)*s}; })
+    .filter(w=>w.a1-w.a0>0.8 && (dc==null || dc<w.a0-0.3 || dc>w.a1+0.3)).sort((p,q)=>p.a0-q.a0);
+  const door=(dc==null)?null:(op.find(q=>q.a0-0.1<=dc && dc<=q.a1+0.1)||{a0:dc-0.6,a1:dc+0.6,y0:0,y1:2.4,d:0});
+  return (C.g={ fc:fc, fx:fx, s:s, ry:Math.atan2(n[0],n[1]), at:at, out:out, gfTop:gfTop, upY:upY,
+                dc:dc, door:door, wins:wins, a0:fc.a0, a1:fc.a1, d0:out(0.02,1.4) }); }
+/* piano con texture appoggiato alla facciata (normale verso la strada) */
+/* loose: senza parent, perche' va fusa con altre (MergeMeshes cuoce la matrice mondo) */
+function _frontPlane(C,mt,w,h,a,y,d,roll,loose){ const g=_frontGeo(C), q=g.at(a,d);
+  const p=BABYLON.MeshBuilder.CreatePlane("bldFp",{width:w,height:h},scene);
+  p.position.set(q[0],y,q[1]); p.rotation.y=g.ry+Math.PI; if(roll) p.rotation.z=roll;
+  p.material=mt; if(!loose) p.parent=C.F; p.isPickable=false; return p; }
+function _sfMat(name,dt,emis,alpha){ const m=new BABYLON.StandardMaterial(name,scene); m.diffuseTexture=dt;
+  m.specularColor=new BABYLON.Color3(0,0,0); m.emissiveColor=new BABYLON.Color3(emis,emis,emis);
+  if(alpha){ dt.hasAlpha=true; m.useAlphaFromDiffuseTexture=true; }
+  return m; }
+function _sfFit(c,txt,maxW,fs,style){ do{ c.font=style.replace("#",fs); if(c.measureText(txt).width<=maxW) break; fs-=2; }while(fs>10); return fs; }
+/* solido a terra: rettangolo nel frame F (lungo/in fuori) -> AABB mondo */
+function _frontSolid(C,a,d,wa,wd){ const g=_frontGeo(C), p=[g.at(a-wa/2,d-wd/2),g.at(a+wa/2,d+wd/2)].map(q=>C.toW(q[0],q[1]));
+  addSolid(p[0][0],p[1][0],p[0][1],p[1][1],"town"); }
+function _noGlow(m){ if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(m); return m; }
+
+function _shopFront(C,S){ const g=_frontGeo(C), id=String(S.l1).replace(/\W+/g,"");
+  const fam=(S.font||"Arial, sans-serif").replace(/^italic /,""), it=/^italic /.test(S.font||"")?"italic ":"";
+  /* -- 5a. INSEGNA A FASCIA: fra le vetrine e il primo piano -- */
+  const y0=g.gfTop+0.12, h=Math.max(0.6,Math.min(1.05,g.upY-0.2-y0)), y1=y0+h;
+  const span=Math.min(g.a1-g.a0-0.4,11), am=(g.a0+g.a1)/2, d=g.out(y0,y1,g.a0,g.a1);
+  { const q=g.at(am,d+0.06); C.box(S.trim,span+0.16,h+0.16,0.12, q[0],y0+h/2,q[1],g.ry); }
+  const W=span>6?2048:1024, H=Math.round(W*h/span);
+  const dt=_dnTex("shopFasT"+id,W,H,(c,w,hh)=>{
+    c.fillStyle=S.bg; c.fillRect(0,0,w,hh);
+    c.strokeStyle=S.trim; c.lineWidth=Math.max(3,hh*0.04); c.strokeRect(hh*0.09,hh*0.09,w-hh*0.18,hh-hh*0.18);
+    c.fillStyle=S.ink; c.textAlign="center"; c.textBaseline="middle";
+    _sfFit(c,S.l1,w*0.8,Math.round(hh*0.52),it+"bold #px "+fam); c.fillText(S.l1,w/2,hh*0.41);
+    c.fillStyle=S.trim; _sfFit(c,S.l2,w*0.7,Math.round(hh*0.21),"bold #px "+fam); c.fillText(S.l2,w/2,hh*0.76); });
+  _noGlow(_frontPlane(C,_sfMat("shopFasM"+id,dt,0.85),span,h,am,y0+h/2,d+0.125));
+  /* -- 5b. INSEGNA A BANDIERA, dalla parte opposta alla porta -- */
+  { const ab=(g.dc!=null && g.dc>am)?g.a0+0.75:g.a1-0.75, yb=Math.min(y1+0.85,g.upY+0.9), dout=g.out(yb-0.5,yb+0.6)+0.02;
+    const q0=g.at(ab,dout+0.55), bt=g.at(ab,dout+0.1), qa=g.at(ab,dout+0.52);
+    C.box("#2b2b2b",0.06,0.06,1.05, qa[0],yb+0.5,qa[1],g.ry);                                            // braccio
+    C.box("#2b2b2b",0.08,0.3,0.06, bt[0],yb+0.42,bt[1],g.ry);                                             // piastra al muro
+    [-0.28,0.28].forEach(k=>{ const q=g.at(ab,dout+0.55+k); C.box("#2b2b2b",0.02,0.12,0.02, q[0],yb+0.42,q[1],g.ry); });
+    const bdt=_dnTex("shopBladeT"+id,256,256,(c,w)=>{ c.clearRect(0,0,w,w);
+      c.fillStyle=S.trim; c.beginPath(); c.arc(w/2,w/2,w*0.48,0,Math.PI*2); c.fill();
+      c.fillStyle=S.bg; c.beginPath(); c.arc(w/2,w/2,w*0.43,0,Math.PI*2); c.fill();
+      c.textAlign="center"; c.textBaseline="middle"; c.font=Math.round(w*0.48)+"px 'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif";
+      c.fillText(S.blade,w/2,w*0.53); });
+    const bm=_sfMat("shopBladeM"+id,bdt,0.8,true);
+    [Math.PI/2,-Math.PI/2].forEach(r=>{ const p=BABYLON.MeshBuilder.CreatePlane("bldBlade",{size:0.72},scene);
+      p.position.set(q0[0],yb,q0[1]); p.rotation.y=g.ry+Math.PI+r; p.material=bm; p.parent=C.F; p.isPickable=false; _noGlow(p); }); }
+  /* -- 5c. ADESIVI IN VETRINA -- */
+  g.wins.forEach((wn,i)=>{ const G=S.glass[i%S.glass.length], ww=wn.a1-wn.a0, wh=wn.y1-wn.y0;
+    const w=Math.min(1.25,ww*0.55), h2=w*0.5;
+    const sdt=_dnTex("shopGlT"+id+i,256,128,(c,w2,h3)=>{ c.clearRect(0,0,w2,h3);
+      c.fillStyle=G[2]; c.beginPath(); if(c.roundRect) c.roundRect(4,4,w2-8,h3-8,18); else c.rect(4,4,w2-8,h3-8); c.fill();
+      c.strokeStyle="#ffffff"; c.lineWidth=4; c.beginPath(); if(c.roundRect) c.roundRect(12,12,w2-24,h3-24,12); else c.rect(12,12,w2-24,h3-24); c.stroke();
+      c.fillStyle="#ffffff"; c.textAlign="center"; c.textBaseline="middle";
+      _sfFit(c,G[0],w2-50,58,"bold #px Arial, sans-serif"); c.fillText(G[0],w2/2,h3*0.42);
+      _sfFit(c,G[1],w2-50,22,"bold #px Arial, sans-serif"); c.fillText(G[1],w2/2,h3*0.76); });
+    _noGlow(_frontPlane(C,_sfMat("shopGlM"+id+i,sdt,0.75,true),w,h2,(wn.a0+wn.a1)/2,wn.y0+wh*0.66,wn.d+0.05)); });
+  /* -- 5d. SUL MARCIAPIEDE: posti liberi lontano dalla porta -- */
+  const m0=g.a0+0.35, m1=g.a1-0.35, iv=[];
+  if(g.dc==null) iv.push({lo:m0,hi:m1,far:1});
+  else { iv.push({lo:m0,hi:g.dc-1.5,far:-1}); iv.push({lo:g.dc+1.5,hi:m1,far:1}); }
+  const slot=w=>{ let b=null; iv.forEach(v=>{ if(v.hi-v.lo>=w && (!b||v.hi-v.lo>b.hi-b.lo)) b=v; }); if(!b) return null;
+    if(b.far<0){ const a=b.lo+w/2; b.lo+=w+0.35; return a; } const a=b.hi-w/2; b.hi-=w+0.35; return a; };
+  const d0=g.d0+0.08;
+  (S.props||[]).forEach((k,i)=>{ const W2={board:0.75,news:0.8,fruit:2.0,rail:2.0}[k], a=slot(W2); if(a==null) return;
+    if(k==="board") _propBoard(C,S,id+i,a,d0+0.95);
+    else if(k==="news") _propNews(C,a,d0+0.22);
+    else if(k==="fruit") _propFruit(C,a,d0+0.45);
+    else if(k==="rail") _propRail(C,a,d0+0.4); });
+}
+/* lavagna a cavalletto, gesso in inglese */
+function _propBoard(C,S,id,a,d){ const g=_frontGeo(C), q=g.at(a,d);
+  const dt=_dnTex("shopBoardT"+id,256,384,(c,w,h)=>{
+    c.fillStyle="#8a5a2b"; c.fillRect(0,0,w,h); c.fillStyle="#26302b"; c.fillRect(16,16,w-32,h-32);
+    c.textAlign="center"; c.textBaseline="middle"; c.fillStyle="#f6e27a";
+    _sfFit(c,S.board[0],w-50,48,"bold #px 'Comic Sans MS','Chalkboard SE',cursive"); c.fillText(S.board[0],w/2,62);
+    c.fillStyle="#f4f1e8"; S.board.slice(1).forEach((t,i)=>{ _sfFit(c,t,w-50,34,"#px 'Comic Sans MS','Chalkboard SE',cursive"); c.fillText(t,w/2,130+i*56); }); });
+  const m=_sfMat("shopBoardM"+id,dt,0.25);
+  [0,Math.PI].forEach(r=>{ const N=new BABYLON.TransformNode("bldBoard",scene); N.parent=C.F; N.position.set(q[0],0,q[1]); N.rotation.y=g.ry+Math.PI+r;
+    const p=BABYLON.MeshBuilder.CreatePlane("bldBoardP",{width:0.62,height:0.95},scene); p.parent=N; p.position.set(0,0.5,-0.1); p.rotation.x=0.2;
+    p.material=m; p.isPickable=false; });
+  C.box("#5a3b1c",0.66,0.05,0.08, q[0],1.0,q[1],g.ry);
+  _frontSolid(C,a,d,0.8,0.55); }
+/* edicola: espositore di giornali addossato al muro */
+function _propNews(C,a,d){ const g=_frontGeo(C), P=(da,dd)=>g.at(a+da,d+dd);
+  let q=P(0,0); C.box("#2f4a3a",0.8,1.05,0.36, q[0],0.525,q[1],g.ry);
+  const cols=["#f4f1e8","#efe6c8","#f4f1e8","#dfe8ef","#f4f1e8","#f6e0d6"], heads=["#c8323a","#1f3f7a","#c8323a","#2b2b2b","#1f6f4a","#c8323a"];
+  for(let r=0;r<3;r++) for(let k=0;k<2;k++){ const i=r*2+k; q=P(-0.19+k*0.38,0.2);
+    C.box(cols[i],0.32,0.26,0.02, q[0],0.28+r*0.3,q[1],g.ry);
+    q=P(-0.19+k*0.38,0.215); C.box(heads[i],0.28,0.05,0.01, q[0],0.37+r*0.3,q[1],g.ry); }
+  _frontSolid(C,a,d,0.9,0.5); }
+/* banco della frutta: tavolo + tre cassette piene */
+function _propFruit(C,a,d){ const g=_frontGeo(C), P=(da,dd)=>g.at(a+da,d+dd), rnd=C.rnd;
+  let q=P(0,0); C.box("#9a6b3d",2.0,0.07,0.8, q[0],0.74,q[1],g.ry);
+  [[-0.94,-0.34],[0.94,-0.34],[-0.94,0.34],[0.94,0.34]].forEach(l=>{ q=P(l[0],l[1]); C.box("#6e4a28",0.06,0.72,0.06, q[0],0.36,q[1],g.ry); });
+  const fruit=["#c62d2d","#f08a1c","#f2d33a","#7cbf3a","#d9412b","#5b2a6e","#e86a7a"];
+  [-0.66,0,0.66].forEach((o,k)=>{ q=P(o,0.02); C.box("#b07a45",0.6,0.2,0.62, q[0],0.875,q[1],g.ry);
+    const col=fruit[(rnd()*fruit.length)|0];
+    for(let i=0;i<4;i++) for(let j=0;j<3;j++){ q=P(o-0.21+i*0.14,-0.17+j*0.17);
+      const s=BABYLON.MeshBuilder.CreateSphere("bldp",{diameter:0.15,segments:3},scene);
+      s.position.set(q[0],0.99+rnd()*0.03,q[1]); C.colorize(s,col); } });
+  _frontSolid(C,a,d,2.1,0.9); }
+/* stender dei saldi davanti al Clothes Shop */
+function _propRail(C,a,d){ const g=_frontGeo(C), P=(da,dd)=>g.at(a+da,d+dd);
+  let q;
+  [-0.92,0.92].forEach(o=>{ q=P(o,0); C.cyl("#3a3a3a",{diameter:0.05,height:1.5,tessellation:6}, q[0],0.75,q[1]);
+    C.box("#3a3a3a",0.06,0.04,0.5, q[0],0.02,q[1],g.ry); });
+  q=P(0,0); C.box("#8c8c8c",1.9,0.04,0.04, q[0],1.48,q[1],g.ry);
+  const cols=["#c8323a","#2d6f8f","#f2c93e","#2f8f5b","#f4f1e8","#7a3f6a","#e8761c"];
+  for(let i=0;i<7;i++){ q=P(-0.75+i*0.25,0); const c=cols[i];
+    C.box("#bbbbbb",0.02,0.1,0.3, q[0],1.42,q[1],g.ry);                 // gruccia
+    C.box(c,0.05,0.18,0.62, q[0],1.3,q[1],g.ry);                         // spalle e maniche
+    C.box(c,0.05,0.55,0.42, q[0],0.98,q[1],g.ry); }                      // corpo
+  _frontSolid(C,a,d,2.0,0.7); }
+
+/* ---- HALLOWEEN: materiali condivisi (una texture per tipo) ---- */
+let _hwM=null;
+function _hwMats(){ if(_hwM) return _hwM;
+  const cut=(n,dt,emis,lit)=>{ dt.hasAlpha=true; const m=new BABYLON.StandardMaterial(n,scene); m.diffuseTexture=dt;
+    m.useAlphaFromDiffuseTexture=true; m.transparencyMode=BABYLON.Material.MATERIAL_ALPHATEST; m.alphaCutOff=0.5;
+    m.specularColor=new BABYLON.Color3(0,0,0); if(emis) m.emissiveColor=BABYLON.Color3.FromHexString(emis); if(lit===false) m.disableLighting=true; return m; };
+  /* faccia della zucca: occhi, naso e bocca «accesi» (giallo-arancio) */
+  const face=_dnTex("hwFaceT",128,96,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle="#ffc23a";
+    [[18,44],[78,44]].forEach(e=>{ c.beginPath(); c.moveTo(e[0],e[1]); c.lineTo(e[0]+32,e[1]); c.lineTo(e[0]+16,e[1]-26); c.closePath(); c.fill(); });
+    c.beginPath(); c.moveTo(56,58); c.lineTo(72,58); c.lineTo(64,46); c.closePath(); c.fill();
+    c.beginPath(); c.moveTo(12,64); for(let i=0;i<=8;i++) c.lineTo(12+i*13,(i%2)?76:66); c.lineTo(116,64);
+    c.quadraticCurveTo(64,112,12,64); c.fill(); });
+  /* pipistrello: sagoma nera */
+  const bat=_dnTex("hwBatT",256,128,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle="#141018"; c.beginPath();
+    c.moveTo(128,40); c.lineTo(118,22); c.lineTo(122,38);
+    c.quadraticCurveTo(70,0,4,30); c.quadraticCurveTo(30,44,24,70); c.quadraticCurveTo(44,56,62,72); c.quadraticCurveTo(80,60,96,84); c.quadraticCurveTo(112,72,128,96);
+    c.quadraticCurveTo(144,72,160,84); c.quadraticCurveTo(176,60,194,72); c.quadraticCurveTo(212,56,232,70); c.quadraticCurveTo(226,44,252,30); c.quadraticCurveTo(186,0,134,38);
+    c.lineTo(138,22); c.closePath(); c.fill(); });
+  /* ragnatela d'angolo (angolo in alto a sinistra) */
+  const web=_dnTex("hwWebT",128,128,(c,w)=>{ c.clearRect(0,0,w,w); c.strokeStyle="#f4f4f4"; c.lineWidth=2.5;
+    const R=[0.15,0.32,0.52,0.75,1.0], A=[0,0.3,0.62,0.94,1.2,Math.PI/2];
+    A.forEach(t=>{ c.beginPath(); c.moveTo(0,0); c.lineTo(Math.cos(t)*w,Math.sin(t)*w); c.stroke(); });
+    R.forEach(r=>{ c.beginPath(); A.forEach((t,i)=>{ const x=Math.cos(t)*r*w*0.95, y=Math.sin(t)*r*w*0.95;
+      if(!i) c.moveTo(x,y); else { const tm=(A[i-1]+t)/2; c.quadraticCurveTo(Math.cos(tm)*r*w*0.8,Math.sin(tm)*r*w*0.8,x,y); } }); c.stroke(); }); });
+  _hwM={ face:cut("hwFace",face,"#ffb347",false), bat:cut("hwBat",bat,"#08060a"), web:cut("hwWeb",web,"#9a9a9a"), sticker:{} };
+  return _hwM; }
+function _hwSticker(txt){ const K=_hwMats(); if(K.sticker[txt]) return K.sticker[txt];
+  const dt=_dnTex("hwStkT"+txt.replace(/\W+/g,""),384,128,(c,w,h)=>{ c.clearRect(0,0,w,h);
+    c.fillStyle="#1d1424"; c.beginPath(); if(c.roundRect) c.roundRect(4,4,w-8,h-8,24); else c.rect(4,4,w-8,h-8); c.fill();
+    c.strokeStyle="#f07a1a"; c.lineWidth=5; c.beginPath(); if(c.roundRect) c.roundRect(14,14,w-28,h-28,16); else c.rect(14,14,w-28,h-28); c.stroke();
+    c.textAlign="center"; c.textBaseline="middle"; c.font="66px 'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif";
+    c.fillText("\u{1F383}",64,h/2+4); c.fillStyle="#f7a440"; _sfFit(c,txt,w-140,46,"bold #px Arial, sans-serif"); c.fillText(txt,w/2+46,h/2); });
+  return (K.sticker[txt]=_sfMat("hwStkM"+txt.replace(/\W+/g,""),dt,0.8,true)); }
+
+function _halloweenFront(C){ const g=_frontGeo(C), K=_hwMats(), rnd=C.rnd, faces=[], bats=[], webs=[];
+  const mid=(g.a0+g.a1)/2, dc=(g.dc!=null)?g.dc:mid, dw=g.door?(g.door.a1-g.door.a0):1.2;
+  /* -- zucche ai lati della porta -- */
+  const pumpkin=(a,dd,D)=>{ const q=g.at(a,dd), yc=D*0.38;
+    const col=["#e8761c","#de6a16","#f08a2a"][(rnd()*3)|0];
+    for(let k=0;k<4;k++){ const s=BABYLON.MeshBuilder.CreateSphere("bldp",{diameter:D,segments:6},scene);
+      s.scaling.set(0.62,0.76,1.0); s.rotation.y=k*Math.PI/4; s.position.set(q[0],yc,q[1]); C.colorize(s,col); }
+    C.cyl("#5a6b2a",{diameterTop:D*0.08,diameterBottom:D*0.12,height:D*0.2,tessellation:6}, q[0],yc+D*0.42,q[1]);
+    const f=_frontPlane(C,K.face,D*0.66,D*0.5,a,yc+D*0.02,dd+D*0.5+0.01,0,true); f.rotation.y+=(rnd()-0.5)*0.4; faces.push(f);
+    _frontSolid(C,a,dd,D+0.1,D+0.1); };
+  [-1,1].forEach((sd,i)=>{ const a=dc+sd*(dw/2+0.5); if(a<g.a0+0.3||a>g.a1-0.3) return;
+    pumpkin(a,g.d0+0.4,0.6);
+    if(i===((rnd()<0.5)?0:1)) pumpkin(a+sd*0.5,g.d0+0.3,0.36); });
+  /* -- festone: bandierine arancio / nero / viola a festoni sopra il piano terra -- */
+  { const yb=g.gfTop+0.06, dd=g.out(yb-0.5,yb+0.1)+0.07, L0=g.a0+0.3, L1=g.a1-0.3, n=Math.max(1,Math.round((L1-L0)/2.6));
+    const pos=[], col=[], ind=[], nor=[], uv=[], cs=[[0.94,0.48,0.1],[0.12,0.1,0.12],[0.48,0.25,0.63]];
+    const yAt=a=>{ const t=((a-L0)/(L1-L0))*n, f=t-Math.floor(t); return yb-0.22*4*f*(1-f); };
+    let k=0; for(let a=L0+0.12;a<L1-0.1;a+=0.3,k++){ const c=cs[k%3], y=yAt(a), q1=g.at(a-0.11,dd), q2=g.at(a+0.11,dd), q3=g.at(a,dd);
+      /* due facce con vertici PROPRI: condivisi, le normali delle due facce si annullerebbero */
+      const v=pos.length/3, tri=[q1[0],y,q1[1], q2[0],yAt(a+0.11),q2[1], q3[0],y-0.3,q3[1]]; pos.push(...tri,...tri);
+      for(let j=0;j<6;j++){ col.push(c[0],c[1],c[2],1); uv.push(0,0); }
+      ind.push(v,v+1,v+2, v+3,v+5,v+4); }
+    if(pos.length){ const m=new BABYLON.Mesh("bldp",scene), vd=new BABYLON.VertexData();
+      vd.positions=pos; vd.indices=ind; vd.colors=col; vd.uvs=uv; BABYLON.VertexData.ComputeNormals(pos,ind,nor); vd.normals=nor;
+      vd.applyToMesh(m); C.parts.push(m);
+      for(let a=L0;a<L1;a+=0.5){ const q=g.at(a+0.25,dd); C.box("#2b2b2b",0.5,0.015,0.015, q[0],yAt(a+0.25)+0.005,q[1],g.ry); } } }
+  /* -- pipistrelli sulla facciata, fra i piani alti -- */
+  { const nB=3+((rnd()*3)|0), yLo=g.upY+0.4, yHi=Math.max(yLo+1,Math.min(C.Y1-1.2,yLo+6));
+    for(let i=0;i<nB;i++){ const a=g.a0+0.8+rnd()*(g.a1-g.a0-1.6), y=yLo+rnd()*(yHi-yLo), sz=0.45+rnd()*0.35;
+      bats.push(_frontPlane(C,K.bat,sz*2,sz,a,y,g.out(y-0.3,y+0.3,a-0.6,a+0.6)+0.04,(rnd()-0.5)*0.7,true)); } }
+  /* -- ragnatele negli angoli alti della porta -- */
+  if(g.door && g.dc!=null){ const dd=g.out(g.door.y1-0.6,g.door.y1-0.1,g.door.a0,g.door.a1)+0.03, y=g.door.y1-0.27;
+    webs.push(_frontPlane(C,K.web,0.55,0.55,g.door.a0+0.27,y,dd,0,true));
+    webs.push(_frontPlane(C,K.web,0.55,0.55,g.door.a1-0.27,y,dd,-Math.PI/2,true)); }
+  /* -- adesivo in vetrina, nella vetrina più larga, in basso -- */
+  if(g.wins.length){ const wn=g.wins.reduce((b,w)=>(w.a1-w.a0>b.a1-b.a0)?w:b), ww=wn.a1-wn.a0;
+    const txt=["Happy Halloween!","Trick or treat!","Boo!"][(rnd()*3)|0], w=Math.min(1.5,ww*0.7);
+    _noGlow(_frontPlane(C,_hwSticker(txt),w,w/3,(wn.a0+wn.a1)/2,wn.y0+(wn.y1-wn.y0)*0.3,wn.d+0.05)); }
+  /* i piani dello stesso materiale: una mesh per tipo */
+  [[faces,K.face],[bats,K.bat],[webs,K.web]].forEach(([arr,mt])=>{ if(!arr.length) return;
+    const m=arr.length===1?arr[0]:BABYLON.Mesh.MergeMeshes(arr,true,true,undefined,false,false);
+    if(m){ m.material=mt; m.parent=C.F; m.isPickable=false; _noGlow(m); } });
 }
 
 /* v273: dove ricomincia la Park Ave (verso sud). Fino a qui e' marciapiede:
@@ -7360,16 +7634,20 @@ function buildTown(){
     /* v242 — tetti, zoccolo, tende, finestre di notte (vedi dressBuilding).
        Il cinema resta com'e': ha il suo look ODEON e nessun materiale window. */
     const _dm=(p.role!=="cinema")?modelDoor(root,p.model):null;   // v243: l'anta vera
+    let _dr=null;
     if(p.role!=="cinema"){ const _d=(p.z>0?-1:1)*(p.flip?-1:1), _hx=BUILDING_TINT[p.t]||"#b9ad9c";
-      dressBuilding(root,{ name:p.t, front:[0,_d], door:_dm?[_dm.c.x,_dm.c.z]:[p.x,(_d<0?b2.min.z:b2.max.z)],
-        accent:_mixHex(_hx,"#1c1a18",0.42).toHexString(), avoid:_wtAt }); }
+      /* v330: vetrina da negozio (SHOP_FRONT) e Halloween (HALLOWEEN.on) */
+      _dr=dressBuilding(root,{ name:p.t, front:[0,_d], door:_dm?[_dm.c.x,_dm.c.z]:[p.x,(_d<0?b2.min.z:b2.max.z)],
+        accent:_mixHex(_hx,"#1c1a18",0.42).toHexString(), avoid:_wtAt,
+        shop:SHOP_FRONT[p.t]||null, halloween:HALLOWEEN.on }); }
     // ---- CARTELLO unita' (vale per OGNI edificio) ----
     const active = (p.role==="home"||p.role==="cinema"||!!(p.qid&&QUESTS[p.qid]));
     const anc=anchorMesh(townRoot,p.x,Math.min(top+1.4,22),p.z);
     guiLabel(anc, (p.ic||"")+" "+(p.t||""), "Year "+p.yr+" · "+p.u, active, "town");
     { let faceZ0=(p.z>0)?b2.min.z:b2.max.z, dir0=(p.z>0)?-1:1;
       if(p.flip){ faceZ0=(dir0>0)?b2.min.z:b2.max.z; dir0=-dir0; }   // edificio girato: insegna sull'altra facciata
-      facilitySign(p.x, Math.min(top*0.42,7.2), faceZ0+dir0*0.45, p.ic||"", p.t||""); }
+      /* v330: i negozi hanno gia' l'insegna a fascia col nome (_shopFront) */
+      if(!(_dr&&_dr.__shopSign)) facilitySign(p.x, Math.min(top*0.42,7.2), faceZ0+dir0*0.45, p.ic||"", p.t||""); }
     const dir=(p.z>0?-1:1)*(p.flip?-1:1);
 
     if(p.role==="home"){
