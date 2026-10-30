@@ -7401,12 +7401,29 @@ function _hwMats(){ if(_hwM) return _hwM;
   const cut=(n,dt,emis,lit)=>{ dt.hasAlpha=true; const m=new BABYLON.StandardMaterial(n,scene); m.diffuseTexture=dt;
     m.useAlphaFromDiffuseTexture=true; m.transparencyMode=BABYLON.Material.MATERIAL_ALPHATEST; m.alphaCutOff=0.5;
     m.specularColor=new BABYLON.Color3(0,0,0); if(emis) m.emissiveColor=BABYLON.Color3.FromHexString(emis); if(lit===false) m.disableLighting=true; return m; };
-  /* faccia della zucca: occhi, naso e bocca «accesi» (giallo-arancio) */
-  const face=_dnTex("hwFaceT",128,96,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle="#ffc23a";
-    [[18,44],[78,44]].forEach(e=>{ c.beginPath(); c.moveTo(e[0],e[1]); c.lineTo(e[0]+32,e[1]); c.lineTo(e[0]+16,e[1]-26); c.closePath(); c.fill(); });
-    c.beginPath(); c.moveTo(56,58); c.lineTo(72,58); c.lineTo(64,46); c.closePath(); c.fill();
-    c.beginPath(); c.moveTo(12,64); for(let i=0;i<=8;i++) c.lineTo(12+i*13,(i%2)?76:66); c.lineTo(116,64);
-    c.quadraticCurveTo(64,112,12,64); c.fill(); });
+  /* v331 (Giacomo: «le parti intagliate sono sospese sopra la zucca, non
+     incollate come cavità»). La faccia NON e' piu' un piano davanti alla
+     zucca: e' disegnata nella sua buccia. Sfera di Babylon: u=0,25 / v=0,5
+     guarda verso -z locale (misurato), quindi la faccia sta li' e la zucca
+     si gira con la facciata. Buccia: arancio con le scanalature degli
+     spicchi (u = k/10, le stesse di _hwPumpkinMesh); i fori sono scuri
+     nella diffusa e gialli nell'emissiva: di giorno sembrano cavita' con la
+     candela dentro, di notte brillano. */
+  const holes=(c,col)=>{ c.fillStyle=col;
+    [[100,124],[156,124]].forEach(e=>{ c.beginPath(); c.moveTo(e[0]-17,e[1]); c.lineTo(e[0]+17,e[1]); c.lineTo(e[0],e[1]-28); c.closePath(); c.fill(); });
+    c.beginPath(); c.moveTo(120,140); c.lineTo(136,140); c.lineTo(128,128); c.closePath(); c.fill();
+    c.beginPath(); c.moveTo(84,150); for(let i=0;i<=8;i++) c.lineTo(84+i*11,(i%2)?162:153); c.lineTo(172,150);
+    c.quadraticCurveTo(128,196,84,150); c.fill(); };
+  const skin=_dnTex("hwSkinT",512,256,(c,w,h)=>{
+    const gr=c.createLinearGradient(0,0,0,h); gr.addColorStop(0,"#b8500f"); gr.addColorStop(0.45,"#ef7f1f"); gr.addColorStop(1,"#a84a0e");
+    c.fillStyle=gr; c.fillRect(0,0,w,h);
+    for(let k=0;k<=10;k++){ const x=k*w/10, sg=c.createLinearGradient(x-14,0,x+14,0);
+      sg.addColorStop(0,"rgba(120,45,5,0)"); sg.addColorStop(0.5,"rgba(120,45,5,0.55)"); sg.addColorStop(1,"rgba(120,45,5,0)");
+      c.fillStyle=sg; c.fillRect(x-14,0,28,h); }
+    holes(c,"#3a1404"); });
+  const glow=_dnTex("hwGlowT",512,256,(c,w,h)=>{ c.fillStyle="#000000"; c.fillRect(0,0,w,h); holes(c,"#ffb238"); });
+  const pk=new BABYLON.StandardMaterial("hwPumpkin",scene); pk.diffuseTexture=skin; pk.emissiveTexture=glow;
+  pk.specularColor=new BABYLON.Color3(0.12,0.08,0.04);
   /* pipistrello: sagoma nera */
   const bat=_dnTex("hwBatT",256,128,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle="#141018"; c.beginPath();
     c.moveTo(128,40); c.lineTo(118,22); c.lineTo(122,38);
@@ -7419,7 +7436,7 @@ function _hwMats(){ if(_hwM) return _hwM;
     A.forEach(t=>{ c.beginPath(); c.moveTo(0,0); c.lineTo(Math.cos(t)*w,Math.sin(t)*w); c.stroke(); });
     R.forEach(r=>{ c.beginPath(); A.forEach((t,i)=>{ const x=Math.cos(t)*r*w*0.95, y=Math.sin(t)*r*w*0.95;
       if(!i) c.moveTo(x,y); else { const tm=(A[i-1]+t)/2; c.quadraticCurveTo(Math.cos(tm)*r*w*0.8,Math.sin(tm)*r*w*0.8,x,y); } }); c.stroke(); }); });
-  _hwM={ face:cut("hwFace",face,"#ffb347",false), bat:cut("hwBat",bat,"#08060a"), web:cut("hwWeb",web,"#9a9a9a"), sticker:{} };
+  _hwM={ pumpkin:pk, bat:cut("hwBat",bat,"#08060a"), web:cut("hwWeb",web,"#9a9a9a"), sticker:{} };
   return _hwM; }
 function _hwSticker(txt){ const K=_hwMats(); if(K.sticker[txt]) return K.sticker[txt];
   const dt=_dnTex("hwStkT"+txt.replace(/\W+/g,""),384,128,(c,w,h)=>{ c.clearRect(0,0,w,h);
@@ -7429,32 +7446,75 @@ function _hwSticker(txt){ const K=_hwMats(); if(K.sticker[txt]) return K.sticker
     c.fillText("\u{1F383}",64,h/2+4); c.fillStyle="#f7a440"; _sfFit(c,txt,w-140,46,"bold #px Arial, sans-serif"); c.fillText(txt,w/2+46,h/2); });
   return (K.sticker[txt]=_sfMat("hwStkM"+txt.replace(/\W+/g,""),dt,0.8,true)); }
 
-function _halloweenFront(C){ const g=_frontGeo(C), K=_hwMats(), rnd=C.rnd, faces=[], bats=[], webs=[];
+/* zucca a spicchi: sfera con 10 scanalature (in corrispondenza delle righe
+   scure della buccia, u = k/10 cioe' phi = -2*pi*u) */
+function _hwPumpkinMesh(D){ const s=BABYLON.MeshBuilder.CreateSphere("hwPk",{diameter:D,segments:12},scene);
+  const p=s.getVerticesData(BABYLON.VertexBuffer.PositionKind), n=[];
+  for(let i=0;i<p.length;i+=3){ const k=1-0.08*(0.5+0.5*Math.cos(10*Math.atan2(p[i+2],p[i]))); p[i]*=k; p[i+2]*=k; }
+  BABYLON.VertexData.ComputeNormals(p,s.getIndices(),n);
+  s.setVerticesData(BABYLON.VertexBuffer.PositionKind,p,false); s.setVerticesData(BABYLON.VertexBuffer.NormalKind,n,false);
+  return s; }
+/* colore per-vertice (per il materiale K.vc di _bldMats) */
+function _vcColor(m,hex){ const c=BABYLON.Color3.FromHexString(hex), n=m.getTotalVertices(), a=new Float32Array(n*4);
+  for(let i=0;i<n;i++){ a[i*4]=c.r; a[i*4+1]=c.g; a[i*4+2]=c.b; a[i*4+3]=1; }
+  m.setVerticesData(BABYLON.VertexBuffer.ColorKind,a); return m; }
+/* zucca appoggiata a quota y (base), faccia verso ry (la -z locale della
+   sfera ruotata di ry: ry = atan2(nx,nz)+PI guarda verso n).
+   Ritorna [corpo (materiale K.pumpkin), picciolo (colori per-vertice)]. */
+function _hwPumpkinAt(x,y,z,D,ry){ const H=D*0.78, s=_hwPumpkinMesh(D);
+  s.scaling.y=0.78; s.position.set(x,y+H/2-0.01,z); s.rotation.y=ry;
+  const st=BABYLON.MeshBuilder.CreateCylinder("hwStem",{diameterTop:D*0.07,diameterBottom:D*0.12,height:D*0.2,tessellation:6},scene);
+  st.position.set(x,y+H+D*0.06,z); _vcColor(st,"#5a6b2a");
+  return [s,st]; }
+/* quota del suolo sotto (x,z), cercata da 1,2 m in giu' (sotto pensiline e tettoie) */
+function _hwGroundY(x,z){
+  const hit=scene.pickWithRay(new BABYLON.Ray(new BABYLON.Vector3(x,1.2,z),new BABYLON.Vector3(0,-1,0),1.6),m=>m.isPickable&&m.isEnabled()&&!m.isDescendantOf(player));
+  return (hit&&hit.hit)?Math.max(0,hit.pickedPoint.y):0; }
+/* festone fra p0 e p1 ([x,z], stesso frame del chiamante): corda a quota y,
+   n festoni di freccia sag, bandierine arancio/nero/viola ogni 0,3 m.
+   UNA mesh a colori per-vertice; ogni triangolo ha le due facce con
+   vertici PROPRI (condivisi, le normali delle due facce si annullerebbero). */
+function _hwBunting(p0,p1,y,sag,n){
+  const dx=p1[0]-p0[0], dz=p1[1]-p0[1], L=Math.hypot(dx,dz), ux=dx/L, uz=dz/L;
+  const yAt=t=>{ const u=(t/L)*n, f=u-Math.floor(u); return y-sag*4*f*(1-f); };
+  const P=t=>[p0[0]+ux*t,p0[1]+uz*t];
+  const pos=[], col=[], ind=[], uv=[], cs=[[0.94,0.48,0.1],[0.12,0.1,0.12],[0.48,0.25,0.63]], cord=[0.17,0.17,0.17];
+  const tri=(A,B,Cc,c)=>{ const v=pos.length/3; pos.push(...A,...B,...Cc,...A,...B,...Cc);
+    for(let j=0;j<6;j++){ col.push(c[0],c[1],c[2],1); uv.push(0,0); } ind.push(v,v+1,v+2, v+3,v+5,v+4); };
+  let k=0; for(let t=0.12;t<L-0.1;t+=0.3,k++){ const a=P(t-0.11), b=P(t+0.11), m=P(t);
+    tri([a[0],yAt(t-0.11),a[1]],[b[0],yAt(t+0.11),b[1]],[m[0],yAt(t)-0.3,m[1]],cs[k%3]); }
+  for(let t=0;t<L-1e-3;t+=0.25){ const t2=Math.min(L,t+0.25), a=P(t), b=P(t2), ya=yAt(t)+0.004, yb=yAt(t2)+0.004;
+    tri([a[0],ya,a[1]],[b[0],yb,b[1]],[a[0],ya+0.016,a[1]],cord);
+    tri([b[0],yb,b[1]],[b[0],yb+0.016,b[1]],[a[0],ya+0.016,a[1]],cord); }
+  const m=new BABYLON.Mesh("hwBunt",scene), vd=new BABYLON.VertexData(), nor=[];
+  vd.positions=pos; vd.indices=ind; vd.colors=col; vd.uvs=uv; BABYLON.VertexData.ComputeNormals(pos,ind,nor); vd.normals=nor;
+  vd.applyToMesh(m); return m; }
+/* piano sciolto (da fondere) che guarda verso ry: CreatePlane guarda -z, quindi ry = atan2(nx,nz)+PI */
+function _hwPlane(w,h,x,y,z,ry,roll){ const p=BABYLON.MeshBuilder.CreatePlane("hwP",{width:w,height:h},scene);
+  p.position.set(x,y,z); p.rotation.y=ry; if(roll) p.rotation.z=roll; p.isPickable=false; return p; }
+/* fonde le liste per materiale sotto un nodo (coordinate gia' nel frame di parent) */
+function _hwFuse(parent,L){ const K=_hwMats();
+  [[L.bodies,K.pumpkin],[L.vc,_bldMats().vc],[L.bats,K.bat],[L.webs,K.web]].forEach(([arr,mt])=>{ if(!arr||!arr.length) return;
+    const m=arr.length===1?arr[0]:BABYLON.Mesh.MergeMeshes(arr,true,true,undefined,false,false);
+    if(m){ m.material=mt; m.parent=parent; m.isPickable=false; _noGlow(m); } }); }
+
+function _halloweenFront(C){ const g=_frontGeo(C), K=_hwMats(), rnd=C.rnd, bodies=[], bats=[], webs=[];
   const mid=(g.a0+g.a1)/2, dc=(g.dc!=null)?g.dc:mid, dw=g.door?(g.door.a1-g.door.a0):1.2;
   /* -- zucche ai lati della porta -- */
-  const pumpkin=(a,dd,D)=>{ const q=g.at(a,dd), yc=D*0.38;
-    const col=["#e8761c","#de6a16","#f08a2a"][(rnd()*3)|0];
-    for(let k=0;k<4;k++){ const s=BABYLON.MeshBuilder.CreateSphere("bldp",{diameter:D,segments:6},scene);
-      s.scaling.set(0.62,0.76,1.0); s.rotation.y=k*Math.PI/4; s.position.set(q[0],yc,q[1]); C.colorize(s,col); }
-    C.cyl("#5a6b2a",{diameterTop:D*0.08,diameterBottom:D*0.12,height:D*0.2,tessellation:6}, q[0],yc+D*0.42,q[1]);
-    const f=_frontPlane(C,K.face,D*0.66,D*0.5,a,yc+D*0.02,dd+D*0.5+0.01,0,true); f.rotation.y+=(rnd()-0.5)*0.4; faces.push(f);
+  /* v331 (Giacomo: «zucche a meta', sprofondate nel terreno»): davanti a
+     certe porte c'e' un gradino o lo zoccolo del modello, piu' alto del
+     marciapiede. La zucca si appoggia su quello che trova SOTTO di se'
+     (raggio dall'altezza di 1,2 m: sotto le pensiline, non sopra). */
+  const pumpkin=(a,dd,D)=>{ const q=g.at(a,dd), w=C.toW(q[0],q[1]);
+    const pk=_hwPumpkinAt(q[0],_hwGroundY(w[0],w[1]),q[1],D,g.ry+Math.PI+(rnd()-0.5)*0.5);
+    bodies.push(pk[0]); C.parts.push(pk[1]);
     _frontSolid(C,a,dd,D+0.1,D+0.1); };
   [-1,1].forEach((sd,i)=>{ const a=dc+sd*(dw/2+0.5); if(a<g.a0+0.3||a>g.a1-0.3) return;
     pumpkin(a,g.d0+0.4,0.6);
     if(i===((rnd()<0.5)?0:1)) pumpkin(a+sd*0.5,g.d0+0.3,0.36); });
   /* -- festone: bandierine arancio / nero / viola a festoni sopra il piano terra -- */
-  { const yb=g.gfTop+0.06, dd=g.out(yb-0.5,yb+0.1)+0.07, L0=g.a0+0.3, L1=g.a1-0.3, n=Math.max(1,Math.round((L1-L0)/2.6));
-    const pos=[], col=[], ind=[], nor=[], uv=[], cs=[[0.94,0.48,0.1],[0.12,0.1,0.12],[0.48,0.25,0.63]];
-    const yAt=a=>{ const t=((a-L0)/(L1-L0))*n, f=t-Math.floor(t); return yb-0.22*4*f*(1-f); };
-    let k=0; for(let a=L0+0.12;a<L1-0.1;a+=0.3,k++){ const c=cs[k%3], y=yAt(a), q1=g.at(a-0.11,dd), q2=g.at(a+0.11,dd), q3=g.at(a,dd);
-      /* due facce con vertici PROPRI: condivisi, le normali delle due facce si annullerebbero */
-      const v=pos.length/3, tri=[q1[0],y,q1[1], q2[0],yAt(a+0.11),q2[1], q3[0],y-0.3,q3[1]]; pos.push(...tri,...tri);
-      for(let j=0;j<6;j++){ col.push(c[0],c[1],c[2],1); uv.push(0,0); }
-      ind.push(v,v+1,v+2, v+3,v+5,v+4); }
-    if(pos.length){ const m=new BABYLON.Mesh("bldp",scene), vd=new BABYLON.VertexData();
-      vd.positions=pos; vd.indices=ind; vd.colors=col; vd.uvs=uv; BABYLON.VertexData.ComputeNormals(pos,ind,nor); vd.normals=nor;
-      vd.applyToMesh(m); C.parts.push(m);
-      for(let a=L0;a<L1;a+=0.5){ const q=g.at(a+0.25,dd); C.box("#2b2b2b",0.5,0.015,0.015, q[0],yAt(a+0.25)+0.005,q[1],g.ry); } } }
+  { const yb=g.gfTop+0.06, dd=g.out(yb-0.5,yb+0.1)+0.07, L0=g.a0+0.3, L1=g.a1-0.3;
+    if(L1-L0>1) C.parts.push(_hwBunting(g.at(L0,dd),g.at(L1,dd),yb,0.22,Math.max(1,Math.round((L1-L0)/2.6)))); }
   /* -- pipistrelli sulla facciata, fra i piani alti -- */
   { const nB=3+((rnd()*3)|0), yLo=g.upY+0.4, yHi=Math.max(yLo+1,Math.min(C.Y1-1.2,yLo+6));
     for(let i=0;i<nB;i++){ const a=g.a0+0.8+rnd()*(g.a1-g.a0-1.6), y=yLo+rnd()*(yHi-yLo), sz=0.45+rnd()*0.35;
@@ -7467,11 +7527,59 @@ function _halloweenFront(C){ const g=_frontGeo(C), K=_hwMats(), rnd=C.rnd, faces
   if(g.wins.length){ const wn=g.wins.reduce((b,w)=>(w.a1-w.a0>b.a1-b.a0)?w:b), ww=wn.a1-wn.a0;
     const txt=["Happy Halloween!","Trick or treat!","Boo!"][(rnd()*3)|0], w=Math.min(1.5,ww*0.7);
     _noGlow(_frontPlane(C,_hwSticker(txt),w,w/3,(wn.a0+wn.a1)/2,wn.y0+(wn.y1-wn.y0)*0.3,wn.d+0.05)); }
-  /* i piani dello stesso materiale: una mesh per tipo */
-  [[faces,K.face],[bats,K.bat],[webs,K.web]].forEach(([arr,mt])=>{ if(!arr.length) return;
-    const m=arr.length===1?arr[0]:BABYLON.Mesh.MergeMeshes(arr,true,true,undefined,false,false);
-    if(m){ m.material=mt; m.parent=C.F; m.isPickable=false; _noGlow(m); } });
+  /* una mesh per materiale */
+  _hwFuse(C.F,{ bodies:bodies, bats:bats, webs:webs });
 }
+
+/* ---- v331 (Giacomo: «anche il Diner e il Café al parco un po' di
+   decorazioni di Halloween»). Coordinate MONDO (townRoot e' l'identita'). ---- */
+/* Sunny Side Diner (buildDiner): veranda con l'ingresso a nord-sud, fronte
+   a z 23.8 verso la High Street, ingresso x -1.6..1.6 nella ringhiera
+   (z 23.7), tettoia a 3.3, mantovana fino a 2.85, lucine a 2.8. */
+function halloweenDiner(){ if(!HALLOWEEN.on) return;
+  try{ const X=DINER.x, gy=DINER.gy||0, L={ bodies:[], vc:[], bats:[], webs:[] }, rnd=_seedRand("hwDiner");
+    /* ry 0 = faccia verso -z, la strada */
+    const pk=(x,z,D)=>{ const q=_hwPumpkinAt(X+x,gy,z,D,(rnd()-0.5)*0.5); L.bodies.push(q[0]); L.vc.push(q[1]);
+      addSolid(X+x-D/2-0.05,X+x+D/2+0.05,z-D/2-0.05,z+D/2+0.05,"town"); };
+    /* fuori dalla ringhiera, ai lati dell'ingresso */
+    pk(-2.3,23.25,0.6); pk(-2.85,23.3,0.38); pk(2.3,23.25,0.6); pk(5.2,23.3,0.45); pk(-5.6,23.3,0.42);
+    /* sui tavoli della veranda (piano a 0.785, raggio 0.475): una zucchetta sul
+       bordo libero, lontano dalle salsiere (tz-0.37) e dai piatti (tx±0.2) */
+    [[-3.3,27.4],[3.3,27.4],[-3.3,31.8],[3.3,31.8]].forEach(t=>{ const q=_hwPumpkinAt(X+t[0],gy+0.785,t[1]+0.28,0.18,0); L.bodies.push(q[0]); L.vc.push(q[1]); });
+    /* festone sotto la mantovana del fronte, appeso ai due pali e al centro */
+    L.vc.push(_hwBunting([X-7.2,23.66],[X+7.2,23.66],gy+2.78,0.18,4));
+    /* ragnatele negli angoli palo/tettoia del fronte */
+    L.webs.push(_hwPlane(0.6,0.6,X-6.85,gy+2.52,23.62,0));
+    L.webs.push(_hwPlane(0.6,0.6,X+6.85,gy+2.52,23.62,0,-Math.PI/2));
+    /* pipistrelli in volo sopra la tettoia */
+    [[-4.5,4.3,23.4],[-1.2,4.9,24.6],[3.6,4.5,23.9],[6.1,5.2,25.2]].forEach((b,i)=>L.bats.push(_hwPlane(0.8+0.15*(i%2),0.42,X+b[0],gy+b[1],b[2],0,(rnd()-0.5)*0.6)));
+    const node=new BABYLON.TransformNode("hwDiner",scene); node.parent=townRoot; _hwFuse(node,L);
+    /* cartello sopra l'ingresso, davanti alla mantovana */
+    const sg=_hwPlane(1.6,0.53,X,gy+2.5,23.6,0); sg.material=_hwSticker("Happy Halloween!"); sg.parent=node; _noGlow(sg);
+  }catch(e){ console.warn("[halloween diner]",e); } }
+/* Town Café (cafe(), outdoor): tettoia 9.4x8.6 centrata a (-0.6, 0) locale,
+   aperta a ovest (si arriva da x -5.3), pali a (-4.6/3.2, ±3.9), tavolini
+   alti a (-2.6, ±3) col piano a 1.06, bancone x 0.6..4.0 col piano a 1.18. */
+function halloweenCafe(x,z,y0){ if(!HALLOWEEN.on) return;
+  try{ const L={ bodies:[], vc:[], bats:[], webs:[] }, rnd=_seedRand("hwCafe"), W=Math.PI/2;   // tutto guarda a ovest (-x): atan2(-1,0)+PI
+    const pk=(lx,lz,ly,D,solid)=>{ const q=_hwPumpkinAt(x+lx,y0+ly,z+lz,D,W+(rnd()-0.5)*0.5); L.bodies.push(q[0]); L.vc.push(q[1]);
+      if(solid) addSolid(x+lx-D/2-0.05,x+lx+D/2+0.05,z+lz-D/2-0.05,z+lz+D/2+0.05,"town"); };
+    /* ai piedi dei due pali d'ingresso, fuori */
+    pk(-5.05,-4.25,0.02,0.55,true); pk(-5.3,-3.6,0.02,0.34,true); pk(-5.05,4.25,0.02,0.55,true);
+    /* sui tavolini e sul bancone */
+    pk(-2.25,-2.75,1.06,0.22); pk(-2.25,3.25,1.06,0.22); pk(1.0,-3.15,1.18,0.26);
+    /* festone sotto la mantovana ovest, davanti alle lucine */
+    L.vc.push(_hwBunting([x-5.36,z-3.9],[x-5.36,z+3.9],y0+2.56,0.16,3));
+    /* ragnatele fra i pali d'ingresso e la tettoia (piano x = -4.75, verso
+       ovest): per chi arriva la sinistra e' +z */
+    L.webs.push(_hwPlane(0.55,0.55,x-4.75,y0+2.33,z+3.6,W));
+    L.webs.push(_hwPlane(0.55,0.55,x-4.75,y0+2.33,z-3.6,W,-Math.PI/2));
+    /* pipistrelli sopra la tettoia */
+    [[-4.0,4.2,-1.5],[-1.0,4.7,2.2],[2.0,4.4,-2.6]].forEach(b=>L.bats.push(_hwPlane(0.8,0.42,x+b[0],y0+b[1],z+b[2],W,(rnd()-0.5)*0.6)));
+    const node=new BABYLON.TransformNode("hwCafe",scene); node.parent=townRoot; _hwFuse(node,L);
+    /* cartello sul fronte del bancone, verso i clienti */
+    const sg=_hwPlane(1.4,0.47,x+0.65,y0+0.66,z+1.9,W); sg.material=_hwSticker("Trick or treat!"); sg.parent=node; _noGlow(sg);
+  }catch(e){ console.warn("[halloween cafe]",e); } }
 
 /* v273: dove ricomincia la Park Ave (verso sud). Fino a qui e' marciapiede:
    Home (pad z 7..23) + un lotto libero da 16 m per il ristorante (23..41). */
@@ -9001,6 +9109,7 @@ function buildPedestrians(){
   initBenches();   // v291: sedersi sulle panchine (prima di costruirle)
   buildTownCafe(); buildCafeNPCs(); buildKiosk(); buildStoryBench(); buildNightBench();
   try{ buildDiner(); }catch(e){ console.warn("[diner]",e); }   // v288: il diner nel lotto a sud di Home
+  halloweenDiner();   // v331: solo nei giorni di HALLOWEEN.on
   /* ⚠️⚠️ IL TERMINAL ERA DISABITATO FUORI DA UNIT 1 (Giacomo, 5 set: «con
      Theo non si puo' ancora parlare», e aveva ragione da prima che io
      toccassi qualsiasi cosa).
@@ -11678,6 +11787,7 @@ const NEWS_PRESA=new BABYLON.Vector3(0,-0.07,-NEWS_MEZZO*Math.sin(0.22));
 function buildTownCafe(){
   const y=(typeof _pedGroundY==="function")?_pedGroundY(CAFE_XZ.x,CAFE_XZ.z):0;
   cafe(CAFE_XZ.x, CAFE_XZ.z, { outdoor:true, y:y });
+  halloweenCafe(CAFE_XZ.x, CAFE_XZ.z, y);   // v331: solo nei giorni di HALLOWEEN.on
 }
 
 /* =====================================================================
