@@ -5467,6 +5467,9 @@ function refreshShadowCasters(){ if(!shadowGen) return;
   const pr=probe?probe.renderList:null; if(pr){ pr.length=0; if(skyDome) pr.push(skyDome); }
   scene.meshes.forEach(m=>{ if(m.__occluder===true){ rl.push(m); if(pr&&probeSafe(m)) pr.push(m); }
     if(m.__npcCast===true) rl.push(m);
+    /* v496: solo ombra (zucche, lavagnette dei negozi): NON __occluder, che
+       vuol dire anche «si dissolve fra camera e avatar» e «entra nella sonda» */
+    if(m.__cast===true && m.__occluder!==true) rl.push(m);
     if(m.__horizon===true&&pr&&probeSafe(m)) pr.push(m);
     // ricevitori: whitelist storica + QUALSIASI superficie-pavimento (__ground) fuori terra.
     // Cosi' prati, promenade, vialetti, piazzali ecc. ricevono le ombre senza dover
@@ -7233,9 +7236,13 @@ function _dressBuilding(root,o){
    ===================================================================== */
 const SHOP_FRONT={
   "Corner Shop":{ bg:"#3d5a80", ink:"#f2e8d2", trim:"#e8b04b", font:"Arial, Helvetica, sans-serif",
-    l1:"CORNER SHOP", l2:"snacks · drinks · newspapers", blade:"\u{1F6D2}",
+    /* v496 (Giacomo, 31 ott: «nel corner shop ci sono skateboard, guitar:
+       sono oggetti della Unit 4, quindi il cartello fuori e' fuorviante»).
+       Dentro si vendono le «my things» della Unit 4 (CORNER_PRICES): niente
+       gelati, bibite o caramelle. Insegna e lavagna dicono quelle. */
+    l1:"CORNER SHOP", l2:"music · tech · gifts · comics", blade:"\u{1F6D2}",
     glass:[["OPEN","Mon-Sat 9-17","#c8323a"]],
-    board:["TODAY","Ice cream","Cold drinks","Comics","Sweets"], props:["board","news"] },
+    board:["TODAY","Skateboards","Guitars","Headphones","Comics"], props:["board","news"] },
   "The Market":{ bg:"#5a7a3a", ink:"#f6f1e2", trim:"#f2c93e", font:"Georgia, 'Times New Roman', serif",
     l1:"THE MARKET", l2:"fresh food every day", blade:"\u{1F34E}",
     glass:[["FRESH!","fruit & vegetables","#d98a1c"],["OPEN","Mon-Sat 8-19","#c8323a"]],
@@ -7255,11 +7262,33 @@ const SHOP_FRONT={
    (la faccia è accesa, di notte si vede), festone arancio/nero/viola,
    pipistrelli sulla facciata, ragnatele sulla porta, un adesivo in inglese
    in vetrina. Per provarlo fuori stagione: ?halloween=1 (o =0 per toglierlo).
+   v496 (Giacomo, 31 ott: «le decorazioni di Halloween scompaiono il 3
+   novembre alle 00»): ANCHE A GIOCO APERTO. Prima si decideva solo al
+   caricamento, e un Chromebook lasciato acceso dalla sera prima se le
+   teneva fino al ricaricamento. Ora ogni pezzo (mesh, nodi, solidi) si
+   segna in HALLOWEEN.mesh / HALLOWEEN.solidi e un controllo al minuto
+   (non un setTimeout lungo: col coperchio chiuso l'orologio va avanti e il
+   timer no) a mezzanotte del 3 li toglie: spariscono anche gli ostacoli
+   invisibili delle zucche. Con ?halloween=1 restano: e' una prova.
    ===================================================================== */
-const HALLOWEEN=(()=>{ let on=null;
-  try{ const q=new URLSearchParams(location.search).get("halloween"); if(q==="1"||q==="0") on=(q==="1"); }catch(e){}
-  if(on==null){ const d=new Date(), m=d.getMonth(), g=d.getDate(); on=(m===9&&g>=20)||(m===10&&g<=2); }
-  return { on:on }; })();
+function _hwStagione(d){ const m=d.getMonth(), g=d.getDate(); return (m===9&&g>=20)||(m===10&&g<=2); }
+const HALLOWEEN=(()=>{ let on=null, forzato=false;
+  try{ const q=new URLSearchParams(location.search).get("halloween"); if(q==="1"||q==="0"){ on=(q==="1"); forzato=true; } }catch(e){}
+  if(on==null) on=_hwStagione(new Date());
+  const H={ on:on, forzato:forzato, mesh:[], solidi:[] };
+  /* toglie tutto; da qui in poi le funzioni halloween* non costruiscono piu' niente */
+  H.spegni=function(){ H.on=false;
+    while(H.mesh.length){ const m=H.mesh.pop(); try{ m.dispose(false,false); }catch(e){} }
+    while(H.solidi.length){ const s=H.solidi.pop(); try{ const i=solids.indexOf(s); if(i>=0) solids.splice(i,1); }catch(e){} }
+    try{ refreshShadowCasters(); }catch(e){}
+    return true; };
+  if(on && !forzato){ const t=setInterval(function(){
+    if(_hwStagione(new Date())) return;
+    clearInterval(t); H.spegni(); }, 60000); }
+  return H; })();
+function _hwTieni(m){ if(m) HALLOWEEN.mesh.push(m); return m; }
+/* i solidi aggiunti da `n0` in poi sono della decorazione */
+function _hwSolidiDa(n0){ for(let i=n0;i<solids.length;i++) HALLOWEEN.solidi.push(solids[i]); }
 
 /* geometria della facciata principale nel frame F di _dressBuilding */
 function _frontGeo(C){ if(C.g) return C.g;
@@ -7357,10 +7386,14 @@ function _propBoard(C,S,id,a,d){ const g=_frontGeo(C), q=g.at(a,d);
     c.textAlign="center"; c.textBaseline="middle"; c.fillStyle="#f6e27a";
     _sfFit(c,S.board[0],w-50,48,"bold #px 'Comic Sans MS','Chalkboard SE',cursive"); c.fillText(S.board[0],w/2,62);
     c.fillStyle="#f4f1e8"; S.board.slice(1).forEach((t,i)=>{ _sfFit(c,t,w-50,34,"#px 'Comic Sans MS','Chalkboard SE',cursive"); c.fillText(t,w/2,130+i*56); }); });
-  const m=_sfMat("shopBoardM"+id,dt,0.25);
+  /* v496 (Giacomo, 31 ott: «questo cartello ha troppo glowing e non ha
+     ombra»). Emissiva 0,25 E dentro il GlowLayer: di giorno la lavagna
+     brillava come un'insegna accesa. Ora poca emissiva (si legge ancora
+     sotto i lampioni), fuori dal glow, e proietta l'ombra (__cast). */
+  const m=_sfMat("shopBoardM"+id,dt,0.1);
   [0,Math.PI].forEach(r=>{ const N=new BABYLON.TransformNode("bldBoard",scene); N.parent=C.F; N.position.set(q[0],0,q[1]); N.rotation.y=g.ry+Math.PI+r;
     const p=BABYLON.MeshBuilder.CreatePlane("bldBoardP",{width:0.62,height:0.95},scene); p.parent=N; p.position.set(0,0.5,-0.1); p.rotation.x=0.2;
-    p.material=m; p.isPickable=false; });
+    p.material=m; p.isPickable=false; p.__cast=true; _noGlow(p); });
   C.box("#5a3b1c",0.66,0.05,0.08, q[0],1.0,q[1],g.ry);
   _frontSolid(C,a,d,0.8,0.55); }
 /* edicola: espositore di giornali addossato al muro */
@@ -7499,9 +7532,16 @@ function _hwPlane(w,h,x,y,z,ry,roll){ const p=BABYLON.MeshBuilder.CreatePlane("h
 function _hwFuse(parent,L){ const K=_hwMats();
   [[L.bodies,K.pumpkin],[L.vc,_bldMats().vc],[L.bats,K.bat],[L.webs,K.web]].forEach(([arr,mt])=>{ if(!arr||!arr.length) return;
     const m=arr.length===1?arr[0]:BABYLON.Mesh.MergeMeshes(arr,true,true,undefined,false,false);
-    if(m){ m.material=mt; m.parent=parent; m.isPickable=false; _noGlow(m); } }); }
+    if(m){ m.material=mt; m.parent=parent; m.isPickable=false; _noGlow(m); _hwTieni(m);
+      /* v496 (Giacomo: «le zucche non hanno un minimo di ombra»): zucche,
+         gambi e festoni proiettano; pipistrelli e ragnatele no (piatti,
+         sulla facciata: l'ombra sarebbe solo una macchia sul muro) */
+      if(mt===K.pumpkin || L.vc===arr) m.__cast=true; } }); }
 
-function _halloweenFront(C){ const g=_frontGeo(C), K=_hwMats(), rnd=C.rnd, bodies=[], bats=[], webs=[];
+function _halloweenFront(C){ const g=_frontGeo(C), K=_hwMats(), rnd=C.rnd, bodies=[], bats=[], webs=[], vc=[], n0=solids.length;
+  /* v496: i pezzi a colori per-vertice NON vanno piu' in C.parts (si
+     fondevano con la vetrina del negozio e non si potevano piu' togliere a
+     mezzanotte): stanno in `vc`, fusi a parte da _hwFuse. */
   const mid=(g.a0+g.a1)/2, dc=(g.dc!=null)?g.dc:mid, dw=g.door?(g.door.a1-g.door.a0):1.2;
   /* -- zucche ai lati della porta -- */
   /* v331 (Giacomo: «zucche a meta', sprofondate nel terreno»): davanti a
@@ -7510,14 +7550,14 @@ function _halloweenFront(C){ const g=_frontGeo(C), K=_hwMats(), rnd=C.rnd, bodie
      (raggio dall'altezza di 1,2 m: sotto le pensiline, non sopra). */
   const pumpkin=(a,dd,D)=>{ const q=g.at(a,dd), w=C.toW(q[0],q[1]);
     const pk=_hwPumpkinAt(q[0],_hwGroundY(w[0],w[1]),q[1],D,g.ry+Math.PI+(rnd()-0.5)*0.5);
-    bodies.push(pk[0]); C.parts.push(pk[1]);
+    bodies.push(pk[0]); vc.push(pk[1]);
     _frontSolid(C,a,dd,D+0.1,D+0.1); };
   [-1,1].forEach((sd,i)=>{ const a=dc+sd*(dw/2+0.5); if(a<g.a0+0.3||a>g.a1-0.3) return;
     pumpkin(a,g.d0+0.4,0.6);
     if(i===((rnd()<0.5)?0:1)) pumpkin(a+sd*0.5,g.d0+0.3,0.36); });
   /* -- festone: bandierine arancio / nero / viola a festoni sopra il piano terra -- */
   { const yb=g.gfTop+0.06, dd=g.out(yb-0.5,yb+0.1)+0.07, L0=g.a0+0.3, L1=g.a1-0.3;
-    if(L1-L0>1) C.parts.push(_hwBunting(g.at(L0,dd),g.at(L1,dd),yb,0.22,Math.max(1,Math.round((L1-L0)/2.6)))); }
+    if(L1-L0>1) vc.push(_hwBunting(g.at(L0,dd),g.at(L1,dd),yb,0.22,Math.max(1,Math.round((L1-L0)/2.6)))); }
   /* -- pipistrelli sulla facciata, fra i piani alti -- */
   { const nB=3+((rnd()*3)|0), yLo=g.upY+0.4, yHi=Math.max(yLo+1,Math.min(C.Y1-1.2,yLo+6));
     for(let i=0;i<nB;i++){ const a=g.a0+0.8+rnd()*(g.a1-g.a0-1.6), y=yLo+rnd()*(yHi-yLo), sz=0.45+rnd()*0.35;
@@ -7529,9 +7569,10 @@ function _halloweenFront(C){ const g=_frontGeo(C), K=_hwMats(), rnd=C.rnd, bodie
   /* -- adesivo in vetrina, nella vetrina più larga, in basso -- */
   if(g.wins.length){ const wn=g.wins.reduce((b,w)=>(w.a1-w.a0>b.a1-b.a0)?w:b), ww=wn.a1-wn.a0;
     const txt=["Happy Halloween!","Trick or treat!","Boo!"][(rnd()*3)|0], w=Math.min(1.5,ww*0.7);
-    _noGlow(_frontPlane(C,_hwSticker(txt),w,w/3,(wn.a0+wn.a1)/2,wn.y0+(wn.y1-wn.y0)*0.3,wn.d+0.05)); }
+    _hwTieni(_noGlow(_frontPlane(C,_hwSticker(txt),w,w/3,(wn.a0+wn.a1)/2,wn.y0+(wn.y1-wn.y0)*0.3,wn.d+0.05))); }
   /* una mesh per materiale */
-  _hwFuse(C.F,{ bodies:bodies, bats:bats, webs:webs });
+  _hwFuse(C.F,{ bodies:bodies, bats:bats, webs:webs, vc:vc });
+  _hwSolidiDa(n0);
 }
 
 /* ---- v331 (Giacomo: «anche il Diner e il Café al parco un po' di
@@ -7540,6 +7581,7 @@ function _halloweenFront(C){ const g=_frontGeo(C), K=_hwMats(), rnd=C.rnd, bodie
    a z 23.8 verso la High Street, ingresso x -1.6..1.6 nella ringhiera
    (z 23.7), tettoia a 3.3, mantovana fino a 2.85, lucine a 2.8. */
 function halloweenDiner(){ if(!HALLOWEEN.on) return;
+  const n0=solids.length;
   try{ const X=DINER.x, gy=DINER.gy||0, L={ bodies:[], vc:[], bats:[], webs:[] }, rnd=_seedRand("hwDiner");
     /* ry 0 = faccia verso -z, la strada */
     const pk=(x,z,D)=>{ const q=_hwPumpkinAt(X+x,gy,z,D,(rnd()-0.5)*0.5); L.bodies.push(q[0]); L.vc.push(q[1]);
@@ -7559,11 +7601,14 @@ function halloweenDiner(){ if(!HALLOWEEN.on) return;
     const node=new BABYLON.TransformNode("hwDiner",scene); node.parent=townRoot; _hwFuse(node,L);
     /* cartello sopra l'ingresso, davanti alla mantovana */
     const sg=_hwPlane(1.6,0.53,X,gy+2.5,23.6,0); sg.material=_hwSticker("Happy Halloween!"); sg.parent=node; _noGlow(sg);
-  }catch(e){ console.warn("[halloween diner]",e); } }
+    _hwTieni(node);
+  }catch(e){ console.warn("[halloween diner]",e); }
+  _hwSolidiDa(n0); }
 /* Town Café (cafe(), outdoor): tettoia 9.4x8.6 centrata a (-0.6, 0) locale,
    aperta a ovest (si arriva da x -5.3), pali a (-4.6/3.2, ±3.9), tavolini
    alti a (-2.6, ±3) col piano a 1.06, bancone x 0.6..4.0 col piano a 1.18. */
 function halloweenCafe(x,z,y0){ if(!HALLOWEEN.on) return;
+  const n0=solids.length;
   try{ const L={ bodies:[], vc:[], bats:[], webs:[] }, rnd=_seedRand("hwCafe"), W=Math.PI/2;   // tutto guarda a ovest (-x): atan2(-1,0)+PI
     const pk=(lx,lz,ly,D,solid)=>{ const q=_hwPumpkinAt(x+lx,y0+ly,z+lz,D,W+(rnd()-0.5)*0.5); L.bodies.push(q[0]); L.vc.push(q[1]);
       if(solid) addSolid(x+lx-D/2-0.05,x+lx+D/2+0.05,z+lz-D/2-0.05,z+lz+D/2+0.05,"town"); };
@@ -7582,7 +7627,9 @@ function halloweenCafe(x,z,y0){ if(!HALLOWEEN.on) return;
     const node=new BABYLON.TransformNode("hwCafe",scene); node.parent=townRoot; _hwFuse(node,L);
     /* cartello sul fronte del bancone, verso i clienti */
     const sg=_hwPlane(1.4,0.47,x+0.65,y0+0.66,z+1.9,W); sg.material=_hwSticker("Trick or treat!"); sg.parent=node; _noGlow(sg);
-  }catch(e){ console.warn("[halloween cafe]",e); } }
+    _hwTieni(node);
+  }catch(e){ console.warn("[halloween cafe]",e); }
+  _hwSolidiDa(n0); }
 
 /* v273: dove ricomincia la Park Ave (verso sud). Fino a qui e' marciapiede:
    Home (pad z 7..23) + un lotto libero da 16 m per il ristorante (23..41). */
@@ -23866,6 +23913,21 @@ function cartAdd(cart, entry){
   cp.setEnabled(true); cp.parent=null; cp.position.set(0,0,0); cp.rotation.set(0,0,0); cp.scaling.set(1,1,1);
   cp.computeWorldMatrix(true); cp.getChildMeshes().forEach(m=>m.computeWorldMatrix(true));
   const bb=cp.getHierarchyBoundingVectors(true), sx=bb.max.x-bb.min.x||0.2, sy=bb.max.y-bb.min.y||0.2, sz=bb.max.z-bb.min.z||0.2;
+  /* v496 (Giacomo: «la chitarra nel cestino si rimpicciolisce e fa ridere»):
+     un oggetto GRANDE (entry.grande: chitarra, skateboard) non entra in una
+     cella della griglia 3x4 — occupa tutto il cestello, quasi a grandezza
+     vera, e puo' sporgere in alto come una chitarra vera in un carrello. */
+  /* anche il trolley di Mia nel listening della Unit 4 (che non passa grande) */
+  const grande=(entry.grande!=null)?!!entry.grande:!!(typeof CORNER_GRANDI!=="undefined" && CORNER_GRANDI[entry.en]);
+  if(grande){
+    const kg=Math.min(1, (bk.w+0.06)/sx, (bk.d+0.2)/sz, 1.25/sy);
+    cp.scaling.set(kg,kg,kg); cp.parent=cart;
+    const ng=cart.__items.filter(q=>q.__grande).length;            // il secondo si affianca al primo
+    cp.position.set((ng%2?0.12:-0.12)*(ng?1:0) - (bb.min.x+bb.max.x)/2*kg, bk.y - bb.min.y*kg, 0.08 - (bb.min.z+bb.max.z)/2*kg);
+    cp.__grande=true;
+    [cp].concat(cp.getChildMeshes()).forEach(m=>{ if(m.getTotalVertices){ m.__dyn=true; m.isPickable=false; } });
+    cart.__items.push(cp); return cp;
+  }
   const k=Math.min(1, (bk.w/3+0.03)/sx, (bk.d/4+0.03)/sz, 0.30/sy);   // un filo di sovrapposizione: si vedono meglio
   cp.scaling.set(k,k,k); cp.parent=cart;
   cp.position.set(-bk.w/3+col*bk.w/3 - (bb.min.x+bb.max.x)/2*k, bk.y+lay*0.2 - bb.min.y*k, -bk.d*3/8+row*bk.d/4 - (bb.min.z+bb.max.z)/2*k);
@@ -24523,7 +24585,34 @@ function clothesAtCounter(npc){
 /* ---- IL CORNER SHOP: il cestino e la cassa di Sam -------------------- */
 const CORNER_PRICES={ "schoolbag":1899, "comic":350, "watch":2500, "camera":4599, "mobile phone":8999,
                       "headphones":2999, "skateboard":2000, "guitar":7500 };
-const CORNER={ on:false, items:[], inters:[], basket:null, stack:null, carryObs:null };
+const CORNER={ on:false, items:[], inters:[], basket:null, stack:null, carryObs:null, mode:"", park:null };
+/* v496 (Giacomo, 31 ott: «per gli oggetti piu' grandi bisogna prendere il
+   trolley, come nel market: nel basket la chitarra si rimpicciolisce e fa
+   ridere. Magari appare una scritta: Take the trolley»). Chitarra e
+   skateboard NON entrano nel cestino: col cestino in mano, E su di loro
+   dice «It's too big for the basket! Take the trolley.». Il trolley e'
+   quello di Mia (U4_TROLLEY.node), al centro del negozio; se lo prendi col cestino in mano, quello
+   che c'era dentro passa nel trolley. Il trolley si spinge come al Market
+   (SHOP.cart: stessa posa delle mani e stesso muso che non entra negli
+   scaffali) e alla cassa di Sam si paga allo stesso modo. */
+const CORNER_GRANDI={ "skateboard":1, "guitar":1 };
+/* durante la quest della Unit 4 il trolley e' di Mia (ci finisce il listening) */
+/* il trolley di Mia al suo posto (on) o in mano al giocatore (off): corpo,
+   etichetta e il suo solido, che altrimenti resterebbe un muro invisibile */
+function cornerParcheggio(on){
+  const tp=CORNER.park; if(!tp) return;
+  tp.setEnabled(on);
+  /* tutte le etichette «Trolley» del negozio (buildShopNPCs puo' averne fatte piu' d'una) */
+  try{ labels.forEach(l=>{ if(l.area===UNIT4.area && l.t1 && /Trolley/.test(l.t1.text||"")) l.hidden=!on; if(!on && l.ctrl) l.ctrl.isVisible=false; }); }catch(e){}
+  try{ updateLabelProximity(); }catch(e){}
+  if(!on){ if(CORNER.parkSolidi) return;
+    tp.computeWorldMatrix(true); const p=tp.getAbsolutePosition();
+    CORNER.parkSolidi=solids.filter(q=>q.area===UNIT4.area && Math.abs((q.x0+q.x1)/2-p.x)<0.9 && Math.abs((q.z0+q.z1)/2-p.z)<0.9);
+    CORNER.parkSolidi.forEach(q=>{ const i=solids.indexOf(q); if(i>=0) solids.splice(i,1); }); }
+  else if(CORNER.parkSolidi){ CORNER.parkSolidi.forEach(q=>{ if(solids.indexOf(q)<0) solids.push(q); }); CORNER.parkSolidi=null; }
+}
+function cornerQuestQui(){ try{ return !!(Quest.unit===UNIT4 && Quest.step); }catch(e){ return false; } }
+function cornerCosa(){ return CORNER.mode==="trolley"?"trolley":"basket"; }
 function cornerActive(){ return typeof area!=="undefined" && area===UNIT4.area; }
 function cornerHud(){
   let el=document.getElementById("cornerHud");
@@ -24534,12 +24623,14 @@ function cornerHud(){
     document.body.appendChild(el); }
   if(!CORNER.on || !cornerActive()){ el.style.display="none"; return; }
   const n=CORNER.items.length; el.style.display="block";
-  el.innerHTML="\u{1F9FA} "+n+(n===1?" thing":" things")+" · "
+  el.innerHTML=(CORNER.mode==="trolley"?"\u{1F6D2} ":"\u{1F9FA} ")+n+(n===1?" thing":" things")+" · "
     +(n?"<span style='color:#3d5a80'>go to Sam to pay</span>":"<span style='color:#6b5d4a'>take what you want from the shelves</span>");
 }
 function cornerTick(){
   const here=cornerActive();
-  CORNER.inters.forEach(o=>{ o.enabled=(o.id==="corner_baskets") ? (here && !CORNER.on && shopOpenFor(UNIT4)) : (here && CORNER.on); });
+  CORNER.inters.forEach(o=>{ o.enabled=(o.id==="corner_baskets") ? (here && !CORNER.on && shopOpenFor(UNIT4))
+    : (o.id==="corner_trolley") ? (here && CORNER.mode!=="trolley" && shopOpenFor(UNIT4) && !cornerQuestQui())    // v496
+    : (here && CORNER.on); });
   cornerHud();
 }
 /* v323c (Giacomo: «dove prendo il basket?»): i cestini sono VERI, impilati
@@ -24556,15 +24647,29 @@ function cornerInit(){
   CORNER.inters.push(addInteract({ id:"corner_baskets", area:UNIT4.area, radius:1.6, enabled:false,
     pos:()=>new BABYLON.Vector3(C.x+2.3,0.6,C.z+7.9), meshes:st.getChildMeshes(), prompt:'Press <b>E</b> to take a <b>basket</b>',
     interact:cornerTakeBasket }));
+  /* v496: il trolley e' QUELLO CHE C'E' GIA' (Giacomo: «c'e' gia' un trolley
+     nel corner shop, usa quello»): il carrello di Mia (U4_TROLLEY.node, con
+     la sua etichetta «🛒 Trolley»). Prendendolo sparisce da li' e lo spingi
+     tu; rimettendolo a posto (o pagando, o uscendo) ricompare. */
+  { const tp=U4_TROLLEY.node; CORNER.park=tp||null;
+    CORNER.inters.push(addInteract({ id:"corner_trolley", area:UNIT4.area, radius:1.7, enabled:false,
+      pos:()=>tp?tp.getAbsolutePosition().add(new BABYLON.Vector3(0,0.6,0)):new BABYLON.Vector3(C.x+2.7,0.6,C.z-0.5),
+      meshes:tp?tp.getChildMeshes():[],
+      prompt:()=>CORNER.mode==="basket"?'Press <b>E</b> to take the <b>trolley</b> (your things go in it)':'Press <b>E</b> to take a <b>trolley</b>',
+      interact:cornerTakeTrolley })); }
   UNIT4.items.forEach(e=>{ if(CORNER_PRICES[e.en]==null) return;
+    const big=!!CORNER_GRANDI[e.en];
     CORNER.inters.push(addInteract({ id:"corner_"+e.en, area:UNIT4.area, radius:2.2, enabled:false,
       pos:()=>e.pos, meshes:[e.mesh].filter(Boolean),
-      prompt:'Press <b>E</b> to put the <b>'+e.en+'</b> in your basket',
+      prompt:()=>(big && CORNER.mode==="basket")
+        ? 'The <b>'+e.en+'</b> is too big for the basket: <b>take the trolley</b>!'
+        : 'Press <b>E</b> to put the <b>'+e.en+'</b> in your '+cornerCosa(),
       interact:()=>{ if(!CORNER.on) return;
-        if(CORNER.items.length>=8){ toast("\u{1F9FA} Your basket is full! Go to Sam."); return; }
+        if(big && CORNER.mode==="basket"){ toast("\u{1F6D2} It's too big for the basket! Take the trolley.",3800); return; }
+        if(CORNER.items.length>=8){ toast((CORNER.mode==="trolley"?"\u{1F6D2}":"\u{1F9FA}")+" Your "+cornerCosa()+" is full! Go to Sam."); return; }
         CORNER.items.push(e);
-        try{ const cp=cartAdd(CORNER.basket,{ en:e.en, mesh:e.mesh }); if(cp) [cp].concat(cp.getChildMeshes()).forEach(m=>{ m.alwaysSelectAsActiveMesh=true; }); }catch(err){}
-        toast("\u{1F9FA} "+e.en+" — in your basket"); cornerTick(); } })); });
+        try{ const cp=cartAdd(CORNER.basket,{ en:e.en, mesh:e.mesh, grande:big }); if(cp) [cp].concat(cp.getChildMeshes()).forEach(m=>{ m.alwaysSelectAsActiveMesh=true; }); }catch(err){}
+        toast((CORNER.mode==="trolley"?"\u{1F6D2} ":"\u{1F9FA} ")+e.en+" — in your "+cornerCosa()); cornerTick(); } })); });
 }
 /* il cestino in mano. v323d (Giacomo: «le mani un po' piu' su sulla
    maniglia nera, il dorso deve star davanti: nella foto sembra appeso al
@@ -24684,31 +24789,59 @@ function cornerTakeBasket(){
   cornerInit();
   const b=LEXPROPS.handBasket("cornerBasket");
   b.getChildMeshes().forEach(m=>{ m.isPickable=false; m.__dyn=true; m.alwaysSelectAsActiveMesh=true; });
-  CORNER.basket=b; CORNER.on=true; CORNER.items=[];
+  CORNER.basket=b; CORNER.on=true; CORNER.items=[]; CORNER.mode="basket";
   try{ const top=CORNER.stack.getChildren().filter(n=>/b3$/.test(n.name))[0]; if(top) top.setEnabled(false); }catch(e){}
   cornerCarry(); cornerTick();
   toast("\u{1F9FA} You've got a basket! Take what you want, then go to Sam to pay.",3500);
 }
+/* v496 — il trolley (vedi CORNER_GRANDI): quello di Mia, che sparisce dal
+   suo posto mentre lo spingi. Col cestino in mano, la merce passa nel
+   trolley e il cestino torna sulla pila. */
+function cornerTakeTrolley(){
+  if(CORNER.mode==="trolley" || !shopOpenFor(UNIT4) || cornerQuestQui()) return;
+  if(SHOP.cart) return;                                           // (non succede: il carrello del Market resta al Market)
+  cornerInit();
+  const prima=CORNER.items.slice();
+  if(CORNER.mode==="basket") cornerDropBasket();
+  const cart=LEXPROPS.trolley("cornerCart"); cart.parent=player; cart.position.set(0,0,0.82); cart.rotation.set(0,0,0);
+  cart.getChildMeshes().forEach(m=>{ m.__dyn=true; m.isPickable=false; m.alwaysSelectAsActiveMesh=true; });
+  SHOP.cart=cart;                       // posa delle mani (shopPushOn) e muso fuori dagli scaffali (cartBlocked)
+  CORNER.basket=cart; CORNER.on=true; CORNER.mode="trolley"; CORNER.items=[];
+  cornerParcheggio(false);
+  prima.forEach(e=>{ CORNER.items.push(e);
+    try{ const cp=cartAdd(cart,{ en:e.en, mesh:e.mesh, grande:!!CORNER_GRANDI[e.en] }); if(cp) [cp].concat(cp.getChildMeshes()).forEach(m=>{ m.alwaysSelectAsActiveMesh=true; }); }catch(err){} });
+  shopPushOn(); cornerTick();
+  toast(prima.length?"\u{1F6D2} Your things are in the trolley now! Take what you want, then go to Sam to pay."
+                    :"\u{1F6D2} You've got a trolley! Take what you want, then go to Sam to pay.",3800);
+}
 function cornerDropBasket(){
+  if(CORNER.mode==="trolley"){                                    // v496: il trolley torna al suo posto
+    try{ shopPushOff(); }catch(e){}
+    if(SHOP.cart===CORNER.basket) SHOP.cart=null;
+    if(CORNER.basket){ try{ cartClear(CORNER.basket); CORNER.basket.dispose(); }catch(e){} CORNER.basket=null; }
+    cornerParcheggio(true);
+    CORNER.on=false; CORNER.items=[]; CORNER.mode=""; cornerTick(); return;
+  }
   if(CORNER.carryObs){ scene.onBeforeRenderObservable.remove(CORNER.carryObs); CORNER.carryObs=null; }
   try{ if(CORNER.grip && CORNER.grip.orig) CORNER.grip.orig.forEach(k=>{ if(!k.t.isDisposed()) k.t.rotationQuaternion.copyFrom(k.q); }); }catch(e){}
   CORNER.grip=null;
   if(CORNER.basket){ try{ cartClear(CORNER.basket); CORNER.basket.dispose(); }catch(e){} CORNER.basket=null; }
   try{ const top=CORNER.stack&&CORNER.stack.getChildren().filter(n=>/b3$/.test(n.name))[0]; if(top) top.setEnabled(true); }catch(e){}
-  CORNER.on=false; CORNER.items=[]; cornerTick();
+  CORNER.on=false; CORNER.items=[]; CORNER.mode=""; cornerTick();
 }
 function startCornerShop(npc,direct){
   cornerInit();
   if(direct){ cornerTakeBasket(); return; }                         // tasto 3 del docente
-  DialogueBox.open({ npc, icon:"\u{1F9FA}", sub:"Shopping at the Corner Shop", text:"Sure! The baskets are by the door. Take one, choose what you want, then come back to me.",
-    italian:"I cestini sono accanto alla porta: prendine uno (E), scegli dagli scaffali e torna da Sam a pagare.",
+  DialogueBox.open({ npc, icon:"\u{1F9FA}", sub:"Shopping at the Corner Shop", text:"Sure! The baskets are by the door. Take one, choose what you want, then come back to me. For big things, take the trolley!",
+    italian:"I cestini sono accanto alla porta: prendine uno (E), scegli dagli scaffali e torna da Sam a pagare. Per le cose grandi (chitarra, skateboard) prendi il carrello (trolley).",
     buttons:[{ label:"OK, thanks!", cls:"primary", act:()=>{} }] });
 }
 function cornerCheckout(npc){
   const its=CORNER.items.slice(), n=its.length, icon="\u{1F6D2}";
-  if(!n){ DialogueBox.open({ npc, icon:"\u{1F9FA}", sub:"Shopping", text:"Your basket is empty! Take something from the shelves.",
-      italian:"Il cestino è vuoto: prendi qualcosa dagli scaffali (E).",
-      buttons:[{ label:"OK!", cls:"primary", act:()=>{} }, { label:"Put the basket back", cls:"ghost", act:()=>cornerDropBasket() }] }); return; }
+  if(!n){ const tr=CORNER.mode==="trolley";
+    DialogueBox.open({ npc, icon:tr?"\u{1F6D2}":"\u{1F9FA}", sub:"Shopping", text:"Your "+cornerCosa()+" is empty! Take something from the shelves.",
+      italian:(tr?"Il carrello":"Il cestino")+" è vuoto: prendi qualcosa dagli scaffali (E).",
+      buttons:[{ label:"OK!", cls:"primary", act:()=>{} }, { label:"Put the "+cornerCosa()+" back", cls:"ghost", act:()=>cornerDropBasket() }] }); return; }
   const tot=its.reduce((a,e)=>a+CORNER_PRICES[e.en],0), P=n>1;
   let errors=0; const add=e=>{ errors+=e||0; };
   shopLine({ npc, icon, sub:"Corner Shop (1/4)", text:"Hello! Have you got everything?", italian:"Rispondi di sì con la risposta breve (have got).",
@@ -26245,7 +26378,7 @@ function buildShopNPCs(){
     x:C.x-7.0, z:C.z+0.0, face:Math.PI/2, tint:"blue", height:1.76, interact:talkToSam });
   MIA=spawnNPC({ id:"mia", name:"Mia", sub:"Friend", area:UNIT4.area,
     x:C.x+1.5, z:C.z-1.5, face:Math.PI, model:"avatarW", height:1.66, interact:talkToMia });
-  guiLabel(anchorMesh(I.root, C.x+2.7, 1.45, C.z-0.5), "🛒 Trolley", null, true, UNIT4.area);
+  U4_TROLLEY.label=guiLabel(anchorMesh(I.root, C.x+2.7, 1.45, C.z-0.5), "🛒 Trolley", null, true, UNIT4.area);   // v496: si nasconde mentre lo spingi (cornerTakeTrolley)
   initShopAssist();
 }
 
@@ -29729,6 +29862,14 @@ function ambientReady(npc,U){
      mai fatto: ogni talkToXxx controlla Quest.step PRIMA di chiamarla (vedi
      talkToOtto e gli altri 21), quindi qui non c'è nulla da distinguere. */
   if(!ambientBonusOpen()) return false;
+  /* ⚠️ v496 (Giacomo, 31 ott: «nella quest del corner shop, step 2, quando
+     Sam chiede se vuoi comprare o andare avanti con la missione, mi fa una
+     domanda di allenamento»). Il commento qui sopra era falso per Sam:
+     talkToSam chiama ambientReady PRIMA di guardare lo step (gram), e qui il
+     «done» veniva prima del controllo sulla quest. Chi la unit l'ha gia'
+     finita (il docente sempre, l'alunno che la rigioca) invece dello step 2
+     si trovava l'allenamento. La quest attiva viene PRIMA, per tutti. */
+  if(U && typeof Quest!=="undefined" && Quest.unit===U && Quest.step) return false;
   if(U){ try{ if(Progress.get(U.id).done) return true; }catch(e){}
          if(typeof Quest!=="undefined" && Quest.unit===U) return false; }
   if(!npc||!npc.metPlayer) return false;
@@ -49448,14 +49589,24 @@ function rainTick(){
       const k=Math.max(0,Math.min(1,(f-0.06)/0.69)), K=k*k*(3-2*k);
       const d0=Math.max(0,Math.min(1,(f-0.36)/0.2)), dz=1-d0*d0*(3-2*d0);   // 1 = pioviggine
       const mix=(dr,ra)=>dr*dz+ra*(1-dz);
-      rainPS.emitRate=mix(n*(0.03+0.12*f), n*(0.08+0.92*Math.pow(f,1.6)));
-      rainPS.minSize=mix(0.02,0.028+0.027*K);  rainPS.maxSize=mix(0.034,0.05+0.05*K);
-      rainPS.minScaleY=mix(1.3,3.0+4.0*K);     rainPS.maxScaleY=mix(2.2,5.5+7.5*K);
-      rainPS.color1.a=mix(0.34,0.30+0.25*K);   rainPS.color2.a=mix(0.26,0.22+0.18*K);
-      /* lente: ci mettono ~1,4-1,7 s a scendere dalla scatola (11-15 m), la
+      /* v496 (Giacomo, 31 ott: «drizzling ora non si vede per niente, si
+         sente il rumore (giusto), fallo un po' piu' intenso»). Misurato nel
+         gioco a forza 0,34 su «medio»: 76 gocce in aria, larghe 1 cm e
+         lunghe 5, trasparenti al 30%, sparse su 34x34 m — sotto il pixel
+         gia' a pochi metri. Contando gocce x lunghezza x larghezza x
+         opacita', la pioviggine valeva 1/400 del «pouring». Ora ~200 gocce
+         in aria, strisce sottili da ~20-25 cm, opache al 50%, sempre lente
+         (~4-5 m/s invece di 7-9 del rovescio): circa 1/10 del «pouring».
+         Si vede che pioviggina, non sembra un acquazzone. Il suono e il
+         bagnato restano quelli della v333. */
+      rainPS.emitRate=mix(n*(0.12+0.40*f), n*(0.08+0.92*Math.pow(f,1.6)));
+      rainPS.minSize=mix(0.04,0.028+0.027*K);  rainPS.maxSize=mix(0.055,0.05+0.05*K);
+      rainPS.minScaleY=mix(4.0,3.0+4.0*K);     rainPS.maxScaleY=mix(6.0,5.5+7.5*K);
+      rainPS.color1.a=mix(0.52,0.30+0.25*K);   rainPS.color2.a=mix(0.44,0.22+0.18*K);
+      /* lente: ci mettono ~1,1-1,4 s a scendere dalla scatola (11-15 m), la
          vita si allunga di conseguenza */
-      rainPS.gravity.y=mix(-6,-38); rainPS.direction1.y=rainPS.direction2.y=mix(-3.5,-9);
-      rainPS.minLifeTime=mix(1.4,0.55); rainPS.maxLifeTime=mix(1.9,0.95);
+      rainPS.gravity.y=mix(-10,-38); rainPS.direction1.y=rainPS.direction2.y=mix(-5,-9);
+      rainPS.minLifeTime=mix(1.05,0.55); rainPS.maxLifeTime=mix(1.45,0.95);
       const sl=rainSlant();
       rainPS.direction1.x=-0.6-sl; rainPS.direction2.x=0.6-sl;
     }
