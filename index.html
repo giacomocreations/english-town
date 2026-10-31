@@ -1294,8 +1294,8 @@ function rainHeard(){
 /* Lo stato a parole, in inglese: lo usano il cartello, gli NPC e l'Unit 2_3.
    Tre gradini, non un numero: "it's raining a bit" e "it's pouring" sono
    due frasi diverse e vanno insegnate diverse. */
-function rainStateEn(){
-  const f=rainHere();
+function rainStateEn(fx){
+  const f=(typeof fx==="number")?fx:rainHere();
   if(f<=0.06) return "";
   if(f<0.42) return "It's drizzling.";
   if(f<0.75) return "It's raining.";
@@ -49591,6 +49591,21 @@ function rainTick(){
          Calcolato a forza 0,36 su «medio» (620): ~75 gocce in aria lunghe
          5 cm, invece di ~120 strisce da 36 cm. */
       const k=Math.max(0,Math.min(1,(f-0.06)/0.69)), K=k*k*(3-2*k);
+      /* v539 (Giacomo, 31 ott: «ha detto it's drizzling ma non e' successo
+         nulla; forzando con P c'era la pioggia, che possiamo aumentare
+         leggermente»). Due cose. (1) Il numero di gocce era una quota della
+         CAPIENZA, che dipende dalla qualita': su «basso» (260, e l'auto-
+         qualita' ci porta i computer lenti) la pioviggine era ~80 gocce
+         sparse su 34x34 m, cioe' niente. Ora la pioviggine conta come se la
+         capienza fosse almeno 560 (su «basso» si ferma comunque a 260 in
+         aria, che con la scatola stretta qui sotto bastano). (2) Le
+         goccioline lontane piu' di 10-12 m sono sotto il pixel comunque:
+         nella pioviggine la scatola si stringe a +-12 m intorno al
+         giocatore, cosi' le stesse gocce cadono dove si vedono (densita'
+         ~2x). Un po' piu' opache e appena piu' lunghe. Il rovescio e il
+         «pouring» non cambiano: tutto passa per mix(), che oltre 0,56 vale
+         la pioggia di prima. */
+      const nd=Math.max(n,560);
       const d0=Math.max(0,Math.min(1,(f-0.36)/0.2)), dz=1-d0*d0*(3-2*d0);   // 1 = pioviggine
       const mix=(dr,ra)=>dr*dz+ra*(1-dz);
       /* v496 (Giacomo, 31 ott: «drizzling ora non si vede per niente, si
@@ -49603,10 +49618,12 @@ function rainTick(){
          (~4-5 m/s invece di 7-9 del rovescio): circa 1/10 del «pouring».
          Si vede che pioviggina, non sembra un acquazzone. Il suono e il
          bagnato restano quelli della v333. */
-      rainPS.emitRate=mix(n*(0.12+0.40*f), n*(0.08+0.92*Math.pow(f,1.6)));
-      rainPS.minSize=mix(0.04,0.028+0.027*K);  rainPS.maxSize=mix(0.055,0.05+0.05*K);
-      rainPS.minScaleY=mix(4.0,3.0+4.0*K);     rainPS.maxScaleY=mix(6.0,5.5+7.5*K);
-      rainPS.color1.a=mix(0.52,0.30+0.25*K);   rainPS.color2.a=mix(0.44,0.22+0.18*K);
+      rainPS.emitRate=mix(nd*(0.14+0.42*f), n*(0.08+0.92*Math.pow(f,1.6)));
+      rainPS.minSize=mix(0.042,0.028+0.027*K); rainPS.maxSize=mix(0.058,0.05+0.05*K);
+      rainPS.minScaleY=mix(4.5,3.0+4.0*K);     rainPS.maxScaleY=mix(6.5,5.5+7.5*K);
+      rainPS.color1.a=mix(0.58,0.30+0.25*K);   rainPS.color2.a=mix(0.50,0.22+0.18*K);
+      const bx=mix(12,17);
+      rainPS.minEmitBox.x=rainPS.minEmitBox.z=-bx; rainPS.maxEmitBox.x=rainPS.maxEmitBox.z=bx;
       /* lente: ci mettono ~1,1-1,4 s a scendere dalla scatola (11-15 m), la
          vita si allunga di conseguenza */
       rainPS.gravity.y=mix(-10,-38); rainPS.direction1.y=rainPS.direction2.y=mix(-5,-9);
@@ -49690,13 +49707,23 @@ function rainAnnounce(f){
      tempo, e la citta' non deve raccontarlo come tale. */
   try{ if(typeof player!=="undefined" && player &&
           rainCovered(player.position.x, player.position.z)) return; }catch(e){}
-  const on=(f>0.06), now=Date.now();
+  /* v539 (Giacomo, 31 ott: «ha detto it's drizzling ma non e' successo
+     nulla»). L'annuncio scattava appena la forza superava 0,06, cioe' nel
+     primo secondo del rovescio, e descriveva QUELLA forza: diceva sempre
+     «It's drizzling», anche quando stava arrivando un acquazzone, e lo
+     diceva quando in aria non c'era ancora niente. Ora (a) si accende solo
+     quando la pioggia si vede davvero (forza 0,20: 2-7 s dopo l'inizio, a
+     seconda del rovescio) e si spegne come prima sotto 0,06 — l'isteresi
+     evita anche il doppio annuncio se la forza oscilla sulla soglia; (b) la
+     frase descrive il rovescio che sta arrivando (RAIN.target), non il
+     primo istante: se arriva il «pouring», si dice «It's pouring!». */
+  const on=rainWasOn ? (f>0.06) : (f>=0.20), now=Date.now();
   if(on===rainWasOn) return;
   rainWasOn=on;
   if(now-rainSaidAt<RAIN_SAY_GAP) return;
   rainSaidAt=now;
   try{
-    if(on) weatherSay("\u{1F327}\uFE0F", rainStateEn()||"It's raining.");
+    if(on) weatherSay("\u{1F327}\uFE0F", rainStateEn(Math.max(f, RAIN.target||0))||"It's raining.");
     else   weatherSay("\u{1F326}\uFE0F", "It's stopped raining.");
   }catch(e){}
 }
