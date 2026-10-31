@@ -7242,7 +7242,11 @@ const SHOP_FRONT={
        gelati, bibite o caramelle. Insegna e lavagna dicono quelle. */
     l1:"CORNER SHOP", l2:"music · tech · gifts · comics", blade:"\u{1F6D2}",
     glass:[["OPEN","Mon-Sat 9-17","#c8323a"]],
-    board:["TODAY","Skateboards","Guitars","Headphones","Comics"], props:["board","news"] },
+    /* v497 (Giacomo: «invece di TODAY, che non c'entra niente, scrivi che c'e'
+       uno sconto»). «SALE!» senza percentuale: alla cassa di Sam i prezzi
+       restano quelli di CORNER_PRICES, e un «-20%» scritto fuori sarebbe
+       una promessa che dentro non si mantiene. */
+    board:["SALE!","Skateboards","Guitars","Headphones","Comics"], props:["board","news"] },
   "The Market":{ bg:"#5a7a3a", ink:"#f6f1e2", trim:"#f2c93e", font:"Georgia, 'Times New Roman', serif",
     l1:"THE MARKET", l2:"fresh food every day", blade:"\u{1F34E}",
     glass:[["FRESH!","fruit & vegetables","#d98a1c"],["OPEN","Mon-Sat 8-19","#c8323a"]],
