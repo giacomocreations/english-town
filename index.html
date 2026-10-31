@@ -74,6 +74,8 @@
     navigator.serviceWorker.addEventListener("message", function(ev){
       var d = ev.data || {};
       if(d.type === "et-update"){ P.aggiornamento = true; P.mostraAggiornamento(); }
+      /* v539: e' arrivata una notifica mentre il gioco e' aperto */
+      if(d.type === "et-avviso"){ try{ window.toast((d.title ? d.title + " \u2014 " : "") + (d.body || ""), 9000); }catch(e){} }
     });
     /* tablet lasciati aperti per ore: al ritorno in primo piano si chiede
        al service worker di guardare se c'e' una versione nuova. */
@@ -50249,6 +50251,7 @@ function verificaIdentita(){
     const prima=Gate.label();
     Student.setIdentita(r.val);
     aggiornaCursoreClasse();          // la classe puo' essere appena arrivata, o cambiata
+    try{ Avvisi.registra(); }catch(e){}   // v539: il token segue la classe vera
     if(Student.digitato){ if(Gate.label()!==prima) aggiornaGate(prima); return; }
     confermaIdentita();
   });
@@ -50385,6 +50388,7 @@ function welcomeStudent(){
      apre nessuna sessione. */
   try{ Presenza.avvia(); }catch(e){}
   try{ pianoPinAvvia(); }catch(e){}            // v403: il piano di Miss Grace, con i link, resta sullo schermo
+  try{ Avvisi.proponi(); }catch(e){}           // v539: notifiche (unit nuove, eventi) a chi ha installato
 }
 /* Marchietto dell'ospite. ⚠️ Sempre visibile, non un toast che passa: nessuno
    deve giocare un'ora e scoprire alla fine che non e' rimasto niente. */
@@ -50475,6 +50479,7 @@ function openTeacherPanel(){
               btn("Come una 2\u00aa","2"), btn("Come una 3\u00aa","3"),
               { label:"\u{1F440} Presenza"+(Presenza.acceso?" \u2713":"")+"\u2026", act:openPresenzaDocente },     // v404
               { label:"\u{1F3EB} Cursore di classe\u2026", act:openCursorePanel },
+              { label:"\u{1F4E3} Notifiche / evento\u2026", act:openAvvisiPanel },     // v539
               { label:"\u{1F3C6} Graduatoria\u2026", act:openGraduatoriaPanel } ] });
 }
 /* =====================================================================
@@ -50532,6 +50537,11 @@ function openCursorePanel(){
       +"<span><b>Possono parlarsi</b><br><small style=\"opacity:.75\">Frasi inglesi "
       +"pronte, premendo E vicino a un compagno. Spegnendo questa restano "
       +"visibili ma zitti.</small></span></label>"
+      +"<label style=\"display:flex;align-items:center;gap:9px;margin:8px 0 0;"
+      +"padding:9px 10px;border-radius:9px;background:#0000000d;cursor:pointer\">"
+      +"<input type=\"checkbox\" id=\"cc-push\""+(pushAutoOn()?" checked":"")+" style=\"width:17px;height:17px;flex:0 0 auto\">"
+      +"<span><b>\u{1F514} Notifica la unit nuova</b><br><small style=\"opacity:.75\">Se con Salva "
+      +"il cursore va avanti, chi ha installato QuestTown riceve \u00abNew unit open\u00bb.</small></span></label>"
       +"<div id=\"cc-msg\" style=\"margin-top:10px;min-height:18px\"></div>"
       +"<div id=\"cc-list\" style=\"margin-top:10px;opacity:.85;font-size:13px\">"
       +"leggo i cursori gi\u00e0 impostati\u2026</div></div>",
@@ -50551,6 +50561,8 @@ function openCursorePanel(){
   if(ct) ct.onchange=function(){ ccParlato(ct.checked); };
   const ci=document.getElementById("cc-cls");
   if(ci) ci.onchange=function(){ ccPresRifletti(); };
+  const cn=document.getElementById("cc-push");      // v539: la scelta resta per le volte dopo
+  if(cn) cn.onchange=function(){ try{ localStorage.setItem("et_push_auto", cn.checked?"1":"0"); }catch(e){} };
   ccClassi();
 }
 /* ---- LE CLASSI NELLA TENDINA -------------------------------------------
@@ -50758,7 +50770,16 @@ function ccSalva(togli){
     cur={ yr:parseInt(p[0],10), n:parseInt(p[1],10) };
   }
   ccMsg("salvo\u2026");
-  scriviCursoreClasse(cls, cur).then(function(w){
+  /* v539: il cursore di PRIMA, riletto (non quello in tendina), per sapere
+     se questo Salva apre davvero una unit nuova. Senza cursore precedente
+     non si annuncia niente: la classe seguiva la tabella interna e «nuova»
+     non e' detto che lo sia. */
+  const pushOn=!togli && !!(document.getElementById("cc-push")||{}).checked;
+  const primaP=pushOn ? Cloud.leggi(ET_CLASSI+cls, 6000) : Promise.resolve(null);
+  primaP.then(function(pr){
+    const prima=(pr && pr.risposto && pr.val) ? cursoreValido(pr.val) : null;
+    return scriviCursoreClasse(cls, cur).then(function(w){ w.prima=prima; return w; });
+  }).then(function(w){
     try{ aggiornaSimDocente(); }catch(e){}   // v306: la simulazione segue le classi
     /* \u26a0\ufe0f Non si annuncia mai l'esito guardando cio' che si e' INVIATO: si
        rilegge dal database e si mostra quello. Una scrittura scaduta puo'
@@ -50770,11 +50791,324 @@ function ccSalva(togli){
         +"</span><br>Non sono riuscito a rileggere per confermare."); ccElenco(); return; }
       if(togli && !r.val){ ccMsg("\u2705 <b>"+esc(cls)+"</b>: cursore tolto, torna alla tabella interna."); ccElenco(); return; }
       if(v){ ccMsg("\u2705 <b>"+esc(cls)+"</b> \u2192 Anno "+v.yr+" \u00b7 "
-        +(v.n===0?"Starter":"Unit "+v.n)+" (riletto dal database)"); ccElenco(); return; }
+        +(v.n===0?"Starter":"Unit "+v.n)+" (riletto dal database)"); ccElenco();
+        const p=w.prima;
+        if(pushOn && p && (v.yr*100+v.n)>(p.yr*100+p.n)){
+          const e=document.getElementById("cc-msg"); if(e) e.insertAdjacentHTML("beforeend","<br>\u{1F514} invio la notifica\u2026");
+          avvisoUnitNuova(cls, v).then(function(r){
+            ccMsg("\u2705 <b>"+esc(cls)+"</b> \u2192 Anno "+v.yr+" \u00b7 "+(v.n===0?"Starter":"Unit "+v.n)
+              +" (riletto dal database)<br>"+Avvisi.esito(r)); });
+        }
+        return; }
       ccMsg("<span style=\"color:#c33\">Non risulta salvato. "+ccSpiega(w.motivo)+"</span>");
       ccElenco();
     });
   });
+}
+
+/* =====================================================================
+   v539 — NOTIFICHE (Giacomo, 31 ott: «se apro una nuova unit, manda
+   notifica a chi ha installato. Oppure se creo un evento nuovo, posso
+   mandare notifica»).
+
+   COME FUNZIONA, IN TRE PEZZI:
+   1. ALUNNO. Chi ha QuestTown INSTALLATA (finestra propria, o appena
+      installata dal bottone) e un codice vero riceve, qualche secondo dopo
+      il benvenuto, una richiesta discreta: «Ti avviso quando si apre una
+      nuova unit?». Solo se tocca «Si'» il browser chiede il permesso (la
+      richiesta del browser deve nascere da un tocco, e un permesso negato
+      non si puo' piu' richiedere: non si spreca all'avvio). Il token FCM
+      va in englishtown/push/<CLASSE>/<CODICE>; si riscrive solo se cambia.
+   2. SERVICE WORKER (et-sw.js). Riceve il push e mostra la notifica; il
+      tocco apre (o porta davanti) il gioco. Se il gioco e' aperto, compare
+      anche come avviso dentro il gioco.
+   3. DOCENTE. Invia da qui, con lo stesso Service Account che MyClass usa
+      per le notifiche di StudentApp: MyClass lo tiene in localStorage
+      (ll_fcm_service_account) e la ORIGINE e' la stessa
+      (giacomocreations.github.io), quindi il gioco lo legge senza doverlo
+      ricaricare. Se manca, il pannello offre di caricare il JSON (e lo
+      salva nella stessa chiave: da li' vale anche per MyClass).
+      - Cursore di classe: se il cursore AVANZA, parte da solo «New unit
+        open» alla classe (si puo' spegnere con la spunta nel pannello).
+      - Pannello «📣 Notifiche / evento»: titolo + testo liberi, a una
+        classe o a tutte.
+
+   ⚠️ REGOLE DEL DATABASE: serve il ramo englishtown/push (vedi
+   myclass/firebase/database.rules.json). Senza, la scrittura del token
+   torna PERMISSION_DENIED e l'alunno resta semplicemente senza notifiche:
+   il gioco non se ne accorge nemmeno.
+   ⚠️ iPhone/iPad: le notifiche web esistono solo per l'app aggiunta alla
+   schermata Home (iOS 16.4+), ed e' proprio il caso «installata».
+   ===================================================================== */
+const ET_PUSH="englishtown/push/";
+/* chiave pubblica VAPID del progetto livelearn-5d30a: la stessa di StudentApp */
+const PUSH_VAPID="BGO9L-QRB01a78D7Fyl4h39sZlD-N3jpTnjQ1zcvsKpIq8by_2PwB1bPJ3Bej4y6N8gJAaSWl_bTnuWVGh-PXhM";
+const PUSH_SA_KEY="ll_fcm_service_account";          // la chiave di MyClass, stessa origine
+const Avvisi=(function(){
+  const K_OK="et_push_ok", K_NO="et_push_no";
+  let sdk=null, oauth=null, oauthExp=0;
+  function _lsGet(k){ try{ return JSON.parse(localStorage.getItem(k)||"null"); }catch(e){ return null; } }
+  function _lsSet(k,v){ try{ if(v==null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+  function supportate(){
+    try{ return location.protocol==="https:" && ("serviceWorker" in navigator)
+      && ("PushManager" in window) && ("Notification" in window); }catch(e){ return false; }
+  }
+  function installata(){ const P=window.ET_PWA||{}; return !!(P.standalone||P.installata); }
+  function alunno(){
+    try{ return !!(Student.code && !Student.ospite && !Student.teacher && RE_CLASSE.test(normClasse(Student.cls))); }
+    catch(e){ return false; }
+  }
+  function _carica(){
+    if(window.firebase && window.firebase.messaging) return Promise.resolve(true);
+    if(sdk) return sdk;
+    sdk=new Promise(function(res){
+      const s=document.createElement("script"); s.src=FB_SDK+"firebase-messaging-compat.js"; s.async=true;
+      s.onload=function(){ res(!!(window.firebase && window.firebase.messaging)); };
+      s.onerror=function(){ sdk=null; res(false); };
+      document.head.appendChild(s);
+    });
+    return sdk;
+  }
+  /* ---- ALUNNO: permesso gia' concesso -> token nel database ----------- */
+  function registra(){
+    if(!supportate() || !alunno()) return Promise.resolve(false);
+    if(Notification.permission!=="granted") return Promise.resolve(false);
+    const code=String(Student.code).toUpperCase(), cls=normClasse(Student.cls);
+    if(/[.#$\[\]\/]/.test(code)) return Promise.resolve(false);
+    return Cloud.attendi(9000).then(function(ok){
+      if(!ok) return false;
+      return _carica().then(function(pronto){
+        if(!pronto) return false;
+        try{ if(firebase.messaging.isSupported && firebase.messaging.isSupported()===false) return false; }catch(e){}
+        return navigator.serviceWorker.ready.then(function(reg){
+          return firebase.messaging().getToken({ vapidKey:PUSH_VAPID, serviceWorkerRegistration:reg });
+        }).then(function(tok){
+          if(!tok || Student.code.toUpperCase()!==code) return false;
+          const prima=_lsGet(K_OK);
+          /* stesso token, stessa classe, scritto da meno di una settimana:
+             niente da fare (la riscrittura settimanale ripara un nodo
+             cancellato a mano o dal docente) */
+          if(prima && prima.c===code && prima.k===cls && prima.t===tok && Date.now()-prima.at<7*864e5) return true;
+          /* classe cambiata: il vecchio nodo non deve piu' ricevere gli avvisi dell'altra classe */
+          if(prima && prima.c===code && prima.k && prima.k!==cls) Cloud.scrivi(ET_PUSH+prima.k+"/"+code, null);
+          return Cloud.scrivi(ET_PUSH+cls+"/"+code, { t:tok, at:Date.now(), app:installata() }).then(function(w){
+            if(w.scritto) _lsSet(K_OK, { c:code, k:cls, t:tok, at:Date.now() });
+            else console.warn("[avvisi] token non salvato:", w.motivo);
+            return !!w.scritto;
+          });
+        });
+      });
+    }).catch(function(e){ console.warn("[avvisi]", e&&e.message||e); return false; });
+  }
+  /* dopo il benvenuto: se il permesso c'e' gia' si aggiorna il token in
+     silenzio; se non c'e', a chi ha installato si chiede UNA volta (un
+     «no grazie» vale due settimane). */
+  function proponi(){
+    if(!supportate() || !alunno()) return;
+    const p=Notification.permission;
+    if(p==="granted"){ registra(); return; }
+    if(p==="denied" || !installata()) return;
+    const no=_lsGet(K_NO);
+    if(no && Date.now()-no<14*864e5) return;
+    setTimeout(scheda, 9000);
+  }
+  function scheda(){
+    if(document.getElementById("et-push") || !alunno() || Notification.permission!=="default") return;
+    const S=(window.ET_PWA&&ET_PWA.STILE_SCURO)||"background:#1d2a32;color:#fff;border-radius:10px;";
+    const d=document.createElement("div"); d.id="et-push";
+    d.style.cssText=S+"position:fixed;z-index:60;left:50%;bottom:18px;transform:translateX(-50%);"
+      +"display:block;max-width:min(440px,92vw);padding:12px 14px;font-weight:600;font-size:14px;line-height:1.4;text-align:left";
+    const b="font:700 14px system-ui,sans-serif;border:none;border-radius:9px;padding:8px 14px;cursor:pointer;margin:8px 8px 0 0;";
+    d.innerHTML="\u{1F514} Vuoi un avviso quando si apre una <b style=\"color:#e8b04b\">nuova unit</b> "
+      +"o c'è un <b style=\"color:#e8b04b\">evento</b> in QuestTown?<br>"
+      +"<button type=\"button\" style=\""+b+"background:#e8b04b;color:#1d2a32\">Sì, avvisami</button>"
+      +"<button type=\"button\" style=\""+b+"background:transparent;color:#fff;opacity:.75\">No, grazie</button>";
+    const bt=d.querySelectorAll("button");
+    bt[0].onclick=function(){
+      d.remove();
+      let pr; try{ pr=Notification.requestPermission(); }catch(e){ pr=null; }
+      Promise.resolve(pr).then(function(p){
+        p=p||Notification.permission;
+        if(p!=="granted"){ if(p==="default") _lsSet(K_NO, Date.now()); return; }
+        registra().then(function(ok){
+          toast(ok?"\u{1F514} Notifiche attive: ti avviso io!"
+                  :"\u{1F514} Permesso ok, ma non riesco a collegarmi: riprovo al prossimo avvio.");
+        });
+      });
+    };
+    bt[1].onclick=function(){ d.remove(); _lsSet(K_NO, Date.now()); };
+    document.body.appendChild(d);
+    setTimeout(function(){ const x=document.getElementById("et-push"); if(x) x.remove(); }, 30000);
+  }
+
+  /* ---- DOCENTE: invio con FCM HTTP v1 --------------------------------- */
+  function sa(){ const s=_lsGet(PUSH_SA_KEY); return (s && s.private_key && s.client_email && s.project_id)?s:null; }
+  function caricaSA(){
+    return new Promise(function(res){
+      const inp=document.createElement("input"); inp.type="file"; inp.accept=".json,application/json";
+      inp.onchange=function(){
+        const f=inp.files&&inp.files[0]; if(!f){ res(false); return; }
+        f.text().then(function(t){
+          const s=JSON.parse(t);
+          if(!s.private_key || !s.client_email || !s.project_id) throw new Error("non e' un Service Account");
+          _lsSet(PUSH_SA_KEY, s); oauth=null; res(true);
+        }).catch(function(e){ toast("❌ JSON non valido: "+(e&&e.message||e)); res(false); });
+      };
+      inp.click();
+    });
+  }
+  function _b64u(x){
+    const str=(typeof x==="string")?x:JSON.stringify(x);
+    return btoa(unescape(encodeURIComponent(str))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+  }
+  function _ab64u(buf){ const u=new Uint8Array(buf); let s=""; for(let i=0;i<u.length;i++) s+=String.fromCharCode(u[i]);
+    return btoa(s).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
+  function _der(pem){ const b=atob(pem.replace(/-----[^-]+-----/g,"").replace(/\s+/g,""));
+    const u=new Uint8Array(b.length); for(let i=0;i<b.length;i++) u[i]=b.charCodeAt(i); return u.buffer; }
+  function _token(s){
+    const now=Math.floor(Date.now()/1000);
+    if(oauth && now<oauthExp) return Promise.resolve(oauth);
+    const un=_b64u({ alg:"RS256", typ:"JWT" })+"."+_b64u({ iss:s.client_email,
+      scope:"https://www.googleapis.com/auth/firebase.messaging",
+      aud:"https://oauth2.googleapis.com/token", iat:now, exp:now+3600 });
+    return crypto.subtle.importKey("pkcs8", _der(s.private_key), { name:"RSASSA-PKCS1-v1_5", hash:"SHA-256" }, false, ["sign"])
+      .then(function(k){ return crypto.subtle.sign("RSASSA-PKCS1-v1_5", k, new TextEncoder().encode(un)); })
+      .then(function(sig){
+        return fetch("https://oauth2.googleapis.com/token", { method:"POST",
+          headers:{ "Content-Type":"application/x-www-form-urlencoded" },
+          body:new URLSearchParams({ grant_type:"urn:ietf:params:oauth:grant-type:jwt-bearer", assertion:un+"."+_ab64u(sig) }) });
+      }).then(function(r){ return r.json(); }).then(function(d){
+        if(!d.access_token) throw new Error("OAuth: "+JSON.stringify(d));
+        oauth=d.access_token; oauthExp=now+3300; return oauth;
+      });
+  }
+  function link(){ return location.origin+location.pathname; }
+  /* ⚠️ SOLO «data», niente «notification»: la notifica la disegna il
+     service worker del gioco (icona, tag, cosa apre il tocco), uguale su
+     ogni browser. TTL un giorno: un avviso di ieri sera non serve domani. */
+  function _uno(s, acc, tok, msg){
+    return fetch("https://fcm.googleapis.com/v1/projects/"+s.project_id+"/messages:send", {
+      method:"POST", headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+acc },
+      body:JSON.stringify({ message:{ token:tok, data:msg,
+        webpush:{ headers:{ Urgency:"high", TTL:"86400" } } } }) })
+      .then(function(r){ return r.json().then(function(j){ return { st:r.status, j:j }; }); });
+  }
+  /* classi: array di classi ("2F"...). Ritorna sempre {ok, ko, tot, motivo}. */
+  function invia(classi, titolo, testo, tag){
+    const s=sa();
+    if(!s) return Promise.resolve({ ok:0, ko:0, tot:0, motivo:"sa" });
+    const msg={ title:String(titolo||"QuestTown").slice(0,80), body:String(testo||"").slice(0,240),
+                tag:String(tag||"et-avviso"), url:link() };
+    return Promise.all(classi.map(function(c){
+      return Cloud.leggi(ET_PUSH+c, 9000).then(function(r){
+        return { c:c, r:r }; });
+    })).then(function(L){
+      const dest=[];
+      let letti=0, motivo="";
+      L.forEach(function(x){
+        if(x.r.risposto) letti++; else motivo=x.r.motivo;
+        const v=x.r.val||{};
+        Object.keys(v).forEach(function(code){ if(v[code] && v[code].t) dest.push({ p:ET_PUSH+x.c+"/"+code, t:v[code].t }); });
+      });
+      if(!dest.length) return { ok:0, ko:0, tot:0, motivo:letti?"nessuno":("lettura: "+motivo) };
+      return _token(s).then(function(acc){
+        let ok=0, ko=0;
+        return dest.reduce(function(pr, d){
+          return pr.then(function(){
+            return _uno(s, acc, d.t, msg).then(function(r){
+              if(r.j && r.j.name){ ok++; return; }
+              ko++;
+              const st=(r.j&&r.j.error&&r.j.error.status)||"";
+              const det=JSON.stringify((r.j&&r.j.error&&r.j.error.details)||"");
+              /* token scaduto o app disinstallata: si toglie, cosi' la
+                 prossima volta il conteggio dice la verita' */
+              if(r.st===404 || st==="NOT_FOUND" || /UNREGISTERED/.test(det)) Cloud.scrivi(d.p, null);
+              else console.warn("[avvisi] invio fallito:", r.j);
+            }, function(e){ ko++; console.warn("[avvisi] rete:", e&&e.message); });
+          });
+        }, Promise.resolve()).then(function(){ return { ok:ok, ko:ko, tot:dest.length, motivo:"ok" }; });
+      }).catch(function(e){ return { ok:0, ko:0, tot:dest.length, motivo:(e&&e.message)||"oauth" }; });
+    });
+  }
+  /* quanti alunni di una classe hanno le notifiche attive (per il pannello) */
+  function conta(c){
+    return Cloud.leggi(ET_PUSH+c, 8000).then(function(r){
+      return r.risposto ? Object.keys(r.val||{}).length : null; });
+  }
+  function esito(r){
+    if(r.motivo==="sa") return "⚠️ Manca il <b>Service Account</b> per le notifiche (quello del \u{1F514} di MyClass).";
+    if(r.motivo==="nessuno") return "\u{1F515} Nessun alunno ha ancora attivato le notifiche in questa classe.";
+    if(!r.tot) return "⚠️ "+esc(r.motivo);
+    if(r.motivo!=="ok") return "⚠️ Invio non riuscito: "+esc(r.motivo);
+    return "\u{1F514} Notifica inviata a <b>"+r.ok+"</b> dispositiv"+(r.ok===1?"o":"i")
+      +(r.ko?(" ("+r.ko+" non raggiungibil"+(r.ko===1?"e":"i")+")"):"");
+  }
+  return { supportate, proponi, registra, sa, caricaSA, invia, conta, esito };
+})();
+
+/* «New unit open»: il cursore di una classe e' AVANZATO (da cursore a
+   cursore, nell'ordine del curricolo). Si annuncia l'ultima unit aperta. */
+function avvisoUnitNuova(cls, v){
+  const u=SYLLABUS.find(function(x){ return x.yr===v.yr && x.n===v.n; });
+  const nome=(v.n===0?"Starter":"Unit "+v.n)+(u?(" · "+u.ic+" "+u.t):"");
+  return Avvisi.invia([cls], "\u{1F513} New unit in QuestTown!", nome+" is open. Come and play!", "et-unit");
+}
+function pushAutoOn(){ try{ return localStorage.getItem("et_push_auto")!=="0"; }catch(e){ return true; } }
+
+/* ---- PANNELLO «📣 Notifiche / evento» (docente) ----------------------- */
+function openAvvisiPanel(){
+  const campo="width:100%;box-sizing:border-box;padding:9px 10px;border-radius:9px;border:1px solid #0003;font:15px system-ui";
+  QModal.open({
+    title:"\u{1F4E3} Notifiche / evento",
+    sub:"Arriva come notifica sul telefono, tablet o Chromebook di chi ha <b>installato QuestTown</b> "
+       +"e ha detto sì agli avvisi. Se il gioco è aperto, compare anche dentro il gioco.",
+    html:"<div style=\"text-align:left;font:14px/1.45 system-ui,sans-serif\">"
+      +"<label style=\"display:block;margin:2px 0 4px;opacity:.8\">A chi</label>"
+      +"<select id=\"av-cls\" style=\""+campo+";font-weight:600\"><option value=\"\">— scegli —</option></select>"
+      +"<div id=\"av-n\" style=\"min-height:18px;margin-top:4px;font-size:12.5px;opacity:.8\"></div>"
+      +"<label style=\"display:block;margin:10px 0 4px;opacity:.8\">Titolo</label>"
+      +"<input id=\"av-tit\" maxlength=\"80\" style=\""+campo+"\" value=\"\u{1F4E3} QuestTown\">"
+      +"<label style=\"display:block;margin:10px 0 4px;opacity:.8\">Messaggio</label>"
+      +"<textarea id=\"av-txt\" maxlength=\"240\" rows=\"3\" style=\""+campo+";resize:vertical\" "
+      +"placeholder=\"es. Halloween party in the square! Find the 5 pumpkins before Friday.\"></textarea>"
+      +"<div id=\"av-msg\" style=\"margin-top:10px;min-height:18px\"></div></div>",
+    buttons:[
+      { label:"Invia notifica", cls:"primary", keepOpen:true, act:avInvia },
+      { label:"\u{1F511} Service Account…", keepOpen:true, act:function(){
+          Avvisi.caricaSA().then(function(ok){ if(ok) avMsg("✅ Service Account caricato (vale anche per MyClass)."); avSA(); }); } },
+      { label:"Close" } ] });
+  avSA();
+  riempiClassi("av-cls", function(r, s){
+    s.insertAdjacentHTML("beforeend", "<option value=\"*\">\u{1F310} Tutte le classi</option>");
+  });
+  const s=document.getElementById("av-cls");
+  if(s) s.onchange=function(){
+    const n=document.getElementById("av-n"); if(!n) return;
+    const c=s.value; if(!c){ n.textContent=""; return; }
+    const cl=(c==="*")?(_ccClassi||[]):[c];
+    n.textContent="conto…";
+    Promise.all(cl.map(Avvisi.conta)).then(function(a){
+      const x=document.getElementById("av-n"); if(!x) return;
+      if(a.some(function(v){ return v===null; })){ x.textContent="non riesco a leggere chi ha le notifiche attive"; return; }
+      const t=a.reduce(function(p,v){ return p+v; },0);
+      x.textContent="\u{1F514} "+t+" alunn"+(t===1?"o":"i")+" con le notifiche attive";
+    });
+  };
+}
+function avMsg(h){ const e=document.getElementById("av-msg"); if(e) e.innerHTML=h||""; }
+function avSA(){ if(!Avvisi.sa()) avMsg("⚠️ Per inviare serve il <b>Service Account</b>: se l'hai già caricato in "
+  +"MyClass (\u{1F514}) su questo browser lo trovo da solo, altrimenti usa \u{1F511}."); }
+function avInvia(){
+  const c=(document.getElementById("av-cls")||{}).value||"";
+  const tit=((document.getElementById("av-tit")||{}).value||"").trim();
+  const txt=((document.getElementById("av-txt")||{}).value||"").trim();
+  if(!c){ avMsg("<span style=\"color:#c33\">Scegli la classe.</span>"); return; }
+  if(!txt){ avMsg("<span style=\"color:#c33\">Scrivi il messaggio.</span>"); return; }
+  if(!Avvisi.sa()){ avSA(); return; }
+  const cl=(c==="*")?(_ccClassi||[]):[c];
+  if(!cl.length){ avMsg("<span style=\"color:#c33\">Elenco classi non disponibile.</span>"); return; }
+  avMsg("invio…");
+  Avvisi.invia(cl, tit||"\u{1F4E3} QuestTown", txt, "et-evento").then(function(r){ avMsg(Avvisi.esito(r)); });
 }
 
 /* =====================================================================

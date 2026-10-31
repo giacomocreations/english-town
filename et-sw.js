@@ -253,3 +253,50 @@ self.addEventListener("message", (e) => {
     e.waitUntil(controllaNovita().catch(() => {}));
   }
 });
+
+/* ------------------------------------------------------------- notifiche
+   v539 (Giacomo, 31 ott: «se apro una nuova unit, manda notifica a chi ha
+   installato; se creo un evento nuovo, posso mandare notifica»).
+   Il docente invia dal gioco (pannello docente) con FCM; qui arriva un push
+   con i soli dati {title, body, tag, url} e la notifica la disegniamo noi,
+   cosi' e' uguale su ogni browser. Niente SDK Firebase in questo file: il
+   push di FCM e' un normale push web, e leggerlo a mano costa dieci righe.
+   ⚠️ Si mostra SEMPRE una notifica, anche a gioco aperto: Safari (iPhone/
+   iPad) toglie l'abbonamento a chi riceve push senza mostrare niente. A
+   gioco aperto si avvisa anche la pagina, che lo ripete dentro il gioco. */
+function datiPush(e){
+  let o = {};
+  try{ o = e.data ? e.data.json() : {}; }
+  catch(err){ try{ o = { data: { body: e.data.text() } }; }catch(e2){} }
+  const d = Object.assign({}, o.notification || {}, o.data || {});
+  return {
+    title: d.title || "QuestTown",
+    body:  d.body || "",
+    tag:   d.tag || "et-avviso",
+    url:   d.url || (o.fcmOptions && o.fcmOptions.link) || PAGE_URL,
+  };
+}
+self.addEventListener("push", (e) => {
+  const d = datiPush(e);
+  e.waitUntil((async () => {
+    const icona = new URL("et-icons/icon-192.png", self.registration.scope).href;
+    await self.registration.showNotification(d.title, {
+      body: d.body, tag: d.tag, renotify: true, icon: icona, badge: icona,
+      vibrate: [150, 60, 150], data: { url: d.url },
+    });
+    const finestre = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    finestre.forEach(c => { try{ c.postMessage({ type: "et-avviso", title: d.title, body: d.body }); }catch(err){} });
+  })());
+});
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || PAGE_URL;
+  e.waitUntil((async () => {
+    const finestre = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    /* il gioco e' gia' aperto: lo si porta davanti invece di aprirne un altro */
+    for(const c of finestre){
+      if(c.url.startsWith(self.registration.scope) && "focus" in c){ try{ return await c.focus(); }catch(err){} }
+    }
+    if(self.clients.openWindow) return self.clients.openWindow(url);
+  })());
+});
