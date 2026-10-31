@@ -67723,6 +67723,22 @@ const Presenza=(function(){
   let nInv=0, nRic=0, byteRic=0, nRifiutate=0, ultimoRifiuto="", kMax=PRES_K_MAX;
   const peers=Object.create(null);
   const corpi=[];
+  /* v494 — LA SALA D'ATTESA (Giacomo, 31 ott: «quando metto la presenza mi
+     trova sempre 3 alunni che poi scompaiono perche' non ci sono»).
+     Collegandosi, child_added consegna TUTTI i nodi della classe, anche
+     quelli rimasti li' da un Chromebook chiuso col coperchio: il nodo ha
+     un `t` vecchio di ore, ma `t` non si puo' usare (orologi non allineati,
+     vedi scaduti), quindi entravano in scena come vivi e sparivano dopo
+     PRES_TTL — solo da qui: nel database restavano, e alla prossima
+     accensione eccoli di nuovo, sempre gli stessi.
+     Ora il PRIMO campione di chi non e' gia' in scena aspetta qui: chi e'
+     vivo riscrive entro PRES_BATT (il battito da fermo cambia almeno `t`)
+     e allora entra; chi in PRES_TTL non ha scritto niente e' un fantasma e
+     il suo nodo si CANCELLA dal database (chiunque lo trovi: il remove e'
+     idempotente, e se per caso era un vivo col wi-fi bloccato, alla sua
+     scrittura successiva il nodo si ricrea da se'). Un compagno che entra
+     davvero compare quindi con al massimo un battito di ritardo. */
+  const attesa=Object.create(null);
 
   /* ---- impronta del codice: 7 caratteri base36, deterministica ---------- */
   function _impronta(x){
@@ -67937,11 +67953,14 @@ const Presenza=(function(){
      singolo passo di un compagno consegna l'intero oggetto della classe:
      stesso numero di eventi, venticinque volte i byte e venticinque volte
      il lavoro di analisi su un Chromebook che gira a 7 fotogrammi. */
-  function _campione(sn){
+  function _campione(sn, primo){
     const key=sn&&sn.key; if(!key || key===mio) return;
     const v=sn.val(); if(!v || typeof v!=="object") return;
     const p=_leggiPos(v.p); if(!p) return;
     const ora=Date.now();
+    /* v494: il primo campione aspetta la conferma (vedi `attesa`) */
+    if(primo===true && !peers[key]){ attesa[key]={ ricev:ora, ref:sn.ref||null }; return; }
+    delete attesa[key];
     nRic++; byteRic += String(v.p||"").length+String(v.k||"").length
                       +String(v.a||"").length+key.length+60;
     let e=peers[key];
@@ -68017,7 +68036,7 @@ const Presenza=(function(){
     return { x:e.p0.x+(e.p1.x-e.p0.x)*t, z:e.p0.z+(e.p1.z-e.p0.z)*t,
              y:e.p0.y+(e.p1.y-e.p0.y)*t, r:e.p1.r };
   }
-  function _via(key){ const e=peers[key]; if(!e) return; _rilascia(e); delete peers[key]; }
+  function _via(key){ delete attesa[key]; const e=peers[key]; if(!e) return; _rilascia(e); delete peers[key]; }
 
   /* ---- I CORPI ---------------------------------------------------------
      Si creano pigramente e si liberano DOPO PRES_LIBERA di inutilizzo, non
@@ -68281,6 +68300,10 @@ const Presenza=(function(){
   function scaduti(){
     const ora=Date.now(); let n=0;
     for(const k in peers) if(ora-peers[k].ricev>PRES_TTL){ _via(k); n++; }
+    /* v494: mai confermato -> fantasma: via anche dal database */
+    for(const k in attesa) if(ora-attesa[k].ricev>PRES_TTL){
+      const r=attesa[k].ref; delete attesa[k];
+      try{ if(r) r.remove().catch(function(){}); }catch(err){} }
     return n;
   }
   /* ---- NON SI INCASTRANO (v312) -----------------------------------------
@@ -68736,6 +68759,33 @@ const Presenza=(function(){
     }
   }
   /* ---- accensione ------------------------------------------------------- */
+  /* ⚠️ Mai passare _campione direttamente a on(): Firebase chiama
+     child_added/child_changed con (snapshot, chiavePrecedente), e la
+     chiave precedente finirebbe nel parametro `primo`. */
+  function _nuovo(sn){ _campione(sn, true); }
+  function _cambiato(sn){ _campione(sn, false); }
+  /* v494 — L'USCITA SI RIARMA A OGNI RICONNESSIONE. onDisconnect().remove()
+     scatta UNA volta, quando il server perde la connessione, e poi non c'e'
+     piu': il wi-fi della scuola salta per due secondi, il nodo si cancella,
+     il Chromebook si ricollega e torna a scrivere... senza piu' nessuna
+     uscita armata. Alla chiusura del coperchio quel nodo restava nel
+     database per sempre: i «tre alunni che non ci sono» del pannello.
+     Si ascolta .info/connected (una volta per app) e a ogni «connesso» si
+     riarma l'uscita su tutti i nodi in cui si scrive, poi si riscrive
+     subito il proprio pacchetto (il nodo puo' essere stato appena tolto). */
+  let connessoRef=null;
+  function _armaUscita(app){
+    if(connessoRef) return;
+    try{
+      connessoRef=app.database().ref(".info/connected");
+      connessoRef.on("value", function(sn){
+        if(!sn || sn.val()!==true || !acceso) return;
+        const L=multi.length?multi.map(function(x){ return x.ref; }):(ref?[ref]:[]);
+        L.forEach(function(r){ try{ r.onDisconnect().remove(); }catch(err){} });
+        try{ _invia(true); }catch(err){}
+      });
+    }catch(err){ connessoRef=null; }
+  }
   function _collega(c){
     return Cloud.carica().then(function(ok){
       if(!ok){ motivo="SDK non disponibile"; return false; }
@@ -68750,11 +68800,13 @@ const Presenza=(function(){
         radice=app.database().ref("presence/"+c);
         ref=radice.child(mio);
         /* ⚠️ SENZA onDisconnect restano fantasmi immobili per la citta': e'
-           l'errore classico di ogni sistema di presenza. Firebase lo riarma
-           da solo a ogni riconnessione. */
+           l'errore classico di ogni sistema di presenza. ⚠️ v494: Firebase
+           NON lo riarma da solo dopo una riconnessione (lo esegue una volta
+           e lo dimentica): ci pensa _armaUscita, su .info/connected. */
         try{ ref.onDisconnect().remove(); }catch(err){}
-        radice.on("child_added", _campione);
-        radice.on("child_changed", _campione);
+        radice.on("child_added", _nuovo);           // v494: aspetta la conferma
+        radice.on("child_changed", _cambiato);
+        _armaUscita(app);
         radice.on("child_removed", function(sn){ if(sn&&sn.key) _via(sn.key); });
         /* v309: l'ora del server, per la radio (la musica uguale per tutti) */
         try{ app.database().ref(".info/serverTimeOffset").on("value", function(sn){
@@ -68926,12 +68978,13 @@ const Presenza=(function(){
         multi=cl.map(function(c){
           const R=app.database().ref("presence/"+c), me=R.child(mio);
           try{ me.onDisconnect().remove(); }catch(err){}
-          R.on("child_added", _campione);
-          R.on("child_changed", _campione);
+          R.on("child_added", _nuovo);              // v494: aspetta la conferma
+          R.on("child_changed", _cambiato);
           R.on("child_removed", function(sn){ if(sn&&sn.key) _via(sn.key); });
           return { c:c, radice:R, ref:me };
         });
         radice=multi[0].radice; ref=multi[0].ref; classe=cl.join(" ");
+        _armaUscita(app);
         try{ app.database().ref(".info/serverTimeOffset").on("value", function(sn){
           const v=+(sn&&sn.val()); if(isFinite(v) && Math.abs(v)<864e5) RADIO.off=v; }); }catch(err){}
         acceso=true; motivo="ok"; t0=Date.now(); pubblica=true; parla=true;
@@ -69027,6 +69080,7 @@ const Presenza=(function(){
     multi.forEach(function(x){ try{ x.radice.off(); }catch(e){} }); multi=[];
     if(timer){ clearInterval(timer); timer=null; }
     for(const k in peers) _via(k);
+    for(const k in attesa) delete attesa[k];       // v494
     for(let i=corpi.length-1;i>=0;i--){ _distruggi(corpi[i]); corpi.splice(i,1); }
     acceso=false; ref=null; radice=null;
     return true;
@@ -69046,7 +69100,8 @@ const Presenza=(function(){
     for(let i=0;i<corpi.length;i++) if(corpi[i].usato) disegnati++;
     return { acceso:acceso, motivo:motivo, classe:classe||"(nessuna)",
       io:mio||"(nessuna)", pubblico:pubblica,
-      compagni:Object.keys(peers).length, disegnati:disegnati, corpi:corpi.length,
+      compagni:Object.keys(peers).length, inAttesa:Object.keys(attesa).length,   // v494
+      disegnati:disegnati, corpi:corpi.length,
       parla:parla,
       hz:Math.round(hz()*100)/100, inviate:nInv, ricevute:nRic,
       rifiutate:nRifiutate, ultimoRifiuto:ultimoRifiuto||"(nessuno)", look:_look(), lookMax:kMax,
