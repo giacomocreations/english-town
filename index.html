@@ -17925,9 +17925,37 @@ function _pkStandNpc(cfg,x,z,face,anim){
 const PK_ARMS_READ={                        // libro aperto davanti al petto, mani sui bordi
   up:(o,f,dn)=>dn.scale(0.95).add(f.scale(0.26)).add(o.scale(0.15)),
   fore:(o,f,dn)=>f.scale(0.85).subtract(dn.scale(0.30)).add(o.scale(0.10)) };
-const PK_ARMS_EAT={                         // il panino con due mani, all'altezza del petto
-  up:(o,f,dn)=>dn.scale(0.95).add(f.scale(0.30)).add(o.scale(0.08)),
-  fore:(o,f,dn)=>f.scale(0.60).subtract(dn.scale(0.60)).subtract(o.scale(0.15)) };
+/* v540 (Giacomo, 31 ott: «la ragazza tiene il panino con le mani SOPRA, le
+   dita in su: dovrebbe prenderlo ai lati, piu' in basso»). Prima le braccia
+   erano due direzioni fisse (su/avanti) e la mano restava come la lascia
+   l'avambraccio: dita verso l'alto, panino appeso sotto i polsi, quasi
+   all'altezza del collo. Ora si parte dal PANINO: sta davanti alla pancia
+   (25 cm sopra le anche, 27 cm avanti), i palmi lo stringono sui due lati
+   (centro del palmo a 8,5 cm dal centro, dita in avanti, palmo verso
+   l'interno) e il braccio si calcola al contrario (due ossa, gomito in
+   basso e un po' in fuori), come la mano appoggiata sulla coscia. */
+const PK_EAT={ h:0.25, fwd:0.27, half:0.085 };
+function _pkEatArm(o,f,dn,ctx){
+  if(ctx.__eat!==undefined) return ctx.__eat;
+  ctx.__eat=null;
+  const V=BABYLON.Vector3, up=new V(0,1,0), hip=SIT_FRAME.hip;
+  if(!hip || !ctx.pU) return null;
+  const hb=_handBasis(ctx.H);
+  const reach=hb?Math.max(0.03,Math.min(0.09,V.Distance(hb.c,hb.w))):0.055;   // polso -> centro del palmo
+  const S=hip.add(up.scale(PK_EAT.h)).add(f.scale(PK_EAT.fwd));
+  const fd=f.add(up.scale(0.12)).normalize();                                   // dita avanti, appena in su
+  const wrist=S.add(o.scale(PK_EAT.half)).subtract(fd.scale(reach));
+  const d=wrist.subtract(ctx.pU), L=Math.min(d.length(),ctx.l1+ctx.l2-0.002), dir=d.normalizeToNew();
+  const A=(ctx.l1*ctx.l1-ctx.l2*ctx.l2+L*L)/(2*L), h=Math.sqrt(Math.max(0,ctx.l1*ctx.l1-A*A));
+  let pole=o.scale(0.45).add(dn.scale(0.85)).subtract(f.scale(0.15)); pole=pole.subtract(dir.scale(V.Dot(pole,dir)));
+  if(pole.length()<1e-4) pole=o.clone(); pole.normalize();
+  const e=ctx.pU.add(dir.scale(A)).add(pole.scale(h)), w=ctx.pU.add(dir.scale(L));
+  ctx.__eat={ e, w, fd }; return ctx.__eat;
+}
+const PK_ARMS_EAT={                         // il panino con due mani, ai lati, davanti alla pancia
+  up:(o,f,dn,sd,ctx)=>{ const r=ctx&&_pkEatArm(o,f,dn,ctx); return r?r.e.subtract(ctx.pU):dn.scale(0.95).add(f.scale(0.30)).add(o.scale(0.08)); },
+  fore:(o,f,dn,sd,ctx)=>{ const r=ctx&&_pkEatArm(o,f,dn,ctx); return r?r.w.subtract(r.e):f.scale(0.60).subtract(dn.scale(0.60)).subtract(o.scale(0.15)); },
+  hand:(o,f,dn,sd,ctx)=>{ const r=ctx&&_pkEatArm(o,f,dn,ctx); return r?{ d:r.fd, n:o.scale(-1) }:null; } };
 function _pkSitArms(n,S,arms){
   const f=new BABYLON.Vector3(Math.sin(S.face),0,Math.cos(S.face));
   n.carrier.rotation.y=S.face; n.baseYaw=S.face;
@@ -17952,7 +17980,10 @@ function _pkHold(n,node){
   const L=side("L"), R=side("R"); if(!L||!R) return;
   try{ _applyPins(n.pins); }catch(e){}
   const wm=t=>{ const ch=[]; for(let q=t;q;q=q.parent) ch.unshift(q); ch.forEach(q=>q.computeWorldMatrix(true)); return t.getAbsolutePosition().clone(); };
-  const pl=wm(L), pr=wm(R); n.carrier.computeWorldMatrix(true);
+  /* v540: H.palm = l'oggetto sta fra i CENTRI DEI PALMI (il panino stretto
+     ai lati), non fra i polsi */
+  const palm=t=>{ wm(t); const b=_handBasis(t); return b?b.c.clone():t.getAbsolutePosition().clone(); };
+  const pl=H.palm?palm(L):wm(L), pr=H.palm?palm(R):wm(R); n.carrier.computeWorldMatrix(true);
   const mid=pl.add(pr).scale(0.5);
   /* largo quanto la distanza fra le mani: le mani stanno SUI BORDI */
   if(H.fit){ const d=BABYLON.Vector3.Distance(pl,pr), k=Math.max(H.kMin||0.6,Math.min(H.kMax||1.6,d/H.fit));
@@ -18080,7 +18111,8 @@ function buildParkFun(){
     /* il panino fra le due mani (centrato: la base del prop sta a terra) */
     const sand=()=>{ const r=new BABYLON.TransformNode("pkSand",scene); const k=LEXPROPS.sandwich("pkSandw"); k.parent=r; k.scaling.setAll(0.42);
       k.position.set(0,-0.04,0);
-      r.position.set(0,0.9,0.25); r.__hold={ dy:0, dz:0.01, rx:-0.25, fit:0.155, kMin:0.8, kMax:1.5 }; return r; };
+      /* v540: fra i palmi, largo quanto lo spazio fra le mani (14 cm a scala 1) */
+      r.position.set(0,0.9,0.25); r.__hold={ palm:true, dy:0, dz:0, rx:-0.12, fit:0.17, kMin:0.8, kMax:1.3 }; return r; };
     /* il libro aperto in piedi davanti a lui, le pagine verso di lui
        (rx -1,05: il piano del libro si alza a ~60°), largo quanto le mani */
     const rbook=()=>{ const r=_pkOpenBook("pkRBook","#2f6a4a");
