@@ -67692,6 +67692,9 @@ const PRES_RIPROVA=60000;   // ms fra due riletture dell'interruttore, finche' e
 const PRES_K_MAX = 160;     // v302: lunghezza massima del look (regole: k.length <= 160)
 const PRES_K_VECCHIO = 32;  // v302: il limite delle regole vecchie, ripiego automatico
 const PRES_H     = 1.65;    // altezza: i compagni sono ragazzi come il giocatore (AVATAR_HEIGHT)
+const PRES_AVV_QUIETE  = 8000;    // v495: niente avvisi «si e' collegato» subito dopo l'accensione
+const PRES_AVV_RIENTRO = 120000;  // v495: chi torna entro 2 minuti non e' un arrivo
+const PRES_AVV_RACCOGLI= 1500;    // v495: arrivi vicini in un avviso solo
 const PRES_SEP   = 0.62;    // v312: distanza minima fra i centri di due corpi disegnati (spalle ~0.45 m)
 /* v404 — IL DOCENTE IN CITTA' (Giacomo, 27 ott: «che io possa vedere gli
    alunni mentre giocano, e loro mi vedano come un NPC col nome Mrs.
@@ -67961,6 +67964,7 @@ const Presenza=(function(){
     /* v494: il primo campione aspetta la conferma (vedi `attesa`) */
     if(primo===true && !peers[key]){ attesa[key]={ ricev:ora, ref:sn.ref||null }; return; }
     delete attesa[key];
+    const arriva=!peers[key];                          // v495: avviso al docente
     nRic++; byteRic += String(v.p||"").length+String(v.k||"").length
                       +String(v.a||"").length+key.length+60;
     let e=peers[key];
@@ -67975,6 +67979,7 @@ const Presenza=(function(){
     e.dur=Math.max(120, Math.min(1200, (ora-e.ricev)||400));
     e.vel=Math.hypot(p.x-q.x, p.z-q.z)/(e.dur/1000);
     e.p0=q; e.p1=p; e.t0=ora; e.ricev=ora;
+    if(!arriva) visto[key]=ora;                        // v495: l'ultima volta che c'era
     e.zona=String(v.a||"town");
     e.siede=p.siede;                                   // v302: seduto / mangia / beve
     e.balla=p.balla;                                   // v304: balla al concerto
@@ -68005,6 +68010,42 @@ const Presenza=(function(){
       e.look=nk;
       if(e.corpo && !e.prof){ if(cambiaRig) _rilascia(e); else _vesti(e.corpo, nk); }
     }
+    if(arriva) _arrivo(key, e);
+  }
+  /* ---- v495 — «SI E' COLLEGATO» (Giacomo, 31 ott: «se ho la presenza
+     inserita, quando si collega un alunno mi appare un avviso»).
+     Solo il docente, solo per gli alunni (non un altro docente, non i
+     compagni finti di ET.presenzaProva).
+     ⚠️ NON all'accensione: chi era gia' in gioco si conferma nei primi
+     secondi (vedi `attesa`) e sarebbe una raffica di avvisi per gente che
+     c'era gia' — quelli li dice l'elenco del pannello. Si tace per
+     PRES_AVV_QUIETE dopo l'accensione.
+     ⚠️ NON a ogni singhiozzo: chi sparisce per PRES_TTL (wi-fi, scheda in
+     secondo piano) e ricompare entro PRES_AVV_RIENTRO non e' un arrivo.
+     ⚠️ Il toast ha un posto solo: arrivi vicini si raccolgono per
+     PRES_AVV_RACCOGLI e diventano un avviso unico («Leonardo (1C), Virginia
+     (3E)»), invece di cancellarsi a vicenda. */
+  const visto=Object.create(null);                 // chiave -> ultima volta in scena
+  let arrivi=[], arriviT=null;
+  function _arrivo(key, e){
+    const ora=Date.now(), prima=visto[key]; visto[key]=ora;
+    if(!_sonoProf() || e.prof || String(key).indexOf("prova")===0) return;
+    if(ora-t0 < PRES_AVV_QUIETE) return;
+    if(prima && ora-prima < PRES_AVV_RIENTRO) return;
+    arrivi.push(key);
+    if(!arriviT) arriviT=setTimeout(_avvisaArrivi, PRES_AVV_RACCOGLI);
+  }
+  function _rigDi(k){ try{ const e=peers[k]; return (e&&e.look)?_leggiLook(e.look).rig:"m"; }catch(err){ return "m"; } }
+  function _avvisaArrivi(){
+    arriviT=null;
+    const L=arrivi.filter(function(k){ return !!peers[k]; }); arrivi=[];
+    if(!L.length || !acceso) return;
+    const chi=L.map(function(k){ const e=peers[k], n=_nomeDi(k)||"un alunno";
+      return n+(e.cls?" ("+e.cls+")":""); });
+    let dove_="";
+    if(L.length===1) try{ dove_=" \u00b7 "+nomeZona(peers[L[0]].zona); }catch(err){}
+    try{ toast("\u{1F440} "+(L.length>1?"Si sono collegati ":(_rigDi(L[0])==="f"?"Si è collegata ":"Si è collegato "))
+      +chi.join(", ")+dove_, 5000); }catch(err){}
   }
   /* Una frase e' arrivata: nuvoletta sopra la testa, voce, e si tiene da
      parte per il ventaglio delle risposte. */
