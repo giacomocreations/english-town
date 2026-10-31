@@ -17930,11 +17930,11 @@ const PK_ARMS_READ={                        // libro aperto davanti al petto, ma
    erano due direzioni fisse (su/avanti) e la mano restava come la lascia
    l'avambraccio: dita verso l'alto, panino appeso sotto i polsi, quasi
    all'altezza del collo. Ora si parte dal PANINO: sta davanti alla pancia
-   (25 cm sopra le anche, 27 cm avanti), i palmi lo stringono sui due lati
+   (25 cm sopra le anche, 33 cm avanti — v541: «un po' in avanti»), i palmi lo stringono sui due lati
    (centro del palmo a 8,5 cm dal centro, dita in avanti, palmo verso
    l'interno) e il braccio si calcola al contrario (due ossa, gomito in
    basso e un po' in fuori), come la mano appoggiata sulla coscia. */
-const PK_EAT={ h:0.25, fwd:0.27, half:0.085 };
+const PK_EAT={ h:0.25, fwd:0.33, half:0.085 };
 function _pkEatArm(o,f,dn,ctx){
   if(ctx.__eat!==undefined) return ctx.__eat;
   ctx.__eat=null;
@@ -18112,7 +18112,10 @@ function buildParkFun(){
     const sand=()=>{ const r=new BABYLON.TransformNode("pkSand",scene); const k=LEXPROPS.sandwich("pkSandw"); k.parent=r; k.scaling.setAll(0.42);
       k.position.set(0,-0.04,0);
       /* v540: fra i palmi, largo quanto lo spazio fra le mani (14 cm a scala 1) */
-      r.position.set(0,0.9,0.25); r.__hold={ palm:true, dy:0, dz:0, rx:-0.12, fit:0.17, kMin:0.8, kMax:1.3 }; return r; };
+      /* v541 (Giacomo: «i pollici passano attraverso il panino»): misurato, le
+         ossa del pollice stavano all'altezza del pane di sopra. Un po' piu' in
+         basso dei palmi (3,5 cm): i pollici ci si appoggiano SOPRA, come si tiene un panino */
+      r.position.set(0,0.9,0.25); r.__hold={ palm:true, dy:-0.035, dz:0, rx:-0.12, fit:0.17, kMin:0.8, kMax:1.3 }; return r; };
     /* il libro aperto in piedi davanti a lui, le pagine verso di lui
        (rx -1,05: il piano del libro si alza a ~60°), largo quanto le mani */
     const rbook=()=>{ const r=_pkOpenBook("pkRBook","#2f6a4a");
