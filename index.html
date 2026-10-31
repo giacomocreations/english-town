@@ -68591,7 +68591,9 @@ const Presenza=(function(){
     arriviT=null;
     const L=arrivi.filter(function(k){ return !!peers[k]; }); arrivi=[];
     if(!L.length || !acceso) return;
-    const chi=L.map(function(k){ const e=peers[k], n=_nomeDi(k)||"un alunno";
+    /* v542: senza nome in tabella, «un'alunna» per le ragazze (prima usciva
+       «Si e' collegata un alunno») */
+    const chi=L.map(function(k){ const e=peers[k], n=_nomeDi(k)||(_rigDi(k)==="f"?"un'alunna":"un alunno");
       return n+(e.cls?" ("+e.cls+")":""); });
     let dove_="";
     if(L.length===1) try{ dove_=" \u00b7 "+nomeZona(peers[L[0]].zona); }catch(err){}
