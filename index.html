@@ -444,6 +444,7 @@
   .dlg-sub{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
   .dlg-text-row{display:flex;align-items:flex-start;gap:10px;margin:10px 0 2px;text-align:left;}
   .dlg-text{font-size:17px;font-weight:700;color:var(--ink);line-height:1.35;flex:1;}
+  .dlg-text.dlg-text-hidden{font-style:italic;font-weight:600;opacity:.6;}
   .dlg-speak{border:none;background:var(--sun);color:var(--ink);width:34px;height:34px;border-radius:50%;
     font-size:15px;cursor:pointer;flex:0 0 auto;box-shadow:0 3px 8px rgba(0,0,0,.15);}
   .dlg-speak.playing{background:var(--signal);color:#fff;}
@@ -17179,6 +17180,8 @@ function skPhotoTick(){
         scritta con lessico e grammatica di quella unit) e ti fa 3 domande:
         1⭐ per risposta giusta, +2 se sono tutte giuste. Una storia nuova al
         giorno; le storie gia' sentite si possono riascoltare senza stelle.
+        La storia si ASCOLTA e basta: il testo non c'e'. Chi non ce la fa
+        preme «💬 Subtitles» e da li' in poi lo legge, ma perde il +2.
      👀 PARK WATCHER — sedendoti su una panchina del parco, la voce ti
         chiede che cosa stanno facendo le persone (una foto della scena nel
         riquadro) e rispondi con le tessere. Dalla Unit 8 dell'Anno 1 in poi
@@ -17532,7 +17535,7 @@ function talkToOakley(npc){
   const g=greetTimeOfDay();
   DialogueBox.open({ npc, icon:"\u{1F4D6}", sub:"Storyteller",
     text:g.en+(me?", "+me:"")+"! I'm Mr. Oakley. Sit down on the bench and listen: today's story is «"+t.t+"». Then I'll ask you three questions!",
-    italian:g.it+"! Siediti sulla panchina e ascolta la storia di oggi. Poi tre domande: 1 stella per risposta giusta, +2 se le indovini tutte.",
+    italian:g.it+"! Siediti sulla panchina e ascolta la storia di oggi (senza testo: se ti servono, chiedi i sottotitoli). Poi tre domande: 1 stella per risposta giusta, +2 se le indovini tutte senza sottotitoli.",
     html:lesCard("les-w",t.ic+" Today's story",'<div class="les-title">'+_escHtml(t.t)+'</div>'),
     buttons:[{ label:"\u{1FA91} Sit down and listen", cls:"primary", act:()=>parkStoryStart(t,false) },
              { label:"Maybe later", cls:"ghost", act:()=>{} }] });
@@ -17543,13 +17546,24 @@ function parkStoryStart(t,again){
   PARKFUN.busy=true;
   const O=PARKFUN.oakley, n=t.p.length;
   let score=0;
+  /* Giacomo: «le storie dovrebbero essere prima senza testo e solo se
+     l'alunno lo richiede, con i sottotitoli, ma prende meno punti». Si
+     ascolta e basta; «💬 Subtitles» accende il testo per il resto della
+     storia e toglie il +2 del tutto giusto. Senza voce sul dispositivo il
+     testo c'e' da subito, e non costa niente: non e' colpa dello studente. */
+  const voice=(typeof TTS!=="undefined" && TTS.available());
+  let subs=!voice;
   const stop={ label:"✋ Stop", cls:"ghost", act:()=>{ PARKFUN.busy=false; } };
-  const page=(i)=>{
+  const page=(i,quiet)=>{
     if(i>=n){ ask(0); return; }
+    const btns=[{ label:i<n-1?"▶ Next":"▶ The end", cls:"primary", act:()=>page(i+1) }];
+    if(!subs) btns.push({ label:"\u{1F4AC} Subtitles"+(again?"":" (\u22122 \u2b50)"), cls:"ghost", act:()=>{ subs=true; page(i,true); } });
+    btns.push(stop);
     DialogueBox.open({ npc:O, icon:"\u{1F4D6}", sub:t.t+" · "+(i+1)+"/"+n,
-      text:t.p[i],
+      text:t.p[i], hideText:!subs && "\u{1F3A7} Listen to Mr. Oakley\u2026 (\u{1F50A} to hear it again)",
+      autoSpeak:!quiet,
       html:i===0?'<div style="text-align:center;font-size:46px;line-height:1.1;margin:2px 0 4px">'+t.ic+'</div>':"",
-      buttons:[{ label:i<n-1?"▶ Next":"▶ The end", cls:"primary", act:()=>page(i+1) }, stop] });
+      buttons:btns });
   };
   const ask=(k)=>{
     if(k>=t.q.length){ done(); return; }
@@ -17568,7 +17582,7 @@ function parkStoryStart(t,again){
     PARKFUN.busy=false;
     const s=parkState(); let got=0;
     if(!again && !s.sDone){
-      got=score+(score===t.q.length?2:0);
+      got=score+(score===t.q.length && !(subs && voice)?2:0);     // con i sottotitoli niente +2
       s.sDone=true; if(s.heard.indexOf(_pkStoryKey(t))<0) s.heard.push(_pkStoryKey(t)); parkSave(s);
       if(got>0) try{ Stars.award(null,got,"storia"); }catch(e){}
     }
@@ -17578,7 +17592,8 @@ function parkStoryStart(t,again){
       italian:"Torna domani: c'e' una storia nuova.",
       html:lesCard("les-end","⭐ Your result",'<div class="les-score">'+score+' / '+t.q.length+'</div>'
         +(again?'<div style="text-align:center;font-size:13px;color:#6b6358">Practice: no stars this time</div>'
-               :'<div style="text-align:center;font-size:13px;color:#6b6358">+'+got+' stars</div>')),
+               :'<div style="text-align:center;font-size:13px;color:#6b6358">+'+got+' stars'
+                 +(subs && voice && score===t.q.length?' \u00b7 \u{1F4AC} subtitles: no +2 bonus':'')+'</div>')),
       buttons:[{ label:"Thank you, Mr. Oakley!", cls:"primary", act:()=>{ try{ if(BSIT.b===PARKFUN.storyBench) benchStand(); }catch(e){} } }] });
   };
   setTimeout(()=>page(0),450);
@@ -20489,6 +20504,10 @@ const DialogueBox=(function(){
     if(cfg.text){
       const row=document.createElement("div"); row.className="dlg-text-row";
       const t=document.createElement("div"); t.className="dlg-text"; t.textContent=cfg.text; row.appendChild(t);
+      /* cfg.hideText: si sente ma non si legge (le storie di Mr. Oakley:
+         prima l'ascolto, i sottotitoli solo se li chiedi). Al posto del
+         testo un segnaposto; il 🔊 legge comunque cfg.text. */
+      if(cfg.hideText){ t.textContent=typeof cfg.hideText==="string"?cfg.hideText:"\u{1F3A7} Listen\u2026"; t.classList.add("dlg-text-hidden"); }
       row.appendChild(speakBtn(cfg.text,ttsOpts));
       card.appendChild(row);
       if(cfg.autoSpeak!==false){ SpeakLock.pending(1400);
