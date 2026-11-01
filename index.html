@@ -6460,8 +6460,9 @@ function addSolid(x0,x1,z0,z1,areaName){ solids.push({x0:Math.min(x0,x1),x1:Math
    servivano 1.10 m di varco e fra i divani non si passava (Giacomo, 28 set).
    0.40 = spalle dell'avatar (~0.45 m di larghezza) + un filo di margine. */
 const AREA_PLAYER_R={ home:0.40 };
-function blocked(x,z){ const PR=AREA_PLAYER_R[area]||PLAYER_R, R2=PR*PR;
+function blocked(x,z,ramps){ const PR=AREA_PLAYER_R[area]||PLAYER_R, R2=PR*PR;
   for(let i=0;i<solids.length;i++){ const s=solids[i]; if(s.area!==area) continue;
+    if(ramps && s.skRamp) continue;                     // 🛹 rampe dello skatepark: le decide skRampStepBlocked
     if(!(x>s.x0-PR && x<s.x1+PR && z>s.z0-PR && z<s.z1+PR)) continue;
     const dx=(x<s.x0)?(s.x0-x):((x>s.x1)?(x-s.x1):0);   // 0 se dentro la fascia
     const dz=(z<s.z0)?(s.z0-z):((z>s.z1)?(z-s.z1):0);
@@ -16028,7 +16029,10 @@ function _skQuarter(x,z,width,ry){
   cop.material=hm7Mat("#c9ccd2",0.6,48); cop.rotation.x=Math.PI/2; cop.position.set(R,R+0.02,0); cop.parent=r;
   /* solido: dalla meta' della curva al retro */
   const cx=x+Math.cos(ry)*(R*0.55+deck/2+R*0.2), cz=z-Math.sin(ry)*(R*0.55+deck/2+R*0.2);
+  const s0=solids.length;
   addSolidRot(cx,cz,ry,(R*0.45+deck)/2+0.1,width/2,"town");
+  for(let i=s0;i<solids.length;i++) solids[i].skRamp=true;      // 🛹 in skate ci si sale (vedi skRampTop)
+  (SKATE.ramps||(SKATE.ramps=[])).push({ k:"q", x, z, ry, R, deck, hw:width/2, y0:g+0.035 });
 }
 function _skFunbox(x,z){
   const g=SKATE.gy, V=BABYLON.Vector3, Lb=3.6, Wd=2.4, Hb=0.5, Lr=1.5;
@@ -16042,6 +16046,49 @@ function _skFunbox(x,z){
   _mergeByMat([-1.4,1.4].map(dx=>{ const p=BABYLON.MeshBuilder.CreateBox("skRP",{width:0.06,height:0.32,depth:0.06},scene);
     p.material=hm7Mat("#4a4f56",0.3,32); p.position.set(x+dx,g+Hb+0.16,z); p.parent=townRoot; return p; }),townRoot);
   addSolid(x-Lb/2-Lr*0.6,x+Lb/2+Lr*0.6,z-Wd/2,z+Wd/2,"town");
+  solids[solids.length-1].skRamp=true;                          // 🛹 in skate ci si sale (vedi skRampTop)
+  /* la sbarra in cima resta un ostacolo anche in skate (lassu' ci si passa
+     di fianco, non attraverso); a terra sta dentro il funbox e non conta */
+  addSolid(x-Lb/2-0.1,x+Lb/2+0.1,z-0.04,z+0.04,"town");
+  (SKATE.ramps||(SKATE.ramps=[])).push({ k:"f", x, z, hl:Lb/2, hw:Wd/2, H:Hb, Lr, y0:g });
+}
+/* 🛹 ALTEZZA DELLE RAMPE in un punto (quota del mondo), o null fuori dalle
+   rampe. Calcolata dalla STESSA geometria con cui sono costruite (curva di
+   raggio R + piano in cima per le quarter pipe, piano + due scivoli per il
+   funbox): niente raggi, costa una manciata di conti ed e' esatta. */
+function skRampTop(X,Z){
+  const L=SKATE.ramps; if(!L || !L.length) return null;
+  if(Math.abs(X-SKATE.C.x)>22 || Math.abs(Z-SKATE.C.z)>16) return null;
+  let best=null;
+  for(const r of L){ let h=null;
+    if(r.k==="q"){
+      const dx=X-r.x, dz=Z-r.z, c=Math.cos(r.ry), s=Math.sin(r.ry);
+      const lx=dx*c-dz*s, lz=dx*s+dz*c;                 // inverso di rotation.y
+      if(Math.abs(lz)>r.hw || lx<0 || lx>r.R+r.deck) continue;
+      h=r.y0+(lx<=r.R ? r.R-Math.sqrt(Math.max(0,r.R*r.R-lx*lx)) : r.R);
+    } else {
+      const ax=Math.abs(X-r.x), az=Math.abs(Z-r.z);
+      if(az>r.hw || ax>r.hl+r.Lr) continue;
+      h=r.y0+(ax<=r.hl ? r.H : r.H*(1-(ax-r.hl)/r.Lr));
+    }
+    if(best===null || h>best) best=h; }
+  return best;
+}
+/* quota del fondo dello skatepark (dove non c'e' rampa), null fuori */
+function skFloorAt(X,Z){
+  const t=skRampTop(X,Z); if(t!==null) return t;
+  if(!SKATE.ramps || Math.abs(X-SKATE.C.x)>17 || Math.abs(Z-SKATE.C.z)>12) return null;
+  return SKATE.gy+0.035;
+}
+/* si puo' passare da (ox,oz) a (x,z) in skate? Si sale fino a 85 cm per
+   passo (lo scalino che resta in cima alla curva, o un «ollie» sul
+   funbox dal fianco), si scende fino a 1 m: il retro di una quarter pipe
+   (1,4 m a picco) resta un muro, da sotto e da sopra. */
+function skRampStepBlocked(ox,oz,x,z){
+  const hn=skRampTop(x,z), ho=skRampTop(ox,oz);
+  if(hn===null && ho===null) return false;
+  const base=SKATE.gy+0.035, a=(ho===null?base:ho), b=(hn===null?base:hn);
+  return (b-a>0.85) || (a-b>1.0);
 }
 function _skFlatRail(x,z,len){
   const g=SKATE.gy;
@@ -47598,15 +47645,18 @@ scene.onBeforeRenderObservable.add(()=>{      // il tasto riflette lo stato REAL
    e monopattino. Skate va veloce come la corsa, monopattino va molto
    veloce. Proponi quando si sbloccano»).
 
-   SBLOCCO — stesso sistema del guardaroba (lookReq): o finisci la unit
-   che ne parla, o arrivi alle stelle. Il docente li ha subito (lookProf).
-     🛹 skate       -> Anno 1 · Unit 7 «Sports Field» (sport e abilita'),
-                       oppure ⭐ 600
-     🛴 monopattino -> Anno 2 · Unit 5 «Central Station» (mezzi di
-                       trasporto), oppure ⭐ 1500
-   Cosi' lo skate arriva a fine prima (o prima, a chi gioca tanto) e il
-   monopattino, che va piu' forte, in seconda: un premio che cresce con
-   l'anno, e ognuno legato alla parola inglese che si studia li'.
+   SBLOCCO — stesso sistema del guardaroba (lookReq): o finisci l'anno
+   (la sua ULTIMA unit), o arrivi alle stelle (Giacomo, 1 nov: «lo
+   sblocco e' a 1000 e 2000 punti, o alla fine del primo anno e del
+   secondo anno come unit»). Il docente li ha subito (lookProf).
+     🛹 skate       -> fine Anno 1 (Unit 8 «Clothes Shop») oppure ⭐ 1000
+     🛴 monopattino -> fine Anno 2 (Unit 8 «City Life Plaza») oppure ⭐ 2000
+   Il premio cresce con l'anno: lo skate a fine prima, il monopattino,
+   che va piu' forte, a fine seconda.
+
+   RAMPE — in skate si sale sulle rampe dello skatepark (le due quarter
+   pipe e il funbox), e la tavola si inclina con la pendenza (skRampTop,
+   skRampStepBlocked, rideTilt). A piedi e in monopattino restano ostacoli.
 
    USO — tasto R (o il bottone 🛹/🛴): a piedi -> skate -> monopattino ->
    a piedi (solo quelli sbloccati). Solo all'aperto, in citta': entrando
@@ -47629,11 +47679,11 @@ scene.onBeforeRenderObservable.add(()=>{      // il tasto riflette lo stato REAL
    ===================================================================== */
 const RIDES=[
   { id:"skate",   code:1, ic:"\u{1F6F9}", en:"Skateboard", it:"lo skate",
-    mult:RUN_MULT, lift:0.11, acc:0.07, coast:0.955, yaw:0,
-    req:{ quest:"u7", stars:600 } },
+    mult:RUN_MULT, lift:0.11, acc:0.07, coast:0.955, yaw:0, ramps:true,
+    req:{ quest:"u8", stars:1000 } },
   { id:"scooter", code:2, ic:"\u{1F6F4}", en:"Scooter",    it:"il monopattino",
     mult:3.0,      lift:0.14, acc:0.05, coast:0.965, yaw:0,
-    req:{ quest:"u2_5", stars:1500 },
+    req:{ quest:"u2_8", stars:2000 },
     bar:{ y:1.02, z:0.35, half:0.21 } },         // manubrio, in metri dai piedi
 ];
 const RIDE={ on:null, v:0, dir:null, coast:false, mesh:{}, pose:null, obs:null,
@@ -47725,7 +47775,7 @@ function _ridePoseOff(){
     P.orig.forEach(k=>{ k.tn.position.copyFrom(k.p);
       if(k.q){ if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion(); k.tn.rotationQuaternion.copyFrom(k.q); }
       k.tn.scaling.copyFrom(k.s); });
-    avatarRoot.rotation.y=P.ry; avatarRoot.position.x=P.hx; avatarRoot.position.z=P.hz;
+    avatarRoot.rotation.y=P.ry; avatarRoot.rotation.x=0; avatarRoot.position.x=P.hx; avatarRoot.position.z=P.hz;
   }
   RIDE.pose=null;
 }
@@ -47802,7 +47852,7 @@ function rideOff(silent){
   const R=RIDE.on;
   _ridePoseOff();
   const m=RIDE.mesh[R.id]; if(m) m.setEnabled(false);
-  RIDE.on=null; RIDE.v=0; RIDE.coast=false;
+  RIDE.on=null; RIDE.v=0; RIDE.coast=false; RIDE.pitch=0; if(m) m.rotation.x=0;
   if(area==="town") player.position.y=Math.max(0,player.position.y-R.lift);
   try{ SFX.roll(0); }catch(e){}
   rideHud();
@@ -47874,6 +47924,26 @@ function rideCheckUnlocks(){
 }
 setInterval(()=>{ try{ rideCheckUnlocks(); }catch(e){} },3000);
 
+/* ---- 🛹 PENDENZA: la tavola segue la rampa, il corpo un po' meno ---------
+   Quota del fondo 30 cm davanti e 30 dietro, nella direzione in cui si
+   guarda. ⚠️ rotation.x NEGATIVA alza la punta (+z): stesso verso delle
+   code dello skate in rideBuildMesh. Il corpo si inclina del 60%, al
+   massimo ~35 gradi: sulla parte quasi verticale della quarter pipe, a
+   piena inclinazione, il ragazzo sembrerebbe sdraiato. */
+function rideSlopeAt(x,z,ry){
+  if(typeof skFloorAt!=="function") return 0;
+  const fx=Math.sin(ry)*0.3, fz=Math.cos(ry)*0.3;
+  const a=skFloorAt(x+fx,z+fz), b=skFloorAt(x-fx,z-fz);
+  if(a===null || b===null) return 0;
+  return Math.atan2(a-b,0.6);
+}
+function rideTilt(board,body,cur,x,z,ry){
+  const t=rideSlopeAt(x,z,ry), p=cur+(t-cur)*0.35;
+  if(board) board.rotation.x=-Math.max(-1.25,Math.min(1.25,p));
+  if(body) body.rotation.x=-Math.max(-0.6,Math.min(0.6,p*0.6));
+  return p;
+}
+
 /* ---- ogni fotogramma: scendere se serve, ruote, rumore ------------------ */
 scene.onBeforeRenderObservable.add(()=>{
   if(!RIDE.on){ RIDE.px=player.position.x; RIDE.pz=player.position.z; return; }
@@ -47882,6 +47952,8 @@ scene.onBeforeRenderObservable.add(()=>{
   RIDE.px=player.position.x; RIDE.pz=player.position.z;
   const step=(d<2)?d:0;                                       // un teletrasporto non e' una pedalata
   rideSpinWheels(RIDE.mesh[RIDE.on.id], step);
+  RIDE.pitch=rideTilt(RIDE.mesh[RIDE.on.id], (RIDE.pose&&RIDE.pose.of===avatarRoot)?avatarRoot:null,
+                      RIDE.pitch||0, player.position.x, player.position.z, player.rotation.y);
   try{ SFX.roll(Math.min(1,step/(PLAYER_SPEED*RIDE.on.mult)), RIDE.on.id); }catch(e){}
 });
 
@@ -47933,7 +48005,10 @@ function move(nx,nz,spd){
   if(spd>0.3){ const a=move(nx,nz,spd/2), b=move(nx,nz,spd/2); return a||b; }
   const ox=player.position.x, oz=player.position.z;
   const px=ox+nx*spd, pz=oz+nz*spd;
-  const blk=(x,z)=>blocked(x,z)||trafficBlocked(x,z)||npcBlocked(x,z)||(SHOP.cart&&cartBlocked(x,z,nx,nz));   // v256
+  /* 🛹 rampe: in skate ci si sale; e chi e' gia' lassu' (sceso dalla tavola
+     in cima al funbox) deve poter scendere a piedi, non restare murato */
+  const ramps=area==="town" && ((RIDE.on && RIDE.on.ramps) || skRampTop(ox,oz)!==null);
+  const blk=(x,z)=>blocked(x,z,ramps)||(ramps&&skRampStepBlocked(ox,oz,x,z))||trafficBlocked(x,z)||npcBlocked(x,z)||(SHOP.cart&&cartBlocked(x,z,nx,nz));   // v256
   if(!blk(px,pz)){ player.position.x=px; player.position.z=pz; }
   else if(!blk(px,oz)){ player.position.x=px; }
   else if(!blk(ox,pz)){ player.position.z=pz; }
@@ -48083,7 +48158,12 @@ scene.registerBeforeRender(()=>{
     if(hits) for(const h of hits){ const hy=h.pickedPoint.y;
       if(hy<=player.position.y+1.1 && (!found||hy>ty)){ ty=hy; found=true; gm=h.pickedMesh; } }
     _gSotto=gm;                            // v305: su cosa si cammina (pozzanghere, vedi puddleUnderPlayer)
-    player.position.y += (ty+rideLift()-player.position.y)*0.45;   // 🛹 in sella: sopra la tavola
+    /* 🛹 sulle rampe dello skatepark la quota viene dalla loro geometria
+       (skRampTop), e la si insegue piu' svelta: sulla curva ripida, col
+       solito 0,45, la tavola affonderebbe nella rampa salendo */
+    const _rh=skRampTop(player.position.x,player.position.z);
+    if(_rh!==null && _rh>ty){ ty=_rh; _gSotto=null; }
+    player.position.y += (ty+rideLift()-player.position.y)*(_rh!==null?0.7:0.45);   // 🛹 in sella: sopra la tavola
   }
   // camera dietro le spalle SOLO andando avanti (W/stick su): strafe (A/D) e retro (S) NON ruotano la camera
   /* v320: le frecce non camminano, ma se le stai usando per girarti la
@@ -69326,8 +69406,9 @@ const Presenza=(function(){
         b.rideM[id].setEnabled(true); }
       b.rideP=null;
     }
-    if(!R || !q) return;
+    if(!R || !q){ if(b.holder && b.rideTilt){ b.holder.rotation.x=0; b.rideTilt=0; } return; }
     if(b.rideP){ const d=Math.hypot(q.x-b.rideP.x, q.z-b.rideP.z); if(d<2) rideSpinWheels(b.rideM[id], d); }
+    b.rideTilt=rideTilt(b.rideM[id], b.holder, b.rideTilt||0, q.x, q.z, b.carrier.rotation.y);   // 🛹 sulle rampe
     b.rideP={ x:q.x, z:q.z };
   }
   function _rilascia(e){
