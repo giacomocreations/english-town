@@ -532,6 +532,16 @@
     background:rgba(251,247,236,.22);border:2px solid rgba(251,247,236,.5);color:var(--ink,#2b2320);
     font-weight:800;font-size:22px;display:none;box-shadow:0 6px 16px rgba(0,0,0,.25);touch-action:manipulation;padding:0;}
   #povBtn.on{background:var(--sun);}
+  /* 🛹🛴 skate / monopattino: compare solo quando almeno uno e' sbloccato
+     (lo accende rideHud). Al computer sta nella fila in alto, accanto a
+     schermo intero; sul tablet sopra CORRI, a portata di pollice. */
+  #rideBtn{position:fixed;z-index:15;top:52px;right:214px;width:42px;height:42px;border-radius:12px;border:none;
+    background:rgba(251,247,236,.94);font-size:21px;line-height:1;cursor:pointer;padding:0;
+    box-shadow:0 4px 14px rgba(20,30,40,.18);touch-action:manipulation;}
+  #rideBtn.on{background:var(--sun);}
+  @media (pointer:coarse){#rideBtn{top:auto;right:115px;bottom:124px;width:52px;height:52px;border-radius:50%;
+    background:rgba(251,247,236,.22);border:2px solid rgba(251,247,236,.5);font-size:24px;}
+    #rideBtn.on{background:var(--sun);}}
   @media (pointer:coarse){#stick,#actBtn,#runBtn,#povBtn{display:block;}
     /* v304 (Giacomo, 7 ott: «su tablet la bussola e' nascosta dalla E»): in
        basso a destra ci sono E (fino a 114 px) e la prima persona (fino a
@@ -908,6 +918,7 @@
 <div id="stick"><div id="knob"></div></div>
 <button id="actBtn">E</button>
 <button id="runBtn">🏃</button>
+<button id="rideBtn" aria-pressed="false" title="Skateboard / scooter (R)" style="display:none">🛹</button>
 <button id="povBtn" aria-pressed="false" title="First person">👁️</button>
 <button id="map-btn" title="Town map (M)">🗺️</button>
 <div id="kbhelp">
@@ -919,6 +930,7 @@
   <span><b>M</b> map</span>
   <span><b>V</b> view</span>
   <span><b>O</b> first person</span>
+  <span id="kb-ride" style="display:none"><b>R</b> skate / scooter</span>
   <span><b>H</b> hide</span>
 </div>
 <button id="star-btn" title="Explorer's Diary"><span>⭐</span><span id="star-n">0</span></button>
@@ -4597,6 +4609,7 @@ const SIT={ on:false, pins:null, drop:0, baseY:null };
    l'anca sulla seduta, non il centro del corpo: se no il busto dei corpi piu'
    robusti finiva dentro lo schienale) */
 function playerSit(fwd,seatY,groundY,arms){
+  try{ if(typeof RIDE!=="undefined" && RIDE.on) rideOff(true); }catch(e){}   // 🛹 prima giu' dalla tavola
   if(!avatarRoot || !_legPins) return null;
   /* v405 (Giacomo, 27 ott: «quando mi siedo col giornale, risulto sospeso
      per aria»). Sedersi col giornale calcola la posa DUE volte (seduto, poi
@@ -39295,7 +39308,31 @@ const SFX=(function(){
     const og=c.createGain(); og.gain.setValueAtTime(0.0001,t); og.gain.exponentialRampToValueAtTime(0.08*g0,t+0.002); og.gain.exponentialRampToValueAtTime(0.0001,t+0.035);
     o.connect(og); og.connect(master); o.start(t); o.stop(t+0.05);
   }
-  return { wake, step, walked, carHorn, carPass, setCarPass, correct, wrong, panOf,
+  /* 🛹🛴 RUOTE — un letto continuo (come la fontana), acceso solo in sella.
+     Skate: rumore grave che si schiarisce con la velocita' (uretano
+     sull'asfalto). Monopattino: piu' morbido, con sotto il fischio del
+     motore elettrico che sale con la velocita'. v = 0..1 (0 = silenzio). */
+  let rdSrc=null, rdVol=null, rdLp=null, rdOsc=null, rdOscG=null;
+  function roll(v,kind){
+    if(dead) return;
+    if(!rdSrc && !(v>0)) return;
+    const c=ready(); if(!c) return;
+    if(!rdSrc){
+      rdVol=c.createGain(); rdVol.gain.value=0; rdVol.connect(master);
+      rdSrc=c.createBufferSource(); rdSrc.buffer=noise; rdSrc.loop=true; rdSrc.playbackRate.value=0.45;
+      rdLp=c.createBiquadFilter(); rdLp.type="lowpass"; rdLp.frequency.value=600; rdLp.Q.value=0.8;
+      rdSrc.connect(rdLp); rdLp.connect(rdVol);
+      rdOsc=c.createOscillator(); rdOsc.type="sine"; rdOsc.frequency.value=180;
+      rdOscG=c.createGain(); rdOscG.gain.value=0; rdOsc.connect(rdOscG); rdOscG.connect(rdVol);
+      rdSrc.start(); rdOsc.start();
+    }
+    const t=c.currentTime, k=Math.max(0,Math.min(1,v||0)), sk=(kind==="skate");
+    rdVol.gain.setTargetAtTime((sk?0.20:0.12)*k*lvl(), t, 0.07);
+    rdLp.frequency.setTargetAtTime(sk?(360+700*k):(260+420*k), t, 0.1);
+    rdOscG.gain.setTargetAtTime(sk?0:0.22*k, t, 0.1);
+    rdOsc.frequency.setTargetAtTime(150+330*k, t, 0.1);
+  }
+  return { wake, step, walked, roll, carHorn, carPass, setCarPass, correct, wrong, panOf,
            shout, voiceState, sip, chew, snap,
            gemChime, gemFit, thunder,
            bell, bellHear, shutter, tick, waterLevel, fountLevel, clubLevel, cricketLevel, windLevel,
@@ -46655,6 +46692,7 @@ function unitPool(){ const u=Quest.unit;
 
 /* ---- AREE / TELEPORT ---- */
 function enterArea(target){
+  if(target!=="town"){ try{ rideOff(true); }catch(e){} }       // 🛹 dentro non si va in skate
   if(typeof area!=="undefined" && area!==target){ try{ standUpAll(); }catch(e){} }   // v296: cambiando luogo si e' sempre in piedi
   if(typeof area!=="undefined" && area==="market" && target!=="market"){ try{ marketOnLeave(); }catch(e){} }   // v256
   if(typeof area!=="undefined" && area==="shop" && target!=="shop"){ try{ u4ShelvesBack(); }catch(e){} }   // v307: carrello di Mia vuoto, scaffali pieni
@@ -47438,6 +47476,7 @@ window.addEventListener("keydown",e=>{ if(__typingNow(e)) return;   // non rubar
   const k=e.key.toLowerCase(); keys[k]=true; if(k==="e") tryInteract();
   if(k==="q"){ e.preventDefault(); cycleInter(e.shiftKey?-1:1); return; }   // scegli fra oggetti vicini
   if(k==="m"){ e.preventDefault(); toggleMap(); return; }
+  if(k==="r"){ e.preventDefault(); rideCycle(); return; }   // 🛹🛴 skate / monopattino / a piedi
   if(k==="escape" && metroOpen){ closeMetro(); return; }
   if(k==="escape" && diaryOpen){ closeDiary(); return; }
   if(k==="escape" && mapOpen){ closeMap(); return; }
@@ -47554,6 +47593,297 @@ scene.onBeforeRenderObservable.add(()=>{      // il tasto riflette lo stato REAL
   runBtn.classList.toggle("on", touchRunHeld||stickRunOn);
 });
 
+/* =====================================================================
+   🛹 SKATE e 🛴 MONOPATTINO (Giacomo, 1 nov: «implementiamo uso di skate
+   e monopattino. Skate va veloce come la corsa, monopattino va molto
+   veloce. Proponi quando si sbloccano»).
+
+   SBLOCCO — stesso sistema del guardaroba (lookReq): o finisci la unit
+   che ne parla, o arrivi alle stelle. Il docente li ha subito (lookProf).
+     🛹 skate       -> Anno 1 · Unit 7 «Sports Field» (sport e abilita'),
+                       oppure ⭐ 600
+     🛴 monopattino -> Anno 2 · Unit 5 «Central Station» (mezzi di
+                       trasporto), oppure ⭐ 1500
+   Cosi' lo skate arriva a fine prima (o prima, a chi gioca tanto) e il
+   monopattino, che va piu' forte, in seconda: un premio che cresce con
+   l'anno, e ognuno legato alla parola inglese che si studia li'.
+
+   USO — tasto R (o il bottone 🛹/🛴): a piedi -> skate -> monopattino ->
+   a piedi (solo quelli sbloccati). Solo all'aperto, in citta': entrando
+   in un luogo, sedendosi o ballando si scende da soli.
+
+   VELOCITA' — skate = la corsa (RUN_MULT), monopattino = 3x il passo.
+   Con un po' di spinta all'inizio e di inerzia quando si molla: senza,
+   sembrerebbe di camminare con una tavola incollata ai piedi.
+   ⚠️ A 3x un passo per fotogramma e' quasi mezzo metro: move() lo spezza
+   in due (vedi move), cosi' i muri sottili non si attraversano.
+
+   POSA — piedi pari (_standPoseFromWalk, la stessa del carrello), rivolti
+   in avanti, PARALLELI alla tavola (Giacomo, 1 nov: «sullo skate i piedi
+   paralleli alla tavola, non perpendicolari»: niente posa di lato). Sul
+   monopattino in piu' le mani sul manubrio (pushPoseFor, la stessa delle
+   mani sulla maniglia del carrello). `yaw` resta per chi volesse un
+   giorno una tavola su cui si sta girati: 0 = di fronte.
+   I compagni lo vedono: un campo ",v1" / ",v2" in coda alla posizione
+   (vedi Presenza, _pos e _leggiPos). Le versioni vecchie lo ignorano.
+   ===================================================================== */
+const RIDES=[
+  { id:"skate",   code:1, ic:"\u{1F6F9}", en:"Skateboard", it:"lo skate",
+    mult:RUN_MULT, lift:0.11, acc:0.07, coast:0.955, yaw:0,
+    req:{ quest:"u7", stars:600 } },
+  { id:"scooter", code:2, ic:"\u{1F6F4}", en:"Scooter",    it:"il monopattino",
+    mult:3.0,      lift:0.14, acc:0.05, coast:0.965, yaw:0,
+    req:{ quest:"u2_5", stars:1500 },
+    bar:{ y:1.02, z:0.35, half:0.21 } },         // manubrio, in metri dai piedi
+];
+const RIDE={ on:null, v:0, dir:null, coast:false, mesh:{}, pose:null, obs:null,
+             last:null, seen:null, px:0, pz:0, spin:0 };
+function rideDef(id){ return RIDES.find(r=>r.id===id)||null; }
+function rideDefCode(c){ return RIDES.find(r=>r.code===c)||null; }
+function rideReq(R){ try{ return lookReq(R.req); }catch(e){ return { open:false, label:"" }; } }
+function rideOpen(R){ return !!rideReq(R).open; }
+function rideUnlocked(){ return RIDES.filter(rideOpen); }
+function rideLift(){ return RIDE.on ? RIDE.on.lift : 0; }
+
+/* ---- le tavole: geometria procedurale, 0 KB di asset -------------------
+   Origine = i piedi del giocatore (piano della tavola), +z = avanti. Le
+   ruote scendono fino a -lift, che e' proprio di quanto si alza chi ci sta
+   sopra: cosi' toccano terra. */
+let _rideMats=null;
+function _rideMat(){
+  if(_rideMats) return _rideMats;
+  const lucido=(n,h,e)=>{ const m=mat(n,h,e); m.specularColor=new BABYLON.Color3(0.28,0.28,0.28); m.specularPower=48; return m; };
+  _rideMats={ grip:mat("rideGrip","#232629"), deck:mat("rideDeck","#e0673a"),
+    deckB:mat("rideDeckB","#3d7fa6"), metal:lucido("rideMetal","#b9bec4"),
+    wheelSk:mat("rideWheelSk","#f2e3a6"), dark:lucido("rideDark","#2b3036"),
+    tyre:mat("rideTyre","#17191b"), accent:lucido("rideAccent","#e8b04b"),
+    lamp:mat("rideLamp","#fff6d8","#fff1c0"), hub:lucido("rideHub","#8d949b") };
+  return _rideMats;
+}
+function rideBuildMesh(id,name){
+  const B=BABYLON.MeshBuilder, M=_rideMat(), R=rideDef(id), L=R.lift;
+  const root=new BABYLON.TransformNode(name,scene); root.__wheels=[];
+  const add=(m,mt,par)=>{ m.material=mt; m.parent=par||root; m.isPickable=false; m.__cast=true; m.applyFog=true; return m; };
+  const box=(mt,w,h,d,x,y,z,par)=>{ const b=add(B.CreateBox(name+"_b",{width:w,height:h,depth:d},scene),mt,par); b.position.set(x,y,z); return b; };
+  const cyl=(mt,dia,h,x,y,z,par,tes)=>{ const c=add(B.CreateCylinder(name+"_c",{diameter:dia,height:h,tessellation:tes||12},scene),mt,par); c.position.set(x,y,z); return c; };
+  /* ruota: perno che gira attorno all'asse X, cilindro coricato dentro.
+     I raggi (spoke) servono solo a far VEDERE che gira. */
+  const wheel=(x,y,z,r,w,mt,hub)=>{
+    const piv=new BABYLON.TransformNode(name+"_wp",scene); piv.parent=root; piv.position.set(x,y,z);
+    cyl(mt,r*2,w,0,0,0,piv,16).rotation.z=Math.PI/2;
+    if(hub){ cyl(hub,r*1.05,w+0.006,0,0,0,piv,12).rotation.z=Math.PI/2;
+      box(M.dark,w+0.012,r*1.3,0.012,0,0,0,piv); box(M.dark,w+0.012,0.012,r*1.3,0,0,0,piv); }
+    root.__wheels.push(piv); root.__wheelR=r; return piv; };
+  if(id==="skate"){
+    box(M.grip,0.205,0.004,0.58,0,-0.002,0);
+    box(M.deck,0.21,0.016,0.58,0,-0.012,0);
+    for(const s of [-1,1]){
+      /* code (kicktail) che si alzano alle due punte */
+      const t=new BABYLON.TransformNode(name+"_tail",scene); t.parent=root; t.position.set(0,-0.012,s*0.29);
+      t.rotation.x=-s*0.32;
+      box(M.deck,0.21,0.016,0.15,0,0,s*0.07,t); box(M.grip,0.205,0.004,0.15,0,0.010,s*0.07,t);
+      /* carrello (truck): piastra, braccio e assale */
+      box(M.metal,0.06,0.012,0.08,0,-0.026,s*0.21);
+      box(M.metal,0.15,0.024,0.034,0,-0.046,s*0.21);
+      cyl(M.metal,0.012,0.205,0,-L+0.027,s*0.21,null,8).rotation.z=Math.PI/2;
+      wheel(-0.088,-L+0.027,s*0.21,0.027,0.032,M.wheelSk); wheel(0.088,-L+0.027,s*0.21,0.027,0.032,M.wheelSk);
+    }
+  } else {
+    const r=0.09, wy=-L+r, bar=R.bar;
+    box(M.dark,0.16,0.04,0.60,0,-0.021,-0.03);                 // pedana
+    box(M.accent,0.166,0.010,0.585,0,-0.030,-0.03);            // filo colorato sui fianchi
+    box(M.grip,0.14,0.004,0.52,0,0.0005,-0.03);                // gommino antiscivolo
+    box(M.dark,0.07,0.035,0.16,0,0.0,0.31).rotation.x=-0.45;   // collo pedana -> sterzo
+    box(M.dark,0.06,0.010,0.21,0,wy+r+0.012,-0.39);            // parafango posteriore
+    wheel(0,wy,-0.39,r,0.045,M.tyre,M.hub);
+    wheel(0,wy,bar.z,r,0.045,M.tyre,M.hub);
+    box(M.dark,0.075,0.05,0.035,0,wy+0.03,bar.z);              // forcella
+    cyl(M.dark,0.038,bar.y-wy,0,(bar.y+wy)/2,bar.z);           // piantone
+    cyl(M.dark,0.028,bar.half*2+0.06,0,bar.y,bar.z).rotation.z=Math.PI/2;   // manubrio
+    for(const s of [-1,1]) cyl(M.grip,0.036,0.11,s*bar.half,bar.y,bar.z).rotation.z=Math.PI/2;
+    box(M.grip,0.07,0.012,0.05,0,bar.y+0.02,bar.z-0.01);      // display
+    box(M.lamp,0.06,0.04,0.02,0,bar.y-0.09,bar.z+0.03);        // faretto
+  }
+  root.setEnabled(false);
+  try{ refreshShadowCasters(); }catch(e){}
+  return root;
+}
+/* le ruote girano di quanto la tavola e' avanzata (s = metri) */
+function rideSpinWheels(root,s){
+  if(!root || !root.__wheels || !root.__wheelR) return;
+  const a=s/root.__wheelR; for(const w of root.__wheels) w.rotation.x+=a;
+}
+
+/* ---- la posa: piedi pari, di lato sullo skate, mani al manubrio --------
+   Stessa tecnica del carrello (shopPushOn), stessa disciplina: si salva
+   tutto quello che si tocca e si rimette a posto scendendo. */
+function _ridePoseOff(){
+  if(RIDE.obs){ scene.onBeforeRenderObservable.remove(RIDE.obs); RIDE.obs=null; }
+  const P=RIDE.pose;
+  if(P && P.of===avatarRoot && avatarRoot){
+    P.orig.forEach(k=>{ k.tn.position.copyFrom(k.p);
+      if(k.q){ if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion(); k.tn.rotationQuaternion.copyFrom(k.q); }
+      k.tn.scaling.copyFrom(k.s); });
+    avatarRoot.rotation.y=P.ry; avatarRoot.position.x=P.hx; avatarRoot.position.z=P.hz;
+  }
+  RIDE.pose=null;
+}
+function _ridePoseOn(R){
+  _ridePoseOff();
+  if(!R || typeof avatarRoot==="undefined" || !avatarRoot) return;
+  const V=BABYLON.Vector3, root=avatarRoot, ry=player.rotation.y, f=new V(Math.sin(ry),0,Math.cos(ry));
+  const P={ of:root, ry:root.rotation.y, hx:root.position.x, hz:root.position.z, orig:[], stand:null, push:null, lock:null };
+  P.orig=root.getDescendants(false).filter(t=>t.rotationQuaternion!==undefined&&/^(Root|Body|Hips|Abdomen|Torso|Chest|Shoulder\.[LR]|UpperArm\.[LR]|LowerArm\.[LR]|Wrist\.[LR]|UpperLeg\.[LR]|LowerLeg\.[LR]|Foot\.[LR]|PT\.[LR])$/.test(_boneKey(t.name)))
+    .map(tn=>({tn, p:tn.position.clone(), q:tn.rotationQuaternion?tn.rotationQuaternion.clone():null, s:tn.scaling.clone()}));
+  RIDE.pose=P;
+  try{
+    player.computeWorldMatrix(true); _sitRefresh(root);
+    const stand=_standPoseFromWalk(root);
+    P.stand=stand;
+    if(R.bar){
+      /* mani sul manubrio: come per il carrello, prima si raddrizza il
+         busto (gambe alla bind + bacino/addome/torace a riposo), se ne
+         salva l'addome rispetto al corpo, poi si calcolano le braccia */
+      const abd=root.getDescendants(false).find(t=>_boneKey(t.name)==="Abdomen"&&t.parent);
+      if(abd){
+        const chain=[]; for(let t=abd.parent;t;t=t.parent){ chain.unshift(t); if(t===root) break; }
+        const body=_restPinsFor(root,/^(Hips|Abdomen|Torso|Chest)$/);
+        const touched=new Set(body.map(k=>k.tn)); (_legPins||[]).forEach(k=>touched.add(k.tn)); (stand||[]).forEach(k=>touched.add(k.tn));
+        const save=[...touched].map(tn=>({tn, p:tn.position.clone(), q:tn.rotationQuaternion?tn.rotationQuaternion.clone():null, s:tn.scaling.clone()}));
+        if(_legPins) _applyPins(_legPins); _applyPins(body); _sitRefresh(root);
+        const L={ abd, chain, root, rel:abd.getWorldMatrix().multiply(BABYLON.Matrix.Invert(root.getWorldMatrix())) };
+        if(stand) _applyPins(stand);
+        _lockAbd(L); _sitRefresh(root);
+        const bar=V.TransformCoordinates(new V(0,R.bar.y,R.bar.z),player.getWorldMatrix());
+        P.push=pushPoseFor(root,f,o=>bar.add(o.scale(R.bar.half-0.01)).subtract(f.scale(0.03)).add(new V(0,0.03,0)));
+        save.forEach(k=>{ k.tn.position.copyFrom(k.p); if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); k.tn.scaling.copyFrom(k.s); });
+        if(P.push) P.lock=L;
+      }
+    }
+  }catch(e){ console.warn("[RIDE] posa",e); }
+  /* di lato sullo skate: si gira il corpo attorno al SUO centro (l'holder
+     sta spostato di -centro: girandolo e basta, il corpo scivolerebbe) */
+  if(R.yaw){
+    const cx=-P.hx, cz=-P.hz, c=Math.cos(R.yaw), s=Math.sin(R.yaw);
+    root.rotation.y=P.ry+R.yaw;
+    root.position.x=-(cx*c+cz*s); root.position.z=-(-cx*s+cz*c);
+  }
+  /* ⚠️ L'osservatore nasce QUI, non al caricamento: deve girare DOPO
+     quello che rimette le gambe alla bind (aggiunto da buildAvatar),
+     se no la bind vincerebbe e i piedi tornerebbero sfalsati. */
+  RIDE.obs=scene.onBeforeRenderObservable.add(()=>{
+    const Q=RIDE.pose; if(!Q || !RIDE.on) return;
+    if(Q.of!==avatarRoot){ const R2=RIDE.on; RIDE.pose=null; setTimeout(()=>{ if(RIDE.on===R2) _ridePoseOn(R2); },0); return; }
+    if(Q.stand && _pinLegs) _applyPins(Q.stand);
+    if(Q.lock) _lockAbd(Q.lock);
+    if(Q.push) _applyPins(Q.push);
+  });
+}
+
+/* ---- sali / scendi ----------------------------------------------------- */
+function rideBusy(){
+  try{ if(typeof SIT!=="undefined" && SIT.on) return true; }catch(e){}
+  try{ if(typeof SKDANCE!=="undefined" && SKDANCE.on) return true; }catch(e){}
+  try{ if(typeof PDANCE!=="undefined" && PDANCE.on) return true; }catch(e){}
+  try{ if(typeof SHOW!=="undefined" && SHOW.seated) return true; }catch(e){}
+  try{ if(typeof DINER!=="undefined" && DINER.seat) return true; }catch(e){}
+  try{ if(typeof BSIT!=="undefined" && BSIT.b) return true; }catch(e){}
+  try{ if(typeof CAFE_PICK!=="undefined" && CAFE_PICK.seated) return true; }catch(e){}
+  try{ if(typeof LESSON!=="undefined" && LESSON.seated) return true; }catch(e){}
+  try{ if(typeof SHOP!=="undefined" && SHOP.cart) return true; }catch(e){}
+  try{ if(typeof FIN!=="undefined" && FIN.on) return true; }catch(e){}
+  try{ if(metroCinematic) return true; }catch(e){}
+  return false;
+}
+function rideCanHere(){ return area==="town" && !rideBusy(); }
+function rideOff(silent){
+  if(!RIDE.on) return;
+  const R=RIDE.on;
+  _ridePoseOff();
+  const m=RIDE.mesh[R.id]; if(m) m.setEnabled(false);
+  RIDE.on=null; RIDE.v=0; RIDE.coast=false;
+  if(area==="town") player.position.y=Math.max(0,player.position.y-R.lift);
+  try{ SFX.roll(0); }catch(e){}
+  rideHud();
+  if(!silent) toast("\u{1F6B6} On foot");
+}
+function rideMount(id){
+  const R=rideDef(id); if(!R) return false;
+  if(!rideOpen(R)){ toast("\u{1F512} "+R.en+": "+rideReq(R).label,3200); return false; }
+  if(!rideCanHere()){ toast(R.ic+" "+R.en+": solo all'aperto, in città",2600); return false; }
+  if(RIDE.on) rideOff(true);
+  try{ if(typeof PDANCE!=="undefined" && PDANCE.on) danceStop(); }catch(e){}
+  if(!RIDE.mesh[R.id]){ RIDE.mesh[R.id]=rideBuildMesh(R.id,"ride_"+R.id); RIDE.mesh[R.id].parent=player; }
+  const m=RIDE.mesh[R.id]; m.position.set(0,0,0); m.rotation.set(0,0,0); m.setEnabled(true);
+  RIDE.on=R; RIDE.last=R.id; RIDE.v=0; RIDE.coast=false; RIDE.dir=null;
+  player.position.y+=R.lift;          // subito sopra la tavola (il ground-follow poi ce lo tiene)
+  playAvatarAnim(IDLE_ANIM);
+  _ridePoseOn(R);
+  rideHud();
+  toast(R.ic+" "+R.en+" — "+(R.id==="skate"?"fast as running!":"super fast!")+" · R to change",2600);
+  return true;
+}
+/* R / bottone: a piedi -> skate -> monopattino -> a piedi (solo gli sbloccati) */
+function rideCycle(){
+  if(!started) return;
+  const L=rideUnlocked();
+  if(!L.length){
+    const R=RIDES[0];
+    toast("\u{1F512} "+R.ic+" "+R.en+": "+rideReq(R).label,3400); return; }
+  if(!RIDE.on){
+    if(!rideCanHere()){ toast(L[0].ic+" Solo all'aperto, in città",2400); return; }
+    rideMount(L[0].id); return; }
+  const i=L.findIndex(r=>r===RIDE.on);
+  if(i>=0 && i<L.length-1) rideMount(L[i+1].id); else rideOff();
+}
+/* velocita' del passo in sella: spinta che cresce, poi piena */
+function rideStepSpeed(){
+  const R=RIDE.on; RIDE.v+=(1-RIDE.v)*R.acc; if(RIDE.v<0.3) RIDE.v=0.3;
+  return PLAYER_SPEED*R.mult*RIDE.v;
+}
+
+/* ---- bottone e legenda -------------------------------------------------- */
+const rideBtn=document.getElementById("rideBtn");
+function rideHud(){
+  if(!rideBtn) return;
+  const L=rideUnlocked();
+  rideBtn.style.display=L.length?"":"none";
+  const nxt=RIDE.on?RIDE.on:(L.find(r=>r.id===RIDE.last)||L[0]);
+  rideBtn.textContent=nxt?nxt.ic:"\u{1F6F9}";
+  rideBtn.classList.toggle("on",!!RIDE.on);
+  rideBtn.setAttribute("aria-pressed",RIDE.on?"true":"false");
+  rideBtn.title=RIDE.on?(RIDE.on.en+" (R)"):"Skateboard / scooter (R)";
+  const kb=document.getElementById("kb-ride"); if(kb) kb.style.display=L.length?"":"none";
+}
+if(rideBtn) rideBtn.addEventListener("click",e=>{ e.preventDefault(); rideCycle(); });
+
+/* ---- «NUOVO!» quando si sblocca: una volta per alunno e dispositivo ---- */
+function _rideSeenKey(){ let c=""; try{ c=Student.code||""; }catch(e){} return "et_ride_seen:"+c; }
+function rideCheckUnlocks(){
+  if(!started) return;
+  try{ if(loginPending) return; }catch(e){}
+  const k=_rideSeenKey();
+  let seen=[]; try{ seen=JSON.parse(localStorage.getItem(k)||"[]")||[]; }catch(e){}
+  const nuovi=rideUnlocked().filter(r=>seen.indexOf(r.id)<0);
+  rideHud();
+  if(!nuovi.length) return;
+  nuovi.forEach(r=>seen.push(r.id));
+  try{ localStorage.setItem(k,JSON.stringify(seen)); }catch(e){}
+  toast("\u{1F389} New: "+nuovi.map(r=>r.ic+" "+r.en).join(" + ")+"! Press R (or "+nuovi[0].ic+") to ride",4200);
+}
+setInterval(()=>{ try{ rideCheckUnlocks(); }catch(e){} },3000);
+
+/* ---- ogni fotogramma: scendere se serve, ruote, rumore ------------------ */
+scene.onBeforeRenderObservable.add(()=>{
+  if(!RIDE.on){ RIDE.px=player.position.x; RIDE.pz=player.position.z; return; }
+  if(!rideCanHere()){ rideOff(true); return; }
+  const d=Math.hypot(player.position.x-RIDE.px, player.position.z-RIDE.pz);
+  RIDE.px=player.position.x; RIDE.pz=player.position.z;
+  const step=(d<2)?d:0;                                       // un teletrasporto non e' una pedalata
+  rideSpinWheels(RIDE.mesh[RIDE.on.id], step);
+  try{ SFX.roll(Math.min(1,step/(PLAYER_SPEED*RIDE.on.mult)), RIDE.on.id); }catch(e){}
+});
+
 /* v540 — NIENTE PICK DI BABYLON SU PRESSIONE E RILASCIO. A ogni pointerdown
    e pointerup Babylon fa da se' uno scene.pick su TUTTE le ~5000 mesh (per
    le ActionManager, che qui non ci sono): misurati 7-50 ms per evento su
@@ -47596,6 +47926,10 @@ function move(nx,nz,spd){
   if(typeof SKDANCE!=="undefined" && SKDANCE.on) skDanceStop();           // v308: camminare smette di ballare
   if(typeof SUBSIT!=="undefined" && SUBSIT.on) subBenchStand(true);   // v297: panchina della metro   // v295: al caffe' il primo passo ti alza dallo sgabello (tazza e cibo sul vassoio)
   spd=spd||PLAYER_SPEED;
+  /* 🛴 in monopattino un passo e' quasi mezzo metro per fotogramma: si
+     spezza in due, cosi' un muro sottile (gonfiato di PLAYER_R per lato)
+     non si salta mai da una parte all'altra */
+  if(spd>0.3){ const a=move(nx,nz,spd/2), b=move(nx,nz,spd/2); return a||b; }
   const ox=player.position.x, oz=player.position.z;
   const px=ox+nx*spd, pz=oz+nz*spd;
   const blk=(x,z)=>blocked(x,z)||trafficBlocked(x,z)||npcBlocked(x,z)||(SHOP.cart&&cartBlocked(x,z,nx,nz));   // v256
@@ -47611,8 +47945,8 @@ function move(nx,nz,spd){
      percorsa, che e' anche il motivo per cui il calcolo sta dopo _moved e
      non nei rami sopra: spingendo contro un muro l'avatar non si sposta e
      i passi devono TACERE, non marciare sul posto. */
-  if(_moved) SFX.walked(Math.hypot(player.position.x-ox, player.position.z-oz),
-                        spd>PLAYER_SPEED*1.2);
+  if(_moved && !RIDE.on) SFX.walked(Math.hypot(player.position.x-ox, player.position.z-oz),
+                        spd>PLAYER_SPEED*1.2);       // in sella niente passi: le ruote le fa RIDE (SFX.roll)
   return _moved;
 }
 
@@ -47683,7 +48017,7 @@ scene.registerBeforeRender(()=>{
   if(dlgLock){
     if(keys["a"]) camera.alpha-=_camTurnSign()*0.028;            // v320: in prima persona il verso e' l'opposto
     if(keys["d"]) camera.alpha+=_camTurnSign()*0.028;
-    moveTarget=null; pendingInteract=null;
+    moveTarget=null; pendingInteract=null; RIDE.v=0;
   } else {
   if(keys["w"]){mx+=fwd.x;mz+=fwd.z;} if(keys["s"]){mx-=fwd.x;mz-=fwd.z;}
   if(keys["d"]){mx+=right.x;mz+=right.z;} if(keys["a"]){mx-=right.x;mz-=right.z;}
@@ -47694,13 +48028,16 @@ scene.registerBeforeRender(()=>{
   // (rimossa la corsa "a fondo joystick": su schermo piccolo il pollice spinge
   // quasi sempre vicino al bordo, quindi risultava "corre sempre" — vedi runBtn)
   let tgtMove=false;
+  /* 🛹🛴 in sella la velocita' la decide la tavola (spinta + inerzia), non Shift */
+  const _spd=()=>RIDE.on ? rideStepSpeed() : (running?PLAYER_SPEED*RUN_MULT:PLAYER_SPEED);
   if(len>0.01){ moveTarget=null; pendingInteract=null; tapMark.setEnabled(false);
-    kbMove=move(mx/len,mz/len, running?PLAYER_SPEED*RUN_MULT:PLAYER_SPEED); }
+    kbMove=move(mx/len,mz/len, _spd());
+    if(RIDE.on){ RIDE.dir={x:mx/len,z:mz/len}; RIDE.coast=kbMove; if(!kbMove) RIDE.v=0; } }
   else if(moveTarget){ const dx=moveTarget.x-player.position.x,dz=moveTarget.z-player.position.z,d=Math.hypot(dx,dz);
     const stop=pendingInteract?(pendingInteract.radius-0.6):0.5;
     if(d<=Math.max(stop,0.5)){ moveTarget=null; tapMark.setEnabled(false);
       if(pendingInteract){ const pp=pendingInteract; pendingInteract=null; pp.interact(); } }
-    else { tgtMove=true; move(dx/d,dz/d, running?PLAYER_SPEED*RUN_MULT:PLAYER_SPEED);
+    else { tgtMove=true; RIDE.coast=false; move(dx/d,dz/d, _spd());
       const nd=Math.hypot(moveTarget.x-player.position.x,moveTarget.z-player.position.z);
       // stesso scivolamento di move() (permette di passare in spazi stretti tra
       // ostacoli, come W) ma ci si ferma nello STESSO frame in cui quello
@@ -47714,9 +48051,17 @@ scene.registerBeforeRender(()=>{
         if(pendingInteract){ const pp=pendingInteract; pendingInteract=null;
           try{ const w=typeof pp.pos==="function"?pp.pos():pp.pos;
             if(pp.enabled && pp.area===area && Math.hypot(player.position.x-w.x, player.position.z-w.z)<pp.radius) pp.interact(); }catch(e){} } } } }
+  /* 🛹 mollati i tasti si scivola ancora un po' (solo dopo una spinta da
+     tastiera/levetta: dopo un tocco sullo schermo ci si ferma dove si e'
+     toccato). Contro un ostacolo ci si ferma subito. */
+  else if(RIDE.on){
+    if(RIDE.coast && RIDE.dir && RIDE.v>0.06){ RIDE.v*=RIDE.on.coast;
+      if(!move(RIDE.dir.x,RIDE.dir.z,PLAYER_SPEED*RIDE.on.mult*RIDE.v)) RIDE.v=0; }
+    else { RIDE.v=0; RIDE.coast=false; } }
   /* 💃 chi balla e poi cammina smette di ballare (vedi PDANCE) */
   if(PDANCE.on && (kbMove||moveTarget)) danceStop();
-  playAvatarAnim((kbMove||moveTarget) ? (running&&(kbMove||tgtMove)?"Run":"Walk") : (PDANCE.on?PDANCE.anim:IDLE_ANIM));
+  playAvatarAnim(RIDE.on ? IDLE_ANIM      // in sella le gambe stanno ferme: va la tavola
+    : (kbMove||moveTarget) ? (running&&(kbMove||tgtMove)?"Run":"Walk") : (PDANCE.on?PDANCE.anim:IDLE_ANIM));
   // CINEMA: l\u0027avatar segue il dislivello (sale sulle gradinate, non sprofonda)
   if(area==="cinema"){
     _gTmp.set(player.position.x, player.position.y+8, player.position.z);
@@ -47737,7 +48082,7 @@ scene.registerBeforeRender(()=>{
     if(hits) for(const h of hits){ const hy=h.pickedPoint.y;
       if(hy<=player.position.y+1.1 && (!found||hy>ty)){ ty=hy; found=true; gm=h.pickedMesh; } }
     _gSotto=gm;                            // v305: su cosa si cammina (pozzanghere, vedi puddleUnderPlayer)
-    player.position.y += (ty-player.position.y)*0.45;
+    player.position.y += (ty+rideLift()-player.position.y)*0.45;   // 🛹 in sella: sopra la tavola
   }
   // camera dietro le spalle SOLO andando avanti (W/stick su): strafe (A/D) e retro (S) NON ruotano la camera
   /* v320: le frecce non camminano, ma se le stai usando per girarti la
@@ -48416,6 +48761,7 @@ function _taxiSpot(x,z){
    qualunque seduta (diner, panchina, sgabello del caffe', panchina della
    metro). Silenzioso: il toast giusto e' quello della destinazione. */
 function standUpAll(){
+  try{ if(typeof RIDE!=="undefined" && RIDE.on) rideOff(true); }catch(e){}   // 🛹 sedersi, ballare, taxi, cambio luogo: giu' dalla tavola
   try{ if(typeof CAFE_PICK!=="undefined" && CAFE_PICK.seated) cafeLeaveSeat(); }catch(e){}
   try{ if(typeof DINER!=="undefined" && DINER.seat) dinerStand(true); }catch(e){}
   try{ if(typeof BSIT!=="undefined" && BSIT.b) benchStand(true); }catch(e){}
@@ -68575,8 +68921,11 @@ const Presenza=(function(){
       let q=((p+w+o).length<=48)?p+w+o:(((p+o).length<=48)?p+o:(((p+w).length<=48)?p+w:p));
       if(iv && (q+iv).length<=48) q+=iv;
       return q; }
-    const q=player.position.x.toFixed(1)+","+player.position.z.toFixed(1)+","
+    let q=player.position.x.toFixed(1)+","+player.position.z.toFixed(1)+","
           +player.position.y.toFixed(2)+","+player.rotation.y.toFixed(2);
+    /* 🛹🛴 in sella: «,v1» skate, «,v2» monopattino (chi ha una versione
+       vecchia non lo riconosce e lo salta: lo vede camminare, come prima) */
+    try{ if(typeof RIDE!=="undefined" && RIDE.on) q+=",v"+RIDE.on.code; }catch(e){}
     return (iv && (q+iv).length<=48)?q+iv:q;
   }
   /* v309e (Giacomo: «fai passare l'invito per tutti»): chi ha chiesto alla
@@ -68593,16 +68942,17 @@ const Presenza=(function(){
     if(!isFinite(x)||!isFinite(z)) return null;
     const m=/^s(-?\d{1,4})_(-?\d{1,4})([db]?)(c?)$/.exec(p[4]||"");
     /* dal sesto campo in poi: il cameriere (w...) e il tavolo (o... / c..., v309) */
-    let w=null, ta=null, iv=0;
+    let w=null, ta=null, iv=0, rv=0;
     for(let i=4;i<p.length;i++){ const f=p[i]||""; let mm;
       if(!iv && (mm=/^i([0-9a-z]{1,8})$/.exec(f))){ iv=parseInt(mm[1],36)*SK_CYCLE; continue; }   // v309e: l'invito alla crew
+      if(!rv && (mm=/^v([1-9])$/.exec(f))){ rv=+mm[1]; continue; }                                // 🛹🛴 in sella
       if(i<5) continue;
       if(!w && (mm=/^w(-?\d{1,4}(?:\.\d)?):(-?\d{1,4}(?:\.\d)?)$/.exec(f))) w=mm;
       else if(!ta && (mm=/^o([0-9a-u]{4})([0-3-])$/.exec(f))) ta={ k:"o", c:mm[1], cur:mm[2] };
       else if(!ta && (mm=/^c([0-7])([0-4])([0-4])([0-4])([01-])$/.exec(f))) ta={ k:"c", c:mm[1]+mm[2]+mm[3]+mm[4], cur:mm[5] }; }
     const d=/^d(\d{1,3})$/.exec(p[4]||"");            // v304: balla (fase in centesimi di battito)
     const mz=/^m([hbmsStar])(\d{1,3})(?:@(\d{2,3}))?$/.exec(p[4]||""); // v309: i passi (mossa, battiti x10, @bpm dello schiocco)
-    return { x:x, z:z, y:(isFinite(y)?y:0), r:(isFinite(r)?r:0), invito:(isFinite(iv)?iv:0),
+    return { x:x, z:z, y:(isFinite(y)?y:0), r:(isFinite(r)?r:0), invito:(isFinite(iv)?iv:0), ride:rv,
              balla:d?{ ph:+d[1]/100 }:null,
              mossa:mz?{ mv:_MOSSA_DA[mz[1]], sdir:(mz[1]==="S"?-1:1), b:+mz[2]/10, bpm:mz[3]?+mz[3]:0 }:null,
              siede:m?{ seat:+m[1]/100, gy:+m[2]/100, eat:m[3]||"", c:!!m[4], ta:ta }:null,
@@ -68681,6 +69031,7 @@ const Presenza=(function(){
     e.zona=String(v.a||"town");
     e.siede=p.siede;                                   // v302: seduto / mangia / beve
     e.balla=p.balla;                                   // v304: balla al concerto
+    e.ride=p.ride||0;                                  // 🛹🛴 skate (1) / monopattino (2)
     /* v309: i passi; t = quando e' arrivato il campione, per far avanzare i battiti */
     e.mossa=p.mossa?Object.assign(p.mossa,{ t:ora }):null;
     /* v309e: un compagno ha invitato la crew a ballare: balla anche qui.
@@ -68952,13 +69303,34 @@ const Presenza=(function(){
        giacche, tagli): quelli sono condivisi, vedi detachSharedDressMats. */
     try{ detachSharedDressMats(b.carrier); }catch(e){}
     try{ if(b.prop) for(const k in b.prop) b.prop[k].dispose(false,false); }catch(e){}   // v302: tazza/boccone (materiali condivisi in _accM)
+    try{ if(b.rideM) for(const k in b.rideM) b.rideM[k].dispose(false,false); b.rideM=null; }catch(e){}   // 🛹 materiali condivisi (_rideMat)
     try{ b.carrier.dispose(false,true); }catch(e){}
   }
   /* la chiave del compagno non e' memorizzata nell'oggetto: si ritrova. Con
      al massimo qualche decina di voci costa niente ed evita di tenere in due
      posti lo stesso dato. */
   function _chiaveDi(e){ for(const k in peers) if(peers[k]===e) return k; return ""; }
+  /* 🛹🛴 la tavola di un compagno: una per tipo e per corpo, nasce la prima
+     volta che serve e poi si accende e si spegne. Nessuna posa di lato
+     (sullo skate non serve: si sta di fronte anche li'): il compagno sta
+     di fronte, coi piedi della posa da fermo, che sono gia' uno avanti e
+     uno dietro, lungo la tavola. Le ruote girano di quanto e' avanzato. */
+  function _inSella(b, code, q){
+    const R=(code && typeof rideDefCode==="function") ? rideDefCode(code) : null, id=R?R.id:null;
+    if((b.rideId||null)!==id){
+      if(b.rideM) for(const k in b.rideM) b.rideM[k].setEnabled(false);
+      b.rideId=id;
+      if(R){ b.rideM=b.rideM||{};
+        if(!b.rideM[id]){ b.rideM[id]=rideBuildMesh(id, b.id+"_ride_"+id); b.rideM[id].parent=b.carrier; }
+        b.rideM[id].setEnabled(true); }
+      b.rideP=null;
+    }
+    if(!R || !q) return;
+    if(b.rideP){ const d=Math.hypot(q.x-b.rideP.x, q.z-b.rideP.z); if(d<2) rideSpinWheels(b.rideM[id], d); }
+    b.rideP={ x:q.x, z:q.z };
+  }
   function _rilascia(e){
+    try{ if(e && e.corpo) _inSella(e.corpo, 0, null); }catch(err){}   // 🛹 la tavola resta col corpo, spenta
     try{ if(e && e.tavola) _sparecchia(e); }catch(err){}   // v309: i suoi piatti se ne vanno con lui
     const b=e&&e.corpo; if(!b) return;
     try{ _alza(b); }catch(err){}                        // v302: il prossimo compagno su questo corpo parte in piedi
@@ -69150,6 +69522,7 @@ const Presenza=(function(){
       }
       if(!vis){ if(e.tavola) _sparecchia(e); if(b.sit) _alza(b); if(b.ballo) _fermaBallo(b); if(b.sk) _fermaPassi(b); continue; }
       if(b.inter) b.inter.area=e.zona;
+      _inSella(b, e.ride, q);                            // 🛹🛴 la sua tavola sotto i piedi (o via, se e' sceso)
       /* v302: seduto (vedi _posa): posa sulle ossa come il giocatore, niente
          Walk, niente giro verso di te; il gesto del mangiare lo rifa' qui */
       if(e.siede && ((ora-e.t0)>=e.dur || e.vel<=0.35)){
@@ -69181,7 +69554,7 @@ const Presenza=(function(){
       b.carrier.rotation.y+=d2*Math.min(1,9*dt);
       /* cammina finche' sta ancora scorrendo verso il campione ricevuto e
          quel tratto era abbastanza lungo: fermo = Idle, come i pedoni. */
-      const vuole=((ora-e.t0)<e.dur && e.vel>0.35) ? "Walk" : "Idle";
+      const vuole=(!e.ride && (ora-e.t0)<e.dur && e.vel>0.35) ? "Walk" : "Idle";   // in sella: gambe ferme
       if(vuole!==b.anim){ b.anim=vuole; b.noPin=(vuole!=="Idle"); b.play(vuole); }
     }
   }
