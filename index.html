@@ -3265,9 +3265,66 @@ const QUESTS={ u3: UNIT3, u4: UNIT4, u6: UNIT6, u2_5: UNIT_TRAVEL, u0: UNIT0, u2
 /* u3_4 (Climate & Fire Stn) si registra in fondo al file, dove e' definita:
    la sua sezione sta in coda come quelle di Style Salon e TechLab. */
 
+/* v540 — UN VECTOR3 PER OGNI VERTICE DI OGNI COPIA (1 nov: «alcuni alunni
+   con tablet economici non riescono neanche a caricarlo»). Misurato in
+   Chromium: finito il caricamento la memoria JS era 555 MB, e 106 MB erano
+   QUESTO. In Babylon 8 refreshBoundingInfo (che parte a ogni clone, cioe' a
+   ogni albero, auto, palazzo, arredo) passa da _getData, che per default si
+   costruisce un array con un Vector3 per vertice e lo appende alla mesh:
+   1,44 milioni di oggetti su 1222 mesh, per geometrie che sono condivise.
+   Per una mesh senza scheletro ne' morph quell'array e' identico, vertice
+   per vertice, a quello della SUA GEOMETRIA (stesse coordinate locali), che
+   Babylon si fa da se', UNA volta per geometria e solo al primo raggio che
+   la tocca (Mesh._positions ripiega su geometry._positions, e
+   _generatePointsArray lo crea li'). Quindi qui non lo si costruisce: stessi
+   raggi, stesse collisioni, stesse bounding box. Personaggi con scheletro e
+   mesh con morph (i personaggi: altri 34 MB, 488 mila Vector3) l'array e'
+   invece la posa vera, e serve al clic sugli NPC (scene.pick): per loro lo
+   si costruisce lo stesso, ma SOLO quando un raggio li tocca davvero
+   (_generatePointsArray, che Babylon chiama prima di ogni test sui
+   triangoli e prima delle collisioni). Prima era la posa al momento della
+   copia, ora quella al momento del primo raggio: per un clic e' meglio. */
+try{ const _gd=BABYLON.AbstractMesh.prototype._getData;
+  if(typeof _gd==="function") BABYLON.AbstractMesh.prototype._getData=function(o,d,k){
+    if(o && o.updatePositionsArray===undefined && this._geometry)
+      o=Object.assign({},o,{updatePositionsArray:false});
+    return _gd.call(this,o,d,k); };
+  const _gpa=BABYLON.Mesh.prototype._generatePointsArray;
+  if(typeof _gd==="function" && typeof _gpa==="function") BABYLON.Mesh.prototype._generatePointsArray=function(){
+    if((this.skeleton||this.morphTargetManager) && this._geometry && !this._internalAbstractMeshDataInfo._positions){
+      try{ _gd.call(this,{applySkeleton:true,applyMorph:true},null,BABYLON.VertexBuffer.PositionKind); }catch(e){}
+      if(this._internalAbstractMeshDataInfo._positions) return true; }
+    return _gpa.call(this); };
+}catch(e){ console.warn("_getData: ritocco non agganciato",e); }
+
 const canvas=document.getElementById("game");
 const engine=new BABYLON.Engine(canvas,true,{preserveDrawingBuffer:true,stencil:true});
-const scene=new BABYLON.Scene(engine);
+/* v540 — SCENA CON LE MAPPE (opzioni di Babylon per le scene con tante mesh):
+   ogni materiale tiene l'elenco delle mesh che lo usano (meshMap), le
+   geometrie si cercano per id invece di scorrerle tutte (3700), i cloni si
+   ritrovano senza giri. Costa un po' di memoria, toglie lavoro quadratico. */
+const scene=new BABYLON.Scene(engine,{ useMaterialMeshMap:true, useGeometryUniqueIdsMap:true, useClonedMeshMap:true });
+/* v540 — GLI AVVISI DEI MATERIALI SOLO A CHI LI USA. Quando un materiale
+   cambia texture o interruttori, Babylon scorre TUTTE le ~5000 mesh della
+   scena per trovare quelle che lo usano (Material._markAllSubMeshesAsDirty
+   non guarda la meshMap). Ogni NPC che nasce clona i suoi materiali e ci
+   mette le tinte: misurati 3,9 s su ~6 s di JavaScript dell'avvio, e lo
+   stesso scatto ogni volta che un passante compare a gioco avviato.
+   Qui Babylon fa lo STESSO lavoro, ma vedendo come «scena» solo le mesh
+   della meshMap del materiale. Si torna al giro completo se la mappa non
+   c'e', se il materiale e' quello di default o se sta dentro un
+   MultiMaterial (li' la mesh e' registrata sul multi, non su di lui). */
+try{ const _mad=BABYLON.Material.prototype._markAllSubMeshesAsDirty, _solo=[];
+  if(typeof _mad==="function") BABYLON.Material.prototype._markAllSubMeshesAsDirty=function(f){
+    const mm=this.meshMap, sc=this.getScene();
+    if(!mm || !sc || !Array.isArray(sc.meshes) || (sc._hasDefaultMaterial && sc.defaultMaterial===this)
+       || (sc.multiMaterials && sc.multiMaterials.some(x=>x.subMaterials && x.subMaterials.indexOf(this)>=0)))
+      return _mad.call(this,f);
+    _solo.length=0; for(const id in mm){ const m=mm[id]; if(m) _solo.push(m); }
+    if(!_solo.length) return;
+    const tutte=sc.meshes; sc.meshes=_solo;
+    try{ return _mad.call(this,f); } finally{ sc.meshes=tutte; } };
+}catch(e){ console.warn("avvisi materiali: ritocco non agganciato",e); }
 scene.clearColor=BABYLON.Color3.FromHexString("#bfe3f0").toColor4(1);
 scene.fogMode=BABYLON.Scene.FOGMODE_LINEAR; scene.fogColor=BABYLON.Color3.FromHexString("#cfe3ee");
 scene.fogStart=80; scene.fogEnd=310;   // fogEnd oltre la cresta delle colline (r~265): orizzonte velato ma visibile
@@ -4209,10 +4266,22 @@ function _sitWorldRot(tn,pivot,from,to){
   const sc=new V(), r=new BABYLON.Quaternion(), t=new V(); L.decompose(sc,r,t);
   tn.rotationQuaternion.copyFrom(r);
 }
+/* v540 — SOLO LE OSSA, NON I VESTITI. Ricalcolava la matrice di OGNI
+   discendente, comprese le mesh foglia (corpo, scarpe, capelli, vestiti):
+   per una mesh Babylon rifa' anche il riquadro d'ingombro, ed e' li' che
+   andava il tempo. dancePoseFor la chiama ~7 volte per posa: misurati
+   0,3-0,5 s per ballerino dello skatepark, uno scatto per ballerino nei
+   primi secondi di gioco (proprio durante la misura automatica degli fps).
+   Le pose leggono solo le ossa; chi misura una mesh (_skSoles, _eatBounds)
+   si chiama computeWorldMatrix(true) da se', e al disegno Babylon le
+   ricalcola comunque. Le mesh CON figli restano: sotto possono esserci
+   nodi che servono subito. La profondita' si conta una volta per nodo
+   (prima: a ogni confronto dell'ordinamento). */
 function _sitRefresh(root){ root.computeWorldMatrix(true);
-  const all=root.getDescendants(false).filter(d=>d.computeWorldMatrix);
-  const depth=t=>{ let d=0; for(let q=t.parent;q;q=q.parent) d++; return d; };
-  all.sort((a,b)=>depth(a)-depth(b)).forEach(d=>d.computeWorldMatrix(true)); }
+  const all=root.getDescendants(false).filter(d=>d.computeWorldMatrix &&
+    !(d instanceof BABYLON.AbstractMesh && !(d.getChildren && d.getChildren().length)));
+  const dp=new Map(); all.forEach(t=>{ let d=0; for(let q=t.parent;q;q=q.parent) d++; dp.set(t,d); });
+  all.sort((a,b)=>dp.get(a)-dp.get(b)).forEach(d=>d.computeWorldMatrix(true)); }
 /* pins = [{tn,p,q,s}] della bind-pose; fwd = davanti nel mondo; seatY = quota
    della seduta; groundY = pavimento. Ritorna { pins (copie, gambe piegate), drop } */
 /* v289 — pin di RIPOSO per ossa scelte per nome (busto, braccia): la posa
@@ -5435,7 +5504,26 @@ function styleWindow(mt){ if(!mt||_winMats.has(mt)) return; _winMats.add(mt); wi
   if(mt.emissiveColor) mt.emissiveColor.set(0,0,0); nightLights.push(mt); }
 
 // ombra morbida singola (sole direzionale)
-const shadowGen=new BABYLON.ShadowGenerator(4096, sun);
+/* v540 — LA MAPPA DELLE OMBRE NASCE PICCOLA. A 4096x4096 sono ~134 MB di
+   memoria video (colore + profondita'), allocati al primo istante anche su
+   Low e Medium, dove le ombre restano spente per tutta la partita (vedi
+   decidiOmbre): proprio sui tablet che non hanno memoria da buttare, e nel
+   momento peggiore, il caricamento. Ora nasce da 16 px e sale a 4096 SOLO
+   quando le ombre si accendono davvero (ombraMappa).
+   ⚠️ CAMBIARE LA MISURA RIFA' LA MAPPA. mapSize (e anche un resize diretto
+   della texture, che il generatore ascolta) butta la RenderTargetTexture e
+   ne crea una nuova, con lo stesso uniqueId: renderList, filtro e
+   profondita' li rimette il generatore, ma getCustomRenderList (le ombre
+   attorno al giocatore, _ombraLista) e' nostro e va riagganciato, se no la
+   mappa ridisegna TUTTI i 1773 oggetti che fanno ombra, a ogni frame.
+   I define dei materiali non cambiano (la misura e' un uniform). */
+const OMBRA_PX=4096;
+const shadowGen=new BABYLON.ShadowGenerator(16, sun);
+let _ombraLista=null;
+function ombraMappa(px){ try{ if(shadowGen.mapSize===px) return;
+  shadowGen.mapSize=px;
+  const sm=shadowGen.getShadowMap(); if(sm && _ombraLista) sm.getCustomRenderList=_ombraLista;
+}catch(e){ console.warn("mappa ombre:",e); } }
 shadowGen.usePercentageCloserFiltering=true; shadowGen.filteringQuality=BABYLON.ShadowGenerator.QUALITY_HIGH;
 shadowGen.bias=0.0016; shadowGen.normalBias=0.028; shadowGen.setDarkness(0.34);
 sun.shadowEnabled=true;
@@ -5668,7 +5756,7 @@ function ombraSegui(){
   if(sun.orthoRight!==OMBRA_S){ sun.orthoLeft=-OMBRA_S; sun.orthoRight=OMBRA_S; sun.orthoTop=OMBRA_S; sun.orthoBottom=-OMBRA_S; } }
 function ombraFissa(){ sun.position.set(70,120,-50); sun.orthoLeft=-170; sun.orthoRight=170; sun.orthoTop=170; sun.orthoBottom=-170; }
 scene.onBeforeRenderObservable.add(()=>{ try{ ombraSegui(); }catch(e){} });
-try{ shadowGen.getShadowMap().getCustomRenderList=function(layer,list,n){
+try{ shadowGen.getShadowMap().getCustomRenderList=_ombraLista=function(layer,list,n){
   if(!_oOn) return null;
   const out=_oList; out.length=0; const S=OMBRA_S;
   const cp=camera.globalPosition, k=_cullOn?(OMBRA_K[qLevel]||0):0;
@@ -5754,7 +5842,39 @@ let _ombreDecise=false;
    fosse applyQuality a decidere, una macchina veloce resterebbe senza ombre
    per sempre solo perche' il PRIMO livello provato non era «alto». */
 function decidiOmbre(q){ if(_ombreDecise) return; _ombreDecise=true;
-  sun.shadowEnabled=qAlmenoAlto(q); }
+  if(qAlmenoAlto(q)) ombraMappa(OMBRA_PX);      // v540: la mappa grande solo se serve
+  sun.shadowEnabled=qAlmenoAlto(q);
+  setTimeout(preriscaldaShader,1500); }         // v540: shader pronti prima di girarsi
+/* v540 — GLI SCATTI GIRANDO LA VISUALE (Giacomo, 1 nov: «anche sul mio
+   computer veloce, quando ruoto la prospettiva di 360 vedo forti
+   rallentamenti»). Misurato: nel PRIMO giro completo della camera si
+   compilano 21 shader nuovi (materiali mai inquadrati dalla porta di casa,
+   le loro varianti per le ombre), sparsi su 11 fotogrammi; nel secondo giro
+   zero, e il fotogramma medio scende di un terzo. Ogni compilazione blocca
+   il fotogramma in cui capita: su Windows (ANGLE/Direct3D) anche centinaia
+   di ms l'una. Lo stesso succede la prima volta in ogni via nuova.
+   Qui li si prepara PRIMA, senza disegnare niente: mesh.isReady(true) e' la
+   stessa domanda che Babylon fa prima di disegnare una mesh, e se la
+   risposta e' «no» crea lo shader che manca (materiale, e mappa delle ombre
+   se la mesh ne proietta). Pochi ms per fotogramma (4), a gioco gia'
+   avviato e DOPO la scelta della qualita' — che cambia le ombre, cioe' gli
+   shader, e che si misura sugli fps: non va disturbata. Solo le mesh
+   accese (gli interni spenti si preparano quando ci entri). Chi non e'
+   ancora pronto si riprova al giro dopo: dove il browser compila in
+   parallelo (KHR_parallel_shader_compile) la risposta arriva dopo. */
+const PRERISC={ on:true, corre:false, giri:0, n:0 };
+function preriscaldaShader(){
+  if(!PRERISC.on || PRERISC.corre) return; PRERISC.corre=true; PRERISC.giri=0;
+  const ok=m=>m && !m.isDisposed() && m.subMeshes && m.subMeshes.length && m.isEnabled() && m.getTotalVertices()>0;
+  let lista=scene.meshes.filter(ok), resto=[], i=0; PRERISC.n=lista.length;
+  const passo=()=>{
+    const t0=performance.now();
+    while(i<lista.length && performance.now()-t0<4){ const m=lista[i++];
+      try{ if(ok(m) && !m.isReady(true)) resto.push(m); }catch(e){} }
+    if(i<lista.length){ requestAnimationFrame(passo); return; }
+    if(resto.length && ++PRERISC.giri<30){ lista=resto; resto=[]; i=0; setTimeout(()=>requestAnimationFrame(passo),200); return; }
+    PRERISC.corre=false; PRERISC.resto=resto.length; };
+  requestAnimationFrame(passo); }
 /* Su Max lo schermo si disegna alla sua risoluzione VERA: l'engine nasce senza
    adaptToDeviceRatio, quindi su un Retina (devicePixelRatio 2) gli altri
    livelli disegnano a meta' risoluzione e il browser ingrandisce. Tetto a 2:
@@ -47434,6 +47554,14 @@ scene.onBeforeRenderObservable.add(()=>{      // il tasto riflette lo stato REAL
   runBtn.classList.toggle("on", touchRunHeld||stickRunOn);
 });
 
+/* v540 — NIENTE PICK DI BABYLON SU PRESSIONE E RILASCIO. A ogni pointerdown
+   e pointerup Babylon fa da se' uno scene.pick su TUTTE le ~5000 mesh (per
+   le ActionManager, che qui non ci sono): misurati 7-50 ms per evento su
+   Chromium software, cioe' uno scatto all'inizio e alla fine di OGNI
+   trascinamento per girare la visuale, e sui tablet di piu'. L'unico
+   ascoltatore del gioco (sotto) si fa il suo pick sul tap e non legge
+   pi.pickInfo: il POINTERTAP arriva lo stesso (provato), il pick no. */
+scene.skipPointerDownPicking=true; scene.skipPointerUpPicking=true; scene.skipPointerMovePicking=true;
 let moveTarget=null, pendingInteract=null, started=false;
 scene.onPointerObservable.add(pi=>{
   if(pi.type!==BABYLON.PointerEventTypes.POINTERTAP||!started) return;
