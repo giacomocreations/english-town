@@ -24824,7 +24824,8 @@ function clothesAtCounter(npc){
 
 /* ---- IL CORNER SHOP: il cestino e la cassa di Sam -------------------- */
 const CORNER_PRICES={ "schoolbag":1899, "comic":350, "watch":2500, "camera":4599, "mobile phone":8999,
-                      "headphones":2999, "skateboard":2000, "guitar":7500 };
+                      "headphones":2999, "skateboard":2000, "guitar":7500,
+                      "scooter":7999 };   // 🛴 il monopattino dell'espositore (rideStand). ⚠️ priceWords arriva a 99 sterline
 const CORNER={ on:false, items:[], inters:[], basket:null, stack:null, carryObs:null, mode:"", park:null };
 /* v496 (Giacomo, 31 ott: «per gli oggetti piu' grandi bisogna prendere il
    trolley, come nel market: nel basket la chitarra si rimpicciolisce e fa
@@ -24835,7 +24836,7 @@ const CORNER={ on:false, items:[], inters:[], basket:null, stack:null, carryObs:
    che c'era dentro passa nel trolley. Il trolley si spinge come al Market
    (SHOP.cart: stessa posa delle mani e stesso muso che non entra negli
    scaffali) e alla cassa di Sam si paga allo stesso modo. */
-const CORNER_GRANDI={ "skateboard":1, "guitar":1 };
+const CORNER_GRANDI={ "skateboard":1, "guitar":1, "scooter":1 };
 /* durante la quest della Unit 4 il trolley e' di Mia (ci finisce il listening) */
 /* il trolley di Mia al suo posto (on) o in mano al giocatore (off): corpo,
    etichetta e il suo solido, che altrimenti resterebbe un muro invisibile */
@@ -24909,7 +24910,9 @@ function cornerInit(){
         if(CORNER.items.length>=8){ toast((CORNER.mode==="trolley"?"\u{1F6D2}":"\u{1F9FA}")+" Your "+cornerCosa()+" is full! Go to Sam."); return; }
         CORNER.items.push(e);
         try{ const cp=cartAdd(CORNER.basket,{ en:e.en, mesh:e.mesh, grande:big }); if(cp) [cp].concat(cp.getChildMeshes()).forEach(m=>{ m.alwaysSelectAsActiveMesh=true; }); }catch(err){}
-        toast((CORNER.mode==="trolley"?"\u{1F6D2} ":"\u{1F9FA} ")+e.en+" — in your "+cornerCosa()); cornerTick(); } })); });
+        toast((CORNER.mode==="trolley"?"\u{1F6D2} ":"\u{1F9FA} ")+e.en+" — in your "+cornerCosa()); cornerTick();
+        try{ rideShopNote(e.en); }catch(err){} } })); });
+  try{ rideStandItem(); }catch(err){}                                 // 🛴 il monopattino dell'espositore
 }
 /* il cestino in mano. v323d (Giacomo: «le mani un po' piu' su sulla
    maniglia nera, il dorso deve star davanti: nella foto sembra appeso al
@@ -25100,7 +25103,8 @@ function cornerCheckout(npc){
           const R=Object.keys(rows).map(k=>[(rows[k]>1?rows[k]+" x ":"")+k, CORNER_PRICES[k]*rows[k]]);
           cornerDropBasket();
           QModal.open({ title:"\u{1F9FE} Your receipt", sub:"", html:shopReceiptHtml("CORNER SHOP","my things · since 2026",R,tot),
-            buttons:[{ label:"Thanks, bye!", cls:"primary" }] }); } }); } }); } }); } });
+            buttons:[{ label:"Thanks, bye!", cls:"primary" }] });
+          try{ rideAfterCheckout(its); }catch(err){} } }); } }); } }); } });   // 🛹🛴 pagati: sono tuoi
 }
 /* uscendo dal negozio: si toglie il capo del camerino, il cestino torna a posto */
 setInterval(()=>{
@@ -39374,7 +39378,7 @@ const SFX=(function(){
       rdSrc.start(); rdOsc.start();
     }
     const t=c.currentTime, k=Math.max(0,Math.min(1,v||0)), sk=(kind==="skate");
-    rdVol.gain.setTargetAtTime((sk?0.20:0.12)*k*lvl(), t, 0.07);
+    rdVol.gain.setTargetAtTime((sk?0.07:0.12)*k*lvl(), t, 0.07);     // skate: era 0,20, troppo forte (Giacomo, 2 nov)
     rdLp.frequency.setTargetAtTime(sk?(360+700*k):(260+420*k), t, 0.1);
     rdOscG.gain.setTargetAtTime(sk?0:0.22*k, t, 0.1);
     rdOsc.frequency.setTargetAtTime(150+330*k, t, 0.1);
@@ -47663,9 +47667,11 @@ scene.onBeforeRenderObservable.add(()=>{      // il tasto riflette lo stato REAL
 
    SI COMPRANO (Giacomo, 2 nov: «per averli devi comprarli in corner shop,
    se hai le stelle sufficienti li puoi usare, se no ti dice non hai
-   stelle sufficienti»). Al Corner Shop c'e' l'espositore (rideStand):
-   con E si sceglie; se lo sblocco c'e' diventa tuo (et_progress.__rides,
-   che sale nel cloud con i progressi), se no il messaggio delle stelle.
+   stelle sufficienti»; poi: «bisogna fare tutta la procedura: mettere nel
+   carrello, andare alla cassa»). Si comprano come ogni altra cosa del
+   Corner Shop: trolley, E sull'oggetto, cassa di Sam (vedi rideStandItem,
+   rideAfterCheckout). Pagato = tuo (et_progress.__rides, che sale nel
+   cloud con i progressi); per USARLO servono le stelle (o l'anno finito).
    Nella Teca (scheda 🛹 Rides) si vedono tutti e due col loro prezzo.
 
    CORPO — sullo skate le braccia si aprono per l'equilibrio (di piu'
@@ -48131,13 +48137,15 @@ function rideCheckUnlocks(){
   try{ if(loginPending) return; }catch(e){}
   const k=_rideSeenKey();
   let seen=[]; try{ seen=JSON.parse(localStorage.getItem(k)||"[]")||[]; }catch(e){}
-  /* si annuncia quando si PUO' COMPRARE (sblocco raggiunto, non ancora tuo) */
-  const nuovi=RIDES.filter(r=>rideOpen(r) && !rideOwned(r) && seen.indexOf(r.id)<0);
+  /* si annuncia quando arrivano le stelle (o l'anno finito) per USARLO */
+  const nuovi=RIDES.filter(r=>rideOpen(r) && seen.indexOf(r.id)<0);
   rideHud();
   if(!nuovi.length) return;
   nuovi.forEach(r=>seen.push(r.id));
   try{ localStorage.setItem(k,JSON.stringify(seen)); }catch(e){}
-  toast("\u{1F389} New: you can buy "+nuovi.map(r=>r.ic+" "+r.en).join(" + ")+" at the Corner Shop! \u00b7 Puoi comprarlo al Corner Shop",4600);
+  const mio=nuovi.filter(rideOwned), da=nuovi.filter(r=>!rideOwned(r));
+  if(mio.length) toast("\u{1F389} Now you can ride your "+mio.map(r=>r.ic+" "+r.en.toLowerCase()).join(" + ")+"! Outside, press R",4600);
+  else toast("\u{1F389} New: "+da.map(r=>r.ic+" "+r.en).join(" + ")+"! Buy it at the Corner Shop \u00b7 Compralo al Corner Shop",4600);
 }
 setInterval(()=>{ try{ rideCheckUnlocks(); }catch(e){} },3000);
 
@@ -48161,13 +48169,21 @@ function rideTilt(board,body,cur,x,z,ry){
   return p;
 }
 
-/* ---- 🛒 L'ESPOSITORE AL CORNER SHOP -----------------------------------------
-   Una pedana fra lo scaffale est e la porta, con sopra uno skate (su un
-   leggio) e un monopattino in piedi, le STESSE tavole che si usano in
-   strada (rideBuildMesh). Si costruisce la prima volta che si entra.
-   E -> si sceglie: se lo sblocco c'e' diventa tuo, se no il messaggio
-   delle stelle che mancano. */
+/* ---- 🛒 AL CORNER SHOP SI COMPRANO COME TUTTO IL RESTO --------------------
+   (Giacomo, 2 nov: «per comprare bisogna fare tutta la procedura: mettere
+   nel carrello, andare alla cassa, etc.»)
+   · 🛹 lo SKATEBOARD e' quello che c'era gia' sullo scaffale est (oggetto
+     della Unit 4, £20.00, «grande»: ci vuole il trolley);
+   · 🛴 il MONOPATTINO sta su una pedana fra lo scaffale est e la porta
+     (rideStand), £79.99, anche lui «grande».
+   Si prende il trolley, E sull'oggetto, si va da Sam e si paga col dialogo
+   di sempre (Have you got everything? / How much…? / il prezzo a voce /
+   Here you are). Pagato = tuo (rideAfterCheckout).
+   Comprarli si puo' sempre (e' la spesa in inglese); USARLI chiede le
+   stelle: senza, R risponde «Non hai stelle sufficienti per usarlo». Lo si
+   dice gia' quando lo metti nel carrello (rideShopNote). */
 const RIDE_STAND={ x:5.6, z:4.0 };          // nel sistema dell'interno (come le props di UNIT4)
+const RIDE_SHOP_EN={ skateboard:"skate", scooter:"scooter" };
 function rideStandBuild(){
   if(RIDE.stand || typeof UNIT4==="undefined") return;
   const I=INTERIORS[UNIT4.area]; if(!I || !I.root) return;
@@ -48175,40 +48191,57 @@ function rideStandBuild(){
   const root=new BABYLON.TransformNode("rideStand",scene); root.parent=I.root; root.position.set(X,0,Z);
   const M=_rideMat();
   if(!M.stand){ M.stand=mat("rideStandM","#2f3d4a"); M.standTop=mat("rideStandT","#e8b04b"); }
-  const ped=B.CreateBox("rideStandP",{width:1.0,height:0.16,depth:2.0},scene); ped.material=M.stand; ped.parent=root; ped.position.y=0.08;
-  const top=B.CreateBox("rideStandT",{width:1.02,height:0.02,depth:2.02},scene); top.material=M.standTop; top.parent=root; top.position.y=0.17;
-  /* skate su un leggio inclinato, monopattino in piedi: guardano la sala (ovest) */
-  const lg=B.CreateBox("rideStandL",{width:0.32,height:0.26,depth:0.06},scene); lg.material=M.stand; lg.parent=root; lg.position.set(0.18,0.31,-0.5);
-  const sk=rideBuildMesh("skate","rideStandSk"); sk.parent=root; sk.position.set(0.02,0.30,-0.5);
-  sk.rotation.set(0,-Math.PI/2,0); sk.rotation.z=0.42; sk.setEnabled(true);
-  const sc=rideBuildMesh("scooter","rideStandSc"); sc.parent=root; sc.position.set(0,0.18+0.14,0.45);
+  const ped=B.CreateBox("rideStandP",{width:0.9,height:0.16,depth:1.3},scene); ped.material=M.stand; ped.parent=root; ped.position.y=0.08;
+  const top=B.CreateBox("rideStandT",{width:0.92,height:0.02,depth:1.32},scene); top.material=M.standTop; top.parent=root; top.position.y=0.17;
+  const sc=rideBuildMesh("scooter","rideStandSc"); sc.parent=root; sc.position.set(0,0.18+0.14,0);
   sc.rotation.y=-Math.PI/2; sc.setEnabled(true);
   root.getChildMeshes().forEach(m=>{ m.isPickable=true; m.alwaysSelectAsActiveMesh=true; });
-  addSolid(X-0.55,X+0.55,Z-1.05,Z+1.05,UNIT4.area);
-  try{ guiLabel(anchorMesh(I.root, X, 1.55, Z-0.5), "\u{1F6F9} Skateboard", "\u2B50 "+RIDES[0].req.stars, true, UNIT4.area); }catch(e){}
-  try{ guiLabel(anchorMesh(I.root, X, 1.75, Z+0.45), "\u{1F6F4} Scooter", "\u2B50 "+RIDES[1].req.stars, true, UNIT4.area); }catch(e){}
-  RIDE.stand=addInteract({ id:"ride_stand", area:UNIT4.area, radius:2.2,
-    pos:()=>new BABYLON.Vector3(X-0.6,0.8,Z), meshes:root.getChildMeshes(),
-    prompt:'Press <b>E</b> to buy a <b>skateboard</b> or a <b>scooter</b>', interact:rideShop });
+  addSolid(X-0.5,X+0.5,Z-0.7,Z+0.7,UNIT4.area);
+  try{ guiLabel(anchorMesh(I.root, X, 1.6, Z), "\u{1F6F4} Scooter \u00b7 \u00a379.99", "\u2B50 "+RIDES[1].req.stars+" to ride", true, UNIT4.area); }catch(e){}
+  /* lo skateboard dello scaffale: stesso cartellino, cosi' si sa che e' «quello» */
+  try{ const sk=(UNIT4.items||[]).find(e=>e.en==="skateboard");
+    if(sk) guiLabel(anchorMesh(I.root, C.x+8.25, 1.5, C.z-2.45), "\u{1F6F9} Skateboard \u00b7 \u00a320.00", "\u2B50 "+RIDES[0].req.stars+" to ride", true, UNIT4.area); }catch(e){}
+  RIDE.stand={ root, sc, pos:new BABYLON.Vector3(X-0.6,0.8,Z) };
+  rideStandItem();
 }
-function rideShop(){
+/* il monopattino come oggetto del negozio: si accende col cestino/trolley
+   in mano (cornerTick: tutti i CORNER.inters che non sono cestini o trolley) */
+function rideStandItem(){
+  if(!RIDE.stand || RIDE.standItem || typeof CORNER==="undefined" || !CORNER.inters.length) return;
+  const e={ en:"scooter", mesh:RIDE.stand.sc, pos:RIDE.stand.pos };
+  RIDE.standItem=addInteract({ id:"corner_scooter", area:UNIT4.area, radius:2.2, enabled:false,
+    pos:()=>e.pos, meshes:RIDE.stand.root.getChildMeshes(),
+    prompt:()=>CORNER.mode==="basket"?'The <b>scooter</b> is too big for the basket: <b>take the trolley</b>!'
+                                     :'Press <b>E</b> to put the <b>scooter</b> in your trolley \u00b7 \u00a379.99',
+    interact:()=>{ if(!CORNER.on) return;
+      if(CORNER.mode==="basket"){ toast("\u{1F6D2} It's too big for the basket! Take the trolley.",3800); return; }
+      if(CORNER.items.length>=8){ toast("\u{1F6D2} Your trolley is full! Go to Sam."); return; }
+      CORNER.items.push(e);
+      try{ const cp=cartAdd(CORNER.basket,{ en:e.en, mesh:e.mesh, grande:true }); if(cp) [cp].concat(cp.getChildMeshes()).forEach(m=>{ m.alwaysSelectAsActiveMesh=true; }); }catch(err){}
+      toast("\u{1F6D2} scooter \u2014 in your trolley"); cornerTick(); try{ rideShopNote("scooter"); }catch(err){} } });
+  CORNER.inters.push(RIDE.standItem);
+  try{ cornerTick(); }catch(err){}
+}
+/* appena messo nel carrello: si dice subito se poi lo si potra' usare */
+function rideShopNote(en){
+  const R=rideDef(RIDE_SHOP_EN[en]||""); if(!R) return;
   let st=0; try{ st=Stars.total(); }catch(e){}
-  const btn=R=>{ const own=rideOwned(R), open=rideOpen(R);
-    return { label:R.ic+" "+R.en+" \u00b7 "+(own?"\u2713 yours":"\u2B50 "+R.req.stars), cls:(!own&&open)?"primary":"",
-             act:()=>rideBuyTry(R) }; };
-  QModal.open({ title:"\u{1F6F9}\u{1F6F4} Skateboards & scooters",
-    sub:"Which one would you like? \u00b7 You've got <b>\u2B50 "+st+"</b> stars.<br>"
-       +"<span style=\"opacity:.75;font-size:13px\">Lo skate va veloce come la corsa, il monopattino molto di pi\u00f9. "
-       +"Li usi fuori, in citt\u00e0: tasto R (o il bottone).</span>",
-    buttons:RIDES.map(btn).concat([{ label:"No, thanks" }]) });
+  setTimeout(()=>{
+    if(rideOwned(R)) toast(R.ic+" You've already got one! \u00b7 Ce l'hai gi\u00e0",3000);
+    else if(rideOpen(R)) toast(R.ic+" Pay at Sam's till and it's yours: then ride it outside (R)! \u00b7 Paga da Sam ed \u00e8 tuo",4200);
+    else toast(R.ic+" You can buy it, but to RIDE it you need \u2B50 "+R.req.stars+" (you've got "+st+") \u00b7 Per usarlo servono "+R.req.stars+" stelle",5200);
+  },1400);
 }
-function rideBuyTry(R){
-  if(rideOwned(R)){ toast(R.ic+" It's already yours! Outside, press R to ride \u00b7 \u00e8 gi\u00e0 tuo",3400); return; }
-  if(!rideOpen(R)){ toast(rideStarsMsg(R),4800); return; }
-  rideSetOwned(R);
-  try{ SFX.correct(); }catch(e){}
-  toast("\u{1F389} "+R.ic+" The "+R.en.toLowerCase()+" is yours! Outside, press R to ride \u00b7 \u00e8 tuo!",4600);
-  rideHud();
+function rideAfterCheckout(its){
+  const nuovi=RIDES.filter(R=>its.some(x=>RIDE_SHOP_EN[x.en]===R.id) && !rideOwned(R));
+  if(!nuovi.length) return;
+  nuovi.forEach(rideSetOwned);
+  const ok=nuovi.filter(rideOpen), no=nuovi.filter(R=>!rideOpen(R));
+  setTimeout(()=>{
+    if(ok.length) toast("\u{1F389} "+ok.map(R=>R.ic+" "+R.en).join(" + ")+": "+(ok.length>1?"they're":"it's")+" yours! Outside, press R to ride \u00b7 Fuori, tasto R",5200);
+    else toast(no.map(R=>R.ic).join(" ")+" "+rideStarsMsg(no[0]),5600);
+    rideHud();
+  },600);
 }
 
 /* ---- ogni fotogramma: scendere se serve, ruote, rumore ------------------ */
@@ -68552,10 +68585,12 @@ function _tecaParts(ids){
     h+='<div class="dy-sec">\u{1F6F9} Skateboard &amp; \u{1F6F4} scooter</div><div class="gem-fits">';
     RIDES.forEach(function(R){ const own=rideOwned(R), r=rideReq(R), open=!!r.open, use=own&&open, on=(RIDE.on===R);
       h+=_tcCard('data-ride="'+R.id+'"',on,!use,_tcSw("#cdd6dc","#8b97a1",R.ic),R.en,
-        on?"you're riding it":(use?"yours \u00b7 tap to ride":(open?"\u{1F6D2} buy it at the Corner Shop":"\u{1F512} \u2B50 "+R.req.stars+" \u00b7 or finish Year "+(R.id==="skate"?1:2))),
+        on?"you're riding it":(use?"yours \u00b7 tap to ride"
+          :((own?"yours \u00b7 ":"\u{1F6D2} Corner Shop \u00b7 ")+(open?"":"\u{1F512} \u2B50 "+R.req.stars+" to ride, or finish Year "+(R.id==="skate"?1:2)))),
         (R.id==="skate"?"fast as running":"super fast")); });
-    h+='</div><div class="dy-note">Buy them at the <b>Corner Shop</b> \u{1F6D2} when you have enough \u2B50 stars '
-      +'(or when you finish the year). Ride them outside: press <b>R</b>.</div>';
+    h+='</div><div class="dy-note">Buy them at the <b>Corner Shop</b> \u{1F6D2}: take a <b>trolley</b>, put it in, '
+      +'and pay at <b>Sam</b>\'s till. To <b>ride</b> them you need the \u2B50 stars (or finish the year). '
+      +'Ride them outside: press <b>R</b>.</div>';
   }
   else if(id.indexOf("acc:")===0){ const slot=id.slice(4);
     /* uno per slot, «None» sempre libero e per primo; sotto l'accessorio che
