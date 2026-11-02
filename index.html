@@ -16064,7 +16064,7 @@ function _skFunbox(x,z){
    rampe. Calcolata dalla STESSA geometria con cui sono costruite (curva di
    raggio R + piano in cima per le quarter pipe, piano + due scivoli per il
    funbox): niente raggi, costa una manciata di conti ed e' esatta. */
-function skRampTop(X,Z){
+function skRampTop(X,Z,rail){   // rail: con la sbarra (default: se il giocatore e' in skate)
   const L=SKATE.ramps; if(!L || !L.length) return null;
   if(Math.abs(X-SKATE.C.x)>22 || Math.abs(Z-SKATE.C.z)>16) return null;
   let best=null;
@@ -16079,7 +16079,7 @@ function skRampTop(X,Z){
       if(az>r.hw || ax>r.hl+r.Lr) continue;
       h=r.y0+(ax<=r.hl ? r.H : r.H*(1-(ax-r.hl)/r.Lr));
       /* la sbarra, ma solo per chi e' in skate (a piedi resta un ostacolo) */
-      if(r.rail && az<0.14 && ax<=r.rail.hl && _skOnSkate()) h=Math.max(h,r.rail.y);
+      if(r.rail && az<0.14 && ax<=r.rail.hl && (rail!==undefined?rail:_skOnSkate())) h=Math.max(h,r.rail.y);
     }
     if(best===null || h>best) best=h; }
   return best;
@@ -16316,12 +16316,14 @@ function skateTick(){
     if(D.n.inter) D.n.inter.enabled=(D.st==="chill" && _pkVisible(D.n));    // si parla solo quando sono fermi
     if(!_pkVisible(D.n)) return;
     if(!D.K){ if(prep) return; prep=true; if(!_skPrepare(D)) return; D.m0=Math.floor(B)+1; }
-    if(ph==="chill" && D.st==="dance") skGoChill(D,see);
+    if((ph==="chill" || (ph==="skate" && !_skIsSkater(D))) && (D.st==="dance" || D.st==="skate")) skGoChill(D,see);
+    else if(ph==="skate" && _skIsSkater(D) && (D.st==="dance" || D.st==="chill")) skGoSkate(D,see);   // 🛹 tocca a loro
     /* v309h (Giacomo: «se deve partire il ballo mollano il cypher
        improvvisamente»): finche' il cerchio c'e', la crew resta; il ballo
        lo raggiungono dopo (_cyDisband -> _cyBack) */
-    else if(ph==="dance" && (D.st==="chill" || (D.st==="cypher" && !_cyCircleOn()))) skGoDance(D,see,B);
+    else if(ph==="dance" && (D.st==="chill" || D.st==="skate" || (D.st==="cypher" && !_cyCircleOn()))) skGoDance(D,see,B);
     if(D.st==="chill") skFaceTalk(D);
+    if(D.st==="skate"){ try{ skSkateTick(D); }catch(e){ console.warn("[skate] crew",e); } return; }
     if(D.st!=="dance") return;
     if(_skRest(D,rest,B,D.n.holder,v=>{ D.n.carrier.rotation.y=D.face; })) return;
     /* v308h: la stessa mossa, sullo stesso battito, per tutti (vedi skCrewStep) */
@@ -16443,6 +16445,8 @@ function SKATE_DUR(mv){ if(mv==="hop"||mv==="rise") return 2; return (SK_MOVES.f
    la stessa cosa. Nia e Kiki si siedono sulla panchina libera, Jay e Leon
    in piedi davanti a loro; chi parla gesticola. La musica resta: le casse
    suonano e il giocatore puo' ballare lo stesso. */
+/* v (2 nov): il ciclo ora ha TRE quarti d'ora: ballo, chiacchiere, skate
+   (Jay e Leon sulle rampe, Nia e Kiki in panchina: vedi SK_RIDES). */
 const SK_CYCLE=15*60*1000;
 /* v309g (Giacomo: «la crew arriva solo dopo le 15; il docente con G li
    vede in azione»). I ragazzi dello skatepark ci vengono il pomeriggio,
@@ -16457,11 +16461,11 @@ function skCrewOpen(){
 }
 function skPhase(){ if(SKATE.force) return SKATE.force;
   if(radioNow()<(SKATE.reqUntil||0)) return "dance";                     // v309d: gliel'hai chiesto tu
-  return (Math.floor(radioNow()/SK_CYCLE)%2)?"chill":"dance"; }   // v309: l'ora della radio
+  return ["dance","chill","skate"][Math.floor(radioNow()/SK_CYCLE)%3]; }   // v (2 nov): dopo ballo e chiacchiere, lo skate   // v309: l'ora della radio
 /* la panchina delle chiacchiere: quella dove non sei seduto tu */
 function skPhaseBenches(ph){
   const Bs=SKATE.benches||[]; Bs.forEach(b=>{ b.npcBusy=false; });
-  if(ph!=="chill" || !Bs.length) return;
+  if((ph!=="chill" && ph!=="skate") || !Bs.length) return;          // nello skate: Nia e Kiki guardano dalla panchina
   let k=0; try{ if(BSIT.b===Bs[0]) k=1; }catch(e){}
   SKATE.chillB=Bs[k]; if(SKATE.chillB) SKATE.chillB.npcBusy=true;
 }
@@ -16485,10 +16489,11 @@ function _skWalk(D,x,z,see,done){
   npcWalkSeq(n,[()=>({ x, z })],0.25,done,"town",jump,{ detour:true, speed:1.15, onStuck:jump });
 }
 function skGoChill(D,see){
+  _skSkateOff(D);
   const sp=_skChillSpot(D); if(!sp) return;
   _skUnpose(D);
   _skWalk(D,sp.x,sp.z,see,()=>{
-    if(skPhase()!=="chill"){ D.st="chill"; return; }        // il quarto d'ora e' gia' finito: si torna a ballare
+    { const ph2=skPhase(); if(ph2!=="chill" && !(ph2==="skate" && !_skIsSkater(D))){ D.st="chill"; return; } }        // il quarto d'ora e' gia' finito: si torna a ballare
     if(sp.sit){
       let ok=false; try{ ok=npcSitAt(D.n,sp.S.x,sp.S.z,sp.S.face,sp.S.y,sp.S.gy,0.03); }catch(e){ console.warn("[skate] sit",e); }
       if(!ok){ D.n.carrier.position.x=sp.x; D.n.carrier.position.z=sp.z; D.n.carrier.rotation.y=sp.S.face; } }
@@ -16520,6 +16525,7 @@ function skFaceTalk(D){
   if(Math.abs(diff)>0.002) n.carrier.rotation.y+=diff*(1-Math.exp(-dt*7));
 }
 function skGoDance(D,see,B){
+  _skSkateOff(D);
   D.talk=false; D.chillFace=null;
   _skUnpose(D);
   _skWalk(D,D.home.x,D.home.z,see,()=>{
@@ -16532,6 +16538,129 @@ function skGoDance(D,see,B){
        leggerla). */
     try{ const q=document.getElementById("quest-modal");
       if(q && q.classList.contains("show") && q.__npc && q.__npc.__skDancer) DialogueBox.close(); }catch(e){} });
+}
+/* ---- 🛹 LA CREW IN SKATE (Giacomo, 2 nov: «allo skate park, dopo che
+   ballano e parlano, ci sia anche un momento in cui alcuni della crew hanno
+   lo skate e fanno le evoluzioni che si possono fare sulle rampe») ---------
+   Terzo quarto d'ora del ciclo (skPhase: dance -> chill -> skate). Jay e
+   Leon (i 0 e 2, quelli che nelle chiacchiere stanno in piedi) prendono lo
+   skate; Nia e Kiki restano in panchina a guardare.
+   I percorsi sono FUNZIONI DEL TEMPO della radio (come la coreografia del
+   ballo): tutta la classe vede lo stesso trick nello stesso momento.
+     Jay  — quarter pipe est: su e giu' con kickturn in cima (una volta piu'
+            in alto, fino quasi al bordo), in piano un ollie col kickflip.
+     Leon — funbox: lo attraversa con un ollie kickflip sopra, curva, sale
+            sulla sbarra e la percorre tutta in grind, curva e ricomincia.
+   Le quote vengono dalla geometria delle rampe (skRampTop con la sbarra),
+   la tavola e il corpo si inclinano con la pendenza come per il giocatore.
+   ⚠️ Arrivati al punto di partenza si aspetta il prossimo giro del ciclo
+   (al massimo una quindicina di secondi, in piedi sulla tavola): cosi' chi
+   arriva allo skatepark in momenti diversi li vede comunque in sincrono. */
+function _skL(a,b,dur,o){ return Object.assign({ k:"line", a, b, dur }, o||{}); }
+function _skArc(c,r,a0,a1,dur){ return { k:"arc", c, r, a0, a1, dur }; }
+function _skQP(z,peak,dur){ return { k:"qp", z, peak, dur }; }
+const SK_RIDES=[
+  { who:0, loop:[                                                     // Jay: quarter pipe est
+      _skL([39.5,55.6],[44.8,55.6],2.0),
+      _skQP(55.6,1.20,1.8),
+      _skL([44.8,55.6],[39.5,55.6],1.9,{ ollie:0.5, flip:true }),
+      _skArc([39.5,56.5],0.9,Math.PI,2*Math.PI,1.2),
+      _skL([39.5,57.4],[44.8,57.4],1.8),
+      _skQP(57.4,1.33,2.0),
+      _skL([44.8,57.4],[39.5,57.4],1.9,{ ollie:0.45 }),
+      _skArc([39.5,56.5],0.9,0,-Math.PI,1.2) ] },
+  { who:2, loop:[                                                     // Leon: funbox e sbarra
+      _skL([24.0,58.5],[36.5,58.5],4.0,{ ollie:0.48, flip:true, h:0.42 }),
+      _skArc([36.5,59.6],1.1,Math.PI,0,1.3),
+      _skL([36.5,60.7],[33.6,59.2],1.0),
+      _skL([33.6,59.2],[25.5,59.2],2.6,{ rail:true }),
+      _skL([25.5,59.2],[22.5,59.6],0.9),
+      _skArc([22.5,59.05],0.55,0,-Math.PI,1.1),
+      _skL([22.5,58.5],[24.0,58.5],0.5) ] },
+];
+SK_RIDES.forEach(L=>{ L.T=L.loop.reduce((a,s)=>a+s.dur,0); });
+function _skIsSkater(D){ return SK_RIDES.some(L=>L.who===D.i); }
+function _skRideOf(D){ return SK_RIDES.find(L=>L.who===D.i)||null; }
+/* il tempo del giro, uguale per tutti: secondi dall'inizio del quarto d'ora */
+function _skLoopT(L){ const ms=radioNow()%SK_CYCLE; return (ms/1000)%L.T; }
+/* dove si e' al tempo t del giro: x, z, direzione, salto, kickflip, sbarra */
+function _skRidePose(L,t){
+  let s=null, u=0;
+  for(const q of L.loop){ if(t<q.dur){ s=q; u=t/q.dur; break; } t-=q.dur; }
+  if(!s){ s=L.loop[L.loop.length-1]; u=1; }
+  const P={ x:0, z:0, yaw:0, hop:0, spin:0, rail:!!s.rail };
+  if(s.k==="line"){
+    P.x=s.a[0]+(s.b[0]-s.a[0])*u; P.z=s.a[1]+(s.b[1]-s.a[1])*u; P.yaw=Math.atan2(s.b[0]-s.a[0],s.b[1]-s.a[1]);
+    if(s.ollie!=null){ const w=0.13, v=(u-(s.ollie-w))/(2*w);
+      if(v>0 && v<1){ P.hop=(s.h||0.34)*Math.sin(Math.PI*v); if(s.flip) P.spin=2*Math.PI*v; } }
+  } else if(s.k==="arc"){
+    const a=s.a0+(s.a1-s.a0)*u, sg=Math.sign(s.a1-s.a0);
+    P.x=s.c[0]+s.r*Math.sin(a); P.z=s.c[1]+s.r*Math.cos(a); P.yaw=Math.atan2(sg*Math.cos(a),-sg*Math.sin(a));
+  } else {                                                            // quarter pipe: su, kickturn, giu'
+    const r=(SKATE.ramps||[]).find(q=>q.k==="q" && q.ry===0); if(!r) return P;
+    const lx=s.peak*Math.sin(Math.PI*u), c=Math.cos(r.ry), sn=Math.sin(r.ry);
+    P.x=r.x+lx*c; P.z=s.z-lx*sn;
+    const up=Math.atan2(c,-sn), k=Math.max(0,Math.min(1,(u-0.42)/0.16));
+    P.yaw=up+Math.PI*(k*k*(3-2*k));
+  }
+  return P;
+}
+function _skFloorRide(x,z,rail){
+  const t=skRampTop(x,z,rail); if(t!==null) return t;
+  return SKATE.gy+0.035;
+}
+function _skSkateOff(D){
+  if(!D.sk) return;
+  const n=D.n;
+  if(D.sk.board) D.sk.board.setEnabled(false);
+  n.holder.rotation.x=0; n.holder.position.y=D.baseY;
+  if(D.sk.cy0!=null) n.carrier.position.y=D.sk.cy0;
+  D.sk.on=false;
+}
+function skGoSkate(D,see){
+  const L=_skRideOf(D); if(!L) return;
+  D.talk=false; D.chillFace=null;
+  _skUnpose(D);
+  const p0=_skRidePose(L,0);
+  _skWalk(D,p0.x,p0.z,see,()=>{
+    const n=D.n;
+    if(!D.sk) D.sk={ board:rideBuildMesh("skate","crewSk_"+D.i), cy0:n.carrier.position.y, sy:null, pitch:0 };
+    D.sk.board.parent=n.carrier; D.sk.board.position.set(0,0,0); D.sk.board.rotation.set(0,0,0);
+    D.sk.cy0=n.carrier.position.y;
+    try{ n.play("Idle"); }catch(e){}
+    n.pins=D.bind.map(k=>({ tn:k.tn, p:k.p.clone(), q:k.q.clone(), s:k.s.clone() }));
+    D.sk.on=true; D.sk.wait=true; D.sk.lastT=null;
+    D.st="skate";
+  });
+}
+/* ogni fotogramma, per chi e' in skate */
+function skSkateTick(D){
+  const L=_skRideOf(D), S=D.sk; if(!L || !S || !S.on) return;
+  const n=D.n, c=n.carrier, R=rideDef("skate");
+  S.board.setEnabled(true);
+  const t=_skLoopT(L);
+  /* in attesa del giro: fermo sulla tavola al punto di partenza */
+  if(S.wait){ if(S.lastT!=null && t<S.lastT){ S.wait=false; } S.lastT=t;
+    if(S.wait){ const p0=_skRidePose(L,0);
+      c.position.y=_skFloorRide(c.position.x,c.position.z,false)+R.lift;
+      c.rotation.y=p0.yaw+NPC_FACE_OFFSET; return; } }
+  const P=_skRidePose(L,t);
+  const prev={ x:c.position.x, z:c.position.z };
+  c.position.x=P.x; c.position.z=P.z;
+  const fy=_skFloorRide(P.x,P.z,P.rail)+R.lift;
+  S.sy=(S.sy==null)?fy:S.sy+(fy-S.sy)*0.5;                // la quota insegue (sbarra e bordo senza scatti)
+  c.position.y=S.sy+P.hop;
+  c.rotation.y=P.yaw+NPC_FACE_OFFSET;
+  /* tavola e corpo inclinati come la rampa (davanti/dietro 30 cm) */
+  const fx=Math.sin(P.yaw)*0.3, fz=Math.cos(P.yaw)*0.3;
+  const sl=Math.atan2(_skFloorRide(P.x+fx,P.z+fz,P.rail)-_skFloorRide(P.x-fx,P.z-fz,P.rail),0.6);
+  S.pitch+=(sl-S.pitch)*0.35;
+  S.board.rotation.x=-Math.max(-1.25,Math.min(1.25,S.pitch));
+  S.board.rotation.z=P.spin;                              // kickflip: la tavola gira sotto i piedi
+  S.board.position.y=P.spin?-0.12*Math.sin(P.spin/2):0;
+  n.holder.rotation.x=-Math.max(-0.6,Math.min(0.6,S.pitch*0.6));
+  /* le ruote girano di quanto si e' andati */
+  const d=Math.hypot(c.position.x-prev.x,c.position.z-prev.z); if(d<2) rideSpinWheels(S.board,d);
 }
 /* ---- PARLARE CON LA CREW (v309d) ---------------------------------------------
    Giacomo: «puoi parlare con i ballerini quando sono fermi come con gli altri
@@ -16555,6 +16684,12 @@ function talkToDancer(D){
     act:()=>openAmbient(npc,null,icon,sub) });
   ch.push({ label:"\u2753 Ask me", act:()=>openAskMenu(npc,icon,sub,null) });
   /* v309h: il saluto in pausa cambia (prima era sempre lo stesso) */
+  if(skPhase()==="skate"){ const a=(SKATE.dancers[0]&&SKATE.dancers[0].n.name)||"Jay", b=(SKATE.dancers[2]&&SKATE.dancers[2].n.name)||"Leon";
+    const B2=_cyPick([["Look at "+a+" and "+b+"! They're skating on the ramps.","Guarda "+a+" e "+b+"! Vanno in skate sulle rampe."],
+      ["Wow, did you see that kickflip? "+b+" is really good!","Hai visto quel kickflip? "+b+" \u00e8 bravissimo!"],
+      [a+" can go really high on the quarter pipe!",a+" sale altissimo sulla quarter pipe!"]]);
+    DialogueBox.open({ npc, icon, sub, text:greetJoin(g.en,(first?"I'm "+npc.name+". ":"")+B2[0]), italian:greetJoin(g.it,(first?"Sono "+npc.name+". ":"")+B2[1]),
+      choices:ch, buttons:[{ label:"Goodbye", cls:"ghost", act:()=>{} }] }); return; }
   const B=_cyPick([["We're having a break now. No music, no dancing!","Adesso facciamo una pausa: niente musica, niente ballo!"],
     ["Just chilling with the crew. We'll dance again soon!","Ci rilassiamo un po' con la crew. Tra poco si torna a ballare!"],
     ["Break time! My legs need a rest after all those moves.","Pausa! Dopo tutte quelle mosse le gambe hanno bisogno di riposo."],
@@ -16836,7 +16971,7 @@ function _cyCircle(npc){
 /* letto da skateTick (piu' su nel file): protetto, cosi' non dipende
    dall'ordine in cui il motore incontra le costanti */
 function _cyCircleOn(){ try{ return !!CYPHER.circle; }catch(e){ return false; } }
-function _cyBack(D){ if(skPhase()==="dance") skGoDance(D,true,SKATE.beat); else skGoChill(D,true); }
+function _cyBack(D){ const ph=skPhase(); if(ph==="dance") skGoDance(D,true,SKATE.beat); else if(ph==="skate" && _skIsSkater(D)) skGoSkate(D,true); else skGoChill(D,true); }
 /* fine del cerchio: chi e' al suo posto nel cerchio torna alle chiacchiere
    (o a ballare); chi stava ancora arrivando ci pensa da se' all'arrivo */
 function _cyDisband(){
@@ -48243,10 +48378,12 @@ function rideRackNear(maxD){
 }
 /* il posto (mondo) di un monopattino nella rastrelliera: in piedi, col
    davanti fra i montanti dell'archetto */
-function _rackSlotPlace(m,k,R){
+function _rackSlotPlace(m,k,R,slot){
   const S=RIDE.racks[k], K=S.K;
   m.parent=townRoot;
-  const c=Math.cos(K.ry), s=Math.sin(K.ry), lx=RIDE_RACK_SLOTS[1], lz=-0.12;
+  /* posto 1 = il centro (il tuo); i compagni 0, 2 e poi piu' in la' */
+  const si=(slot==null)?1:slot, lx=(si<RIDE_RACK_SLOTS.length)?RIDE_RACK_SLOTS[si]:(si%2?1:-1)*(0.6+0.6*Math.ceil((si-2)/2));
+  const c=Math.cos(K.ry), s=Math.sin(K.ry), lz=-0.12;
   m.position.set(K.x+lx*c+lz*s, S.y+R.lift, K.z-lx*s+lz*c);
   m.rotation.set(0,K.ry,0);
 }
@@ -69615,12 +69752,15 @@ const Presenza=(function(){
       if(iv && (q+iv).length<=48) q+=iv;
       /* 🛹 seduto con la tavola accanto: la vedono anche i compagni */
       try{ const rp=(typeof RIDE!=="undefined")?(RIDE.parked||RIDE.on):null; if(rp && (q+",v"+rp.code).length<=48) q+=",v"+rp.code; }catch(e){}
+      try{ const rk=(typeof RIDE!=="undefined")?RIDE.racked:null; if(rk && (q+",k"+rk.R.code+rk.k).length<=48) q+=",k"+rk.R.code+rk.k; }catch(e){}
       return q; }
     let q=player.position.x.toFixed(1)+","+player.position.z.toFixed(1)+","
           +player.position.y.toFixed(2)+","+player.rotation.y.toFixed(2);
     /* 🛹🛴 in sella: «,v1» skate, «,v2» monopattino (chi ha una versione
        vecchia non lo riconosce e lo salta: lo vede camminare, come prima) */
     try{ if(typeof RIDE!=="undefined" && RIDE.on) q+=",v"+RIDE.on.code; }catch(e){}
+    /* 🅿️ il tuo monopattino nella rastrelliera: «,k<codice><rastrelliera>» */
+    try{ if(typeof RIDE!=="undefined" && RIDE.racked) q+=",k"+RIDE.racked.R.code+RIDE.racked.k; }catch(e){}
     return (iv && (q+iv).length<=48)?q+iv:q;
   }
   /* v309e (Giacomo: «fai passare l'invito per tutti»): chi ha chiesto alla
@@ -69637,17 +69777,18 @@ const Presenza=(function(){
     if(!isFinite(x)||!isFinite(z)) return null;
     const m=/^s(-?\d{1,4})_(-?\d{1,4})([db]?)(c?)$/.exec(p[4]||"");
     /* dal sesto campo in poi: il cameriere (w...) e il tavolo (o... / c..., v309) */
-    let w=null, ta=null, iv=0, rv=0;
+    let w=null, ta=null, iv=0, rv=0; let rk=null;
     for(let i=4;i<p.length;i++){ const f=p[i]||""; let mm;
       if(!iv && (mm=/^i([0-9a-z]{1,8})$/.exec(f))){ iv=parseInt(mm[1],36)*SK_CYCLE; continue; }   // v309e: l'invito alla crew
       if(!rv && (mm=/^v([1-9])$/.exec(f))){ rv=+mm[1]; continue; }                                // 🛹🛴 in sella
+      if(!rk && (mm=/^k([1-9])([0-9])$/.exec(f))){ rk={ code:+mm[1], k:+mm[2] }; continue; }       // 🅿️ il suo monopattino parcheggiato
       if(i<5) continue;
       if(!w && (mm=/^w(-?\d{1,4}(?:\.\d)?):(-?\d{1,4}(?:\.\d)?)$/.exec(f))) w=mm;
       else if(!ta && (mm=/^o([0-9a-u]{4})([0-3-])$/.exec(f))) ta={ k:"o", c:mm[1], cur:mm[2] };
       else if(!ta && (mm=/^c([0-7])([0-4])([0-4])([0-4])([01-])$/.exec(f))) ta={ k:"c", c:mm[1]+mm[2]+mm[3]+mm[4], cur:mm[5] }; }
     const d=/^d(\d{1,3})$/.exec(p[4]||"");            // v304: balla (fase in centesimi di battito)
     const mz=/^m([hbmsStar])(\d{1,3})(?:@(\d{2,3}))?$/.exec(p[4]||""); // v309: i passi (mossa, battiti x10, @bpm dello schiocco)
-    return { x:x, z:z, y:(isFinite(y)?y:0), r:(isFinite(r)?r:0), invito:(isFinite(iv)?iv:0), ride:rv,
+    return { x:x, z:z, y:(isFinite(y)?y:0), r:(isFinite(r)?r:0), invito:(isFinite(iv)?iv:0), ride:rv, rack:rk,
              balla:d?{ ph:+d[1]/100 }:null,
              mossa:mz?{ mv:_MOSSA_DA[mz[1]], sdir:(mz[1]==="S"?-1:1), b:+mz[2]/10, bpm:mz[3]?+mz[3]:0 }:null,
              siede:m?{ seat:+m[1]/100, gy:+m[2]/100, eat:m[3]||"", c:!!m[4], ta:ta }:null,
@@ -69727,6 +69868,7 @@ const Presenza=(function(){
     e.siede=p.siede;                                   // v302: seduto / mangia / beve
     e.balla=p.balla;                                   // v304: balla al concerto
     e.ride=p.ride||0;                                  // 🛹🛴 skate (1) / monopattino (2)
+    e.rack=p.rack||null;                               // 🅿️ il suo monopattino nella rastrelliera
     /* v309: i passi; t = quando e' arrivato il campione, per far avanzare i battiti */
     e.mossa=p.mossa?Object.assign(p.mossa,{ t:ora }):null;
     /* v309e: un compagno ha invitato la crew a ballare: balla anche qui.
@@ -70196,8 +70338,31 @@ const Presenza=(function(){
       e.sep.x+=(e.sepTx-e.sep.x)*k; e.sep.z+=(e.sepTz-e.sep.z)*k;
     }
   }
+  /* 🅿️ (Giacomo, 2 nov: «i compagni devono vedere lo scooter nella
+     rastrelliera»). Ogni compagno che ha il monopattino parcheggiato ce
+     l'ha nella sua rastrelliera, in un posto suo: il centro resta tuo, i
+     compagni vanno ai lati e poi piu' in la'. Si vede anche se lui e' dentro
+     un negozio: il monopattino e' rimasto fuori. */
+  function _rastrelliereCompagni(){
+    if(typeof RIDE==="undefined" || !RIDE.racks) return;
+    const M=RIDE.peerRack||(RIDE.peerRack={}), seen={}, uso={};
+    Object.keys(peers).sort().forEach(function(key){
+      const e=peers[key], rk=e && e.rack; if(!rk) return;
+      const R=rideDefCode(rk.code), S=RIDE.racks[rk.k]; if(!R || !S || R.kind!=="scooter") return;
+      seen[key]=1;
+      const mio=!!(RIDE.racked && RIDE.racked.k===rk.k);
+      const n=uso[rk.k]=(uso[rk.k]||0)+1, ord=[0,2,1,3,4,5,6], slot=mio?ord.filter(function(x){ return x!==1; })[n-1]:ord[n-1];
+      let o=M[key];
+      if(!o || o.id!==R.id || o.k!==rk.k){ if(o && o.m) try{ o.m.dispose(false,false); }catch(err){}
+        o=M[key]={ m:rideBuildMesh(R.id,"peerRack_"+key), id:R.id, k:rk.k, slot:-1 }; }
+      if(o.slot!==slot){ _rackSlotPlace(o.m,rk.k,R,slot); o.slot=slot; }
+      o.m.setEnabled(area==="town");
+    });
+    for(const key in M) if(!seen[key]){ try{ M[key].m.dispose(false,false); }catch(err){} delete M[key]; }
+  }
   function tick(){
     if(!acceso) return;
+    try{ _rastrelliereCompagni(); }catch(err){}
     const ora=Date.now();
     scaduti();
     if(ora-ultimaScelta>500){ ultimaScelta=ora; _scegli(); }
