@@ -16704,12 +16704,20 @@ function _skCrewArmsTick(D,P,turn){
    ci tornano in skate e lo riappoggiano li', poi vanno a ballare o in
    panchina. Da lontano (non li vedi) tutto succede subito. */
 const SK_HOME={ 0:{ x:42.0 }, 2:{ x:18.0 } };
-const SK_HOME_Z=66.36, SK_HOME_RX=1.31, SK_GLIDE_V=3.0;   // il fondo arancio verso la pista (il grip nero sul muro scuro non si vedeva)
+/* ⚠️ (Giacomo: «mi sembrano attaccati al muro»). Prima: quasi verticali
+   (15 gradi) e, girati per mostrare il fondo, con la BASE contro il muro e
+   la cima staccata — al contrario di come sta in piedi una tavola. Ora:
+   la tavola si gira sul suo asse (roll PI: il fondo colorato e le ruote
+   verso la pista, il grip verso il muro) e poi si inclina col naso in su
+   verso la parete: base a terra a ~40 cm dal muro, cima appoggiata,
+   ~24 gradi dalla verticale. Il kicktail in cima si piega verso il muro:
+   5 cm di margine. */
+const SK_HOME_Z=66.20, SK_HOME_RX=-1.15, SK_GLIDE_V=3.0;
 function _skBoardHome(D){
   const S=D.sk, H=SK_HOME[D.i]; if(!S || !H) return;
   S.board.parent=townRoot;
-  S.board.position.set(H.x, SKATE.gy+0.44, SK_HOME_Z);
-  S.board.rotation.set(SK_HOME_RX,0,0.05);
+  S.board.position.set(H.x, SKATE.gy+0.50, SK_HOME_Z);              // la base sul cordolo della pista (alto 10 cm)
+  S.board.rotation.set(SK_HOME_RX,0.05,Math.PI);
   S.state="home";
 }
 function _skBoardInit(D){
