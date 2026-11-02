@@ -47692,7 +47692,7 @@ scene.onBeforeRenderObservable.add(()=>{      // il tasto riflette lo stato REAL
    secondo anno come unit»). Il docente li ha subito (lookProf).
      🛹 skate       -> fine Anno 1 (Unit 8 «Clothes Shop») oppure ⭐ 1000
      🛴 monopattini -> City: fine Anno 2 o ⭐ 2000 · Sport: ⭐ 2500 ·
-                       Turbo: fine Anno 3 o ⭐ 3000 (vedi RIDES)
+                       Turbo: Anno 3 · Unit 3 completa o ⭐ 3000 (vedi RIDES)
    Il premio cresce con l'anno: lo skate a fine prima, il monopattino,
    che va piu' forte, a fine seconda.
 
@@ -47742,24 +47742,24 @@ scene.onBeforeRenderObservable.add(()=>{      // il tasto riflette lo stato REAL
    colori diversi; si comprano tutti al Corner Shop (pedana a tre posti).
      City   2,1x  ⭐ 2000 o fine Anno 2   £99.99   azzurro
      Sport  2,5x  ⭐ 2500                  £149.99  rosso
-     Turbo  3,0x  ⭐ 3000 o fine Anno 3   £249.99  nero e giallo (quello di prima)
+     Turbo  3,0x  ⭐ 3000 o Anno 3 · Unit 3 completa (Hikers' Camp)   £249.99  nero e giallo (quello di prima)
    ⚠️ Il Turbo tiene id "scooter" e code 2: chi l'aveva gia' comprato (in
    et_progress.__rides.scooter) se lo ritrova, e i compagni con una versione
    precedente continuano a vederlo. */
 const _SC_BAR={ y:1.02, z:0.35, half:0.21 };     // manubrio, in metri dai piedi
 const RIDES=[
-  { id:"skate",   code:1, ic:"\u{1F6F9}", en:"Skateboard", it:"lo skate", sub:"fast as running", year:1, shop:"skateboard", price:2000,
+  { id:"skate",   code:1, ic:"\u{1F6F9}", en:"Skateboard", it:"lo skate", sub:"fast as running", alt:{ it:"oppure finisci l'Anno 1", en:"or finish Year 1" }, shop:"skateboard", price:2000,
     mult:RUN_MULT, lift:0.11, acc:0.07, coast:0.955, yaw:0, ramps:true,
     req:{ quest:"u8", stars:1000 } },
-  { id:"scooter_city",  code:3, kind:"scooter", ic:"\u{1F6F4}", en:"City scooter",  it:"il monopattino City",  sub:"fast", year:2,
+  { id:"scooter_city",  code:3, kind:"scooter", ic:"\u{1F6F4}", en:"City scooter",  it:"il monopattino City",  sub:"fast", alt:{ it:"oppure finisci l'Anno 2", en:"or finish Year 2" },
     shop:"city scooter", price:9999, col:{ body:"#c9d1d8", acc:"#4fa3d9" },
     mult:2.1, lift:0.14, acc:0.05, coast:0.965, yaw:0, req:{ quest:"u2_8", stars:2000 }, bar:_SC_BAR },
-  { id:"scooter_sport", code:4, kind:"scooter", ic:"\u{1F6F4}", en:"Sport scooter", it:"il monopattino Sport", sub:"very fast", year:null,
+  { id:"scooter_sport", code:4, kind:"scooter", ic:"\u{1F6F4}", en:"Sport scooter", it:"il monopattino Sport", sub:"very fast", alt:null,
     shop:"sport scooter", price:14999, col:{ body:"#2b3036", acc:"#d8453a" },
     mult:2.5, lift:0.14, acc:0.05, coast:0.965, yaw:0, req:{ stars:2500 }, bar:_SC_BAR },
-  { id:"scooter", code:2, kind:"scooter", ic:"\u{1F6F4}", en:"Turbo scooter", it:"il monopattino Turbo", sub:"super fast", year:3,
+  { id:"scooter", code:2, kind:"scooter", ic:"\u{1F6F4}", en:"Turbo scooter", it:"il monopattino Turbo", sub:"super fast", alt:{ it:"oppure completa la Unit 3 dell'Anno 3", en:"or complete Year 3 \u00b7 Unit 3" },
     shop:"turbo scooter", price:24999, col:{ body:"#2b3036", acc:"#e8b04b" }, turbo:true,
-    mult:3.0, lift:0.14, acc:0.05, coast:0.965, yaw:0, req:{ quest:"u3_5", stars:3000 }, bar:_SC_BAR },
+    mult:3.0, lift:0.14, acc:0.05, coast:0.965, yaw:0, req:{ quest:"u3_3", stars:3000 }, bar:_SC_BAR },   // Giacomo: «3000 stelle ma con Unit 3 completa anno 3»
 ];
 const RIDE={ on:null, v:0, dir:null, coast:false, mesh:{}, pose:null, obs:null,
              last:null, seen:null, px:0, pz:0, spin:0 };
@@ -47780,7 +47780,7 @@ function rideUsable(R){ return rideOwned(R) && rideOpen(R); }
 function rideUnlocked(){ return RIDES.filter(rideUsable); }
 function rideStarsMsg(R){
   let st=0; try{ st=Stars.total(); }catch(e){}
-  return "\u2B50 Non hai stelle sufficienti per usarlo: ti servono "+R.req.stars+" stelle (ne hai "+st+")"+(R.year?", oppure finisci l'Anno "+R.year:"")+".";
+  return "\u2B50 Non hai stelle sufficienti per usarlo: ti servono "+R.req.stars+" stelle (ne hai "+st+")"+(R.alt?", "+R.alt.it:"")+".";
 }
 function rideLift(){ return RIDE.on ? RIDE.on.lift : 0; }
 
@@ -68706,9 +68706,12 @@ function _tecaParts(ids){
        Si comprano al Corner Shop (rideStand), si usano fuori col tasto R. */
     h+='<div class="dy-sec">\u{1F6F9} Skateboard &amp; \u{1F6F4} scooters</div><div class="gem-fits">';
     RIDES.forEach(function(R){ const own=rideOwned(R), r=rideReq(R), open=!!r.open, use=own&&open, on=(RIDE.on===R);
-      h+=_tcCard('data-ride="'+R.id+'"',on,!use,_tcSw("#cdd6dc","#8b97a1",R.ic),R.en,
+      /* il campione col colore del modello (Giacomo: «nella teca non vedo i 3
+         diversi scooter»: con la stessa icona grigia sembravano uguali) */
+      const cl=R.col?R.col:{ acc:"#e0673a", body:"#232629" };
+      h+=_tcCard('data-ride="'+R.id+'"',on,!use,_tcSw(cl.acc,cl.body,R.ic),R.en,
         on?"you're riding it":(use?"yours \u00b7 tap to ride"
-          :((own?"yours":"\u{1F6D2} Corner Shop "+gbp(R.price))+(open?"":" \u00b7 \u{1F512} \u2B50 "+R.req.stars+" to ride"+(R.year?", or finish Year "+R.year:"")))),
+          :((own?"yours":"\u{1F6D2} Corner Shop "+gbp(R.price))+(open?"":" \u00b7 \u{1F512} \u2B50 "+R.req.stars+" to ride"+(R.alt?", "+R.alt.en:"")))),
         R.sub); });
     h+='</div><div class="dy-note">Buy them at the <b>Corner Shop</b> \u{1F6D2}: take a <b>trolley</b>, put it in, '
       +'and pay at <b>Sam</b>\'s till. To <b>ride</b> them you need the \u2B50 stars (or finish the year). '
