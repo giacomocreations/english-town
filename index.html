@@ -39379,7 +39379,7 @@ const SFX=(function(){
     rdOscG.gain.setTargetAtTime(sk?0:0.22*k, t, 0.1);
     rdOsc.frequency.setTargetAtTime(150+330*k, t, 0.1);
   }
-  return { wake, step, walked, roll, carHorn, carPass, setCarPass, correct, wrong, panOf,
+  return { wake, step, walked, roll, splash, carHorn, carPass, setCarPass, correct, wrong, panOf,
            shout, voiceState, sip, chew, snap,
            gemChime, gemFit, thunder,
            bell, bellHear, shutter, tick, waterLevel, fountLevel, clubLevel, cricketLevel, windLevel,
@@ -47657,6 +47657,22 @@ scene.onBeforeRenderObservable.add(()=>{      // il tasto riflette lo stato REAL
    RAMPE — in skate si sale sulle rampe dello skatepark (le due quarter
    pipe e il funbox), e la tavola si inclina con la pendenza (skRampTop,
    skRampStepBlocked, rideTilt). A piedi e in monopattino restano ostacoli.
+   Sulla curva delle quarter pipe comanda la gravita' (rideQuarterTick):
+   si sale quanto la rincorsa permette, ci si ferma, ci si gira e si
+   riscende da soli; con la rincorsa piena si arriva sul piano in cima.
+
+   SI COMPRANO (Giacomo, 2 nov: «per averli devi comprarli in corner shop,
+   se hai le stelle sufficienti li puoi usare, se no ti dice non hai
+   stelle sufficienti»). Al Corner Shop c'e' l'espositore (rideStand):
+   con E si sceglie; se lo sblocco c'e' diventa tuo (et_progress.__rides,
+   che sale nel cloud con i progressi), se no il messaggio delle stelle.
+   Nella Teca (scheda 🛹 Rides) si vedono tutti e due col loro prezzo.
+
+   CORPO — sullo skate le braccia si aprono per l'equilibrio (di piu'
+   sulle rampe e spingendo) e ondeggiano un poco; ogni tanto il piede
+   destro scende a terra di fianco alla tavola e spinge da avanti a
+   dietro (ridePushPose: cinematica inversa della gamba, il ginocchio
+   d'appoggio si piega). Nelle pozzanghere si sente lo schizzo.
 
    USO — tasto R (o il bottone 🛹/🛴): a piedi -> skate -> monopattino ->
    a piedi (solo quelli sbloccati). Solo all'aperto, in citta': entrando
@@ -47692,7 +47708,22 @@ function rideDef(id){ return RIDES.find(r=>r.id===id)||null; }
 function rideDefCode(c){ return RIDES.find(r=>r.code===c)||null; }
 function rideReq(R){ try{ return lookReq(R.req); }catch(e){ return { open:false, label:"" }; } }
 function rideOpen(R){ return !!rideReq(R).open; }
-function rideUnlocked(){ return RIDES.filter(rideOpen); }
+/* comprato al Corner Shop? (il docente li ha tutti: vede e prova tutto) */
+function rideOwned(R){
+  try{ if(lookProf()) return true; }catch(e){}
+  try{ const p=Sync.get("et_progress",{})||{}; return !!(p.__rides && p.__rides[R.id]); }catch(e){ return false; } }
+function rideSetOwned(R){
+  const p=Sync.get("et_progress",{})||{};
+  p.__rides=Object.assign({},p.__rides||{}); p.__rides[R.id]=true;
+  Sync.set("et_progress",p);                     // ⚠️ dentro et_progress: sale nel cloud (SYNC_MAX, fondiMax = OR)
+}
+function rideUsable(R){ return rideOwned(R) && rideOpen(R); }
+function rideUnlocked(){ return RIDES.filter(rideUsable); }
+function rideStarsMsg(R){
+  let st=0; try{ st=Stars.total(); }catch(e){}
+  const y=(R.id==="skate")?"l'Anno 1":"l'Anno 2";
+  return "⭐ Non hai stelle sufficienti per usarlo: ti servono "+R.req.stars+" stelle (ne hai "+st+"), oppure finisci "+y+".";
+}
 function rideLift(){ return RIDE.on ? RIDE.on.lift : 0; }
 
 /* ---- le tavole: geometria procedurale, 0 KB di asset -------------------
@@ -47776,6 +47807,7 @@ function _ridePoseOff(){
       if(k.q){ if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion(); k.tn.rotationQuaternion.copyFrom(k.q); }
       k.tn.scaling.copyFrom(k.s); });
     avatarRoot.rotation.y=P.ry; avatarRoot.rotation.x=0; avatarRoot.position.x=P.hx; avatarRoot.position.z=P.hz;
+    if(P.hy!=null) avatarRoot.position.y=P.hy;
   }
   RIDE.pose=null;
 }
@@ -47810,7 +47842,7 @@ function _ridePoseOn(R){
         save.forEach(k=>{ k.tn.position.copyFrom(k.p); if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); k.tn.scaling.copyFrom(k.s); });
         if(P.push) P.lock=L;
       }
-    }
+    } else _rideSkateBody(root,P,f,stand);
   }catch(e){ console.warn("[RIDE] posa",e); }
   /* di lato sullo skate: si gira il corpo attorno al SUO centro (l'holder
      sta spostato di -centro: girandolo e basta, il corpo scivolerebbe) */
@@ -47828,7 +47860,115 @@ function _ridePoseOn(R){
     if(Q.stand && _pinLegs) _applyPins(Q.stand);
     if(Q.lock) _lockAbd(Q.lock);
     if(Q.push) _applyPins(Q.push);
+    if(Q.arms) _rideArmsTick(Q);
+    if(Q.legs) _ridePushTick(Q);
   });
+}
+
+/* ---- 🛹 IL CORPO SULLO SKATE: braccia per l'equilibrio, piede che spinge --
+   Si calcola UNA volta salendo, nella posa a piedi pari:
+   · due pose delle braccia (_armPose, la stessa del carrello e del
+     mangiare): «giu'» (lungo i fianchi, appena staccate) e «fuori»
+     (aperte e un po' avanti, gomiti morbidi). A ogni fotogramma si fonde
+     fra le due con un peso che cresce con la pendenza, sulla quarter pipe,
+     spingendo e curvando, e ondeggia piano: le braccia non stanno mai
+     ferme come in una foto.
+   · le gambe: lunghezze di coscia e stinco e dove stanno caviglia e punta
+     a riposo, nel sistema del giocatore (non cambia girando o andando). */
+function _rideSkateBody(root,P,f,stand){
+  const V=BABYLON.Vector3, dn=new V(0,-1,0), up=new V(0,1,0);
+  const body=_restPinsFor(root,/^(Hips|Abdomen|Torso|Chest)$/);
+  const arms=_restPinsFor(root,/^(Shoulder\.[LR]|UpperArm\.[LR]|LowerArm\.[LR]|Wrist\.[LR])$/);
+  const touched=new Set(body.map(k=>k.tn)); arms.forEach(k=>touched.add(k.tn));
+  (_legPins||[]).forEach(k=>touched.add(k.tn)); (stand||[]).forEach(k=>touched.add(k.tn));
+  const save=[...touched].map(tn=>({tn, p:tn.position.clone(), q:tn.rotationQuaternion?tn.rotationQuaternion.clone():null, s:tn.scaling.clone()}));
+  try{
+    if(_legPins) _applyPins(_legPins); if(stand) _applyPins(stand); _applyPins(body); _applyPins(arms); _sitRefresh(root);
+    const tns=arms.map(k=>k.tn);
+    const down=_armPose(root,tns,f,(o)=>dn.scale(0.96).add(o.scale(0.20)).add(f.scale(0.04)),
+                                   (o)=>dn.scale(0.92).add(o.scale(0.10)).add(f.scale(0.30)),null);
+    _applyPins(arms); _sitRefresh(root);
+    const out=_armPose(root,tns,f,(o)=>dn.scale(0.55).add(o.scale(0.80)).add(f.scale(0.22)),
+                                  (o)=>dn.scale(0.30).add(o.scale(0.70)).add(f.scale(0.62)),null);
+    const L=[]; down.forEach((q,tn)=>{ if(out.has(tn)) L.push({ tn, a:q.clone(), b:out.get(tn).clone(),
+      R:/\.R$/.test(_boneKey(tn.name)) }); });
+    if(L.length) P.arms={ list:L, w:0.2 };
+    /* gambe */
+    _applyPins(arms); _sitRefresh(root);
+    player.computeWorldMatrix(true);
+    const inv=player.getWorldMatrix().clone().invert(), loc=v=>V.TransformCoordinates(v,inv);
+    const find=k=>root.getDescendants(false).find(t=>_boneKey(t.name)===k);
+    const leg=sd=>{ const U=find("UpperLeg."+sd), K=find("LowerLeg."+sd), F=find("Foot."+sd); if(!U||!K||!F||!F.parent) return null;
+      const pU=U.getAbsolutePosition(), pK=K.getAbsolutePosition(), pF=F.getAbsolutePosition();
+      return { U, K, F, l1:V.Distance(pU,pK), l2:V.Distance(pK,pF), foot:loc(pF),
+               ank:V.TransformCoordinates(pF,K.getWorldMatrix().clone().invert()) }; };   // la caviglia, vista dallo stinco
+    const lR=leg("R"), lL=leg("L");
+    if(lR && lL) P.legs={ R:lR, L:lL };
+    P.hy=root.position.y;
+  }finally{
+    save.forEach(k=>{ k.tn.position.copyFrom(k.p); if(k.q){ if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion(); k.tn.rotationQuaternion.copyFrom(k.q); } k.tn.scaling.copyFrom(k.s); });
+    _sitRefresh(root);
+  }
+}
+/* peso delle braccia «fuori»: un po' sempre, molto sulle rampe */
+function _rideArmsTick(Q){
+  const A=Q.arms, now=performance.now()/1000;
+  let t=0.22;
+  t+=Math.min(0.7,Math.abs(RIDE.pitch||0)*1.4);                     // pendenza
+  if(RIDE.qp) t+=0.45;                                              // quarter pipe
+  if(RIDE.push) t+=0.25*Math.sin(Math.PI*Math.min(1,RIDE.push.u||0)); // spinta
+  t+=Math.min(0.3,Math.abs(RIDE.turn||0)*6);                        // curva
+  t=Math.min(1,t);
+  A.w+=(t-A.w)*0.12;
+  const sw=0.07+0.05*Math.min(1,RIDE.v||0);                         // ondeggiare
+  const wL=Math.max(0,Math.min(1,A.w+sw*Math.sin(now*1.9))),
+        wR=Math.max(0,Math.min(1,A.w+sw*Math.sin(now*1.9+2.3)));
+  for(const k of A.list){ if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion();
+    BABYLON.Quaternion.SlerpToRef(k.a,k.b,k.R?wR:wL,k.tn.rotationQuaternion); }
+}
+/* GAMBA A DUE OSSA verso una caviglia T (nel mondo). ⚠️ In questo rig il
+   PIEDE NON E' FIGLIO DELLO STINCO: Foot.L/R sono ossa di controllo appese
+   a Root (come PT.L/R), e LowerLeg non ha figli (misurato). Quindi:
+   1) si sposta il piede stesso dove deve andare (nello spazio di Root);
+   2) coscia e stinco si girano perche' la fine dello stinco (la caviglia
+      a riposo, salvata nel sistema dello stinco: G.ank) ci arrivi.
+   Il ginocchio si piega in avanti (f). La rotazione del piede resta quella
+   della posa da fermo: pianta parallela al terreno. */
+function _rideLegIK(root,G,T,f){
+  const V=BABYLON.Vector3;
+  G.F.position.copyFrom(V.TransformCoordinates(T,G.F.parent.getWorldMatrix().clone().invert()));
+  const pH=G.U.getAbsolutePosition().clone(), pK=G.K.getAbsolutePosition().clone();
+  const d=T.subtract(pH), dl=d.length(); if(dl<1e-4) return;
+  const L=Math.min(dl,G.l1+G.l2-0.003), dir=d.scale(1/dl);
+  const A=(G.l1*G.l1-G.l2*G.l2+L*L)/(2*L), h=Math.sqrt(Math.max(0,G.l1*G.l1-A*A));
+  let pole=f.subtract(dir.scale(V.Dot(f,dir))); if(pole.length()<1e-4) pole=new V(0,0,1); pole.normalize();
+  const E=pH.add(dir.scale(A)).add(pole.scale(h)), W=pH.add(dir.scale(L));
+  _sitWorldRot(G.U,pH,pK.subtract(pH),E.subtract(pH)); _sitRefresh(root);
+  const pK2=G.K.getAbsolutePosition().clone(), end2=V.TransformCoordinates(G.ank,G.K.getWorldMatrix());
+  _sitWorldRot(G.K,pK2,end2.subtract(pK2),W.subtract(pK2)); _sitRefresh(root);
+}
+/* LA SPINTA: il piede destro esce di lato, tocca terra davanti, spinge
+   fino dietro, si rialza e torna sulla tavola. Il ginocchio sinistro si
+   piega (il corpo scende di qualche centimetro), se no la gamba che
+   spinge non arriverebbe a terra: la tavola e' alta 11 cm. */
+const RIDE_PUSH_MS=820;
+const _RIDE_PUSH_K=[ [0.00,"rest",0], [0.18,"out",0.07], [0.30,"gnd",0.20], [0.64,"gnd",-0.32], [0.80,"out",-0.18], [1.00,"rest",0] ];
+function _ridePushTick(Q){
+  const G=Q.legs, root=avatarRoot, P=RIDE.push; if(!G || !root) return;
+  if(!P){ if(Q.hy!=null && root.position.y!==Q.hy) root.position.y=Q.hy; return; }
+  const V=BABYLON.Vector3, u=Math.min(1,(performance.now()-P.t0)/RIDE_PUSH_MS); P.u=u;
+  if(u>=1){ RIDE.push=null; RIDE.pushEnd=performance.now(); root.position.y=Q.hy; return; }
+  const lift=RIDE.on?RIDE.on.lift:0.11, rest=G.R.foot, sx=(Math.abs(rest.x)>0.02?Math.sign(rest.x):1)*0.25;
+  const pt=(k,z)=>k==="rest"?rest.clone():(k==="gnd"?new V(sx,rest.y-lift,z):new V(sx*0.9,rest.y+0.07,z));
+  let i=0; while(i<_RIDE_PUSH_K.length-2 && u>_RIDE_PUSH_K[i+1][0]) i++;
+  const a=_RIDE_PUSH_K[i], b=_RIDE_PUSH_K[i+1], t=(u-a[0])/(b[0]-a[0]), e=t*t*(3-2*t);
+  const footL=V.Lerp(pt(a[1],a[2]),pt(b[1],b[2]),e);
+  const drop=0.12*Math.sin(Math.PI*Math.max(0,Math.min(1,(u-0.06)/0.86)));
+  root.position.y=Q.hy-drop;
+  player.computeWorldMatrix(true); _sitRefresh(root);
+  const W=player.getWorldMatrix(), f=V.TransformNormal(new V(0,0,1),W).normalize();
+  _rideLegIK(root,G.L,V.TransformCoordinates(G.L.foot,W),f);    // il piede d'appoggio resta sulla tavola
+  _rideLegIK(root,G.R,V.TransformCoordinates(footL,W),f);
 }
 
 /* ---- sali / scendi ----------------------------------------------------- */
@@ -47852,7 +47992,7 @@ function rideOff(silent){
   const R=RIDE.on;
   _ridePoseOff();
   const m=RIDE.mesh[R.id]; if(m) m.setEnabled(false);
-  RIDE.on=null; RIDE.v=0; RIDE.coast=false; RIDE.pitch=0; if(m) m.rotation.x=0;
+  RIDE.on=null; RIDE.v=0; RIDE.coast=false; RIDE.pitch=0; RIDE.push=null; RIDE.qp=null; if(m) m.rotation.x=0;
   if(area==="town") player.position.y=Math.max(0,player.position.y-R.lift);
   try{ SFX.roll(0); }catch(e){}
   rideHud();
@@ -47860,7 +48000,8 @@ function rideOff(silent){
 }
 function rideMount(id){
   const R=rideDef(id); if(!R) return false;
-  if(!rideOpen(R)){ toast("\u{1F512} "+R.en+": "+rideReq(R).label,3200); return false; }
+  if(!rideOwned(R)){ toast(R.ic+" "+R.en+": buy it at the Corner Shop \u{1F6D2} \u00b7 compralo al Corner Shop",3400); return false; }
+  if(!rideOpen(R)){ toast(rideStarsMsg(R),4200); return false; }
   if(!rideCanHere()){ toast(R.ic+" "+R.en+": solo all'aperto, in città",2600); return false; }
   if(RIDE.on) rideOff(true);
   try{ if(typeof PDANCE!=="undefined" && PDANCE.on) danceStop(); }catch(e){}
@@ -47879,8 +48020,11 @@ function rideCycle(){
   if(!started) return;
   const L=rideUnlocked();
   if(!L.length){
-    const R=RIDES[0];
-    toast("\u{1F512} "+R.ic+" "+R.en+": "+rideReq(R).label,3400); return; }
+    const R=RIDES.find(r=>rideOwned(r)) || RIDES[0];
+    if(rideOwned(R)) toast(rideStarsMsg(R),4200);
+    else if(rideOpen(R)) toast(R.ic+" "+R.en+": buy it at the Corner Shop \u{1F6D2} \u00b7 compralo al Corner Shop",3600);
+    else toast("\u{1F512} "+R.ic+" "+R.en+": "+rideReq(R).label+" \u00b7 then buy it at the Corner Shop",3800);
+    return; }
   if(!RIDE.on){
     if(!rideCanHere()){ toast(L[0].ic+" Solo all'aperto, in città",2400); return; }
     rideMount(L[0].id); return; }
@@ -47888,6 +48032,70 @@ function rideCycle(){
   if(i>=0 && i<L.length-1) rideMount(L[i+1].id); else rideOff();
 }
 /* velocita' del passo in sella: spinta che cresce, poi piena */
+/* ---- 🛹 QUARTER PIPE: ANDATA E RITORNO (Giacomo, 2 nov) --------------------
+   Sulla curva comanda la gravita', non i tasti. Si conserva l'energia:
+   v²/2 + g·h resta uguale, quindi salendo si rallenta e scendendo si
+   accelera. Con la velocita' che si ha all'imbocco si arriva fin dove si
+   arriva; li' ci si ferma un attimo, ci si gira (kickturn) e si riscende
+   da soli, uscendo in piano con la velocita' presa. Con la rincorsa piena
+   (la velocita' dello skate) si sale fin sopra il bordo e si resta sul
+   piano in cima. ⚠️ Le unita' sono «per fotogramma», come tutto il resto
+   del movimento (PLAYER_SPEED): RIDE_G e' tarata cosi' che a velocita'
+   piena si salga di ~1,55 m (la curva e' alta 1,40). */
+const RIDE_G=Math.pow(PLAYER_SPEED*RUN_MULT,2)/(2*1.55);
+function skQuarterAt(X,Z){
+  const L=SKATE.ramps; if(!L) return null;
+  for(const r of L){ if(r.k!=="q") continue;
+    const dx=X-r.x, dz=Z-r.z, c=Math.cos(r.ry), s=Math.sin(r.ry);
+    const lx=dx*c-dz*s, lz=dx*s+dz*c;
+    if(Math.abs(lz)<=r.hw && lx>0.03 && lx<r.R) return { r, lx, nx:c, nz:-s }; }   // n = verso il bordo, nel mondo
+  return null;
+}
+function rideQuarterTick(inDir){
+  const V=BABYLON.Vector3;
+  let Q=RIDE.qp;
+  const at=skQuarterAt(player.position.x,player.position.z);
+  if(!Q){
+    if(!at) return false;
+    /* si entra con la velocita' che si ha, proiettata sulla salita */
+    const d=inDir||(((RIDE.coast&&RIDE.v>0.06)||performance.now()-(RIDE.inpT||0)<250)?RIDE.dir:null);
+    const sp=d?PLAYER_SPEED*RIDE.on.mult*Math.max(RIDE.v,0.3):0;
+    const dot=d?(d.x*at.nx+d.z*at.nz):-1;
+    const h=at.r.R-Math.sqrt(Math.max(0,at.r.R*at.r.R-at.lx*at.lx));
+    Q=RIDE.qp={ r:at.r, nx:at.nx, nz:at.nz, sign:(dot>=0?1:-1), E:0.5*Math.pow(sp*Math.abs(dot),2)+RIDE_G*h, stall:0 };
+    moveTarget=null; pendingInteract=null; try{ tapMark.setEnabled(false); }catch(e){}
+  }
+  const r=Q.r;
+  if(Q.stall>0){                                               // fermi in cima: ci si gira
+    Q.stall--; const k=1-Q.stall/RIDE_QP_STALL;
+    let dd=Q.turnTo-Q.turnFrom; while(dd>Math.PI) dd-=2*Math.PI; while(dd<-Math.PI) dd+=2*Math.PI;
+    player.rotation.y=Q.turnFrom+dd*(k*k*(3-2*k));
+    if(Q.stall===0) Q.sign=-1;
+    RIDE.v=0; return true;
+  }
+  const dx=player.position.x-r.x, dz=player.position.z-r.z, c=Math.cos(r.ry), s=Math.sin(r.ry);
+  const lx=dx*c-dz*s;
+  if(Q.sign>0 && lx>=r.R){ RIDE.qp=null; RIDE.v=0; RIDE.coast=false; return true; }        // sul piano in cima: fermi
+  if(lx<=0.03 || !at && lx<r.R){                                                         // uscita in piano
+    const sp=Math.sqrt(Math.max(0,2*(Q.E-RIDE_G*Math.max(0,lx>0?r.R-Math.sqrt(Math.max(0,r.R*r.R-lx*lx)):0))));
+    RIDE.qp=null; RIDE.dir={ x:Q.sign*Q.nx, z:Q.sign*Q.nz };
+    RIDE.v=Math.min(1.15,sp/(PLAYER_SPEED*RIDE.on.mult)); RIDE.coast=RIDE.v>0.06;
+    return false;
+  }
+  const h=r.R-Math.sqrt(Math.max(0,r.R*r.R-lx*lx));
+  const sp=Math.sqrt(Math.max(0,2*(Q.E-RIDE_G*h)));
+  if(Q.sign>0 && sp<0.012){                                     // non sale piu': stallo, poi giu'
+    Q.stall=RIDE_QP_STALL; Q.turnFrom=player.rotation.y; Q.turnTo=Math.atan2(-Q.nx,-Q.nz); RIDE.v=0; return true; }
+  const cosT=Math.sqrt(Math.max(0,r.R*r.R-lx*lx))/r.R;
+  let st=sp*Math.max(cosT,0.06);
+  if(Q.sign>0 && Q.E>RIDE_G*r.R && lx>r.R-0.3) st=Math.max(st,0.1);   // ce la fa: oltre il bordo, sul piano
+  const ok=move(Q.sign*Q.nx,Q.sign*Q.nz,Math.max(0.004,st));
+  if(!ok){ if(Q.sign>0){ Q.stall=RIDE_QP_STALL; Q.turnFrom=player.rotation.y; Q.turnTo=Math.atan2(-Q.nx,-Q.nz); }
+           else { RIDE.qp=null; RIDE.v=0; } }
+  RIDE.v=Math.min(1.15,sp/(PLAYER_SPEED*RIDE.on.mult));
+  return true;
+}
+const RIDE_QP_STALL=16;
 function rideStepSpeed(){
   const R=RIDE.on; RIDE.v+=(1-RIDE.v)*R.acc; if(RIDE.v<0.3) RIDE.v=0.3;
   return PLAYER_SPEED*R.mult*RIDE.v;
@@ -47915,12 +48123,13 @@ function rideCheckUnlocks(){
   try{ if(loginPending) return; }catch(e){}
   const k=_rideSeenKey();
   let seen=[]; try{ seen=JSON.parse(localStorage.getItem(k)||"[]")||[]; }catch(e){}
-  const nuovi=rideUnlocked().filter(r=>seen.indexOf(r.id)<0);
+  /* si annuncia quando si PUO' COMPRARE (sblocco raggiunto, non ancora tuo) */
+  const nuovi=RIDES.filter(r=>rideOpen(r) && !rideOwned(r) && seen.indexOf(r.id)<0);
   rideHud();
   if(!nuovi.length) return;
   nuovi.forEach(r=>seen.push(r.id));
   try{ localStorage.setItem(k,JSON.stringify(seen)); }catch(e){}
-  toast("\u{1F389} New: "+nuovi.map(r=>r.ic+" "+r.en).join(" + ")+"! Press R (or "+nuovi[0].ic+") to ride",4200);
+  toast("\u{1F389} New: you can buy "+nuovi.map(r=>r.ic+" "+r.en).join(" + ")+" at the Corner Shop! \u00b7 Puoi comprarlo al Corner Shop",4600);
 }
 setInterval(()=>{ try{ rideCheckUnlocks(); }catch(e){} },3000);
 
@@ -47944,14 +48153,83 @@ function rideTilt(board,body,cur,x,z,ry){
   return p;
 }
 
+/* ---- 🛒 L'ESPOSITORE AL CORNER SHOP -----------------------------------------
+   Una pedana fra lo scaffale est e la porta, con sopra uno skate (su un
+   leggio) e un monopattino in piedi, le STESSE tavole che si usano in
+   strada (rideBuildMesh). Si costruisce la prima volta che si entra.
+   E -> si sceglie: se lo sblocco c'e' diventa tuo, se no il messaggio
+   delle stelle che mancano. */
+const RIDE_STAND={ x:5.6, z:4.0 };          // nel sistema dell'interno (come le props di UNIT4)
+function rideStandBuild(){
+  if(RIDE.stand || typeof UNIT4==="undefined") return;
+  const I=INTERIORS[UNIT4.area]; if(!I || !I.root) return;
+  const C=I.center, X=C.x+RIDE_STAND.x, Z=C.z+RIDE_STAND.z, B=BABYLON.MeshBuilder;
+  const root=new BABYLON.TransformNode("rideStand",scene); root.parent=I.root; root.position.set(X,0,Z);
+  const M=_rideMat();
+  if(!M.stand){ M.stand=mat("rideStandM","#2f3d4a"); M.standTop=mat("rideStandT","#e8b04b"); }
+  const ped=B.CreateBox("rideStandP",{width:1.0,height:0.16,depth:2.0},scene); ped.material=M.stand; ped.parent=root; ped.position.y=0.08;
+  const top=B.CreateBox("rideStandT",{width:1.02,height:0.02,depth:2.02},scene); top.material=M.standTop; top.parent=root; top.position.y=0.17;
+  /* skate su un leggio inclinato, monopattino in piedi: guardano la sala (ovest) */
+  const lg=B.CreateBox("rideStandL",{width:0.32,height:0.26,depth:0.06},scene); lg.material=M.stand; lg.parent=root; lg.position.set(0.18,0.31,-0.5);
+  const sk=rideBuildMesh("skate","rideStandSk"); sk.parent=root; sk.position.set(0.02,0.30,-0.5);
+  sk.rotation.set(0,-Math.PI/2,0); sk.rotation.z=0.42; sk.setEnabled(true);
+  const sc=rideBuildMesh("scooter","rideStandSc"); sc.parent=root; sc.position.set(0,0.18+0.14,0.45);
+  sc.rotation.y=-Math.PI/2; sc.setEnabled(true);
+  root.getChildMeshes().forEach(m=>{ m.isPickable=true; m.alwaysSelectAsActiveMesh=true; });
+  addSolid(X-0.55,X+0.55,Z-1.05,Z+1.05,UNIT4.area);
+  try{ guiLabel(anchorMesh(I.root, X, 1.55, Z-0.5), "\u{1F6F9} Skateboard", "\u2B50 "+RIDES[0].req.stars, true, UNIT4.area); }catch(e){}
+  try{ guiLabel(anchorMesh(I.root, X, 1.75, Z+0.45), "\u{1F6F4} Scooter", "\u2B50 "+RIDES[1].req.stars, true, UNIT4.area); }catch(e){}
+  RIDE.stand=addInteract({ id:"ride_stand", area:UNIT4.area, radius:2.2,
+    pos:()=>new BABYLON.Vector3(X-0.6,0.8,Z), meshes:root.getChildMeshes(),
+    prompt:'Press <b>E</b> to buy a <b>skateboard</b> or a <b>scooter</b>', interact:rideShop });
+}
+function rideShop(){
+  let st=0; try{ st=Stars.total(); }catch(e){}
+  const btn=R=>{ const own=rideOwned(R), open=rideOpen(R);
+    return { label:R.ic+" "+R.en+" \u00b7 "+(own?"\u2713 yours":"\u2B50 "+R.req.stars), cls:(!own&&open)?"primary":"",
+             act:()=>rideBuyTry(R) }; };
+  QModal.open({ title:"\u{1F6F9}\u{1F6F4} Skateboards & scooters",
+    sub:"Which one would you like? \u00b7 You've got <b>\u2B50 "+st+"</b> stars.<br>"
+       +"<span style=\"opacity:.75;font-size:13px\">Lo skate va veloce come la corsa, il monopattino molto di pi\u00f9. "
+       +"Li usi fuori, in citt\u00e0: tasto R (o il bottone).</span>",
+    buttons:RIDES.map(btn).concat([{ label:"No, thanks" }]) });
+}
+function rideBuyTry(R){
+  if(rideOwned(R)){ toast(R.ic+" It's already yours! Outside, press R to ride \u00b7 \u00e8 gi\u00e0 tuo",3400); return; }
+  if(!rideOpen(R)){ toast(rideStarsMsg(R),4800); return; }
+  rideSetOwned(R);
+  try{ SFX.correct(); }catch(e){}
+  toast("\u{1F389} "+R.ic+" The "+R.en.toLowerCase()+" is yours! Outside, press R to ride \u00b7 \u00e8 tuo!",4600);
+  rideHud();
+}
+
 /* ---- ogni fotogramma: scendere se serve, ruote, rumore ------------------ */
 scene.onBeforeRenderObservable.add(()=>{
+  if(!RIDE.stand && typeof UNIT4!=="undefined" && area===UNIT4.area){ try{ rideStandBuild(); }catch(e){ console.warn("[RIDE] espositore",e); RIDE.stand=true; } }
   if(!RIDE.on){ RIDE.px=player.position.x; RIDE.pz=player.position.z; return; }
   if(!rideCanHere()){ rideOff(true); return; }
   const d=Math.hypot(player.position.x-RIDE.px, player.position.z-RIDE.pz);
   RIDE.px=player.position.x; RIDE.pz=player.position.z;
   const step=(d<2)?d:0;                                       // un teletrasporto non e' una pedalata
   rideSpinWheels(RIDE.mesh[RIDE.on.id], step);
+  /* quanto si sta curvando (per le braccia) */
+  let dy=player.rotation.y-(RIDE.ry0==null?player.rotation.y:RIDE.ry0);
+  while(dy>Math.PI) dy-=2*Math.PI; while(dy<-Math.PI) dy+=2*Math.PI;
+  RIDE.ry0=player.rotation.y; RIDE.turn=(RIDE.turn||0)*0.8+dy*0.2;
+  /* 🛹 la spinta col piede: subito se si sta partendo, poi ogni tanto per
+     tenere la velocita'. Solo in piano e solo se si sta davvero spingendo
+     (tasti, levetta o un tocco), non mentre si scivola */
+  const now=performance.now();
+  if(RIDE.on.id==="skate" && RIDE.pose && RIDE.pose.legs && !RIDE.push && !RIDE.qp){
+    const spinge=(now-(RIDE.inpT||0))<150 && step>0.01;
+    const piano=Math.abs(RIDE.pitch||0)<0.06 && skRampTop(player.position.x,player.position.z)===null;
+    if(spinge && piano && now-(RIDE.pushEnd||0)>((RIDE.v||0)<0.85?150:2600)) RIDE.push={ t0:now, u:0 };
+  }
+  /* 💦 pozzanghere: uno schizzo entrando e poi ogni ~90 cm dentro l'acqua */
+  let bagnato=false; try{ bagnato=step>0.005 && puddleUnderPlayer(); }catch(e){}
+  if(bagnato){ RIDE.wet=(RIDE.wet||0)+step;
+    if(!RIDE.wasWet || RIDE.wet>0.9){ RIDE.wet=0; try{ SFX.splash(true); }catch(e){} } }
+  RIDE.wasWet=bagnato;
   RIDE.pitch=rideTilt(RIDE.mesh[RIDE.on.id], (RIDE.pose&&RIDE.pose.of===avatarRoot)?avatarRoot:null,
                       RIDE.pitch||0, player.position.x, player.position.z, player.rotation.y);
   try{ SFX.roll(Math.min(1,step/(PLAYER_SPEED*RIDE.on.mult)), RIDE.on.id); }catch(e){}
@@ -48106,14 +48384,18 @@ scene.registerBeforeRender(()=>{
   let tgtMove=false;
   /* 🛹🛴 in sella la velocita' la decide la tavola (spinta + inerzia), non Shift */
   const _spd=()=>RIDE.on ? rideStepSpeed() : (running?PLAYER_SPEED*RUN_MULT:PLAYER_SPEED);
-  if(len>0.01){ moveTarget=null; pendingInteract=null; tapMark.setEnabled(false);
+  /* 🛹 sulla curva di una quarter pipe comanda la gravita' (rideQuarterTick) */
+  const _rq=!!(RIDE.on && RIDE.on.ramps && rideQuarterTick(len>0.01?{x:mx/len,z:mz/len}:null));
+  if(_rq){ /* la tavola va da sola: niente tasti, niente tocchi */ }
+  else if(len>0.01){ moveTarget=null; pendingInteract=null; tapMark.setEnabled(false);
+    RIDE.inpT=performance.now();
     kbMove=move(mx/len,mz/len, _spd());
     if(RIDE.on){ RIDE.dir={x:mx/len,z:mz/len}; RIDE.coast=kbMove; if(!kbMove) RIDE.v=0; } }
   else if(moveTarget){ const dx=moveTarget.x-player.position.x,dz=moveTarget.z-player.position.z,d=Math.hypot(dx,dz);
     const stop=pendingInteract?(pendingInteract.radius-0.6):0.5;
     if(d<=Math.max(stop,0.5)){ moveTarget=null; tapMark.setEnabled(false);
       if(pendingInteract){ const pp=pendingInteract; pendingInteract=null; pp.interact(); } }
-    else { tgtMove=true; RIDE.coast=false; move(dx/d,dz/d, _spd());
+    else { tgtMove=true; RIDE.coast=false; RIDE.inpT=performance.now(); RIDE.dir={x:dx/d,z:dz/d}; move(dx/d,dz/d, _spd());
       const nd=Math.hypot(moveTarget.x-player.position.x,moveTarget.z-player.position.z);
       // stesso scivolamento di move() (permette di passare in spazi stretti tra
       // ostacoli, come W) ma ci si ferma nello STESSO frame in cui quello
@@ -68151,7 +68433,7 @@ ET.vestitiNPC=function(){
    colore e si resta li', non si torna in cima. */
 let _tecaTab="me";
 const TECA_TABS=[ ["me","\u{1F9CD}","Me"], ["hair","\u{1F487}","Hair"], ["clothes","\u{1F455}","Clothes"],
-                  ["acc","\u{1F9E2}","Accessories"], ["words","\u{1F4D6}","Words"] ];
+                  ["acc","\u{1F9E2}","Accessories"], ["ride","\u{1F6F9}","Rides"], ["words","\u{1F4D6}","Words"] ];
 function _tcCard(attr,on,off,sw,name,state,sub){
   return '<div class="gem-fit'+(off?" off":"")+(on?" on":"")+'"'+(off?'':' '+attr)+'>'+sw
     +'<b>'+_escHtml(name)+'</b>'+(sub?'<small>'+sub+'</small>':'')+'<i>'+state+'</i></div>'; }
@@ -68161,7 +68443,7 @@ function _tcSw(bg,bd,inner){ return '<span class="gem-sw" style="background:'+bg
    grande per inquadratura (MIR_PARTS: viso o corpo). Stesse schede, stessi
    lucchetti, stessi clic (_tecaWire): una sola copia da tenere allineata. */
 const TECA_PARTS={ me:["body","skin","face"], hair:["cut","hcol"], clothes:["top","coat","bottom","shoes"],
-                   acc:["acc:head","acc:face","acc:neck","acc:bag"] };
+                   acc:["acc:head","acc:face","acc:neck","acc:bag"], ride:["rides"] };
 function _tecaParts(ids){
   const st=Gems.state(), tot=st.tot, prof=lookProf(), _L=Look.state(), _rig=(_L.rig==="f"?"f":"m");
   let h="";
@@ -68256,6 +68538,17 @@ function _tecaParts(ids){
         on?"you're wearing them":(open?"tap to wear them":"\u{1F48E} "+k.cost)); });
     h+='</div>';
   }
+  else if(id==="rides"){
+    /* 🛹🛴 skate e monopattino: quante stelle servono, e se sono gia' tuoi.
+       Si comprano al Corner Shop (rideStand), si usano fuori col tasto R. */
+    h+='<div class="dy-sec">\u{1F6F9} Skateboard &amp; \u{1F6F4} scooter</div><div class="gem-fits">';
+    RIDES.forEach(function(R){ const own=rideOwned(R), r=rideReq(R), open=!!r.open, use=own&&open, on=(RIDE.on===R);
+      h+=_tcCard('data-ride="'+R.id+'"',on,!use,_tcSw("#cdd6dc","#8b97a1",R.ic),R.en,
+        on?"you're riding it":(use?"yours \u00b7 tap to ride":(open?"\u{1F6D2} buy it at the Corner Shop":"\u{1F512} \u2B50 "+R.req.stars+" \u00b7 or finish Year "+(R.id==="skate"?1:2))),
+        (R.id==="skate"?"fast as running":"super fast")); });
+    h+='</div><div class="dy-note">Buy them at the <b>Corner Shop</b> \u{1F6D2} when you have enough \u2B50 stars '
+      +'(or when you finish the year). Ride them outside: press <b>R</b>.</div>';
+  }
   else if(id.indexOf("acc:")===0){ const slot=id.slice(4);
     /* uno per slot, «None» sempre libero e per primo; sotto l'accessorio che
        porti, la riga dei suoi colori */
@@ -68305,7 +68598,7 @@ function buildTeca(){
     +'</div>';
   h+='<div class="tc-tabs">'+TECA_TABS.map(function(t){
       return '<button type="button" class="tc-tab'+(_tecaTab===t[0]?" on":"")+'" data-ttab="'+t[0]+'"><span>'+t[1]+'</span>'+t[2]+'</button>'; }).join("")+'</div>';
-  if(_tecaTab!=="words") h+=mirStrip();            // v316: lo specchio, sopra il guardaroba
+  if(_tecaTab!=="words" && _tecaTab!=="ride") h+=mirStrip();            // v316: lo specchio, sopra il guardaroba
 
   if(_tecaTab!=="words") h+=_tecaParts(TECA_PARTS[_tecaTab]);
   else {
@@ -68342,7 +68635,9 @@ function buildTeca(){
   wire("data-ttab",   v=>{ _tecaTab=v; el.scrollTop=0; return true; });
   _tecaWire(el, buildTeca);
   wire("data-mir",    v=>mirAct(v));
-  if(_tecaTab!=="words") mirRefresh();
+  wire("data-ride",   v=>{ const R=rideDef(v); if(!R) return false;          // 🛹 dalla Teca si sale (o si scende)
+    if(RIDE.on===R) rideOff(); else if(rideMount(R.id)){ try{ closeDiary(); }catch(e){} } return true; });
+  if(_tecaTab!=="words" && _tecaTab!=="ride") mirRefresh();
 }
 /* ---- v316 — LO SPECCHIO DELLA TECA ----------------------------------------
    Giacomo: «nella teca la possibilita' di vedere grande e in dettaglio il
@@ -68367,7 +68662,7 @@ const MIR={ a:0, face:false, img:"", key:"", t:0, raf:0, drag:null, off:false, m
 try{ MIR.off=localStorage.getItem("et_mirror_off")==="1"; }catch(e){}
 function _mirKey(){ let k=""; try{ k=JSON.stringify(Look.state())+"|"+Gems.fit(); }catch(e){} return k+"|"+MIR.a.toFixed(3)+"|"+MIR.face; }
 function _mirBig(){ const o=document.getElementById("av-mir-ov"); return !!(o && o.classList.contains("on")); }
-function _mirShown(){ return _mirBig() || (!MIR.off && diaryOpen && diaryTab==="gems" && _tecaTab!=="words"); }
+function _mirShown(){ return _mirBig() || (!MIR.off && diaryOpen && diaryTab==="gems" && _tecaTab!=="words" && _tecaTab!=="ride"); }
 function mirStrip(){
   if(MIR.off) return '<button type="button" class="tc-mir-open" data-mir="show">\u{1FA9E} Mirror · see yourself</button>';
   const B=function(v,lab,on,tt){ return '<button type="button" data-mir="'+v+'"'+(on?' class="on"':'')+(tt?' title="'+tt+'"':'')+'>'+lab+'</button>'; };
