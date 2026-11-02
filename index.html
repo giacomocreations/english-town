@@ -47885,11 +47885,19 @@ function _rideSkateBody(root,P,f,stand){
   try{
     if(_legPins) _applyPins(_legPins); if(stand) _applyPins(stand); _applyPins(body); _applyPins(arms); _sitRefresh(root);
     const tns=arms.map(k=>k.tn);
-    const down=_armPose(root,tns,f,(o)=>dn.scale(0.96).add(o.scale(0.20)).add(f.scale(0.04)),
-                                   (o)=>dn.scale(0.92).add(o.scale(0.10)).add(f.scale(0.30)),null);
+    /* ⚠️ «IN FUORI» DALLA SPALLA VERA (stesso errore gia' visto col
+       carrello, vedi pushPoseFor; Giacomo, 2 nov: «nelle foto vedo braccia
+       incrociate»). _armPose cerca il petto fra le ossa che gli si passano
+       e qui ci sono solo le braccia: ripiegava su una direzione di riserva
+       col segno sbagliato e ogni braccio andava verso l'altro fianco. Il
+       lato si legge da dove sta la spalla rispetto al centro del corpo. */
+    const cen=root.getAbsolutePosition().clone();
+    const fuori=(o,ctx)=>{ let v=ctx.pU.subtract(cen); v.y=0; v=v.subtract(f.scale(V.Dot(v,f))); return v.length()>1e-4?v.normalize():o; };
+    const down=_armPose(root,tns,f,(o,sd,ctx)=>dn.scale(0.96).add(fuori(o,ctx).scale(0.20)).add(f.scale(0.04)),
+                                   (o,sd,ctx)=>dn.scale(0.92).add(fuori(o,ctx).scale(0.10)).add(f.scale(0.30)),null);
     _applyPins(arms); _sitRefresh(root);
-    const out=_armPose(root,tns,f,(o)=>dn.scale(0.55).add(o.scale(0.80)).add(f.scale(0.22)),
-                                  (o)=>dn.scale(0.30).add(o.scale(0.70)).add(f.scale(0.62)),null);
+    const out=_armPose(root,tns,f,(o,sd,ctx)=>dn.scale(0.55).add(fuori(o,ctx).scale(0.80)).add(f.scale(0.22)),
+                                  (o,sd,ctx)=>dn.scale(0.30).add(fuori(o,ctx).scale(0.70)).add(f.scale(0.62)),null);
     const L=[]; down.forEach((q,tn)=>{ if(out.has(tn)) L.push({ tn, a:q.clone(), b:out.get(tn).clone(),
       R:/\.R$/.test(_boneKey(tn.name)) }); });
     if(L.length) P.arms={ list:L, w:0.2 };
