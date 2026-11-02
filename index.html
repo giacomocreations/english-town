@@ -16069,6 +16069,9 @@ function skRampTop(X,Z,rail){   // rail: con la sbarra (default: se il giocatore
   if(Math.abs(X-SKATE.C.x)>22 || Math.abs(Z-SKATE.C.z)>16) return null;
   let best=null;
   for(const r of L){ let h=null;
+    if(r.k==="r"){                                          // sbarra bassa: solo per la crew
+      if(rail!==true || Math.abs(X-r.x)>r.hl || Math.abs(Z-r.z)>0.14) continue;
+      h=r.y; if(best===null || h>best) best=h; continue; }
     if(r.k==="q"){
       const dx=X-r.x, dz=Z-r.z, c=Math.cos(r.ry), s=Math.sin(r.ry);
       const lx=dx*c-dz*s, lz=dx*s+dz*c;                 // inverso di rotation.y
@@ -16122,6 +16125,9 @@ function _skFlatRail(x,z,len){
   _mergeByMat([-len/2+0.3,0,len/2-0.3].map(dx=>{ const p=BABYLON.MeshBuilder.CreateBox("skFRp",{width:0.06,height:0.42,depth:0.06},scene);
     p.material=hm7Mat("#3a3f46",0.3,32); p.position.set(x+dx,g+0.21,z); p.parent=townRoot; return p; }),townRoot);
   addSolid(x-len/2,x+len/2,z-0.08,z+0.08,"town");
+  /* 🛹 la crew ci fa grind (skRampTop con rail===true: solo loro, per il
+     giocatore resta un ostacolo) */
+  (SKATE.ramps||(SKATE.ramps=[])).push({ k:"r", x, z, hl:len/2, y:g+0.42+0.03-0.05 });
 }
 function _skSpeaker(x,z,ry){
   const g=SKATE.gy, r=new BABYLON.TransformNode("skSpk",scene); r.parent=townRoot; r.position.set(x,g+0.035,z); r.rotation.y=ry;
@@ -16446,7 +16452,7 @@ function SKATE_DUR(mv){ if(mv==="hop"||mv==="rise") return 2; return (SK_MOVES.f
    in piedi davanti a loro; chi parla gesticola. La musica resta: le casse
    suonano e il giocatore puo' ballare lo stesso. */
 /* v (2 nov): il ciclo ora ha TRE quarti d'ora: ballo, chiacchiere, skate
-   (Jay e Leon sulle rampe, Nia e Kiki in panchina: vedi SK_RIDES). */
+   (Jay e Leon sulle rampe, Nia e Kiki in panchina: vedi SK_Q / SK_F). */
 const SK_CYCLE=15*60*1000;
 /* v309g (Giacomo: «la crew arriva solo dopo le 15; il docente con G li
    vede in azione»). I ragazzi dello skatepark ci vengono il pomeriggio,
@@ -16547,10 +16553,8 @@ function skGoDance(D,see,B){
    skate; Nia e Kiki restano in panchina a guardare.
    I percorsi sono FUNZIONI DEL TEMPO della radio (come la coreografia del
    ballo): tutta la classe vede lo stesso trick nello stesso momento.
-     Jay  — quarter pipe est: su e giu' con kickturn in cima (una volta piu'
-            in alto, fino quasi al bordo), in piano un ollie col kickflip.
-     Leon — funbox: lo attraversa con un ollie kickflip sopra, curva, sale
-            sulla sbarra e la percorre tutta in grind, curva e ricomincia.
+     Due giri (SK_Q da rampa a rampa, SK_F funbox e sbarre) che Jay e Leon
+     si scambiano a ogni turno; braccia per l'equilibrio come il giocatore.
    Le quote vengono dalla geometria delle rampe (skRampTop con la sbarra),
    la tavola e il corpo si inclinano con la pendenza come per il giocatore.
    ⚠️ Arrivati al punto di partenza si aspetta il prossimo giro del ciclo
@@ -16558,50 +16562,78 @@ function skGoDance(D,see,B){
    arriva allo skatepark in momenti diversi li vede comunque in sincrono. */
 function _skL(a,b,dur,o){ return Object.assign({ k:"line", a, b, dur }, o||{}); }
 function _skArc(c,r,a0,a1,dur){ return { k:"arc", c, r, a0, a1, dur }; }
-function _skQP(z,peak,dur){ return { k:"qp", z, peak, dur }; }
-const SK_RIDES=[
-  { who:0, loop:[                                                     // Jay: quarter pipe est
-      _skL([39.5,55.6],[44.8,55.6],2.0),
-      _skQP(55.6,1.20,1.8),
-      _skL([44.8,55.6],[39.5,55.6],1.9,{ ollie:0.5, flip:true }),
-      _skArc([39.5,56.5],0.9,Math.PI,2*Math.PI,1.2),
-      _skL([39.5,57.4],[44.8,57.4],1.8),
-      _skQP(57.4,1.33,2.0),
-      _skL([44.8,57.4],[39.5,57.4],1.9,{ ollie:0.45 }),
-      _skArc([39.5,56.5],0.9,0,-Math.PI,1.2) ] },
-  { who:2, loop:[                                                     // Leon: funbox e sbarra
-      _skL([24.0,58.5],[36.5,58.5],4.0,{ ollie:0.48, flip:true, h:0.42 }),
-      _skArc([36.5,59.6],1.1,Math.PI,0,1.3),
-      _skL([36.5,60.7],[33.6,59.2],1.0),
-      _skL([33.6,59.2],[25.5,59.2],2.6,{ rail:true }),
-      _skL([25.5,59.2],[22.5,59.6],0.9),
-      _skArc([22.5,59.05],0.55,0,-Math.PI,1.1),
-      _skL([22.5,58.5],[24.0,58.5],0.5) ] },
-];
-SK_RIDES.forEach(L=>{ L.T=L.loop.reduce((a,s)=>a+s.dur,0); });
-function _skIsSkater(D){ return SK_RIDES.some(L=>L.who===D.i); }
-function _skRideOf(D){ return SK_RIDES.find(L=>L.who===D.i)||null; }
-/* il tempo del giro, uguale per tutti: secondi dall'inizio del quarto d'ora */
-function _skLoopT(L){ const ms=radioNow()%SK_CYCLE; return (ms/1000)%L.T; }
-/* dove si e' al tempo t del giro: x, z, direzione, salto, kickflip, sbarra */
-function _skRidePose(L,t){
-  let s=null, u=0;
-  for(const q of L.loop){ if(t<q.dur){ s=q; u=t/q.dur; break; } t-=q.dur; }
-  if(!s){ s=L.loop[L.loop.length-1]; u=1; }
-  const P={ x:0, z:0, yaw:0, hop:0, spin:0, rail:!!s.rail };
+function _skQP(side,z,peak,dur){ return { k:"qp", side, z, peak, dur }; }
+/* v (2 nov, Giacomo: «metti varieta' nei percorsi: possono fare anche da
+   una rampa all'altra»). Due GIRI che Jay e Leon si scambiano a ogni turno
+   (SK_SLOT secondi): mentre uno fa l'uno, l'altro fa l'altro, su corsie
+   lontane almeno 1,4 m, poi ognuno passa all'altro giro con un raccordo
+   (anche quelli su corsie separate). In fondo a ogni giro si e' gia' dove
+   comincia il giro dopo: nessun salto.
+     Q (da rampa a rampa, corsia z 55,6): quarter pipe EST, attraversa tutta
+       la pista con ollie, quarter pipe OVEST (piu' alta), ritorno.
+     F (funbox e sbarre): ollie sopra il funbox, curva, grind sulla sbarra
+       del funbox, curva larga, grind sulla sbarra bassa in fondo alla
+       pista, curva, ritorno a sud del funbox.
+   E i trick cambiano di turno in turno (_skTrick): kickflip, pop shove-it,
+   ollie semplice; le quarter pipe una volta piu' alte, una meno. */
+const SK_Q=[
+  _skQP("E",55.6,1.20,1.8),
+  _skL([44.8,55.6],[30,55.6],4.0,{ ollie:0.5, trick:1 }),
+  _skL([30,55.6],[15.2,55.6],4.0,{ ollie:0.5 }),
+  _skQP("W",55.6,1.30,2.0),
+  _skL([15.2,55.6],[30,55.6],4.0,{ ollie:0.45, trick:2 }),
+  _skL([30,55.6],[44.8,55.6],4.0),
+  /* raccordo verso il giro F: su e giu' dalla est, corsia z 57 verso ovest */
+  _skQP("E",55.6,1.25,1.9),
+  _skL([44.8,55.6],[40,57.0],1.6),
+  _skL([40,57.0],[21.5,57.0],6.0,{ ollie:0.5, trick:1 }),
+  _skArc([21.5,57.75],0.75,Math.PI,2*Math.PI,1.0) ];
+const SK_F=[
+  _skL([21.5,58.5],[36.5,58.5],4.4,{ ollie:0.57, trick:1, h:0.42 }),     // sopra il funbox
+  _skArc([36.5,59.6],1.1,Math.PI,0,1.3),
+  _skL([36.5,60.7],[33.6,59.2],1.0),
+  _skL([33.6,59.2],[25.5,59.2],2.6,{ rail:true }),                       // grind sulla sbarra del funbox
+  _skL([25.5,59.2],[22.5,60.6],1.0),
+  _skArc([22.5,62.1],1.5,Math.PI,2*Math.PI,1.6),
+  _skL([22.5,63.6],[37.5,63.6],4.6,{ rail:true }),                       // grind sulla sbarra bassa
+  _skArc([37.5,61.05],2.55,0,Math.PI,2.6),
+  _skL([37.5,58.5],[21.5,57.0],4.6,{ ollie:0.45, trick:2 }),
+  _skArc([21.5,57.75],0.75,Math.PI,2*Math.PI,1.0),
+  /* raccordo verso il giro Q: giu' sulla corsia z 55,6 verso est */
+  _skL([21.5,58.5],[25,55.6],1.4),
+  _skL([25,55.6],[44.8,55.6],6.6,{ ollie:0.5, trick:2 }) ];
+const SK_SLOT=32;                                                       // secondi di un turno (giro + raccordo)
+[SK_Q,SK_F].forEach(L=>{ const T=L.reduce((a,s)=>a+s.dur,0), k=SK_SLOT/T; L.forEach(s=>{ s.dur*=k; }); });
+const SK_WHO=[0,2];                                                     // Jay, Leon
+function _skIsSkater(D){ return SK_WHO.indexOf(D.i)>=0; }
+/* il turno, uguale per tutti: dall'ora della radio */
+function _skSlot(){ const t=(radioNow()%SK_CYCLE)/1000; return { k:Math.floor(t/SK_SLOT), u:t%SK_SLOT }; }
+function _skSeqOf(D,k){ const jay=(D.i===SK_WHO[0]); return ((k%2===0)===jay)?SK_Q:SK_F; }
+/* il trick di un ollie in questo turno: 1/2 = i due «posti» dei trick */
+function _skTrick(slot,k){ const c=(k+slot)%3; return c===0?"flip":(c===1?"shuv":"ollie"); }
+/* dove si e' al tempo u del turno k: x, z, direzione, salto, trick, sbarra */
+function _skRidePose(L,u,k){
+  let s=null, v=0;
+  for(const q of L){ if(u<q.dur){ s=q; v=u/q.dur; break; } u-=q.dur; }
+  if(!s){ s=L[L.length-1]; v=1; }
+  const P={ x:0, z:0, yaw:0, hop:0, flip:0, shuv:0, rail:!!s.rail, qp:s.k==="qp", arc:s.k==="arc" };
   if(s.k==="line"){
-    P.x=s.a[0]+(s.b[0]-s.a[0])*u; P.z=s.a[1]+(s.b[1]-s.a[1])*u; P.yaw=Math.atan2(s.b[0]-s.a[0],s.b[1]-s.a[1]);
-    if(s.ollie!=null){ const w=0.13, v=(u-(s.ollie-w))/(2*w);
-      if(v>0 && v<1){ P.hop=(s.h||0.34)*Math.sin(Math.PI*v); if(s.flip) P.spin=2*Math.PI*v; } }
+    P.x=s.a[0]+(s.b[0]-s.a[0])*v; P.z=s.a[1]+(s.b[1]-s.a[1])*v; P.yaw=Math.atan2(s.b[0]-s.a[0],s.b[1]-s.a[1]);
+    if(s.ollie!=null){ const w=0.12, q=(v-(s.ollie-w))/(2*w);
+      if(q>0 && q<1){ const tr=s.trick?_skTrick(s.trick,k):"ollie";
+        P.hop=(s.h||0.34)*(tr==="ollie"?1.1:1)*Math.sin(Math.PI*q);
+        if(tr==="flip") P.flip=2*Math.PI*q; else if(tr==="shuv") P.shuv=Math.PI*q; } }
   } else if(s.k==="arc"){
-    const a=s.a0+(s.a1-s.a0)*u, sg=Math.sign(s.a1-s.a0);
+    const a=s.a0+(s.a1-s.a0)*v, sg=Math.sign(s.a1-s.a0);
     P.x=s.c[0]+s.r*Math.sin(a); P.z=s.c[1]+s.r*Math.cos(a); P.yaw=Math.atan2(sg*Math.cos(a),-sg*Math.sin(a));
   } else {                                                            // quarter pipe: su, kickturn, giu'
-    const r=(SKATE.ramps||[]).find(q=>q.k==="q" && q.ry===0); if(!r) return P;
-    const lx=s.peak*Math.sin(Math.PI*u), c=Math.cos(r.ry), sn=Math.sin(r.ry);
+    const ry=(s.side==="W")?Math.PI:0;
+    const r=(SKATE.ramps||[]).find(q=>q.k==="q" && Math.abs(q.ry-ry)<0.01); if(!r) return P;
+    const pk=s.peak*(1+0.07*((k%3)-1));                                // una volta piu' su, una meno
+    const lx=Math.min(r.R-0.02,pk)*Math.sin(Math.PI*v), c=Math.cos(r.ry), sn=Math.sin(r.ry);
     P.x=r.x+lx*c; P.z=s.z-lx*sn;
-    const up=Math.atan2(c,-sn), k=Math.max(0,Math.min(1,(u-0.42)/0.16));
-    P.yaw=up+Math.PI*(k*k*(3-2*k));
+    const up=Math.atan2(c,-sn), kk=Math.max(0,Math.min(1,(v-0.42)/0.16));
+    P.yaw=up+Math.PI*(kk*kk*(3-2*kk));
   }
   return P;
 }
@@ -16615,13 +16647,65 @@ function _skSkateOff(D){
   if(D.sk.board) D.sk.board.setEnabled(false);
   n.holder.rotation.x=0; n.holder.position.y=D.baseY;
   if(D.sk.cy0!=null) n.carrier.position.y=D.sk.cy0;
+  /* le braccia com'erano (alcune ossa l'Idle non le anima: resterebbero aperte) */
+  if(D.sk.armsOrig) D.sk.armsOrig.forEach(k=>{ if(k.tn.rotationQuaternion) k.tn.rotationQuaternion.copyFrom(k.q); });
   D.sk.on=false;
 }
+/* 🛹 LE BRACCIA DELLA CREW (Giacomo, 2 nov: «anche per loro metti le
+   braccia come hai fatto per l'avatar»). Stesse due pose del giocatore
+   (_rideSkateBody): «giu'» lungo i fianchi e «fuori» per l'equilibrio,
+   calcolate una volta sul corpo di chi va in skate e fuse a ogni
+   fotogramma (_skCrewArmsTick). Il «fuori» dalla spalla vera. */
+function _skCrewArms(D){
+  const n=D.n, root=n.holder, V=BABYLON.Vector3, dn=new V(0,-1,0);
+  const ry=n.carrier.rotation.y, f=new V(Math.sin(ry),0,Math.cos(ry));
+  const body=_restPinsFor(root,/^(Hips|Abdomen|Torso|Chest)$/);
+  const arms=_restPinsFor(root,/^(Shoulder\.[LR]|UpperArm\.[LR]|LowerArm\.[LR]|Wrist\.[LR])$/);
+  if(!arms.length) return null;
+  const touched=new Set(body.map(k=>k.tn)); arms.forEach(k=>touched.add(k.tn));
+  const save=[...touched].map(tn=>({tn, p:tn.position.clone(), q:tn.rotationQuaternion?tn.rotationQuaternion.clone():null, s:tn.scaling.clone()}));
+  let L=null;
+  try{
+    _applyPins(body); _applyPins(arms); n.carrier.computeWorldMatrix(true); _sitRefresh(root);
+    const tns=arms.map(k=>k.tn), cen=root.getAbsolutePosition().clone();
+    const fuori=(o,ctx)=>{ let v=ctx.pU.subtract(cen); v.y=0; v=v.subtract(f.scale(V.Dot(v,f))); return v.length()>1e-4?v.normalize():o; };
+    const down=_armPose(root,tns,f,(o,sd,ctx)=>dn.scale(0.96).add(fuori(o,ctx).scale(0.20)).add(f.scale(0.04)),
+                                   (o,sd,ctx)=>dn.scale(0.92).add(fuori(o,ctx).scale(0.10)).add(f.scale(0.30)),null);
+    _applyPins(arms); _sitRefresh(root);
+    const out=_armPose(root,tns,f,(o,sd,ctx)=>dn.scale(0.55).add(fuori(o,ctx).scale(0.80)).add(f.scale(0.22)),
+                                  (o,sd,ctx)=>dn.scale(0.30).add(fuori(o,ctx).scale(0.70)).add(f.scale(0.62)),null);
+    L=[]; down.forEach((q,tn)=>{ if(out.has(tn)) L.push({ tn, a:q.clone(), b:out.get(tn).clone(), R:/\.R$/.test(_boneKey(tn.name)) }); });
+  }catch(e){ console.warn("[skate] braccia crew",e); L=null; }
+  finally{
+    save.forEach(k=>{ k.tn.position.copyFrom(k.p); if(k.q){ if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion(); k.tn.rotationQuaternion.copyFrom(k.q); } k.tn.scaling.copyFrom(k.s); });
+    _sitRefresh(root);
+  }
+  if(L && L.length){ D.sk.armsOrig=L.map(k=>({ tn:k.tn, q:k.tn.rotationQuaternion?k.tn.rotationQuaternion.clone():new BABYLON.Quaternion() })); return { list:L, w:0.2 }; }
+  return null;
+}
+function _skCrewArmsTick(D,P,turn){
+  const A=D.sk.arms; if(!A) return;
+  const now=performance.now()/1000;
+  let t=0.22;
+  t+=Math.min(0.7,Math.abs(D.sk.pitch||0)*1.4);                      // pendenza
+  if(P.qp) t+=0.45;                                                  // quarter pipe
+  if(P.hop>0.02) t+=0.45;                                            // in aria
+  if(P.rail && D.sk.sy!=null && D.sk.sy>SKATE.gy+0.4) t+=0.6;        // in grind
+  t+=Math.min(0.3,Math.abs(turn)*6);                                 // curva
+  t=Math.min(1,t);
+  A.w+=(t-A.w)*0.12;
+  const sw=0.09, ph=D.i*1.7;
+  const wL=Math.max(0,Math.min(1,A.w+sw*Math.sin(now*1.9+ph))),
+        wR=Math.max(0,Math.min(1,A.w+sw*Math.sin(now*1.9+ph+2.3)));
+  for(const k of A.list){ if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion();
+    BABYLON.Quaternion.SlerpToRef(k.a,k.b,k.R?wR:wL,k.tn.rotationQuaternion); }
+}
 function skGoSkate(D,see){
-  const L=_skRideOf(D); if(!L) return;
+  if(!_skIsSkater(D)) return;
   D.talk=false; D.chillFace=null;
   _skUnpose(D);
-  const p0=_skRidePose(L,0);
+  /* si va dove comincia il PROSSIMO turno, e li' si aspetta che cominci */
+  const S0=_skSlot(), kn=S0.k+1, p0=_skRidePose(_skSeqOf(D,kn),0,kn);
   _skWalk(D,p0.x,p0.z,see,()=>{
     const n=D.n;
     if(!D.sk) D.sk={ board:rideBuildMesh("skate","crewSk_"+D.i), cy0:n.carrier.position.y, sy:null, pitch:0 };
@@ -16629,36 +16713,45 @@ function skGoSkate(D,see){
     D.sk.cy0=n.carrier.position.y;
     try{ n.play("Idle"); }catch(e){}
     n.pins=D.bind.map(k=>({ tn:k.tn, p:k.p.clone(), q:k.q.clone(), s:k.s.clone() }));
-    D.sk.on=true; D.sk.wait=true; D.sk.lastT=null;
+    n.carrier.rotation.y=p0.yaw+NPC_FACE_OFFSET; n.carrier.computeWorldMatrix(true);
+    D.sk.arms=_skCrewArms(D);
+    D.sk.on=true; D.sk.waitK=kn; D.sk.yaw0=null;
     D.st="skate";
   });
 }
 /* ogni fotogramma, per chi e' in skate */
 function skSkateTick(D){
-  const L=_skRideOf(D), S=D.sk; if(!L || !S || !S.on) return;
+  const S=D.sk; if(!S || !S.on) return;
   const n=D.n, c=n.carrier, R=rideDef("skate");
   S.board.setEnabled(true);
-  const t=_skLoopT(L);
-  /* in attesa del giro: fermo sulla tavola al punto di partenza */
-  if(S.wait){ if(S.lastT!=null && t<S.lastT){ S.wait=false; } S.lastT=t;
-    if(S.wait){ const p0=_skRidePose(L,0);
+  const T=_skSlot();
+  /* in attesa del turno: fermo sulla tavola dove comincia */
+  if(S.waitK!=null){
+    if(T.k>=S.waitK || T.k<S.waitK-2) S.waitK=null;
+    else { const p0=_skRidePose(_skSeqOf(D,S.waitK),0,S.waitK);
       c.position.y=_skFloorRide(c.position.x,c.position.z,false)+R.lift;
-      c.rotation.y=p0.yaw+NPC_FACE_OFFSET; return; } }
-  const P=_skRidePose(L,t);
+      c.rotation.y=p0.yaw+NPC_FACE_OFFSET;
+      if(S.arms) _skCrewArmsTick(D,{ hop:0 },0);
+      return; } }
+  const P=_skRidePose(_skSeqOf(D,T.k),T.u,T.k);
   const prev={ x:c.position.x, z:c.position.z };
   c.position.x=P.x; c.position.z=P.z;
   const fy=_skFloorRide(P.x,P.z,P.rail)+R.lift;
   S.sy=(S.sy==null)?fy:S.sy+(fy-S.sy)*0.5;                // la quota insegue (sbarra e bordo senza scatti)
   c.position.y=S.sy+P.hop;
+  let dy=P.yaw-(S.yaw0==null?P.yaw:S.yaw0); while(dy>Math.PI) dy-=2*Math.PI; while(dy<-Math.PI) dy+=2*Math.PI;
+  S.yaw0=P.yaw; S.turn=(S.turn||0)*0.8+dy*0.2;
   c.rotation.y=P.yaw+NPC_FACE_OFFSET;
   /* tavola e corpo inclinati come la rampa (davanti/dietro 30 cm) */
   const fx=Math.sin(P.yaw)*0.3, fz=Math.cos(P.yaw)*0.3;
   const sl=Math.atan2(_skFloorRide(P.x+fx,P.z+fz,P.rail)-_skFloorRide(P.x-fx,P.z-fz,P.rail),0.6);
   S.pitch+=(sl-S.pitch)*0.35;
   S.board.rotation.x=-Math.max(-1.25,Math.min(1.25,S.pitch));
-  S.board.rotation.z=P.spin;                              // kickflip: la tavola gira sotto i piedi
-  S.board.position.y=P.spin?-0.12*Math.sin(P.spin/2):0;
+  S.board.rotation.z=P.flip;                              // kickflip: la tavola gira sotto i piedi
+  S.board.rotation.y=P.shuv;                              // pop shove-it: gira in piano, di mezzo giro
+  S.board.position.y=(P.flip||P.shuv)?-0.12*Math.sin(Math.max(P.flip/2,P.shuv)):0;
   n.holder.rotation.x=-Math.max(-0.6,Math.min(0.6,S.pitch*0.6));
+  _skCrewArmsTick(D,P,S.turn);
   /* le ruote girano di quanto si e' andati */
   const d=Math.hypot(c.position.x-prev.x,c.position.z-prev.z); if(d<2) rideSpinWheels(S.board,d);
 }
