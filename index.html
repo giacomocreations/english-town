@@ -16567,6 +16567,10 @@ function skGoDance(D,see,B){
 function _skL(a,b,dur,o){ return Object.assign({ k:"line", a, b, dur }, o||{}); }
 function _skArc(c,r,a0,a1,dur){ return { k:"arc", c, r, a0, a1, dur }; }
 function _skQP(side,z,peak,dur){ return { k:"qp", side, z, peak, dur }; }
+/* sulla quarter pipe fin SOPRA il bordo, lungo il bordo da z0 a z1, poi
+   giu' di nuovo (Giacomo: «devono camminare sul bordo con lo skate per un
+   po' e poi scendono») */
+function _skQPD(side,z0,z1,dur){ return { k:"qpd", side, z0, z1, dur }; }
 /* v (2 nov, Giacomo: «metti varieta' nei percorsi: possono fare anche da
    una rampa all'altra»). Due GIRI che Jay e Leon si scambiano a ogni turno
    (SK_SLOT secondi): mentre uno fa l'uno, l'altro fa l'altro, su corsie
@@ -16581,16 +16585,18 @@ function _skQP(side,z,peak,dur){ return { k:"qp", side, z, peak, dur }; }
    E i trick cambiano di turno in turno (_skTrick): kickflip, pop shove-it,
    ollie semplice; le quarter pipe una volta piu' alte, una meno. */
 const SK_Q=[
-  _skQP("E",55.6,1.20,1.8),
-  _skL([44.8,55.6],[30,55.6],4.0,{ ollie:0.5, trick:1 }),
-  _skL([30,55.6],[15.2,55.6],4.0,{ ollie:0.5 }),
-  _skQP("W",55.6,1.30,2.0),
-  _skL([15.2,55.6],[30,55.6],4.0,{ ollie:0.45, trick:2 }),
-  _skL([30,55.6],[44.8,55.6],4.0),
+  _skQPD("E",55.6,59.6,3.0),                                             // su, 4 m lungo il bordo verso nord, giu'
+  _skL([44.8,59.6],[40.5,55.6],1.7),
+  _skL([40.5,55.6],[30,55.6],3.0,{ ollie:0.5, trick:1 }),
+  _skL([30,55.6],[15.2,55.6],4.2,{ ollie:0.5 }),
+  _skQPD("W",55.6,59.6,3.0),                                             // l'altra rampa, idem
+  _skL([15.2,59.6],[19.5,55.6],1.7),
+  _skL([19.5,55.6],[30,55.6],3.0,{ ollie:0.45, trick:2 }),
+  _skL([30,55.6],[44.8,55.6],4.2),
   /* raccordo verso il giro F: su e giu' dalla est, corsia z 57 verso ovest */
-  _skQP("E",55.6,1.25,1.9),
+  _skQP("E",55.6,1.25,1.0),
   _skL([44.8,55.6],[40,57.0],1.6),
-  _skL([40,57.0],[21.5,57.0],6.0,{ ollie:0.5, trick:1 }),
+  _skL([40,57.0],[21.5,57.0],5.4,{ ollie:0.5, trick:1 }),
   _skArc([21.5,57.75],0.75,Math.PI,2*Math.PI,1.0) ];
 const SK_F=[
   _skL([21.5,58.5],[36.5,58.5],4.4,{ ollie:0.57, trick:1, h:0.42 }),     // sopra il funbox
@@ -16630,14 +16636,31 @@ function _skRidePose(L,u,k){
   } else if(s.k==="arc"){
     const a=s.a0+(s.a1-s.a0)*v, sg=Math.sign(s.a1-s.a0);
     P.x=s.c[0]+s.r*Math.sin(a); P.z=s.c[1]+s.r*Math.cos(a); P.yaw=Math.atan2(sg*Math.cos(a),-sg*Math.sin(a));
-  } else {                                                            // quarter pipe: su, kickturn, giu'
+  } else {
+    /* quarter pipe. ⚠️ A VELOCITA' COSTANTE (Giacomo: «sembra che rallentino
+       sopra la rampa, non devono»): prima il profilo era un seno, fermo in
+       cima. Ora si sale e si scende col passo che si ha in piano. */
+    P.qp=true;
     const ry=(s.side==="W")?Math.PI:0;
     const r=(SKATE.ramps||[]).find(q=>q.k==="q" && Math.abs(q.ry-ry)<0.01); if(!r) return P;
-    const pk=s.peak*(1+0.07*((k%3)-1));                                // una volta piu' su, una meno
-    const lx=Math.min(r.R-0.02,pk)*Math.sin(Math.PI*v), c=Math.cos(r.ry), sn=Math.sin(r.ry);
-    P.x=r.x+lx*c; P.z=s.z-lx*sn;
-    const up=Math.atan2(c,-sn), kk=Math.max(0,Math.min(1,(v-0.42)/0.16));
-    P.yaw=up+Math.PI*(kk*kk*(3-2*kk));
+    const c=Math.cos(r.ry), sn=Math.sin(r.ry), up=Math.atan2(c,-sn);
+    const wrap=a=>{ while(a>Math.PI) a-=2*Math.PI; while(a<-Math.PI) a+=2*Math.PI; return a; };
+    const turn=(a,b,t)=>{ t=Math.max(0,Math.min(1,t)); t=t*t*(3-2*t); return a+wrap(b-a)*t; };
+    if(s.k==="qp"){                                                   // su, kickturn, giu'
+      const pk=Math.min(r.R-0.02,s.peak*(1+0.07*((k%3)-1)));          // una volta piu' su, una meno
+      const lx=pk*(1-Math.abs(1-2*v));
+      P.x=r.x+lx*c; P.z=s.z-lx*sn;
+      P.yaw=turn(up,up+Math.PI,(v-0.45)/0.1);
+    } else {                                                          // sul bordo: su, lungo, giu'
+      const LD=r.R+0.35, a=0.22, b=0.78;                              // a meta' del piano in cima
+      let lx, z;
+      if(v<a){ lx=LD*(v/a); z=s.z0; P.yaw=up; }
+      else if(v<b){ const w=(v-a)/(b-a); lx=LD; z=s.z0+(s.z1-s.z0)*w;
+        const along=Math.atan2(0,Math.sign(s.z1-s.z0)||1);
+        P.yaw=(w<0.5)?turn(up,along,w/0.18):turn(along,up+Math.PI,(w-0.82)/0.18); }
+      else { lx=LD*(1-(v-b)/(1-b)); z=s.z1; P.yaw=up+Math.PI; }
+      P.x=r.x+lx*c; P.z=z-lx*sn;
+    }
   }
   return P;
 }
@@ -16775,7 +16798,10 @@ function _skSkateHome(D,see,after){
   if(!see){ _skSkateOff(D); after(); return; }
   const P=_skPickSpot(D);
   S.waitK=null; D.st="skateHome";
-  S.glide={ x:P.x, z:P.z, then:()=>{ D.n.carrier.rotation.y=0+NPC_FACE_OFFSET; _skSkateOff(D); after(); } };
+  S.glide={ x:P.x, z:P.z, then:()=>{ D.n.carrier.rotation.y=0+NPC_FACE_OFFSET; _skSkateOff(D);
+    /* ⚠️ via da «skateHome» PRIMA di after(): skGoChill/skGoDance la usano per
+       non ripartire mentre si riporta lo skate, e cosi' restava fermo li' */
+    D.st="idle"; after(); } };
 }
 /* tratto «libero» in skate (all'angolo e ritorno): dritto, a passo di skate */
 function _skGlideTick(D){
