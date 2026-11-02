@@ -49110,7 +49110,7 @@ function _fkSet(id,G,F,dz){
     const head=BABYLON.MeshBuilder.CreateSphere("fkDh",{ diameter:0.26, segments:10 },scene); head.material=yellow; head.parent=r; head.position.y=1.72;
     r.getChildMeshes().forEach(m=>{ m.__cast=true; m.isPickable=false; });
     addSolid(wx-0.22,wx+0.22,wz-0.22,wz+0.22,"town");
-    return { x:wx, z:wz }; });
+    return { x:wx, z:wz, node:r, sol:solids[solids.length-1] }; });
   return { id, G, F, spot:{ x:bx, z:bz }, dir:d, perp:p, ball, wall, sim:null };
 }
 function fkBuild(){
@@ -49119,7 +49119,7 @@ function fkBuild(){
   FK.built=true;
   FK.sets={ crew:_fkSet("crew",{ x:F.x+15, z:F.z, sg:1 },F,1.5), me:_fkSet("me",{ x:F.x-15, z:F.z, sg:-1 },F,-1.5) };
   const S=FK.sets.me;
-  addInteract({ id:"fk_me", area:"town", radius:1.9, meshes:[S.ball],
+  FK.inter=addInteract({ id:"fk_me", area:"town", radius:1.9, meshes:[S.ball],
     pos:()=>S.ball.position,
     prompt:()=>FK.aim?'⚽ <b>Space</b> (or E) to <b>kick</b> · Esc to stop':'Press <b>E</b> to take a <b>free kick</b> ⚽',
     interact:()=>{ if(FK.aim) fkKick(); else fkStart(); } });
@@ -49499,6 +49499,18 @@ const _fkBoot=scene.onBeforeRenderObservable.add(()=>{
   scene.onBeforeRenderObservable.remove(_fkBoot);
   FK.obs=scene.onBeforeRenderObservable.add(()=>{
     if(area!=="town") { if(FK.aim) fkStop(); return; }
+    /* 🌙 (Giacomo, 2 nov: «dalle 10 via i palloni, campo vuoto come per le
+       altre cose»): a citta' chiusa (townOpen, dalle 22 alle 6) palloni e
+       barriere spariscono, la E non c'e' piu' e le sagome non fanno da
+       ostacolo (il loro solido passa a un'area che non esiste, come le
+       casse dello skatepark). Chi stava tirando smette. */
+    { const open=(typeof townOpen!=="function") || townOpen();
+      if(open!==FK.open){ FK.open=open;
+        if(!open && FK.aim) fkStop();
+        ["me","crew"].forEach(k=>{ const S=FK.sets[k]; _fkReset(S); S.simK=null; S.ball.setEnabled(open);
+          S.wall.forEach(w=>{ w.node.setEnabled(open); if(w.sol) w.sol.area=open?"town":"_fk_off"; }); });
+        if(FK.inter) FK.inter.enabled=open; }
+      if(!open) return; }
     if(!FK.crewObs && typeof U7_NPC!=="undefined" && U7_NPC.kim && U7_NPC.alex && U7_NPC.ravi){
       try{ if(PARKFUN && !PARKFUN.people.kicking){ const F0=FK.sets.crew.F, sp=FK.sets.crew.spot,
           snap=()=>({ cam:new BABYLON.Vector3(sp.x-1.5,F0.y+2.4,sp.z-7.5), look:new BABYLON.Vector3(sp.x+2,F0.y+0.9,sp.z) });
