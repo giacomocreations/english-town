@@ -6462,7 +6462,7 @@ function addSolid(x0,x1,z0,z1,areaName){ solids.push({x0:Math.min(x0,x1),x1:Math
 const AREA_PLAYER_R={ home:0.40 };
 function blocked(x,z,ramps){ const PR=AREA_PLAYER_R[area]||PLAYER_R, R2=PR*PR;
   for(let i=0;i<solids.length;i++){ const s=solids[i]; if(s.area!==area) continue;
-    if(ramps && s.skRamp) continue;                     // 🛹 rampe dello skatepark: le decide skRampStepBlocked
+    if(ramps && s.skRamp && (ramps===2 || !s.skRail)) continue;   // 🛹 rampe (e in skate la sbarra): le decide skRampStepBlocked
     if(!(x>s.x0-PR && x<s.x1+PR && z>s.z0-PR && z<s.z1+PR)) continue;
     const dx=(x<s.x0)?(s.x0-x):((x>s.x1)?(x-s.x1):0);   // 0 se dentro la fascia
     const dz=(z<s.z0)?(s.z0-z):((z>s.z1)?(z-s.z1):0);
@@ -16050,7 +16050,13 @@ function _skFunbox(x,z){
   /* la sbarra in cima resta un ostacolo anche in skate (lassu' ci si passa
      di fianco, non attraverso); a terra sta dentro il funbox e non conta */
   addSolid(x-Lb/2-0.1,x+Lb/2+0.1,z-0.04,z+0.04,"town");
-  (SKATE.ramps||(SKATE.ramps=[])).push({ k:"f", x, z, hl:Lb/2, hw:Wd/2, H:Hb, Lr, y0:g });
+  /* 🛹 in skate pero' la sbarra NON ferma (Giacomo, 2 nov: «sulla rampa
+     centrale al centro si ferma e poi continua»): gonfiata del raggio del
+     giocatore era una fascia di 1,2 m in mezzo al funbox, e chi ci saliva
+     dritto ci sbatteva. In skate ci si sale sopra e si scivola (grind):
+     vedi skRampTop (quota della sbarra) e rideGrind. */
+  Object.assign(solids[solids.length-1],{ skRamp:true, skRail:true });
+  (SKATE.ramps||(SKATE.ramps=[])).push({ k:"f", x, z, hl:Lb/2, hw:Wd/2, H:Hb, Lr, y0:g, rail:{ hl:Lb/2+0.1, y:g+Hb+0.32+0.035-0.05 } });
 }
 /* 🛹 ALTEZZA DELLE RAMPE in un punto (quota del mondo), o null fuori dalle
    rampe. Calcolata dalla STESSA geometria con cui sono costruite (curva di
@@ -16070,9 +16076,26 @@ function skRampTop(X,Z){
       const ax=Math.abs(X-r.x), az=Math.abs(Z-r.z);
       if(az>r.hw || ax>r.hl+r.Lr) continue;
       h=r.y0+(ax<=r.hl ? r.H : r.H*(1-(ax-r.hl)/r.Lr));
+      /* la sbarra, ma solo per chi e' in skate (a piedi resta un ostacolo) */
+      if(r.rail && az<0.14 && ax<=r.rail.hl && _skOnSkate()) h=Math.max(h,r.rail.y);
     }
     if(best===null || h>best) best=h; }
   return best;
+}
+function _skOnSkate(){ try{ return !!(RIDE.on && RIDE.on.ramps); }catch(e){ return false; } }
+/* 🛹 GRIND: chi e' sul funbox e va lungo la sbarra (non di traverso) ci
+   viene tirato sopra, cosi' si scivola dritti da un capo all'altro invece
+   di sbatterci contro. Ritorna la sbarra se ci si e' sopra. */
+function rideGrind(dirx,dirz){
+  const L=SKATE.ramps; if(!L) return null;
+  const X=player.position.x, Z=player.position.z;
+  for(const r of L){ if(r.k!=="f" || !r.rail) continue;
+    const ax=Math.abs(X-r.x), dz=r.z-Z;
+    if(ax>r.rail.hl || Math.abs(dz)>0.45) continue;
+    if(dirx!=null && Math.abs(dirx)<0.75) continue;                 // di traverso: niente grind
+    player.position.z+=dz*0.35;
+    return r; }
+  return null;
 }
 /* quota del fondo dello skatepark (dove non c'e' rampa), null fuori */
 function skFloorAt(X,Z){
@@ -24079,8 +24102,15 @@ function mktPrice(e){ return MARKET.prices[mktKey(e)]; }
 /* plurali: «there are no more grapes» / «there's no more milk» */
 const MARKET_PLURAL={ tomatoes:1, oranges:1, grapes:1, onions:1, mushrooms:1, peas:1, crisps:1, biscuits:1, apples:1, bananas:1, eggs:1 };
 const SHOP={ cart:null, items:[], paying:false, inters:[] };
-function gbp(p){ return "\u00a3"+(p/100).toFixed(2); }
-function _numW(n){ const o=["zero","one","two","three","four","five","six","seven","eight","nine","ten","eleven","twelve",
+function gbp(p){ const s=(p/100).toFixed(2), i=s.indexOf(".");   // £1,249.99: la virgola delle migliaia all'inglese
+  return "\u00a3"+s.slice(0,i).replace(/\B(?=(\d{3})+(?!\d))/g,",")+s.slice(i); }
+/* v (2 nov, Giacomo: «estendi il sistema dei prezzi oltre i 100»): centinaia
+   e migliaia all'inglese britannico, con «and»: «one hundred and forty-nine»,
+   «two thousand three hundred and five». Prima si fermava a 99. */
+function _numW(n){ n=Math.floor(n);
+  if(n>=1000){ const k=Math.floor(n/1000), r=n%1000; return _numW(k)+" thousand"+(r?((r<100?" and ":" ")+_numW(r)):""); }
+  if(n>=100){ const h=Math.floor(n/100), r=n%100; return _numW(h)+" hundred"+(r?" and "+_numW(r):""); }
+  const o=["zero","one","two","three","four","five","six","seven","eight","nine","ten","eleven","twelve",
   "thirteen","fourteen","fifteen","sixteen","seventeen","eighteen","nineteen"], t=["","","twenty","thirty","forty","fifty","sixty","seventy","eighty","ninety"];
   return n<20?o[n]:(t[Math.floor(n/10)]+(n%10?"-"+o[n%10]:"")); }
 /* come lo dice una cassiera inglese: «six pounds forty», «ninety p» */
@@ -24104,6 +24134,7 @@ function priceOptions(c){
   const L=Math.floor(c/100), P=c%100, alts=[];
   const SW={13:30,14:40,15:50,16:60,17:70,18:80,19:90,30:13,40:14,50:15,60:16,70:17,80:18,90:19};
   if(SW[L]!=null) alts.push(SW[L]*100+P);                 // thirteen pounds / thirty pounds
+  else if(L>=100 && SW[L%100]!=null) alts.push((L-L%100+SW[L%100])*100+P);   // one hundred and fifteen / and fifty
   if(P && SW[P]!=null) alts.push(L*100+SW[P]);            // four pounds fifteen / four pounds fifty
   alts.push(c+100, c>=200?c-100:c+200, c+50, c>=80?c-50:c+150, c+20);
   const out=[c]; for(let i=0;i<alts.length && out.length<3;i++){ const v=alts[i]; if(v>0 && out.indexOf(v)<0) out.push(v); }
@@ -24825,7 +24856,7 @@ function clothesAtCounter(npc){
 /* ---- IL CORNER SHOP: il cestino e la cassa di Sam -------------------- */
 const CORNER_PRICES={ "schoolbag":1899, "comic":350, "watch":2500, "camera":4599, "mobile phone":8999,
                       "headphones":2999, "skateboard":2000, "guitar":7500,
-                      "scooter":7999 };   // 🛴 il monopattino dell'espositore (rideStand). ⚠️ priceWords arriva a 99 sterline
+                      "scooter":14999 };  // 🛴 il monopattino dell'espositore (rideStand)
 const CORNER={ on:false, items:[], inters:[], basket:null, stack:null, carryObs:null, mode:"", park:null };
 /* v496 (Giacomo, 31 ott: «per gli oggetti piu' grandi bisogna prendere il
    trolley, come nel market: nel basket la chitarra si rimpicciolisce e fa
@@ -39377,10 +39408,11 @@ const SFX=(function(){
       rdOscG=c.createGain(); rdOscG.gain.value=0; rdOsc.connect(rdOscG); rdOscG.connect(rdVol);
       rdSrc.start(); rdOsc.start();
     }
-    const t=c.currentTime, k=Math.max(0,Math.min(1,v||0)), sk=(kind==="skate");
-    rdVol.gain.setTargetAtTime((sk?0.07:0.12)*k*lvl(), t, 0.07);     // skate: era 0,20, troppo forte (Giacomo, 2 nov)
-    rdLp.frequency.setTargetAtTime(sk?(360+700*k):(260+420*k), t, 0.1);
-    rdOscG.gain.setTargetAtTime(sk?0:0.22*k, t, 0.1);
+    const t=c.currentTime, k=Math.max(0,Math.min(1,v||0)), sk=(kind==="skate"), gr=(kind==="grind");
+    /* grind: metallo che striscia sulla sbarra (rumore chiaro, sottile) */
+    rdVol.gain.setTargetAtTime((gr?0.05:(sk?0.07:0.12))*k*lvl(), t, 0.07);     // skate: era 0,20, troppo forte (Giacomo, 2 nov)
+    rdLp.frequency.setTargetAtTime(gr?(2600+900*k):(sk?(360+700*k):(260+420*k)), t, 0.1);
+    rdOscG.gain.setTargetAtTime((sk||gr)?0:0.22*k, t, 0.1);
     rdOsc.frequency.setTargetAtTime(150+330*k, t, 0.1);
   }
   return { wake, step, walked, roll, splash, carHorn, carPass, setCarPass, correct, wrong, panOf,
@@ -47930,6 +47962,7 @@ function _rideArmsTick(Q){
   let t=0.22;
   t+=Math.min(0.7,Math.abs(RIDE.pitch||0)*1.4);                     // pendenza
   if(RIDE.qp) t+=0.45;                                              // quarter pipe
+  if(RIDE.grind) t+=0.6;                                            // sulla sbarra
   if(RIDE.push) t+=0.25*Math.sin(Math.PI*Math.min(1,RIDE.push.u||0)); // spinta
   t+=Math.min(0.3,Math.abs(RIDE.turn||0)*6);                        // curva
   t=Math.min(1,t);
@@ -47957,9 +47990,12 @@ function _rideLegIK(root,G,T,f){
   const A=(G.l1*G.l1-G.l2*G.l2+L*L)/(2*L), h=Math.sqrt(Math.max(0,G.l1*G.l1-A*A));
   let pole=f.subtract(dir.scale(V.Dot(f,dir))); if(pole.length()<1e-4) pole=new V(0,0,1); pole.normalize();
   const E=pH.add(dir.scale(A)).add(pole.scale(h)), W=pH.add(dir.scale(L));
-  _sitWorldRot(G.U,pH,pK.subtract(pH),E.subtract(pH)); _sitRefresh(root);
+  /* ⚠️ niente _sitRefresh qui: rifa' i conti di TUTTO lo scheletro (con i
+     vestiti sono centinaia di nodi) e, chiamato piu' volte a fotogramma,
+     faceva scattare la spinta sui portatili lenti. Bastano coscia e stinco. */
+  _sitWorldRot(G.U,pH,pK.subtract(pH),E.subtract(pH)); G.U.computeWorldMatrix(true); G.K.computeWorldMatrix(true);
   const pK2=G.K.getAbsolutePosition().clone(), end2=V.TransformCoordinates(G.ank,G.K.getWorldMatrix());
-  _sitWorldRot(G.K,pK2,end2.subtract(pK2),W.subtract(pK2)); _sitRefresh(root);
+  _sitWorldRot(G.K,pK2,end2.subtract(pK2),W.subtract(pK2)); G.K.computeWorldMatrix(true);
 }
 /* LA SPINTA: il piede destro esce di lato, tocca terra davanti, spinge
    fino dietro, si rialza e torna sulla tavola. Il ginocchio sinistro si
@@ -48175,7 +48211,7 @@ function rideTilt(board,body,cur,x,z,ry){
    · 🛹 lo SKATEBOARD e' quello che c'era gia' sullo scaffale est (oggetto
      della Unit 4, £20.00, «grande»: ci vuole il trolley);
    · 🛴 il MONOPATTINO sta su una pedana fra lo scaffale est e la porta
-     (rideStand), £79.99, anche lui «grande».
+     (rideStand), £149.99, anche lui «grande».
    Si prende il trolley, E sull'oggetto, si va da Sam e si paga col dialogo
    di sempre (Have you got everything? / How much…? / il prezzo a voce /
    Here you are). Pagato = tuo (rideAfterCheckout).
@@ -48197,7 +48233,7 @@ function rideStandBuild(){
   sc.rotation.y=-Math.PI/2; sc.setEnabled(true);
   root.getChildMeshes().forEach(m=>{ m.isPickable=true; m.alwaysSelectAsActiveMesh=true; });
   addSolid(X-0.5,X+0.5,Z-0.7,Z+0.7,UNIT4.area);
-  try{ guiLabel(anchorMesh(I.root, X, 1.6, Z), "\u{1F6F4} Scooter \u00b7 \u00a379.99", "\u2B50 "+RIDES[1].req.stars+" to ride", true, UNIT4.area); }catch(e){}
+  try{ guiLabel(anchorMesh(I.root, X, 1.6, Z), "\u{1F6F4} Scooter \u00b7 \u00a3149.99", "\u2B50 "+RIDES[1].req.stars+" to ride", true, UNIT4.area); }catch(e){}
   /* lo skateboard dello scaffale: stesso cartellino, cosi' si sa che e' «quello» */
   try{ const sk=(UNIT4.items||[]).find(e=>e.en==="skateboard");
     if(sk) guiLabel(anchorMesh(I.root, C.x+8.25, 1.5, C.z-2.45), "\u{1F6F9} Skateboard \u00b7 \u00a320.00", "\u2B50 "+RIDES[0].req.stars+" to ride", true, UNIT4.area); }catch(e){}
@@ -48212,7 +48248,7 @@ function rideStandItem(){
   RIDE.standItem=addInteract({ id:"corner_scooter", area:UNIT4.area, radius:2.2, enabled:false,
     pos:()=>e.pos, meshes:RIDE.stand.root.getChildMeshes(),
     prompt:()=>CORNER.mode==="basket"?'The <b>scooter</b> is too big for the basket: <b>take the trolley</b>!'
-                                     :'Press <b>E</b> to put the <b>scooter</b> in your trolley \u00b7 \u00a379.99',
+                                     :'Press <b>E</b> to put the <b>scooter</b> in your trolley \u00b7 \u00a3149.99',
     interact:()=>{ if(!CORNER.on) return;
       if(CORNER.mode==="basket"){ toast("\u{1F6D2} It's too big for the basket! Take the trolley.",3800); return; }
       if(CORNER.items.length>=8){ toast("\u{1F6D2} Your trolley is full! Go to Sam."); return; }
@@ -48271,9 +48307,13 @@ scene.onBeforeRenderObservable.add(()=>{
   if(bagnato){ RIDE.wet=(RIDE.wet||0)+step;
     if(!RIDE.wasWet || RIDE.wet>0.9){ RIDE.wet=0; try{ SFX.splash(true); }catch(e){} } }
   RIDE.wasWet=bagnato;
+  /* 🛹 sulla sbarra del funbox: tirati sopra mentre si va lungo di lei */
+  RIDE.grind=null;
+  if(RIDE.on.ramps && step>0.005){ const fx=Math.sin(player.rotation.y);
+    RIDE.grind=rideGrind(fx,Math.cos(player.rotation.y)); }
   RIDE.pitch=rideTilt(RIDE.mesh[RIDE.on.id], (RIDE.pose&&RIDE.pose.of===avatarRoot)?avatarRoot:null,
                       RIDE.pitch||0, player.position.x, player.position.z, player.rotation.y);
-  try{ SFX.roll(Math.min(1,step/(PLAYER_SPEED*RIDE.on.mult)), RIDE.on.id); }catch(e){}
+  try{ SFX.roll(Math.min(1,step/(PLAYER_SPEED*RIDE.on.mult)), RIDE.grind?"grind":RIDE.on.id); }catch(e){}
 });
 
 /* v540 — NIENTE PICK DI BABYLON SU PRESSIONE E RILASCIO. A ogni pointerdown
@@ -48326,8 +48366,17 @@ function move(nx,nz,spd){
   const px=ox+nx*spd, pz=oz+nz*spd;
   /* 🛹 rampe: in skate ci si sale; e chi e' gia' lassu' (sceso dalla tavola
      in cima al funbox) deve poter scendere a piedi, non restare murato */
-  const ramps=area==="town" && ((RIDE.on && RIDE.on.ramps) || skRampTop(ox,oz)!==null);
-  const blk=(x,z)=>blocked(x,z,ramps)||(ramps&&skRampStepBlocked(ox,oz,x,z))||trafficBlocked(x,z)||npcBlocked(x,z)||(SHOP.cart&&cartBlocked(x,z,nx,nz));   // v256
+  const ramps=(area!=="town") ? false : ((RIDE.on && RIDE.on.ramps) ? 2 : (skRampTop(ox,oz)!==null ? 1 : false));
+  /* 🛴 in monopattino (Giacomo, 2 nov: «sulle rampe prima si ferma, ma poi
+     ci sale e si incastra»): gli ostacoli delle rampe coprono solo la
+     parte alta, il primo tratto di scivolo e di curva era libero. Il
+     monopattino ci entrava, veniva sollevato, e da li' valeva la regola
+     «chi e' gia' sopra puo' scendere» (ramps=1): passava l'ostacolo e
+     restava incastrato. Ora per lui una rampa e' un muro dal primo
+     centimetro, misurato alla ruota davanti (si esce soltanto, se ci si
+     trova gia' sopra). */
+  const noRamp=area==="town" && RIDE.on && !RIDE.on.ramps && skRampTop(ox,oz)===null;
+  const blk=(x,z)=>blocked(x,z,ramps)||(ramps&&skRampStepBlocked(ox,oz,x,z))||(noRamp&&(skRampTop(x,z)!==null||skRampTop(x+nx*0.45,z+nz*0.45)!==null))||trafficBlocked(x,z)||npcBlocked(x,z)||(SHOP.cart&&cartBlocked(x,z,nx,nz));   // v256
   if(!blk(px,pz)){ player.position.x=px; player.position.z=pz; }
   else if(!blk(px,oz)){ player.position.x=px; }
   else if(!blk(ox,pz)){ player.position.z=pz; }
