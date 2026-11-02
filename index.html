@@ -16571,6 +16571,11 @@ function _skQP(side,z,peak,dur){ return { k:"qp", side, z, peak, dur }; }
    giu' di nuovo (Giacomo: «devono camminare sul bordo con lo skate per un
    po' e poi scendono») */
 function _skQPD(side,z0,z1,dur){ return { k:"qpd", side, z0, z1, dur }; }
+/* AIRWALK sulla quarter pipe (Giacomo: «sulla rampa i piedi lasciano lo skate
+   quando e' sul bordo e poi lo riprendono al volo»): su fino al bordo, in
+   aria sopra il bordo girando di mezzo giro, in aria i piedi si staccano
+   dalla tavola (uno avanti e uno indietro), la riprendono e giu'. */
+function _skQPA(side,z,dur){ return { k:"qpa", side, z, dur }; }
 /* v (2 nov, Giacomo: «metti varieta' nei percorsi: possono fare anche da
    una rampa all'altra»). Due GIRI che Jay e Leon si scambiano a ogni turno
    (SK_SLOT secondi): mentre uno fa l'uno, l'altro fa l'altro, su corsie
@@ -16594,7 +16599,7 @@ const SK_Q=[
   _skL([19.5,55.6],[30,55.6],3.0,{ ollie:0.45, trick:2 }),
   _skL([30,55.6],[44.8,55.6],4.2),
   /* raccordo verso il giro F: su e giu' dalla est, corsia z 57 verso ovest */
-  _skQP("E",55.6,1.25,1.0),
+  _skQPA("E",55.6,1.8),                                                   // airwalk sopra il bordo
   _skL([44.8,55.6],[40,57.0],1.6),
   _skL([40,57.0],[21.5,57.0],5.4,{ ollie:0.5, trick:1 }),
   _skArc([21.5,57.75],0.75,Math.PI,2*Math.PI,1.0) ];
@@ -16647,6 +16652,15 @@ function _skRidePose(L,u,k){
     const c=Math.cos(r.ry), sn=Math.sin(r.ry), up=Math.atan2(c,-sn);
     const wrap=a=>{ while(a>Math.PI) a-=2*Math.PI; while(a<-Math.PI) a+=2*Math.PI; return a; };
     const turn=(a,b,t)=>{ t=Math.max(0,Math.min(1,t)); t=t*t*(3-2*t); return a+wrap(b-a)*t; };
+    if(s.k==="qpa"){                                                  // airwalk: su, in aria sopra il bordo, giu'
+      const LX=r.R-0.03, a=0.28, b=0.72;
+      let lx;
+      if(v<a){ lx=LX*(v/a); P.yaw=up; }
+      else if(v<b){ const w=(v-a)/(b-a); lx=LX; P.hop=0.85*Math.sin(Math.PI*w); P.yaw=turn(up,up+Math.PI,(w-0.25)/0.5);
+        P.feetOff=Math.max(0,Math.sin(Math.PI*Math.max(0,Math.min(1,(w-0.18)/0.64)))); P.air=true; }
+      else { lx=LX*(1-(v-b)/(1-b)); P.yaw=up+Math.PI; }
+      P.x=r.x+lx*c; P.z=s.z-lx*sn;
+    } else
     if(s.k==="qp"){                                                   // su, kickturn, giu'
       const pk=Math.min(r.R-0.02,s.peak*(1+0.07*((k%3)-1)));          // una volta piu' su, una meno
       const lx=pk*(1-Math.abs(1-2*v));
@@ -16917,6 +16931,14 @@ function skSkateTick(D){
   n.holder.rotation.x=-Math.max(-0.6,Math.min(0.6,S.pitch*0.6));
   _skCrewArmsTick(D,P,S.turn);
   _skCrewPush(D,_skPushPhase(P.seg,P.tSeg,P,P.x,P.z));          // 🦶 la spinta col piede
+  /* airwalk: la tavola resta sotto (un po' piu' giu' e storta), i piedi si
+     aprono uno avanti e uno indietro, poi la riprendono */
+  if(P.feetOff>0.001 && S.legs){ const fo=P.feetOff, V=BABYLON.Vector3;
+    S.board.position.y=-0.30*fo; S.board.rotation.y=0.45*fo; S.board.rotation.z=0.25*fo;
+    n.carrier.computeWorldMatrix(true); _sitRefresh(n.holder);
+    const W=n.carrier.getWorldMatrix(), f=V.TransformNormal(new V(0,0,1),W).normalize();
+    _rideLegIK(n.holder,S.legs.L,V.TransformCoordinates(S.legs.L.foot.add(new V(0.04,-0.06,0.34).scale(fo)),W),f);
+    _rideLegIK(n.holder,S.legs.R,V.TransformCoordinates(S.legs.R.foot.add(new V(-0.04,-0.06,-0.34).scale(fo)),W),f); }
   /* le ruote girano di quanto si e' andati */
   const d=Math.hypot(c.position.x-prev.x,c.position.z-prev.z); if(d<2) rideSpinWheels(S.board,d);
 }
@@ -48336,7 +48358,10 @@ function _ridePoseOn(R){
         if(stand) _applyPins(stand);
         _lockAbd(L); _sitRefresh(root);
         const bar=V.TransformCoordinates(new V(0,R.bar.y,R.bar.z),player.getWorldMatrix());
-        P.push=pushPoseFor(root,f,o=>bar.add(o.scale(R.bar.half-0.01)).subtract(f.scale(0.03)).add(new V(0,0.03,0)));
+        /* (Giacomo, 2 nov, in prima persona: «le mani vanno portate un po' indietro,
+           pollici e nocche proprio sul manubrio»): il polso 9 cm DIETRO la sbarra e
+           un filo piu' su, come per la maniglia del carrello (shopPushOn) */
+        P.push=pushPoseFor(root,f,o=>bar.add(o.scale(R.bar.half-0.01)).subtract(f.scale(0.09)).add(new V(0,0.045,0)));
         save.forEach(k=>{ k.tn.position.copyFrom(k.p); if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); k.tn.scaling.copyFrom(k.s); });
         if(P.push) P.lock=L;
       }
