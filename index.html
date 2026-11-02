@@ -16258,6 +16258,11 @@ function buildSkatepark(){
   if(jay && typeof PARKFUN!=="undefined"){
     PARKFUN.people.skate={ npc:jay.n, sideX:0.4, now:()=>jay.st==="dance", viewFn:()=>({ x:Math.sin(jay.face), z:Math.cos(jay.face) }) };
     PARKFUN.people.beat={ always:true, now:()=>!!skPhoto("beat"), img:()=>skPhoto("beat") };
+    PARKFUN.people.rapping={ always:true, now:()=>!!skPhoto("rap"), img:()=>skPhoto("rap") };
+    /* la crew in skate dal vivo: la foto inquadra Jay e Leon insieme */
+    PARKFUN.people.skating={ npc:jay.n, now:()=>{ const D=SKATE.dancers[0]; return !!(D && D.st==="skate" && D.sk && D.sk.on && D.sk.waitK==null && !D.sk.glide); },
+      snap:()=>{ const a=SKATE.dancers[0].n.carrier.position, b=(SKATE.dancers[2]||SKATE.dancers[0]).n.carrier.position, lx=(a.x+b.x)/2, lz=(a.z+b.z)/2;
+        return { cam:new BABYLON.Vector3(lx,4.8,Math.max(47,lz-13)), look:new BABYLON.Vector3(lx,0.9,lz) }; } };
     PARKFUN.people.cinema={ always:true, now:()=>!!skPhoto("cinema"), img:()=>skPhoto("cinema") }; }
 }
 /* le pose si calcolano quando le pin delle gambe ci sono (qualche
@@ -17813,6 +17818,18 @@ function skPhotoTick(){
         _skShoot("beat",new BABYLON.Vector3(c.x+2.6,2.7,c.z+5.8),new BABYLON.Vector3(c.x,1.2,c.z-3.6)); }
       SKPH.beatT=now+24000; }                         // v309l: se non e' riuscita, si riprova fra 30 s, non a ogni fotogramma
   } else SKPH.beatT=0;
+  /* 🎤 il cypher: dopo 5 s nel cerchio, la crew che rappa (per il Ranger: «They're rapping») */
+  let dRap=""; try{ dRap=localStorage.getItem("et_ph_rap_d")||""; }catch(e){}
+  if(typeof _cyCircleOn==="function" && _cyCircleOn() && area==="town"){
+    if(!SKPH.rapT) SKPH.rapT=now;
+    if(now-SKPH.rapT>5000 && dRap!==today){
+      const L=SKATE.dancers.filter(D=>D.st==="cypher"||D.st==="go"), V=BABYLON.Vector3;
+      let cx=0, cz=0; L.forEach(D=>{ cx+=D.n.carrier.position.x; cz+=D.n.carrier.position.z; });
+      const p=player.position; if(L.length){ cx/=L.length; cz/=L.length; } else { cx=p.x; cz=p.z+2; }
+      const dx=cx-p.x, dz=cz-p.z, dl=Math.hypot(dx,dz)||1;
+      _skShoot("rap",new V(p.x-dx/dl*2.2,p.y+2.0,p.z-dz/dl*2.2),new V(cx,p.y+1.1,cz));
+      SKPH.rapT=now+22000; }
+  } else SKPH.rapT=0;
   /* cinema, seduti col film, dopo 8 s: tu che guardi il film */
   if(area==="cinema" && typeof SHOW!=="undefined" && SHOW.seated){
     if(!SKPH.cineT) SKPH.cineT=now;
@@ -18274,6 +18291,13 @@ const PARK_SCENES=[
   { id:"skate",   who:"he",  ing:["He's","dancing."],                     ingD:["dance","She's","dances."],has:null, q:"Look at the skatepark! What is he doing?" },
   { id:"beat",    who:"they",ing:["They're","dancing."],                  ingD:["dance","He's","dances."], has:null, q:"Do you remember the Beat Club? Look at this photo! What are they doing?" },
   { id:"cinema",  who:"i",   ing:["I'm","watching","a","film."],          ingD:["watch","He's","films."],  has:null, q:"Look! This is you at the cinema. What are you doing?" },
+  /* v (2 nov, Giacomo: «il Ranger aggiunge they are skating, they're kicking
+     the ball, they're playing football, they're rapping»): la crew in skate
+     dal vivo, gli atleti alle punizioni (a orario), la foto del cypher */
+  { id:"skating", who:"they",ing:["They're","skating."],                  ingD:["skate","He's","skates."], has:null, q:"Look at the skatepark! What are they doing?" },
+  { id:"kicking", who:"they",ing:["They're","kicking","the","ball."],     ingD:["kick","He's","a"],        has:null, q:"Look at the football pitch! What are they doing?" },
+  { id:"football",who:"they",ing:["They're","playing","football."],       ingD:["play","He's","plays"],    has:null, q:"Look at the Sports Field! What are they doing?" },
+  { id:"rapping", who:"they",ing:["They're","rapping."],                  ingD:["rap","He's","raps."],     has:null, q:"Do you remember the cypher at the skatepark? Look at this photo! What are they doing?" },
 ];
 function parkWatchMode(){
   const open=parkOpenUnits();
@@ -48016,6 +48040,7 @@ function __typingNow(e){ const t=e&&e.target, tag=t&&t.tagName;
   return tag==="INPUT"||tag==="TEXTAREA"||(t&&t.isContentEditable); }
 window.addEventListener("keydown",e=>{ if(__typingNow(e)) return;   // non rubare i tasti mentre si scrive nel pad (writing/textarea)
   const k=e.key.toLowerCase(); keys[k]=true; if(k==="e") tryInteract();
+  if(FK.aim){ if(k===" "||k==="k"){ e.preventDefault(); fkKick(); return; } if(k==="escape"){ fkStop(); return; } }   // ⚽ punizione
   if(k==="q"){ e.preventDefault(); cycleInter(e.shiftKey?-1:1); return; }   // scegli fra oggetti vicini
   if(k==="m"){ e.preventDefault(); toggleMap(); return; }
   if(k==="r"){ e.preventDefault(); rideCycle(); return; }   // 🛹🛴 skate / monopattino / a piedi
@@ -48999,6 +49024,374 @@ scene.onBeforeRenderObservable.add(()=>{
   try{ SFX.roll(Math.min(1,step/(PLAYER_SPEED*RIDE.on.mult)), RIDE.grind?"grind":RIDE.on.id); }catch(e){}
 });
 
+
+/* =====================================================================
+   ⚽ PUNIZIONI AL CAMPO SPORTIVO (Giacomo, 2 nov: «al campo di calcio gli
+   atleti si esercitano con le punizioni calciando la palla, non tutto il
+   giorno ma con un orario, e puoi farlo anche tu avvicinandoti alla palla.
+   Quando calci la punizione col controller decidi dove mandarla e con che
+   potenza. Dopo 3 tiri arriva il Ranger e ti chiede What are you doing?»).
+
+   DUE POSTAZIONI, una per porta, ognuna con pallone e barriera di tre
+   sagome gialle da allenamento:
+     · porta EST: Kim, Alex e Ravi tirano a turno, OGNI ORA DA «O'CLOCK» A
+       «QUARTER PAST» (minuti 0-15, ora della radio: per tutta la classe allo
+       stesso momento). Fuori orario tornano al loro posto. Durante la quest
+       della Unit 7 non si allenano (servono alla quest).
+     · porta OVEST: la tua, sempre. E sul pallone: mira con A/D (o la levetta
+       / ◀ ▶), altezza con W/S (▲ ▼), la barra della potenza va su e giu':
+       SPAZIO (o E, o KICK) per tirare quando e' dove vuoi.
+   Il pallone e' fisica vera (gravita', rimbalzi, attrito, effetto) contro
+   barriera, pali, traversa e rete; il tiro degli atleti e' deterministico
+   (stessi parametri dal numero del tiro, simulazione a passo fisso): tutti
+   vedono lo stesso pallone entrare o finire sulla barriera.
+   Dopo il terzo tuo tiro (una volta al giorno) arriva Mr. Poole, il Ranger:
+   «What are you doing?» — si risponde al present continuous.
+   ===================================================================== */
+const FK={ built:false, sets:null, aim:null, kicks:0, obs:null, crew:null, prac:false, hud:null, ballMat:null };
+const FK_R=0.12, FK_H=1/120, FK_EVERY=9, FK_START=25, FK_WIN=15*60;
+function _fkField(){ const m=scene.getMeshByName("pitch"); return m?{ x:m.position.x, z:m.position.z, y:PITCH_Y }:null; }
+function _fkBallMat(){
+  if(FK.ballMat) return FK.ballMat;
+  const bm=new BABYLON.StandardMaterial("fkBallM",scene); bm.diffuseTexture=sfBallTex();
+  bm.specularColor=new BABYLON.Color3(0.3,0.3,0.3); bm.specularPower=40; return (FK.ballMat=bm);
+}
+/* una postazione: pallone, barriera a 5 m verso la porta, porta G */
+function _fkSet(id,G,F,dz){
+  const bx=G.x-G.sg*11, bz=G.z+dz;
+  const ball=BABYLON.MeshBuilder.CreateSphere("fkBall_"+id,{ diameter:FK_R*2, segments:16 },scene);
+  ball.material=_fkBallMat(); ball.parent=townRoot; ball.isPickable=true; ball.__cast=true;
+  ball.position.set(bx,F.y+FK_R,bz);
+  const dx=G.x-bx, dz2=G.z-bz, dl=Math.hypot(dx,dz2), d={ x:dx/dl, z:dz2/dl }, p={ x:-d.z, z:d.x };
+  const yellow=mat("fkDumY","#f2c230"), dark=mat("fkDumD","#2b3036");
+  const wall=[-0.62,0,0.62].map((o,i)=>{ const wx=bx+d.x*5+p.x*o, wz=bz+d.z*5+p.z*o;
+    const r=new BABYLON.TransformNode("fkDummy",scene); r.parent=townRoot; r.position.set(wx,F.y,wz); r.rotation.y=Math.atan2(-d.x,-d.z);
+    const base=BABYLON.MeshBuilder.CreateCylinder("fkDb",{ diameter:0.42, height:0.05, tessellation:16 },scene); base.material=dark; base.parent=r; base.position.y=0.025;
+    const pole=BABYLON.MeshBuilder.CreateCylinder("fkDp",{ diameter:0.05, height:0.3, tessellation:8 },scene); pole.material=dark; pole.parent=r; pole.position.y=0.18;
+    const body=BABYLON.MeshBuilder.CreateBox("fkDbd",{ width:0.44, height:1.25, depth:0.08 },scene); body.material=yellow; body.parent=r; body.position.y=0.95;
+    const head=BABYLON.MeshBuilder.CreateSphere("fkDh",{ diameter:0.26, segments:10 },scene); head.material=yellow; head.parent=r; head.position.y=1.72;
+    r.getChildMeshes().forEach(m=>{ m.__cast=true; m.isPickable=false; });
+    addSolid(wx-0.22,wx+0.22,wz-0.22,wz+0.22,"town");
+    return { x:wx, z:wz }; });
+  return { id, G, F, spot:{ x:bx, z:bz }, dir:d, perp:p, ball, wall, sim:null };
+}
+function fkBuild(){
+  if(FK.built) return false;
+  const F=_fkField(); if(!F) return false;
+  FK.built=true;
+  FK.sets={ crew:_fkSet("crew",{ x:F.x+15, z:F.z, sg:1 },F,1.5), me:_fkSet("me",{ x:F.x-15, z:F.z, sg:-1 },F,-1.5) };
+  const S=FK.sets.me;
+  addInteract({ id:"fk_me", area:"town", radius:1.9, meshes:[S.ball],
+    pos:()=>S.ball.position,
+    prompt:()=>FK.aim?'⚽ <b>Space</b> (or E) to <b>kick</b> · Esc to stop':'Press <b>E</b> to take a <b>free kick</b> ⚽',
+    interact:()=>{ if(FK.aim) fkKick(); else fkStart(); } });
+  try{ refreshShadowCasters(); }catch(e){}
+  /* per il Ranger del parco (Park watcher): chi tira e chi gioca */
+  try{ const sp=FK.sets.crew.spot, look=()=>new BABYLON.Vector3(sp.x+2,F.y+0.9,sp.z),
+         snap=()=>({ cam:new BABYLON.Vector3(sp.x-1.5,F.y+2.4,sp.z-7.5), look:look() });
+    PARKFUN.people.kicking={ npc:U7_NPC.kim, now:()=>FK.prac, snap };
+    PARKFUN.people.football={ npc:U7_NPC.alex, now:()=>FK.prac, snap }; }catch(e){}
+  return true;
+}
+/* ---- la fisica del pallone (passo fisso: tutti vedono lo stesso tiro) ---- */
+function _fkLaunch(S,yawOff,loft,power,curl,t){
+  const base=Math.atan2(S.dir.x,S.dir.z), yaw=base+yawOff, v0=11+19*power;
+  S.sim={ t0:t, t:t, p:{ x:S.spot.x, y:S.F.y+FK_R, z:S.spot.z },
+          v:{ x:v0*Math.cos(loft)*Math.sin(yaw), y:v0*Math.sin(loft), z:v0*Math.cos(loft)*Math.cos(yaw) },
+          curl:curl||0, res:null, net:false, stop:false };
+}
+function _fkStep(S){
+  const M=S.sim, p=M.p, v=M.v, h=FK_H, y0=S.F.y, G=S.G;
+  if(M.stop) return;
+  v.y-=9.8*h; const dr=1-0.10*h; v.x*=dr; v.y*=dr; v.z*=dr;
+  const vh=Math.hypot(v.x,v.z);
+  if(M.curl && vh>3 && p.y>y0+FK_R+0.02){ v.x+=(v.z/vh)*M.curl*h; v.z+=(-v.x/vh)*M.curl*h; }      // effetto: la palla gira
+  const px0=p.x;
+  p.x+=v.x*h; p.y+=v.y*h; p.z+=v.z*h;
+  /* terreno: rimbalzi, poi rotola e si ferma */
+  if(p.y<y0+FK_R){ p.y=y0+FK_R;
+    if(v.y<-1.2){ v.y=-v.y*0.5; v.x*=0.85; v.z*=0.85; }
+    else { v.y=0; const s=Math.hypot(v.x,v.z), ns=Math.max(0,s-3.2*h); if(s>1e-4){ v.x*=ns/s; v.z*=ns/s; } if(ns<0.05) M.stop=true; } }
+  /* barriera: cilindri di 24 cm fino a 1,85 m */
+  for(const w of S.wall){ const dx=p.x-w.x, dz=p.z-w.z, d=Math.hypot(dx,dz);
+    if(d<FK_R+0.24 && p.y<y0+1.85 && d>1e-4){ const nx=dx/d, nz=dz/d, vn=v.x*nx+v.z*nz;
+      if(vn<0){ v.x-=1.3*vn*nx; v.z-=1.3*vn*nz; v.y*=0.6; if(!M.res) M.res="wall"; }
+      p.x=w.x+nx*(FK_R+0.24); p.z=w.z+nz*(FK_R+0.24); } }
+  /* pali e traversa */
+  for(const pz of [G.z-3,G.z+3]){ const dx=p.x-G.x, dz=p.z-pz, d=Math.hypot(dx,dz);
+    if(d<FK_R+0.065 && p.y<y0+2.2 && d>1e-4){ const nx=dx/d, nz=dz/d, vn=v.x*nx+v.z*nz;
+      if(vn<0){ v.x-=1.6*vn*nx; v.z-=1.6*vn*nz; if(!M.res) M.res="post"; } } }
+  if(Math.abs(p.z-G.z)<3){ const dx=p.x-G.x, dy=p.y-(y0+2.2), d=Math.hypot(dx,dy);
+    if(d<FK_R+0.065 && d>1e-4){ const nx=dx/d, ny=dy/d, vn=v.x*nx+v.y*ny;
+      if(vn<0){ v.x-=1.6*vn*nx; v.y-=1.6*vn*ny; if(!M.res) M.res="bar"; } } }
+  /* la linea di porta */
+  const a=(px0-G.x)*G.sg, b=(p.x-G.x)*G.sg;
+  if(a<0 && b>=0 && !M.net){
+    if(Math.abs(p.z-G.z)<3-FK_R && p.y<y0+2.2-FK_R){ M.net=true; M.res="goal"; }
+    else if(!M.res || M.res==="wall" || M.res==="post" || M.res==="bar") M.res=(M.res==="post"||M.res==="bar")?M.res:((p.y>=y0+2.2-FK_R)?"over":"wide"); }
+  /* nella rete: si ferma */
+  if(M.net){ const dd=(p.x-G.x)*G.sg;
+    if(dd>1.1){ p.x=G.x+G.sg*1.1; v.x=-v.x*0.15; v.z*=0.5; }
+    if(Math.abs(p.z-G.z)>2.85){ p.z=G.z+Math.sign(p.z-G.z)*2.85; v.z=-v.z*0.2; }
+    if(p.y>y0+2.1){ p.y=y0+2.1; v.y=-Math.abs(v.y)*0.2; } }
+  /* via dal campo: ci si ferma (poi la palla torna sul dischetto) */
+  if((Math.abs(p.x-S.F.x)>22 || Math.abs(p.z-S.F.z)>16) && p.y<=y0+FK_R+0.01){ M.stop=true; }   // fuori dal campo: si ferma A TERRA (non in aria)
+  M.t+=h;
+}
+function _fkAdvance(S,t){
+  const M=S.sim; if(!M) return;
+  if(t-M.t>3) M.t=t-3;                                    // dopo un buco lungo si recupera al massimo 3 s
+  while(M.t+FK_H<=t && !M.stop) _fkStep(S);
+  const b=S.ball, sp=Math.hypot(M.v.x,M.v.z);
+  b.position.set(M.p.x,M.p.y,M.p.z);
+  if(!M.stop){ b.rotation.x+=sp*0.016/FK_R*Math.cos(Math.atan2(M.v.x,M.v.z)); b.rotation.z-=sp*0.016/FK_R*Math.sin(Math.atan2(M.v.x,M.v.z)); }
+}
+function _fkReset(S){ S.sim=null; S.ball.position.set(S.spot.x,S.F.y+FK_R,S.spot.z); }
+function _fkHash(k){ let x=(k*2654435761)>>>0; x^=x>>>13; x=(x*1274126177)>>>0; x^=x>>>16; return x/4294967296; }
+
+/* ---- IL CALCIO (gambe): stessa cinematica inversa di skate e spinta ------ */
+function _fkLegs(root,ref){
+  const V=BABYLON.Vector3;
+  try{
+    ref.computeWorldMatrix(true); _sitRefresh(root);
+    const inv=ref.getWorldMatrix().clone().invert(), loc=v=>V.TransformCoordinates(v,inv);
+    const find=k=>root.getDescendants(false).find(t=>_boneKey(t.name)===k);
+    const leg=sd=>{ const U=find("UpperLeg."+sd), K=find("LowerLeg."+sd), F=find("Foot."+sd); if(!U||!K||!F||!F.parent) return null;
+      const pU=U.getAbsolutePosition(), pK=K.getAbsolutePosition(), pF=F.getAbsolutePosition();
+      return { U, K, F, l1:V.Distance(pU,pK), l2:V.Distance(pK,pF), foot:loc(pF), fchild:F.isDescendantOf(K),
+               ank:V.TransformCoordinates(pF,K.getWorldMatrix().clone().invert()) }; };
+    const R=leg("R"), L=leg("L"); return (R&&L)?{ R, L }:null;
+  }catch(e){ return null; }
+}
+/* il piede destro: dietro, giu' sul pallone, su nel seguito. u = 0..1 */
+const _FK_KICK=[[0,0,0.10,-0.10],[0.35,0.04,0.30,-0.50],[0.62,0.02,0.04,0.22],[0.85,0.0,0.50,0.55],[1,0,0.10,0.05]];
+function _fkKickIK(root,ref,G,u){
+  if(!G) return;
+  const V=BABYLON.Vector3;
+  let i=0; while(i<_FK_KICK.length-2 && u>_FK_KICK[i+1][0]) i++;
+  const a=_FK_KICK[i], b=_FK_KICK[i+1], t=Math.max(0,Math.min(1,(u-a[0])/(b[0]-a[0]))), e=t*t*(3-2*t);
+  const off=new V(a[1]+(b[1]-a[1])*e, a[2]+(b[2]-a[2])*e, a[3]+(b[3]-a[3])*e);
+  ref.computeWorldMatrix(true); _sitRefresh(root);
+  const W=ref.getWorldMatrix(), f=V.TransformNormal(new V(0,0,1),W).normalize();
+  _rideLegIK(root,G.L,V.TransformCoordinates(G.L.foot,W),f);
+  _rideLegIK(root,G.R,V.TransformCoordinates(G.R.foot.add(off),W),f);
+}
+function _fkSfx(kind){ try{ if(kind==="kick") SFX.step(false,true); }catch(e){} }
+
+/* ---- GLI ATLETI: allenamento a orario ------------------------------------ */
+function fkPracticeTime(){ const t=(radioNow()/1000)%3600; return t<FK_WIN; }
+function _fkAthletes(){ try{ return ["kim","alex","ravi"].map(id=>U7_NPC[id]).filter(Boolean); }catch(e){ return []; } }
+function _fkCrewOn(){
+  if(!fkPracticeTime()) return false;
+  try{ if(typeof Quest!=="undefined" && Quest.unit===UNIT7) return false; }catch(e){}
+  try{ if(typeof townOpen==="function" && !townOpen()) return false; }catch(e){}
+  const A=_fkAthletes(); return A.length===3 && A.every(n=>n.holder && n.holder.isEnabled());
+}
+function _fkQueue(i){ const S=FK.sets.crew; return { x:S.spot.x-S.dir.x*3.4+S.perp.x*(2.2+i*0.9), z:S.spot.z-S.dir.z*3.4+S.perp.z*(2.2+i*0.9) }; }
+function _fkCrewTick(){
+  const S=FK.sets.crew, A=_fkAthletes(); if(A.length<3) return;
+  const on=_fkCrewOn();
+  if(!FK.crew) FK.crew={ st:A.map(()=>"home"), home:A.map(n=>({ x:n.carrier.position.x, z:n.carrier.position.z, r:n.carrier.rotation.y })) };
+  const C=FK.crew;
+  if(on!==FK.prac){
+    FK.prac=on;
+    A.forEach((n,i)=>{
+      if(on){ C.home[i]={ x:n.carrier.position.x, z:n.carrier.position.z, r:n.carrier.rotation.y }; C.st[i]="go";
+        const q=_fkQueue(i); npcWalkSeq(n,[()=>q],0.3,()=>{ C.st[i]="q"; },"town",()=>{ C.st[i]="q"; },{ detour:true, speed:1.5, onStuck:()=>{ n.carrier.position.x=q.x; n.carrier.position.z=q.z; C.st[i]="q"; } }); }
+      else { C.st[i]="back"; const h=C.home[i]; n.__noPin=false;
+        npcWalkSeq(n,[()=>({ x:h.x, z:h.z })],0.3,()=>{ C.st[i]="home"; n.carrier.rotation.y=h.r; n.watch=true; },"town",()=>{ C.st[i]="home"; },{ detour:true, speed:1.35 }); }
+    });
+    if(!on) _fkReset(S);
+  }
+  if(!on) return;
+  const tsec=(radioNow()/1000)%3600;
+  if(tsec<FK_START){ _fkReset(S); return; }
+  const k=Math.floor((tsec-FK_START)/FK_EVERY), u=(tsec-FK_START)-k*FK_EVERY, ki=k%3;
+  const run={ x:S.spot.x-S.dir.x*2.4+S.perp.x*0.9, z:S.spot.z-S.dir.z*2.4+S.perp.z*0.9 };
+  const plant={ x:S.spot.x-S.dir.x*0.32+S.perp.x*0.22, z:S.spot.z-S.dir.z*0.32+S.perp.z*0.22 };
+  const goalYaw=Math.atan2(S.dir.x,S.dir.z);
+  A.forEach((n,i)=>{
+    if(C.st[i]!=="q") return;
+    const c=n.carrier.position, q=_fkQueue(i);
+    n.watch=false;
+    const lerp=(a,b,t)=>{ t=Math.max(0,Math.min(1,t)); c.x=a.x+(b.x-a.x)*t; c.z=a.z+(b.z-a.z)*t; n.carrier.rotation.y=Math.atan2(b.x-a.x,b.z-a.z); };
+    const play=nm=>{ n.__noPin=(nm!=="Idle"); if(!n.cur || n.__fkAnim!==nm){ n.__fkAnim=nm; n.play(n.anims[nm]?nm:"Idle"); } };
+    if(i!==ki){ c.x+= (q.x-c.x)*0.2; c.z+=(q.z-c.z)*0.2; n.carrier.rotation.y=Math.atan2(S.spot.x-c.x,S.spot.z-c.z); play("Idle"); return; }
+    if(u<2){ play("Walk"); lerp(q,run,u/2); }
+    else if(u<3){ play("Idle"); c.x=run.x; c.z=run.z; n.carrier.rotation.y=goalYaw; }
+    else if(u<3.45){ play("Run"); lerp(run,plant,(u-3)/0.45); }
+    else if(u<3.95){ play("Idle"); c.x=plant.x; c.z=plant.z; n.carrier.rotation.y=goalYaw;
+      if(!n.__fkLegs) n.__fkLegs=_fkLegs(n.holder,n.carrier);
+      _fkKickIK(n.holder,n.carrier,n.__fkLegs,(u-3.45)/0.5); }
+    else if(u<6){ play("Idle"); c.x=plant.x; c.z=plant.z; n.carrier.rotation.y=goalYaw; }
+    else if(u<8.6){ play("Walk"); lerp(plant,q,(u-6)/2.6); }
+    else { play("Idle"); c.x=q.x; c.z=q.z; }
+  });
+  /* il pallone di questo tiro: fermo fino al calcio, poi la fisica */
+  const tk=FK_START+k*FK_EVERY+3.62;
+  if(u<3.62){ _fkReset(S); S.simK=null; }
+  else { if(S.simK!==k){ const r1=_fkHash(k), r2=_fkHash(k+77), r3=_fkHash(k+151), r4=_fkHash(k+233);
+      /* a lato della barriera (destra o sinistra), altezza e potenza variabili:
+         misurato su 80 tiri ~6 gol su 10, gli altri fuori o sulla barriera */
+      const sg=r1<0.5?-1:1;
+      _fkLaunch(S,sg*(0.2+r4*0.1),(14+r2*6)*Math.PI/180,0.4+r3*0.25,0,tk); S.simK=k;
+      if(Math.hypot(player.position.x-S.spot.x,player.position.z-S.spot.z)<30) _fkSfx("kick"); }
+    _fkAdvance(S,tsec); }
+}
+
+/* ---- LA TUA PUNIZIONE ------------------------------------------------------ */
+function fkStart(){
+  const S=FK.sets&&FK.sets.me; if(!S || FK.aim) return;
+  if(RIDE.on) rideOff(true);
+  try{ standUpAll(); }catch(e){}
+  _fkReset(S);
+  FK.aim={ yaw:0, loft:14*Math.PI/180, t0:performance.now(), kick:null, res:null, resT:0 };
+  _fkPlace();
+  fkHud(true);
+  toast("⚽ Free kick! A/D aim · W/S height · SPACE kick (when the power is right) · Esc stop",4200);
+}
+function _fkPlace(){ const S=FK.sets.me; player.position.x=S.spot.x-S.dir.x*2.4+S.perp.x*0.5; player.position.z=S.spot.z-S.dir.z*2.4+S.perp.z*0.5;
+  player.rotation.y=Math.atan2(S.dir.x,S.dir.z); moveTarget=null; pendingInteract=null;
+  try{ camera.alpha=-player.rotation.y-Math.PI/2; }catch(e){} }
+function fkStop(){ if(!FK.aim) return; FK.aim=null; fkHud(false); if(FK.sets) _fkReset(FK.sets.me); playAvatarAnim(IDLE_ANIM); }
+function fkKick(){
+  const A=FK.aim; if(!A || A.kick || A.res) return;
+  const now=performance.now();
+  A.kick={ t0:now, pw:_fkPower(now), yaw:A.yaw, loft:A.loft };
+  if(!FK.legs || FK.legsOf!==avatarRoot){ FK.legs=_fkLegs(avatarRoot,player); FK.legsOf=avatarRoot; }
+}
+function _fkPower(now){ return 0.5-0.5*Math.cos(2*Math.PI*((now-FK.aim.t0)/1300)); }
+const FK_RES={ goal:["⚽ GOAL! Brilliant!","Gol!"], wall:["🧱 The wall blocked it!","La barriera!"], post:["🥅 Off the post!","Palo!"],
+  bar:["🥅 Off the crossbar!","Traversa!"], over:["↗️ Over the bar!","Alta!"], wide:["↔️ Wide!","Fuori!"], short:["🐢 Too weak!","Troppo piano!"] };
+function _fkMeTick(){
+  const A=FK.aim, S=FK.sets.me; if(!A) return;
+  if(area!=="town" || Math.hypot(player.position.x-S.spot.x,player.position.z-S.spot.z)>6){ fkStop(); return; }
+  const now=performance.now(), dt=Math.min(0.1,(engine.getDeltaTime()||16)/1000);
+  const paused=(typeof _dlgOpen==="function" && _dlgOpen());
+  if(!A.kick && !A.res && !paused){
+    const H=FK.hold||{};
+    const ax=(keys["d"]?1:0)-(keys["a"]?1:0)+(H.r?1:0)-(H.l?1:0)+(Math.abs(stickVec.x)>0.2?stickVec.x:0);
+    const ay=(keys["w"]?1:0)-(keys["s"]?1:0)+(H.u?1:0)-(H.d?1:0)+(Math.abs(stickVec.y)>0.2?-stickVec.y:0);
+    A.yaw=Math.max(-0.45,Math.min(0.45,A.yaw+ax*0.55*dt));
+    A.loft=Math.max(2*Math.PI/180,Math.min(35*Math.PI/180,A.loft+ay*0.30*dt));
+    _fkPlace();
+    playAvatarAnim(IDLE_ANIM);
+  }
+  fkHudDraw(A.kick?A.kick.pw:_fkPower(now));
+  _fkAimDraw(!A.kick && !A.res);
+  if(A.kick){
+    const u=(now-A.kick.t0)/1000;
+    const run={ x:S.spot.x-S.dir.x*2.4+S.perp.x*0.5, z:S.spot.z-S.dir.z*2.4+S.perp.z*0.5 };
+    const plant={ x:S.spot.x-S.dir.x*0.32+S.perp.x*0.22, z:S.spot.z-S.dir.z*0.32+S.perp.z*0.22 };
+    if(u<0.45){ playAvatarAnim(avatarAnims.Run?"Run":IDLE_ANIM); const t=u/0.45;
+      player.position.x=run.x+(plant.x-run.x)*t; player.position.z=run.z+(plant.z-run.z)*t; }
+    else if(u<0.95){ playAvatarAnim(IDLE_ANIM); player.position.x=plant.x; player.position.z=plant.z;
+      FK.kickU=(u-0.45)/0.5; }
+    else FK.kickU=null;
+    if(u>=0.62 && !S.sim){ _fkLaunch(S,A.kick.yaw,A.kick.loft,A.kick.pw,0,now/1000); _fkSfx("kick"); }
+    if(S.sim){ _fkAdvance(S,now/1000);
+      const M=S.sim, done=M.stop || (now/1000-M.t0)>4.2;
+      if(done && u>1){ const r=M.res||"short"; A.res=r; A.resT=now; A.kick=null; FK.kicks++;
+        const T=FK_RES[r]||FK_RES.short; toast(T[0]+" · "+T[1],2600);
+        if(r==="goal") try{ SFX.correct(); }catch(e){}
+        if(FK.kicks>=3) fkRangerCome(); } }
+  } else if(A.res && now-A.resT>1600){ A.res=null; _fkReset(S); A.t0=now; }
+}
+/* la freccia della mira (a terra, dal pallone) e l'altezza (nella barra) */
+function _fkAimDraw(on){
+  const S=FK.sets.me;
+  if(!FK.arrow){ const m=BABYLON.MeshBuilder.CreateBox("fkArrow",{ width:0.06, height:0.02, depth:1 },scene);
+    const am=new BABYLON.StandardMaterial("fkArrowM",scene); am.diffuseColor=new BABYLON.Color3(1,0.85,0.2); am.emissiveColor=new BABYLON.Color3(0.8,0.6,0.1);
+    m.material=am; m.parent=townRoot; m.isPickable=false; FK.arrow=m; }
+  const A=FK.aim, m=FK.arrow; m.setEnabled(!!(on && A));
+  if(!on || !A) return;
+  const yaw=Math.atan2(S.dir.x,S.dir.z)+A.yaw, L=1.5+A.loft*6;
+  m.scaling.z=L; m.rotation.y=yaw;
+  m.position.set(S.spot.x+Math.sin(yaw)*(0.25+L/2), S.F.y+0.03, S.spot.z+Math.cos(yaw)*(0.25+L/2));
+}
+/* il calcio sulle gambe del giocatore: DOPO le pin (osservatore nato tardi) */
+function _fkMeLegs(){ if(FK.kickU!=null && FK.legs && avatarRoot) _fkKickIK(avatarRoot,player,FK.legs,FK.kickU); }
+
+/* ---- HUD: potenza, altezza, e i tasti per il tablet ---------------------- */
+function fkHud(on){
+  let h=document.getElementById("fkHud");
+  if(!h){ h=document.createElement("div"); h.id="fkHud";
+    h.style.cssText="position:fixed;left:50%;bottom:86px;transform:translateX(-50%);z-index:30;background:rgba(251,247,236,.95);"
+      +"border-radius:14px;padding:8px 12px;box-shadow:0 6px 18px rgba(0,0,0,.25);font:700 13px system-ui,sans-serif;color:#1d2a32;display:none;"
+      +"align-items:center;gap:10px;touch-action:manipulation;user-select:none;-webkit-user-select:none";
+    const B=(id,t)=>'<button type="button" data-fk="'+id+'" style="min-width:38px;height:38px;border:none;border-radius:10px;background:#e8dfc8;font:800 16px system-ui;cursor:pointer;touch-action:manipulation">'+t+'</button>';
+    h.innerHTML='<span>⚽</span>'+B("l","◀")+B("r","▶")
+      +'<div title="Height" style="width:10px;height:44px;border-radius:5px;background:#e8dfc8;position:relative;overflow:hidden"><i id="fkLoft" style="position:absolute;left:0;right:0;bottom:0;background:#3d7fa6"></i></div>'
+      +B("u","▲")+B("d","▼")
+      +'<div title="Power" style="width:120px;height:14px;border-radius:7px;background:#e8dfc8;overflow:hidden"><i id="fkPow" style="display:block;height:100%;width:0;background:linear-gradient(90deg,#58b368,#e8b04b,#e0673a)"></i></div>'
+      +'<button type="button" data-fk="kick" style="height:40px;padding:0 14px;border:none;border-radius:10px;background:#e0673a;color:#fff;font:800 14px system-ui;cursor:pointer">KICK</button>'
+      +B("x","✕");
+    document.body.appendChild(h);
+    FK.hold={};
+    h.querySelectorAll("[data-fk]").forEach(b=>{ const k=b.getAttribute("data-fk");
+      if(k==="kick"){ b.addEventListener("click",e=>{ e.preventDefault(); fkKick(); }); return; }
+      if(k==="x"){ b.addEventListener("click",e=>{ e.preventDefault(); fkStop(); }); return; }
+      const on=e=>{ e.preventDefault(); FK.hold[k]=true; }, off=()=>{ FK.hold[k]=false; };
+      b.addEventListener("pointerdown",on); b.addEventListener("pointerup",off); b.addEventListener("pointerleave",off); b.addEventListener("pointercancel",off); }); }
+  h.style.display=on?"flex":"none";
+  if(!on && FK.arrow) FK.arrow.setEnabled(false);
+}
+function fkHudDraw(pw){
+  const p=document.getElementById("fkPow"), l=document.getElementById("fkLoft"); if(!p||!l||!FK.aim) return;
+  p.style.width=Math.round(pw*100)+"%";
+  l.style.height=Math.round((FK.aim.loft-2*Math.PI/180)/(33*Math.PI/180)*100)+"%";
+}
+
+/* ---- IL RANGER: «What are you doing?» (una volta al giorno) ------------- */
+function _fkRgKey(){ let c=""; try{ c=Student.code||""; }catch(e){} return "et_fk_rg:"+new Date().toDateString()+":"+c; }
+function fkRangerCome(){
+  try{ if(localStorage.getItem(_fkRgKey())) return; }catch(e){}
+  if(typeof RANGER==="undefined" || !RANGER || RANGER_A.active) return;
+  try{ localStorage.setItem(_fkRgKey(),"1"); }catch(e){}
+  RANGER_A.active=true; RANGER_A.mode="fk";
+  RANGER.holder.setEnabled(true); RANGER_A.vis=true;
+  const d=Math.hypot(player.position.x-RANGER.carrier.position.x, player.position.z-RANGER.carrier.position.z);
+  if(d>25){ const sp=_pkRangerSpot(); if(sp) RANGER.carrier.position.copyFrom(sp); }
+  const S=FK.sets.me, spot=()=>new BABYLON.Vector3(player.position.x-S.perp.x*1.6-S.dir.x*0.6,0,player.position.z-S.perp.z*1.6-S.dir.z*0.6);
+  toast("\u{1F9E5} Mr. Poole, the Town Ranger, is coming…",2600);
+  npcWalkSeq(RANGER,[spot],0.5,()=>{
+    RANGER.__noPin=false; RANGER.play("Idle"); RANGER.watch=true;
+    RANGER.carrier.rotation.y=Math.atan2(player.position.x-RANGER.carrier.position.x, player.position.z-RANGER.carrier.position.z);
+    FK.rg={ idle:performance.now() };
+    let yr=1; try{ yr=studentYear(); }catch(e){}
+    mktTyped({ npc:RANGER, icon:"\u{1F9E5}", sub:"Town Ranger",
+      text:"Hey, Kid! What are you doing?",
+      italian:"Il Ranger ti chiede che cosa stai facendo: rispondi al present continuous (I'm + verbo in -ing).",
+      ph:"I'm ...", model:"I'm kicking the ball.", hint:"<b>I'm</b> + verbo in <b>-ing</b>: I'm kicking the ball / I'm playing football.",
+      ok:v=>/\b(i'?m|i am)\s+(kicking|playing|practi[sc]ing|taking|shooting|training|scoring|doing|having|trying|learning)\b/.test(v),
+      next:err=>{ let got=0; try{ got=Stars.award("fkRanger:"+new Date().toDateString(),err?1:3,"Ranger"); }catch(e){}
+        DialogueBox.open({ npc:RANGER, icon:"\u{1F9E5}", sub:"Town Ranger"+(got?"  ⭐ +"+got:""),
+          text:err?"Ah, I see! You're kicking the ball. Good luck with your free kicks!":"Great! You're practising free kicks. Keep going, champion!",
+          italian:"Bravo! Continua ad allenarti con le punizioni.",
+          buttons:[{ label:"Thanks!", cls:"primary", act:()=>{} }] }); } });
+  },"town",()=>{ FK.rg=null; rangerRelease(); },{ speed:2.4 });
+}
+function _fkRangerTick(){
+  const R=FK.rg; if(!R) return; const now=performance.now();
+  if(_dlgOpen()){ R.idle=now; return; }
+  if(now-R.idle>2500){ FK.rg=null; try{ rangerRelease(); }catch(e){} }
+}
+
+/* ---- avvio: l'osservatore nasce DOPO gli atleti (le loro pin delle gambe
+   girano prima, la nostra cinematica dopo) e dopo l'avatar -------------- */
+const _fkBoot=scene.onBeforeRenderObservable.add(()=>{
+  if(typeof U7_NPC==="undefined" || !U7_NPC.kim || !avatarRoot || !_pinHooked) return;
+  if(!fkBuild()) return;
+  scene.onBeforeRenderObservable.remove(_fkBoot);
+  FK.obs=scene.onBeforeRenderObservable.add(()=>{
+    if(area!=="town") { if(FK.aim) fkStop(); return; }
+    const F=FK.sets.crew.F, d=Math.hypot(player.position.x-F.x, player.position.z-F.z);
+    try{ if(d<90 || FK.prac) _fkCrewTick(); }catch(e){ console.warn("[fk] crew",e); }
+    try{ _fkMeTick(); _fkMeLegs(); }catch(e){ console.warn("[fk] me",e); }
+    try{ _fkRangerTick(); }catch(e){}
+  });
+});
+
 /* v540 — NIENTE PICK DI BABYLON SU PRESSIONE E RILASCIO. A ogni pointerdown
    e pointerup Babylon fa da se' uno scene.pick su TUTTE le ~5000 mesh (per
    le ActionManager, che qui non ci sono): misurati 7-50 ms per evento su
@@ -49150,6 +49543,7 @@ scene.registerBeforeRender(()=>{
   if(keys["d"]){mx+=right.x;mz+=right.z;} if(keys["a"]){mx-=right.x;mz-=right.z;}
   if(stickVec.x||stickVec.y){mx+=fwd.x*(-stickVec.y)+right.x*stickVec.x; mz+=fwd.z*(-stickVec.y)+right.z*stickVec.x;}
   }
+  if(FK.aim){ mx=0; mz=0; moveTarget=null; pendingInteract=null; }          // ⚽ in mira: si sta fermi sul dischetto
   const len=Math.hypot(mx,mz); let kbMove=false;
   const running=(keys["shift"]||keys["shiftleft"]||keys["shiftright"])||touchRunHeld||stickRunning();
   // (rimossa la corsa "a fondo joystick": su schermo piccolo il pollice spinge
@@ -49191,7 +49585,7 @@ scene.registerBeforeRender(()=>{
     else { RIDE.v=0; RIDE.coast=false; } }
   /* 💃 chi balla e poi cammina smette di ballare (vedi PDANCE) */
   if(PDANCE.on && (kbMove||moveTarget)) danceStop();
-  playAvatarAnim(RIDE.on ? IDLE_ANIM      // in sella le gambe stanno ferme: va la tavola
+  if(!FK.aim) playAvatarAnim(RIDE.on ? IDLE_ANIM      // in sella le gambe stanno ferme: va la tavola (⚽ in mira decide la punizione)
     : (kbMove||moveTarget) ? (running&&(kbMove||tgtMove)?"Run":"Walk") : (PDANCE.on?PDANCE.anim:IDLE_ANIM));
   // CINEMA: l\u0027avatar segue il dislivello (sale sulle gradinate, non sprofonda)
   if(area==="cinema"){
