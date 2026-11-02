@@ -48351,10 +48351,46 @@ function _ridePoseOff(){
     P.orig.forEach(k=>{ k.tn.position.copyFrom(k.p);
       if(k.q){ if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion(); k.tn.rotationQuaternion.copyFrom(k.q); }
       k.tn.scaling.copyFrom(k.s); });
+    if(P.fing && P.fing.orig) P.fing.orig.forEach(k=>{ if(k.tn.rotationQuaternion) k.tn.rotationQuaternion.copyFrom(k.q); });
     avatarRoot.rotation.y=P.ry; avatarRoot.rotation.x=0; avatarRoot.position.x=P.hx; avatarRoot.position.z=P.hz;
     if(P.hy!=null) avatarRoot.position.y=P.hy;
   }
   RIDE.pose=null;
+}
+/* 🛴 LE DITA CHIUSE SUL MANUBRIO (Giacomo, 2 nov: «la posizione e' giusta,
+   ma le dita non restano dritte: vanno piegate sopra il manubrio»). Come il
+   pugno sulla maniglia del cestino (basketGripPins): la mano e' gia' nella
+   posa del manubrio (palmo giu'), e le falangi 2 e 3 di indice, medio,
+   anulare e mignolo si chiudono verso il palmo, attorno alla sbarra; il
+   pollice un po' meno. ⚠️ Ogni pezzo dell'avatar ha il suo scheletro (anche
+   la giacca): si calcola sulla catena che ha le dita e si copia su tutte le
+   ossa omonime (_pinsOmonime). Ritorna { pins, orig } o null. */
+function _rideFingerPins(root){
+  const V=BABYLON.Vector3, out=[], keep=[];
+  const ANG={ 2:1.35, 3:1.15 }, ANGT={ 2:0.45, 3:0.55 };
+  ["L","R"].forEach(sd=>{
+    const H=_polsoConDita(root,sd); if(!H) return;
+    _sitRefresh(root);
+    const hb=_handBasis(H); if(!hb) return;
+    const pn=_palmoVero(H,hb); if(!pn) return;
+    const ds=H.getDescendants(false);
+    const curl=(fn,k,ang)=>{
+      const t=ds.find(d=>new RegExp("(^|_)"+fn+k+"\\."+sd+"$").test(d.name)), c=ds.find(d=>new RegExp("(^|_)"+fn+(k+1)+"\\."+sd+"$").test(d.name));
+      if(!t||!c) return;
+      if(!t.rotationQuaternion) t.rotationQuaternion=BABYLON.Quaternion.FromEulerVector(t.rotation);
+      keep.push({ tn:t, q:t.rotationQuaternion.clone() });
+      t.computeWorldMatrix(true); c.computeWorldMatrix(true);
+      const p=t.getAbsolutePosition().clone(), dir=c.getAbsolutePosition().subtract(p).normalize();
+      const n=pn.subtract(dir.scale(V.Dot(pn,dir))); if(n.length()<1e-4) return; n.normalize();
+      _sitWorldRot(t,p,dir,dir.scale(Math.cos(ang)).add(n.scale(Math.sin(ang)))); _sitRefresh(root);
+      out.push({ tn:t, q:t.rotationQuaternion.clone() }); };
+    ["Index","Middle","Ring","Pinky"].forEach(fn=>{ curl(fn,2,ANG[2]); curl(fn,3,ANG[3]); });
+    curl("Thumb",2,ANGT[2]); curl("Thumb",3,ANGT[3]);
+  });
+  /* com'erano, e la stessa piega su tutte le copie */
+  keep.slice().reverse().forEach(k=>k.tn.rotationQuaternion.copyFrom(k.q));
+  if(!out.length) return null;
+  return { pins:_pinsOmonime(root,out), orig:_pinsOmonime(root,keep) };
 }
 function _ridePoseOn(R){
   _ridePoseOff();
@@ -48387,6 +48423,7 @@ function _ridePoseOn(R){
            pollici e nocche proprio sul manubrio»): il polso 9 cm DIETRO la sbarra e
            un filo piu' su, come per la maniglia del carrello (shopPushOn) */
         P.push=pushPoseFor(root,f,o=>bar.add(o.scale(R.bar.half-0.01)).subtract(f.scale(0.09)).add(new V(0,0.045,0)));
+        if(P.push){ try{ _applyPins(P.push); _sitRefresh(root); P.fing=_rideFingerPins(root); }catch(e){ console.warn("[RIDE] dita",e); } }
         save.forEach(k=>{ k.tn.position.copyFrom(k.p); if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); k.tn.scaling.copyFrom(k.s); });
         if(P.push) P.lock=L;
       }
@@ -48408,6 +48445,7 @@ function _ridePoseOn(R){
     if(Q.stand && _pinLegs) _applyPins(Q.stand);
     if(Q.lock) _lockAbd(Q.lock);
     if(Q.push) _applyPins(Q.push);
+    if(Q.fing) Q.fing.pins.forEach(k=>{ k.tn.rotationQuaternion.copyFrom(k.q); });   // le dita chiuse sul manubrio
     if(Q.arms) _rideArmsTick(Q);
     if(Q.legs) _ridePushTick(Q);
   });
