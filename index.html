@@ -16627,6 +16627,7 @@ function _skRidePose(L,u,k){
   for(const q of L){ if(u<q.dur){ s=q; v=u/q.dur; break; } u-=q.dur; }
   if(!s){ s=L[L.length-1]; v=1; }
   const P={ x:0, z:0, yaw:0, hop:0, flip:0, shuv:0, rail:!!s.rail, qp:s.k==="qp", arc:s.k==="arc" };
+  P.seg=s; P.tSeg=v*s.dur;
   if(s.k==="line"){
     P.x=s.a[0]+(s.b[0]-s.a[0])*v; P.z=s.a[1]+(s.b[1]-s.a[1])*v; P.yaw=Math.atan2(s.b[0]-s.a[0],s.b[1]-s.a[1]);
     if(s.ollie!=null){ const w=0.12, q=(v-(s.ollie-w))/(2*w);
@@ -16759,6 +16760,7 @@ function _skMount(D){
   try{ n.play("Idle"); }catch(e){}
   n.pins=D.bind.map(k=>({ tn:k.tn, p:k.p.clone(), q:k.q.clone(), s:k.s.clone() }));
   n.carrier.computeWorldMatrix(true);
+  if(!S.legs) S.legs=_skCrewLegs(D);                       // per la spinta col piede
   if(!S.arms) S.arms=_skCrewArms(D);
   S.on=true;
 }
@@ -16774,6 +16776,66 @@ function _skSkateOff(D){
   S.on=false; S.glide=null; S.waitK=null;
   _skBoardHome(D); S.board.setEnabled(!!SKATE.crewHere);
 }
+/* 🛹 LA SPINTA DELLA CREW (Giacomo, 2 nov: «devono darsi la spinta col piede
+   come l'avatar»). Stessa cinematica inversa del giocatore (_rideLegIK) e
+   stessa traiettoria del piede (_RIDE_PUSH_K): il destro esce di lato,
+   tocca terra davanti, spinge fino dietro e torna sulla tavola, il
+   ginocchio d'appoggio si piega. Le gambe a riposo si misurano salendo,
+   nella posa da fermo (n.pins = bind), nel sistema del carrier.
+   Quando: all'inizio di ogni tratto dritto in piano e poi ogni ~2,4 s
+   (deterministico, dal tempo del tratto: tutti vedono la stessa spinta);
+   mai in aria, sulle rampe o sulle sbarre. */
+function _skCrewLegs(D){
+  const n=D.n, V=BABYLON.Vector3, root=n.holder;
+  try{
+    _applyPins(n.pins); n.carrier.computeWorldMatrix(true); _sitRefresh(root);
+    const inv=n.carrier.getWorldMatrix().clone().invert(), loc=v=>V.TransformCoordinates(v,inv);
+    const find=k=>root.getDescendants(false).find(t=>_boneKey(t.name)===k);
+    const leg=sd=>{ const U=find("UpperLeg."+sd), K=find("LowerLeg."+sd), F=find("Foot."+sd); if(!U||!K||!F||!F.parent) return null;
+      const pU=U.getAbsolutePosition(), pK=K.getAbsolutePosition(), pF=F.getAbsolutePosition();
+      return { U, K, F, l1:V.Distance(pU,pK), l2:V.Distance(pK,pF), foot:loc(pF), fchild:F.isDescendantOf(K),
+               ank:V.TransformCoordinates(pF,K.getWorldMatrix().clone().invert()) }; };
+    const R=leg("R"), L=leg("L");
+    return (R && L) ? { R, L } : null;
+  }catch(e){ console.warn("[skate] gambe crew",e); return null; }
+}
+const SK_PUSH_S=0.82, SK_PUSH_EVERY=2.4;
+/* la fase della spinta (0..1) in questo istante, o null */
+function _skPushPhase(seg,tSeg,P,x,z){
+  if(!seg || seg.k!=="line" || P.rail || P.hop>0.001) return null;
+  if(skRampTop(x,z,false)!==null) return null;                       // sulle rampe niente spinte
+  const ph=tSeg%SK_PUSH_EVERY; if(ph>SK_PUSH_S) return null;
+  if(seg.ollie!=null){ const v=tSeg/seg.dur, w=0.18; if(Math.abs(v-seg.ollie)<w) return null; }   // vicino al salto no
+  if(seg.dur-tSeg<SK_PUSH_S) return null;                            // a fine tratto no (si sta per curvare)
+  return ph/SK_PUSH_S;
+}
+function _skCrewPush(D,u){
+  const S=D.sk, G=S.legs, n=D.n; if(!G) return;
+  if(u==null){ if(S.pushing){ n.holder.position.y=D.baseY; S.pushing=false; } return; }
+  S.pushing=true;
+  const V=BABYLON.Vector3, lift=0.11, rest=G.R.foot, sx=(Math.abs(rest.x)>0.02?Math.sign(rest.x):1)*0.25;
+  const pt=(k,z)=>k==="rest"?rest.clone():(k==="gnd"?new V(sx,rest.y-lift,z):new V(sx*0.9,rest.y+0.07,z));
+  let i=0; while(i<_RIDE_PUSH_K.length-2 && u>_RIDE_PUSH_K[i+1][0]) i++;
+  const a=_RIDE_PUSH_K[i], b=_RIDE_PUSH_K[i+1], t=(u-a[0])/(b[0]-a[0]), e=t*t*(3-2*t);
+  const foot=V.Lerp(pt(a[1],a[2]),pt(b[1],b[2]),e);
+  const drop=0.12*Math.sin(Math.PI*Math.max(0,Math.min(1,(u-0.06)/0.86)));
+  n.holder.position.y=D.baseY-drop;
+  n.carrier.computeWorldMatrix(true); _sitRefresh(n.holder);
+  const W=n.carrier.getWorldMatrix(), f=V.TransformNormal(new V(0,0,1),W).normalize();
+  _rideLegIK(n.holder,G.L,V.TransformCoordinates(G.L.foot,W),f);    // il piede d'appoggio resta sulla tavola
+  _rideLegIK(n.holder,G.R,V.TransformCoordinates(foot,W),f);
+}
+/* ⚠️ NIENTE SALTI (Giacomo, 2 nov: «dopo che hanno preso gli skate ho visto
+   uno scomparire e apparire qualche metro piu' avanti»). Si andava al punto
+   di partenza del turno DOPO e li' si aspettava; ma se ci si arrivava a
+   turno gia' cominciato (l'angolo era lontano), si partiva dal punto in cui
+   il giro era arrivato: un salto di metri. Ora chi arriva tardi ripianifica:
+   va (in skate) alla partenza del turno successivo e aspetta quello. */
+function _skPlanStart(D){
+  const S=D.sk, T=_skSlot(), kn=T.k+1, p=_skRidePose(_skSeqOf(D,kn),0,kn), c=D.n.carrier.position;
+  if(Math.hypot(p.x-c.x,p.z-c.z)>0.3){ S.waitK=null; S.glide={ x:p.x, z:p.z, push:true, then:()=>_skPlanStart(D) }; }
+  else { S.glide=null; S.waitK=kn; }
+}
 function skGoSkate(D,see){
   if(!_skIsSkater(D)) return;
   D.talk=false; D.chillFace=null;
@@ -16781,14 +16843,14 @@ function skGoSkate(D,see){
   const S=_skBoardInit(D); if(!S) return;
   /* si va dove comincia il PROSSIMO turno, e li' si aspetta che cominci */
   const kn=_skSlot().k+1, p0=_skRidePose(_skSeqOf(D,kn),0,kn);
-  const via=()=>{ D.st="skate"; S.waitK=kn; S.yaw0=null; };
+  const via=()=>{ D.st="skate"; S.yaw0=null; _skPlanStart(D); };
   if(!see){ const c=D.n.carrier; c.position.x=p0.x; c.position.z=p0.z; _skMount(D); via(); return; }
   const P=_skPickSpot(D);
   _skWalk(D,P.x,P.z,see,()=>{
     D.n.carrier.rotation.y=0+NPC_FACE_OFFSET;               // verso la parete, davanti al suo skate
     _skMount(D);
     D.st="skate"; S.waitK=null;
-    S.glide={ x:p0.x, z:p0.z, then:via };                    // in skate fino al punto di partenza
+    S.glide={ x:p0.x, z:p0.z, push:true, then:via };          // in skate fino al punto di partenza (spingendo)
   });
 }
 /* finito lo skate: in skate fino al suo angolo, lo riappoggia, poi after() */
@@ -16798,7 +16860,7 @@ function _skSkateHome(D,see,after){
   if(!see){ _skSkateOff(D); after(); return; }
   const P=_skPickSpot(D);
   S.waitK=null; D.st="skateHome";
-  S.glide={ x:P.x, z:P.z, then:()=>{ D.n.carrier.rotation.y=0+NPC_FACE_OFFSET; _skSkateOff(D);
+  S.glide={ x:P.x, z:P.z, push:true, then:()=>{ _skCrewPush(D,null); D.n.carrier.rotation.y=0+NPC_FACE_OFFSET; _skSkateOff(D);
     /* ⚠️ via da «skateHome» PRIMA di after(): skGoChill/skGoDance la usano per
        non ripartire mentre si riporta lo skate, e cosi' restava fermo li' */
     D.st="idle"; after(); } };
@@ -16812,7 +16874,11 @@ function _skGlideTick(D){
   const fy=_skFloorRide(c.position.x,c.position.z,false)+R.lift;
   S.sy=(S.sy==null)?fy:S.sy+(fy-S.sy)*0.5; c.position.y=S.sy;
   if(S.arms) _skCrewArmsTick(D,{ hop:0 },0);
-  if(d<=0.02){ const f=G.then; S.glide=null; if(f) f(); }
+  { let u=null;                                                      // spinte: all'inizio e poi ogni ~2,4 s, non a fine corsa
+    if(G.push && d>1.5){ const now=performance.now(); if(!G.t0) G.t0=now;
+      const ph=((now-G.t0)/1000)%SK_PUSH_EVERY; if(ph<SK_PUSH_S && skRampTop(c.position.x,c.position.z,false)===null) u=ph/SK_PUSH_S; }
+    _skCrewPush(D,u); }
+  if(d<=0.02){ _skCrewPush(D,null); const f=G.then; S.glide=null; if(f) f(); }
 }
 /* ogni fotogramma, per chi e' in skate */
 function skSkateTick(D){
@@ -16823,7 +16889,9 @@ function skSkateTick(D){
   const T=_skSlot();
   /* in attesa del turno: fermo sulla tavola dove comincia */
   if(S.waitK!=null){
-    if(T.k>=S.waitK || T.k<S.waitK-2) S.waitK=null;
+    _skCrewPush(D,null);
+    if(T.k===S.waitK && T.u<0.2) S.waitK=null;                       // il turno comincia adesso: via
+    else if(T.k!==S.waitK-1){ _skPlanStart(D); return; }             // perso (arrivato tardi): al prossimo, senza salti
     else { const p0=_skRidePose(_skSeqOf(D,S.waitK),0,S.waitK);
       c.position.y=_skFloorRide(c.position.x,c.position.z,false)+R.lift;
       c.rotation.y=p0.yaw+NPC_FACE_OFFSET;
@@ -16848,6 +16916,7 @@ function skSkateTick(D){
   S.board.position.y=(P.flip||P.shuv)?-0.12*Math.sin(Math.max(P.flip/2,P.shuv)):0;
   n.holder.rotation.x=-Math.max(-0.6,Math.min(0.6,S.pitch*0.6));
   _skCrewArmsTick(D,P,S.turn);
+  _skCrewPush(D,_skPushPhase(P.seg,P.tSeg,P,P.x,P.z));          // 🦶 la spinta col piede
   /* le ruote girano di quanto si e' andati */
   const d=Math.hypot(c.position.x-prev.x,c.position.z-prev.z); if(d<2) rideSpinWheels(S.board,d);
 }
@@ -48374,7 +48443,7 @@ function _rideArmsTick(Q){
    della posa da fermo: pianta parallela al terreno. */
 function _rideLegIK(root,G,T,f){
   const V=BABYLON.Vector3;
-  G.F.position.copyFrom(V.TransformCoordinates(T,G.F.parent.getWorldMatrix().clone().invert()));
+  if(!G.fchild) G.F.position.copyFrom(V.TransformCoordinates(T,G.F.parent.getWorldMatrix().clone().invert()));   // nei rig dove il piede e' figlio dello stinco lo porta lui
   const pH=G.U.getAbsolutePosition().clone(), pK=G.K.getAbsolutePosition().clone();
   const d=T.subtract(pH), dl=d.length(); if(dl<1e-4) return;
   const L=Math.min(dl,G.l1+G.l2-0.003), dir=d.scale(1/dl);
