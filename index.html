@@ -4609,7 +4609,7 @@ const SIT={ on:false, pins:null, drop:0, baseY:null };
    l'anca sulla seduta, non il centro del corpo: se no il busto dei corpi piu'
    robusti finiva dentro lo schienale) */
 function playerSit(fwd,seatY,groundY,arms){
-  try{ if(typeof RIDE!=="undefined" && RIDE.on) rideSitPark(); }catch(e){}   // 🛹 prima giu' dalla tavola (di solito gia' fatto da chi fa sedere)
+  try{ if(typeof RIDE!=="undefined" && RIDE.on && rideSitPark()===false) return null; }catch(e){}   // 🛹 prima giu' dalla tavola (di solito gia' fatto da chi fa sedere)
   if(!avatarRoot || !_legPins) return null;
   /* v405 (Giacomo, 27 ott: «quando mi siedo col giornale, risulto sospeso
      per aria»). Sedersi col giornale calcola la posa DUE volte (seduto, poi
@@ -10779,7 +10779,7 @@ function dinerSeatInteracts(){
 }
 function dinerSit(s){
   if(DINER.seat) return;
-  try{ if(dinerOpen() && !DINER.debt) rideSitPark(); }catch(e){}   // 🛹 giu' dalla tavola PRIMA di misurare (la tavola resta accanto)
+  try{ if(dinerOpen() && !DINER.debt && rideSitPark()===false) return; }catch(e){}   // 🛹 giu' dalla tavola PRIMA di misurare (la tavola resta accanto); 🛴 in monopattino no
   if(!dinerOpen()){ toast("\u{1F319} The diner is closed now. Come back tomorrow!"); return; }
   /* v291: col conto ancora da pagare non ci si risiede: Ray arriva subito */
   if(DINER.debt){ toast("\u{1F9FE} You haven't paid the bill yet! Ray is coming\u2026"); if(!DINER.debt.asking) DINER.debt.at=0; return; }
@@ -11638,7 +11638,7 @@ function benchSit(b){
   /* v308e (Giacomo: «quando stai ballando, non puoi sederti sulla panchina») */
   if(typeof SKDANCE!=="undefined" && SKDANCE.on){ toast("\u{1F57A} You're dancing! Walk to stop, then sit down."); return; }
   if(b.npcBusy){ toast("\u{1FA91} This bench is taken."); return; }
-  try{ rideSitPark(); }catch(e){}                                 // 🛹 giu' dalla tavola PRIMA di misurare (la tavola resta accanto)
+  try{ if(rideSitPark()===false) return; }catch(e){}              // 🛹 giu' dalla tavola PRIMA di misurare (la tavola resta accanto); 🛴 in monopattino no
   const P=player.position;
   /* la fila e il punto piu' vicini a te */
   let best=null;
@@ -34059,7 +34059,7 @@ function _cafeSit(){ const P=CAFE_PICK; if(!P.spot) return false;
   if((typeof DINER!=="undefined" && DINER.seat) || (typeof BSIT!=="undefined" && BSIT.b)) return false;
   /* 🛹 PRIMA di leggere la quota: sulla tavola player.y e' 11-14 cm piu' su
      del pavimento, e gy (che poi resta) faceva sedere sospesi per aria */
-  try{ rideSitPark(); }catch(e){}
+  try{ if(rideSitPark()===false) return false; }catch(e){}
   { const s=_cafeStoolLibero(P);
     if(s!==P.stool){ P.stool=s; if(P.node) P.node.position.z=P.spot.z+CAFE_TRAY_Z[s]; } }
   const S=_cafeStoolW(P), f=new BABYLON.Vector3(1,0,0), gy=(P.gy!=null)?P.gy:player.position.y;
@@ -34082,6 +34082,7 @@ function _cafeStand(){ const P=CAFE_PICK; if(!P.seated) return;
   player.position.set(S.x-0.9, (P.gy!=null)?P.gy:player.position.y, S.z); player.rotation.y=P.face!=null?P.face:player.rotation.y; }
 function cafeTake(){
   const P=CAFE_PICK; if((P.st!=="ready" && P.st!=="paused")||!P.node) return;
+  try{ if(rideScooterBlocks()) return; }catch(e){}     // 🛴 prima al parcheggio: l'ordine resta li' sul bancone
   if(P.inter){ removeInteract(P.inter); P.inter=null; }
   if(P.timer){ clearTimeout(P.timer); P.timer=null; }
   if(!_cafeSit()) return;
@@ -47777,7 +47778,7 @@ function rideSetOwned(R){
   Sync.set("et_progress",p);                     // ⚠️ dentro et_progress: sale nel cloud (SYNC_MAX, fondiMax = OR)
 }
 function rideUsable(R){ return rideOwned(R) && rideOpen(R); }
-function rideUnlocked(){ return RIDES.filter(rideUsable); }
+function rideUnlocked(){ return RIDES.filter(R=>rideUsable(R) && !(RIDE.racked && RIDE.racked.R===R)); }   // 🅿️ quello parcheggiato si riprende alla rastrelliera
 function rideStarsMsg(R){
   let st=0; try{ st=Stars.total(); }catch(e){}
   return "\u2B50 Non hai stelle sufficienti per usarlo: ti servono "+R.req.stars+" stelle (ne hai "+st+")"+(R.alt?", "+R.alt.it:"")+".";
@@ -48079,11 +48080,15 @@ function rideOff(silent){
   rideHud();
   if(!silent) toast("\u{1F6B6} On foot");
 }
-function rideMount(id,quiet){
+function rideMount(id,quiet,fromRack){
   const R=rideDef(id); if(!R) return false;
   if(!rideOwned(R)){ toast(R.ic+" "+R.en+": buy it at the Corner Shop \u{1F6D2} \u00b7 compralo al Corner Shop",3400); return false; }
   if(!rideOpen(R)){ toast(rideStarsMsg(R),4200); return false; }
   if(!rideCanHere()){ toast(R.ic+" "+R.en+": solo all'aperto, in città",2600); return false; }
+  /* 🅿️ parcheggiato alla rastrelliera: si riprende li' (rideRackAct) */
+  if(RIDE.racked && RIDE.racked.R===R && !fromRack){
+    toast("\u{1F17F}\uFE0F Your "+R.en.toLowerCase()+" is at the scooter parking "+RIDE_RACKS[RIDE.racked.k].where+" \u00b7 \u00e8 al parcheggio",4000); return false; }
+  if(RIDE.racked && RIDE.racked.R===R) RIDE.racked=null;
   if(RIDE.on) rideOff(true);
   try{ if(typeof PDANCE!=="undefined" && PDANCE.on) danceStop(); }catch(e){}
   if(!RIDE.mesh[R.id]){ RIDE.mesh[R.id]=rideBuildMesh(R.id,"ride_"+R.id); RIDE.mesh[R.id].parent=player; }
@@ -48104,36 +48109,179 @@ function rideMount(id,quiet){
    chiama: dinerSit, benchSit, _cafeSit, playerSit), la tavola resta li'
    accanto (rideParkTick) e alzandosi ci si risale da soli. */
 function rideSitPark(){
-  if(!RIDE.on) return;
+  if(!RIDE.on) return true;
   const R=RIDE.on;
+  /* 🛴 in monopattino non ci si siede (Giacomo, 2 nov: «fuori dal ristorante
+     o vicino al caffe' ci deve essere uno scooter rack dove lasciare gli
+     scooter; altrimenti con lo scooter non si puo' sedere»): lo skate si
+     tiene accanto, il monopattino si lascia allo SCOOTER PARKING. */
+  if(R.kind==="scooter"){ rideScooterSitMsg(); return false; }
   rideOff(true);
   player.position.y-=R.lift;                       // i piedi a terra, non sulla tavola
-  RIDE.parked=R; RIDE.parkT=performance.now();
-  const m=RIDE.mesh[R.id]; if(m){ m.setEnabled(true); _rideParkPlace(m,R,player.position.y,null); }
+  RIDE.parked=R; RIDE.parkT=performance.now(); RIDE.parkSpot=null;
+  const m=RIDE.mesh[R.id]; if(m){ m.setEnabled(true); _rideParkPlace(m,R,player.position.y,null,null); }
+  return true;
 }
-/* accanto alla seduta, a destra: lo skate a terra, il monopattino in piedi
-   rivolto all'indietro (cosi' manubrio e ruota davanti non finiscono sotto
-   il tavolo). parent = chi siede (giocatore o compagno), quote locali. */
-function _rideParkPlace(m,R,bodyY,gy){
+/* vero se adesso ci si vuole sedere in monopattino (e lo si dice) */
+function rideScooterBlocks(){ if(RIDE.on && RIDE.on.kind==="scooter"){ rideScooterSitMsg(); return true; } return false; }
+function rideScooterSitMsg(){
+  const k=rideRackNear(45);
+  if(k) toast("\u{1F6F4} You can't sit on a scooter! Leave it at the \u{1F17F}️ scooter parking "+k.where+" · Lascia il monopattino al parcheggio qui vicino",5200);
+  else toast("\u{1F6F4} Get off your scooter first: press R · Prima scendi dal monopattino (tasto R)",4200);
+}
+/* accanto alla seduta. parent = chi siede (giocatore o compagno), quote
+   locali. spot = {x,z,ry} gia' scelto in un punto libero (rideParkSpot);
+   senza (i compagni) a destra: lo skate a terra, il monopattino in piedi
+   rivolto all'indietro. */
+function _rideParkPlace(m,R,bodyY,gy,spot){
   const g=(gy!=null)?gy:bodyY;
+  if(spot){ m.position.set(spot.x, g-bodyY+R.lift, spot.z); m.rotation.set(0, spot.ry, 0); return; }
   m.position.set(0.62, g-bodyY+R.lift, R.kind==="scooter"?-0.25:-0.05);
   m.rotation.set(0, R.kind==="scooter"?Math.PI:0, 0);
+}
+/* 🛹 IN UN PUNTO LIBERO (Giacomo, 2 nov: «al cafe' lo skateboard viene
+   lasciato dentro il bancone: va lasciato in un punto vuoto dove non c'e'
+   niente»). Si provano dei posti attorno a chi siede (a destra, a sinistra,
+   dietro, in diagonale), ognuno dritto e di traverso, e si prende il primo
+   la cui IMPRONTA (la tavola intera, non solo il centro) non tocca nessun
+   ostacolo: bancone, sgabelli, tavoli, panchine. */
+const _RIDE_PARK_TRY=[[0.62,-0.05],[-0.62,-0.05],[0.55,-0.75],[-0.55,-0.75],[0,-0.95],[0.9,0.2],[-0.9,0.2],[0,-1.3],[1.1,-0.6],[-1.1,-0.6]];
+function _rideFootFree(cx,cz,ax,az,half,w){
+  const pts=[[0,0],[half,0],[-half,0],[half,w],[half,-w],[-half,w],[-half,-w]];
+  for(const pq of pts){ const a=pq[0], b=pq[1], x=cx+ax*a-az*b, z=cz+az*a+ax*b;
+    for(let i=0;i<solids.length;i++){ const s=solids[i]; if(s.area!==area) continue;
+      /* 30 cm di margine: i solidi coprono la BASE di banconi e tavoli, ma il
+         piano sporge (al caffe' lo skate finiva con la punta sotto il bancone) */
+      if(x>s.x0-0.30 && x<s.x1+0.30 && z>s.z0-0.30 && z<s.z1+0.30) return false; } }
+  return true;
+}
+function rideParkSpot(R){
+  const ry=player.rotation.y, fx=Math.sin(ry), fz=Math.cos(ry), rx=Math.cos(ry), rz=-Math.sin(ry);
+  const half=(R.kind==="scooter")?0.5:0.42, w=(R.kind==="scooter")?0.15:0.14;
+  for(const c of _RIDE_PARK_TRY){
+    const X=player.position.x+rx*c[0]+fx*c[1], Z=player.position.z+rz*c[0]+fz*c[1];
+    if(_rideFootFree(X,Z,fx,fz,half,w)) return { x:c[0], z:c[1], ry:0 };                // dritta
+    if(_rideFootFree(X,Z,rx,rz,half,w)) return { x:c[0], z:c[1], ry:Math.PI/2 };        // di traverso
+  }
+  return { x:0.62, z:-0.05, ry:0 };
 }
 function rideParkTick(){
   const R=RIDE.parked; if(!R) return;
   const m=RIDE.mesh[R.id];
   if(area!=="town"){ if(m) m.setEnabled(false); RIDE.parked=null; return; }
   let sitting=false; try{ sitting=!!SIT.on; }catch(e){}
-  if(sitting){ if(m) _rideParkPlace(m,R,player.position.y,(SIT.gy!=null)?SIT.gy:null); return; }
+  if(sitting){
+    if(!RIDE.parkSpot) RIDE.parkSpot=rideParkSpot(R);        // seduti davvero: il posto si cerca una volta
+    if(m) _rideParkPlace(m,R,player.position.y,(SIT.gy!=null)?SIT.gy:null,RIDE.parkSpot); return; }
   /* in piedi (e non piu' occupati): si risale da soli */
   if(!rideBusy() && performance.now()-(RIDE.parkT||0)>300){
     if(!rideUsable(R) || !rideMount(R.id,true)){ if(m) m.setEnabled(false); RIDE.parked=null; } }
+}
+
+/* ---- 🅿️ SCOOTER PARKING -------------------------------------------------
+   Una rastrelliera con tre posti e il cartello «P · SCOOTER PARKING» fuori
+   dal Sunny Side Diner e accanto ai due caffe'. In monopattino, vicino:
+   «Press E to park your scooter» -> scendi, il monopattino resta li' nel
+   suo posto (e ti puoi sedere). Tornando: «Press E to take your …» e ci
+   risali. Finche' sta parcheggiato, R non lo fa comparire altrove: e' li'.
+   (Il parcheggio vive finche' la pagina e' aperta: riaprendo il gioco il
+   monopattino e' di nuovo con te.) */
+const RIDE_RACKS=[
+  { id:"diner", where:"outside the Diner", x:-9.6, z:28.5, ry:-Math.PI/2 },
+  { id:"cafe0", where:"near the café",     x:21.6, z:-114,  ry:Math.PI/2 },
+  { id:"cafe1", where:"near the café",     x:71.0, z:7.4,   ry:Math.PI },     // davanti al caffe' del parco (non sotto l'edicola)
+];
+const RIDE_RACK_SLOTS=[-0.6,0,0.6];
+function _rackGround(x,z){
+  try{ const V=BABYLON.Vector3, h=pickRaggio(new BABYLON.Ray(new V(x,6,z),new V(0,-1,0),12),"__ground",true);
+    let y=0; if(h) for(const q of h){ const hy=q.pickedPoint.y; if(hy<2 && hy>y) y=hy; } return y; }catch(e){ return 0; }
+}
+function rideRacksBuild(){
+  if(RIDE.racks || !started || area!=="town") return;
+  RIDE.racks=[];
+  const B=BABYLON.MeshBuilder, M=_rideMat();
+  if(!M.rack){ M.rack=mat("rideRack","#9aa3ab"); M.rack.specularColor=new BABYLON.Color3(0.35,0.35,0.35); M.rackBase=mat("rideRackB","#3a4148"); }
+  if(!M.sign){
+    const dt=new BABYLON.DynamicTexture("rideParkSignT",{width:256,height:320},scene,true), c=dt.getContext();
+    c.fillStyle="#1f5fa8"; c.fillRect(0,0,256,320); c.fillStyle="#ffffff"; c.fillRect(10,10,236,300); c.fillStyle="#1f5fa8"; c.fillRect(18,18,220,284);
+    c.fillStyle="#ffffff"; c.textAlign="center"; c.textBaseline="middle";
+    c.font="bold 150px Arial"; c.fillText("P",128,105);
+    c.font="64px Segoe UI Emoji, Apple Color Emoji, sans-serif"; c.fillText("\u{1F6F4}",128,200);
+    c.font="bold 30px Arial"; c.fillText("SCOOTER",128,252); c.fillText("PARKING",128,284);
+    dt.update(); const sm=new BABYLON.StandardMaterial("rideParkSignM",scene); sm.diffuseTexture=dt; sm.emissiveColor=new BABYLON.Color3(0.25,0.25,0.25);
+    sm.specularColor=new BABYLON.Color3(0,0,0); M.sign=sm; }
+  RIDE_RACKS.forEach((K,i)=>{
+    const y=_rackGround(K.x,K.z);
+    const root=new BABYLON.TransformNode("rideRack_"+K.id,scene); root.parent=townRoot; root.position.set(K.x,y,K.z); root.rotation.y=K.ry;
+    const part=(m,mt)=>{ m.material=mt; m.parent=root; m.isPickable=false; m.__cast=true; return m; };
+    part(B.CreateBox("rkBase",{width:2.0,height:0.04,depth:0.55},scene),M.rackBase).position.set(0,0.02,0.1);
+    RIDE_RACK_SLOTS.forEach(sx=>{
+      /* un archetto per posto: due montanti e il traverso, dove si appoggia la ruota davanti */
+      [-0.11,0.11].forEach(dx=>{ const p=part(B.CreateCylinder("rkPost",{diameter:0.035,height:0.5,tessellation:8},scene),M.rack); p.position.set(sx+dx,0.27,0.3); });
+      const t=part(B.CreateCylinder("rkTop",{diameter:0.035,height:0.26,tessellation:8},scene),M.rack); t.rotation.z=Math.PI/2; t.position.set(sx,0.52,0.3);
+    });
+    const pole=part(B.CreateCylinder("rkPole",{diameter:0.05,height:1.9,tessellation:8},scene),M.rack); pole.position.set(1.2,0.95,0.3);
+    /* due facce, una per lato: con una sola visibile da dietro la scritta si leggeva a specchio */
+    [0,Math.PI].forEach((r,j)=>{ const sg=part(B.CreatePlane("rkSign",{width:0.46,height:0.58},scene),M.sign);
+      sg.position.set(1.2,1.62,0.3+(j?0.012:-0.012)); sg.rotation.y=r; });
+    addSolid(K.x-1.0,K.x+1.0,K.z-1.0,K.z+1.0,"town");   // ⚠️ quadrato prudente: la rastrelliera ruota con K.ry
+    solids[solids.length-1].rideRack=true;
+    const inter=addInteract({ id:"ride_rack_"+K.id, area:"town", radius:2.8, enabled:false,
+      pos:()=>new BABYLON.Vector3(K.x,0.8,K.z),
+      prompt:()=>{ const P=RIDE.racked;
+        if(P && P.k===i && !(RIDE.on && RIDE.on.kind==="scooter")) return 'Press <b>E</b> to take your <b>'+P.R.en.toLowerCase()+'</b>';
+        return 'Press <b>E</b> to park your <b>scooter</b> here'; },
+      interact:()=>rideRackAct(i) });
+    RIDE.racks.push({ K, root, y, inter });
+  });
+  try{ refreshShadowCasters(); }catch(e){}
+}
+function rideRackNear(maxD){
+  let best=null, bd=maxD||1e9;
+  RIDE_RACKS.forEach(K=>{ const d=Math.hypot(player.position.x-K.x, player.position.z-K.z); if(d<bd){ bd=d; best=K; } });
+  return best;
+}
+/* il posto (mondo) di un monopattino nella rastrelliera: in piedi, col
+   davanti fra i montanti dell'archetto */
+function _rackSlotPlace(m,k,R){
+  const S=RIDE.racks[k], K=S.K;
+  m.parent=townRoot;
+  const c=Math.cos(K.ry), s=Math.sin(K.ry), lx=RIDE_RACK_SLOTS[1], lz=-0.12;
+  m.position.set(K.x+lx*c+lz*s, S.y+R.lift, K.z-lx*s+lz*c);
+  m.rotation.set(0,K.ry,0);
+}
+function rideRackAct(k){
+  const S=RIDE.racks&&RIDE.racks[k]; if(!S) return;
+  if(RIDE.on && RIDE.on.kind==="scooter"){
+    const R=RIDE.on;
+    if(RIDE.racked){ const om=RIDE.mesh[RIDE.racked.R.id]; if(om && RIDE.racked.R!==R) om.setEnabled(false); }   // uno alla volta
+    rideOff(true);
+    const m=RIDE.mesh[R.id]; if(m){ m.setEnabled(true); _rackSlotPlace(m,k,R); }
+    RIDE.racked={ R, k };
+    try{ SFX.correct(); }catch(e){}
+    toast("\u{1F17F}️ Your "+R.en.toLowerCase()+" is parked. Now you can sit down! · Monopattino parcheggiato",4200);
+    rideHud(); return;
+  }
+  const P=RIDE.racked;
+  if(P && P.k===k){
+    if(!rideUsable(P.R)){ toast(rideStarsMsg(P.R),4200); return; }
+    if(RIDE.on) rideOff(true);
+    rideMount(P.R.id,false,true);
+  }
+}
+/* ogni fotogramma (dal tick di RIDE): le E delle rastrelliere si accendono
+   solo quando servono (in monopattino, o dove c'e' il tuo) */
+function rideRacksTick(){
+  if(!RIDE.racks){ rideRacksBuild(); if(!RIDE.racks) return; }
+  const sc=!!(RIDE.on && RIDE.on.kind==="scooter");
+  RIDE.racks.forEach((S,i)=>{ S.inter.enabled=(area==="town") && (sc || !!(RIDE.racked && RIDE.racked.k===i)); });
 }
 /* R / bottone: a piedi -> skate -> monopattino -> a piedi (solo gli sbloccati) */
 function rideCycle(){
   if(!started) return;
   const L=rideUnlocked();
   if(!L.length){
+    if(RIDE.racked){ toast("\u{1F17F}\uFE0F Your "+RIDE.racked.R.en.toLowerCase()+" is at the scooter parking "+RIDE_RACKS[RIDE.racked.k].where,3600); return; }
     const R=RIDES.find(r=>rideOwned(r)) || RIDES[0];
     if(rideOwned(R)) toast(rideStarsMsg(R),4200);
     else if(rideOpen(R)) toast(R.ic+" "+R.en+": buy it at the Corner Shop \u{1F6D2} \u00b7 compralo al Corner Shop",3600);
@@ -48356,6 +48504,7 @@ function rideAfterCheckout(its){
 scene.onBeforeRenderObservable.add(()=>{
   if(!RIDE.stand && typeof UNIT4!=="undefined" && area===UNIT4.area){ try{ rideStandBuild(); }catch(e){ console.warn("[RIDE] espositore",e); RIDE.stand=true; } }
   if(RIDE.parked){ try{ rideParkTick(); }catch(e){} }
+  try{ rideRacksTick(); }catch(e){}                         // 🅿️ scooter parking
   if(!RIDE.on){ RIDE.px=player.position.x; RIDE.pz=player.position.z; return; }
   if(!rideCanHere()){ rideOff(true); return; }
   const d=Math.hypot(player.position.x-RIDE.px, player.position.z-RIDE.pz);
