@@ -48323,7 +48323,10 @@ function rideParkTick(){
    monopattino e' di nuovo con te.) */
 const RIDE_RACKS=[
   { id:"diner", where:"outside the Diner", x:-9.6, z:28.5, ry:-Math.PI/2 },
-  { id:"cafe0", where:"near the café",     x:21.6, z:-114,  ry:Math.PI/2 },
+  /* fuori dall'ingresso del terminal (porta a vetri: x 10,5..17,5 a z -82),
+     a fianco della porta contro la vetrata est: in aeroporto si entra a
+     piedi (prima stava DENTRO la sala, accanto al bar del terminal) */
+  { id:"airport", where:"outside the airport", x:22.5, z:-80.2, ry:Math.PI },
   { id:"cafe1", where:"near the café",     x:71.0, z:7.4,   ry:Math.PI },     // davanti al caffe' del parco (non sotto l'edicola)
 ];
 const RIDE_RACK_SLOTS=[-0.6,0,0.6];
