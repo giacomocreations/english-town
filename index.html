@@ -48644,7 +48644,7 @@ function rideOff(silent){
   const R=RIDE.on;
   _ridePoseOff();
   const m=RIDE.mesh[R.id]; if(m) m.setEnabled(false);
-  RIDE.on=null; RIDE.v=0; RIDE.coast=false; RIDE.pitch=0; RIDE.push=null; RIDE.qp=null; if(m) m.rotation.x=0;
+  RIDE.on=null; RIDE.v=0; RIDE.coast=false; RIDE.pitch=0; RIDE.push=null; RIDE.qp=null; RIDE.deck=null; if(m) m.rotation.x=0;
   /* ⚠️ la quota NON si tocca qui: scendendo per sedersi la sedia ha GIA'
      messo il corpo alla sua altezza, e togliere ancora la tavola lo
      faceva sedere 11 cm troppo in basso (poi il terreno lo rialzava:
@@ -48936,6 +48936,46 @@ function rideQuarterTick(inDir){
   return true;
 }
 const RIDE_QP_STALL=16;
+/* ---- 🛹 DROP-IN DAL BORDO (Giacomo, 3 nov: «se l'avatar sta piu' di un
+   secondo fermo sul bordo della rampa, fallo scendere automaticamente»).
+   Sul piano in cima a una quarter pipe, senza tasti ne' tocchi per 1 s:
+   ci si gira verso la curva (0,35 s), si rotola fino al bordo e da li' la
+   discesa e' quella di sempre (rideQuarterTick, con la gravita'). Basta un
+   tasto in qualunque momento per riprendere i comandi. */
+const RIDE_DROP_WAIT=1000, RIDE_DROP_TURN=350;
+function _skDeckAt(X,Z){
+  const L=SKATE.ramps; if(!L) return null;
+  for(const r of L){ if(r.k!=="q") continue;
+    const dx=X-r.x, dz=Z-r.z, c=Math.cos(r.ry), s=Math.sin(r.ry);
+    const lx=dx*c-dz*s, lz=dx*s+dz*c;
+    if(Math.abs(lz)<=r.hw && lx>=r.R-0.06 && lx<=r.R+r.deck+0.1) return { r, lx, nx:c, nz:-s }; }
+  return null;
+}
+function rideDropInTick(idle){
+  const now=performance.now();
+  if(!idle || RIDE.qp || RIDE.push){ RIDE.deck=null; return false; }
+  let D=RIDE.deck;
+  if(!D || !D.go){
+    const at=_skDeckAt(player.position.x,player.position.z);
+    if(!at || player.position.y<at.r.y0+at.r.R-0.25){ RIDE.deck=null; return false; }   // non sei lassu'
+    if(!D || D.r!==at.r){ RIDE.deck={ r:at.r, t0:now }; return false; }
+    if(now-D.t0<RIDE_DROP_WAIT) return false;
+    D.go=true; D.tg=now; D.from=player.rotation.y; D.to=Math.atan2(-at.nx,-at.nz); D.nx=at.nx; D.nz=at.nz;
+  }
+  const k=Math.min(1,(now-D.tg)/RIDE_DROP_TURN);
+  let dd=D.to-D.from; while(dd>Math.PI) dd-=2*Math.PI; while(dd<-Math.PI) dd+=2*Math.PI;
+  player.rotation.y=D.from+dd*(k*k*(3-2*k)); RIDE.v=0;
+  if(k<1) return true;
+  /* girati: si rotola fino al bordo, poi giu' con la gravita' */
+  const r=D.r, dx=player.position.x-r.x, dz=player.position.z-r.z, lx=dx*Math.cos(r.ry)-dz*Math.sin(r.ry);
+  if(lx>r.R-0.05){ RIDE.dir={ x:-D.nx, z:-D.nz };
+    if(!move(-D.nx,-D.nz,0.03)){ RIDE.deck=null; return false; }
+    player.rotation.y=D.to; return true; }
+  const h=r.R-Math.sqrt(Math.max(0,r.R*r.R-lx*lx));
+  RIDE.qp={ r, nx:D.nx, nz:D.nz, sign:-1, E:RIDE_G*h+1e-4, stall:0 };
+  RIDE.deck=null; moveTarget=null; pendingInteract=null;
+  return true;
+}
 function rideStepSpeed(){
   const R=RIDE.on; RIDE.v+=(1-RIDE.v)*R.acc; if(RIDE.v<0.3) RIDE.v=0.3;
   return PLAYER_SPEED*R.mult*RIDE.v;
@@ -49898,8 +49938,9 @@ scene.registerBeforeRender(()=>{
   /* 🛹🛴 in sella la velocita' la decide la tavola (spinta + inerzia), non Shift */
   const _spd=()=>RIDE.on ? rideStepSpeed() : (running?PLAYER_SPEED*RUN_MULT:PLAYER_SPEED);
   /* 🛹 sulla curva di una quarter pipe comanda la gravita' (rideQuarterTick) */
-  const _rq=!!(RIDE.on && RIDE.on.ramps && rideQuarterTick(len>0.01?{x:mx/len,z:mz/len}:null));
-  if(_rq){ /* la tavola va da sola: niente tasti, niente tocchi */ }
+  const _rd=!!(RIDE.on && RIDE.on.ramps && rideDropInTick(len<=0.01 && !moveTarget));   // 🛹 fermo sul bordo: giu' da solo
+  const _rq=!_rd && !!(RIDE.on && RIDE.on.ramps && rideQuarterTick(len>0.01?{x:mx/len,z:mz/len}:null));
+  if(_rd || _rq){ /* la tavola va da sola: niente tasti, niente tocchi */ }
   else if(len>0.01){ moveTarget=null; pendingInteract=null; tapMark.setEnabled(false);
     RIDE.inpT=performance.now();
     kbMove=move(mx/len,mz/len, _spd());
