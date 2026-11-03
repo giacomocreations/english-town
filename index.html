@@ -4239,8 +4239,47 @@ function snapshotLegBind(){            // cattura la bind-pose di gambe+bacino d
   }});
   console.log("[avatar] bind-pose gambe+bacino agganciata su",n,"bone (TRS live)");
 }
+/* ⚠️ IN PIEDI, PIEDI DRITTI (Giacomo, 3 nov: «rimane innaturale il piede
+   sinistro»). Nella bind-pose del rig il piede sinistro sta ~30 cm indietro
+   e con la punta girata di quasi 60 gradi in fuori: da fermi lo si vedeva
+   sempre di traverso. Non si tocca _legPins (sedute, mangiare, skate e
+   balli partono da li'): si costruisce UNA volta una posa da fermo a parte,
+   col piede storto messo a specchio di quello dritto (stessa distanza dal
+   centro del bacino, stessa altezza, stesso avanti/indietro) e la punta
+   girata come la sua, a specchio. Gamba col solito _rideLegIK. */
+let _legStand=null;
+function _legStandBuild(){
+  if(!_legPins || !avatarRoot) return null;
+  const V=BABYLON.Vector3, ref=avatarRoot.parent||player;
+  const save=_legPins.map(k=>({ tn:k.tn, p:k.tn.position.clone(), q:k.tn.rotationQuaternion?k.tn.rotationQuaternion.clone():null, s:k.tn.scaling.clone() }));
+  try{
+    _applyPins(_legPins); ref.computeWorldMatrix(true); _sitRefresh(avatarRoot);
+    const G=_fkLegs(avatarRoot,ref); if(!G) return [];
+    const W=ref.getWorldMatrix(), inv=W.clone().invert();
+    const f=V.TransformNormal(new V(0,0,1),W); f.y=0; f.normalize();
+    const ax=_fkFootAxis(G,f); if(!ax) return [];
+    const toeYaw=g=>{ g.F.rotationQuaternion.copyFrom(g.q0); g.F.computeWorldMatrix(true);
+      const t=V.TransformNormal(ax,g.F.getWorldMatrix()), l=V.TransformNormal(t,inv); return Math.atan2(l.x,l.z); };
+    const yL=toeYaw(G.L), yR=toeYaw(G.R);
+    const bad=Math.abs(yL)>Math.abs(yR)?"L":"R", ok=bad==="L"?"R":"L";
+    if(Math.abs(bad==="L"?yL:yR)<0.26) return [];                 // gia' dritti (meno di 15 gradi): niente
+    const hip=sd=>V.TransformCoordinates(G[sd].U.getAbsolutePosition(),inv);
+    const cx=(hip("L").x+hip("R").x)/2, gf=G[ok].foot;
+    const T=V.TransformCoordinates(new V(2*cx-gf.x,gf.y,gf.z),W);
+    _rideLegIK(avatarRoot,G[bad],T,f);
+    /* la punta: a specchio di quella dritta */
+    const g=G[bad], F=g.F; F.rotationQuaternion.copyFrom(g.q0); F.computeWorldMatrix(true);
+    const t=V.TransformNormal(ax,F.getWorldMatrix()), h=Math.hypot(t.x,t.z);
+    if(h>0.3){ const want=-(ok==="L"?yL:yR), yw=Math.atan2(f.x,f.z)+want, t2=new V(h*Math.sin(yw),t.y,h*Math.cos(yw));
+      _sitWorldRot(F,F.getAbsolutePosition().clone(),t,t2); F.computeWorldMatrix(true); }
+    return _legPins.map(k=>({ tn:k.tn, p:k.tn.position.clone(), q:(k.tn.rotationQuaternion||BABYLON.Quaternion.FromEulerVector(k.tn.rotation)).clone(), s:k.tn.scaling.clone() }));
+  }catch(e){ console.warn("[avatar] piedi dritti",e); return []; }
+  finally{ save.forEach(k=>{ k.tn.position.copyFrom(k.p); if(k.q) k.tn.rotationQuaternion.copyFrom(k.q); k.tn.scaling.copyFrom(k.s); }); }
+}
 function pinLegsToBind(){              // riapplica la bind-pose (gira DOPO la valutazione dell'anim)
   if(!_legPins) return;
+  if(_legStand===null) _legStand=_legStandBuild()||[];
+  if(_legStand.length){ _applyPins(_legStand); return; }
   for(const k of _legPins){
     k.tn.position.copyFrom(k.p);
     if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion();
@@ -5077,7 +5116,7 @@ function rebuildAvatar(){
   avatarRoot=null; avatarMeshes=[];
   for(const k in _gemFitMats){ try{ _gemFitMats[k].dispose(); }catch(e){} delete _gemFitMats[k]; }
   for(const k in avatarAnims){ try{ avatarAnims[k].dispose(); }catch(e){} delete avatarAnims[k]; }
-  _avAnimCur=null; _legPins=null; _pinLegs=false;
+  _avAnimCur=null; _legPins=null; _legStand=null; _pinLegs=false;
   const _eraSeduto=SIT.on; SIT.on=false; SIT.pins=null; SIT.baseY=null; SIT.prev=null;
   buildAvatar();
   if(_eraSeduto) try{ dinerResit(); benchResit(); cafeResit(); }catch(e){}
