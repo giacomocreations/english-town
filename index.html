@@ -49192,9 +49192,13 @@ function _fkReset(S){ S.sim=null; S.ball.position.set(S.spot.x,S.F.y+FK_R,S.spot
 function _fkHash(k){ let x=(k*2654435761)>>>0; x^=x>>>13; x=(x*1274126177)>>>0; x^=x>>>16; return x/4294967296; }
 
 /* ---- IL CALCIO (gambe): stessa cinematica inversa di skate e spinta ------ */
-function _fkLegs(root,ref){
+function _fkLegs(root,ref,pins){
   const V=BABYLON.Vector3;
   try{
+    /* ⚠️ nella posa da FERMO: per gli atleti si applicano le loro pin a mano
+       (nel fotogramma in cui smettono di camminare le ossa sono ancora nella
+       camminata: lunghezze e piedi a riposo uscivano sbagliati) */
+    if(pins && pins.length) _applyPins(pins);
     ref.computeWorldMatrix(true); _sitRefresh(root);
     const inv=ref.getWorldMatrix().clone().invert(), loc=v=>V.TransformCoordinates(v,inv);
     const find=k=>root.getDescendants(false).find(t=>_boneKey(t.name)===k);
@@ -49266,6 +49270,53 @@ function _fkKickLegs(K,u,rec){
   _rideLegIK(K.root,G.L,L,f);
   _rideLegIK(K.root,G.R,R,f);
 }
+/* 🦵💪 LE BRACCIA NEL CALCIO (Giacomo, 3 nov: «le braccia non devono stare
+   ferme ma essere naturali durante il calcio»). Tre pose calcolate una volta
+   sul corpo di chi calcia (_armPose, il «fuori» dalla spalla vera):
+     D  giu' lungo i fianchi, appena staccate (inizio e fine);
+     A  la CARICA: il braccio opposto alla gamba che calcia (il sinistro)
+        avanti e in fuori, il destro indietro e in fuori — l'equilibrio;
+     B  CONTATTO e SEGUITO: si scambiano, il sinistro si apre indietro, il
+        destro viene avanti.
+   Durante il calcio si passa D -> A -> B -> D (fusioni di quaternioni
+   assolute: non dipende da cosa fa l'animazione sotto). */
+function _fkArmSet(root,f){
+  const V=BABYLON.Vector3, dn=new V(0,-1,0);
+  const body=_restPinsFor(root,/^(Hips|Abdomen|Torso|Chest)$/);
+  const arms=_restPinsFor(root,/^(Shoulder\.[LR]|UpperArm\.[LR]|LowerArm\.[LR]|Wrist\.[LR])$/);
+  if(!arms.length) return null;
+  const touched=new Set(body.map(k=>k.tn)); arms.forEach(k=>touched.add(k.tn));
+  const save=[...touched].map(tn=>({tn, p:tn.position.clone(), q:tn.rotationQuaternion?tn.rotationQuaternion.clone():null, s:tn.scaling.clone()}));
+  const out={};
+  try{
+    const tns=arms.map(k=>k.tn), cen=root.getAbsolutePosition().clone();
+    const fuori=(o,ctx)=>{ let v=ctx.pU.subtract(cen); v.y=0; v=v.subtract(f.scale(V.Dot(v,f))); return v.length()>1e-4?v.normalize():o; };
+    const P={
+      D:{ up:(o,sd)=>dn.scale(0.96).add(o.scale(0.20)).add(f.scale(0.04)), fo:(o,sd)=>dn.scale(0.92).add(o.scale(0.10)).add(f.scale(0.30)) },
+      A:{ up:(o,sd)=>sd==="L"?dn.scale(0.35).add(o.scale(0.85)).add(f.scale(0.40)):dn.scale(0.62).add(o.scale(0.55)).add(f.scale(-0.45)),
+          fo:(o,sd)=>sd==="L"?f.scale(0.70).add(o.scale(0.40)).add(dn.scale(0.20)):dn.scale(0.50).add(o.scale(0.40)).add(f.scale(-0.30)) },
+      B:{ up:(o,sd)=>sd==="L"?dn.scale(0.50).add(o.scale(0.80)).add(f.scale(-0.25)):dn.scale(0.60).add(o.scale(0.40)).add(f.scale(0.55)),
+          fo:(o,sd)=>sd==="L"?dn.scale(0.30).add(o.scale(0.70)).add(f.scale(-0.20)):f.scale(0.70).add(dn.scale(0.20)).add(o.scale(0.20)) } };
+    for(const k in P){ _applyPins(body); _applyPins(arms); _sitRefresh(root);
+      const m=_armPose(root,tns,f,(o,sd,ctx)=>P[k].up(fuori(o,ctx),sd),(o,sd,ctx)=>P[k].fo(fuori(o,ctx),sd),null);
+      out[k]=m; }
+  }catch(e){ console.warn("[fk] braccia",e); return null; }
+  finally{ save.forEach(k=>{ k.tn.position.copyFrom(k.p); if(k.q){ if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion(); k.tn.rotationQuaternion.copyFrom(k.q); } k.tn.scaling.copyFrom(k.s); }); _sitRefresh(root); }
+  const L=[]; out.D.forEach((q,tn)=>{ if(out.A.has(tn) && out.B.has(tn)) L.push({ tn, D:q.clone(), A:out.A.get(tn).clone(), B:out.B.get(tn).clone() }); });
+  return L.length?L:null;
+}
+function _fkKickArms(K,u,rec){
+  const L=K.arms; if(!L) return;
+  const Q=BABYLON.Quaternion, tmp=new Q();
+  let a="D", b="D", w=0;
+  if(rec!=null){ a="D"; b="D"; w=0; }
+  else if(u<0.30){ a="D"; b="A"; w=_fkSm(u/0.30); }
+  else if(u<0.62){ a="A"; b="B"; w=_fkSm((u-0.30)/0.32); }
+  else if(u<0.82){ a="B"; b="B"; w=0; }
+  else { a="B"; b="D"; w=_fkSm((u-0.82)/0.18); }
+  for(const k of L){ if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new Q();
+    Q.SlerpToRef(k[a],k[b],w,tmp); k.tn.rotationQuaternion.copyFrom(tmp); }
+}
 function _fkSfx(kind){ try{ if(kind==="kick") SFX.step(false,true); }catch(e){} }
 
 /* ---- GLI ATLETI: allenamento a orario ------------------------------------ */
@@ -49311,12 +49362,18 @@ function _fkCrewTick(){
     const TK=FK_RUN+FK_KICK+FK_REC;
     if(u<2){ play("Walk"); lerp(q,run,u/2); n.holder.rotation.x=0; }
     else if(u<3){ play("Idle"); c.x=run.x; c.z=run.z; n.carrier.rotation.y=goalYaw;
-      if(!n.__fkLegs) n.__fkLegs=_fkLegs(n.holder,n.carrier); n.__fkK=null; }
+      if(!n.__fkLegs) n.__fkLegs=_fkLegs(n.holder,n.carrier,n.pins);
+      if(!n.__fkArms){ n.carrier.computeWorldMatrix(true); n.__fkArms=_fkArmSet(n.holder,new BABYLON.Vector3(S.dir.x,0,S.dir.z)); }
+      n.__fkK=null; }
     else if(u<3+TK){                                                   // rincorsa e calcio, senza pause
-      if(!n.__fkK) n.__fkK={ root:n.holder, ref:n.carrier, legs:n.__fkLegs, S, t0pos:{ x:run.x, z:run.z } };
+      /* se l'attesa e' saltata (tempo ripreso a calcio gia' partito) si misura qui */
+      if(!n.__fkLegs) n.__fkLegs=_fkLegs(n.holder,n.carrier,n.pins);
+      if(!n.__fkArms){ n.carrier.computeWorldMatrix(true); n.__fkArms=_fkArmSet(n.holder,new BABYLON.Vector3(S.dir.x,0,S.dir.z)); }
+      if(!n.__fkK) n.__fkK={ root:n.holder, ref:n.carrier, legs:n.__fkLegs, arms:n.__fkArms, S, t0pos:{ x:run.x, z:run.z } };
       const o=_fkKicker(n.__fkK,u-3);
       play(o.anim==="Run"?"Run":"Idle"); c.x=o.x; c.z=o.z; n.carrier.rotation.y=o.yaw; n.holder.rotation.x=o.lean;
-      if(o.kickU!=null) _fkKickLegs(n.__fkK,o.kickU,null); else if(o.rec!=null && o.rec<1) _fkKickLegs(n.__fkK,1,o.rec); }
+      if(o.kickU!=null){ _fkKickLegs(n.__fkK,o.kickU,null); _fkKickArms(n.__fkK,o.kickU,null); }
+      else if(o.rec!=null && o.rec<1){ _fkKickLegs(n.__fkK,1,o.rec); _fkKickArms(n.__fkK,1,o.rec); } }
     else if(u<6){ play("Idle"); c.x=after.x; c.z=after.z; n.carrier.rotation.y=goalYaw; n.holder.rotation.x=0; }
     else if(u<8.6){ play("Walk"); lerp(after,q,(u-6)/2.6); }
     else { play("Idle"); c.x=q.x; c.z=q.z; }
@@ -49356,8 +49413,9 @@ function fkKick(){
   const A=FK.aim; if(!A || A.kick || A.res) return;
   const now=performance.now();
   A.kick={ t0:now, pw:_fkPower(now), yaw:A.yaw, loft:A.loft };
-  if(!FK.legs || FK.legsOf!==avatarRoot){ FK.legs=_fkLegs(avatarRoot,player); FK.legsOf=avatarRoot; }
-  FK.K={ root:avatarRoot, ref:player, legs:FK.legs, S:FK.sets.me, t0pos:{ x:player.position.x, z:player.position.z }, u:null, rec:null };
+  if(!FK.legs || FK.legsOf!==avatarRoot){ FK.legs=_fkLegs(avatarRoot,player); FK.legsOf=avatarRoot; FK.arms=null; }
+  if(!FK.arms){ const S0=FK.sets.me; player.rotation.y=Math.atan2(S0.dir.x,S0.dir.z); player.computeWorldMatrix(true); FK.arms=_fkArmSet(avatarRoot,new BABYLON.Vector3(S0.dir.x,0,S0.dir.z)); }
+  FK.K={ root:avatarRoot, ref:player, legs:FK.legs, arms:FK.arms, S:FK.sets.me, t0pos:{ x:player.position.x, z:player.position.z }, u:null, rec:null };
 }
 function _fkPower(now){ return 0.5-0.5*Math.cos(2*Math.PI*((now-FK.aim.t0)/1300)); }
 const FK_RES={ goal:["⚽ GOAL! Brilliant!","Gol!"], wall:["🧱 The wall blocked it!","La barriera!"], post:["🥅 Off the post!","Palo!"],
@@ -49433,7 +49491,7 @@ function _fkAimDraw(on){
 }
 /* il calcio sulle gambe del giocatore: DOPO le pin (osservatore nato tardi) */
 function _fkMeLegs(){ const K=FK.K; if(!K || !FK.aim || K.root!==avatarRoot) return;
-  if(K.u!=null) _fkKickLegs(K,K.u,null); else if(K.rec!=null) _fkKickLegs(K,1,K.rec); }
+  if(K.u!=null){ _fkKickLegs(K,K.u,null); _fkKickArms(K,K.u,null); } else if(K.rec!=null){ _fkKickLegs(K,1,K.rec); _fkKickArms(K,1,K.rec); } }
 
 /* ---- HUD: potenza, altezza, e i tasti per il tablet ---------------------- */
 function fkHud(on){
