@@ -22701,6 +22701,23 @@ const COLLAUDO_H=["1bq6dkg.18p2aq7","1qres5l.1x5kg0q"];
 const COLLAUDO_CLASSE="3C";
 function _collaudoH(c){ const s=String(c||"").trim().toUpperCase(); return _fnv("qt|"+s).toString(36)+"."+_fnv(s+"|qt#").toString(36); }
 function isCollaudo(c){ return !!c && COLLAUDO_H.indexOf(_collaudoH(c))>=0; }
+/* v541 — IL NUMERO DEL DOCENTE (Giacomo, 3 nov: «se un alunno scrive
+   prof-cossu non riesce a entrare? cambiamo la password con un numero che
+   vale solo per me, sempre in locale»). PROF-COSSU stava in chiaro qui
+   sopra: chi lo scriveva entrava da docente per qualche secondo, e del
+   tutto dove la sessione Firebase non arriva (file://, rete filtrata).
+   Ora la modalita' docente si apre SOLO col numero, di cui qui c'e' la sola
+   IMPRONTA (stesso schema dei codici di collaudo, sali diversi).
+   ⚠️ Il nome interno resta PROF-COSSU: progressi sul dispositivo, chiave
+   della presenza (Mrs. Jackson, anche per i client vecchi), etichette a
+   schermo — niente cambia. Cambia solo la porta: PROF-COSSU digitato a mano
+   diventa un codice sconosciuto.
+   ⚠️ Resta un'impronta di un numero corto: chi sa programmare la puo'
+   rovesciare. La serratura vera resta l'UID (verificaDocente). Per cambiare
+   numero: rigenerare l'impronta con _docenteH("nuovo") e sostituirla qui. */
+const DOCENTE_H=["1q2mq4e.1r9s2t1"];
+function _docenteH(c){ const s=String(c||"").trim().toUpperCase(); return _fnv("dc|"+s).toString(36)+"."+_fnv(s+"|dc#").toString(36); }
+function isNumeroDocente(c){ return !!c && DOCENTE_H.indexOf(_docenteH(c))>=0; }
 /* ⚠️ IL CODICE DOCENTE NON E' UN SEGRETO E NON PUO' ESSERLO. Sta in chiaro
    qui dentro, in un file HTML che chiunque puo' aprire col tasto destro:
    basta un Ctrl+F per trovarlo. Fino alla 138 chi lo scriveva otteneva
@@ -22728,9 +22745,14 @@ const Student=(function(){
   /* docOk: null = non ancora verificato (si concede, e' il caso di Giacomo
      nei primi secondi), true = uid confermato, false = smentito dal server. */
   let docOk=null;
+  /* v541: true solo se in QUESTA sessione e' stato digitato il numero del
+     docente. Qualunque altra strada che porti il codice a PROF-COSSU (il
+     codice scritto a mano, il ricordo su disco) non apre niente. */
+  let sbloccato=false;
   function isTeacher(c){
     if(isCollaudo(c||code)) return true;                 // v301: codici di collaudo, tutto aperto
     if(DOCENTI.indexOf((c||code||"").toUpperCase())<0) return false;
+    if(!sbloccato) return false;                         // v541: serve il numero
     return docOk!==false;
   }
   function _ls(k){ try{ return localStorage.getItem(k)||""; }catch(e){ return ""; } }
@@ -22743,7 +22765,7 @@ const Student=(function(){
     }catch(e){}
   }
   function boot(){
-    Sync.ospite(false); ospite=false; digitato=false; docOk=null;
+    Sync.ospite(false); ospite=false; digitato=false; docOk=null; sbloccato=false;
     /* 🔐 v213 — IL CODICE SI CHIEDE A OGNI APERTURA. In laboratorio i
        ragazzi trovavano il «Sei tu?» e premevano «Yes» senza leggere,
        giocando sul quaderno del compagno dell'ora prima. Ora nessun codice
@@ -22759,9 +22781,10 @@ const Student=(function(){
     nome=code?(Sync.get("et_name","")||""):"";
     return code;
   }
-  function setCode(c){
+  function setCode(c, docente){
     Sync.ospite(false); ospite=false; digitato=true; docOk=null;
     code=(c||"").trim().toUpperCase();
+    sbloccato=!!docente && DOCENTI.indexOf(code)>=0;
     try{ localStorage.setItem(K_ET, code); }catch(e){}
     Sync.ns(code); _migra();
     cls=Sync.get("et_class","")||""; nome=Sync.get("et_name","")||"";
@@ -22807,11 +22830,11 @@ const Student=(function(){
      sporcare i dati di nessuno. Parte da zero: COORTI["*"]. */
   function entraOspite(){
     try{ localStorage.removeItem(K_ET); }catch(e){}
-    code=""; cls=""; nome=""; ospite=true; digitato=false; docOk=null;
+    code=""; cls=""; nome=""; ospite=true; digitato=false; docOk=null; sbloccato=false;
     Sync.ns("OSPITE"); Sync.ospite(true);
   }
   function logout(){ try{ localStorage.removeItem(K_ET); }catch(e){}
-    code=""; cls=""; nome=""; ospite=false; digitato=false; docOk=null;
+    code=""; cls=""; nome=""; ospite=false; digitato=false; docOk=null; sbloccato=false;
     Sync.ospite(false); Sync.ns(""); }
   function setDocente(v){ docOk=v; return v; }
   return { boot, setCode, setClass, setIdentita, entraOspite, logout, setDocente,
@@ -52720,7 +52743,15 @@ function loginEntra(){
   if(/[.#$\[\]\/]/.test(v)){ if(err) err.textContent="Il codice non pu\u00f2 contenere . # $ [ ] /"; return; }
   /* il docente non sta in anagrafica: si riconosce prima di chiedere al cloud,
      se no diventerebbe ospite a casa sua. */
-  if(DOCENTI.indexOf(v)>=0 || isCollaudo(v)){ Student.setCode(v); QModal.close(); welcomeStudent(); return; }
+  /* v541: il docente entra col NUMERO, che diventa PROF-COSSU solo dentro;
+     PROF-COSSU scritto a mano e' un codice sconosciuto come un altro. */
+  if(isNumeroDocente(v)){ Student.setCode(DOCENTI[0], true); QModal.close(); welcomeStudent(); return; }
+  if(isCollaudo(v)){ Student.setCode(v); QModal.close(); welcomeStudent(); return; }
+  if(DOCENTI.indexOf(v)>=0){
+    if(err) err.innerHTML="Codice non riconosciuto. Controlla su StudentApp, "
+      +"oppure entra come ospite (senza salvare i progressi).";
+    return;
+  }
   const btn=document.querySelector("#qm-card .qm-btn.primary");
   if(btn){ btn.disabled=true; btn.textContent="checking\u2026"; }
   if(err) err.textContent="";
