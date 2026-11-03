@@ -4239,8 +4239,9 @@ function snapshotLegBind(){            // cattura la bind-pose di gambe+bacino d
   }});
   console.log("[avatar] bind-pose gambe+bacino agganciata su",n,"bone (TRS live)");
 }
-/* ⚠️ IN PIEDI, PIEDI DRITTI (Giacomo, 3 nov: «rimane innaturale il piede
-   sinistro»). Nella bind-pose del rig il piede sinistro sta ~30 cm indietro
+/* ⚠️ SUL DISCHETTO, PIEDI DRITTI (Giacomo, 3 nov: «rimane innaturale il piede
+   sinistro»; poi: «i piedi devono tornare normali quando si finiscono le
+   punizioni» -> solo mentre FK.aim). Nella bind-pose del rig il piede sinistro sta ~30 cm indietro
    e con la punta girata di quasi 60 gradi in fuori: da fermi lo si vedeva
    sempre di traverso. Non si tocca _legPins (sedute, mangiare, skate e
    balli partono da li'): si costruisce UNA volta una posa da fermo a parte,
@@ -4264,9 +4265,15 @@ function _legStandBuild(){
     const bad=Math.abs(yL)>Math.abs(yR)?"L":"R", ok=bad==="L"?"R":"L";
     if(Math.abs(bad==="L"?yL:yR)<0.26) return [];                 // gia' dritti (meno di 15 gradi): niente
     const hip=sd=>V.TransformCoordinates(G[sd].U.getAbsolutePosition(),inv);
-    const cx=(hip("L").x+hip("R").x)/2, gf=G[ok].foot;
-    const T=V.TransformCoordinates(new V(2*cx-gf.x,gf.y,gf.z),W);
-    _rideLegIK(avatarRoot,G[bad],T,f);
+    /* ⚠️ (Giacomo: «dopo il calcio i piedi rimangono uniti»): non a specchio
+       del piede dritto (stava a 7 cm dal centro: piedi attaccati) ma tutti e
+       due a 11 cm dal centro del bacino, alla larghezza delle anche */
+    const cx=(hip("L").x+hip("R").x)/2, gf=G[ok].foot, half=Math.max(0.11,Math.abs(gf.x-cx));
+    const sx=sd=>(hip(sd).x>cx?1:-1);
+    _rideLegIK(avatarRoot,G[bad],V.TransformCoordinates(new V(cx+sx(bad)*half,gf.y,gf.z),W),f);
+    if(Math.abs(Math.abs(gf.x-cx)-half)>0.01){
+      _rideLegIK(avatarRoot,G[ok],V.TransformCoordinates(new V(cx+sx(ok)*half,gf.y,gf.z),W),f);
+      _fkFootYaw(G,G[ok],f,0); }
     /* la punta: a specchio di quella dritta */
     const g=G[bad], F=g.F; F.rotationQuaternion.copyFrom(g.q0); F.computeWorldMatrix(true);
     const t=V.TransformNormal(ax,F.getWorldMatrix()), h=Math.hypot(t.x,t.z);
@@ -4278,8 +4285,12 @@ function _legStandBuild(){
 }
 function pinLegsToBind(){              // riapplica la bind-pose (gira DOPO la valutazione dell'anim)
   if(!_legPins) return;
-  if(_legStand===null) _legStand=_legStandBuild()||[];
-  if(_legStand.length){ _applyPins(_legStand); return; }
+  /* (Giacomo: «i piedi devono tornare normali quando si finiscono le
+     punizioni»): la posa a piedi dritti vale solo sul dischetto */
+  let fkOn=false; try{ fkOn=!!FK.aim; }catch(e){}           // FK e' dichiarato piu' giu': mai toccarlo prima che esista
+  if(fkOn){
+    if(_legStand===null) _legStand=_legStandBuild()||[];
+    if(_legStand.length){ _applyPins(_legStand); return; } }
   for(const k of _legPins){
     k.tn.position.copyFrom(k.p);
     if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new BABYLON.Quaternion();
@@ -49265,7 +49276,7 @@ function _fkLegs(root,ref,pins){
      · il corpo continua ad avanzare, un filo indietro in carica e in avanti
        al contatto; dopo, le gambe tornano piano alla posa da fermo.
    Tempi: corsa FK_RUN, calcio FK_KICK (contatto a FK_HIT del calcio). */
-const FK_RUN=0.42, FK_KICK=0.62, FK_HIT=0.5, FK_REC=0.35;
+const FK_RUN=0.55, FK_KICK=0.62, FK_HIT=0.5, FK_REC=0.35, FK_V=2.2;
 function _fkSm(t){ t=Math.max(0,Math.min(1,t)); return t*t*(3-2*t); }
 /* K = { root, ref, legs, S, t0pos:{x,z} }  t = secondi dalla partenza della rincorsa.
    Ritorna { anim, x, z, yaw, lean, kickU } e applica la cinematica alle gambe. */
@@ -49275,14 +49286,21 @@ function _fkKicker(K,t){
   const P0=at(-0.72,-0.17), P1=at(-0.30,-0.17), P2=at(0.08,-0.12);
   const goalYaw=Math.atan2(d.x,d.z);
   const out={ anim:"Idle", x:P2.x, z:P2.z, yaw:goalYaw, lean:0, kickU:null };
-  if(t<FK_RUN){ const u=t/FK_RUN, a=K.t0pos;
-    out.anim="Run"; out.x=a.x+(P0.x-a.x)*u; out.z=a.z+(P0.z-a.z)*u;
+  /* ⚠️ SENZA FRENATA (Giacomo, 3 nov: «sembra si fermi leggermente prima di
+     calciare»): la rincorsa parte da ferma ed ARRIVA alla velocita' FK_V,
+     e il calcio riparte da quella stessa velocita' e rallenta fino al
+     seguito (una sola curva lungo P0-P1-P2, senza sosta al contatto). */
+  const H=(u,m0,m1)=>{ const u2=u*u, u3=u2*u; return (u3-2*u2+u)*m0+(-2*u3+3*u2)+(u3-u2)*m1; };
+  if(t<FK_RUN){ const u=t/FK_RUN, a=K.t0pos, D=Math.max(0.3,Math.hypot(P0.x-a.x,P0.z-a.z)), e=H(u,0,Math.min(1.4,FK_V*FK_RUN/D));
+    out.anim="Run"; out.x=a.x+(P0.x-a.x)*e; out.z=a.z+(P0.z-a.z)*e;
     const my=Math.atan2(P0.x-a.x,P0.z-a.z); out.yaw=my+(goalYaw-my)*_fkSm((u-0.5)/0.5); return out; }
   const u=(t-FK_RUN)/FK_KICK;
   if(u<1){
     out.kickU=u;
-    if(u<FK_HIT){ const e=1-Math.pow(1-u/FK_HIT,2); out.x=P0.x+(P1.x-P0.x)*e; out.z=P0.z+(P1.z-P0.z)*e; }
-    else { const e=_fkSm((u-FK_HIT)/(1-FK_HIT)); out.x=P1.x+(P2.x-P1.x)*e; out.z=P1.z+(P2.z-P1.z)*e; }
+    const l1=Math.hypot(P1.x-P0.x,P1.z-P0.z), l2=Math.hypot(P2.x-P1.x,P2.z-P1.z), L=l1+l2;
+    const sL=L*H(u,Math.min(1.9,FK_V*FK_KICK/L),0);
+    if(sL<l1){ const e=sL/l1; out.x=P0.x+(P1.x-P0.x)*e; out.z=P0.z+(P1.z-P0.z)*e; }
+    else { const e=Math.min(1,(sL-l1)/l2); out.x=P1.x+(P2.x-P1.x)*e; out.z=P1.z+(P2.z-P1.z)*e; }
     out.lean=(u<0.35)?-0.07*_fkSm(u/0.35):(u<0.62?(-0.07+0.19*_fkSm((u-0.35)/0.27)):0.12*(1-_fkSm((u-0.62)/0.38)));
     return out; }
   const w=(t-FK_RUN-FK_KICK)/FK_REC; out.rec=Math.min(1,w); return out;
@@ -49302,10 +49320,13 @@ function _fkKickLegs(K,u,rec){
     const e=_fkSm(rec); L=V.Lerp(plant,restL,e); R=V.Lerp(P(0.30,0.04,aR),restR,e);
   } else {
     /* piede d'appoggio: il passo fino accanto al pallone, poi piantato */
-    if(u<0.32){ if(!K.l0) K.l0=restL.clone(); const e=_fkSm(u/0.32); L=V.Lerp(K.l0,plant,e); L.y+=0.12*Math.sin(Math.PI*e); }
+    /* i piedi partono da dove li ha lasciati la corsa (non dalla posa da
+       fermo: quello scatto sembrava una frenata) */
+    if(!K.l0){ K.l0=G.L.F.getAbsolutePosition().clone(); K.l0.y=Math.max(gy+aL,K.l0.y); }
+    if(!K.r0){ K.r0=G.R.F.getAbsolutePosition().clone(); K.r0.y=Math.max(gy+aR,K.r0.y); }
+    if(u<0.32){ const e=_fkSm(u/0.32); L=V.Lerp(K.l0,plant,e); L.y+=0.12*Math.sin(Math.PI*e); }
     else L=plant;
     /* il piede che calcia: carica, contatto, seguito, appoggio */
-    if(!K.r0) K.r0=restR.clone();
     const KF=[[0,K.r0],[0.30,P(-0.85,0.02,aR+0.40)],[FK_HIT,P(-0.17,0.0,aR+0.03)],[0.74,P(0.45,-0.04,aR+0.55)],[1,P(0.30,0.04,aR)]];
     let i=0; while(i<KF.length-2 && u>KF[i+1][0]) i++;
     const a=KF[i], b=KF[i+1], e=_fkSm((u-a[0])/(b[0]-a[0]));
@@ -49386,13 +49407,15 @@ function _fkKickArms(K,u,rec){
   const L=K.arms; if(!L) return;
   const Q=BABYLON.Quaternion, tmp=new Q();
   let a="D", b="D", w=0;
+  if(!K.arm0 && rec==null){ K.arm0=new Map(); for(const k of L) if(k.tn.rotationQuaternion) K.arm0.set(k.tn,k.tn.rotationQuaternion.clone()); }
   if(rec!=null){ a="D"; b="D"; w=0; }
-  else if(u<0.30){ a="D"; b="A"; w=_fkSm(u/0.30); }
+  else if(u<0.30){ a="0"; b="A"; w=_fkSm(u/0.30); }
   else if(u<0.62){ a="A"; b="B"; w=_fkSm((u-0.30)/0.32); }
   else if(u<0.82){ a="B"; b="B"; w=0; }
   else { a="B"; b="D"; w=_fkSm((u-0.82)/0.18); }
   for(const k of L){ if(!k.tn.rotationQuaternion) k.tn.rotationQuaternion=new Q();
-    Q.SlerpToRef(k[a],k[b],w,tmp); k.tn.rotationQuaternion.copyFrom(tmp); }
+    const qa=a==="0"?((K.arm0&&K.arm0.get(k.tn))||k.D):k[a];
+    Q.SlerpToRef(qa,k[b],w,tmp); k.tn.rotationQuaternion.copyFrom(tmp); }
 }
 function _fkSfx(kind){ try{ if(kind==="kick") SFX.step(false,true); }catch(e){} }
 
@@ -49485,7 +49508,9 @@ function fkStart(){
 function _fkPlace(){ const S=FK.sets.me; player.position.x=S.spot.x-S.dir.x*2.4+S.perp.x*0.5; player.position.z=S.spot.z-S.dir.z*2.4+S.perp.z*0.5;
   player.rotation.y=Math.atan2(S.dir.x,S.dir.z); moveTarget=null; pendingInteract=null;
   try{ camera.alpha=-player.rotation.y-Math.PI/2; }catch(e){} }
-function fkStop(){ if(!FK.aim) return; FK.aim=null; FK.K=null; if(FK.inter) FK.inter.enabled=(FK.open!==false); try{ avatarRoot.rotation.x=0; }catch(e){} fkHud(false); if(FK.sets) _fkReset(FK.sets.me); playAvatarAnim(IDLE_ANIM); }
+function fkStop(){ if(!FK.aim) return;
+  try{ const S=FK.sets.me; if(Math.hypot(player.position.x-S.spot.x,player.position.z-S.spot.z)<0.8) _fkPlace(); }catch(e){}   // non restare in piedi sul pallone
+  FK.aim=null; FK.K=null; if(FK.inter) FK.inter.enabled=(FK.open!==false); try{ avatarRoot.rotation.x=0; }catch(e){} fkHud(false); if(FK.sets) _fkReset(FK.sets.me); playAvatarAnim(IDLE_ANIM); }
 function fkKick(){
   const A=FK.aim; if(!A || A.kick || A.res) return;
   const now=performance.now();
@@ -49603,33 +49628,60 @@ function fkHudDraw(pw){
 }
 
 /* ---- IL RANGER: «What are you doing?» (una volta al giorno) ------------- */
-function _fkRgKey(){ let c=""; try{ c=Student.code||""; }catch(e){} return "et_fk_rg:"+new Date().toDateString()+":"+c; }
+/* IL RANGER DOPO I TRE TIRI (Giacomo, 3 nov: «ho fatto tre punizioni e
+   mi aspettavo che arrivasse il Ranger a chiedermi cosa stavo facendo»).
+   ⚠️ Prima veniva UNA volta al giorno (chiave in localStorage, segnata
+   gia' alla partenza) e solo se era libero: se era impegnato col traffico o
+   al parco, o se il giro a piedi falliva, non arrivava piu'. Ora:
+     · viene ogni volta che la sessione di tiri finisce (le stelle restano
+       una volta al giorno: la chiave e' in Stars.award);
+     · se e' impegnato si aspetta (FK.rgWant) e viene appena e' libero,
+       finche' sei vicino al campo;
+     · se il giro a piedi non riesce, compare accanto a te e chiede lo stesso.
+   La risposta: in PRIMA con le tessere, dalla SECONDA si scrive. */
 function fkRangerCome(){
-  try{ if(localStorage.getItem(_fkRgKey())) return; }catch(e){}
+  FK.rgWant=true;
   if(typeof RANGER==="undefined" || !RANGER || RANGER_A.active) return;
-  try{ localStorage.setItem(_fkRgKey(),"1"); }catch(e){}
+  FK.rgWant=false;
   RANGER_A.active=true; RANGER_A.mode="fk";
   RANGER.holder.setEnabled(true); RANGER_A.vis=true;
   const d=Math.hypot(player.position.x-RANGER.carrier.position.x, player.position.z-RANGER.carrier.position.z);
   if(d>25){ const sp=_pkRangerSpot(); if(sp) RANGER.carrier.position.copyFrom(sp); }
   const S=FK.sets.me, spot=()=>new BABYLON.Vector3(player.position.x-S.perp.x*1.6-S.dir.x*0.6,0,player.position.z-S.perp.z*1.6-S.dir.z*0.6);
   toast("\u{1F9E5} Mr. Poole, the Town Ranger, is coming…",2600);
-  npcWalkSeq(RANGER,[spot],0.5,()=>{
+  const arrive=()=>{
     RANGER.__noPin=false; RANGER.play("Idle"); RANGER.watch=true;
     RANGER.carrier.rotation.y=Math.atan2(player.position.x-RANGER.carrier.position.x, player.position.z-RANGER.carrier.position.z);
     FK.rg={ idle:performance.now() };
-    let yr=1; try{ yr=studentYear(); }catch(e){}
-    mktTyped({ npc:RANGER, icon:"\u{1F9E5}", sub:"Town Ranger",
-      text:"Hey, Kid! What are you doing?",
-      italian:"Il Ranger ti chiede che cosa stai facendo: rispondi al present continuous (I'm + verbo in -ing).",
-      ph:"I'm ...", model:"I'm kicking the ball.", hint:"<b>I'm</b> + verbo in <b>-ing</b>: I'm kicking the ball / I'm playing football.",
-      ok:v=>/\b(i'?m|i am)\s+(kicking|playing|practi[sc]ing|taking|shooting|training|scoring|doing|having|trying|learning)\b/.test(v),
-      next:err=>{ let got=0; try{ got=Stars.award("fkRanger:"+new Date().toDateString(),err?1:3,"Ranger"); }catch(e){}
-        DialogueBox.open({ npc:RANGER, icon:"\u{1F9E5}", sub:"Town Ranger"+(got?"  ⭐ +"+got:""),
-          text:err?"Ah, I see! You're kicking the ball. Good luck with your free kicks!":"Great! You're practising free kicks. Keep going, champion!",
-          italian:"Bravo! Continua ad allenarti con le punizioni.",
-          buttons:[{ label:"Thanks!", cls:"primary", act:()=>{} }] }); } });
-  },"town",()=>{ FK.rg=null; rangerRelease(); },{ speed:2.4 });
+    _fkRangerAsk();
+  };
+  npcWalkSeq(RANGER,[spot],0.5,arrive,"town",()=>{
+    /* il giro non riesce: compare li' accanto e chiede lo stesso */
+    try{ const p=spot(); RANGER.carrier.position.x=p.x; RANGER.carrier.position.z=p.z; }catch(e){}
+    arrive();
+  },{ speed:2.4 });
+}
+function _fkRangerAsk(){
+  const q="Hey, Kid! What are you doing?", spk={ npc:RANGER, icon:"\u{1F9E5}", sub:"Town Ranger" };
+  const done=err=>{ let got=0; try{ got=Stars.award("fkRanger:"+new Date().toDateString(),err?1:3,"Ranger"); }catch(e){}
+    DialogueBox.open({ ...spk, sub:"Town Ranger"+(got?"  ⭐ +"+got:""),
+      text:err?"Ah, I see! You're kicking the ball. Good luck with your free kicks!":"Great! You're practising free kicks. Keep going, champion!",
+      italian:"Bravo! Continua ad allenarti con le punizioni.",
+      buttons:[{ label:"Thanks!", cls:"primary", act:()=>{} }] }); };
+  let typed=false; try{ typed=yrEnglish(); }catch(e){}
+  if(typed) return mktTyped({ ...spk, text:q,
+    italian:"Il Ranger ti chiede che cosa stai facendo: rispondi al present continuous (I'm + verbo in -ing).",
+    ph:"I'm ...", model:"I'm kicking the ball.", hint:"<b>I'm</b> + verbo in <b>-ing</b>: I'm kicking the ball / I'm playing football.",
+    ok:v=>/\b(i'?m|i am)\s+(kicking|playing|practi[sc]ing|taking|shooting|training|scoring|doing|having|trying|learning)\b/.test(v),
+    next:done });
+  /* in prima: le tessere */
+  let err=false;
+  DialogueBox.open({ ...spk, text:q,
+    italian:"Il Ranger ti chiede che cosa stai facendo. Componi la frase: I'm + verbo in -ing.",
+    tiles:{ tokens:["I'm","kicking","the","ball."], distractors:["kick","kicks","is","are"], checkLabel:"✔ Rispondi",
+      onCheck:(w)=>{ if(w.join(" ")==="I'm kicking the ball.") return { ok:true, msg:"✓ Giusto!" };
+        err=true; return { ok:false, msg:"Riprova! \u{1F4A1} I'm + verbo in -ing: kick → kicking." }; },
+      onSuccess:()=>done(err) } });
 }
 function _fkRangerTick(){
   const R=FK.rg; if(!R) return; const now=performance.now();
@@ -49670,6 +49722,8 @@ const _fkBoot=scene.onBeforeRenderObservable.add(()=>{
         try{ if(d<90 || FK.prac) _fkCrewTick(); }catch(e){ console.warn("[fk] crew",e); } }); }
     try{ _fkMeTick(); _fkMeLegs(); }catch(e){ console.warn("[fk] me",e); }
     try{ _fkRangerTick(); }catch(e){}
+    /* il Ranger era impegnato: viene appena e' libero, se sei ancora dalle parti del campo */
+    try{ if(FK.rgWant && !RANGER_A.active && !_dlgOpen() && FK.sets && Math.hypot(player.position.x-FK.sets.me.spot.x,player.position.z-FK.sets.me.spot.z)<30) fkRangerCome(); }catch(e){}
   });
 });
 
