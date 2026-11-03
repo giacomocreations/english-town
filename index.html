@@ -48040,7 +48040,7 @@ function __typingNow(e){ const t=e&&e.target, tag=t&&t.tagName;
   return tag==="INPUT"||tag==="TEXTAREA"||(t&&t.isContentEditable); }
 window.addEventListener("keydown",e=>{ if(__typingNow(e)) return;   // non rubare i tasti mentre si scrive nel pad (writing/textarea)
   const k=e.key.toLowerCase(); keys[k]=true; if(k==="e") tryInteract();
-  if(FK.aim){ if(k===" "||k==="k"){ e.preventDefault(); fkKick(); return; } if(k==="escape"){ fkStop(); return; } }   // ⚽ punizione
+  if(FK.aim){ if(k===" "||k==="k"||k==="e"){ e.preventDefault(); fkKick(); return; } if(k==="escape"){ fkStop(); return; } }   // ⚽ punizione
   if(k==="q"){ e.preventDefault(); cycleInter(e.shiftKey?-1:1); return; }   // scegli fra oggetti vicini
   if(k==="m"){ e.preventDefault(); toggleMap(); return; }
   if(k==="r"){ e.preventDefault(); rideCycle(); return; }   // 🛹🛴 skate / monopattino / a piedi
@@ -49104,11 +49104,18 @@ function _fkSet(id,G,F,dz){
   const yellow=mat("fkDumY","#f2c230"), dark=mat("fkDumD","#2b3036");
   const wall=[-0.62,0,0.62].map((o,i)=>{ const wx=bx+d.x*5+p.x*o, wz=bz+d.z*5+p.z*o;
     const r=new BABYLON.TransformNode("fkDummy",scene); r.parent=townRoot; r.position.set(wx,F.y,wz); r.rotation.y=Math.atan2(-d.x,-d.z);
-    const base=BABYLON.MeshBuilder.CreateCylinder("fkDb",{ diameter:0.42, height:0.05, tessellation:16 },scene); base.material=dark; base.parent=r; base.position.y=0.025;
-    const pole=BABYLON.MeshBuilder.CreateCylinder("fkDp",{ diameter:0.05, height:0.3, tessellation:8 },scene); pole.material=dark; pole.parent=r; pole.position.y=0.18;
-    const body=BABYLON.MeshBuilder.CreateBox("fkDbd",{ width:0.44, height:1.25, depth:0.08 },scene); body.material=yellow; body.parent=r; body.position.y=0.95;
-    const head=BABYLON.MeshBuilder.CreateSphere("fkDh",{ diameter:0.26, segments:10 },scene); head.material=yellow; head.parent=r; head.position.y=1.72;
+    /* ⚠️ (Giacomo: «le barriere sembrano sospese in aria»). Prima: un busto
+       su un paletto di 5 cm alto 30, senza ombra sotto: si leggeva come un
+       cartello a mezz'aria. Ora la sagoma da allenamento vera: due gambe fino
+       alla piastra a terra, busto e testa, e l'ombra di contatto sul manto. */
+    const B=BABYLON.MeshBuilder, box=(w,h,dd,y,x,m2)=>{ const b=B.CreateBox("fkD",{ width:w, height:h, depth:dd },scene); b.material=m2; b.parent=r; b.position.set(x||0,y,0); return b; };
+    box(0.56,0.035,0.32,0.0175,0,dark);                               // piastra a terra
+    box(0.15,0.86,0.09,0.035+0.43,-0.11,yellow); box(0.15,0.86,0.09,0.035+0.43,0.11,yellow);   // le gambe
+    box(0.46,0.74,0.10,0.895+0.37,0,yellow);                          // il busto
+    box(0.10,0.10,0.10,1.68,0,yellow);                                // il collo
+    const head=B.CreateSphere("fkDh",{ diameter:0.26, segments:12 },scene); head.material=yellow; head.parent=r; head.position.y=1.84;
     r.getChildMeshes().forEach(m=>{ m.__cast=true; m.isPickable=false; });
+    try{ hm7Shadow(r,0.8,0.55,0,0,0.043,0.75); }catch(e){}
     addSolid(wx-0.22,wx+0.22,wz-0.22,wz+0.22,"town");
     return { x:wx, z:wz, node:r, sol:solids[solids.length-1] }; });
   return { id, G, F, spot:{ x:bx, z:bz }, dir:d, perp:p, ball, wall, sim:null };
@@ -49149,7 +49156,7 @@ function _fkStep(S){
     else { v.y=0; const s=Math.hypot(v.x,v.z), ns=Math.max(0,s-3.2*h); if(s>1e-4){ v.x*=ns/s; v.z*=ns/s; } if(ns<0.05) M.stop=true; } }
   /* barriera: cilindri di 24 cm fino a 1,85 m */
   for(const w of S.wall){ const dx=p.x-w.x, dz=p.z-w.z, d=Math.hypot(dx,dz);
-    if(d<FK_R+0.24 && p.y<y0+1.85 && d>1e-4){ const nx=dx/d, nz=dz/d, vn=v.x*nx+v.z*nz;
+    if(d<FK_R+0.24 && p.y<y0+1.97 && d>1e-4){ const nx=dx/d, nz=dz/d, vn=v.x*nx+v.z*nz;
       if(vn<0){ v.x-=1.3*vn*nx; v.z-=1.3*vn*nz; v.y*=0.6; if(!M.res) M.res="wall"; }
       p.x=w.x+nx*(FK_R+0.24); p.z=w.z+nz*(FK_R+0.24); } }
   /* pali e traversa */
@@ -49241,7 +49248,7 @@ function _fkKickLegs(K,u,rec){
   const aL=Math.max(0.04,G.L.foot.y), aR=Math.max(0.04,G.R.foot.y);
   const P=(a,b,h)=>new V(B.x+d.x*a+r.x*b, gy+h, B.z+d.z*a+r.z*b);
   const restL=V.TransformCoordinates(G.L.foot,K.ref.getWorldMatrix()), restR=V.TransformCoordinates(G.R.foot,K.ref.getWorldMatrix());
-  const plant=P(-0.10,-0.30,aL);
+  const plant=P(-0.07,-0.19,aL);                          // accanto al pallone (era 30 cm di lato: gambe aperte)
   let L, R;
   if(rec!=null){                                           // dopo: le gambe tornano piano a riposo
     const e=_fkSm(rec); L=V.Lerp(plant,restL,e); R=V.Lerp(P(0.30,0.04,aR),restR,e);
@@ -49329,10 +49336,14 @@ function _fkCrewTick(){
 /* ---- LA TUA PUNIZIONE ------------------------------------------------------ */
 function fkStart(){
   const S=FK.sets&&FK.sets.me; if(!S || FK.aim) return;
+  /* ⚠️ (Giacomo: «dopo che arriva il Ranger non puoi piu' calciare per la
+     sessione, se no gli alunni fanno solo quello»): tre tiri a sessione */
+  if(FK.sessionDone){ toast("⚽ That's enough free kicks for now! Come back next time. · Basta punizioni per oggi: torna la prossima volta!",4200); return; }
   if(RIDE.on) rideOff(true);
   try{ standUpAll(); }catch(e){}
   _fkReset(S);
   FK.aim={ yaw:0, loft:14*Math.PI/180, t0:performance.now(), kick:null, res:null, resT:0 };
+  if(FK.inter) FK.inter.enabled=false;                     // il prompt in basso coprirebbe la barra: calcia SPAZIO / E / KICK
   _fkPlace();
   fkHud(true);
   toast("⚽ Free kick! A/D aim · W/S height · SPACE kick (when the power is right) · Esc stop",4200);
@@ -49340,7 +49351,7 @@ function fkStart(){
 function _fkPlace(){ const S=FK.sets.me; player.position.x=S.spot.x-S.dir.x*2.4+S.perp.x*0.5; player.position.z=S.spot.z-S.dir.z*2.4+S.perp.z*0.5;
   player.rotation.y=Math.atan2(S.dir.x,S.dir.z); moveTarget=null; pendingInteract=null;
   try{ camera.alpha=-player.rotation.y-Math.PI/2; }catch(e){} }
-function fkStop(){ if(!FK.aim) return; FK.aim=null; FK.K=null; try{ avatarRoot.rotation.x=0; }catch(e){} fkHud(false); if(FK.sets) _fkReset(FK.sets.me); playAvatarAnim(IDLE_ANIM); }
+function fkStop(){ if(!FK.aim) return; FK.aim=null; FK.K=null; if(FK.inter) FK.inter.enabled=(FK.open!==false); try{ avatarRoot.rotation.x=0; }catch(e){} fkHud(false); if(FK.sets) _fkReset(FK.sets.me); playAvatarAnim(IDLE_ANIM); }
 function fkKick(){
   const A=FK.aim; if(!A || A.kick || A.res) return;
   const now=performance.now();
@@ -49380,8 +49391,9 @@ function _fkMeTick(){
       if(done && u>FK_RUN+FK_KICK+FK_REC){ const r=M.res||"short"; A.res=r; A.resT=now; A.kick=null; FK.kicks++; if(FK.K){ FK.K.u=null; FK.K.rec=null; } avatarRoot.rotation.x=0;
         const T=FK_RES[r]||FK_RES.short; toast(T[0]+" · "+T[1],2600);
         if(r==="goal") try{ SFX.correct(); }catch(e){}
-        if(FK.kicks>=3) fkRangerCome(); } }
-  } else if(A.res && now-A.resT>1600){ A.res=null; _fkReset(S); A.t0=now; }
+        if(FK.kicks>=3){ FK.sessionDone=true; fkRangerCome(); } } }
+  } else if(A.res && now-A.resT>1600){ if(FK.sessionDone){ fkStop(); toast("⚽ That's enough free kicks for now! · Basta punizioni per ora",3000); return; }
+    A.res=null; _fkReset(S); A.t0=now; }
 }
 /* LA MIRA (v2, Giacomo: «migliora la linea bianca per indirizzare il tiro,
    troppo basic»). Due cose:
@@ -49427,15 +49439,15 @@ function _fkMeLegs(){ const K=FK.K; if(!K || !FK.aim || K.root!==avatarRoot) ret
 function fkHud(on){
   let h=document.getElementById("fkHud");
   if(!h){ h=document.createElement("div"); h.id="fkHud";
-    h.style.cssText="position:fixed;left:50%;bottom:86px;transform:translateX(-50%);z-index:30;background:rgba(251,247,236,.95);"
-      +"border-radius:14px;padding:8px 12px;box-shadow:0 6px 18px rgba(0,0,0,.25);font:700 13px system-ui,sans-serif;color:#1d2a32;display:none;"
+    h.style.cssText="position:fixed;left:50%;bottom:6px;transform:translateX(-50%);z-index:30;background:rgba(251,247,236,.92);"   // in basso: non copre il tiro
+      +"border-radius:12px;padding:5px 9px;box-shadow:0 6px 18px rgba(0,0,0,.25);font:700 13px system-ui,sans-serif;color:#1d2a32;display:none;"
       +"align-items:center;gap:10px;touch-action:manipulation;user-select:none;-webkit-user-select:none";
-    const B=(id,t)=>'<button type="button" data-fk="'+id+'" style="min-width:38px;height:38px;border:none;border-radius:10px;background:#e8dfc8;font:800 16px system-ui;cursor:pointer;touch-action:manipulation">'+t+'</button>';
+    const B=(id,t)=>'<button type="button" data-fk="'+id+'" style="min-width:34px;height:34px;border:none;border-radius:10px;background:#e8dfc8;font:800 16px system-ui;cursor:pointer;touch-action:manipulation">'+t+'</button>';
     h.innerHTML='<span>⚽</span>'+B("l","◀")+B("r","▶")
       +'<div title="Height" style="width:10px;height:44px;border-radius:5px;background:#e8dfc8;position:relative;overflow:hidden"><i id="fkLoft" style="position:absolute;left:0;right:0;bottom:0;background:#3d7fa6"></i></div>'
       +B("u","▲")+B("d","▼")
       +'<div title="Power" style="width:120px;height:14px;border-radius:7px;background:#e8dfc8;overflow:hidden"><i id="fkPow" style="display:block;height:100%;width:0;background:linear-gradient(90deg,#58b368,#e8b04b,#e0673a)"></i></div>'
-      +'<button type="button" data-fk="kick" style="height:40px;padding:0 14px;border:none;border-radius:10px;background:#e0673a;color:#fff;font:800 14px system-ui;cursor:pointer">KICK</button>'
+      +'<button type="button" data-fk="kick" style="height:36px;padding:0 12px;border:none;border-radius:10px;background:#e0673a;color:#fff;font:800 14px system-ui;cursor:pointer">KICK</button>'
       +B("x","✕");
     document.body.appendChild(h);
     FK.hold={};
@@ -49445,6 +49457,7 @@ function fkHud(on){
       const on=e=>{ e.preventDefault(); FK.hold[k]=true; }, off=()=>{ FK.hold[k]=false; };
       b.addEventListener("pointerdown",on); b.addEventListener("pointerup",off); b.addEventListener("pointerleave",off); b.addEventListener("pointercancel",off); }); }
   h.style.display=on?"flex":"none";
+  try{ const kb=document.getElementById("kbhelp"); if(kb) kb.style.visibility=on?"hidden":""; }catch(e){}   // la legenda dei tasti finirebbe sotto la barra
   if(!on && FK.aimN) FK.aimN.root.setEnabled(false);
 }
 function fkHudDraw(pw){
@@ -49509,7 +49522,7 @@ const _fkBoot=scene.onBeforeRenderObservable.add(()=>{
         if(!open && FK.aim) fkStop();
         ["me","crew"].forEach(k=>{ const S=FK.sets[k]; _fkReset(S); S.simK=null; S.ball.setEnabled(open);
           S.wall.forEach(w=>{ w.node.setEnabled(open); if(w.sol) w.sol.area=open?"town":"_fk_off"; }); });
-        if(FK.inter) FK.inter.enabled=open; }
+        if(FK.inter) FK.inter.enabled=open && !FK.aim; }
       if(!open) return; }
     if(!FK.crewObs && typeof U7_NPC!=="undefined" && U7_NPC.kim && U7_NPC.alex && U7_NPC.ravi){
       try{ if(PARKFUN && !PARKFUN.people.kicking){ const F0=FK.sets.crew.F, sp=FK.sets.crew.spot,
