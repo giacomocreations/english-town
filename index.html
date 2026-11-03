@@ -48039,8 +48039,12 @@ const keys={};
 function __typingNow(e){ const t=e&&e.target, tag=t&&t.tagName;
   return tag==="INPUT"||tag==="TEXTAREA"||(t&&t.isContentEditable); }
 window.addEventListener("keydown",e=>{ if(__typingNow(e)) return;   // non rubare i tasti mentre si scrive nel pad (writing/textarea)
-  const k=e.key.toLowerCase(); keys[k]=true; if(k==="e") tryInteract();
-  if(FK.aim){ if(k===" "||k==="k"||k==="e"){ e.preventDefault(); fkKick(); return; } if(k==="escape"){ fkStop(); return; } }   // ⚽ punizione
+  const k=e.key.toLowerCase(); keys[k]=true;
+  /* ⚽ punizione: PRIMA di tryInteract (Giacomo, 3 nov: «appena premo E il
+     primo tiro parte subito senza poter dosare forza e direzione»: lo stesso
+     E apriva la mira e poi, qui sotto, calciava). Tasto tenuto giu' = niente. */
+  if(FK.aim){ if(k===" "||k==="k"||k==="e"){ e.preventDefault(); if(!e.repeat) fkKick(); return; } if(k==="escape"){ fkStop(); return; } }
+  if(k==="e") tryInteract();
   if(k==="q"){ e.preventDefault(); cycleInter(e.shiftKey?-1:1); return; }   // scegli fra oggetti vicini
   if(k==="m"){ e.preventDefault(); toggleMap(); return; }
   if(k==="r"){ e.preventDefault(); rideCycle(); return; }   // 🛹🛴 skate / monopattino / a piedi
@@ -49205,7 +49209,8 @@ function _fkLegs(root,ref,pins){
     const leg=sd=>{ const U=find("UpperLeg."+sd), K=find("LowerLeg."+sd), F=find("Foot."+sd); if(!U||!K||!F||!F.parent) return null;
       const pU=U.getAbsolutePosition(), pK=K.getAbsolutePosition(), pF=F.getAbsolutePosition();
       return { U, K, F, l1:V.Distance(pU,pK), l2:V.Distance(pK,pF), foot:loc(pF), fchild:F.isDescendantOf(K),
-               ank:V.TransformCoordinates(pF,K.getWorldMatrix().clone().invert()) }; };
+               ank:V.TransformCoordinates(pF,K.getWorldMatrix().clone().invert()),
+               q0:F.rotationQuaternion?F.rotationQuaternion.clone():BABYLON.Quaternion.FromEulerVector(F.rotation) }; };
     const R=leg("R"), L=leg("L"); return (R&&L)?{ R, L }:null;
   }catch(e){ return null; }
 }
@@ -49269,6 +49274,39 @@ function _fkKickLegs(K,u,rec){
   }
   _rideLegIK(K.root,G.L,L,f);
   _rideLegIK(K.root,G.R,R,f);
+  /* le punte: il piede d'appoggio si gira verso la porta mentre fa il passo,
+     quello che calcia ci sta gia'; dopo tornano piano come da fermo */
+  const wL=rec!=null?1-_fkSm(rec):_fkSm(u/0.32), wR=rec!=null?1-_fkSm(rec):1;
+  _fkFootYaw(G,G.L,f,wL); _fkFootYaw(G,G.R,f,wR);
+}
+/* ⚠️ LA PUNTA DEL PIEDE (Giacomo, 3 nov: «il piede sinistro rimane sempre
+   laterale»). Nella posa da fermo dell'avatar la punta sinistra e' girata
+   di quasi 60 gradi in fuori, e il calcio spostava solo la caviglia: il
+   piede d'appoggio restava di traverso accanto al pallone. Qui si parte
+   dalla rotazione da fermo (q0) e si gira il piede attorno alla verticale
+   di w * (l'angolo fra la punta e la porta). L'asse della punta nel rig si
+   trova una volta: quello (fra +-X, +-Y, +-Z) che da fermo punta piu' in
+   avanti, sul piede piu' dritto dei due. */
+function _fkFootAxis(G,f){
+  const V=BABYLON.Vector3; let best=null, bd=-2;
+  for(const g of [G.R,G.L]){ g.F.rotationQuaternion.copyFrom(g.q0); g.F.computeWorldMatrix(true);
+    const W=g.F.getWorldMatrix();
+    for(const a of [new V(1,0,0),new V(-1,0,0),new V(0,1,0),new V(0,-1,0),new V(0,0,1),new V(0,0,-1)]){
+      const t=V.TransformNormal(a,W); t.y=0; if(t.length()<0.5) continue;
+      const dd=V.Dot(t.normalize(),f); if(dd>bd){ bd=dd; best=a; } } }
+  return best;
+}
+function _fkFootYaw(G,g,f,w){
+  if(!g.q0) return;
+  const V=BABYLON.Vector3, F=g.F;
+  if(!F.rotationQuaternion) F.rotationQuaternion=new BABYLON.Quaternion();
+  if(G.toe===undefined) G.toe=_fkFootAxis(G,f);
+  F.rotationQuaternion.copyFrom(g.q0); F.computeWorldMatrix(true);
+  if(!G.toe || w<=0.001) return;
+  const t=V.TransformNormal(G.toe,F.getWorldMatrix()), h=Math.hypot(t.x,t.z); if(h<0.3) return;
+  let a=Math.atan2(f.x,f.z)-Math.atan2(t.x,t.z); while(a>Math.PI) a-=2*Math.PI; while(a<-Math.PI) a+=2*Math.PI;
+  const y=Math.atan2(t.x,t.z)+a*w, t2=new V(h*Math.sin(y),t.y,h*Math.cos(y));
+  _sitWorldRot(F,F.getAbsolutePosition().clone(),t,t2); F.computeWorldMatrix(true);
 }
 /* 🦵💪 LE BRACCIA NEL CALCIO (Giacomo, 3 nov: «le braccia non devono stare
    ferme ma essere naturali durante il calcio»). Tre pose calcolate una volta
@@ -49412,6 +49450,7 @@ function fkStop(){ if(!FK.aim) return; FK.aim=null; FK.K=null; if(FK.inter) FK.i
 function fkKick(){
   const A=FK.aim; if(!A || A.kick || A.res) return;
   const now=performance.now();
+  if(now-A.t0<400) return;                                   // il tocco che ha aperto la mira non e' un tiro
   A.kick={ t0:now, pw:_fkPower(now), yaw:A.yaw, loft:A.loft };
   if(!FK.legs || FK.legsOf!==avatarRoot){ FK.legs=_fkLegs(avatarRoot,player); FK.legsOf=avatarRoot; FK.arms=null; }
   if(!FK.arms){ const S0=FK.sets.me; player.rotation.y=Math.atan2(S0.dir.x,S0.dir.z); player.computeWorldMatrix(true); FK.arms=_fkArmSet(avatarRoot,new BABYLON.Vector3(S0.dir.x,0,S0.dir.z)); }
