@@ -49661,27 +49661,38 @@ function fkRangerCome(){
     arrive();
   },{ speed:2.4 });
 }
+/* (Giacomo, 3 nov: «aggiungi anche: sto giocando a calcio, oppure sto
+   tirando le punizioni... insomma le possibili varianti che possono
+   scrivere»). Vale qualunque present continuous sensato sul calcio:
+   I'm kicking the ball / playing football / taking (practising, shooting)
+   free kicks / training / scoring goals / aiming at the goal... e il Ranger
+   ripete la frase dello studente («Ah, you're playing football!»). */
+const FK_RG_VERB=/\b(?:i'?m|im|i am)\s+(?:just\s+|only\s+|really\s+)?((?:kicking|playing|practi[sc]ing|taking|shooting|training|scoring|doing|having|trying|learning|aiming|hitting|striking|enjoying|improving|making)\b.*)$/;
 function _fkRangerAsk(){
   const q="Hey, Kid! What are you doing?", spk={ npc:RANGER, icon:"\u{1F9E5}", sub:"Town Ranger" };
-  const done=err=>{ let got=0; try{ got=Stars.award("fkRanger:"+new Date().toDateString(),err?1:3,"Ranger"); }catch(e){}
+  const done=(err,rest)=>{ let got=0; try{ got=Stars.award("fkRanger:"+new Date().toDateString(),err?1:3,"Ranger"); }catch(e){}
+    const echo=rest?"Ah, you're "+rest.replace(/[.!]+$/,"")+"! ":"";
     DialogueBox.open({ ...spk, sub:"Town Ranger"+(got?"  ⭐ +"+got:""),
-      text:err?"Ah, I see! You're kicking the ball. Good luck with your free kicks!":"Great! You're practising free kicks. Keep going, champion!",
+      text:echo+(err?"Good luck with your free kicks!":"Great job. Keep going, champion!"),
       italian:"Bravo! Continua ad allenarti con le punizioni.",
       buttons:[{ label:"Thanks!", cls:"primary", act:()=>{} }] }); };
   let typed=false; try{ typed=yrEnglish(); }catch(e){}
-  if(typed) return mktTyped({ ...spk, text:q,
-    italian:"Il Ranger ti chiede che cosa stai facendo: rispondi al present continuous (I'm + verbo in -ing).",
-    ph:"I'm ...", model:"I'm kicking the ball.", hint:"<b>I'm</b> + verbo in <b>-ing</b>: I'm kicking the ball / I'm playing football.",
-    ok:v=>/\b(i'?m|i am)\s+(kicking|playing|practi[sc]ing|taking|shooting|training|scoring|doing|having|trying|learning)\b/.test(v),
-    next:done });
-  /* in prima: le tessere */
-  let err=false;
+  if(typed){ let rest="";
+    return mktTyped({ ...spk, text:q,
+      italian:"Il Ranger ti chiede che cosa stai facendo: rispondi al present continuous (I'm + verbo in -ing).",
+      ph:"I'm ...", model:"I'm kicking the ball.",
+      hint:"<b>I'm</b> + verbo in <b>-ing</b>: I'm kicking the ball / I'm playing football / I'm taking free kicks / I'm practising free kicks.",
+      ok:v=>{ const m=FK_RG_VERB.exec(v); if(m) rest=m[1]; return !!m; },
+      next:err=>done(err,err?"":rest) }); }
+  /* in prima: le tessere — piu' frasi giuste con le stesse tessere */
+  const GOOD=["I'm kicking the ball.","I'm kicking the football.","I'm playing football.","I'm playing with the ball."];
+  let err=false, last="";
   DialogueBox.open({ ...spk, text:q,
-    italian:"Il Ranger ti chiede che cosa stai facendo. Componi la frase: I'm + verbo in -ing.",
-    tiles:{ tokens:["I'm","kicking","the","ball."], distractors:["kick","kicks","is","are"], checkLabel:"✔ Rispondi",
-      onCheck:(w)=>{ if(w.join(" ")==="I'm kicking the ball.") return { ok:true, msg:"✓ Giusto!" };
-        err=true; return { ok:false, msg:"Riprova! \u{1F4A1} I'm + verbo in -ing: kick → kicking." }; },
-      onSuccess:()=>done(err) } });
+    italian:"Il Ranger ti chiede che cosa stai facendo. Componi la frase: I'm + verbo in -ing (es. «Sto calciando il pallone» o «Sto giocando a calcio»).",
+    tiles:{ tokens:["I'm","kicking","the","ball."], distractors:["playing","football.","kick","is","are"], checkLabel:"✔ Rispondi",
+      onCheck:(w)=>{ const f=w.join(" "); if(GOOD.indexOf(f)>=0){ last=f; return { ok:true, msg:"✓ Giusto!" }; }
+        err=true; return { ok:false, msg:"Riprova! \u{1F4A1} I'm + verbo in -ing: kick → kicking, play → playing." }; },
+      onSuccess:()=>done(err,last.replace(/^I'm\s+/,"")) } });
 }
 function _fkRangerTick(){
   const R=FK.rg; if(!R) return; const now=performance.now();
