@@ -22715,7 +22715,7 @@ function isCollaudo(c){ return !!c && COLLAUDO_H.indexOf(_collaudoH(c))>=0; }
    ⚠️ Resta un'impronta di un numero corto: chi sa programmare la puo'
    rovesciare. La serratura vera resta l'UID (verificaDocente). Per cambiare
    numero: rigenerare l'impronta con _docenteH("nuovo") e sostituirla qui. */
-const DOCENTE_H=["1q2mq4e.1r9s2t1"];
+const DOCENTE_H=["1845i3i.u2c7m5"];   // 4 nov: numero cambiato (Giacomo)
 function _docenteH(c){ const s=String(c||"").trim().toUpperCase(); return _fnv("dc|"+s).toString(36)+"."+_fnv(s+"|dc#").toString(36); }
 function isNumeroDocente(c){ return !!c && DOCENTE_H.indexOf(_docenteH(c))>=0; }
 /* ⚠️ IL CODICE DOCENTE NON E' UN SEGRETO E NON PUO' ESSERLO. Sta in chiaro
