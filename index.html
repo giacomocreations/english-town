@@ -49074,8 +49074,14 @@ function rideQuarterTick(inDir){
      perdono lo skate e lo riprendono al volo»). SPAZIO o il bottone 🤸
      mentre si sale (o poco prima di salire): arrivati vicino al bordo si
      salta, mezzo giro in aria, i piedi lasciano la tavola e la riprendono,
-     poi giu' con la gravita'. Serve arrivare quasi in cima. */
-  if(Q.sign>0 && !Q.trick && performance.now()-(RIDE.trickT||0)<700) Q.trick=true;
+     poi giu' con la gravita'. La richiesta vale 3 s (RIDE_TRICK_ARM). */
+  if(Q.sign>0 && !Q.trick && performance.now()-(RIDE.trickT||0)<RIDE_TRICK_ARM) Q.trick=true;
+  /* ⚠️ (Giacomo, 4 nov: «sul tablet l'airwalk non funziona ancora»). Con
+     la levetta si sale spesso piano o di traverso e la tavola si fermava
+     sotto il bordo: niente airwalk, la solita girata. Chi l'ha chiesto prende
+     lo slancio che serve per arrivare quasi in cima (non oltre: sul piano si
+     andrebbe senza il trick). */
+  if(Q.trick && Q.sign>0 && !Q.air) Q.E=Math.max(Q.E,RIDE_G*(r.R-0.05));
   if(Q.air) return rideAirTick(Q);
   if(Q.stall>0){                                               // fermi in cima: ci si gira
     Q.stall--; const k=1-Q.stall/RIDE_QP_STALL;
@@ -49109,6 +49115,12 @@ function rideQuarterTick(inDir){
 }
 const RIDE_QP_STALL=16;
 const RIDE_AIR_MS=950, RIDE_AIR_HOP=0.8;
+/* ⚠️ la richiesta dell'airwalk resta valida 3 s (prima 0,7). La salita
+   sulla curva dura una decina di fotogrammi: con lo SPAZIO si preme al volo,
+   ma sul tablet, staccando un dito per toccare 🤸, si arrivava quasi sempre
+   troppo presto o troppo tardi. Ora il tocco «carica» il trick (il bottone
+   resta acceso) e la prossima salita su una quarter pipe lo fa. */
+const RIDE_TRICK_ARM=3000;
 function rideAirStart(Q,lx){
   Q.air={ t0:performance.now(), lx0:lx, from:player.rotation.y, to:Math.atan2(-Q.nx,-Q.nz) };
   RIDE.trickT=0; RIDE.v=0; RIDE.hop=0; RIDE.feetOff=0;
@@ -49136,8 +49148,10 @@ function rideAirTick(Q){
    comincia a salire entro 0,7 s) */
 function rideTrick(){
   if(!RIDE.on || !RIDE.on.ramps) return;
-  RIDE.trickT=performance.now();
+  const now=performance.now(), gia=now-(RIDE.trickT||0)<RIDE_TRICK_ARM;
+  RIDE.trickT=now;
   if(RIDE.qp && RIDE.qp.sign>0 && !RIDE.qp.air) RIDE.qp.trick=true;
+  else if(!RIDE.qp && !gia) toast("\u{1F938} Airwalk ready: ride up a quarter pipe! \u00b7 Ora sali su una quarter pipe",2400);
 }
 /* ---- 🛹 DROP-IN DAL BORDO (Giacomo, 3 nov: «se l'avatar sta piu' di un
    secondo fermo sul bordo della rampa, fallo scendere automaticamente»).
@@ -49205,7 +49219,7 @@ function rideTrickHud(){
   let on=false; try{ on=!!(RIDE.on && RIDE.on.ramps && area==="town" && skFloorAt(player.position.x,player.position.z)!==null); }catch(e){}
   if(on!==RIDE.trickVis){ RIDE.trickVis=on; trickBtn.style.display=on?"":"none";
     const kb=document.getElementById("kb-trick"); if(kb) kb.style.display=on?"":"none"; }
-  trickBtn.classList.toggle("on",!!((RIDE.qp && (RIDE.qp.trick || RIDE.qp.air)) || performance.now()-(RIDE.trickT||0)<700));   // si accende al tocco: si vede che e' arrivato
+  trickBtn.classList.toggle("on",!!((RIDE.qp && (RIDE.qp.trick || RIDE.qp.air)) || performance.now()-(RIDE.trickT||0)<RIDE_TRICK_ARM));   // acceso finche' il trick e' «carico»
 }
 /* ⚠️ POINTERDOWN, NON CLICK (Giacomo, 4 nov: «sul tablet premendo l'icona
    non vedo differenze, sul pc con spazio si'»). L'airwalk si chiede mentre
