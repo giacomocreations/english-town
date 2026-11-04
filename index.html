@@ -48280,8 +48280,9 @@ scene.onBeforeRenderObservable.add(()=>{      // il tasto riflette lo stato REAL
    🅿️ L'ALUNNO PARCHEGGIA (Giacomo, 4 nov: «dovrebbe parcheggiarlo nei
    posti appositi»): dal monopattino R non fa piu' sparire niente. Vicino
    a una rastrelliera R parcheggia (come la E), lontano dice dov'e' la piu'
-   vicina; neanche dalla Teca si scende o si cambia mezzo. Se si scende per
-   forza (entrando in un luogo, teletrasporto, ballo, punizione…) il
+   vicina; neanche dalla Teca si scende o si cambia mezzo. Col teletrasporto
+   della mappa (taxiTo) il mezzo ti segue: si arriva in sella. Se si scende per
+   forza (entrando in un luogo, ballo, punizione…) il
    monopattino resta li' dov'eri, fuori dalla porta, e si riprende con la
    E (rideLeaveHere / rideSpotTake). Il docente resta libero: R ovunque.
 
@@ -50800,6 +50801,9 @@ function _taxiNearInter(d){
   return null;
 }
 function taxiTo(d){ closeMap(); _fade(true);
+  /* 🛹🛴 (Giacomo, 4 nov: «col teletrasporto il monopattino deve seguirti»):
+     chi e' in sella arriva in sella, non lo lascia indietro */
+  let ride=null; try{ if(RIDE.on){ ride=RIDE.on; rideOff(true); } }catch(e){}
   standUpAll();
   setTimeout(()=>{
     const ni=_taxiNearInter(d);
@@ -50809,6 +50813,7 @@ function taxiTo(d){ closeMap(); _fade(true);
     else if(ni) player.rotation.y=ni.face;
     moveTarget=null; pendingInteract=null; if(typeof tapMark!=="undefined"&&tapMark) tapMark.setEnabled(false);
     camera.target.copyFrom(player.position); camera.target.y+=2.0;
+    try{ if(ride) rideMount(ride.id,true); }catch(e){}
     updateProximity(); toast("🚕 "+d.name);
     setTimeout(()=>_fade(false),120);
   },360); }
