@@ -539,6 +539,14 @@
     background:rgba(251,247,236,.94);font-size:21px;line-height:1;cursor:pointer;padding:0;
     box-shadow:0 4px 14px rgba(20,30,40,.18);touch-action:manipulation;}
   #rideBtn.on{background:var(--sun);}
+  /* 🤸 airwalk: solo in skate nello skatepark, accanto al bottone dello skate */
+  #trickBtn{position:fixed;z-index:15;top:52px;right:262px;width:42px;height:42px;border-radius:12px;border:none;
+    background:rgba(251,247,236,.94);font-size:21px;line-height:1;cursor:pointer;padding:0;
+    box-shadow:0 4px 14px rgba(20,30,40,.18);touch-action:manipulation;}
+  #trickBtn.on{background:var(--sun);}
+  @media (pointer:coarse){#trickBtn{top:auto;right:177px;bottom:124px;width:52px;height:52px;border-radius:50%;
+    background:rgba(251,247,236,.22);border:2px solid rgba(251,247,236,.5);font-size:24px;}
+    #trickBtn.on{background:var(--sun);}}
   @media (pointer:coarse){#rideBtn{top:auto;right:115px;bottom:124px;width:52px;height:52px;border-radius:50%;
     background:rgba(251,247,236,.22);border:2px solid rgba(251,247,236,.5);font-size:24px;}
     #rideBtn.on{background:var(--sun);}}
@@ -919,6 +927,7 @@
 <button id="actBtn">E</button>
 <button id="runBtn">🏃</button>
 <button id="rideBtn" aria-pressed="false" title="Skateboard / scooter (R)" style="display:none">🛹</button>
+<button id="trickBtn" title="Airwalk on the quarter pipe (SPACE)" style="display:none">🤸</button>
 <button id="povBtn" aria-pressed="false" title="First person">👁️</button>
 <button id="map-btn" title="Town map (M)">🗺️</button>
 <div id="kbhelp">
@@ -931,6 +940,7 @@
   <span><b>V</b> view</span>
   <span><b>O</b> first person</span>
   <span id="kb-ride" style="display:none"><b>R</b> skate / scooter</span>
+  <span id="kb-trick" style="display:none"><b>SPACE</b> airwalk</span>
   <span><b>H</b> hide</span>
 </div>
 <button id="star-btn" title="Explorer's Diary"><span>⭐</span><span id="star-n">0</span></button>
@@ -16138,6 +16148,46 @@ function skRampTop(X,Z,rail){   // rail: con la sbarra (default: se il giocatore
   return best;
 }
 function _skOnSkate(){ try{ return !!(RIDE.on && RIDE.on.ramps); }catch(e){ return false; } }
+/* 🛹 PENDENZA ESATTA SULLE QUARTER PIPE (Giacomo, 4 nov: «sul bordo a volte
+   sembra passare attraverso la rampa per un istante»). La pendenza stimata
+   fra due punti a 30 cm (rideSlopeAt) sulla curva di raggio 1,4 m resta
+   molto piu' piatta del vero vicino al bordo, dove la curva e' quasi
+   verticale: la punta della tavola entrava nella rampa (fino a 70 cm nei
+   conti), e sul piano in cima restava storta di 50 gradi. Qui la tangente
+   vera della curva (h = R - sqrt(R²-x²), dh/dx = x/sqrt(R²-x²)) nella
+   direzione in cui si guarda; sul piano in cima 0. null fuori.
+   ⚠️ La tavola sta a 11 cm (lift) dalla rampa in PERPENDICOLARE, non in
+   verticale: sulla parte quasi verticale 11 cm in su lasciavano le ruote
+   dentro la parete. Chi ci va sopra segue quindi la curva parallela di
+   raggio R-lift (skQPRideY), e la pendenza e' quella della stessa curva. */
+const SK_LIFT=0.11;                                            // = lift dello skate (RIDES)
+function _skQPAt(X,Z){
+  const L=SKATE.ramps; if(!L) return null;
+  for(const r of L){ if(r.k!=="q") continue;
+    const dx=X-r.x, dz=Z-r.z, c=Math.cos(r.ry), s=Math.sin(r.ry);
+    const lx=dx*c-dz*s, lz=dx*s+dz*c;
+    if(Math.abs(lz)>r.hw || lx<0 || lx>r.R+r.deck) continue;
+    return { r, lx, c, s }; }
+  return null;
+}
+function skQPSlope(X,Z,yaw,lift){
+  const q=_skQPAt(X,Z); if(!q) return null;
+  const r=q.r, lx=q.lx, Ri=r.R-(lift==null?SK_LIFT:lift);
+  const dot=Math.sin(yaw)*q.c-Math.cos(yaw)*q.s;               // quanto si guarda verso il bordo
+  /* sull'ultimo tratto, sotto il bordo, la tavola passa da quasi verticale a
+     piatta mentre il corpo sale al piano (skQPRideY): si «rotola» sul coping */
+  if(lx>=Ri) return dot*1.5*(1-Math.min(1,(lx-Ri)/(r.R-Ri+0.05)));
+  return Math.atan(dot*lx/Math.sqrt(Math.max(1e-6,Ri*Ri-lx*lx)));
+}
+/* quota (dei piedi, gia' sopra la tavola) di chi va in skate sulla quarter
+   pipe: curva parallela di raggio R-lift; sotto il bordo si raccorda col
+   piano in cima (+lift). null fuori dalle quarter pipe. */
+function skQPRideY(X,Z,lift){
+  const q=_skQPAt(X,Z); if(!q) return null;
+  const r=q.r, lx=q.lx, l=(lift==null?SK_LIFT:lift), Ri=r.R-l, yc=r.y0+r.R;
+  if(lx<=Ri) return yc-Math.sqrt(Math.max(0,Ri*Ri-lx*lx));
+  return yc+l*Math.min(1,(lx-Ri)/(l+0.05));
+}
 /* 🛹 GRIND: chi e' sul funbox e va lungo la sbarra (non di traverso) ci
    viene tirato sopra, cosi' si scivola dritti da un capo all'altro invece
    di sbatterci contro. Ritorna la sbarra se ci si e' sopra. */
@@ -16969,17 +17019,18 @@ function skSkateTick(D){
   const P=_skRidePose(_skSeqOf(D,T.k),T.u,T.k);
   const prev={ x:c.position.x, z:c.position.z };
   c.position.x=P.x; c.position.z=P.z;
-  const fy=_skFloorRide(P.x,P.z,P.rail)+R.lift;
+  const qy=skQPRideY(P.x,P.z,R.lift), fy=Math.max(qy===null?-1e9:qy,_skFloorRide(P.x,P.z,P.rail)+R.lift), qs=skQPSlope(P.x,P.z,P.yaw,R.lift);
   S.sy=(S.sy==null)?fy:S.sy+(fy-S.sy)*0.5;                // la quota insegue (sbarra e bordo senza scatti)
+  if(qs!==null && S.sy<fy) S.sy=fy;                       // 🛹 sulla quarter pipe mai dentro la rampa
   c.position.y=S.sy+P.hop;
   let dy=P.yaw-(S.yaw0==null?P.yaw:S.yaw0); while(dy>Math.PI) dy-=2*Math.PI; while(dy<-Math.PI) dy+=2*Math.PI;
   S.yaw0=P.yaw; S.turn=(S.turn||0)*0.8+dy*0.2;
   c.rotation.y=P.yaw+NPC_FACE_OFFSET;
   /* tavola e corpo inclinati come la rampa (davanti/dietro 30 cm) */
   const fx=Math.sin(P.yaw)*0.3, fz=Math.cos(P.yaw)*0.3;
-  const sl=Math.atan2(_skFloorRide(P.x+fx,P.z+fz,P.rail)-_skFloorRide(P.x-fx,P.z-fz,P.rail),0.6);
-  S.pitch+=(sl-S.pitch)*0.35;
-  S.board.rotation.x=-Math.max(-1.25,Math.min(1.25,S.pitch));
+  const sl=(qs!==null)?qs:Math.atan2(_skFloorRide(P.x+fx,P.z+fz,P.rail)-_skFloorRide(P.x-fx,P.z-fz,P.rail),0.6);
+  S.pitch+=(sl-S.pitch)*(qs!==null?0.9:0.35);
+  S.board.rotation.x=-Math.max(qs!==null?-1.5:-1.25,Math.min(qs!==null?1.5:1.25,S.pitch));
   S.board.rotation.z=P.flip;                              // kickflip: la tavola gira sotto i piedi
   S.board.rotation.y=P.shuv;                              // pop shove-it: gira in piano, di mezzo giro
   S.board.position.y=(P.flip||P.shuv)?-0.12*Math.sin(Math.max(P.flip/2,P.shuv)):0;
@@ -48121,6 +48172,7 @@ window.addEventListener("keydown",e=>{ if(__typingNow(e)) return;   // non rubar
   if(k==="q"){ e.preventDefault(); cycleInter(e.shiftKey?-1:1); return; }   // scegli fra oggetti vicini
   if(k==="m"){ e.preventDefault(); toggleMap(); return; }
   if(k==="r"){ e.preventDefault(); rideCycle(); return; }   // 🛹🛴 skate / monopattino / a piedi
+  if(k===" " && RIDE.on && RIDE.on.ramps && RIDE.trickVis){ e.preventDefault(); if(!e.repeat) rideTrick(); return; }   // 🛹 airwalk sulla quarter pipe
   if(k==="escape" && metroOpen){ closeMetro(); return; }
   if(k==="escape" && diaryOpen){ closeDiary(); return; }
   if(k==="escape" && mapOpen){ closeMap(); return; }
@@ -48347,6 +48399,9 @@ function rideStarsMsg(R){
   return "\u2B50 Non hai stelle sufficienti per usarlo: ti servono "+R.req.stars+" stelle (ne hai "+st+")"+(R.alt?", "+R.alt.it:"")+".";
 }
 function rideLift(){ return RIDE.on ? RIDE.on.lift : 0; }
+/* 🛹 airwalk: quanto si e' in aria, e quanto i piedi hanno lasciato la tavola */
+function rideHop(){ return (RIDE.on && RIDE.qp && RIDE.qp.air) ? (RIDE.hop||0) : 0; }
+function rideFeetOff(){ return (RIDE.on && RIDE.qp && RIDE.qp.air) ? (RIDE.feetOff||0) : 0; }
 
 /* ---- le tavole: geometria procedurale, 0 KB di asset -------------------
    Origine = i piedi del giocatore (piano della tavola), +z = avanti. Le
@@ -48533,7 +48588,18 @@ function _ridePoseOn(R){
     if(Q.fing) Q.fing.pins.forEach(k=>{ k.tn.rotationQuaternion.copyFrom(k.q); });   // le dita chiuse sul manubrio
     if(Q.arms) _rideArmsTick(Q);
     if(Q.legs) _ridePushTick(Q);
+    if(Q.legs && rideFeetOff()>0.001) _rideAirLegs(Q);                // 🛹 airwalk: piedi fuori dalla tavola
   });
+}
+/* 🛹 AIRWALK: i piedi lasciano la tavola, uno avanti e uno indietro (come
+   la crew, vedi _skQPA), e la riprendono */
+function _rideAirLegs(Q){
+  const G=Q.legs, root=avatarRoot, fo=rideFeetOff(), V=BABYLON.Vector3; if(!G || !root) return;
+  player.computeWorldMatrix(true); _sitRefresh(root);
+  const W=player.getWorldMatrix(), f=V.TransformNormal(new V(0,0,1),W).normalize();
+  const off=(F,z)=>F.foot.add(new V((Math.sign(F.foot.x)||1)*0.05,-0.04,z).scale(fo));
+  _rideLegIK(root,G.L,V.TransformCoordinates(off(G.L,0.34),W),f);
+  _rideLegIK(root,G.R,V.TransformCoordinates(off(G.R,-0.34),W),f);
 }
 
 /* ---- 🛹 IL CORPO SULLO SKATE: braccia per l'equilibrio, piede che spinge --
@@ -48675,7 +48741,8 @@ function rideOff(silent){
   const R=RIDE.on;
   _ridePoseOff();
   const m=RIDE.mesh[R.id]; if(m) m.setEnabled(false);
-  RIDE.on=null; RIDE.v=0; RIDE.coast=false; RIDE.pitch=0; RIDE.push=null; RIDE.qp=null; RIDE.deck=null; if(m) m.rotation.x=0;
+  RIDE.on=null; RIDE.v=0; RIDE.coast=false; RIDE.pitch=0; RIDE.push=null; RIDE.qp=null; RIDE.deck=null; RIDE.hop=0; RIDE.feetOff=0;
+  if(m){ m.rotation.x=0; m.rotation.y=0; m.rotation.z=0; m.position.y=0; }
   /* ⚠️ la quota NON si tocca qui: scendendo per sedersi la sedia ha GIA'
      messo il corpo alla sua altezza, e togliere ancora la tavola lo
      faceva sedere 11 cm troppo in basso (poi il terreno lo rialzava:
@@ -48998,6 +49065,13 @@ function rideQuarterTick(inDir){
     moveTarget=null; pendingInteract=null; try{ tapMark.setEnabled(false); }catch(e){}
   }
   const r=Q.r;
+  /* 🛹 AIRWALK (Giacomo, 4 nov: «metti anche la mossa della crew: sul bordo
+     perdono lo skate e lo riprendono al volo»). SPAZIO o il bottone 🤸
+     mentre si sale (o poco prima di salire): arrivati vicino al bordo si
+     salta, mezzo giro in aria, i piedi lasciano la tavola e la riprendono,
+     poi giu' con la gravita'. Serve arrivare quasi in cima. */
+  if(Q.sign>0 && !Q.trick && performance.now()-(RIDE.trickT||0)<700) Q.trick=true;
+  if(Q.air) return rideAirTick(Q);
   if(Q.stall>0){                                               // fermi in cima: ci si gira
     Q.stall--; const k=1-Q.stall/RIDE_QP_STALL;
     let dd=Q.turnTo-Q.turnFrom; while(dd>Math.PI) dd-=2*Math.PI; while(dd<-Math.PI) dd+=2*Math.PI;
@@ -49016,6 +49090,7 @@ function rideQuarterTick(inDir){
   }
   const h=r.R-Math.sqrt(Math.max(0,r.R*r.R-lx*lx));
   const sp=Math.sqrt(Math.max(0,2*(Q.E-RIDE_G*h)));
+  if(Q.sign>0 && Q.trick && (lx>=r.R-0.12 || (sp<0.012 && h>=r.R-0.45))) return rideAirStart(Q,lx);
   if(Q.sign>0 && sp<0.012){                                     // non sale piu': stallo, poi giu'
     Q.stall=RIDE_QP_STALL; Q.turnFrom=player.rotation.y; Q.turnTo=Math.atan2(-Q.nx,-Q.nz); RIDE.v=0; return true; }
   const cosT=Math.sqrt(Math.max(0,r.R*r.R-lx*lx))/r.R;
@@ -49028,6 +49103,37 @@ function rideQuarterTick(inDir){
   return true;
 }
 const RIDE_QP_STALL=16;
+const RIDE_AIR_MS=950, RIDE_AIR_HOP=0.8;
+function rideAirStart(Q,lx){
+  Q.air={ t0:performance.now(), lx0:lx, from:player.rotation.y, to:Math.atan2(-Q.nx,-Q.nz) };
+  RIDE.trickT=0; RIDE.v=0; RIDE.hop=0; RIDE.feetOff=0;
+  moveTarget=null; pendingInteract=null;
+  try{ SFX.roll(0); }catch(e){}
+  return true;
+}
+function rideAirTick(Q){
+  const A=Q.air, r=Q.r, w=Math.min(1,(performance.now()-A.t0)/RIDE_AIR_MS);
+  /* su fin quasi al bordo (nel primo quarto), poi fermi li' sopra in aria */
+  const dx=player.position.x-r.x, dz=player.position.z-r.z, lx=dx*Math.cos(r.ry)-dz*Math.sin(r.ry);
+  const lxA=A.lx0+(r.R-0.03-A.lx0)*Math.min(1,w/0.25), d=lxA-lx;
+  player.position.x+=d*Q.nx; player.position.z+=d*Q.nz;
+  RIDE.hop=RIDE_AIR_HOP*Math.sin(Math.PI*w);
+  RIDE.feetOff=Math.max(0,Math.sin(Math.PI*Math.max(0,Math.min(1,(w-0.18)/0.64))));
+  const k=Math.max(0,Math.min(1,(w-0.25)/0.5)), e=k*k*(3-2*k);
+  let dd=A.to-A.from; while(dd>Math.PI) dd-=2*Math.PI; while(dd<-Math.PI) dd+=2*Math.PI;
+  player.rotation.y=A.from+dd*e;
+  RIDE.v=0;
+  if(w>=1){ Q.air=null; Q.trick=false; Q.sign=-1; RIDE.hop=0; RIDE.feetOff=0; player.rotation.y=A.to;
+    const h=r.R-Math.sqrt(Math.max(0,r.R*r.R-lxA*lxA)); Q.E=Math.max(Q.E,RIDE_G*h+1e-4); }
+  return true;
+}
+/* SPAZIO / bottone 🤸: la richiesta vale per la salita in corso (o se si
+   comincia a salire entro 0,7 s) */
+function rideTrick(){
+  if(!RIDE.on || !RIDE.on.ramps) return;
+  RIDE.trickT=performance.now();
+  if(RIDE.qp && RIDE.qp.sign>0 && !RIDE.qp.air) RIDE.qp.trick=true;
+}
 /* ---- 🛹 DROP-IN DAL BORDO (Giacomo, 3 nov: «se l'avatar sta piu' di un
    secondo fermo sul bordo della rampa, fallo scendere automaticamente»).
    Sul piano in cima a una quarter pipe, senza tasti ne' tocchi per 1 s:
@@ -49087,6 +49193,16 @@ function rideHud(){
   const kb=document.getElementById("kb-ride"); if(kb) kb.style.display=L.length?"":"none";
 }
 if(rideBtn) rideBtn.addEventListener("click",e=>{ e.preventDefault(); rideCycle(); });
+/* 🤸 il bottone del trick: solo in skate dentro lo skatepark */
+const trickBtn=document.getElementById("trickBtn");
+function rideTrickHud(){
+  if(!trickBtn) return;
+  let on=false; try{ on=!!(RIDE.on && RIDE.on.ramps && area==="town" && skFloorAt(player.position.x,player.position.z)!==null); }catch(e){}
+  if(on!==RIDE.trickVis){ RIDE.trickVis=on; trickBtn.style.display=on?"":"none";
+    const kb=document.getElementById("kb-trick"); if(kb) kb.style.display=on?"":"none"; }
+  trickBtn.classList.toggle("on",!!(RIDE.qp && (RIDE.qp.trick || RIDE.qp.air)));
+}
+if(trickBtn) trickBtn.addEventListener("click",e=>{ e.preventDefault(); rideTrick(); try{ canvas.focus(); }catch(err){} });
 
 /* ---- «NUOVO!» quando si sblocca: una volta per alunno e dispositivo ---- */
 function _rideSeenKey(){ let c=""; try{ c=Student.code||""; }catch(e){} return "et_ride_seen:"+c; }
@@ -49115,14 +49231,18 @@ setInterval(()=>{ try{ rideCheckUnlocks(); }catch(e){} },3000);
    piena inclinazione, il ragazzo sembrerebbe sdraiato. */
 function rideSlopeAt(x,z,ry){
   if(typeof skFloorAt!=="function") return 0;
+  const q=skQPSlope(x,z,ry); if(q!==null) return q;             // quarter pipe: la tangente vera
   const fx=Math.sin(ry)*0.3, fz=Math.cos(ry)*0.3;
   const a=skFloorAt(x+fx,z+fz), b=skFloorAt(x-fx,z-fz);
   if(a===null || b===null) return 0;
   return Math.atan2(a-b,0.6);
 }
 function rideTilt(board,body,cur,x,z,ry){
-  const t=rideSlopeAt(x,z,ry), p=cur+(t-cur)*0.35;
-  if(board) board.rotation.x=-Math.max(-1.25,Math.min(1.25,p));
+  /* sulla quarter pipe la tangente e' esatta: la si segue quasi subito e la
+     tavola puo' arrivare quasi in verticale (86 gradi), com'e' la curva */
+  const qp=(typeof skQPSlope==="function") && skQPSlope(x,z,ry)!==null;
+  const t=rideSlopeAt(x,z,ry), p=cur+(t-cur)*(qp?0.9:0.35), mx=qp?1.5:1.25;
+  if(board) board.rotation.x=-Math.max(-mx,Math.min(mx,p));
   if(body) body.rotation.x=-Math.max(-0.6,Math.min(0.6,p*0.6));
   return p;
 }
@@ -49215,6 +49335,7 @@ scene.onBeforeRenderObservable.add(()=>{
   if(!RIDE.stand && typeof UNIT4!=="undefined" && area===UNIT4.area){ try{ rideStandBuild(); }catch(e){ console.warn("[RIDE] espositore",e); RIDE.stand=true; } }
   if(RIDE.parked){ try{ rideParkTick(); }catch(e){} }
   try{ rideRacksTick(); }catch(e){}                         // 🅿️ scooter parking
+  try{ rideTrickHud(); }catch(e){}                          // 🤸 il bottone dell'airwalk
   if(!RIDE.on){ RIDE.px=player.position.x; RIDE.pz=player.position.z; return; }
   if(!rideCanHere()){ rideDrop(); return; }
   const d=Math.hypot(player.position.x-RIDE.px, player.position.z-RIDE.pz);
@@ -49245,6 +49366,9 @@ scene.onBeforeRenderObservable.add(()=>{
     RIDE.grind=rideGrind(fx,Math.cos(player.rotation.y)); }
   RIDE.pitch=rideTilt(RIDE.mesh[RIDE.on.id], (RIDE.pose&&RIDE.pose.of===avatarRoot)?avatarRoot:null,
                       RIDE.pitch||0, player.position.x, player.position.z, player.rotation.y);
+  /* 🛹 airwalk: la tavola resta sotto, un po' piu' giu' e storta (come la crew) */
+  if(RIDE.on.ramps){ const bm=RIDE.mesh[RIDE.on.id], fo=rideFeetOff();
+    if(bm){ bm.position.y=-0.25*fo; bm.rotation.y=0.45*fo; bm.rotation.z=0.25*fo; } }
   try{ SFX.roll(Math.min(1,step/(PLAYER_SPEED*RIDE.on.mult)), RIDE.grind?"grind":RIDE.on.id); }catch(e){}
 });
 
@@ -50091,7 +50215,15 @@ scene.registerBeforeRender(()=>{
        solito 0,45, la tavola affonderebbe nella rampa salendo */
     const _rh=skRampTop(player.position.x,player.position.z);
     if(_rh!==null && _rh>ty){ ty=_rh; _gSotto=null; }
-    player.position.y += (ty+rideLift()-player.position.y)*(_rh!==null?0.7:0.45);   // 🛹 in sella: sopra la tavola
+    const _q=(RIDE.on && RIDE.on.ramps)?skQPRideY(player.position.x,player.position.z,rideLift()):null;
+    const _ty=(_q!==null?Math.max(_q,ty+rideLift()):ty+rideLift())+rideHop();
+    player.position.y += (_ty-player.position.y)*(_rh!==null?0.7:0.45);   // 🛹 in sella: sopra la tavola
+    /* 🛹 sulle rampe mai SOTTO la superficie (Giacomo, 4 nov: «sul bordo
+       sembra passare attraverso la rampa»): inseguendo la quota, negli
+       ultimi centimetri prima del bordo (dove la curva sale di 30 cm in 3)
+       i piedi restavano fino a 17 cm dentro la rampa. In su si va subito,
+       in giu' si insegue come prima. */
+    if(_rh!==null && player.position.y<_ty) player.position.y=_ty;
   }
   // camera dietro le spalle SOLO andando avanti (W/stick su): strafe (A/D) e retro (S) NON ruotano la camera
   /* v320: le frecce non camminano, ma se le stai usando per girarti la
