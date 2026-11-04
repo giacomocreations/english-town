@@ -15931,11 +15931,15 @@ function _skEval(K,mv,b,sd){
     const w=b<1?1-_skEase(b):(b>D-1?_skEase(b-(D-1)):0);
     if(w>0){ E.A2=P.stand; E.B2=P.stand; E.w=w; }
     return E; }
-  /* v327: il running man, un passo per battito (due battiti per gamba):
-     ginocchio su -> giu' davanti mentre l'altro piede scivola indietro ->
-     l'altro ginocchio su... Entrata e uscita dalla posa in piedi come il
-     cabbage patch. */
-  if(mv==="running"){ const D=SKATE_DUR("running"), c=(b-Math.floor(b/2)*2)*2, k=Math.floor(c)%4, S=["rmUL","rmDL","rmUR","rmDR"];
+  /* v327: il running man: ginocchio su -> giu' davanti mentre l'altro piede
+     scivola indietro -> l'altro ginocchio su... Entrata e uscita dalla posa
+     in piedi come il cabbage patch.
+     ⚠️ A META' TEMPO (Giacomo, 4 nov: «dovrebbe essere veloce la meta' per
+     avere l'effetto rallentato, adesso sembra una corsa»): un tempo per
+     battito, quindi un passo ogni DUE battiti e il giro completo in quattro.
+     Prima era mezzo battito per tempo: con i brani del Beat Club (90-148
+     bpm) erano fino a 2,5 passi al secondo, una corsetta. */
+  if(mv==="running"){ const D=SKATE_DUR("running"), c=b-Math.floor(b/4)*4, k=Math.floor(c)%4, S=["rmUL","rmDL","rmUR","rmDR"];
     const E={ A:P[S[k]], B:P[S[(k+1)%4]], t:_skEase(c-Math.floor(c)), glide:0, hop:0 };
     const w=b<0.5?1-_skEase(b/0.5):(b>D-0.5?_skEase((b-(D-0.5))/0.5):0);
     if(w>0){ E.A2=P.stand; E.B2=P.stand; E.w=w; }
@@ -48167,7 +48171,8 @@ window.addEventListener("keydown",e=>{ if(__typingNow(e)) return;   // non rubar
   /* ⚽ punizione: PRIMA di tryInteract (Giacomo, 3 nov: «appena premo E il
      primo tiro parte subito senza poter dosare forza e direzione»: lo stesso
      E apriva la mira e poi, qui sotto, calciava). Tasto tenuto giu' = niente. */
-  if(FK.aim){ if(k===" "||k==="k"||k==="e"){ e.preventDefault(); if(!e.repeat) fkKick(); return; } if(k==="escape"){ fkStop(); return; } }
+  if(FK.aim){ if(k===" "||k==="k"||k==="e"){ e.preventDefault(); if(!e.repeat) fkKick(); return; } if(k==="escape"){ fkStop(); return; }
+    if(k==="q"){ e.preventDefault(); if(!e.repeat) fkSpinCycle(); return; } }   // ⚽ effetto: dritto / interno / esterno
   if(k==="e") tryInteract();
   if(k==="q"){ e.preventDefault(); cycleInter(e.shiftKey?-1:1); return; }   // scegli fra oggetti vicini
   if(k==="m"){ e.preventDefault(); toggleMap(); return; }
@@ -49462,20 +49467,20 @@ function _fkStep(S){
   p.x+=v.x*h; p.y+=v.y*h; p.z+=v.z*h;
   /* terreno: rimbalzi, poi rotola e si ferma */
   if(p.y<y0+FK_R){ p.y=y0+FK_R;
-    if(v.y<-1.2){ v.y=-v.y*0.5; v.x*=0.85; v.z*=0.85; }
+    if(v.y<-1.2){ v.y=-v.y*0.5; v.x*=0.85; v.z*=0.85; M.curl*=0.5; }
     else { v.y=0; const s=Math.hypot(v.x,v.z), ns=Math.max(0,s-3.2*h); if(s>1e-4){ v.x*=ns/s; v.z*=ns/s; } if(ns<0.05) M.stop=true; } }
   /* barriera: cilindri di 24 cm fino a 1,85 m */
   for(const w of S.wall){ const dx=p.x-w.x, dz=p.z-w.z, d=Math.hypot(dx,dz);
     if(d<FK_R+0.24 && p.y<y0+1.97 && d>1e-4){ const nx=dx/d, nz=dz/d, vn=v.x*nx+v.z*nz;
-      if(vn<0){ v.x-=1.3*vn*nx; v.z-=1.3*vn*nz; v.y*=0.6; if(!M.res) M.res="wall"; }
+      if(vn<0){ v.x-=1.3*vn*nx; v.z-=1.3*vn*nz; v.y*=0.6; M.curl*=0.2; if(!M.res) M.res="wall"; }   // ⚽ l'urto si mangia l'effetto
       p.x=w.x+nx*(FK_R+0.24); p.z=w.z+nz*(FK_R+0.24); } }
   /* pali e traversa */
   for(const pz of [G.z-3,G.z+3]){ const dx=p.x-G.x, dz=p.z-pz, d=Math.hypot(dx,dz);
     if(d<FK_R+0.065 && p.y<y0+2.2 && d>1e-4){ const nx=dx/d, nz=dz/d, vn=v.x*nx+v.z*nz;
-      if(vn<0){ v.x-=1.6*vn*nx; v.z-=1.6*vn*nz; if(!M.res) M.res="post"; } } }
+      if(vn<0){ v.x-=1.6*vn*nx; v.z-=1.6*vn*nz; M.curl*=0.2; if(!M.res) M.res="post"; } } }
   if(Math.abs(p.z-G.z)<3){ const dx=p.x-G.x, dy=p.y-(y0+2.2), d=Math.hypot(dx,dy);
     if(d<FK_R+0.065 && d>1e-4){ const nx=dx/d, ny=dy/d, vn=v.x*nx+v.y*ny;
-      if(vn<0){ v.x-=1.6*vn*nx; v.y-=1.6*vn*ny; if(!M.res) M.res="bar"; } } }
+      if(vn<0){ v.x-=1.6*vn*nx; v.y-=1.6*vn*ny; M.curl*=0.2; if(!M.res) M.res="bar"; } } }
   /* la linea di porta */
   const a=(px0-G.x)*G.sg, b=(p.x-G.x)*G.sg;
   if(a<0 && b>=0 && !M.net){
@@ -49593,7 +49598,13 @@ function _fkKickLegs(K,u,rec){
   /* le punte: il piede d'appoggio si gira verso la porta mentre fa il passo,
      quello che calcia ci sta gia'; dopo tornano piano come da fermo */
   const wL=rec!=null?1-_fkSm(rec):_fkSm(u/0.32), wR=rec!=null?1-_fkSm(rec):1;
-  _fkFootYaw(G,G.L,f,wL); _fkFootYaw(G,G.R,f,wR);
+  /* ⚽ con l'effetto il piede che calcia si gira: di INTERNO la punta va in
+     fuori (verso destra) e si colpisce col collo-interno, di ESTERNO la punta
+     va in dentro. Si gira nella carica, resta al contatto, torna nel seguito. */
+  let fR=f;
+  if(K.spin && rec==null){ const a=(K.spin===1?0.75:-0.45)*(u<0.30?_fkSm(u/0.30):(u<0.74?1:1-_fkSm((u-0.74)/0.26)));
+    fR=new V(f.x*Math.cos(a)+f.z*Math.sin(a),0,f.z*Math.cos(a)-f.x*Math.sin(a)); }
+  _fkFootYaw(G,G.L,f,wL); _fkFootYaw(G,G.R,fR,wR);
 }
 /* ⚠️ LA PUNTA DEL PIEDE (Giacomo, 3 nov: «il piede sinistro rimane sempre
    laterale»). Nella posa da fermo dell'avatar la punta sinistra e' girata
@@ -49755,11 +49766,39 @@ function fkStart(){
   if(RIDE.on) rideDrop();
   try{ standUpAll(); }catch(e){}
   _fkReset(S);
-  FK.aim={ yaw:0, loft:14*Math.PI/180, t0:performance.now(), kick:null, res:null, resT:0 };
+  FK.aim={ yaw:0, loft:14*Math.PI/180, t0:performance.now(), kick:null, res:null, resT:0, spin:FK.spin||0 };
   if(FK.inter) FK.inter.enabled=false;                     // il prompt in basso coprirebbe la barra: calcia SPAZIO / E / KICK
   _fkPlace();
   fkHud(true);
-  toast("⚽ Free kick! A/D aim · W/S height · SPACE kick (when the power is right) · Esc stop",4200);
+  toast("⚽ Free kick! A/D aim · W/S height · Q spin · SPACE kick (when the power is right) · Esc stop",4600);
+  fkSpinHud();
+}
+/* ⚽ L'EFFETTO A RIENTRARE (Giacomo, 4 nov: «metti anche la possibilita' di
+   fare l'effetto a rientrare con interno e esterno del piede»). Si calcia
+   col destro:
+     · INTERNO  (inside)  — il pallone gira da destra a sinistra;
+     · ESTERNO  (outside) — da sinistra a destra (la «trivela»).
+   Si mira fuori dalla barriera o dal palo e il pallone rientra. Q (o il
+   bottone dell'effetto nella barra) passa da dritto a interno a esterno; la
+   scia di punti della mira si curva gia' come il tiro. Fisica: la stessa
+   accelerazione di lato che c'era per gli atleti (_fkStep, curl > 0 verso
+   destra), solo in volo. */
+const FK_SPIN=[ { en:"Straight", ic:"\u{1F9B6}", curl:0 },
+                { en:"Inside",   ic:"↰",    curl:-8.5 },          // interno destro: gira a sinistra
+                { en:"Outside",  ic:"↱",    curl:7 } ];           // esterno destro: gira a destra (un po' meno)
+function fkSpinCycle(){
+  const A=FK.aim; if(!A || A.kick || A.res) return;
+  A.spin=(A.spin+1)%FK_SPIN.length; FK.spin=A.spin;
+  const S=FK_SPIN[A.spin];
+  toast("⚽ "+S.en+(A.spin===1?" of the foot: the ball curls left · interno: rientra da destra a sinistra":
+                       A.spin===2?" of the foot: the ball curls right · esterno: rientra da sinistra a destra":
+                       " shot · tiro dritto, senza effetto"),2600);
+  fkSpinHud();
+}
+function fkSpinHud(){
+  const b=document.querySelector('#fkHud [data-fk="spin"]'); if(!b || !FK.aim) return;
+  const S=FK_SPIN[FK.aim.spin||0];
+  b.textContent=S.ic+" "+S.en; b.style.background=FK.aim.spin?"#3d7fa6":"#e8dfc8"; b.style.color=FK.aim.spin?"#fff":"#1d2a32";
 }
 function _fkPlace(){ const S=FK.sets.me; player.position.x=S.spot.x-S.dir.x*2.4+S.perp.x*0.5; player.position.z=S.spot.z-S.dir.z*2.4+S.perp.z*0.5;
   player.rotation.y=Math.atan2(S.dir.x,S.dir.z); moveTarget=null; pendingInteract=null;
@@ -49771,10 +49810,10 @@ function fkKick(){
   const A=FK.aim; if(!A || A.kick || A.res) return;
   const now=performance.now();
   if(now-A.t0<400) return;                                   // il tocco che ha aperto la mira non e' un tiro
-  A.kick={ t0:now, pw:_fkPower(now), yaw:A.yaw, loft:A.loft };
+  A.kick={ t0:now, pw:_fkPower(now), yaw:A.yaw, loft:A.loft, spin:A.spin||0 };
   if(!FK.legs || FK.legsOf!==avatarRoot){ FK.legs=_fkLegs(avatarRoot,player); FK.legsOf=avatarRoot; FK.arms=null; }
   if(!FK.arms){ const S0=FK.sets.me; player.rotation.y=Math.atan2(S0.dir.x,S0.dir.z); player.computeWorldMatrix(true); FK.arms=_fkArmSet(avatarRoot,new BABYLON.Vector3(S0.dir.x,0,S0.dir.z)); }
-  FK.K={ root:avatarRoot, ref:player, legs:FK.legs, arms:FK.arms, S:FK.sets.me, t0pos:{ x:player.position.x, z:player.position.z }, u:null, rec:null };
+  FK.K={ root:avatarRoot, ref:player, legs:FK.legs, arms:FK.arms, S:FK.sets.me, t0pos:{ x:player.position.x, z:player.position.z }, u:null, rec:null, spin:A.spin||0 };
 }
 function _fkPower(now){ return 0.5-0.5*Math.cos(2*Math.PI*((now-FK.aim.t0)/1300)); }
 const FK_RES={ goal:["⚽ GOAL! Brilliant!","Gol!"], wall:["🧱 The wall blocked it!","La barriera!"], post:["🥅 Off the post!","Palo!"],
@@ -49802,11 +49841,11 @@ function _fkMeTick(){
       player.position.x=o.x; player.position.z=o.z; player.rotation.y=o.yaw; avatarRoot.rotation.x=o.lean;
       K.u=o.kickU; K.rec=(o.rec!=null && o.rec<1)?o.rec:null;
       if(o.kickU==null && K.rec==null) avatarRoot.rotation.x=0; }
-    if(u>=FK_RUN+FK_HIT*FK_KICK && !S.sim){ _fkLaunch(S,A.kick.yaw,A.kick.loft,A.kick.pw,0,now/1000); _fkSfx("kick"); }
+    if(u>=FK_RUN+FK_HIT*FK_KICK && !S.sim){ _fkLaunch(S,A.kick.yaw,A.kick.loft,A.kick.pw,FK_SPIN[A.kick.spin||0].curl,now/1000); _fkSfx("kick"); S.sim.spin=A.kick.spin||0; }
     if(S.sim){ _fkAdvance(S,now/1000);
       const M=S.sim, done=M.stop || (now/1000-M.t0)>4.2;
       if(done && u>FK_RUN+FK_KICK+FK_REC){ const r=M.res||"short"; A.res=r; A.resT=now; A.kick=null; FK.kicks++; if(FK.K){ FK.K.u=null; FK.K.rec=null; } avatarRoot.rotation.x=0;
-        const T=FK_RES[r]||FK_RES.short; toast(T[0]+" · "+T[1],2600);
+        const T=(r==="goal" && M.spin)?["⚽ GOAL! What a curler!","Gol a giro!"]:(FK_RES[r]||FK_RES.short); toast(T[0]+" · "+T[1],2600);
         if(r==="goal") try{ SFX.correct(); }catch(e){}
         if(FK.kicks>=3){ FK.sessionDone=true; fkRangerCome(); } } }
   } else if(A.res && now-A.resT>1600){ if(FK.sessionDone){ fkStop(); toast("⚽ That's enough free kicks for now! · Basta punizioni per ora",3000); return; }
@@ -49842,10 +49881,11 @@ function _fkAimDraw(on){
   const L=0.8+pw*2.2, y=S.F.y+0.02;
   N.arrow.position.set(S.spot.x+sx*0.3, y, S.spot.z+sz*0.3); N.arrow.rotation.y=yaw;
   N.shaft.scaling.y=L; N.shaft.position.set(0,0,L/2); N.head.position.set(0,0,L+0.14);
-  /* la scia: come _fkLaunch, senza attrito ne' urti, per 0,33 s */
-  const v0=11+19*pw, vx=v0*Math.cos(A.loft)*sx, vz=v0*Math.cos(A.loft)*sz, vy=v0*Math.sin(A.loft);
-  N.dots.forEach((s,i)=>{ const t=0.025+i*0.02;
-    s.position.set(S.spot.x+vx*t, S.F.y+FK_R+vy*t-4.9*t*t, S.spot.z+vz*t);
+  /* la scia: come _fkLaunch, senza attrito ne' urti, per 0,33 s; con
+     l'effetto si piega gia' di lato (curl verso destra, vedi _fkStep) */
+  const v0=11+19*pw, vx=v0*Math.cos(A.loft)*sx, vz=v0*Math.cos(A.loft)*sz, vy=v0*Math.sin(A.loft), cu=FK_SPIN[A.spin||0].curl;
+  N.dots.forEach((s,i)=>{ const t=0.025+i*0.02, lat=0.5*cu*t*t*1.6;     // un filo esagerata: in 0,33 s si vedrebbe appena
+    s.position.set(S.spot.x+vx*t+sz*lat, S.F.y+FK_R+vy*t-4.9*t*t, S.spot.z+vz*t-sx*lat);
     const k=1-i/N.dots.length; s.scaling.setAll(0.55+0.6*k); });
 }
 /* il calcio sulle gambe del giocatore: DOPO le pin (osservatore nato tardi) */
@@ -49858,18 +49898,21 @@ function fkHud(on){
   if(!h){ h=document.createElement("div"); h.id="fkHud";
     h.style.cssText="position:fixed;left:50%;bottom:6px;transform:translateX(-50%);z-index:30;background:rgba(251,247,236,.92);"   // in basso: non copre il tiro
       +"border-radius:12px;padding:5px 9px;box-shadow:0 6px 18px rgba(0,0,0,.25);font:700 13px system-ui,sans-serif;color:#1d2a32;display:none;"
-      +"align-items:center;gap:10px;touch-action:manipulation;user-select:none;-webkit-user-select:none";
+      +"align-items:center;gap:10px;touch-action:manipulation;user-select:none;-webkit-user-select:none;"
+      +"flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 12px);box-sizing:border-box";   // ⚽ col bottone dell'effetto: sugli schermi stretti va a capo
     const B=(id,t)=>'<button type="button" data-fk="'+id+'" style="min-width:34px;height:34px;border:none;border-radius:10px;background:#e8dfc8;font:800 16px system-ui;cursor:pointer;touch-action:manipulation">'+t+'</button>';
     h.innerHTML='<span>⚽</span>'+B("l","◀")+B("r","▶")
       +'<div title="Height" style="width:10px;height:44px;border-radius:5px;background:#e8dfc8;position:relative;overflow:hidden"><i id="fkLoft" style="position:absolute;left:0;right:0;bottom:0;background:#3d7fa6"></i></div>'
       +B("u","▲")+B("d","▼")
       +'<div title="Power" style="width:120px;height:14px;border-radius:7px;background:#e8dfc8;overflow:hidden"><i id="fkPow" style="display:block;height:100%;width:0;background:linear-gradient(90deg,#58b368,#e8b04b,#e0673a)"></i></div>'
+      +'<button type="button" data-fk="spin" title="Spin: straight / inside / outside (Q)" style="height:34px;padding:0 9px;border:none;border-radius:10px;background:#e8dfc8;font:800 13px system-ui;cursor:pointer;touch-action:manipulation;white-space:nowrap">\u{1F9B6} Straight</button>'
       +'<button type="button" data-fk="kick" style="height:36px;padding:0 12px;border:none;border-radius:10px;background:#e0673a;color:#fff;font:800 14px system-ui;cursor:pointer">KICK</button>'
       +B("x","✕");
     document.body.appendChild(h);
     FK.hold={};
     h.querySelectorAll("[data-fk]").forEach(b=>{ const k=b.getAttribute("data-fk");
       if(k==="kick"){ b.addEventListener("click",e=>{ e.preventDefault(); fkKick(); }); return; }
+      if(k==="spin"){ b.addEventListener("click",e=>{ e.preventDefault(); fkSpinCycle(); }); return; }
       if(k==="x"){ b.addEventListener("click",e=>{ e.preventDefault(); fkStop(); }); return; }
       const on=e=>{ e.preventDefault(); FK.hold[k]=true; }, off=()=>{ FK.hold[k]=false; };
       b.addEventListener("pointerdown",on); b.addEventListener("pointerup",off); b.addEventListener("pointerleave",off); b.addEventListener("pointercancel",off); }); }
