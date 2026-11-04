@@ -22715,7 +22715,7 @@ function isCollaudo(c){ return !!c && COLLAUDO_H.indexOf(_collaudoH(c))>=0; }
    ⚠️ Resta un'impronta di un numero corto: chi sa programmare la puo'
    rovesciare. La serratura vera resta l'UID (verificaDocente). Per cambiare
    numero: rigenerare l'impronta con _docenteH("nuovo") e sostituirla qui. */
-const DOCENTE_H=["1q2mq4e.1r9s2t1"];
+const DOCENTE_H=["1845i3i.u2c7m5"];   // 4 nov: numero cambiato (Giacomo)
 function _docenteH(c){ const s=String(c||"").trim().toUpperCase(); return _fnv("dc|"+s).toString(36)+"."+_fnv(s+"|dc#").toString(36); }
 function isNumeroDocente(c){ return !!c && DOCENTE_H.indexOf(_docenteH(c))>=0; }
 /* ⚠️ IL CODICE DOCENTE NON E' UN SEGRETO E NON PUO' ESSERLO. Sta in chiaro
@@ -47331,7 +47331,7 @@ function unitPool(){ const u=Quest.unit;
 
 /* ---- AREE / TELEPORT ---- */
 function enterArea(target){
-  if(target!=="town"){ try{ rideOff(true); }catch(e){} }       // 🛹 dentro non si va in skate
+  if(target!=="town"){ try{ rideDrop("outside, by the door"); }catch(e){} }       // 🛹 dentro non si va in skate (🛴 l'alunno lo lascia fuori dalla porta)
   if(typeof area!=="undefined" && area!==target){ try{ standUpAll(); }catch(e){} }   // v296: cambiando luogo si e' sempre in piedi
   if(typeof area!=="undefined" && area==="market" && target!=="market"){ try{ marketOnLeave(); }catch(e){} }   // v256
   if(typeof area!=="undefined" && area==="shop" && target!=="shop"){ try{ u4ShelvesBack(); }catch(e){} }   // v307: carrello di Mia vuoto, scaffali pieni
@@ -48277,6 +48277,13 @@ scene.onBeforeRenderObservable.add(()=>{      // il tasto riflette lo stato REAL
    USO — tasto R (o il bottone 🛹/🛴): a piedi -> skate -> monopattino ->
    a piedi (solo quelli sbloccati). Solo all'aperto, in citta': entrando
    in un luogo, sedendosi o ballando si scende da soli.
+   🅿️ L'ALUNNO PARCHEGGIA (Giacomo, 4 nov: «dovrebbe parcheggiarlo nei
+   posti appositi»): dal monopattino R non fa piu' sparire niente. Vicino
+   a una rastrelliera R parcheggia (come la E), lontano dice dov'e' la piu'
+   vicina; neanche dalla Teca si scende o si cambia mezzo. Se si scende per
+   forza (entrando in un luogo, teletrasporto, ballo, punizione…) il
+   monopattino resta li' dov'eri, fuori dalla porta, e si riprende con la
+   E (rideLeaveHere / rideSpotTake). Il docente resta libero: R ovunque.
 
    VELOCITA' — skate = la corsa (RUN_MULT), monopattini 2,1x / 2,5x / 3x il passo.
    Con un po' di spinta all'inizio e di inerzia quando si molla: senza,
@@ -48682,8 +48689,8 @@ function rideMount(id,quiet,fromRack){
   if(!rideOpen(R)){ toast(rideStarsMsg(R),4200); return false; }
   if(!rideCanHere()){ toast(R.ic+" "+R.en+": solo all'aperto, in città",2600); return false; }
   /* 🅿️ parcheggiato alla rastrelliera: si riprende li' (rideRackAct) */
-  if(RIDE.racked && RIDE.racked.R===R && !fromRack){
-    toast("\u{1F17F}\uFE0F Your "+R.en.toLowerCase()+" is at the scooter parking "+RIDE_RACKS[RIDE.racked.k].where+" \u00b7 \u00e8 al parcheggio",4000); return false; }
+  if(RIDE.racked && RIDE.racked.R===R && !fromRack){ toast(rideRackedMsg(),4000); return false; }
+  if(RIDE.on && RIDE.on!==R && rideMustPark()){ rideParkFirstMsg(); return false; }   // 🛴 l'alunno prima parcheggia
   if(RIDE.racked && RIDE.racked.R===R) RIDE.racked=null;
   if(RIDE.on) rideOff(true);
   try{ if(typeof PDANCE!=="undefined" && PDANCE.on) danceStop(); }catch(e){}
@@ -48723,7 +48730,55 @@ function rideScooterBlocks(){ if(RIDE.on && RIDE.on.kind==="scooter"){ rideScoot
 function rideScooterSitMsg(){
   const k=rideRackNear(45);
   if(k) toast("\u{1F6F4} You can't sit on a scooter! Leave it at the \u{1F17F}️ scooter parking "+k.where+" · Lascia il monopattino al parcheggio qui vicino",5200);
+  else if(rideMustPark()) toast("\u{1F6F4} You can't sit on a scooter! Leave it at the \u{1F17F}️ scooter parking "+rideRackNear().where+" · Lascia il monopattino al parcheggio",5200);
   else toast("\u{1F6F4} Get off your scooter first: press R · Prima scendi dal monopattino (tasto R)",4200);
+}
+/* 🅿️ l'alunno in monopattino non lo fa sparire: lo parcheggia (vedi USO) */
+function rideMustPark(){
+  if(!RIDE.on || RIDE.on.kind!=="scooter") return false;
+  try{ return !lookProf(); }catch(e){ return true; }
+}
+function rideParkFirstMsg(){
+  const K=rideRackNear();
+  toast("\u{1F6F4} Park your scooter first! Nearest \u{1F17F}\uFE0F scooter parking: "+(K?K.where:"")+" \u00b7 Prima parcheggia il monopattino alla rastrelliera",5200);
+}
+/* dov'e' il monopattino parcheggiato: in una rastrelliera (k>=0) o lasciato
+   li' dov'eri (k=-1, rideLeaveHere) */
+function rideRackedMsg(){
+  const P=RIDE.racked; if(!P) return "";
+  const n=P.R.en.toLowerCase();
+  return (P.k>=0)
+    ? "\u{1F17F}\uFE0F Your "+n+" is at the scooter parking "+RIDE_RACKS[P.k].where+" \u00b7 \u00e8 al parcheggio"
+    : "\u{1F17F}\uFE0F Your "+n+" is "+P.where+" \u00b7 ti aspetta dove l'hai lasciato";
+}
+/* scendere PER FORZA (entrare in un luogo, teletrasporto, ballo, punizione,
+   sedute…): l'alunno in monopattino lo lascia li', in citta'; il resto come
+   sempre (lo skate e il docente: si scende e basta) */
+function rideDrop(where){
+  if(!RIDE.on) return;
+  if(rideMustPark() && area==="town"){ rideLeaveHere(RIDE.on,where); return; }
+  rideOff(true);
+}
+/* il monopattino resta in piedi accanto a te, in un punto libero
+   (rideParkSpot), finche' non torni a prenderlo con la E (rideSpotTake) */
+function rideLeaveHere(R,where){
+  const ry=player.rotation.y, sp=rideParkSpot(R);
+  const rx=Math.cos(ry), rz=-Math.sin(ry), fx=Math.sin(ry), fz=Math.cos(ry);
+  const x=player.position.x+rx*sp.x+fx*sp.z, z=player.position.z+rz*sp.x+fz*sp.z, y=_rackGround(x,z);
+  rideOff(true);
+  if(RIDE.racked && RIDE.racked.R!==R){ const om=RIDE.mesh[RIDE.racked.R.id]; if(om) om.setEnabled(false); }   // uno alla volta
+  const m=RIDE.mesh[R.id];
+  if(m){ m.parent=townRoot; m.position.set(x,y+R.lift,z); m.rotation.set(0,ry+(sp.ry||0),0); m.setEnabled(true); }
+  RIDE.racked={ R, k:-1, x, z, where:where||"where you left it" };
+  rideHud();
+  setTimeout(()=>{ try{ if(RIDE.racked && RIDE.racked.R===R && RIDE.racked.k<0) toast(rideRackedMsg(),4200); }catch(e){} },900);   // dopo il toast di chi ci ha fatto scendere
+}
+function rideSpotTake(){
+  const P=RIDE.racked; if(!P || P.k>=0) return;
+  if(rideMustPark()){ rideParkFirstMsg(); return; }
+  if(!rideUsable(P.R)){ toast(rideStarsMsg(P.R),4200); return; }
+  if(RIDE.on) rideOff(true);
+  rideMount(P.R.id,false,true);
 }
 /* accanto alla seduta. parent = chi siede (giocatore o compagno), quote
    locali. spot = {x,z,ry} gia' scelto in un punto libero (rideParkSpot);
@@ -48780,6 +48835,8 @@ function rideParkTick(){
    «Press E to park your scooter» -> scendi, il monopattino resta li' nel
    suo posto (e ti puoi sedere). Tornando: «Press E to take your …» e ci
    risali. Finche' sta parcheggiato, R non lo fa comparire altrove: e' li'.
+   L'alunno in monopattino parcheggia anche con R, vicino alla rastrelliera
+   (rideCycle); lontano R non lo fa scendere.
    (Il parcheggio vive finche' la pagina e' aperta: riaprendo il gioco il
    monopattino e' di nuovo con te.) */
 const RIDE_RACKS=[
@@ -48833,6 +48890,11 @@ function rideRacksBuild(){
       interact:()=>rideRackAct(i) });
     RIDE.racks.push({ K, root, y, inter });
   });
+  /* 🅿️ il monopattino lasciato fuori (rideLeaveHere): E per riprenderlo */
+  RIDE.spotInter=addInteract({ id:"ride_spot", area:"town", radius:2.2, enabled:false,
+    pos:()=>{ const P=RIDE.racked; return new BABYLON.Vector3(P&&P.k<0?P.x:0,0.8,P&&P.k<0?P.z:0); },
+    prompt:()=>{ const P=RIDE.racked; return 'Press <b>E</b> to take your <b>'+(P?P.R.en.toLowerCase():'scooter')+'</b>'; },
+    interact:()=>rideSpotTake() });
   try{ refreshShadowCasters(); }catch(e){}
 }
 function rideRackNear(maxD){
@@ -48876,13 +48938,19 @@ function rideRacksTick(){
   if(!RIDE.racks){ rideRacksBuild(); if(!RIDE.racks) return; }
   const sc=!!(RIDE.on && RIDE.on.kind==="scooter");
   RIDE.racks.forEach((S,i)=>{ S.inter.enabled=(area==="town") && (sc || !!(RIDE.racked && RIDE.racked.k===i)); });
+  if(RIDE.spotInter) RIDE.spotInter.enabled=(area==="town") && !sc && !!(RIDE.racked && RIDE.racked.k<0);
 }
 /* R / bottone: a piedi -> skate -> monopattino -> a piedi (solo gli sbloccati) */
 function rideCycle(){
   if(!started) return;
+  /* 🅿️ l'alunno in monopattino: R parcheggia alla rastrelliera, se c'e' */
+  if(rideMustPark()){
+    const K=rideRackNear(3.2);
+    if(K) rideRackAct(RIDE_RACKS.indexOf(K)); else rideParkFirstMsg();
+    return; }
   const L=rideUnlocked();
   if(!L.length){
-    if(RIDE.racked){ toast("\u{1F17F}\uFE0F Your "+RIDE.racked.R.en.toLowerCase()+" is at the scooter parking "+RIDE_RACKS[RIDE.racked.k].where,3600); return; }
+    if(RIDE.racked){ toast(rideRackedMsg(),3600); return; }
     const R=RIDES.find(r=>rideOwned(r)) || RIDES[0];
     if(rideOwned(R)) toast(rideStarsMsg(R),4200);
     else if(rideOpen(R)) toast(R.ic+" "+R.en+": buy it at the Corner Shop \u{1F6D2} \u00b7 compralo al Corner Shop",3600);
@@ -49014,7 +49082,7 @@ function rideHud(){
   rideBtn.textContent=nxt?nxt.ic:"\u{1F6F9}";
   rideBtn.classList.toggle("on",!!RIDE.on);
   rideBtn.setAttribute("aria-pressed",RIDE.on?"true":"false");
-  rideBtn.title=RIDE.on?(RIDE.on.en+" (R)"):"Skateboard / scooter (R)";
+  rideBtn.title=RIDE.on?(rideMustPark()?RIDE.on.en+": park it at a scooter parking (R)":RIDE.on.en+" (R)"):"Skateboard / scooter (R)";
   const kb=document.getElementById("kb-ride"); if(kb) kb.style.display=L.length?"":"none";
 }
 if(rideBtn) rideBtn.addEventListener("click",e=>{ e.preventDefault(); rideCycle(); });
@@ -49147,7 +49215,7 @@ scene.onBeforeRenderObservable.add(()=>{
   if(RIDE.parked){ try{ rideParkTick(); }catch(e){} }
   try{ rideRacksTick(); }catch(e){}                         // 🅿️ scooter parking
   if(!RIDE.on){ RIDE.px=player.position.x; RIDE.pz=player.position.z; return; }
-  if(!rideCanHere()){ rideOff(true); return; }
+  if(!rideCanHere()){ rideDrop(); return; }
   const d=Math.hypot(player.position.x-RIDE.px, player.position.z-RIDE.pz);
   RIDE.px=player.position.x; RIDE.pz=player.position.z;
   const step=(d<2)?d:0;                                       // un teletrasporto non e' una pedalata
@@ -49559,7 +49627,7 @@ function fkStart(){
   /* ⚠️ (Giacomo: «dopo che arriva il Ranger non puoi piu' calciare per la
      sessione, se no gli alunni fanno solo quello»): tre tiri a sessione */
   if(FK.sessionDone){ toast("⚽ That's enough free kicks for now! Come back next time. · Basta punizioni per oggi: torna la prossima volta!",4200); return; }
-  if(RIDE.on) rideOff(true);
+  if(RIDE.on) rideDrop();
   try{ standUpAll(); }catch(e){}
   _fkReset(S);
   FK.aim={ yaw:0, loft:14*Math.PI/180, t0:performance.now(), kick:null, res:null, resT:0 };
@@ -50701,7 +50769,7 @@ function _taxiSpot(x,z){
    qualunque seduta (diner, panchina, sgabello del caffe', panchina della
    metro). Silenzioso: il toast giusto e' quello della destinazione. */
 function standUpAll(){
-  try{ if(typeof RIDE!=="undefined" && RIDE.on) rideOff(true); }catch(e){}   // 🛹 sedersi, ballare, taxi, cambio luogo: giu' dalla tavola
+  try{ if(typeof RIDE!=="undefined" && RIDE.on) rideDrop(); }catch(e){}   // 🛹 sedersi, ballare, taxi, cambio luogo: giu' dalla tavola (🛴 l'alunno lo lascia li')
   try{ if(typeof CAFE_PICK!=="undefined" && CAFE_PICK.seated) cafeLeaveSeat(); }catch(e){}
   try{ if(typeof DINER!=="undefined" && DINER.seat) dinerStand(true); }catch(e){}
   try{ if(typeof BSIT!=="undefined" && BSIT.b) benchStand(true); }catch(e){}
@@ -70226,7 +70294,8 @@ function buildTeca(){
   _tecaWire(el, buildTeca);
   wire("data-mir",    v=>mirAct(v));
   wire("data-ride",   v=>{ const R=rideDef(v); if(!R) return false;          // 🛹 dalla Teca si sale (o si scende)
-    if(RIDE.on===R) rideOff(); else if(rideMount(R.id)){ try{ closeDiary(); }catch(e){} } return true; });
+    if(RIDE.on===R){ if(rideMustPark()) rideParkFirstMsg(); else rideOff(); }   // 🅿️ l'alunno lo parcheggia
+    else if(rideMount(R.id)){ try{ closeDiary(); }catch(e){} } return true; });
   if(_tecaTab!=="words" && _tecaTab!=="ride") mirRefresh();
 }
 /* ---- v316 — LO SPECCHIO DELLA TECA ----------------------------------------
@@ -70888,7 +70957,7 @@ const Presenza=(function(){
       if(iv && (q+iv).length<=48) q+=iv;
       /* 🛹 seduto con la tavola accanto: la vedono anche i compagni */
       try{ const rp=(typeof RIDE!=="undefined")?(RIDE.parked||RIDE.on):null; if(rp && (q+",v"+rp.code).length<=48) q+=",v"+rp.code; }catch(e){}
-      try{ const rk=(typeof RIDE!=="undefined")?RIDE.racked:null; if(rk && (q+",k"+rk.R.code+rk.k).length<=48) q+=",k"+rk.R.code+rk.k; }catch(e){}
+      try{ const rk=(typeof RIDE!=="undefined")?RIDE.racked:null; if(rk && rk.k>=0 && (q+",k"+rk.R.code+rk.k).length<=48) q+=",k"+rk.R.code+rk.k; }catch(e){}
       return q; }
     let q=player.position.x.toFixed(1)+","+player.position.z.toFixed(1)+","
           +player.position.y.toFixed(2)+","+player.rotation.y.toFixed(2);
@@ -70896,7 +70965,7 @@ const Presenza=(function(){
        vecchia non lo riconosce e lo salta: lo vede camminare, come prima) */
     try{ if(typeof RIDE!=="undefined" && RIDE.on) q+=",v"+RIDE.on.code; }catch(e){}
     /* 🅿️ il tuo monopattino nella rastrelliera: «,k<codice><rastrelliera>» */
-    try{ if(typeof RIDE!=="undefined" && RIDE.racked) q+=",k"+RIDE.racked.R.code+RIDE.racked.k; }catch(e){}
+    try{ if(typeof RIDE!=="undefined" && RIDE.racked && RIDE.racked.k>=0) q+=",k"+RIDE.racked.R.code+RIDE.racked.k; }catch(e){}
     return (iv && (q+iv).length<=48)?q+iv:q;
   }
   /* v309e (Giacomo: «fai passare l'invito per tutti»): chi ha chiesto alla
