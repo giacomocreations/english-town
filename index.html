@@ -49205,9 +49205,17 @@ function rideTrickHud(){
   let on=false; try{ on=!!(RIDE.on && RIDE.on.ramps && area==="town" && skFloorAt(player.position.x,player.position.z)!==null); }catch(e){}
   if(on!==RIDE.trickVis){ RIDE.trickVis=on; trickBtn.style.display=on?"":"none";
     const kb=document.getElementById("kb-trick"); if(kb) kb.style.display=on?"":"none"; }
-  trickBtn.classList.toggle("on",!!(RIDE.qp && (RIDE.qp.trick || RIDE.qp.air)));
+  trickBtn.classList.toggle("on",!!((RIDE.qp && (RIDE.qp.trick || RIDE.qp.air)) || performance.now()-(RIDE.trickT||0)<700));   // si accende al tocco: si vede che e' arrivato
 }
-if(trickBtn) trickBtn.addEventListener("click",e=>{ e.preventDefault(); rideTrick(); try{ canvas.focus(); }catch(err){} });
+/* ⚠️ POINTERDOWN, NON CLICK (Giacomo, 4 nov: «sul tablet premendo l'icona
+   non vedo differenze, sul pc con spazio si'»). L'airwalk si chiede mentre
+   l'altro pollice tiene la levetta per salire sulla rampa: con un dito gia'
+   sullo schermo i browser dei tablet NON generano il click del secondo tocco
+   (provato in Chromium: arrivano pointerdown e touchstart, il click no).
+   Niente preventDefault: farebbe arrivare un touchcancel alla levetta (vedi
+   il tasto CORRI). Il click resta solo per non lasciare il fuoco al bottone. */
+if(trickBtn){ trickBtn.addEventListener("pointerdown",()=>{ rideTrick(); },{passive:true});
+  trickBtn.addEventListener("click",e=>{ e.preventDefault(); try{ canvas.focus(); }catch(err){} }); }
 
 /* ---- «NUOVO!» quando si sblocca: una volta per alunno e dispositivo ---- */
 function _rideSeenKey(){ let c=""; try{ c=Student.code||""; }catch(e){} return "et_ride_seen:"+c; }
@@ -49911,8 +49919,11 @@ function fkHud(on){
     document.body.appendChild(h);
     FK.hold={};
     h.querySelectorAll("[data-fk]").forEach(b=>{ const k=b.getAttribute("data-fk");
-      if(k==="kick"){ b.addEventListener("click",e=>{ e.preventDefault(); fkKick(); }); return; }
-      if(k==="spin"){ b.addEventListener("click",e=>{ e.preventDefault(); fkSpinCycle(); }); return; }
+      /* ⚠️ pointerdown e non click: si mira con la levetta e si calcia con
+         l'altro dito, e con due dita sullo schermo il click non arriva (vedi
+         il bottone dell'airwalk). Niente preventDefault (touchcancel alla levetta). */
+      if(k==="kick"){ b.addEventListener("pointerdown",()=>{ fkKick(); },{passive:true}); return; }
+      if(k==="spin"){ b.addEventListener("pointerdown",()=>{ fkSpinCycle(); },{passive:true}); return; }
       if(k==="x"){ b.addEventListener("click",e=>{ e.preventDefault(); fkStop(); }); return; }
       const on=e=>{ e.preventDefault(); FK.hold[k]=true; }, off=()=>{ FK.hold[k]=false; };
       b.addEventListener("pointerdown",on); b.addEventListener("pointerup",off); b.addEventListener("pointerleave",off); b.addEventListener("pointercancel",off); }); }
