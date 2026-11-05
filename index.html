@@ -18893,7 +18893,7 @@ function _pkLog(x,z,d,h){
      giorno (STAR_RULES.spkDailyCap). Senza microfono si puo' dire ad alta
      voce aiutandosi con l'esempio, ma senza stelle (come in LiveLearn).
    ===================================================================== */
-/* ---- correzione: COPIA di _spkEval di LiveLearn (myclass/LiveLearn.html, identica in StudentApp) ---- */
+/* ---- correzione: COPIA di _spkEval di LiveLearn (myclass/LiveLearn.html, identica in StudentApp e MyClass Analytics) ---- */
 function _spkNorm(s) {
   return ' ' + String(s == null ? '' : s).toLowerCase()
     .replace(/[‘’`´]/g, "'")
@@ -18902,6 +18902,10 @@ function _spkNorm(s) {
     .replace(/n't\b/g, ' not')
     .replace(/'m\b/g, ' am').replace(/'re\b/g, ' are').replace(/'ve\b/g, ' have')
     .replace(/'ll\b/g, ' will').replace(/'d\b/g, ' would')
+    // 's = HAS davanti a un participio (she's got, he's never been, what's happened, where's he gone):
+    // prima diventava sempre «is» e «she's got» si leggeva «she is got». Resta «is» negli altri casi (she's tall, it's raining).
+    .replace(/\b(he|she|it|there|that|what|who|where|here|this)'s((?:\s+(?:never|ever|already|just|not|always|recently|only|really))*\s+(?:got|gotten|been|gone|done|seen|eaten|taken|given|written|had|made|bought|brought|found|forgotten|known|met|ridden|flown|swum|slept|won|heard|told|said|sent|spent|left|become|come|grown|happened|changed|lived|played|visited|finished|started|worked|tried|watched|stayed|travelled|traveled|cooked|climbed|studied|learnt|learned|broken\s+(?:his|her|its|my|a|the)))\b/g, '$1 has$2')
+    .replace(/\b(what|who|where)'s\s+(he|she|it|they|you)\s+(been|gone|done|got|seen|had|eaten|bought|found|made)\b/g, '$1 has $2 $3')
     .replace(/\b(he|she|it|there|that|what|who|where|here|this)'s\b/g, '$1 is')
     .replace(/[^a-z0-9'*\s]/g, ' ')
     .replace(/\s+/g, ' ').trim() + ' ';
@@ -19073,11 +19077,11 @@ const SPK_TOPICS={
  u2_1:[
   ["Describe your best friend's appearance.","Descrivi l'aspetto del tuo migliore amico o amica.",22,
    "My best friend is Giulia. She's tall and slim. She's got long, curly brown hair and big green eyes. She wears glasses.",
-   [["He's / She's got …","he has got|she has got|he has|she has|he is got|she is got"],["hair / eyes","hair|eyes"],["describing words","tall|short|curly|straight|wavy|long|blond|blonde|dark|brown|fair|slim|freckles|glasses|beard|moustache"]],
+   [["He's / She's got …","he has got|she has got|he has|she has"],["hair / eyes","hair|eyes"],["describing words","tall|short|curly|straight|wavy|long|blond|blonde|dark|brown|fair|slim|freckles|glasses|beard|moustache"]],
    [["hairs","«Hair» is uncountable: she's got long HAIR (not hairs)."],["he have|she have","With he/she: he HAS got."]]],
   ["Describe a famous person without saying the name: what does he or she look like?","Descrivi una persona famosa senza dire il nome: com'è fisicamente?",25,
    "She's a famous singer. She's quite tall and she's got long, straight blonde hair and blue eyes. She always wears red lipstick.",
-   [["He's / She's …","he is|she is"],["has got","has got|has|is got"],["hair / eyes / face","hair|eyes|face|beard|moustache|freckles|nose|mouth"]],
+   [["He's / She's …","he is|she is"],["has got","has got|has"],["hair / eyes / face","hair|eyes|face|beard|moustache|freckles|nose|mouth"]],
    [["hairs","«Hair» is uncountable: long HAIR."],["he have|she have","With he/she: she HAS got."]]],
   ["You're at the hairdresser's: say what you would like.","Sei dal parrucchiere: di' cosa vorresti.",20,
    "Hello! I'd like a haircut, please. Can you make it a bit shorter at the back? I don't want a fringe. Thank you!",
