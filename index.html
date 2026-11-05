@@ -18886,8 +18886,10 @@ function _pkLog(x,z,d,h){
      La correzione e' una COPIA di _spkEval di LiveLearn (se si cambia la',
      va cambiata anche qui): obiettivi, minimo di parole, errori da evitare;
      il punteggio e' la frazione degli obiettivi raggiunti.
-   · LE STELLE: punteggio su 10 (frazione x 10). Conta il MIGLIOR punteggio
-     del giorno: si prendono le ⭐ che mancano per arrivarci, al massimo 10 al
+   · LE STELLE: voto su 10 (frazione x 10); le ⭐ in proporzione, 30 se e'
+     tutto giusto (Giacomo, 5 nov: «lo speaking e' piu' difficile, dia 30
+     punti se tutto giusto»: 7/10 = 21 ⭐). Conta il MIGLIOR risultato del
+     giorno: si prendono le ⭐ che mancano per arrivarci, al massimo 30 al
      giorno (STAR_RULES.spkDailyCap). Senza microfono si puo' dire ad alta
      voce aiutandosi con l'esempio, ma senza stelle (come in LiveLearn).
    ===================================================================== */
@@ -19378,7 +19380,7 @@ function spkToggleMic(){
 function spkResult(raw){
   const T=SPK.cur, y1=_spkYr1(), e=_spkEval(T,raw), all=e.frac>=1, score=Math.round(e.frac*10);
   SPK.tries++;
-  let got=0; try{ got=Stars.awardSpeak(score); }catch(err){}
+  let got=0; try{ got=Stars.awardSpeak(Math.round(e.frac*STAR_RULES.spkDailyCap)); }catch(err){}   // ⭐ in proporzione: 10/10 = 30
   const rows=e.rows.map(r=>{ const icon=r.ok?"✅":r.count?"\u{1F7E1}":"❌";
     const n=(r.min>1||r.words)?" <span style=\"opacity:.75\">"+r.count+" / "+r.min+"</span>":"";
     return "<li style=\"margin:3px 0;color:"+(r.ok?"#166534":r.count?"#92400e":"#991b1b")+"\">"+icon+" "+_escHtml(_spkWordsLabel(r))+n+"</li>"; }).join("");
@@ -22306,7 +22308,7 @@ const STAR_RULES={
   gemDailyCap:60,     // tetto ⭐ giornaliero dei cristalli = 10 risposte
   fkNote:3,           // ⚽📝 foglietto giusto colpito col pallone (Giacomo, 5 nov: «prende 3 stellette»)
   fkNoteDailyCap:15,  // tetto ⭐ giornaliero dei foglietti = 5 frasi giuste
-  spkDailyCap:10,     // 🎤 Speakers' Corner: conta il miglior punteggio del giorno (su 10)
+  spkDailyCap:30,     // 🎤 Speakers' Corner: tutto giusto = 30 ⭐ (Giacomo, 5 nov: «e' piu' difficile»); conta il migliore del giorno
 };
 /* Anni il cui curricolo e' DAVVERO tutto implementato: solo per questi ha
    senso il bonus di fine anno.
@@ -22475,7 +22477,7 @@ const Stars=(function(){
     return give;
   }
   /* 🎤 SPEAKERS' CORNER: si prendono le ⭐ che mancano per arrivare al miglior
-     punteggio del giorno (su 10): riprovare migliora, non moltiplica. */
+     risultato del giorno (fino a 30): riprovare migliora, non moltiplica. */
   function awardSpeak(score){
     const s=ledger(), t=_today();
     if(s.daySpkDate!==t){ s.daySpkDate=t; s.daySpk=0; }
