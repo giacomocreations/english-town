@@ -18871,10 +18871,17 @@ function _pkLog(x,z,d,h){
    l'alunno che vuole parlare deve seguire il tema del giorno; la modalita'
    e' quella di English Drills e dei piani di speaking su MyClass: l'alunno
    parla e avra' un punteggio in base al feedback»).
-   · DOVE: l'angolo nord-ovest di Central Park (x 91, z 46), sul prato appena
-     dopo la promenade — come quello vero, all'angolo di Hyde Park. Una
-     cassetta di legno su cui si sale (si puo' camminarci sopra) e il
-     cartello «SPEAKERS' CORNER» col tema del giorno, rivolto alla promenade.
+   · DOVE (Giacomo, 5 nov, con uno screenshot: «mettilo qui, sempre al parco
+     ma nello sterrato vicino alla fontana»): all'incrocio fra il vialetto
+     della fontana (z -3..3) e il vialetto est che va dalla riva del lago al
+     campo (x 124..128). ⚠️ NON al centro dell'incrocio: Ryan, il runner,
+     corre lungo x 126 (vedi PARKIES, loop) e chi passeggia va sulle corsie
+     z +-1,8 (PK_LANE): ci sarebbero passati attraverso. La cassetta (ci si
+     sale) sta nell'angolo nord-ovest dell'incrocio, sul bordo dello sterrato
+     (x 124,4 z 2,85: x 123,8..125 e z 2,4..3,3), il cartello «SPEAKERS'
+     CORNER» col tema del giorno subito dietro sul bordo del prato, rivolto
+     alla fontana, da dove arriva chi passeggia.
+     (Prima era sul prato nell'angolo nord-ovest del parco, x 91 z 46.)
    · IL TEMA: dalla unit a cui e' arrivata la classe (il cursore di classe,
      Gate.cursor: l'ultima unit aperta), tre temi per unit (SPK_TOPICS) che
      si alternano un giorno ciascuno. Il docente senza simulazione vede ogni
@@ -19244,7 +19251,7 @@ const SPK_TOPICS={
    [["injuries","broke|broken|cut|hurt|sprained|twisted|fell|bruise*|plaster|bandage|arm|leg|ankle|wrist|knee|finger"],["past simple","was|were|fell|broke|hurt|went|had|happened|took"],["hospital / doctor","hospital|doctor|nurse|x ray|x-ray|ambulance|emergency"]],
    [["have broken * last|have broken * ago|have fallen * yesterday|have fallen * last","With a finished time use the past simple: I broke my arm last year."]]] ],
 };
-const SPK={ built:false, x:91, z:46, day:-1, sign:null, signTex:null, cur:null, rec:null, busy:false, tries:0, forceUnit:null };
+const SPK={ built:false, x:124.4, z:2.85, day:-1, sign:null, signTex:null, cur:null, rec:null, busy:false, tries:0, forceUnit:null };
 function spkDay(){ const d=new Date(); return Math.floor((d.getTime()-d.getTimezoneOffset()*60000)/86400000); }
 /* la unit della classe: la piu' avanti fra quelle aperte dal cursore */
 function spkUnitId(){
@@ -19290,7 +19297,7 @@ function spkBuild(){
   [-0.3,0,0.3].forEach(dz=>{ const s=B.CreateBox("spkSlat",{ width:1.22, height:0.035, depth:0.03 },scene); s.material=dark; s.parent=townRoot;
     s.position.set(x,gy+0.12+(dz+0.3)*0.25,z-0.455); s.isPickable=false; });
   const lab=B.CreateBox("spkLab",{ width:0.5, height:0.16, depth:0.02 },scene); lab.material=dark; lab.parent=townRoot; lab.position.set(x-0.61,gy+0.22,z); lab.rotation.y=Math.PI/2; lab.isPickable=false;
-  /* il cartello, rivolto alla promenade (ovest) */
+  /* il cartello, rivolto alla fontana (ovest) */
   const post=B.CreateCylinder("spkPost",{ diameter:0.09, height:2.5, tessellation:8 },scene); post.material=dark; post.parent=townRoot;
   post.position.set(x+0.2,gy+1.25,z+1.75); post.__cast=true;
   const dt=new BABYLON.DynamicTexture("spkSignT",{ width:512, height:360 },scene,true);
@@ -19314,7 +19321,7 @@ function _spkWordsLabel(r){ return r.words ? (_spkYr1()?"almeno "+r.min+" parole
 function spkOpen(){
   if(RIDE.on) rideDrop();
   try{ standUpAll(); }catch(e){}
-  player.position.set(SPK.x,(SPK.gy||0)+0.42,SPK.z); player.rotation.y=-Math.PI/2;   // sulla cassetta, rivolto alla promenade
+  player.position.set(SPK.x,(SPK.gy||0)+0.42,SPK.z); player.rotation.y=-Math.PI/2;   // sulla cassetta, rivolto alla fontana
   moveTarget=null; pendingInteract=null;
   if(SPK.day!==spkDay()) spkSignDraw();
   SPK.cur=spkTopic(); SPK.tries=0; SPK.noMic=false;
