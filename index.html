@@ -21764,6 +21764,8 @@ const STAR_RULES={
   gem:6,              // cristallo raccolto rispondendo
   gemSeen:3,          // scheda di scoperta (guardarlo bene e' il lavoro, quel giro)
   gemDailyCap:60,     // tetto ⭐ giornaliero dei cristalli = 10 risposte
+  fkNote:3,           // ⚽📝 foglietto giusto colpito col pallone (Giacomo, 5 nov: «prende 3 stellette»)
+  fkNoteDailyCap:15,  // tetto ⭐ giornaliero dei foglietti = 5 frasi giuste
 };
 /* Anni il cui curricolo e' DAVVERO tutto implementato: solo per questi ha
    senso il bonus di fine anno.
@@ -21801,6 +21803,7 @@ const Stars=(function(){
              dayCafe:s.dayCafe||{}, dayCafeTot:s.dayCafeTot||0,
              dayShop:s.dayShop||0, dayShopDate:s.dayShopDate||"",      // v256 — spesa al Market
              dayGem:s.dayGem||0, dayGemDate:s.dayGemDate||"",          // v312 — stelle dei cristalli
+             dayFk:s.dayFk||0, dayFkDate:s.dayFkDate||"",              // ⚽📝 foglietti della porta
              master:!!s.master };
   }
   function total(){ return ledger().tot; }
@@ -21919,6 +21922,16 @@ const Stars=(function(){
     if(give>0) flash(give, "cristallo");
     return give;
   }
+  /* ⚽📝 FOGLIETTI DELLA PORTA: tetto giornaliero con data propria, come i
+     cristalli. Ritorna le ⭐ date (0 = tetto pieno: lo dice chi chiama). */
+  function awardFkNote(){
+    const s=ledger(), t=_today();
+    if(s.dayFkDate!==t){ s.dayFkDate=t; s.dayFk=0; }
+    const give=Math.min(STAR_RULES.fkNote, Math.max(0, STAR_RULES.fkNoteDailyCap - s.dayFk));
+    s.dayFk+=give; s.tot+=give; _save(s);
+    if(give>0) flash(give, "frase giusta");
+    return give;
+  }
   function awardFragment(fragId, missed){
     return award("f:"+fragId, missed?STAR_RULES.fragmentRetry:STAR_RULES.fragment, "frammento"); }
   function awardPhoto(id){ return award("p:"+id, STAR_RULES.photo, "foto"); }
@@ -21956,7 +21969,7 @@ const Stars=(function(){
   }
   function reset(){ _save({tot:0,given:{},day:"",dayAmb:0,dayNpc:{},master:false}); refreshStarHud(); }
   return { total, award, awardStep, awardAmbient, awardAmbientNPC, awardAskNPC,
-           awardCafeOrder, awardShopping, awardGem, awardFragment, awardPhoto,
+           awardCafeOrder, awardShopping, awardGem, awardFkNote, awardFragment, awardPhoto,
            checkYearBonus, setMaster, title, next, unitStars, ledger, reset };
 })();
 
@@ -49507,6 +49520,7 @@ function _fkStep(S){
       if(vn<0){ v.x-=1.6*vn*nx; v.y-=1.6*vn*ny; M.curl*=0.2; if(!M.res) M.res="bar"; } } }
   /* la linea di porta */
   const a=(px0-G.x)*G.sg, b=(p.x-G.x)*G.sg;
+  if(a<0 && b>=0 && !M.cross) M.cross={ z:p.z-G.z, y:p.y-y0 };     // ⚽📝 dove passa la linea (foglietti)
   if(a<0 && b>=0 && !M.net){
     if(Math.abs(p.z-G.z)<3-FK_R && p.y<y0+2.2-FK_R){ M.net=true; M.res="goal"; }
     else if(!M.res || M.res==="wall" || M.res==="post" || M.res==="bar") M.res=(M.res==="post"||M.res==="bar")?M.res:((p.y>=y0+2.2-FK_R)?"over":"wide"); }
@@ -49796,6 +49810,7 @@ function fkStart(){
   fkHud(true);
   toast("⚽ Free kick! A/D aim · W/S height · Q spin · SPACE kick (when the power is right) · Esc stop",4600);
   fkSpinHud();
+  try{ fkNotesNew(); }catch(e){ console.warn("[fk] foglietti",e); }
 }
 /* ⚽ L'EFFETTO A RIENTRARE (Giacomo, 4 nov: «metti anche la possibilita' di
    fare l'effetto a rientrare con interno e esterno del piede»). Si calcia
@@ -49829,7 +49844,8 @@ function _fkPlace(){ const S=FK.sets.me; player.position.x=S.spot.x-S.dir.x*2.4+
   try{ camera.alpha=-player.rotation.y-Math.PI/2; }catch(e){} }
 function fkStop(){ if(!FK.aim) return;
   try{ const S=FK.sets.me; if(Math.hypot(player.position.x-S.spot.x,player.position.z-S.spot.z)<0.8) _fkPlace(); }catch(e){}   // non restare in piedi sul pallone
-  FK.aim=null; FK.K=null; if(FK.inter) FK.inter.enabled=(FK.open!==false); try{ avatarRoot.rotation.x=0; }catch(e){} fkHud(false); if(FK.sets) _fkReset(FK.sets.me); playAvatarAnim(IDLE_ANIM); }
+  FK.aim=null; FK.K=null; if(FK.inter) FK.inter.enabled=(FK.open!==false); try{ avatarRoot.rotation.x=0; }catch(e){} fkHud(false); if(FK.sets) _fkReset(FK.sets.me); playAvatarAnim(IDLE_ANIM);
+  try{ fkNotesShow(false); }catch(e){} }
 function fkKick(){
   const A=FK.aim; if(!A || A.kick || A.res) return;
   const now=performance.now();
@@ -49847,6 +49863,11 @@ function _fkMeTick(){
   if(area!=="town" || Math.hypot(player.position.x-S.spot.x,player.position.z-S.spot.z)>6){ fkStop(); return; }
   const now=performance.now(), dt=Math.min(0.1,(engine.getDeltaTime()||16)/1000);
   const paused=(typeof _dlgOpen==="function" && _dlgOpen());
+  /* ⚽📝 barra ed elenco dei foglietti stanno sopra le finestre (z 30 contro
+     25): con lo zoom di un foglietto (o il Ranger) aperto ne coprivano il
+     testo e i bottoni. Si nascondono finche' la finestra e' aperta. */
+  { const hh=document.getElementById("fkHud"), nl=document.getElementById("fkNotesList"), v=paused?"hidden":"";
+    if(hh && hh.style.visibility!==v) hh.style.visibility=v; if(nl && nl.style.visibility!==v) nl.style.visibility=v; }
   if(!A.kick && !A.res && !paused){
     const H=FK.hold||{};
     const ax=(keys["d"]?1:0)-(keys["a"]?1:0)+(H.r?1:0)-(H.l?1:0)+(Math.abs(stickVec.x)>0.2?stickVec.x:0);
@@ -49869,11 +49890,13 @@ function _fkMeTick(){
     if(S.sim){ _fkAdvance(S,now/1000);
       const M=S.sim, done=M.stop || (now/1000-M.t0)>4.2;
       if(done && u>FK_RUN+FK_KICK+FK_REC){ const r=M.res||"short"; A.res=r; A.resT=now; A.kick=null; FK.kicks++; if(FK.K){ FK.K.u=null; FK.K.rec=null; } avatarRoot.rotation.x=0;
-        const T=(r==="goal" && M.spin)?["⚽ GOAL! What a curler!","Gol a giro!"]:(FK_RES[r]||FK_RES.short); toast(T[0]+" · "+T[1],2600);
-        if(r==="goal") try{ SFX.correct(); }catch(e){}
+        const T=(r==="goal" && M.spin)?["⚽ GOAL! What a curler!","Gol a giro!"]:(FK_RES[r]||FK_RES.short);
+        let nota=null; try{ nota=fkNotesCheck(M); }catch(e){ console.warn("[fk] foglietti",e); }
+        if(!nota) toast(T[0]+" · "+T[1],2600);
+        if(r==="goal" && !nota) try{ SFX.correct(); }catch(e){}
         if(FK.kicks>=3){ FK.sessionDone=true; fkRangerCome(); } } }
   } else if(A.res && now-A.resT>1600){ if(FK.sessionDone){ fkStop(); toast("⚽ That's enough free kicks for now! · Basta punizioni per ora",3000); return; }
-    A.res=null; _fkReset(S); A.t0=now; }
+    A.res=null; _fkReset(S); A.t0=now; try{ fkNotesNew(); }catch(e){} }
 }
 /* LA MIRA (v2, Giacomo: «migliora la linea bianca per indirizzare il tiro,
    troppo basic»). Due cose:
@@ -49911,6 +49934,190 @@ function _fkAimDraw(on){
   N.dots.forEach((s,i)=>{ const t=0.025+i*0.02, lat=0.5*cu*t*t*1.6;     // un filo esagerata: in 0,33 s si vedrebbe appena
     s.position.set(S.spot.x+vx*t+sz*lat, S.F.y+FK_R+vy*t-4.9*t*t, S.spot.z+vz*t-sx*lat);
     const k=1-i/N.dots.length; s.scaling.setAll(0.55+0.6*k); });
+}
+/* =====================================================================
+   ⚽📝 I FOGLIETTI SULLA PORTA (Giacomo, 5 nov: «mettere delle frasi, sempre
+   diverse, in base a dove e' arrivato l'alunno, in varie parti della porta,
+   come stick notes: solo una e' corretta; se l'alunno riesce a prenderla col
+   pallone prende 3 stellette. Cliccandoci si possono zoomare»; poi: «tetto»
+   e «solo unit»).
+   · LE FRASI: il lessico delle unit APERTE per l'alunno, lo stesso dei
+     cristalli (GEM_LEX, gemLexIndex: 70% dall'anno piu' recente). Si prende
+     una parola con la sua frase col buco: la frase GIUSTA e' col buco
+     riempito dalla parola, le SBAGLIATE con parole di TIPO DIVERSO (vedi
+     _fkNoteWrong), quindi una sola frase e' giusta.
+     Un set nuovo a ogni tiro, senza ripetere la parola nella sessione.
+   · DOVE: quattro post-it negli angoli della porta, appena dietro la linea
+     (due in alto, due in basso: gli angoli sono i tiri piu' difficili). Se
+     le frasi sbagliate trovate sono solo due, i foglietti sono tre.
+   · IL COLPO: conta il punto dove il pallone passa la linea di porta
+     (M.cross in _fkStep), dentro il rettangolo del foglietto.
+     Giusto: +3 ⭐ (STAR_RULES.fkNote, tetto giornaliero fkNoteDailyCap).
+     Sbagliato: il foglietto giusto si accende e si legge la frase giusta;
+     la parola va nella coda di ripasso dei cristalli (gemDueArm).
+   · ZOOM: un tocco sul foglietto (o sulla sua riga nell'elenco sopra la
+     barra) apre la frase grande, con 🔊 per sentirla.
+   ===================================================================== */
+const FK_NOTE_W=1.45, FK_NOTE_H=0.78;
+const FK_NOTE_SPOTS=[ { z:-2.1, y:1.66, c:"#ffe36e", d:"\u{1F7E8}" },     // in alto (giallo)
+                      { z: 2.1, y:1.66, c:"#8fdcff", d:"\u{1F7E6}" },     // in alto (azzurro)
+                      { z:-2.1, y:0.58, c:"#ffb3c9", d:"\u{1F7E5}" },     // in basso (rosa)
+                      { z: 2.1, y:0.58, c:"#b8f0a0", d:"\u{1F7E9}" } ];   // in basso (verde)
+function _fkNoteDraw(N,i,state){
+  const sp=FK_NOTE_SPOTS[i], dt=N.tex[i], c=dt.getContext(), W=512, H=276;
+  const txt=(N.set && N.set.opts[i]) ? N.set.opts[i].t : "";
+  c.clearRect(0,0,W,H);
+  c.fillStyle=state==="ok"?"#5fd16f":(state==="no"?"#ef6b5f":sp.c); c.fillRect(0,0,W,H);
+  c.fillStyle="rgba(0,0,0,0.07)"; c.fillRect(0,0,W,34);                    // la striscia adesiva
+  c.fillStyle="#1d2a32"; c.textAlign="center"; c.textBaseline="middle";
+  /* il testo piu' grande che ci sta, a capo sulle parole */
+  let fs=60, lines=[];
+  for(;fs>=26;fs-=4){ c.font="bold "+fs+"px Arial"; lines=[]; let cur="";
+    String(txt).split(/\s+/).forEach(w=>{ const t=cur?cur+" "+w:w; if(c.measureText(t).width>W-40 && cur){ lines.push(cur); cur=w; } else cur=t; });
+    if(cur) lines.push(cur);
+    if(lines.length*fs*1.12<=H-60) break; }
+  const y0=34+(H-34)/2-(lines.length-1)*fs*0.56;
+  lines.forEach((l,k)=>c.fillText(l,W/2,y0+k*fs*1.12));
+  dt.update();
+}
+function _fkNotesBuild(){
+  if(FK.notes) return FK.notes;
+  const S=FK.sets.me, G=S.G, y0=S.F.y, B=BABYLON.MeshBuilder;
+  const root=new BABYLON.TransformNode("fkNotes",scene); root.parent=townRoot;
+  const N={ root, mesh:[], tex:[], set:null };
+  FK_NOTE_SPOTS.forEach((sp,i)=>{
+    const dt=new BABYLON.DynamicTexture("fkNoteT"+i,{ width:512, height:276 },scene,true);
+    const m=new BABYLON.StandardMaterial("fkNoteM"+i,scene); m.diffuseTexture=dt;
+    m.emissiveColor=new BABYLON.Color3(0.55,0.55,0.55); m.specularColor=new BABYLON.Color3(0,0,0); m.backFaceCulling=false;
+    const pl=B.CreatePlane("fkNote"+i,{ width:FK_NOTE_W, height:FK_NOTE_H },scene); pl.material=m; pl.parent=root;
+    /* appena dietro la linea, rivolto a chi tira (il piano di serie guarda -z) */
+    pl.position.set(G.x+G.sg*0.22, y0+sp.y, G.z+sp.z); pl.rotation.y=G.sg*Math.PI/2; pl.rotation.z=(i%2?1:-1)*0.035;
+    pl.isPickable=true; pl.__fkNote=i;
+    try{ if(typeof glowL!=="undefined" && glowL) glowL.addExcludedMesh(pl); }catch(e){}
+    N.mesh.push(pl); N.tex.push(dt); });
+  root.setEnabled(false);
+  /* zoom: un tocco sul foglietto durante la punizione */
+  scene.onPointerObservable.add(pi=>{
+    if(pi.type!==BABYLON.PointerEventTypes.POINTERTAP || !FK.aim || !N.set) return;
+    if(typeof _dlgOpen==="function" && _dlgOpen()) return;
+    /* ⚠️ il pick automatico dei puntatori e' spento (skipPointer*Picking):
+       si fa a mano, solo sui foglietti */
+    const pk=scene.pick(scene.pointerX,scene.pointerY,mm=>mm.__fkNote!=null && mm.isEnabled()), m=pk && pk.hit && pk.pickedMesh;
+    if(m && N.set.opts[m.__fkNote]) fkNoteZoom(m.__fkNote);
+  });
+  return (FK.notes=N);
+}
+function _fkNotesPick(){
+  const ix=gemLexIndex(), seen=FK.noteSeen||(FK.noteSeen={});
+  const ok=ix.keys.filter(k=>{ const w=k.slice(k.indexOf(":",4)+1), r=ix.byWord[String(w).toLowerCase()];
+    return r && r.cloze && r.cloze.indexOf("___")>=0 && !seen[k]; });
+  if(!ok.length){ FK.noteSeen={}; return null; }
+  const sp=gemLexSplit(ok), pool=(sp.recent.length && (Math.random()<GEM_LEX_RECENT || !sp.older.length))?sp.recent:sp.older;
+  for(let tries=0;tries<30;tries++){
+    const key=pool[Math.floor(Math.random()*pool.length)], it=gemItem(key);
+    if(!it || !it.cloze) continue;
+    const wrong=_fkNoteWrong(it);
+    if(wrong.length<2) continue;
+    seen[key]=1;
+    const fill=w=>it.cloze.replace("___",w);
+    const opts=[{ t:fill(it.word), ok:true }].concat(wrong.map(w=>({ t:fill(w), ok:false })));
+    for(let i=opts.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=opts[i]; opts[i]=opts[j]; opts[j]=t; }
+    return { key, word:it.word, it:it.it, opts };
+  }
+  return null;
+}
+/* ⚠️ LE FRASI SBAGLIATE DEVONO ESSERE SBAGLIATE DAVVERO. I distrattori dei
+   cristalli (gemLexAltsCloze) sono parole di un ALTRO campo semantico ma
+   dello STESSO tipo: per scegliere una parola vanno bene, ma come frase
+   intera spesso stanno in piedi («Our book is very nice»), e a inizio anno
+   ripiegano perfino sulla stessa unit («Our school is very nice»: giusta
+   anche lei). Qui si prendono parole di TIPO DIVERSO da quello del buco
+   (_gemSlot: nome / aggettivo / verbo, letto dalla parola prima del buco):
+   «Our green is very nice», «There are twenty desks in our thirty». Se il
+   tipo del buco non si sa ("any") la parola si salta. Una parola della
+   stessa unit al massimo (sembra plausibile, ma e' del tipo sbagliato). */
+/* ⚠️⚠️ In inglese tante parole sono insieme nome e verbo («zip line», «sign»,
+   «upload») o nome e aggettivo (i colori, le nazionalita', «light», «cold»):
+   «Don't zip line in the forest» e' giusta quanto «Don't get lost». Quindi
+   per tipo di buco si prendono solo i tipi che NON si possono confondere:
+     nome      -> espressioni verbali di piu' parole («brush my teeth»), poi
+                  aggettivi e numeri che non siano colori, nazionalita' o
+                  aggettivi-che-sono-anche-nomi/verbi (_FK_AMBI);
+     aggettivo -> nomi, espressioni verbali di piu' parole;
+     verbo     -> solo aggettivi «sicuri» (non _FK_AMBI, non colori).
+   Meno di due frasi sbagliate sicure: la parola si salta. */
+const _FK_COL=/^(red|blue|green|yellow|white|black|grey|gray|orange|purple|pink|brown|gold|silver)$/i;
+const _FK_AMBI=/^(clean|dry|warm|empty|tidy|open|close|closed|free|clear|wet|cool|calm|slow|fast|cold|hot|light|dark|right|wrong|safe|quiet|busy|better|best|well|sick|ill|fit|cut|hurt|broken|kind|mean|fine|sound|fair|fare|present|last|still|even|round|straight|short|long|smart|cross|sore|bright|direct|second|square|plain|express|local|single|return|loud|low|high|back|live|bald|blond|blonde)$/i;
+function _fkNoteWrong(it){
+  const slot=_gemSlot(it.cloze); if(slot==="any") return [];
+  const ix=gemLexIndex(), t1=[], t2=[], seen={};
+  seen[String(it.word).toLowerCase()]=1;
+  ix.units.forEach(u=>(GEM_LEX[u]||[]).forEach(w=>{
+    const en=String(w[0]), k=en.toLowerCase(); if(seen[k]) return; seen[k]=1;
+    const sl=_gemSlot(w[3]||""), multi=/\s/.test(en), ambi=_FK_AMBI.test(en)||_FK_COL.test(en)||/^[A-Z]/.test(en);
+    if(sl==="any" || sl===slot) return;
+    if(slot==="n"){ if(sl==="v" && multi) t1.push(en); else if(sl==="a" && !ambi) t2.push(en); }
+    else if(slot==="a"){ if(sl==="n" || (sl==="v" && multi)) t1.push(en); }
+    else if(slot==="v"){ if(sl==="a" && !ambi) t1.push(en); }
+  }));
+  const mix=a=>{ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; };
+  const all=mix(t1.concat(t2));                 // i due gruppi mescolati: varieta' a ogni tiro
+  return all.slice(0,3);
+}
+function fkNotesNew(){
+  if(!FK.sets) return;
+  const N=_fkNotesBuild(), set=_fkNotesPick();
+  N.set=set;
+  N.mesh.forEach((m,i)=>{ m.setEnabled(!!(set && set.opts[i])); _fkNoteDraw(N,i,null); });
+  fkNotesShow(!!set);
+  fkNotesList();
+}
+function fkNotesShow(on){ const N=FK.notes; if(N) N.root.setEnabled(!!on && !!FK.aim); const L=document.getElementById("fkNotesList"); if(L && !on) L.style.display="none"; }
+/* l'elenco piccolo sopra la barra: da 11 metri i foglietti si leggono male */
+function fkNotesList(){
+  const N=FK.notes; let L=document.getElementById("fkNotesList");
+  if(!L){ L=document.createElement("div"); L.id="fkNotesList";
+    L.style.cssText="position:fixed;left:50%;transform:translateX(-50%);bottom:64px;z-index:30;background:rgba(251,247,236,.94);"
+      +"border-radius:12px;padding:6px 10px;box-shadow:0 6px 18px rgba(0,0,0,.22);font:600 12.5px system-ui,sans-serif;color:#1d2a32;"
+      +"max-width:calc(100vw - 16px);box-sizing:border-box;display:none";
+    document.body.appendChild(L);
+    L.addEventListener("click",e=>{ const t=e.target.closest("[data-fkn]"); if(t) fkNoteZoom(+t.getAttribute("data-fkn")); }); }
+  if(!N || !N.set || !FK.aim){ L.style.display="none"; return; }
+  L.innerHTML="<div style=\"font-weight:800;margin-bottom:2px\">\u{1F4DD} Hit the correct sentence! <span style=\"font-weight:600;opacity:.7\">· Colpisci la frase giusta (+3 ⭐)</span></div>"
+    +N.set.opts.map((o,i)=>"<div data-fkn=\""+i+"\" style=\"cursor:pointer;padding:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\">"
+      +FK_NOTE_SPOTS[i].d+" "+_escHtml(o.t)+"</div>").join("");
+  L.style.display="block";
+  try{ const h=document.getElementById("fkHud"); if(h) L.style.bottom=(h.offsetHeight+14)+"px"; }catch(e){}   // sopra la barra, anche quando va a capo
+}
+function fkNoteZoom(i){
+  const N=FK.notes; if(!N || !N.set || !N.set.opts[i]) return;
+  const t=N.set.opts[i].t;
+  QModal.open({ title:FK_NOTE_SPOTS[i].d+" Sentence",
+    html:"<div style=\"padding:18px 14px;border-radius:12px;background:"+FK_NOTE_SPOTS[i].c+";font:800 26px/1.35 system-ui,sans-serif;color:#1d2a32;text-align:center\">"+_escHtml(t)+"</div>"
+      +"<div style=\"margin-top:10px;font-size:13px;opacity:.75\">Only one sentence is correct: hit it with the ball! · Una sola frase è giusta: colpiscila col pallone!</div>",
+    buttons:[ { label:"\u{1F50A} Listen", keepOpen:true, act:()=>{ try{ speechSynthesis.resume(); TTS.say(t); }catch(e){} } },
+              { label:"OK", cls:"primary" } ] });
+}
+/* a tiro finito: ha preso un foglietto? Ritorna true se ha gia' detto lui l'esito */
+function fkNotesCheck(M){
+  const N=FK.notes; if(!N || !N.set || !M || M.res!=="goal" || !M.cross) return false;
+  const c=M.cross, mz=FK_NOTE_W/2+FK_R*0.6, my=FK_NOTE_H/2+FK_R*0.6;
+  let hit=-1;
+  FK_NOTE_SPOTS.forEach((sp,i)=>{ if(hit<0 && N.set.opts[i] && Math.abs(c.z-sp.z)<=mz && Math.abs(c.y-sp.y)<=my) hit=i; });
+  if(hit<0) return false;
+  const good=N.set.opts.findIndex(o=>o.ok), giusta=N.set.opts[good].t;
+  if(N.set.opts[hit].ok){
+    _fkNoteDraw(N,hit,"ok");
+    let got=0; try{ got=Stars.awardFkNote(); }catch(e){}
+    try{ SFX.correct(); }catch(e){}
+    toast("\u{1F4DD}⚽ Correct sentence! "+(got?"+"+got+" ⭐":"(no more ⭐ today)")+" · Frase giusta! "+(got?"":"Per oggi le stelle dei foglietti sono finite."),3600);
+  } else {
+    _fkNoteDraw(N,hit,"no"); _fkNoteDraw(N,good,"ok");
+    try{ SFX.wrong(); }catch(e){}
+    toast("❌ Wrong sentence! The right one: «"+giusta+"» · Frase sbagliata: quella giusta è in verde",4800);
+    try{ gemDueArm(N.set.key); }catch(e){}            // la parola torna presto su un cristallo in citta' (ripasso)
+  }
+  return true;
 }
 /* il calcio sulle gambe del giocatore: DOPO le pin (osservatore nato tardi) */
 function _fkMeLegs(){ const K=FK.K; if(!K || !FK.aim || K.root!==avatarRoot) return;
@@ -65629,7 +65836,7 @@ const GEM_LEX={
     ["lake","lago","","We have swum in that ___."],
     ["cave","grotta","","We found a dark ___."],
     ["camp","campo","","We set up ___ near the trees."],
-    ["climb","scalare","","I have never ___ a mountain."],
+    ["climb","scalare","","I want to ___ a mountain one day."],   // era «I have never ___»: col present perfect ci va climbed, non climb
     ["hike","escursione","","We went on a long ___."],
     ["get lost","perdersi","","Don't ___ in the forest."],
     ["shelter","riparo","","We looked for a ___ from the rain."],
