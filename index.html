@@ -18865,6 +18865,546 @@ function _pkLog(x,z,d,h){
   const ring=BABYLON.MeshBuilder.CreateCylinder("pkLogR",{diameter:d*0.5,height:0.014,tessellation:14},scene);
   ring.material=lpMat("#a97f4f"); ring.position.set(x,g+h+0.006,z); ring.parent=townRoot;
 }
+/* =====================================================================
+   🎤 SPEAKERS' CORNER (Giacomo, 5 nov: «implementiamo uno speakers corner:
+   in base alla unit in cui si trovano ogni giorno cambia l'argomento. Qui
+   l'alunno che vuole parlare deve seguire il tema del giorno; la modalita'
+   e' quella di English Drills e dei piani di speaking su MyClass: l'alunno
+   parla e avra' un punteggio in base al feedback»).
+   · DOVE: l'angolo nord-ovest di Central Park (x 91, z 46), sul prato appena
+     dopo la promenade — come quello vero, all'angolo di Hyde Park. Una
+     cassetta di legno su cui si sale (si puo' camminarci sopra) e il
+     cartello «SPEAKERS' CORNER» col tema del giorno, rivolto alla promenade.
+   · IL TEMA: dalla unit a cui e' arrivata la classe (il cursore di classe,
+     Gate.cursor: l'ultima unit aperta), tre temi per unit (SPK_TOPICS) che
+     si alternano un giorno ciascuno. Il docente senza simulazione vede ogni
+     giorno una unit diversa, e nella finestra puo' sceglierne un'altra.
+   · LA MODALITA': quella di LiveLearn/StudentApp (domanda «speaking»): 🎤,
+     riconoscimento vocale del browser (en-GB), «👂 Ho sentito», una riga per
+     obiettivo (✅ / 🟡 / ❌), ⚠️ per gli errori tipici sentiti, l'esempio
+     (👁 e 🔊) dopo il primo tentativo, riprova quante volte si vuole.
+     La correzione e' una COPIA di _spkEval di LiveLearn (se si cambia la',
+     va cambiata anche qui): obiettivi, minimo di parole, errori da evitare;
+     il punteggio e' la frazione degli obiettivi raggiunti.
+   · LE STELLE: punteggio su 10 (frazione x 10). Conta il MIGLIOR punteggio
+     del giorno: si prendono le ⭐ che mancano per arrivarci, al massimo 10 al
+     giorno (STAR_RULES.spkDailyCap). Senza microfono si puo' dire ad alta
+     voce aiutandosi con l'esempio, ma senza stelle (come in LiveLearn).
+   ===================================================================== */
+/* ---- correzione: COPIA di _spkEval di LiveLearn (myclass/LiveLearn.html, identica in StudentApp) ---- */
+function _spkNorm(s) {
+  return ' ' + String(s == null ? '' : s).toLowerCase()
+    .replace(/[‘’`´]/g, "'")
+    .replace(/\bcan't\b/g, 'can not').replace(/\bcannot\b/g, 'can not')
+    .replace(/\bwon't\b/g, 'will not').replace(/\bshan't\b/g, 'shall not')
+    .replace(/n't\b/g, ' not')
+    .replace(/'m\b/g, ' am').replace(/'re\b/g, ' are').replace(/'ve\b/g, ' have')
+    .replace(/'ll\b/g, ' will').replace(/'d\b/g, ' would')
+    .replace(/\b(he|she|it|there|that|what|who|where|here|this)'s\b/g, '$1 is')
+    .replace(/[^a-z0-9'*\s]/g, ' ')
+    .replace(/\s+/g, ' ').trim() + ' ';
+}
+function _spkAlts(say) {
+  return (Array.isArray(say) ? say : String(say == null ? '' : say).split('|'))
+    .map(x => _spkNorm(x).trim()).filter(Boolean);
+}
+function _spkCount(normText, say) {
+  let n = 0;
+  _spkAlts(say).forEach(alt => {
+    const body = alt.split(' ').map(w => w.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, "[a-z0-9']*")).join(' ');
+    const m = normText.match(new RegExp(' ' + body + '(?= )', 'g'));
+    if (m) n += m.length;
+  });
+  return n;
+}
+function _spkArr(v) {
+  if (Array.isArray(v)) return v.filter(Boolean);
+  if (v && typeof v === 'object') return Object.keys(v).sort((a, b) => a - b).map(k => v[k]).filter(Boolean);
+  return [];
+}
+// → { rows:[{label,count,min,ok}], tips:[...], words, frac }
+function _spkEval(q, raw) {
+  const t = _spkNorm(raw);
+  const words = t.trim() ? t.trim().split(' ').length : 0;
+  const rows = _spkArr(q && q.targets).map(tg => {
+    const min = Math.max(1, Number(tg.min) || 1);
+    const count = _spkCount(t, tg.say);
+    return { label: String(tg.label || String(tg.say || '').split('|')[0]), count, min, ok: count >= min };
+  });
+  const mw = Number(q && q.minWords) || 0;
+  if (mw > 0) rows.push({ label: 'almeno ' + mw + ' parole', count: words, min: mw, ok: words >= mw, words: true });
+  const tips = _spkArr(q && q.avoid).filter(av => _spkCount(t, av.say) > 0).map(av => String(av.tip || av.say));
+  // Ogni errore tipico sentito vale come un obiettivo mancato
+  const den = rows.length + tips.length;
+  const frac = !words ? 0 : den ? rows.reduce((s, r) => s + Math.min(r.count / r.min, 1), 0) / den : 1;
+  return { rows, tips, words, frac };
+}
+/* 🎤 I TEMI DELLO SPEAKERS' CORNER: tre per unit, a turno un giorno ciascuno.
+   [ testo, italiano, minimo di parole, esempio,
+     obiettivi [[etichetta, «frase1|frase2»]...], errori tipici [[«frase», consiglio]...] ]
+   Nelle frasi l'asterisco vale «qualunque parola o pezzo di parola» (is *ing:
+   is wearing, is running...) e le forme contratte valgono come quelle intere
+   (I'm = I am, don't = do not): stesse regole di LiveLearn (_spkEval). */
+const SPK_COL="red|blue|green|yellow|white|black|grey|orange|purple|pink|brown";
+const SPK_CLOTHES="t-shirt|t shirt|tshirt|shirt|jeans|trousers|skirt|dress|jumper|sweater|hoodie|jacket|coat|shoes|trainers|boots|socks|hat|cap|scarf|shorts|tracksuit|sweatshirt";
+const SPK_CHORES="make my bed|make the bed|tidy my room|tidy the|do the washing up|do the washing-up|wash the dishes|wash up|take out the rubbish|clean|hoover|vacuum|lay the table|set the table|clear the table|feed the|walk the dog|do the laundry|iron|cook|do the shopping";
+const SPK_PLACES="bank|library|post office|supermarket|station|park|museum|chemist*|pharmacy|bakery|square|church|hospital|cinema|shop*|school|restaurant|cafe|café|shopping centre|sports centre|stadium|theatre|bus stop";
+const SPK_TIME="o'clock|half past|quarter past|quarter to|a m|p m|at 6|at 7|at 8|at 9|at six|at seven|at eight|at nine|at half";
+const SPK_TOPICS={
+ u0:[
+  ["Introduce yourself: your name, your age and your class.","Presentati: il tuo nome, quanti anni hai e la tua classe.",15,
+   "Hi! My name is Luca. I'm twelve years old. I'm in class 1F at Town School. My favourite colour is blue.",
+   [["My name is …","my name is|i am *"],["I'm … years old","years old"],["my class / my school","my class|my school|i am in class|in class"]],
+   [["i have * years","Age: you ARE twelve (I'm 12 years old), not «I have 12 years»."]]],
+  ["Talk about your school subjects: which ones do you like and which don't you like?","Parla delle materie: quali ti piacciono e quali no?",18,
+   "My favourite subject is Science. I like English and Art. I don't like Maths because it's difficult.",
+   [["My favourite subject is …","favourite subject*"],["I like / I love …","i like|i love"],["I don't like …","i do not like"]],
+   [["i like very much","Say: I like it very much / I really like it."]]],
+  ["Describe your pencil case: what's in it and what colour is it?","Descrivi il tuo astuccio: cosa c'è dentro e di che colore è?",15,
+   "My pencil case is green. In my pencil case there are two pens, a pencil and a rubber. My pens are blue and red.",
+   [["colours",SPK_COL],["school things","pen|pens|pencil*|rubber*|ruler*|sharpener*|scissors|glue|marker*|crayon*|felt tip*"],["It's … / They're …","it is|they are|there is|there are"]],
+   [["the pen blue|the pencil red|the ruler green|a pen blue|a pencil red","Colours go BEFORE the noun: a blue pen."]]] ],
+ u1:[
+  ["Introduce a friend from another country: name, country and nationality.","Presenta un amico di un altro paese: nome, paese e nazionalità.",18,
+   "This is my friend Yuki. She's from Japan. She's Japanese. She's twelve and she lives in Tokyo.",
+   [["He's / She's …","he is|she is"],["from + country","is from|are from|comes from|come from"],["nationality","italian|english|british|american|french|spanish|german|chinese|japanese|brazilian|mexican|irish|greek|portuguese|indian|canadian|australian|russian|egyptian|moroccan|turkish|polish|dutch|swiss|swedish|scottish|welsh|argentinian|korean"]],
+   [["he come from|she come from","With he/she: she COMES from / she IS from."]]],
+  ["You're at the airport: say where you are from and ask two questions.","Sei all'aeroporto: di' da dove vieni e fai due domande.",15,
+   "Hello! I'm from Italy, I'm Italian. Where are you from? Are you English? Are you on holiday?",
+   [["I'm from …","i am from"],["Where are you from?","where are you from|where is he from|where is she from"],["Are you …?","are you *"]],
+   [["where you are from|where you from","Question: Where ARE you from? (verb before you)."]]],
+  ["Talk about a country you want to visit and the language people speak there.","Parla di un paese che vuoi visitare e della lingua che si parla lì.",18,
+   "I want to visit Brazil. It's in South America. People speak Portuguese there. Brazilian people are friendly.",
+   [["I want to visit …","want to visit|want to go to|would like to visit|would like to go to"],["people speak …","speak *|language"],["It's … / People are …","it is|people are|they are"]],
+   [["the people is|people is","«People» is plural: people ARE."]]] ],
+ u2:[
+  ["Describe your family: who is in it?","Descrivi la tua famiglia: chi c'è?",18,
+   "There are four people in my family. My mum is Laura and my dad is Marco. I've got one brother. He's ten.",
+   [["my mum / my dad …","my mum|my mother|my dad|my father|my parents"],["brother / sister","brother*|sister*|only child"],["I've got …","i have got|i have"]],
+   [["he have|she have","With he/she: he HAS got."]]],
+  ["Talk about a grandparent or a cousin: name, age and birthday.","Parla di un nonno o di un cugino: nome, età e compleanno.",18,
+   "My grandma is Rosa. She's seventy years old. Her birthday is on the third of May. She's very kind.",
+   [["grandma / grandpa / cousin","grandma|grandmother|grandpa|grandfather|granny|grandparent*|cousin*|aunt|uncle"],["… years old","years old"],["birthday","birthday"]],
+   [["the birthday of my","Say: my grandma's birthday (not «the birthday of my grandma»)."]]],
+  ["When's your birthday? Talk about the birthdays in your family.","Quando è il tuo compleanno? Parla dei compleanni in famiglia.",18,
+   "When's your birthday? My birthday is on the twelfth of March. My brother's birthday is in July, on the first of July.",
+   [["When's your birthday?","when is your birthday|when's your birthday"],["on the … of … / in + month","on the * of|in january|in february|in march|in april|in may|in june|in july|in august|in september|in october|in november|in december"],["my … birthday","my birthday|birthday is"]],
+   [["in the * of","Dates: ON the fifth of May (not IN)."]]] ],
+ u3:[
+  ["Describe your bedroom: what is there in it?","Descrivi la tua camera: cosa c'è?",20,
+   "In my bedroom there is a bed, a desk and a wardrobe. There are two posters on the wall. There isn't a TV.",
+   [["There is …","there is"],["There are …","there are"],["furniture","bed|desk|chair*|wardrobe|lamp|shelf|shelves|sofa|table|window|carpet|rug|poster*|mirror|bookcase|armchair|cupboard"]],
+   [["there is two|there is three|there is four|there is many|there is some * s","With plurals: there ARE two chairs."]]],
+  ["Describe your house: what rooms are there and where are they?","Descrivi la tua casa: quali stanze ci sono e dove sono?",22,
+   "My house has got two floors. Downstairs there is a kitchen and a living room. Upstairs there are three bedrooms and a bathroom. The bathroom is next to my bedroom.",
+   [["rooms","kitchen|bathroom|bedroom*|living room|dining room|garden|hall|garage|stairs|balcony"],["there is / there are","there is|there are"],["next to / opposite / upstairs…","next to|opposite|between|upstairs|downstairs|near|in front of|behind"]],
+   [["there is * rooms|there is * bedrooms","Plural: there ARE three bedrooms."]]],
+  ["Your dream house: what is there and what isn't there? Ask a friend one question.","La casa dei sogni: cosa c'è e cosa no? Fai una domanda a un amico.",22,
+   "In my dream house there is a big swimming pool and there are five bedrooms. There isn't a garden, but there's a cinema room! Is there a pool in your house?",
+   [["there is / there are","there is|there are"],["there isn't / there aren't","there is not|there are not|there is no|there are no"],["Is there …? / Are there …?","is there|are there"]],
+   [["there is two|there is three|there is many","With plurals: there ARE."]]] ],
+ u4:[
+  ["Talk about your favourite things: what have you got and what haven't you got?","Le tue cose preferite: cosa hai e cosa non hai?",18,
+   "I've got a phone, a red bike and a skateboard. I haven't got a tablet. My favourite thing is my bike.",
+   [["I've got …","i have got"],["I haven't got …","i have not got"],["things","phone|bag|backpack|watch|headphones|bike|ball|book*|camera|tablet|laptop|keys|wallet|purse|skateboard|console|game*|computer"]],
+   [["i have not a|i do not have got","Negative: I HAVEN'T GOT a tablet."]]],
+  ["You're in a shop: ask for three things and ask the price.","Sei in un negozio: chiedi tre cose e chiedi il prezzo.",15,
+   "Hello! Have you got a blue notebook? Can I have two pens, please? How much are they? Here you are. Thank you!",
+   [["Can I have …? / Have you got …?","can i have|i would like|have you got"],["How much …?","how much"],["please / thank you","please|thank you|thanks"]],
+   [["how much it is|how much costs","Ask: How much IS it? / How much does it cost?"]]],
+  ["Describe your schoolbag: what's in it? Use this, these, my.","Descrivi il tuo zaino: cosa c'è dentro? Usa this, these, my.",15,
+   "This is my schoolbag. These are my books and this is my pencil case. That is my water bottle.",
+   [["this / these / that","this|these|that|those"],["my …","my *"],["things","book*|pen*|pencil*|notebook*|diary|bottle|lunch|phone|keys|ruler|calculator|dictionary|sandwich"]],
+   [["this are|these is|that are|those is","this IS, these ARE."]]] ],
+ u5:[
+  ["Describe your morning routine on a school day.","Descrivi la tua mattina in un giorno di scuola.",25,
+   "On school days I get up at seven o'clock. First I have a shower, then I have breakfast at half past seven. After that I go to school by bus.",
+   [["routine verbs","get up|wake up|have breakfast|get dressed|brush my teeth|have a shower|wash|go to school|leave home|catch the bus"],["times",SPK_TIME],["first / then / after that","first|then|after that|finally|after breakfast|before"]],
+   [["i goes|i gets|i has|i wakes","With I: no -s (I get up, I have)."]]],
+  ["Describe the routine of someone in your family (he / she).","Descrivi la routine di qualcuno della tua famiglia (he / she).",25,
+   "My dad gets up at six o'clock. He always has coffee for breakfast. He goes to work by car and he usually comes home at seven.",
+   [["he / she + verb-s","he *s|she *s"],["times",SPK_TIME],["always / usually / never","always|usually|often|sometimes|never|every day"]],
+   [["he go|she go|he have|she have|he get|she get|he do|she do|he watch|she watch|he play|she play|he work|she work","With he/she add -s: she goes, he has, he works."]]],
+  ["Your weekend: what do you usually do on Saturday and Sunday?","Il tuo weekend: cosa fai di solito sabato e domenica?",25,
+   "On Saturday I usually play football in the morning. In the afternoon I often meet my friends. On Sunday I don't get up early and I never do homework. I sometimes visit my grandparents.",
+   [["on Saturday / on Sunday","on saturday*|on sunday*|at the weekend|on the weekend|at weekends"],["always / usually / often / never","always|usually|often|sometimes|never"],["I don't …","i do not"]],
+   [["on the saturday|on the sunday","Days: ON Saturday (no «the»)."]]] ],
+ u6:[
+  ["What do you usually eat for breakfast, lunch and dinner?","Cosa mangi di solito a colazione, pranzo e cena?",22,
+   "For breakfast I usually have milk and cereal. For lunch I eat pasta or rice with vegetables. For dinner I have fish or chicken and some salad.",
+   [["for breakfast / lunch / dinner","for breakfast|for lunch|for dinner|at lunch|at dinner"],["food","bread|milk|cereal*|egg*|pasta|pizza|rice|chicken|fish|meat|salad|fruit|apple*|banana*|cheese|vegetables|soup|biscuit*|yoghurt|yogurt|juice|tea|coffee|water|sandwich*|potato*|tomato*"],["I eat / I have / I drink","i eat|i have|i drink|i usually"]],
+   [["for the breakfast|for the lunch|for the dinner","Meals: for breakfast, for lunch (no «the»)."]]],
+  ["You're at the market: ask for some food and ask how much it is.","Sei al mercato: chiedi del cibo e quanto costa.",15,
+   "Good morning! Can I have some apples, please? I'd like a kilo. Have you got any cheese? How much is it?",
+   [["some / any","some|any"],["Can I have …? / I'd like …","can i have|i would like|i want|have you got"],["How much …? / How many …?","how much|how many"]],
+   [["a bread|a cheese|a milk|a rice|a water|a pasta","Uncountable: SOME bread, SOME milk (not «a bread»)."]]],
+  ["Talk about the food you love and the food you hate.","Parla dei cibi che ami e di quelli che odi.",22,
+   "I love pizza and chocolate. I really like strawberries because they're sweet. I don't like broccoli and I hate fish because it smells.",
+   [["I love / I like …","i love|i like|i really like"],["I hate / I don't like …","i hate|i do not like|i can not stand"],["because …","because"]],
+   [["i like very much","Say: I like it very much / I really like it."]]] ],
+ u7:[
+  ["What sports can you do? What can't you do?","Quali sport sai fare? Cosa non sai fare?",18,
+   "I can swim and I can ride a bike. I can play football very well. I can't ski and I can't play tennis.",
+   [["I can …","i can"],["I can't …","i can not"],["sports","football|basketball|volleyball|tennis|swim|ski|skate|run|cycle|ride a bike|ride a horse|judo|karate|rugby|dance|play *"]],
+   [["can to|can not to","No «to» after can: I can swim."]]],
+  ["Ask a friend three questions with «Can you…?» and answer them.","Fai a un amico tre domande con «Can you…?» e rispondi.",15,
+   "Can you play basketball? Yes, I can. Can you swim well? Yes, very well! Can you ski? No, I can't.",
+   [["Can you …?","can you"],["Yes, I can / No, I can't","yes i can|no i can not|yes he can|yes she can|no he can not|no she can not"],["well / very well","well|very well|a little|not very well"]],
+   [["do you can|does he can|does she can","Question: CAN you swim? (no «do»)."]]],
+  ["Describe your favourite sport: where you play it and who you play with.","Descrivi il tuo sport preferito: dove lo fai e con chi.",22,
+   "My favourite sport is basketball. I play it at the sports centre with my friends twice a week. I love playing in a team.",
+   [["play / go / do + sport","play *|go *ing|do *"],["I like / love + -ing","like *ing|love *ing|enjoy *ing"],["with / at / in …","with my|with *|at the|in the"]],
+   [["like play|love play|like swim|love swim|like run|love run|like dance|love dance","After like/love: -ING (I love playing)."]]] ],
+ u8:[
+  ["Describe what you are wearing today.","Descrivi cosa indossi oggi.",18,
+   "Today I'm wearing blue jeans, a white T-shirt and a black hoodie. I'm wearing my red trainers too.",
+   [["I'm wearing …","i am wearing"],["clothes",SPK_CLOTHES],["colours",SPK_COL]],
+   [["i am wear|i wearing|i wear today","Now: I'M WEARING (be + -ing)."]]],
+  ["Look around: describe what two people are wearing.","Guardati intorno: descrivi cosa indossano due persone.",20,
+   "Marco is wearing a green jumper and grey trousers. Sara is wearing a red dress and white trainers. They're both wearing school badges.",
+   [["He's / She's wearing …","he is wearing|she is wearing|they are wearing|is wearing"],["clothes",SPK_CLOTHES],["colours",SPK_COL]],
+   [["he wearing|she wearing|he wear|she wear","Use IS + -ing: she IS wearing."]]],
+  ["You're in a clothes shop: ask for something, the size and the price.","Sei in un negozio di vestiti: chiedi un capo, la taglia e il prezzo.",15,
+   "Excuse me, I'm looking for a jacket. Have you got this one in medium? Can I try it on? How much is it?",
+   [["I'm looking for … / Can I try …?","i am looking for|can i try|i would like|have you got"],["size","size|small|medium|large"],["How much …?","how much"]],
+   [["how much costs|how much it is","Ask: How much IS it?"]]] ],
+ u2_1:[
+  ["Describe your best friend's appearance.","Descrivi l'aspetto del tuo migliore amico o amica.",22,
+   "My best friend is Giulia. She's tall and slim. She's got long, curly brown hair and big green eyes. She wears glasses.",
+   [["He's / She's got …","he has got|she has got|he has|she has|he is got|she is got"],["hair / eyes","hair|eyes"],["describing words","tall|short|curly|straight|wavy|long|blond|blonde|dark|brown|fair|slim|freckles|glasses|beard|moustache"]],
+   [["hairs","«Hair» is uncountable: she's got long HAIR (not hairs)."],["he have|she have","With he/she: he HAS got."]]],
+  ["Describe a famous person without saying the name: what does he or she look like?","Descrivi una persona famosa senza dire il nome: com'è fisicamente?",25,
+   "She's a famous singer. She's quite tall and she's got long, straight blonde hair and blue eyes. She always wears red lipstick.",
+   [["He's / She's …","he is|she is"],["has got","has got|has|is got"],["hair / eyes / face","hair|eyes|face|beard|moustache|freckles|nose|mouth"]],
+   [["hairs","«Hair» is uncountable: long HAIR."],["he have|she have","With he/she: she HAS got."]]],
+  ["You're at the hairdresser's: say what you would like.","Sei dal parrucchiere: di' cosa vorresti.",20,
+   "Hello! I'd like a haircut, please. Can you make it a bit shorter at the back? I don't want a fringe. Thank you!",
+   [["I'd like … / Can you …?","i would like|can you|i want"],["hair words","short|shorter|long|fringe|cut|haircut|curly|straight|dye|colour|trim|wash"],["please / thank you","please|thank you|thanks"]],
+   [["i would like to cut my hair|i want cut","Say: I'd like a haircut / I want my hair cut."]]] ],
+ u2_2:[
+  ["Talk about a concert or a party you went to. What happened?","Racconta un concerto o una festa a cui sei andato. Cosa è successo?",25,
+   "Last Saturday I went to a concert with my cousin. The band played rock music and we danced a lot. The singer was amazing. I was so excited!",
+   [["past simple","was|were|went|saw|played|danced|sang|had|listened|enjoyed|met|heard|got"],["last … / yesterday / ago","last *|yesterday|ago|on saturday|on friday|at the weekend"],["feelings","happy|excited|nervous|scared|bored|tired|amazing|great|fun|brilliant"]],
+   [["i goed|we goed|i seed|i buyed|i eated|i singed|we singed","Irregular past: went, saw, bought, ate, sang."]]],
+  ["What music do you like? How does it make you feel?","Che musica ti piace? Come ti fa sentire?",25,
+   "I love pop and hip hop music. My favourite singer is Billie Eilish. Her songs make me feel calm and happy. I listen to music every day.",
+   [["I like / I love / I prefer …","i like|i love|i prefer|my favourite"],["kinds of music","pop|rock|rap|hip hop|jazz|classical|techno|reggae|country|electronic|music"],["feelings / makes me …","makes me|make me|feel *|happy|relaxed|calm|sad|energetic"]],
+   [["makes me to|make me to","Say: it makes me happy (no «to»)."]]],
+  ["Can you play a musical instrument? Talk about it, or about one you want to learn.","Suoni uno strumento? Parlane, o di uno che vuoi imparare.",22,
+   "I can play the piano a little. I started two years ago. I'd like to learn the drums because I love rock music.",
+   [["play the …","play the *|plays the *|playing the *"],["instruments","guitar|piano|drums|violin|flute|keyboard|trumpet|saxophone|bass|cello|recorder"],["want to / would like to / can","want to|would like to|can play|can not play"]],
+   [["can to play|i can to","No «to» after can: I can play."]]] ],
+ u2_3:[
+  ["What's the weather like today? And what was it like yesterday?","Che tempo fa oggi? E com'era ieri?",20,
+   "Today it's cloudy and quite cold, about ten degrees. Yesterday it was sunny and warm. Tomorrow it will be windy.",
+   [["It's … (today)","it is *|today"],["It was … (yesterday)","it was|yesterday"],["weather words","sunny|cloudy|rainy|windy|snowy|foggy|stormy|raining|snowing|hot|cold|warm|degrees|wet|dry"]],
+   [["it is rain|it rains today","Now: it's raining / it's rainy."]]],
+  ["Describe the weather in your favourite season.","Descrivi il tempo della tua stagione preferita.",25,
+   "My favourite season is spring. In spring it's usually warm and sunny, but sometimes it rains. The sky is blue and there are flowers everywhere.",
+   [["season","spring|summer|autumn|fall|winter"],["In … it's …","in * it is|it is often|it is usually|it is always"],["weather words","sunny|cloudy|rainy|windy|snowy|foggy|stormy|rain*|snow*|hot|cold|warm|cool"]],
+   [["it is rain|it is snow","Say: it's raining / it's rainy, it's snowing / it's snowy."]]],
+  ["Describe a place in your country: mountains, rivers, lakes, the sea… Compare them.","Descrivi un luogo del tuo paese: montagne, fiumi, laghi, il mare… Confrontali.",25,
+   "In the north of Italy there are high mountains and big lakes. Lake Garda is bigger than Lake Como. The Po is the longest river in Italy.",
+   [["places in nature","mountain*|river*|lake*|sea|beach*|forest*|hill*|island*|valley|coast|volcano*"],["there is / there are","there is|there are"],["comparatives / superlatives","*er than|more * than|the *est|the most *"]],
+   [["more big|more long|more high|more cold|more hot","Short adjectives: bigger, longer, higher."]]] ],
+ u2_4:[
+  ["Talk about the last film you saw.","Racconta l'ultimo film che hai visto.",22,
+   "Last weekend I watched an animated film at the cinema. It was very funny because the characters were crazy. I loved the music too.",
+   [["I saw / I watched …","i saw|i watched|we saw|we watched|i went to"],["kind of film","comedy|horror|action|animated|cartoon|science fiction|sci fi|fantasy|thriller|adventure|romantic|documentary|musical|drama|superhero"],["It was … because …","it was|because"]],
+   [["i see * last|i watch * last|i seed|i have seen * yesterday|i have seen * last","Finished time: I SAW it last week / yesterday."]]],
+  ["Ask a friend about films: use «Did you…?» and «What / Who…?».","Chiedi a un amico dei film: usa «Did you…?» e «What / Who…?».",20,
+   "Did you watch a film last weekend? What was it? Did you like it? Who did you go with? Yes, I did, it was great!",
+   [["Did you …?","did you"],["What / Who / Where …?","what|which|who|where|when"],["Yes, I did / No, I didn't","yes i did|no i did not|i did|i did not"]],
+   [["did you saw|did you watched|did you went|did you liked","After did: base verb (Did you see / watch / go?)."]]],
+  ["What TV programmes do you watch? Which do you like and which don't you like?","Che programmi TV guardi? Quali ti piacciono e quali no?",25,
+   "I watch cartoons and quiz shows. I love talent shows because the singers are amazing. I don't like the news because it's boring.",
+   [["TV programmes","quiz show*|reality show*|cartoon*|series|soap opera*|the news|sports programme*|documentar*|talent show*|sitcom*|cooking show*|game show*"],["I like / I don't like / I can't stand","i like|i do not like|i can not stand|i love|i hate"],["because …","because"]],
+   [["i like very much","Say: I like it very much / I really like it."]]] ],
+ u2_5:[
+  ["Compare two ways to travel: which is faster, cheaper, more comfortable?","Confronta due mezzi di trasporto: quale è più veloce, economico, comodo?",25,
+   "The train is faster than the bus, but the bus is cheaper. The plane is the fastest, but it's more expensive than the train. I think the train is more comfortable.",
+   [["-er than","*er than"],["more … than","more * than"],["transport","train|bus|car|plane|bike|boat|ship|ferry|taxi|underground|tube|metro|coach|scooter|tram|on foot"]],
+   [["more fast|more cheap|more big|more slow|more easy|more quick|more long","Short adjectives: faster, cheaper (not «more fast»)."],["faster that|cheaper that|slower that|more * that","Comparatives use THAN, not «that»."]]],
+  ["Buy a train ticket: where to, when, single or return, and how much.","Compra un biglietto del treno: per dove, quando, andata o andata e ritorno, quanto costa.",15,
+   "Hello! Can I have a return ticket to London, please? What time is the next train? Which platform is it? How much is it?",
+   [["a single / return ticket","single|return|ticket"],["to + place","ticket to|train to|go to"],["What time …? / How much …?","what time|how much|which platform"]],
+   [["how much costs|how much it is","Ask: How much IS it?"]]],
+  ["How do you get to school? How long does it take?","Come vai a scuola? Quanto ci metti?",22,
+   "I usually go to school by bus. It takes about twenty minutes. When it's sunny I sometimes go by bike. My friend walks, he goes on foot.",
+   [["by bus / by car / on foot","by bus|by car|by train|by bike|by tram|by underground|by metro|by scooter|on foot|walk*"],["It takes …","it takes|minutes|hour*"],["usually / sometimes","usually|sometimes|always|often|never"]],
+   [["with the bus|with the car|with the train|by foot|with the bike","Say: BY bus, BY car, BY bike — and ON foot."]]] ],
+ u2_6:[
+  ["How do you recycle at home? Talk about containers and materials.","Come fate la raccolta differenziata a casa? Parla di contenitori e materiali.",25,
+   "At home we recycle a lot. We put glass bottles and jars in the green bin. Plastic bottles and cans go in the yellow bin, and we recycle paper and cardboard boxes.",
+   [["containers","bottle*|can|cans|jar*|box*|carton*|bag*|packet*|tin*|tub*"],["materials / bins","plastic|glass|paper|metal|cardboard|bin*|recycl*|rubbish"],["we put / we recycle …","we put|we recycle|we throw|we use|we take"]],
+   [["the plastics|the papers|the cardboards","Materials are uncountable: plastic, paper, cardboard."]]],
+  ["Explain how to make a simple recipe: first, then, after that, finally.","Spiega come si prepara una ricetta semplice: first, then, after that, finally.",25,
+   "First, peel and cut two apples. Then mix some flour, sugar and two eggs. After that, add the apples and pour everything into a dish. Finally, bake it for forty minutes.",
+   [["cooking verbs","peel|cut|chop|boil|fry|mix|pour|bake|add|slice|stir|put|wash|grate"],["first / then / after that / finally","first|then|next|after that|finally"],["quantities","some|a little|a lot of|two|three|a cup|spoon*|grams|a glass"]],
+   [["you must to|must to","No «to» after must."]]],
+  ["What's in your fridge? Use some, any, a lot of, how much and how many.","Cosa c'è nel tuo frigo? Usa some, any, a lot of, how much e how many.",25,
+   "In my fridge there is some milk and a lot of cheese. There are a few eggs, but there aren't any tomatoes. How much juice is there? Not much!",
+   [["some / any","some|any"],["a lot of / a few / a little / much / many","a lot of|lots of|a few|a little|much|many"],["there is / there are","there is|there are|there is not|there are not"]],
+   [["there is many|there are much|how many milk|how many water|how many cheese|how much eggs|how much apples|how much tomatoes","Countable: how many, many; uncountable: how much, much."]]] ],
+ u2_7:[
+  ["What chores do you have to do at home?","Quali faccende devi fare a casa?",25,
+   "At home I have to make my bed and tidy my room every day. I also have to take out the rubbish. I don't have to cook, my dad does it.",
+   [["I have to …","i have to|i must"],["I don't have to …","i do not have to"],["chores",SPK_CHORES]],
+   [["must to|have to to|do not must","Say: I have to / I must tidy (no extra «to»); negative: I don't have to."]]],
+  ["Your house rules: what must you do and what mustn't you do?","Le regole di casa tua: cosa devi fare e cosa non devi fare?",22,
+   "In my house we must take off our shoes. I must do my homework before dinner. I mustn't use my phone at the table and I mustn't go to bed late.",
+   [["must","must *"],["mustn't","must not"],["rules","home|room|phone|dinner|table|bed|shoes|tv|homework|television|late|early"]],
+   [["must to|mustn't to|must not to","No «to» after must / mustn't."]]],
+  ["Who does what in your family? Use «he / she has to» and «doesn't have to».","Chi fa cosa nella tua famiglia? Usa «he / she has to» e «doesn't have to».",25,
+   "My mum has to cook dinner and my dad has to do the shopping. My sister has to feed the cat. My brother doesn't have to do anything, he's only three!",
+   [["he / she has to …","has to"],["doesn't have to / don't have to","does not have to|do not have to"],["chores",SPK_CHORES]],
+   [["he have to|she have to|my mum have to|my dad have to|he do not have to|she do not have to","With he/she: HAS to, DOESN'T have to."]]] ],
+ u2_8:[
+  ["Give directions from your school to a place in your town.","Dai le indicazioni dalla scuola a un posto della tua città.",25,
+   "Go out of the school and turn left. Go straight on for two minutes. Turn right at the traffic lights. The library is on the left, opposite the bank.",
+   [["go straight / turn left / turn right","go straight|turn left|turn right|go along|cross|take the first|take the second"],["next to / opposite / on the left…","next to|opposite|between|on the left|on the right|at the end|near|behind|in front of|on the corner"],["places",SPK_PLACES]],
+   [["turn at left|turn at right|turn to left|turn to right","Say: turn left / turn right."]]],
+  ["Describe your town or your neighbourhood: what is there?","Descrivi la tua città o il tuo quartiere: cosa c'è?",25,
+   "I live in a small town. There's a big square with a church and there are some nice shops. There isn't a cinema, but there's a library near my house.",
+   [["there is / there are","there is|there are"],["places",SPK_PLACES],["describing words","big|small|quiet|busy|noisy|beautiful|old|modern|clean|friendly|nice|lively"]],
+   [["there is many|there is two|there is some * s","With plurals: there ARE."]]],
+  ["What are you going to do in town this weekend?","Cosa farai in città questo weekend?",25,
+   "This weekend I'm going to go to the shopping centre with my friends. We're going to buy a present for my mum. On Sunday I'm going to visit the museum.",
+   [["I'm going to …","i am going to|we are going to|going to"],["places",SPK_PLACES],["this weekend / on Saturday …","this weekend|on saturday|on sunday|tomorrow|next *|tonight"]],
+   [["i going to|i am go to|we going to","Plans: I AM going TO + verb."]]] ],
+ u3_1:[
+  ["What job would you like to do in the future? Why?","Che lavoro vorresti fare da grande? Perché?",28,
+   "In the future I'd like to be a vet because I love animals. A vet has to be patient and kind. I think I'll study science at university.",
+   [["I'd like to be / I want to be …","would like to be|want to be|would like to work|want to work|will be a|will be an"],["jobs","vet|nurse|chef|pilot|teacher|doctor|police officer|firefighter|engineer|lawyer|actor|actress|singer|farmer|architect|journalist|scientist|hairdresser|programmer|designer|mechanic|photographer|footballer|dentist|cook|shop assistant|waiter|waitress|builder|plumber|electrician|youtuber"],["because …","because"]],
+   [["to be doctor|to be teacher|to be nurse|to be vet|to be pilot|to be chef|to be engineer|to be scientist|to be lawyer|to be architect|to be dentist|to be footballer","Jobs need a / an: I want to be A doctor."]]],
+  ["Describe someone you know and their job: what are they like?","Descrivi una persona che conosci e il suo lavoro: com'è?",28,
+   "My aunt is a nurse. She works in a big hospital. She's very patient and hard-working. She has to work at night sometimes, but she loves helping people.",
+   [["He's / She's a … / works …","he is a|she is a|he is an|she is an|he works|she works|works as"],["personality","patient|kind|hard working|hard-working|reliable|organised|friendly|creative|brave|honest|polite|punctual|cheerful|confident|helpful|funny|calm"],["has to / works / helps","has to|works|helps|looks after"]],
+   [["she work in|he work in|she have to|he have to","With he/she: she WORKS, she HAS to."]]],
+  ["Job interview: introduce yourself and say why you are good for the job.","Colloquio di lavoro: presentati e di' perché sei adatto al lavoro.",30,
+   "Good morning. My name is Anna and I'm fourteen. I'm reliable and organised, and I'm very good with children. I can speak English and Spanish. I'd love to work at the summer camp.",
+   [["I'm … (personality)","i am *"],["I can … / I've got experience","i can|i have|experience"],["I'd like / I'd love …","i would like|i would love|i want"]],
+   [["i am agree|i have * years","Say: I agree / I'm fourteen (years old)."]]] ],
+ u3_2:[
+  ["What devices do you use every day and what for?","Quali dispositivi usi ogni giorno e per cosa?",30,
+   "I use my smartphone every day to chat with my friends and to listen to music. I use my laptop to do my homework. I sometimes use my headphones on the bus.",
+   [["devices","phone|smartphone|tablet|laptop|computer|headphones|earphones|smartwatch|console|speaker|camera|printer|charger|keyboard|mouse"],["I use … to …","use * to|use it to|use my * to|use it for|use * for"],["every day / sometimes / never","every day|always|usually|often|sometimes|never|hours"]],
+   [["for to|i use * for listen|i use * for watch|i use * for play","Purpose: I use it TO listen (or FOR listening)."]]],
+  ["How will technology change our lives in the future?","Come cambierà la tecnologia la nostra vita in futuro?",30,
+   "I think robots will do the housework in the future. Cars will drive by themselves and we won't need a driver. Maybe students will learn at home with virtual reality.",
+   [["will / won't","will|will not"],["I think / maybe / probably","i think|maybe|probably|perhaps"],["technology words","robot*|internet|app*|online|virtual|artificial intelligence|ai|drone*|smart|computer*|screen*|machine*"]],
+   [["will to|will can|will goes|will does","After will: base verb (will go, will be able to)."]]],
+  ["If you lose your phone, what will happen? Use «if» and «will».","Se perdi il telefono, cosa succederà? Usa «if» e «will».",30,
+   "If I lose my phone, I'll be very worried. If I can't find it, my parents will be angry. I'll call it from my friend's phone. If someone finds it, I hope they'll give it back.",
+   [["If + present","if i *|if you *|if we *|if someone *|if my *"],["will / won't","will|will not"],["phone words","phone|message*|photos|call|contacts|password|app*|screen"]],
+   [["if i will|if you will|if we will|if someone will","After IF use the present (if I lose…), not will."]]] ],
+ u3_3:[
+  ["Talk about things you have done and things you have never done.","Parla di cose che hai fatto e di cose che non hai mai fatto.",35,
+   "I've been to the mountains many times and I've climbed a high mountain once. I've never slept in a tent and I've never seen a bear. Have you ever tried rock climbing?",
+   [["I've … (present perfect)","i have *ed|i have been|i have seen|i have done|i have eaten|i have climbed|i have visited|i have tried|i have swum|i have flown|i have ridden|i have met|i have slept|i have had"],["never","never"],["ever / once / twice / … times","ever|once|twice|times"]],
+   [["have went|have saw|have did|have ate|have swam|have flew|have rode","Present perfect uses the PAST PARTICIPLE: gone/been, seen, done, eaten, swum."]]],
+  ["Ask a friend «Have you ever…?»: ask three questions and answer them.","Chiedi a un amico «Have you ever…?»: fai tre domande e rispondi.",25,
+   "Have you ever been camping? Yes, I have. Have you ever seen a wild animal? No, I haven't. Have you ever got lost in a forest? Yes, once!",
+   [["Have you ever …?","have you ever"],["Yes, I have / No, I haven't","yes i have|no i have not|no never|never"],["past participles","been|seen|done|eaten|climbed|visited|tried|swum|flown|ridden|met|slept|camped|got|lost"]],
+   [["have you ever went|have you ever saw|have you ever did|have you ever ate|did you ever","Ask: Have you ever BEEN / SEEN / DONE…?"]]],
+  ["Tell the story of an adventure you had.","Racconta un'avventura che hai vissuto.",35,
+   "Last summer I went hiking with my family. We walked for six hours and we got lost in the forest! It was scary, but we found the path again. It's the best adventure I've ever had.",
+   [["past simple","was|were|went|saw|got|walked|found|had|climbed|slept|lost|camped"],["last … / ago / when I was …","last *|ago|when i was|yesterday|in 20*"],["present perfect (I've ever / never …)","i have ever|i have never|ever had|ever done|ever seen|ever been"]],
+   [["have been * last|have gone * last|have seen * yesterday|have been * ago|have gone * ago","With a finished time (last year, ago) use the PAST SIMPLE: I went…"]]] ],
+ u3_4:[
+  ["What can we do to protect the environment?","Cosa possiamo fare per proteggere l'ambiente?",35,
+   "We should use less plastic and recycle more. We can go to school by bike instead of by car. If we plant more trees, the air will be cleaner. We must save water and energy.",
+   [["should / must / can","we should|we must|we can|we have to|people should"],["environment words","recycl*|pollution|plastic|energy|electricity|water|trees|planet|climate|cars|public transport|solar|waste|rubbish"],["If … will …","if we *|if people *"]],
+   [["should to|must to","No «to» after should / must."]]],
+  ["Describe an extreme weather event or a natural disaster.","Descrivi un evento meteo estremo o un disastro naturale.",30,
+   "In 2023 there was a terrible flood in Emilia-Romagna. The rain destroyed many houses and roads. Thousands of people had to leave their homes. Many volunteers came to help.",
+   [["disasters","flood*|earthquake*|wildfire*|fire*|storm*|hurricane*|tornado*|drought*|heatwave*|tsunami*|landslide*|volcano*|eruption"],["past simple","was|were|destroyed|damaged|happened|hit|lost|had to|died|helped|came"],["people / help","people|help*|rescue*|firefighter*|volunteer*|ambulance*"]],
+   [["there were a|there was many|there was * people","There WAS a flood; there WERE many people."]]],
+  ["How will climate change affect the world? Use «will» and «might».","Come cambierà il mondo il cambiamento climatico? Usa «will» e «might».",30,
+   "If we don't stop climate change, temperatures will rise. The ice will melt and the sea level might go up. There will be more droughts and heatwaves. We have to act now.",
+   [["will / won't","will|will not"],["might / may","might|may"],["climate words","climate change|global warming|temperature*|ice|sea level*|hotter|warmer|drought*|flood*|heatwave*|planet"]],
+   [["will to|might to|will can","After will / might: base verb."]]] ],
+ u3_5:[
+  ["You're at the doctor's: say what's wrong with you.","Sei dal medico: di' cosa ti senti.",25,
+   "Good morning, doctor. I've got a terrible headache and a sore throat. I've had a temperature since yesterday. I feel very tired and my back hurts.",
+   [["I've got a … / my … hurts","i have got a|i have a|i have got|hurts|it hurts"],["illnesses","headache|stomach ache|stomachache|toothache|earache|sore throat|cold|cough|temperature|fever|flu|backache|sick|dizzy"],["since / for","since|for * days|for a week|for two|yesterday|this morning"]],
+   [["i have pain|i have the fever|i have fever|i have headache","Say: I've got A headache, I've got A temperature."]]],
+  ["Give advice to a friend who is ill: use «should» and «shouldn't».","Dai consigli a un amico malato: usa «should» e «shouldn't».",30,
+   "You've got a cold, so you should stay in bed and rest. You should drink a lot of water and some hot tea with honey. You shouldn't go to school today.",
+   [["You should …","you should|he should|she should"],["You shouldn't …","should not"],["remedies","rest|stay in bed|drink|water|medicine|pill*|doctor|sleep|take|tea|honey|lie down"]],
+   [["should to|do not should|should drinking|should going","After should: base verb; negative: shouldn't."]]],
+  ["Tell about an accident or an injury you had. What happened?","Racconta un incidente o un infortunio che hai avuto. Cosa è successo?",35,
+   "Two years ago I fell off my bike and I broke my arm. It hurt a lot! My dad took me to the hospital. The doctor did an X-ray and put my arm in a plaster for a month.",
+   [["injuries","broke|broken|cut|hurt|sprained|twisted|fell|bruise*|plaster|bandage|arm|leg|ankle|wrist|knee|finger"],["past simple","was|were|fell|broke|hurt|went|had|happened|took"],["hospital / doctor","hospital|doctor|nurse|x ray|x-ray|ambulance|emergency"]],
+   [["have broken * last|have broken * ago|have fallen * yesterday|have fallen * last","With a finished time use the past simple: I broke my arm last year."]]] ],
+};
+const SPK={ built:false, x:91, z:46, day:-1, sign:null, signTex:null, cur:null, rec:null, busy:false, tries:0, forceUnit:null };
+function spkDay(){ const d=new Date(); return Math.floor((d.getTime()-d.getTimezoneOffset()*60000)/86400000); }
+/* la unit della classe: la piu' avanti fra quelle aperte dal cursore */
+function spkUnitId(){
+  if(SPK.forceUnit && SPK_TOPICS[SPK.forceUnit]) return SPK.forceUnit;
+  let c=null; try{ c=Gate.cursor(); }catch(e){}
+  const day=spkDay(), ids=SYLLABUS.map(u=>u.id).filter(id=>SPK_TOPICS[id]);
+  if(!c || c.yr>=9) return ids[((day%ids.length)+ids.length)%ids.length];       // docente, tutto aperto: una unit al giorno
+  let best=null;
+  SYLLABUS.forEach(u=>{ if(!SPK_TOPICS[u.id]) return; if(u.yr<c.yr || (u.yr===c.yr && u.n<=c.n)){
+    if(!best || u.yr>best.yr || (u.yr===best.yr && u.n>best.n)) best=u; } });
+  return best?best.id:"u0";
+}
+function spkTopic(){
+  const id=spkUnitId(), L=SPK_TOPICS[id]||SPK_TOPICS.u0, day=spkDay(), i=((day%L.length)+L.length)%L.length, t=L[i];
+  return { unit:id, i, day, text:t[0], it:t[1], minWords:t[2], model:t[3], free:true,
+           targets:t[4].map(x=>({ label:x[0], say:x[1] })), avoid:t[5].map(x=>({ say:x[0], tip:x[1] })) };
+}
+function _spkWrap(c,txt,maxW){ const out=[]; let cur="";
+  String(txt).split(/\s+/).forEach(w=>{ const t=cur?cur+" "+w:w; if(c.measureText(t).width>maxW && cur){ out.push(cur); cur=w; } else cur=t; });
+  if(cur) out.push(cur); return out; }
+function spkSignDraw(){
+  if(!SPK.signTex) return;
+  const T=spkTopic(), dt=SPK.signTex, c=dt.getContext(), W=512, H=360;
+  c.fillStyle="#1f3d2c"; c.fillRect(0,0,W,H); c.fillStyle="#f3ead2"; c.fillRect(10,10,W-20,H-20); c.fillStyle="#1f3d2c"; c.fillRect(18,18,W-36,H-36);
+  c.fillStyle="#f3ead2"; c.textAlign="center"; c.textBaseline="middle";
+  c.font="bold 44px Georgia, serif"; c.fillText("SPEAKERS' CORNER",W/2,62);
+  c.fillStyle="#f0c44a"; c.font="bold 26px Arial"; c.fillText("\u{1F3A4} TODAY'S TOPIC",W/2,112);
+  c.fillStyle="#ffffff"; let fs=32, lines;
+  for(;fs>=20;fs-=2){ c.font="bold "+fs+"px Arial"; lines=_spkWrap(c,T.text,W-70); if(lines.length*fs*1.2<=H-170) break; }
+  const y0=150+((H-170)-lines.length*fs*1.2)/2+fs*0.6;
+  lines.forEach((l,k)=>c.fillText(l,W/2,y0+k*fs*1.2));
+  dt.update(); SPK.day=T.day; SPK.signUnit=T.unit;
+}
+function spkBuild(){
+  if(SPK.built || !started || typeof townRoot==="undefined" || !townRoot) return;
+  SPK.built=true;
+  const B=BABYLON.MeshBuilder, x=SPK.x, z=SPK.z, gy=_rackGround(x,z);
+  SPK.gy=gy;                                                             // il prato: prima della cassetta (poi _rackGround trova lei)
+  const wood=mat("spkWood","#9a6a3c"), dark=mat("spkWoodD","#5e3d22");
+  /* la cassetta: ci si sale (__ground, non e' un ostacolo) */
+  const crate=B.CreateBox("spkCrate",{ width:1.2, height:0.42, depth:0.9 },scene); crate.material=wood;
+  crate.parent=townRoot; crate.position.set(x,gy+0.21,z); crate.__ground=true; crate.__cast=true;
+  [-0.3,0,0.3].forEach(dz=>{ const s=B.CreateBox("spkSlat",{ width:1.22, height:0.035, depth:0.03 },scene); s.material=dark; s.parent=townRoot;
+    s.position.set(x,gy+0.12+(dz+0.3)*0.25,z-0.455); s.isPickable=false; });
+  const lab=B.CreateBox("spkLab",{ width:0.5, height:0.16, depth:0.02 },scene); lab.material=dark; lab.parent=townRoot; lab.position.set(x-0.61,gy+0.22,z); lab.rotation.y=Math.PI/2; lab.isPickable=false;
+  /* il cartello, rivolto alla promenade (ovest) */
+  const post=B.CreateCylinder("spkPost",{ diameter:0.09, height:2.5, tessellation:8 },scene); post.material=dark; post.parent=townRoot;
+  post.position.set(x+0.2,gy+1.25,z+1.75); post.__cast=true;
+  const dt=new BABYLON.DynamicTexture("spkSignT",{ width:512, height:360 },scene,true);
+  const sm=new BABYLON.StandardMaterial("spkSignM",scene); sm.diffuseTexture=dt; sm.emissiveColor=new BABYLON.Color3(0.5,0.5,0.5); sm.specularColor=new BABYLON.Color3(0,0,0);
+  const board=B.CreatePlane("spkSign",{ width:1.7, height:1.2 },scene); board.material=sm; board.parent=townRoot;
+  board.position.set(x+0.16,gy+2.0,z+1.75); board.rotation.y=Math.PI/2;                 // il piano guarda -z: girato guarda -x
+  const back=B.CreateBox("spkSignB",{ width:0.04, height:1.26, depth:1.76 },scene); back.material=dark; back.parent=townRoot; back.position.set(x+0.2,gy+2.0,z+1.75);
+  try{ if(typeof glowL!=="undefined" && glowL) glowL.addExcludedMesh(board); }catch(e){}
+  addSolid(x+0.1,x+0.3,z+1.65,z+1.85,"town");
+  SPK.sign=board; SPK.signTex=dt; spkSignDraw();
+  SPK.inter=addInteract({ id:"speakers_corner", area:"town", radius:3.2, meshes:[crate,board],
+    pos:()=>new BABYLON.Vector3(x,0.8,z),
+    prompt:()=>"\u{1F3A4} <b>Speakers' Corner</b> · press <b>E</b> to speak",
+    interact:()=>spkOpen() });
+  try{ refreshShadowCasters(); }catch(e){}
+}
+/* ---- la finestra ---------------------------------------------------- */
+const _SpkRec=window.SpeechRecognition||window.webkitSpeechRecognition||null;
+function _spkYr1(){ let y=1; try{ y=studentYear(); }catch(e){} return y<=1; }
+function _spkWordsLabel(r){ return r.words ? (_spkYr1()?"almeno "+r.min+" parole":"at least "+r.min+" words") : r.label; }
+function spkOpen(){
+  if(RIDE.on) rideDrop();
+  try{ standUpAll(); }catch(e){}
+  player.position.set(SPK.x,(SPK.gy||0)+0.42,SPK.z); player.rotation.y=-Math.PI/2;   // sulla cassetta, rivolto alla promenade
+  moveTarget=null; pendingInteract=null;
+  if(SPK.day!==spkDay()) spkSignDraw();
+  SPK.cur=spkTopic(); SPK.tries=0; SPK.noMic=false;
+  spkRender();
+}
+function spkRender(){
+  const T=SPK.cur, y1=_spkYr1(), u=Gate.info(T.unit)||{ yr:1, n:0, ic:"", t:T.unit };
+  let prof=false; try{ prof=!!Student.teacher; }catch(e){}
+  const chips=T.targets.map(t=>"<span style=\"display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border-radius:999px;background:#ede9ff;color:#4c1d95;font-size:12.5px;font-weight:700\">"+_escHtml(t.label)+"</span>").join("")
+    +"<span style=\"display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border-radius:999px;background:#f1f5f9;color:#334155;font-size:12.5px;font-weight:700\">"+(y1?"almeno ":"at least ")+T.minWords+(y1?" parole":" words")+"</span>";
+  const sel=prof ? "<div style=\"margin-top:10px;font-size:12px\">\u{1F469}‍\u{1F3EB} <select id=\"spk-unit\" style=\"font-size:12px;padding:3px\">"
+      +SYLLABUS.filter(s=>SPK_TOPICS[s.id]).map(s=>"<option value=\""+s.id+"\""+(s.id===T.unit?" selected":"")+">Anno "+s.yr+" · "+(s.n===0?"Starter":"Unit "+s.n)+" — "+_escHtml(s.t)+"</option>").join("")
+      +"</select> <span style=\"opacity:.7\">tema del giorno di un'altra unit</span></div>" : "";
+  const noSupport=_SpkRec ? "" : "<div style=\"background:#fef3c7;border:1.5px solid #f59e0b;border-radius:10px;padding:10px 12px;font-size:13px;color:#92400e;margin-top:10px\">⚠️ "
+      +(y1?"Questo browser non riconosce la voce: usa <b>Chrome</b> o <b>Safari</b>.":"This browser can't recognise speech: use <b>Chrome</b> or <b>Safari</b>.")+"</div>";
+  const html="<div style=\"text-align:left\">"
+    +"<div style=\"font-size:12px;opacity:.7;margin-bottom:4px\">"+u.ic+" "+(u.yr?"Anno "+u.yr+" · "+(u.n===0?"Starter":"Unit "+u.n)+" — ":"")+_escHtml(u.t||"")+"</div>"
+    +"<div style=\"font:800 18px/1.35 system-ui,sans-serif;color:#1d2a32\">"+_escHtml(T.text)+"</div>"
+    +(y1 ? "<div style=\"font-size:13px;opacity:.75;margin-top:3px\">"+_escHtml(T.it)+"</div>"
+         : "<div style=\"margin-top:3px\"><a href=\"#\" id=\"spk-it-btn\" style=\"font-size:12.5px\">❓ Non capisco</a><div id=\"spk-it\" style=\"display:none;font-size:13px;opacity:.8\">"+_escHtml(T.it)+"</div></div>")
+    +"<div style=\"margin-top:8px;font-size:12.5px;opacity:.75\">"+(y1?"Prova a usare:":"Try to use:")+"</div><div>"+chips+"</div>"
+    +"<p style=\"font-size:13px;color:#64748b;margin:8px 0 6px\">"+(y1?"Premi \u{1F3A4}, parla con calma e premi <b>⏹ Ho finito</b> quando hai finito.":"Press \u{1F3A4}, speak calmly and press <b>⏹ I've finished</b> when you're done.")+"</p>"
+    +"<div style=\"text-align:center;margin:6px 0\">"+(_SpkRec?"<button type=\"button\" id=\"spk-mic\" class=\"qm-btn primary\" style=\"font-size:16px;padding:11px 22px;border-radius:999px\">\u{1F3A4} "+(y1?"Inizia a parlare":"Start speaking")+"</button>":"")+"</div>"
+    +"<div id=\"spk-note\" style=\"text-align:center;font-size:13px;font-weight:700;color:#6c47ff;min-height:18px\"></div>"
+    +noSupport
+    +"<label style=\"display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;color:#475569;cursor:pointer\"><input type=\"checkbox\" id=\"spk-nomic\" style=\"width:17px;height:17px\"> \u{1F6AB} "+(y1?"Non posso usare il microfono":"I can't use the microphone")+"</label>"
+    +"<div id=\"spk-nomic-box\" style=\"display:none;margin-top:8px;background:#fffbeb;border:1.5px solid #f59e0b;border-radius:10px;padding:10px 12px\"><div style=\"font-size:13px;color:#92400e;margin-bottom:8px;line-height:1.5\">"
+    +(y1?"Di' la risposta <b>ad alta voce</b> aiutandoti con l'esempio (\u{1F441} e \u{1F50A}), poi premi il pulsante. Senza microfono non si sente cosa hai detto: niente stelle.":"Say it <b>out loud</b> with the help of the example (\u{1F441} and \u{1F50A}), then press the button. Without the microphone your answer can't be heard: no stars.")
+    +"</div><button type=\"button\" id=\"spk-aloud\" class=\"qm-btn\">✔ "+(y1?"L'ho detto ad alta voce":"I said it out loud")+"</button></div>"
+    +"<div id=\"spk-out\" style=\"margin-top:10px\"></div>"
+    +"<div id=\"spk-model-box\" style=\"margin-top:8px;display:none\"><button type=\"button\" id=\"spk-eye\" class=\"qm-btn\">\u{1F441} "+(y1?"Esempio":"Example")+"</button> <button type=\"button\" id=\"spk-say\" class=\"qm-btn\">\u{1F50A} "+(y1?"Ascolta l'esempio":"Listen to the example")+"</button>"
+    +"<div id=\"spk-model\" style=\"display:none;margin-top:6px;background:#f5f3ff;border-radius:8px;padding:8px 10px;font-size:14px;color:#3730a3;font-style:italic\">"+_escHtml(T.model)+"</div></div>"
+    +sel+"</div>";
+  QModal.open({ title:"\u{1F3A4} Speakers' Corner", sub:(y1?"Il tema di oggi":"Today's topic"), html, buttons:[{ label:"Close", act:()=>spkStop() }] });
+  const $=id=>document.getElementById(id);
+  const m=$("spk-mic"); if(m) m.onclick=()=>spkToggleMic();
+  const nm=$("spk-nomic"); if(nm) nm.onchange=()=>{ spkStop(); SPK.noMic=nm.checked; $("spk-nomic-box").style.display=nm.checked?"":"none"; if(m) m.style.display=nm.checked?"none":""; $("spk-model-box").style.display=(nm.checked||SPK.tries)?"":"none"; };
+  const al=$("spk-aloud"); if(al) al.onclick=()=>{ $("spk-out").innerHTML="<div style=\"border:1.5px solid #f59e0b;background:#fffbeb;border-radius:12px;padding:12px 14px;font-size:14px;font-weight:700;color:#92400e\">✅ "+(_spkYr1()?"Detto ad alta voce senza microfono · niente stelle":"Said out loud without the microphone · no stars")+"</div>"; };
+  const eye=$("spk-eye"); if(eye) eye.onclick=()=>{ const d=$("spk-model"); d.style.display=d.style.display==="none"?"":"none"; };
+  const say=$("spk-say"); if(say) say.onclick=()=>{ try{ speechSynthesis.resume(); TTS.say(T.model); }catch(e){} };
+  const itb=$("spk-it-btn"); if(itb) itb.onclick=e=>{ e.preventDefault(); const d=$("spk-it"); d.style.display=d.style.display==="none"?"":"none"; };
+  const us=$("spk-unit"); if(us) us.onchange=()=>{ spkStop(); SPK.forceUnit=us.value; SPK.cur=spkTopic(); SPK.tries=0; spkRender(); };
+}
+function spkStop(){ if(SPK.rec){ try{ SPK.rec.abort(); }catch(e){} } SPK.rec=null; SPK.busy=false; }
+function spkToggleMic(){
+  if(SPK.busy && SPK.rec){ try{ SPK.rec.stop(); }catch(e){} return; }
+  if(!_SpkRec) return;
+  const T=SPK.cur, y1=_spkYr1(), note=document.getElementById("spk-note"), btn=document.getElementById("spk-mic");
+  let text="";
+  try{ speechSynthesis.cancel(); }catch(e){}
+  try{
+    const r=new _SpkRec(); SPK.rec=r;
+    r.lang="en-GB"; r.interimResults=false; r.maxAlternatives=1; r.continuous=true;
+    r.onresult=e=>{ for(let k=e.resultIndex;k<e.results.length;k++) if(e.results[k].isFinal) text+=" "+e.results[k][0].transcript; };
+    r.onerror=e=>{ const n=document.getElementById("spk-note"); if(!n) return;
+      n.textContent = (e.error==="not-allowed"||e.error==="service-not-allowed") ? (y1?"⚠️ Permetti l'uso del microfono al browser (icona nella barra dell'indirizzo).":"⚠️ Allow the browser to use the microphone (icon in the address bar).")
+        : e.error==="network" ? (y1?"⚠️ Serve la connessione a internet per riconoscere la voce.":"⚠️ Speech recognition needs an internet connection.")
+        : (y1?"⚠️ Non ho sentito bene: riprova.":"⚠️ I didn't hear you well: try again."); };
+    r.onend=()=>{ SPK.busy=false; if(SPK.rec===r) SPK.rec=null;
+      const b=document.getElementById("spk-mic"); if(b) b.textContent="\u{1F3A4} "+(SPK.tries||text.trim()?(y1?"Riprova":"Try again"):(y1?"Inizia a parlare":"Start speaking"));
+      if(text.trim() && SPK.cur===T){ const n=document.getElementById("spk-note"); if(n) n.textContent=""; spkResult(text.trim()); } };
+    r.start(); SPK.busy=true;
+  }catch(e){ SPK.busy=false; if(note) note.textContent=y1?"⚠️ Microfono non disponibile.":"⚠️ Microphone not available."; return; }
+  if(btn) btn.textContent=y1?"⏹ Ho finito":"⏹ I've finished";
+  if(note) note.textContent=y1?"\u{1F534} Ti ascolto… premi ⏹ quando hai finito.":"\u{1F534} I'm listening… press ⏹ when you've finished.";
+}
+function spkResult(raw){
+  const T=SPK.cur, y1=_spkYr1(), e=_spkEval(T,raw), all=e.frac>=1, score=Math.round(e.frac*10);
+  SPK.tries++;
+  let got=0; try{ got=Stars.awardSpeak(score); }catch(err){}
+  const rows=e.rows.map(r=>{ const icon=r.ok?"✅":r.count?"\u{1F7E1}":"❌";
+    const n=(r.min>1||r.words)?" <span style=\"opacity:.75\">"+r.count+" / "+r.min+"</span>":"";
+    return "<li style=\"margin:3px 0;color:"+(r.ok?"#166534":r.count?"#92400e":"#991b1b")+"\">"+icon+" "+_escHtml(_spkWordsLabel(r))+n+"</li>"; }).join("");
+  const tips=e.tips.map(t=>"<div style=\"color:#991b1b;font-size:13px;margin-top:4px\">⚠️ "+_escHtml(t)+"</div>").join("");
+  let best=0; try{ best=Stars.speakToday(); }catch(err){}
+  const out=document.getElementById("spk-out");
+  if(out) out.innerHTML="<div style=\"border:1.5px solid "+(all?"#16a37f":"#f59e0b")+";background:"+(all?"#e8fdf5":"#fffbeb")+";border-radius:12px;padding:12px 14px\">"
+    +"<div style=\"font-size:12px;color:#64748b;margin-bottom:4px\">\u{1F442} "+(y1?"Ho sentito:":"I heard:")+"</div>"
+    +"<div style=\"font-size:15px;font-style:italic;color:#1e293b;margin-bottom:8px\">“"+_escHtml(raw)+"”</div>"
+    +(rows?"<ul style=\"list-style:none;padding:0;margin:0;font-size:14px;font-weight:700\">"+rows+"</ul>":"")+tips
+    +"<div style=\"margin-top:8px;font-size:15px;font-weight:800;color:"+(all?"#166534":"#92400e")+"\">Score: "+score+"/10"
+    +(got?" · +"+got+" ⭐":"")+"</div>"
+    +"<div style=\"margin-top:3px;font-size:12.5px;color:#475569\">"+(all?(y1?"\u{1F389} Ottimo!":"\u{1F389} Excellent!"):(y1?"Premi \u{1F3A4} Riprova quante volte vuoi: per le stelle conta il punteggio migliore di oggi.":"Press \u{1F3A4} Try again as many times as you like: your best score today counts for the stars."))
+    +(best>=STAR_RULES.spkDailyCap?(y1?" Oggi hai già preso tutte le ⭐ dello Speakers' Corner.":" You've already got all today's Speakers' Corner ⭐."):"")+"</div></div>";
+  const mb=document.getElementById("spk-model-box"); if(mb) mb.style.display="";
+  if(all) try{ SFX.correct(); }catch(err){}
+}
+/* ogni fotogramma: costruzione quando la citta' c'e', cartello nuovo a
+   mezzanotte, microfono spento se la finestra si chiude (anche con Esc) */
+scene.onBeforeRenderObservable.add(()=>{
+  if(!SPK.built){ try{ spkBuild(); }catch(e){ console.warn("[spk] costruzione",e); SPK.built=true; } return; }
+  if(SPK.busy){ const el=document.getElementById("quest-modal"); if(!el || !el.classList.contains("show")) spkStop(); }
+  SPK.n=(SPK.n||0)+1;
+  if(SPK.n%600===0 && SPK.day!==spkDay()) try{ spkSignDraw(); }catch(e){}
+});
+
 function buildParkFun(){
   /* 🧩 lavagnetta nel gazebo: dentro la balaustra (x 89.6..96.4, z
      10.8..17.2), girata verso il varco d'ingresso a ovest */
@@ -21766,6 +22306,7 @@ const STAR_RULES={
   gemDailyCap:60,     // tetto ⭐ giornaliero dei cristalli = 10 risposte
   fkNote:3,           // ⚽📝 foglietto giusto colpito col pallone (Giacomo, 5 nov: «prende 3 stellette»)
   fkNoteDailyCap:15,  // tetto ⭐ giornaliero dei foglietti = 5 frasi giuste
+  spkDailyCap:10,     // 🎤 Speakers' Corner: conta il miglior punteggio del giorno (su 10)
 };
 /* Anni il cui curricolo e' DAVVERO tutto implementato: solo per questi ha
    senso il bonus di fine anno.
@@ -21804,6 +22345,7 @@ const Stars=(function(){
              dayShop:s.dayShop||0, dayShopDate:s.dayShopDate||"",      // v256 — spesa al Market
              dayGem:s.dayGem||0, dayGemDate:s.dayGemDate||"",          // v312 — stelle dei cristalli
              dayFk:s.dayFk||0, dayFkDate:s.dayFkDate||"",              // ⚽📝 foglietti della porta
+             daySpk:s.daySpk||0, daySpkDate:s.daySpkDate||"",          // 🎤 Speakers' Corner (miglior punteggio di oggi)
              master:!!s.master };
   }
   function total(){ return ledger().tot; }
@@ -21932,6 +22474,17 @@ const Stars=(function(){
     if(give>0) flash(give, "frase giusta");
     return give;
   }
+  /* 🎤 SPEAKERS' CORNER: si prendono le ⭐ che mancano per arrivare al miglior
+     punteggio del giorno (su 10): riprovare migliora, non moltiplica. */
+  function awardSpeak(score){
+    const s=ledger(), t=_today();
+    if(s.daySpkDate!==t){ s.daySpkDate=t; s.daySpk=0; }
+    const tgt=Math.min(STAR_RULES.spkDailyCap, Math.max(0, score|0)), give=Math.max(0, tgt-s.daySpk);
+    s.daySpk+=give; s.tot+=give; _save(s);
+    if(give>0) flash(give, "Speakers' Corner");
+    return give;
+  }
+  function speakToday(){ const s=ledger(); return s.daySpkDate===_today() ? s.daySpk : 0; }
   function awardFragment(fragId, missed){
     return award("f:"+fragId, missed?STAR_RULES.fragmentRetry:STAR_RULES.fragment, "frammento"); }
   function awardPhoto(id){ return award("p:"+id, STAR_RULES.photo, "foto"); }
@@ -21969,7 +22522,7 @@ const Stars=(function(){
   }
   function reset(){ _save({tot:0,given:{},day:"",dayAmb:0,dayNpc:{},master:false}); refreshStarHud(); }
   return { total, award, awardStep, awardAmbient, awardAmbientNPC, awardAskNPC,
-           awardCafeOrder, awardShopping, awardGem, awardFkNote, awardFragment, awardPhoto,
+           awardCafeOrder, awardShopping, awardGem, awardFkNote, awardSpeak, speakToday, awardFragment, awardPhoto,
            checkYearBonus, setMaster, title, next, unitStars, ledger, reset };
 })();
 
@@ -49440,6 +49993,10 @@ scene.onBeforeRenderObservable.add(()=>{
    ===================================================================== */
 const FK={ built:false, sets:null, aim:null, kicks:0, obs:null, crew:null, prac:false, hud:null, ballMat:null };
 const FK_R=0.12, FK_H=1/120, FK_EVERY=9, FK_START=25, FK_WIN=15*60;
+/* ⚽ tiri di fila prima del Ranger (Giacomo, 5 nov: «i tiri che si possono
+   fare consecutivi sono 9»; erano 3). Il tetto di ⭐ dei foglietti non
+   cambia (STAR_RULES.fkNoteDailyCap). */
+const FK_KICKS=9;
 function _fkField(){ const m=scene.getMeshByName("pitch"); return m?{ x:m.position.x, z:m.position.z, y:PITCH_Y }:null; }
 function _fkBallMat(){
   if(FK.ballMat) return FK.ballMat;
@@ -49818,7 +50375,7 @@ function _fkCrewTick(){
 function fkStart(){
   const S=FK.sets&&FK.sets.me; if(!S || FK.aim) return;
   /* ⚠️ (Giacomo: «dopo che arriva il Ranger non puoi piu' calciare per la
-     sessione, se no gli alunni fanno solo quello»): tre tiri a sessione */
+     sessione, se no gli alunni fanno solo quello»): FK_KICKS tiri a sessione (9) */
   if(FK.sessionDone){ toast("⚽ That's enough free kicks for now! Come back next time. · Basta punizioni per oggi: torna la prossima volta!",4200); return; }
   if(RIDE.on) rideDrop();
   try{ standUpAll(); }catch(e){}
@@ -49913,7 +50470,7 @@ function _fkMeTick(){
         let nota=null; try{ nota=fkNotesCheck(M); }catch(e){ console.warn("[fk] foglietti",e); }
         if(!nota) toast(T[0]+" · "+T[1],2600);
         if(r==="goal" && !nota) try{ SFX.correct(); }catch(e){}
-        if(FK.kicks>=3){ FK.sessionDone=true; fkRangerCome(); } } }
+        if(FK.kicks>=FK_KICKS){ FK.sessionDone=true; fkRangerCome(); } } }
   } else if(A.res && now-A.resT>1600){ if(FK.sessionDone){ fkStop(); toast("⚽ That's enough free kicks for now! · Basta punizioni per ora",3000); return; }
     A.res=null; _fkReset(S); A.t0=now; try{ fkNotesNew(); }catch(e){} }
 }
@@ -50083,9 +50640,49 @@ function _fkNoteWrong(it){
   const all=mix(t1.concat(t2));                 // i due gruppi mescolati: varieta' a ogni tiro
   return all.slice(0,3);
 }
+/* ⚽📝 DALLA SECONDA ANCHE VERBI IRREGOLARI E COMPARATIVI (Giacomo, 5 nov:
+   «in seconda e in terza aggiungiamo anche verbi irregolari e comparativi»).
+   Meta' dei set resta il lessico delle unit; l'altra meta', a turno:
+     · VERBI: le tre forme in fila («go → went → gone»); sbagliate la forma
+       regolare inventata («goed»), le forme scambiate, il passato ripetuto;
+     · COMPARATIVI: «This one is ___ than that one.» — sbagliate «more big»
+       (regola sbagliata), «the biggest» (superlativo), «more bigger»;
+     · SUPERLATIVI: «It's ___ of all.» — sbagliate «the most big»,
+       «bigger», «the most biggest».
+   Le forme vengono da gemItem (le stesse dei cristalli). Si saltano gli
+   aggettivi che accettano tutte e due le forme (friendly: friendlier e more
+   friendly) e far (further/farther): due frasi sarebbero giuste. */
+const _FK_ADJ_BOTH=/^(friendly|simple|quiet|clever|narrow|gentle|polite|common|likely|lively|lovely|pleasant|stupid|shallow|handsome|far|tired|bored)$/i;
+function _fkFormsSet(){
+  const seen=FK.noteSeen||(FK.noteSeen={});
+  const verbs=Math.random()<0.5;
+  const keys=gemFormKeys().filter(k=>!seen[k] && (verbs ? k.indexOf("v1:")===0 : /^[cs]:/.test(k)) && !_FK_ADJ_BOTH.test(k.slice(2)));
+  if(!keys.length) return null;
+  const key=keys[Math.floor(Math.random()*keys.length)], it=gemItem(key); if(!it) return null;
+  seen[key]=1;
+  let opts;
+  if(verbs){
+    const v=GEM_VERBS.find(x=>x[0]===it.word); if(!v) return null;
+    const b=v[0], p=v[1], pp=(b==="get")?"got":v[2], reg=gemRegular(b), ch=(a,c)=>b+" → "+a+" → "+c;
+    const ok=ch(p,pp), wr=[ch(reg,pp), ch(p,reg), (p!==pp?ch(pp,p):ch(reg,reg))].filter((x,i,A)=>x!==ok && A.indexOf(x)===i);
+    opts=[{ t:ok, ok:true }].concat(wr.slice(0,3).map(t=>({ t, ok:false })));
+  } else {
+    const c=it.kind==="c", ans=it.answer, frame=c?(w=>"This one is "+w+" than that one."):(w=>"It's "+w+" of all.");
+    const dbl=c ? (/^more /.test(ans)?ans.replace(/^more /,"most "):"more "+ans) : (/^the most /.test(ans)?ans.replace(/^the most /,"the more "):ans.replace(/^the /,"the most "));
+    const wr=[].concat(it.wrong||[],[dbl]).filter((w,i,A)=>w && w!==ans && A.indexOf(w)===i && !(it.also||[]).includes(w));
+    opts=[{ t:frame(ans), ok:true }].concat(wr.slice(0,3).map(w=>({ t:frame(w), ok:false })));
+  }
+  if(opts.length<3) return null;
+  for(let i=opts.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=opts[i]; opts[i]=opts[j]; opts[j]=t; }
+  return { key, word:it.word, it:it.it, opts, kind:verbs?"verbs":"adj" };
+}
 function fkNotesNew(){
   if(!FK.sets) return;
-  const N=_fkNotesBuild(), set=_fkNotesPick();
+  let anno=1; try{ anno=studentYear(); }catch(e){}
+  let set=null;
+  if(anno>=2 && Math.random()<0.5){ try{ set=_fkFormsSet(); }catch(e){ console.warn("[fk] forme",e); } }
+  if(!set) set=_fkNotesPick();
+  const N=_fkNotesBuild();
   N.set=set;
   N.mesh.forEach((m,i)=>{ m.setEnabled(!!(set && set.opts[i])); _fkNoteDraw(N,i,null); });
   fkNotesShow(!!set);
@@ -50102,7 +50699,9 @@ function fkNotesList(){
     document.body.appendChild(L);
     L.addEventListener("click",e=>{ const t=e.target.closest("[data-fkn]"); if(t) fkNoteZoom(+t.getAttribute("data-fkn")); }); }
   if(!N || !N.set || !FK.aim){ L.style.display="none"; return; }
-  L.innerHTML="<div style=\"font-weight:800;margin-bottom:2px\">\u{1F4DD} Hit the correct sentence! <span style=\"font-weight:600;opacity:.7\">· Colpisci la frase giusta (+3 ⭐)</span></div>"
+  const verbi=N.set.kind==="verbs";
+  L.innerHTML="<div style=\"font-weight:800;margin-bottom:2px\">\u{1F4DD} "+(verbi?"Hit the right verb forms!":"Hit the correct sentence!")
+    +" <span style=\"font-weight:600;opacity:.7\">\u00b7 "+(verbi?"Colpisci le forme giuste":"Colpisci la frase giusta")+" (+3 \u2b50)</span></div>"
     +N.set.opts.map((o,i)=>"<div data-fkn=\""+i+"\" style=\"cursor:pointer;padding:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\">"
       +FK_NOTE_SPOTS[i].d+" "+_escHtml(o.t)+"</div>").join("");
   L.style.display="block";
