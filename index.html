@@ -49542,7 +49542,29 @@ function _fkAdvance(S,t){
   if(!M.stop){ b.rotation.x+=sp*0.016/FK_R*Math.cos(Math.atan2(M.v.x,M.v.z)); b.rotation.z-=sp*0.016/FK_R*Math.sin(Math.atan2(M.v.x,M.v.z)); }
 }
 function _fkReset(S){ S.sim=null; S.ball.position.set(S.spot.x,S.F.y+FK_R,S.spot.z); }
-function _fkHash(k){ let x=(k*2654435761)>>>0; x^=x>>>13; x=(x*1274126177)>>>0; x^=x>>>16; return x/4294967296; }
+/* ⚠️⚠️ (Giacomo, 5 nov: «gli npc che battono le punizioni calciano sempre
+   dalla stessa parte»). Il vecchio hash moltiplicava con * (oltre 2^53 i
+   numeri di JS perdono i bit bassi) e l'ultimo x^=x>>>16 tornava un intero
+   CON SEGNO: meta' dei valori usciva negativa, quindi «r1<0.5» era vero
+   sempre — 400 tiri su 400 a sinistra — e anche altezza e potenza erano
+   sbilanciate. Ora Math.imul e >>>0 a ogni passo: uniforme su [0,1). */
+function _fkHash(k){ let x=Math.imul(k|0,2654435761)>>>0; x=(x^(x>>>13))>>>0; x=Math.imul(x,1274126177)>>>0; x=(x^(x>>>16))>>>0; return x/4294967296; }
+/* ⚽ IL TIRO DEGLI ATLETI dal numero del tiro (deterministico: tutta la
+   classe vede lo stesso). Come puo' fare l'avatar (FK_SPIN):
+     · 32% DRITTO a lato della barriera, a destra o a sinistra;
+     · 27% d'INTERNO: mirato fuori a destra, rientra verso sinistra;
+     · 27% d'ESTERNO: mirato fuori a sinistra, rientra verso destra;
+     · 14% PALLONETTO sopra la barriera (alto e piano: senza la rotazione
+       in avanti, che la fisica non ha, e' l'unico tiro che ricade in porta).
+   Misurato su 1000 tiri: ~69% gol, il resto fra alto, traversa, fuori,
+   palo e barriera; i tiri passano la linea da tutte e due le parti. */
+function _fkCrewShot(k){
+  const r1=_fkHash(k), r2=_fkHash(k+77), r3=_fkHash(k+151), r4=_fkHash(k+233), r5=_fkHash(k+311), sg=r1<0.5?-1:1, D=Math.PI/180;
+  if(r5<0.32) return { yaw:sg*(0.2+r4*0.1), loft:(14+r2*6)*D, pw:0.4+r3*0.25, spin:0 };
+  if(r5<0.46) return { yaw:sg*r4*0.06, loft:(27+r2*12)*D, pw:0.02+r3*0.18, spin:0 };
+  if(r5<0.73) return { yaw:0.24+r4*0.12, loft:(12+r2*5)*D, pw:0.45+r3*0.25, spin:1 };
+  return { yaw:-(0.22+r4*0.12), loft:(12+r2*5)*D, pw:0.45+r3*0.25, spin:2 };
+}
 
 /* ---- IL CALCIO (gambe): stessa cinematica inversa di skate e spinta ------ */
 function _fkLegs(root,ref,pins){
@@ -49774,7 +49796,7 @@ function _fkCrewTick(){
       /* se l'attesa e' saltata (tempo ripreso a calcio gia' partito) si misura qui */
       if(!n.__fkLegs) n.__fkLegs=_fkLegs(n.holder,n.carrier,n.pins);
       if(!n.__fkArms){ n.carrier.computeWorldMatrix(true); n.__fkArms=_fkArmSet(n.holder,new BABYLON.Vector3(S.dir.x,0,S.dir.z)); }
-      if(!n.__fkK) n.__fkK={ root:n.holder, ref:n.carrier, legs:n.__fkLegs, arms:n.__fkArms, S, t0pos:{ x:run.x, z:run.z } };
+      if(!n.__fkK) n.__fkK={ root:n.holder, ref:n.carrier, legs:n.__fkLegs, arms:n.__fkArms, S, t0pos:{ x:run.x, z:run.z }, spin:_fkCrewShot(k).spin };   // il piede si gira con l'effetto
       const o=_fkKicker(n.__fkK,u-3);
       play(o.anim==="Run"?"Run":"Idle"); c.x=o.x; c.z=o.z; n.carrier.rotation.y=o.yaw; n.holder.rotation.x=o.lean;
       if(o.kickU!=null){ _fkKickLegs(n.__fkK,o.kickU,null); _fkKickArms(n.__fkK,o.kickU,null); }
@@ -49786,11 +49808,8 @@ function _fkCrewTick(){
   /* il pallone di questo tiro: fermo fino al calcio, poi la fisica */
   const tHit=3+FK_RUN+FK_HIT*FK_KICK, tk=FK_START+k*FK_EVERY+tHit;
   if(u<tHit){ _fkReset(S); S.simK=null; }
-  else { if(S.simK!==k){ const r1=_fkHash(k), r2=_fkHash(k+77), r3=_fkHash(k+151), r4=_fkHash(k+233);
-      /* a lato della barriera (destra o sinistra), altezza e potenza variabili:
-         misurato su 80 tiri ~6 gol su 10, gli altri fuori o sulla barriera */
-      const sg=r1<0.5?-1:1;
-      _fkLaunch(S,sg*(0.2+r4*0.1),(14+r2*6)*Math.PI/180,0.4+r3*0.25,0,tk); S.simK=k;
+  else { if(S.simK!==k){ const T=_fkCrewShot(k);                     // dritto, d'interno, d'esterno o pallonetto
+      _fkLaunch(S,T.yaw,T.loft,T.pw,FK_SPIN[T.spin].curl,tk); S.simK=k;
       if(Math.hypot(player.position.x-S.spot.x,player.position.z-S.spot.z)<30) _fkSfx("kick"); }
     _fkAdvance(S,tsec); }
 }
