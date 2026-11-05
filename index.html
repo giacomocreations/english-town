@@ -48398,7 +48398,8 @@ function rideSetOwned(R){
   Sync.set("et_progress",p);                     // ⚠️ dentro et_progress: sale nel cloud (SYNC_MAX, fondiMax = OR)
 }
 function rideUsable(R){ return rideOwned(R) && rideOpen(R); }
-function rideUnlocked(){ return RIDES.filter(R=>rideUsable(R) && !(RIDE.racked && RIDE.racked.R===R)); }   // 🅿️ quello parcheggiato si riprende alla rastrelliera
+function rideUnlocked(){ let prof=false; try{ prof=lookProf(); }catch(e){}
+  return RIDES.filter(R=>rideUsable(R) && (prof || !(RIDE.racked && RIDE.racked.R===R))); }   // 🅿️ quello parcheggiato si riprende dov'e' (il docente lo richiama)
 function rideStarsMsg(R){
   let st=0; try{ st=Stars.total(); }catch(e){}
   return "\u2B50 Non hai stelle sufficienti per usarlo: ti servono "+R.req.stars+" stelle (ne hai "+st+")"+(R.alt?", "+R.alt.it:"")+".";
@@ -48762,7 +48763,8 @@ function rideMount(id,quiet,fromRack){
   if(!rideOpen(R)){ toast(rideStarsMsg(R),4200); return false; }
   if(!rideCanHere()){ toast(R.ic+" "+R.en+": solo all'aperto, in città",2600); return false; }
   /* 🅿️ parcheggiato alla rastrelliera: si riprende li' (rideRackAct) */
-  if(RIDE.racked && RIDE.racked.R===R && !fromRack){ toast(rideRackedMsg(),4000); return false; }
+  let _prof=false; try{ _prof=lookProf(); }catch(e){}
+  if(RIDE.racked && RIDE.racked.R===R && !fromRack && !_prof){ toast(rideRackedMsg(),4000); return false; }
   if(RIDE.on && RIDE.on!==R && rideMustPark()){ rideParkFirstMsg(); return false; }   // 🛴 l'alunno prima parcheggia
   if(RIDE.racked && RIDE.racked.R===R) RIDE.racked=null;
   if(RIDE.on) rideOff(true);
@@ -51979,6 +51981,7 @@ function openStationRadio(){
 /* ---- Discesa cinematica nella metro: l'avatar scende i gradini e svanisce nel buio ---- */
 function playMetroDescent(stId){
   if(metroCinematic) return;
+  rideLeaveForMetro(stId);
   const S=metroStairs[stId];
   if(!S || !avatarMeshes.length){ enterSubway(stId); return; }   // fallback se manca la scala/avatar
   /* v293 (Giacomo: «quando entri in metro, se sei in POV diventa non POV»):
@@ -52013,9 +52016,27 @@ function playMetroDescent(stId){
   });
 }
 
+/* 🛴 IN METRO NON SI SCENDE COL MONOPATTINO (Giacomo, 5 nov: «se scendi il
+   monopattino va lasciato vicino all'entrata»). Prima: la discesa mette
+   l'avatar sul primo gradino e solo dopo il monopattino veniva lasciato
+   «dov'eri», cioe' sul gradino dentro la buca delle scale (e al docente
+   spariva e scendeva con lui). Ora si lascia PRIMA della discesa, dove si
+   e' davanti all'ingresso (sul marciapiede a nord della scala, fuori dalla
+   buca sigillata), in un punto libero: per TUTTI, docente compreso. Lo
+   skate si porta con se' come negli altri luoghi. Il docente puo' comunque
+   richiamarlo con R (vedi rideUnlocked: per lui niente parcheggio). */
+function rideLeaveForMetro(stId){
+  try{
+    if(!RIDE.on) return;
+    if(RIDE.on.kind!=="scooter"){ rideOff(true); return; }
+    const st=METRO_STATIONS.find(s=>s.id===stId);
+    rideLeaveHere(RIDE.on, "at the "+(st?st.name+" ":"")+"metro entrance");
+  }catch(e){ try{ rideOff(true); }catch(e2){} }
+}
 /* ---- enterSubway / exitSubway ---- */
 let _metroPovBack=false;
 function enterSubway(stId){
+  rideLeaveForMetro(stId);          // via di riserva (senza scala/avatar): idem
   buildSubwayPlatform();
   currentMetroStation=stId;
   _fade(true);
@@ -53905,6 +53926,50 @@ function _gradUnit(p){
     return n;
   }catch(e){ return 0; }
 }
+/* 📋 QUALI QUEST (Giacomo, 5 nov: «deve essere possibile per il docente
+   vedere quali quest ogni alunno ha ultimato, ora si vede solo il numero»).
+   Stessi dati della graduatoria (et_progress dell'alunno: { unitId:{ step,
+   done } }), nessuna lettura in piu'. Le unit nell'ordine del SYLLABUS;
+   le tappe totali dalla definizione della unit (steps). */
+const _GRAD_UNITS=[()=>UNIT0,()=>UNIT1,()=>UNIT2,()=>UNIT3,()=>UNIT4,()=>UNIT5,()=>UNIT6,()=>UNIT7,()=>UNIT8,
+  ()=>UNIT_STYLE,()=>UNIT_MUSIC,()=>UNIT_WEATHER,()=>UNIT_SCREENS,()=>UNIT_TRAVEL,()=>UNIT_ECO,()=>UNIT_HOME7,()=>UNIT_CITY,
+  ()=>UNIT_JOBS,()=>UNIT_TECH,()=>UNIT_SURVIVAL,()=>UNIT_CLIMATE,()=>UNIT_ER];
+let _gradTappe=null;
+function _gradTappeDi(id){
+  if(!_gradTappe){ _gradTappe={};
+    _GRAD_UNITS.forEach(f=>{ try{ const u=f(); if(u && u.id && Array.isArray(u.steps)) _gradTappe[u.id]=u.steps.length; }catch(e){} }); }
+  return _gradTappe[id]||0;
+}
+function _gradQuest(p){
+  const o=(_gradDati(p).et_progress)||{}, fatte=[], incorso=[];
+  const ordine=SYLLABUS.map(u=>u.id);
+  Object.keys(o).filter(k=>k.indexOf("__")!==0 && o[k] && typeof o[k]==="object")
+    .sort((a,b)=>{ const ia=ordine.indexOf(a), ib=ordine.indexOf(b); return (ia<0?999:ia)-(ib<0?999:ib) || a.localeCompare(b); })
+    .forEach(k=>{ const v=o[k], u=SYLLABUS.find(x=>x.id===k)||{ id:k, yr:0, n:0, ic:"\u{1F4CC}", t:k };
+      const tot=_gradTappeDi(k), st=Math.max(0,Number(v.step)||0);
+      if(v.done) fatte.push({ u });
+      else if(st>0) incorso.push({ u, step:tot?Math.min(st,tot):st, tot }); });
+  return { fatte, incorso };
+}
+function _gradQuestHtml(x){
+  if(x.mai) return "<span style=\"opacity:.7\">Non ha mai aperto il gioco.</span>";
+  const Q=x.quest||{ fatte:[], incorso:[] };
+  const chip=(u,extra,bg)=>"<span title=\""+esc((u.yr?"Anno "+u.yr+" · "+(u.n===0?"Starter":"Unit "+u.n):u.id))+"\" "
+    +"style=\"display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border-radius:999px;background:"+bg+";font-size:12.5px;white-space:nowrap\">"
+    +u.ic+" "+esc(u.t)+(extra?" <b>"+extra+"</b>":"")+"</span>";
+  let h="";
+  if(Q.fatte.length){
+    const anni={}; Q.fatte.forEach(f=>{ (anni[f.u.yr]=anni[f.u.yr]||[]).push(f.u); });
+    h+="<div style=\"margin:2px 0 4px\"><b>✅ Finite ("+Q.fatte.length+")</b></div>";
+    Object.keys(anni).sort().forEach(y=>{
+      h+="<div style=\"margin:0 0 3px\"><span style=\"font-size:12px;opacity:.7;margin-right:4px\">"+(Number(y)?"Anno "+y:"Altro")+":</span>"
+        +anni[y].map(u=>chip(u,"","#dff0dc")).join("")+"</div>"; });
+  } else h+="<div style=\"margin:2px 0 4px;opacity:.75\">✅ Nessuna quest finita ancora.</div>";
+  if(Q.incorso.length)
+    h+="<div style=\"margin:6px 0 2px\"><b>⏳ In corso</b></div><div>"
+      +Q.incorso.map(q=>chip(q.u,q.tot?(q.step+"/"+q.tot+" tappe"):(q.step+" tappe"),"#fbefd2")).join("")+"</div>";
+  return h;
+}
 function _gradGemme(p){
   try{ return Number(_gradDati(p).et_gems.tot)||0; }catch(e){ return 0; }
 }
@@ -53931,9 +53996,10 @@ function graduatoriaClasse(cls, ms){
       const k=String(d.className||"").toUpperCase().replace(/\s+/g,"");
       if(k!==c) return;
       const p=prog[code]||null;
+      let quest=null; try{ quest=p?_gradQuest(p):null; }catch(e){ quest=null; }
       righe.push({ code:code, nome:(String(d.name||"").trim()||code),
                    stelle:p?_gradStelle(p):0, unit:p?_gradUnit(p):0,
-                   gemme:p?_gradGemme(p):0, mai:!p });
+                   gemme:p?_gradGemme(p):0, mai:!p, quest:quest });
     });
     /* stelle, poi unit finite, poi cristalli, poi nome: i pareggi si sciolgono
        su cio' che costa fatica prima che sull'alfabeto. */
@@ -53984,22 +54050,39 @@ function grRiempi(c){
     if(!r.risposto){ e.innerHTML="Non sono riuscito a leggere: "+esc(r.motivo)+"."; return; }
     if(!r.righe.length){ e.innerHTML="Nessun alunno risulta in <b>"+esc(r.cls)+"</b> in anagrafica."; return; }
     const MED=["\u{1F947}","\u{1F948}","\u{1F949}"];
-    const tr=r.righe.map(function(x){
+    /* 📋 ogni riga si apre (▸) con le quest finite e quelle in corso */
+    const tr=r.righe.map(function(x,i){
       const med=(x.pos<=3)?MED[x.pos-1]:"";
-      const sp=x.mai?" style=\"opacity:.45\"":"";
-      return "<tr"+sp+"><td style=\"padding:3px 8px 3px 0;text-align:right\">"+x.pos+"</td>"
+      const sp=x.mai?"opacity:.45;":"";
+      return "<tr data-gr=\""+i+"\" title=\"Tocca per vedere le quest\" style=\""+sp+"cursor:pointer\">"
+        +"<td style=\"padding:3px 8px 3px 0;text-align:right\">"+x.pos+"</td>"
         +"<td style=\"padding:3px 6px 3px 0\">"+med+"</td>"
-        +"<td style=\"padding:3px 10px 3px 0\"><b>"+esc(x.nome)+"</b>"
+        +"<td style=\"padding:3px 10px 3px 0\"><span data-gr-ar=\""+i+"\" style=\"display:inline-block;width:12px;opacity:.6\">▸</span><b>"+esc(x.nome)+"</b>"
         +(x.mai?" <span style=\"font-size:11px\">(mai entrato)</span>":"")+"</td>"
         +"<td style=\"padding:3px 10px 3px 0;text-align:right\">"+x.stelle+" \u2b50</td>"
         +"<td style=\"padding:3px 10px 3px 0;text-align:right\">"+x.unit+" unit</td>"
-        +"<td style=\"padding:3px 0;text-align:right\">"+x.gemme+" \u{1F48E}</td></tr>";
+        +"<td style=\"padding:3px 0;text-align:right\">"+x.gemme+" \u{1F48E}</td></tr>"
+        +"<tr data-gr-d=\""+i+"\" style=\"display:none\"><td></td><td></td><td colspan=\"4\" "
+        +"style=\"padding:4px 0 10px;font-size:13px;line-height:1.5\">"+_gradQuestHtml(x)+"</td></tr>";
     }).join("");
     const mai=r.righe.filter(function(x){ return x.mai; }).length;
-    e.innerHTML="<table style=\"width:100%;border-collapse:collapse;font:14px system-ui\">"+tr+"</table>"
+    e.innerHTML="<div style=\"margin:0 0 8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap\">"
+      +"<button type=\"button\" id=\"gr-all\" style=\"padding:6px 12px;border:none;border-radius:9px;background:#e8dfc8;"
+      +"font:700 13px system-ui;cursor:pointer\">\u{1F4CB} Mostra le quest di tutti</button>"
+      +"<span style=\"font-size:12px;opacity:.7\">o tocca un nome</span></div>"
+      +"<table style=\"width:100%;border-collapse:collapse;font:14px system-ui\">"+tr+"</table>"
       +"<div style=\"margin-top:10px;font-size:12px;opacity:.75\">"
-      +r.righe.length+" in anagrafica"+(mai?(" \u00b7 "+mai+" non hanno mai giocato"):"")
-      +" \u00b7 i pari merito hanno lo stesso posto</div>";
+      +r.righe.length+" in anagrafica"+(mai?(" · "+mai+" non hanno mai giocato"):"")
+      +" · i pari merito hanno lo stesso posto</div>";
+    const apri=function(i,on){ const d=e.querySelector("[data-gr-d=\""+i+"\"]"), a=e.querySelector("[data-gr-ar=\""+i+"\"]");
+      if(!d) return; const vis=(on==null)?(d.style.display==="none"):on;
+      d.style.display=vis?"":"none"; if(a) a.textContent=vis?"▾":"▸"; };
+    Array.prototype.forEach.call(e.querySelectorAll("tr[data-gr]"),function(row){
+      row.addEventListener("click",function(){ apri(row.getAttribute("data-gr")); }); });
+    const all=document.getElementById("gr-all");
+    if(all){ let tutti=false; all.onclick=function(){ tutti=!tutti;
+      r.righe.forEach(function(x,i){ apri(i,tutti); });
+      all.textContent=tutti?"\u{1F4CB} Chiudi tutte":"\u{1F4CB} Mostra le quest di tutti"; }; }
   });
 }
 /* PANNELLO GRADUATORIA (Giacomo, 3 set: «deve essere per classe»).
@@ -54009,8 +54092,8 @@ function grRiempi(c){
 function openGraduatoriaPanel(){
   QModal.open({
     title:"\u{1F3C6} Graduatoria di classe",
-    sub:"Chi \u00e8 avanti, per i premi. \u26a0\ufe0f Le \u2b50 si contano sul dispositivo del "
-       +"ragazzo: <b>non usarle per il voto</b>.",
+    sub:"Chi è avanti, per i premi. Tocca un nome per vedere <b>quali quest</b> ha finito. "
+       +"⚠️ Le ⭐ si contano sul dispositivo del ragazzo: <b>non usarle per il voto</b>.",
     html:"<div style=\"text-align:left;font:14px/1.45 system-ui,sans-serif\">"
       +"<label style=\"display:block;margin:2px 0 4px;opacity:.8\">Classe</label>"
       +"<select id=\"gr-cls\" style=\"width:100%;padding:9px 10px;border-radius:9px;"
