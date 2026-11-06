@@ -9547,6 +9547,13 @@ function rangerExempt(){
     if(t && Math.hypot(t.x-player.position.x, t.z-player.position.z)<25) return true;
   }
   if(typeof fragmentNear==="function" && fragmentNear(player.position)) return true;  // FASE 4.3
+  /* ⚽ (Giacomo, 6 nov: «il Ranger arriva anche mentre sto calciando le
+     punizioni: scambia l'attesa per la punizione per bighellonare»). In mira
+     il giocatore e' inchiodato sul dischetto (_fkPlace) e la rincorsa non
+     supera i 3 m di RANGER_A.eps, quindi per l'anti-idling era «fermo»; e il
+     prompt «premi E» e' spento in mira, quindi nearInter non lo copriva.
+     Chi sta calciando (o sta parlando col Ranger dei tiri) sta giocando. */
+  try{ if(FK.aim || FK.rg) return true; }catch(e){}
   return false;
 }
 function rangerShowWay(npc,goal){
@@ -9711,7 +9718,11 @@ function rangerRelease(){
   RANGER_A.ax=player.position.x; RANGER_A.az=player.position.z;
   if(RANGER){ RANGER.__noPin=false; RANGER.watch=true; RANGER.play("Idle"); }
 }
-function openRangerDialog(){ rangerRelease(); talkToRanger(RANGER,true); }
+function openRangerDialog(){ rangerRelease();
+  /* ⚽ partito per l'anti-idling PRIMA che cominciassi a calciare: arriva, ti
+     vede impegnato con le punizioni e non ti interrompe. */
+  try{ if(FK.aim) return; }catch(e){}
+  talkToRanger(RANGER,true); }
 /* =====================================================================
    IL RANGER E IL TRAFFICO BLOCCATO (Giacomo, 12 set 2026). L'autista e'
    arrivato in fondo alla sua scala ("Get out of the way!") e non ha altro
