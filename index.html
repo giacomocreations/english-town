@@ -16133,8 +16133,8 @@ function skRampTop(X,Z,rail){   // rail: con la sbarra (default: se il giocatore
   if(Math.abs(X-SKATE.C.x)>22 || Math.abs(Z-SKATE.C.z)>16) return null;
   let best=null;
   for(const r of L){ let h=null;
-    if(r.k==="r"){                                          // sbarra bassa: solo per la crew
-      if(rail!==true || Math.abs(X-r.x)>r.hl || Math.abs(Z-r.z)>0.14) continue;
+    if(r.k==="r"){                                          // sbarra bassa: la crew e (dal 6 nov) chi e' in skate
+      if(!(rail!==undefined?rail:_skOnSkate()) || Math.abs(X-r.x)>r.hl || Math.abs(Z-r.z)>0.14) continue;
       h=r.y; if(best===null || h>best) best=h; continue; }
     if(r.k==="q"){
       const dx=X-r.x, dz=Z-r.z, c=Math.cos(r.ry), s=Math.sin(r.ry);
@@ -16198,9 +16198,11 @@ function skQPRideY(X,Z,lift){
 function rideGrind(dirx,dirz){
   const L=SKATE.ramps; if(!L) return null;
   const X=player.position.x, Z=player.position.z;
-  for(const r of L){ if(r.k!=="f" || !r.rail) continue;
+  for(const r of L){
+    /* la sbarra del funbox e (dal 6 nov) la sbarra bassa in fondo alla pista */
+    const hl=(r.k==="f" && r.rail) ? r.rail.hl : (r.k==="r" ? r.hl : 0); if(!hl) continue;
     const ax=Math.abs(X-r.x), dz=r.z-Z;
-    if(ax>r.rail.hl || Math.abs(dz)>0.45) continue;
+    if(ax>hl || Math.abs(dz)>0.45) continue;
     if(dirx!=null && Math.abs(dirx)<0.75) continue;                 // di traverso: niente grind
     player.position.z+=dz*0.35;
     return r; }
@@ -16229,8 +16231,12 @@ function _skFlatRail(x,z,len){
   _mergeByMat([-len/2+0.3,0,len/2-0.3].map(dx=>{ const p=BABYLON.MeshBuilder.CreateBox("skFRp",{width:0.06,height:0.42,depth:0.06},scene);
     p.material=hm7Mat("#3a3f46",0.3,32); p.position.set(x+dx,g+0.21,z); p.parent=townRoot; return p; }),townRoot);
   addSolid(x-len/2,x+len/2,z-0.08,z+0.08,"town");
-  /* 🛹 la crew ci fa grind (skRampTop con rail===true: solo loro, per il
-     giocatore resta un ostacolo) */
+  /* 🛹 la crew ci fa grind (skRampTop con rail===true). Dal 6 nov anche il
+     giocatore in skate (Giacomo: «aggiungi anche salire sul grind come gli
+     avatar»): come la sbarra del funbox, in skate non e' un ostacolo — ci si
+     sale (skRampTop) e andandoci lungo si viene tirati sopra (rideGrind). A
+     piedi resta un ostacolo. */
+  Object.assign(solids[solids.length-1],{ skRamp:true, skRail:true });
   (SKATE.ramps||(SKATE.ramps=[])).push({ k:"r", x, z, hl:len/2, y:g+0.42+0.03-0.05 });
 }
 function _skSpeaker(x,z,ry){
@@ -22320,6 +22326,8 @@ const STAR_RULES={
   gemDailyCap:60,     // tetto ⭐ giornaliero dei cristalli = 10 risposte
   fkNote:3,           // ⚽📝 foglietto giusto colpito col pallone (Giacomo, 5 nov: «prende 3 stellette»)
   fkNoteDailyCap:15,  // tetto ⭐ giornaliero dei foglietti = 5 frasi giuste
+  skWord:1,           // 🛹🔤 parola giusta presa in skate allo skatepark
+  skWordDailyCap:20,  // tetto ⭐ giornaliero delle parole dello skatepark (Giacomo, 6 nov)
   spkDailyCap:30,     // 🎤 Speakers' Corner: tutto giusto = 30 ⭐ (Giacomo, 5 nov: «e' piu' difficile»); conta il migliore del giorno
 };
 /* Anni il cui curricolo e' DAVVERO tutto implementato: solo per questi ha
@@ -22359,6 +22367,7 @@ const Stars=(function(){
              dayShop:s.dayShop||0, dayShopDate:s.dayShopDate||"",      // v256 — spesa al Market
              dayGem:s.dayGem||0, dayGemDate:s.dayGemDate||"",          // v312 — stelle dei cristalli
              dayFk:s.dayFk||0, dayFkDate:s.dayFkDate||"",              // ⚽📝 foglietti della porta
+             daySkw:s.daySkw||0, daySkwDate:s.daySkwDate||"",          // 🛹🔤 parole dello skatepark
              daySpk:s.daySpk||0, daySpkDate:s.daySpkDate||"",          // 🎤 Speakers' Corner (miglior punteggio di oggi)
              master:!!s.master };
   }
@@ -22498,6 +22507,14 @@ const Stars=(function(){
     if(give>0) flash(give, "Speakers' Corner");
     return give;
   }
+  function awardSkWord(){
+    const s=ledger(), t=_today();
+    if(s.daySkwDate!==t){ s.daySkwDate=t; s.daySkw=0; }
+    const give=Math.min(STAR_RULES.skWord, Math.max(0, STAR_RULES.skWordDailyCap - s.daySkw));
+    s.daySkw+=give; s.tot+=give; _save(s);
+    if(give>0) flash(give, "skatepark");
+    return give;
+  }
   function speakToday(){ const s=ledger(); return s.daySpkDate===_today() ? s.daySpk : 0; }
   function awardFragment(fragId, missed){
     return award("f:"+fragId, missed?STAR_RULES.fragmentRetry:STAR_RULES.fragment, "frammento"); }
@@ -22536,7 +22553,7 @@ const Stars=(function(){
   }
   function reset(){ _save({tot:0,given:{},day:"",dayAmb:0,dayNpc:{},master:false}); refreshStarHud(); }
   return { total, award, awardStep, awardAmbient, awardAmbientNPC, awardAskNPC,
-           awardCafeOrder, awardShopping, awardGem, awardFkNote, awardSpeak, speakToday, awardFragment, awardPhoto,
+           awardCafeOrder, awardShopping, awardGem, awardFkNote, awardSpeak, speakToday, awardSkWord, awardFragment, awardPhoto,
            checkYearBonus, setMaster, title, next, unitStars, ledger, reset };
 })();
 
@@ -49775,6 +49792,163 @@ function rideDropInTick(idle){
   RIDE.deck=null; moveTarget=null; pendingInteract=null;
   return true;
 }
+/* =====================================================================
+   🛹🔤 LE PAROLE DELLO SKATEPARK (Giacomo, 6 nov: «quando ho lo skate e
+   faccio evoluzioni sulle rampe e altro, appaiono in diversi punti delle
+   parole dell'unita', alcune con spelling giusto altre sbagliato: se
+   l'alunno passa in quelle giuste prende una stella. Alcune le posso
+   prendere con l'airwalk. Aggiungi anche salire sul grind come gli avatar e
+   anche li' metti una parola. Come la prendo si rinnova e ne appare
+   un'altra, giusta o sbagliata. Tetto di 20 al giorno»).
+   · SOLO IN SKATE, dentro lo skatepark: altrimenti non si vedono.
+   · LE PAROLE: il lessico delle unit aperte (gemLexIndex, 70% dall'anno piu'
+     recente, come i cristalli e i foglietti della porta), parole di 4-11
+     lettere. Il 55% scritte giuste, il resto con UN errore di spelling
+     plausibile (_skwMisspell: due lettere scambiate, una doppia in piu' o in
+     meno, una lettera mancante, una vocale sbagliata, ie/ei) che non sia
+     un'altra parola del lessico. Tutte uguali a vedersi: si capisce solo
+     leggendo.
+   · DOVE (10 alla volta), e come si prendono:
+       floor  3  sul fondo della pista: ci si passa attraverso;
+       ramp   2  a meta' di una quarter pipe: salendoci;
+       air    2  sopra il bordo di una quarter pipe, ALTE: solo con l'airwalk
+                 (senza, in cima alla curva o sul piano si resta 14 cm sotto);
+       grind  2  sopra la sbarra del funbox e la sbarra bassa: solo facendo
+                 grind (sul piano del funbox accanto alla sbarra si passa
+                 16 cm sotto);
+       top    1  sul piano del funbox.
+     Si prende se si passa abbastanza vicino (raggio della categoria) con la
+     parola fra 20 cm e 1,75 m sopra i piedi.
+   · PRESA: giusta = +1 ⭐ (tetto 20 al giorno, STAR_RULES.skWordDailyCap);
+     sbagliata = niente stelle, si legge la parola giusta e va nel ripasso
+     dei cristalli (gemDueArm). Subito ne nasce un'altra, nella stessa
+     categoria ma in un altro punto, giusta o sbagliata.
+   ===================================================================== */
+const SKW={ toks:null, vis:false, capSaid:"" };
+const SKW_CATS=[ ["floor",3,0.6], ["ramp",2,0.6], ["air",2,0.7], ["grind",2,0.35], ["top",1,0.55] ];
+function _skwWords(){
+  const ix=gemLexIndex();
+  const ok=ix.keys.filter(k=>{ const w=k.slice(k.indexOf(":",4)+1); return /^[A-Za-z]{4,11}$/.test(w); });
+  return { ix, ok };
+}
+function _skwMisspell(w,known){
+  const lo=w.toLowerCase(), V="aeiou", out=[];
+  const isV=c=>V.indexOf(c)>=0;
+  for(let i=1;i<lo.length-1;i++) if(lo[i]!==lo[i+1]) out.push(lo.slice(0,i)+lo[i+1]+lo[i]+lo.slice(i+2));          // lettere scambiate
+  for(let i=1;i<lo.length;i++){ const c=lo[i];
+    /* doppia in piu' solo dove la si sbaglia davvero: fra due vocali o in fondo dopo vocale (elleven, pencill), non «bllack» */
+    if("bdfglmnprst".indexOf(c)>=0 && isV(lo[i-1]) && (i===lo.length-1 || isV(lo[i+1]))) out.push(lo.slice(0,i)+c+lo.slice(i));
+    if(c===lo[i-1]) out.push(lo.slice(0,i)+lo.slice(i+1));                                                          // doppia in meno
+    if(i>=2 && i<lo.length-1 && lo[i-1]!==c) out.push(lo.slice(0,i)+lo.slice(i+1));                                // lettera mancante (non la seconda: «rbber»)
+    if(isV(c)){ const sub={a:"e",e:"i",i:"e",o:"u",u:"o"}[c]; out.push(lo.slice(0,i)+sub+lo.slice(i+1)); } }      // vocale sbagliata
+  if(lo.indexOf("ie")>=0) out.push(lo.replace("ie","ei")); if(lo.indexOf("ei")>=0) out.push(lo.replace("ei","ie"));
+  const good=out.filter(x=>x!==lo && x.length>=3 && !known[x]);
+  if(!good.length) return null;
+  const m=good[Math.floor(Math.random()*good.length)];
+  return (w[0]===w[0].toUpperCase()) ? m[0].toUpperCase()+m.slice(1) : m;
+}
+function _skwWord(){
+  const W=_skwWords(); if(!W.ok.length) return null;
+  const sp=gemLexSplit(W.ok), pool=(sp.recent.length && (Math.random()<GEM_LEX_RECENT || !sp.older.length))?sp.recent:sp.older;
+  /* un errore che sia un'ALTRA parola vera non vale: si escludono tutte le
+     parole note al gioco (lessico, verbi irregolari, aggettivi e forme) */
+  const known={}; Object.keys(W.ix.byWord).forEach(k=>{ known[k.toLowerCase()]=1; });
+  try{ GEM_VERBS.forEach(v=>{ known[v[0]]=known[v[1]]=known[v[2]]=1; });
+       GEM_ADJ.forEach(a=>{ known[a[0]]=1; const f=gemForms(a); if(f){ known[String(f.comp).replace(/^more /,"")]=1; known[String(f.sup).replace(/^most /,"")]=1; } }); }catch(e){}
+  for(let t=0;t<12;t++){
+    const key=pool[Math.floor(Math.random()*pool.length)], w=key.slice(key.indexOf(":",4)+1);
+    if(Math.random()<0.55) return { key, right:w, shown:w, ok:true };
+    const bad=_skwMisspell(w,known); if(bad) return { key, right:w, shown:bad, ok:false };
+  }
+  return null;
+}
+/* un punto nuovo per la categoria: { x, y, z } (y = quota della parola) */
+function _skwSpot(cat){
+  const R=SKATE.ramps||[], qs=R.filter(r=>r.k==="q"), fb=R.find(r=>r.k==="f"), fr=R.find(r=>r.k==="r");
+  const rnd=(a,b)=>a+Math.random()*(b-a), LIFT=0.11;
+  if((cat==="ramp"||cat==="air") && qs.length){
+    const q=qs[Math.floor(Math.random()*qs.length)], lz=rnd(-q.hw+0.8,q.hw-0.8), lx=(cat==="ramp")?0.85:q.R-0.03;
+    const c=Math.cos(q.ry), s=Math.sin(q.ry), x=q.x+lx*c+lz*s, z=q.z-lx*s+lz*c;
+    const y=(cat==="ramp") ? (skQPRideY(x,z,LIFT)||q.y0)+1.0 : q.y0+q.R+2.0;
+    return { x, y, z }; }
+  if(cat==="grind"){
+    const useFb=fb && fb.rail && (!fr || Math.random()<0.5);
+    if(useFb) return { x:fb.x+rnd(-fb.rail.hl+0.4,fb.rail.hl-0.4), y:fb.rail.y+LIFT+1.65, z:fb.z };
+    if(fr) return { x:fr.x+rnd(-fr.hl+0.4,fr.hl-0.4), y:fr.y+LIFT+1.65, z:fr.z }; }
+  if(cat==="top" && fb) return { x:fb.x+rnd(-fb.hl+0.3,fb.hl-0.3), y:fb.y0+fb.H+LIFT+1.0, z:fb.z+(Math.random()<0.5?-1:1)*rnd(0.6,1.0) };
+  for(let t=0;t<40;t++){                                   // floor: sul fondo, lontano da rampe, sbarre e ostacoli
+    const x=SKATE.C.x+rnd(-14,14), z=SKATE.C.z+rnd(-9,9);
+    if(skRampTop(x,z,true)!==null || skRampTop(x+1,z,true)!==null || skRampTop(x-1,z,true)!==null || skRampTop(x,z+1,true)!==null || skRampTop(x,z-1,true)!==null) continue;
+    if(blocked(x,z,false)) continue;
+    return { x, y:SKATE.gy+0.035+LIFT+1.0, z }; }
+  return null;
+}
+function _skwDraw(t){
+  const c=t.dt.getContext(), W=512, H=128, txt=t.word?t.word.shown:"";
+  c.clearRect(0,0,W,H);
+  c.font="bold 64px Arial"; const r=56, tw=Math.max(2*r+20,Math.min(W-12,c.measureText(txt).width+70));
+  const x0=(W-tw)/2;
+  c.fillStyle="rgba(255,255,255,0.94)"; c.beginPath(); c.moveTo(x0+r,8); c.lineTo(x0+tw-r,8); c.arc(x0+tw-r,H/2,r,-Math.PI/2,Math.PI/2); c.lineTo(x0+r,H-8); c.arc(x0+r,H/2,r,Math.PI/2,Math.PI*1.5); c.closePath(); c.fill();
+  c.lineWidth=6; c.strokeStyle="#7c4dff"; c.stroke();
+  c.fillStyle="#1d2a32"; c.textAlign="center"; c.textBaseline="middle"; c.fillText(txt,W/2,H/2+3);
+  t.dt.update(); t.m.scaling.x=Math.max(0.45,tw/W);
+}
+function _skwBuild(){
+  if(SKW.toks) return;
+  SKW.toks=[];
+  SKW_CATS.forEach(([cat,n,rad])=>{ for(let i=0;i<n;i++){
+    const dt=new BABYLON.DynamicTexture("skwT"+SKW.toks.length,{ width:512, height:128 },scene,true); dt.hasAlpha=true;
+    const mt=new BABYLON.StandardMaterial("skwM"+SKW.toks.length,scene); mt.diffuseTexture=dt; mt.useAlphaFromDiffuseTexture=true;
+    mt.emissiveColor=new BABYLON.Color3(0.85,0.85,0.85); mt.specularColor=new BABYLON.Color3(0,0,0); mt.backFaceCulling=false; mt.disableLighting=true;
+    const m=BABYLON.MeshBuilder.CreatePlane("skwW"+SKW.toks.length,{ width:3.0, height:0.75 },scene); m.material=mt; m.parent=townRoot;   // grandi: si leggono andando in skate
+    m.billboardMode=BABYLON.Mesh.BILLBOARDMODE_ALL; m.isPickable=false; m.setEnabled(false);
+    m.__dyn=true;                      // ⚠️ si sposta: fuori dall'octree statico (rebuildOctree), se no resta «dove e' nata» e non si disegna
+    try{ if(typeof glowL!=="undefined" && glowL) glowL.addExcludedMesh(m); }catch(e){}
+    const t={ cat, rad, m, dt, word:null, p:null, ph:Math.random()*6 };
+    SKW.toks.push(t); _skwRenew(t); } });
+}
+function _skwRenew(t){
+  /* mai addosso a chi l'ha appena presa (la riprenderebbe al fotogramma dopo) */
+  /* ...e non sopra un'altra parola (due «air» sulla stessa rampa a 30 cm) */
+  const lontana=q=>q && Math.hypot(q.x-player.position.x,q.z-player.position.z)>3
+    && (SKW.toks||[]).every(o=>o===t || o.dead || !o.p || Math.hypot(q.x-o.p.x,q.z-o.p.z)>2.5);
+  let p=null; for(let k=0;k<12;k++){ p=_skwSpot(t.cat); if(lontana(p)) break; }
+  t.p=p; t.word=_skwWord();
+  if(!t.p || !t.word){ t.m.setEnabled(false); t.dead=true; return; }
+  t.dead=false; _skwDraw(t); t.m.position.set(t.p.x,t.p.y,t.p.z); t.pop=1; t.m.setEnabled(true);
+}
+function _skwTake(t){
+  const W=t.word;
+  if(W.ok){
+    let got=0; try{ got=Stars.awardSkWord(); }catch(e){}
+    try{ SFX.correct(); }catch(e){}
+    if(got) toast("✅ "+W.shown+" +1 ⭐",1600);
+    else { const d=new Date().toDateString(); toast("✅ "+W.shown+(SKW.capSaid!==d?" · 20 ⭐ today: that's all for today! · Per oggi le stelle delle parole sono finite":""),SKW.capSaid!==d?3600:1400); SKW.capSaid=d; }
+  } else {
+    try{ SFX.wrong(); }catch(e){}
+    toast("❌ «"+W.shown+"» is wrong → "+W.right+" · ortografia sbagliata",3200);
+    try{ gemDueArm(W.key); }catch(e){}
+  }
+  _skwRenew(t);
+}
+function skwTick(){
+  let on=false;
+  try{ on=!!(started && area==="town" && RIDE.on && RIDE.on.ramps && Math.abs(player.position.x-SKATE.C.x)<24 && Math.abs(player.position.z-SKATE.C.z)<17 && SKATE.ramps); }catch(e){ on=false; }
+  if(!on){ if(SKW.vis && SKW.toks){ SKW.toks.forEach(t=>t.m.setEnabled(false)); SKW.vis=false; } return; }
+  if(!SKW.toks){ try{ _skwBuild(); }catch(e){ console.warn("[skw]",e); SKW.toks=[]; } }
+  const now=performance.now()/1000, px=player.position.x, pz=player.position.z, py=player.position.y;
+  SKW.toks.forEach(t=>{
+    if(t.dead){ if(Math.random()<0.01) _skwRenew(t); return; }
+    if(!SKW.vis) t.m.setEnabled(true);
+    t.m.position.y=t.p.y+0.06*Math.sin(now*2+t.ph);
+    if(t.pop>0){ t.pop=Math.max(0,t.pop-0.06); const k=1-t.pop; t.m.scaling.y=k; } else t.m.scaling.y=1;
+    const d=Math.hypot(px-t.p.x,pz-t.p.z), h=t.p.y-py;
+    if(d<t.rad && h>=0.2 && h<=1.75) _skwTake(t);
+  });
+  SKW.vis=true;
+}
+scene.onBeforeRenderObservable.add(()=>{ try{ skwTick(); }catch(e){} });
+
 function rideStepSpeed(){
   const R=RIDE.on; RIDE.v+=(1-RIDE.v)*R.acc; if(RIDE.v<0.3) RIDE.v=0.3;
   return PLAYER_SPEED*R.mult*RIDE.v;
