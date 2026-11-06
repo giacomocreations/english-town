@@ -49959,6 +49959,11 @@ function skwTick(){
   try{ on=!!(started && area==="town" && RIDE.on && RIDE.on.ramps && Math.abs(player.position.x-SKATE.C.x)<24 && Math.abs(player.position.z-SKATE.C.z)<17 && SKATE.ramps); }catch(e){ on=false; }
   if(!on){ if(SKW.vis && SKW.toks){ SKW.toks.forEach(t=>t.m.setEnabled(false)); SKW.vis=false; } return; }
   if(!SKW.toks){ try{ _skwBuild(); }catch(e){ console.warn("[skw]",e); SKW.toks=[]; } }
+  /* la prima volta del giorno che le parole compaiono si dice come funziona:
+     senza, l'alunno vedeva scritte sospese senza sapere cosa farne */
+  if(!SKW.vis){ const d=new Date().toDateString(); let k=""; try{ k=localStorage.getItem("et_skw_hint")||""; }catch(e){}
+    if(k!==d){ try{ localStorage.setItem("et_skw_hint",d); }catch(e){}
+      toast("\u{1F6F9}\u{1F524} Ride through the words spelt RIGHT: +1 \u2b50 \u00b7 spelt WRONG: \u22121 \u2b50 \u00b7 Passa sulle parole scritte giuste, evita quelle sbagliate",6000); } }
   const now=performance.now()/1000, px=player.position.x, pz=player.position.z, py=player.position.y;
   SKW.toks.forEach(t=>{
     if(t.dead){ if(Math.random()<0.01) _skwRenew(t); return; }
