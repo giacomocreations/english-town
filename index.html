@@ -15598,12 +15598,14 @@ const SK_MOVES=[ { id:"basic",    en:"Beat Club dance", ic:"\u{1F64C}", stars:0,
 const SK_ARMS={
   swing:{ up:(o,f,dn)=>dn.scale(0.95).add(f.scale(0.18)).add(o.scale(0.14)),
           fore:(o,f,dn)=>f.scale(0.75).subtract(dn.scale(0.35)).add(o.scale(0.05)) },
-  /* (Giacomo, 6 nov: «abbassa un poco le braccia nel moonwalk»): il braccio
-     pende dritto (prima un filo avanti, 0.06) e l'avambraccio scende di piu'
-     (prima a 45 gradi: f 0.55 / giu' 0.55). Vale anche per il sidewalk, che
-     usa le stesse pose del moonwalk (mwL/mwR) */
-  mw:   { up:(o,f,dn)=>dn.scale(0.97).add(o.scale(0.2)),
-          fore:(o,f,dn)=>f.scale(0.4).add(dn.scale(0.7)).add(o.scale(0.08)) },
+  /* (Giacomo, 6 nov: «abbassa un poco le braccia nel moonwalk», poi «non
+     abbassare troppo, non devono essere dritte ai fianchi»): solo un filo
+     sotto la posa di prima. Il braccio resta un poco avanti e in fuori
+     (prima f 0.06, ora 0.04) e l'avambraccio piegato in avanti, appena piu'
+     giu' dei 45 gradi di prima (f 0.55 / giu' 0.55 -> 0.5 / 0.6). Vale
+     anche per il sidewalk, che usa le stesse pose (mwL/mwR) */
+  mw:   { up:(o,f,dn)=>dn.scale(0.95).add(f.scale(0.04)).add(o.scale(0.22)),
+          fore:(o,f,dn)=>f.scale(0.5).add(dn.scale(0.6)).add(o.scale(0.10)) },
   hat:  { up:(o,f,dn,sd)=>sd==="R"?new BABYLON.Vector3(0,0.55,0).add(o.scale(0.55)).add(f.scale(0.35)):dn.scale(0.9).add(o.scale(0.25)).add(f.scale(0.1)),
           fore:(o,f,dn,sd)=>sd==="R"?new BABYLON.Vector3(0,0.9,0).subtract(o.scale(0.55)).add(f.scale(0.1)):dn.scale(0.6).add(f.scale(0.5)).subtract(o.scale(0.2)) },
   /* la mano su del ballo del Beat Club: in alto (sul salto) e a meta' (sulla piega) */
@@ -15629,8 +15631,9 @@ function _skArmFore(side,amt){
            fore:(o,f,dn,sd)=>sd===side?f.scale(0.8).subtract(dn.scale(amt)).add(o.scale(0.06)):SK_ARMS.mw.fore(o,f,dn,sd) }; }
 /* -0.16: l'avambraccio alzato resta un filo sotto l'orizzontale (Giacomo:
    «puo' stare leggermente piu' basso»; prima saliva un poco sopra).
-   -0.34 (6 nov, «abbassa un poco le braccia nel moonwalk»): ~20 gradi sotto */
-SK_ARMS.mwFR=_skArmFore("R",-0.34);  SK_ARMS.mwFL=_skArmFore("L",-0.34);
+   -0.25 (6 nov, «abbassa un poco le braccia nel moonwalk... non troppo»):
+   ~15 gradi sotto (-0.34 era troppo) */
+SK_ARMS.mwFR=_skArmFore("R",-0.25);  SK_ARMS.mwFL=_skArmFore("L",-0.25);
 /* la piega del saltello: braccia un poco indietro e in fuori, gomiti morbidi */
 SK_ARMS.load={ up:(o,f,dn)=>dn.scale(0.95).subtract(f.scale(0.16)).add(o.scale(0.2)),
                fore:(o,f,dn)=>dn.scale(0.55).add(f.scale(0.35)).add(o.scale(0.08)) };
