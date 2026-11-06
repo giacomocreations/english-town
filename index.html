@@ -16547,7 +16547,24 @@ function _skConn(i){ return "hop"; }
    rivolta alle panchine (sud, PI); per il moonwalk si gira di 90 gradi nel
    saltello prima, scivola lungo la fila (a ovest la prima volta, a est la
    seconda), torna, e nel saltello dopo si rigira verso il pubblico. */
-function _skCrewFace(mv,i){ return mv==="moonwalk" ? Math.PI+((i%2)?1:-1)*Math.PI/2 : Math.PI; }
+/* ⚠️ (6 nov) il verso lo decide il NUMERO del moonwalk nella coreografia
+   (primo, secondo...), non la sua posizione i: i due moonwalk di
+   SK_ROUTINE stanno a i=1 e i=9, tutti e due dispari, e scivolavano nello
+   stesso verso — 2 m fuori posto a ogni giro, che recuperavano i saltelli.
+   Senza saltelli fra le mosse la crew deve tornare al posto da sola. */
+function _skCrewFace(mv,i){
+  if(mv!=="moonwalk") return Math.PI;
+  let j=0; for(let q=0;q<i && q<SK_ROUTINE.length;q++) if(SK_ROUTINE[q]==="moonwalk") j++;
+  return Math.PI+((j%2)?1:-1)*Math.PI/2; }
+/* (Giacomo, 6 nov: «forse e' meglio togliere questi passetti di raccordo e
+   provare i passi uno dietro l'altro dove possibile»). Tutte le mosse
+   cominciano e finiscono nella posa in piedi (stand), quindi si possono
+   attaccare una all'altra senza scatti. Il raccordo (due step-touch, vedi
+   _skEval) resta SOLO dove serve: quando la mossa dopo guarda da un'altra
+   parte (il moonwalk di profilo e il ritorno verso il pubblico) — girarsi
+   di 90 gradi sul posto in un attimo sarebbe peggio. */
+function _skCrewConn(i){ const N=SK_ROUTINE.length, j=(i+1)%N;
+  return Math.abs(_skCrewFace(SK_ROUTINE[i],i)-_skCrewFace(SK_ROUTINE[j],j))>0.01; }
 /* il verso della scivolata (versore nel mondo): il moonwalk all'indietro
    rispetto a dove si guarda, il sidewalk di lato (sdir) */
 function _skGlideDir(mv,i,sdir){
@@ -16564,23 +16581,28 @@ function skCrewStep(B,rest){
   const R=SKATE.crew||(SKATE.crew={ mv:"hop", m0:0, dur:2, i:-1, sdir:1, rest:false });
   if(rest){ R.rest=true; return R; }
   R.rest=false;
-  if(!SKATE.crewL){ let L=0, n=0; SK_ROUTINE.forEach(m=>{ L+=2+SKATE_DUR(m); if(m==="sidewalk") n++; });
+  if(!SKATE.crewL){ let L=0, n=0; SK_ROUTINE.forEach((m,q)=>{ L+=SKATE_DUR(m)+(_skCrewConn(q)?2:0); if(m==="sidewalk") n++; });
     SKATE.crewL=L; SKATE.crewFlip=(n%2===1); }
   const k=Math.floor(Math.max(0,B)/SKATE.crewL);
   /* sdir parte da -1: il primo sidewalk (dopo il primo moonwalk, verso
-     est) torna verso ovest, il secondo va a est e il secondo moonwalk
-     riporta tutti al posto. Cosi' non ci si allontana mai piu' di
+     ovest) torna verso est, il secondo va a ovest e il secondo moonwalk
+     (verso est) riporta tutti al posto. Cosi' non ci si allontana mai piu' di
      SK_GLIDE dal proprio posto (le casse sono a 1,6 m dagli ultimi). */
-  let m0=k*SKATE.crewL, mv="hop", dur=2, i=-1, conn=true, sdir=(SKATE.crewFlip && k%2)?1:-1, ox=0, oz=0;
+  /* ogni giro: mossa 0, [raccordo], mossa 1, [raccordo]... — il raccordo
+     dopo la mossa i solo se _skCrewConn(i) */
+  const N=SK_ROUTINE.length;
+  let m0=k*SKATE.crewL, i=0, mv=SK_ROUTINE[0], dur=SKATE_DUR(mv), conn=false, sdir=(SKATE.crewFlip && k%2)?1:-1, ox=0, oz=0;
+  if(mv==="sidewalk") sdir=-sdir;
   while(B>=m0+dur){
     if(!conn && (mv==="moonwalk"||mv==="sidewalk")){ const g=_skGlideDir(mv,i,sdir); ox+=g.x*SK_GLIDE; oz+=g.z*SK_GLIDE; }
     m0+=dur;
-    if(!conn){ conn=true; mv=_skConn(i); dur=2; }
-    else { conn=false; i++; mv=SK_ROUTINE[i]; dur=SKATE_DUR(mv); if(mv==="sidewalk") sdir=-sdir; } }
+    if(!conn && _skCrewConn(i)){ conn=true; mv=_skConn(i); dur=2; }
+    else { if(i>=N-1) break;                           // fine giro (arrotondamenti): il prossimo lo apre k+1
+      conn=false; i++; mv=SK_ROUTINE[i]; dur=SKATE_DUR(mv); if(mv==="sidewalk") sdir=-sdir; } }
   R.mv=mv; R.m0=m0; R.dur=dur; R.i=i; R.sdir=sdir; R.ox=ox; R.oz=oz;
   { const g=conn?{ x:0, z:0 }:_skGlideDir(mv,i,sdir); R.gx=g.x; R.gz=g.z; }
-  if(conn){ const N=SK_ROUTINE.length, pi=i>=0?i:N-1;
-    R.faceFrom=_skCrewFace(SK_ROUTINE[pi],pi); R.faceTo=_skCrewFace(SK_ROUTINE[i+1],i+1); }
+  if(conn){ const j=(i+1)%N;
+    R.faceFrom=_skCrewFace(SK_ROUTINE[i],i); R.faceTo=_skCrewFace(SK_ROUTINE[j],j); }
   else R.faceFrom=R.faceTo=_skCrewFace(mv,i);
   return R;
 }
@@ -16595,7 +16617,7 @@ function _skRest(D,rest,B,holder,face){
     const y=D.snapY*(1-t)+_skH(K.stand)*t;
     if(holder) holder.position.y=D.baseY+y; else avatarRoot.position.y=D.baseY+y;
     face(); return true; }
-  if(D.restT){ D.restT=0; D.mv="hop"; D.dur=2; D.m0=Math.floor(B)+1; D.turnFrom=D.face; D.turnTo=D.face; }
+  if(D.restT){ D.restT=0; D.mv="hop"; D.conn=false; D.dur=2; D.m0=Math.floor(B)+1; D.turnFrom=D.face; D.turnTo=D.face; }
   return false;
 }
 function SKATE_DUR(mv){ if(mv==="hop"||mv==="rise") return 2; return (SK_MOVES.find(m=>m.id===mv)||{beats:4}).beats; }
@@ -17770,7 +17792,7 @@ function skDanceStart(list){
   SKDANCE.schiocco=null;
   /* al Beat Club si balla rivolti al palco */
   let f0=ry; if(area!=="town"){ try{ f0=danceStageFace(); player.rotation.y=f0; }catch(e){} }
-  Object.assign(SKDANCE,{ on:true, K, list, mv:"hop", last:null, dur:2, m0:Math.floor(_skDanceClock().beat)+1, baseY:avatarRoot.position.y,
+  Object.assign(SKDANCE,{ on:true, K, list, mv:"hop", conn:false, last:null, dur:2, m0:Math.floor(_skDanceClock().beat)+1, baseY:avatarRoot.position.y,
     face:f0, turnFrom:f0, turnTo:f0, sdir:1, home:{ x:player.position.x, z:player.position.z } });
   SKDANCE.cur=K.stand.pins.map(k=>({ tn:k.tn, p:k.p.clone(), q:k.q.clone(), s:k.s.clone() }));
   try{ playAvatarAnim(IDLE_ANIM); }catch(e){}
@@ -17810,15 +17832,27 @@ function skDanceTick(){
   if(_skRest(S,rest,B,null,()=>{ player.rotation.y=S.face; })) return;
   /* lo schiocco, uno per battito */
   if(CL.snap && S.schiocco){ const k=Math.floor(B); if(k!==S.schiocco.last){ S.schiocco.last=k; try{ SFX.snap(); }catch(e){} } }
+  /* (Giacomo, 6 nov: «togliere questi passetti di raccordo e provare i
+     passi uno dietro l'altro dove possibile»): una mossa dopo l'altra. Il
+     raccordo (S.conn) solo quando serve davvero: allo skatepark se una
+     scivolata ti ha portato lontano dal tuo posto e devi girarti per
+     tornarci, al Beat Club per tornare al tuo posto davanti al palco.
+     All'inizio (e alla ripresa dopo la pausa) si parte subito con la mossa. */
+  const pick=()=>{ const opts=S.list.length>1?S.list.filter(m=>m!==S.last):S.list; S.mv=opts[(Math.random()*opts.length)|0]; S.last=S.mv; S.dur=SKATE_DUR(S.mv); S.conn=false; };
+  if(S.mv==="hop" && !S.conn) pick();
   let b=B-S.m0;
   if(b<0||b>S.dur+8){ S.m0=Math.floor(B); b=B-S.m0; }
   if(b>=S.dur){ const was=S.mv;
-    if(was==="hop"){ const opts=S.list.length>1?S.list.filter(m=>m!==S.last):S.list; S.mv=opts[(Math.random()*opts.length)|0]; S.last=S.mv; S.dur=SKATE_DUR(S.mv); }
-    else { S.mv="hop"; S.dur=2;
-      S.turnFrom=S.face;
-      const hx=S.home.x-player.position.x, hz=S.home.z-player.position.z;
-      S.turnTo=(S.area==="town" && Math.hypot(hx,hz)>0.6)?Math.atan2(-hx,-hz):S.face;
-      S.sdir=(hx*Math.cos(S.turnTo)-hz*Math.sin(S.turnTo))>0?1:-1; }
+    const hx=S.home.x-player.position.x, hz=S.home.z-player.position.z, hd=Math.hypot(hx,hz);
+    let turnTo=S.face;
+    if(was==="hop") pick();
+    else {
+      if(S.area==="town" && hd>0.6) turnTo=Math.atan2(-hx,-hz);
+      let df=turnTo-S.face; while(df>Math.PI) df-=2*Math.PI; while(df<-Math.PI) df+=2*Math.PI;
+      const club=S.area!=="town";
+      if((!club && Math.abs(df)>0.35) || (club && hd>0.25)){ S.mv="hop"; S.dur=2; S.conn=true; S.turnFrom=S.face; S.turnTo=turnTo; }
+      else pick(); }
+    S.sdir=(hx*Math.cos(turnTo)-hz*Math.sin(turnTo))>0?1:-1;
     S.m0+=(was==="hop"?2:SKATE_DUR(was)); b=B-S.m0; }
   const E=_skEval(S.K,S.mv,b,S.sdir), dy=_skBlendE(S.cur,E);
   avatarRoot.position.y=S.baseY+dy+(E.hop||0);
