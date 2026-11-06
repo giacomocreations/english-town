@@ -15598,8 +15598,12 @@ const SK_MOVES=[ { id:"basic",    en:"Beat Club dance", ic:"\u{1F64C}", stars:0,
 const SK_ARMS={
   swing:{ up:(o,f,dn)=>dn.scale(0.95).add(f.scale(0.18)).add(o.scale(0.14)),
           fore:(o,f,dn)=>f.scale(0.75).subtract(dn.scale(0.35)).add(o.scale(0.05)) },
-  mw:   { up:(o,f,dn)=>dn.scale(0.95).add(f.scale(0.06)).add(o.scale(0.22)),
-          fore:(o,f,dn)=>f.scale(0.55).add(dn.scale(0.55)).add(o.scale(0.10)) },
+  /* (Giacomo, 6 nov: «abbassa un poco le braccia nel moonwalk»): il braccio
+     pende dritto (prima un filo avanti, 0.06) e l'avambraccio scende di piu'
+     (prima a 45 gradi: f 0.55 / giu' 0.55). Vale anche per il sidewalk, che
+     usa le stesse pose del moonwalk (mwL/mwR) */
+  mw:   { up:(o,f,dn)=>dn.scale(0.97).add(o.scale(0.2)),
+          fore:(o,f,dn)=>f.scale(0.4).add(dn.scale(0.7)).add(o.scale(0.08)) },
   hat:  { up:(o,f,dn,sd)=>sd==="R"?new BABYLON.Vector3(0,0.55,0).add(o.scale(0.55)).add(f.scale(0.35)):dn.scale(0.9).add(o.scale(0.25)).add(f.scale(0.1)),
           fore:(o,f,dn,sd)=>sd==="R"?new BABYLON.Vector3(0,0.9,0).subtract(o.scale(0.55)).add(f.scale(0.1)):dn.scale(0.6).add(f.scale(0.5)).subtract(o.scale(0.2)) },
   /* la mano su del ballo del Beat Club: in alto (sul salto) e a meta' (sulla piega) */
@@ -15624,8 +15628,9 @@ function _skArmFore(side,amt){
   return { up:(o,f,dn,sd)=>{ const u=SK_ARMS.mw.up(o,f,dn,sd); return sd===side?u.add(f.scale(0.07)):u; },
            fore:(o,f,dn,sd)=>sd===side?f.scale(0.8).subtract(dn.scale(amt)).add(o.scale(0.06)):SK_ARMS.mw.fore(o,f,dn,sd) }; }
 /* -0.16: l'avambraccio alzato resta un filo sotto l'orizzontale (Giacomo:
-   «puo' stare leggermente piu' basso»; prima saliva un poco sopra) */
-SK_ARMS.mwFR=_skArmFore("R",-0.16);  SK_ARMS.mwFL=_skArmFore("L",-0.16);
+   «puo' stare leggermente piu' basso»; prima saliva un poco sopra).
+   -0.34 (6 nov, «abbassa un poco le braccia nel moonwalk»): ~20 gradi sotto */
+SK_ARMS.mwFR=_skArmFore("R",-0.34);  SK_ARMS.mwFL=_skArmFore("L",-0.34);
 /* la piega del saltello: braccia un poco indietro e in fuori, gomiti morbidi */
 SK_ARMS.load={ up:(o,f,dn)=>dn.scale(0.95).subtract(f.scale(0.16)).add(o.scale(0.2)),
                fore:(o,f,dn)=>dn.scale(0.55).add(f.scale(0.35)).add(o.scale(0.08)) };
@@ -15718,6 +15723,12 @@ const SK_POSES={
   toe2:  { L:{t:0.05,s:0,p:0.8},     R:{t:0.05,s:0,p:0.8},     arms:"hat2", lift:0.07, lean:0.08 },
   rise:  { L:{t:0.05,s:0,p:0.75},    R:{t:0.05,s:0,p:0.75},    arms:"open", lift:0.06, lean:0.05 },
   crouch:{ L:{t:0.62,s:-0.5,p:0.05}, R:{t:0.62,s:-0.5,p:0.05}, arms:"load", lean:0.2 },
+  /* il raccordo a step-touch (vedi la fine di _skEval): tallone su e
+     ginocchio avanti da una parte, il peso sull'altra gamba appena
+     piegata; groove = il molleggio in mezzo, ginocchia morbide */
+  stepL: { L:{t:0.3,s:-0.42,p:0.7},  R:{t:0.1,s:-0.13,p:0.02}, arms:"rest", lean:0.14 },
+  stepR: { L:{t:0.1,s:-0.13,p:0.02},  R:{t:0.3,s:-0.42,p:0.7}, arms:"rest", lean:0.14 },
+  groove:{ L:{t:0.16,s:-0.21,p:0.04}, R:{t:0.16,s:-0.21,p:0.04}, arms:"rest", lean:0.15 },
   /* v325: il cabbage patch, quattro punti del giro dei pugni (vedi
      _skCabbageArms). Le ginocchia piu' piegate quando i pugni spingono
      avanti (cp1) e piu' dritte quando tornano al petto (cp3): un
@@ -15857,7 +15868,8 @@ function _skSoles(root,K){
 }
 /* le coppie di pose che _skEval fonde fra loro */
 const SK_PAIRS=[["stand","crouch"],["bDn","bUp"],["mwL","mwLb"],["mwLb","mwR"],["mwR","mwRb"],["mwRb","mwL"],["stand","mwL"],["mwRb","stand"],
-  ["mwL","swLp"],["swLp","mwR"],["mwR","swRp"],["swRp","mwL"],["mwL","swLn"],["swLn","mwR"],["mwR","swRn"],["swRn","mwL"],["swRp","stand"],["swRn","stand"],["stand","toe"],["toe","toe2"],["stand","rise"],["cp0","cp1"],["cp1","cp2"],["cp2","cp3"],["cp3","cp0"],["rmUL","rmDL"],["rmDL","rmUR"],["rmUR","rmDR"],["rmDR","rmUL"]];
+  ["mwL","swLp"],["swLp","mwR"],["mwR","swRp"],["swRp","mwL"],["mwL","swLn"],["swLn","mwR"],["mwR","swRn"],["swRn","mwL"],["swRp","stand"],["swRn","stand"],["stand","toe"],["toe","toe2"],["stand","rise"],["cp0","cp1"],["cp1","cp2"],["cp2","cp3"],["cp3","cp0"],["rmUL","rmDL"],["rmDL","rmUR"],["rmUR","rmDR"],["rmDR","rmUL"],
+  ["stand","stepL"],["stepL","groove"],["groove","stepR"],["stepR","stand"]];     // il raccordo a step-touch
 /* di quanto si alza (o si abbassa) il corpo in questa posa */
 function _skH(P){ return (P.off!=null)?P.off:((P.lift||0)-(P.drop||0)); }
 /* ...e a meta' strada fra due pose (tabella misurata in _skSoles, se c'e') */
@@ -15976,14 +15988,28 @@ function _skEval(K,mv,b,sd){
     const w=b<0.5?1-_skEase(b/0.5):(b>D-0.5?_skEase((b-(D-0.5))/0.5):0);
     if(w>0){ E.A2=P.stand; E.B2=P.stand; E.w=w; }
     return E; }
-  /* il saltello: piega, stacco, in aria, atterraggio, su */
-  if(b<0.4)  return { A:P.stand, B:P.crouch, t:_skEase(b/0.4), glide:0, hop:0, turn:0 };
-  /* v309g: 12 cm e non 20: in un saltello di mezzo battito (0,3 s a 120
-     bpm) un corpo vero sale di una decina di centimetri, 20 sembravano
-     un volo */
-  if(b<1.0){ const u=(b-0.4)/0.6; return { A:P.crouch, B:P.stand, t:_skEase(u*2), glide:0, hop:0.12*Math.sin(Math.PI*u), turn:u }; }
-  if(b<1.3)  return { A:P.stand, B:P.crouch, t:_skEase((b-1.0)/0.3), glide:0, hop:0, turn:1 };
-  return { A:P.crouch, B:P.stand, t:_skEase((b-1.3)/0.7), glide:0, hop:0, turn:1 };
+  /* IL RACCORDO fra una mossa e l'altra ("hop": il nome resta, lo usano la
+     coreografia, il giocatore e le prove della crew).
+     v-step (Giacomo, 6 nov: «il saltello di raccordo tra i passi a volte non
+     c'entra niente, si potrebbe passare da uno all'altro piu'
+     realisticamente»). Prima era sempre un SALTELLO (piega, stacco di 12 cm,
+     atterraggio, piega): anche quando non c'era niente da girare ne' posto
+     da riprendere, e fra due mosse a terra un salto non lo fa nessuno.
+     Ora e' quello che fa un ballerino vero per cambiare passo: due
+     STEP-TOUCH a tempo, senza staccare i piedi. Sul battito 0 il tallone
+     sinistro si alza e il peso va sul destro (stepL), a meta' si appoggia
+     in un piccolo molleggio (groove), sul battito 1 lo stesso a destra
+     (stepR), e si torna in piedi pronti per la mossa nuova. Il giro (es. il
+     moonwalk di profilo) si fa camminando, spalmato su tutti e due i
+     battiti, e il busto accompagna il peso (sway). Le braccia restano
+     sciolte lungo i fianchi (rest), come nella posa in piedi in cui
+     finiscono e cominciano tutte le mosse: niente scatti. */
+  const tu=Math.max(0,Math.min(1,b/2)), sw=0.07*Math.sin(Math.PI*b);
+  const G=P.groove||P.stand, SL=P.stepL||P.stand, SR=P.stepR||P.stand;
+  if(b<0.5) return { A:P.stand, B:SL, t:_skEase(b/0.5), glide:0, hop:0, turn:tu, sway:sw };
+  if(b<1.0) return { A:SL, B:G, t:_skEase((b-0.5)/0.5), glide:0, hop:0, turn:tu, sway:sw };
+  if(b<1.5) return { A:G, B:SR, t:_skEase((b-1.0)/0.5), glide:0, hop:0, turn:tu, sway:sw };
+  return { A:SR, B:P.stand, t:_skEase((b-1.5)/0.5), glide:0, hop:0, turn:tu, sway:sw };
 }
 
 /* ---- COSTRUZIONE ------------------------------------------------------------ */
@@ -50263,7 +50289,9 @@ function _fkSet(id,G,F,dz){
   ball.position.set(bx,F.y+FK_R,bz);
   const dx=G.x-bx, dz2=G.z-bz, dl=Math.hypot(dx,dz2), d={ x:dx/dl, z:dz2/dl }, p={ x:-d.z, z:d.x };
   const yellow=mat("fkDumY","#f2c230"), dark=mat("fkDumD","#2b3036");
-  const wall=[-0.62,0,0.62].map((o,i)=>{ const wx=bx+d.x*5+p.x*o, wz=bz+d.z*5+p.z*o;
+  /* barriera da QUATTRO (Giacomo, 6 nov: «mettiamo una barriera da 4, ora e' 3»):
+     stesso passo di 62 cm fra le sagome, centrata sulla linea pallone-porta */
+  const wall=[-0.93,-0.31,0.31,0.93].map((o,i)=>{ const wx=bx+d.x*5+p.x*o, wz=bz+d.z*5+p.z*o;
     const r=new BABYLON.TransformNode("fkDummy",scene); r.parent=townRoot; r.position.set(wx,F.y,wz); r.rotation.y=Math.atan2(-d.x,-d.z);
     /* ⚠️ (Giacomo: «le barriere sembrano sospese in aria»). Prima: un busto
        su un paletto di 5 cm alto 30, senza ombra sotto: si leggeva come un
@@ -50359,20 +50387,24 @@ function _fkReset(S){ S.sim=null; S.ball.position.set(S.spot.x,S.F.y+FK_R,S.spot
    sbilanciate. Ora Math.imul e >>>0 a ogni passo: uniforme su [0,1). */
 function _fkHash(k){ let x=Math.imul(k|0,2654435761)>>>0; x=(x^(x>>>13))>>>0; x=Math.imul(x,1274126177)>>>0; x=(x^(x>>>16))>>>0; return x/4294967296; }
 /* ⚽ IL TIRO DEGLI ATLETI dal numero del tiro (deterministico: tutta la
-   classe vede lo stesso). Come puo' fare l'avatar (FK_SPIN):
-     · 32% DRITTO a lato della barriera, a destra o a sinistra;
-     · 27% d'INTERNO: mirato fuori a destra, rientra verso sinistra;
-     · 27% d'ESTERNO: mirato fuori a sinistra, rientra verso destra;
+   classe vede lo stesso). Come puo' fare l'avatar (FK_SPIN).
+   ⚠️ Con la barriera da QUATTRO (6 nov) il tiro DRITTO a lato non passa
+   quasi piu': la barriera copre fin quasi al palo (con la mira di prima i
+   gol erano scesi dal 65% al 28%, meta' dei tiri sulla barriera). Quindi,
+   come un tiratore vero, si gira intorno alla barriera o la si scavalca:
+     · 37% d'INTERNO: mirato fuori a destra, rientra verso sinistra;
+     · 37% d'ESTERNO: mirato fuori a sinistra, rientra verso destra;
      · 14% PALLONETTO sopra la barriera (alto e piano: senza la rotazione
-       in avanti, che la fisica non ha, e' l'unico tiro che ricade in porta).
-   Misurato su 1000 tiri: ~69% gol, il resto fra alto, traversa, fuori,
-   palo e barriera; i tiri passano la linea da tutte e due le parti. */
+       in avanti, che la fisica non ha, e' l'unico tiro che ricade in porta);
+     · 12% DRITTO rasente la barriera: quasi sempre barriera o fuori.
+   Misurato su 2000 tiri (stessa fisica, _fkStep): ~65% gol come prima, il
+   resto fra barriera, fuori, alto, palo e traversa. */
 function _fkCrewShot(k){
   const r1=_fkHash(k), r2=_fkHash(k+77), r3=_fkHash(k+151), r4=_fkHash(k+233), r5=_fkHash(k+311), sg=r1<0.5?-1:1, D=Math.PI/180;
-  if(r5<0.32) return { yaw:sg*(0.2+r4*0.1), loft:(14+r2*6)*D, pw:0.4+r3*0.25, spin:0 };
-  if(r5<0.46) return { yaw:sg*r4*0.06, loft:(27+r2*12)*D, pw:0.02+r3*0.18, spin:0 };
-  if(r5<0.73) return { yaw:0.24+r4*0.12, loft:(12+r2*5)*D, pw:0.45+r3*0.25, spin:1 };
-  return { yaw:-(0.22+r4*0.12), loft:(12+r2*5)*D, pw:0.45+r3*0.25, spin:2 };
+  if(r5<0.12) return { yaw:sg*(0.25+r4*0.04), loft:(14+r2*6)*D, pw:0.4+r3*0.25, spin:0 };
+  if(r5<0.26) return { yaw:sg*r4*0.06, loft:(30+r2*8)*D, pw:0.02+r3*0.18, spin:0 };
+  if(r5<0.63) return { yaw:0.30+r4*0.05, loft:(12+r2*4)*D, pw:0.38+r3*0.2, spin:1 };
+  return { yaw:-(0.29+r4*0.06), loft:(12+r2*4)*D, pw:0.30+r3*0.25, spin:2 };
 }
 
 /* ---- IL CALCIO (gambe): stessa cinematica inversa di skate e spinta ------ */
