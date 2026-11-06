@@ -22515,6 +22515,12 @@ const Stars=(function(){
     if(give>0) flash(give, "skatepark");
     return give;
   }
+  /* 🛹🔤 parola SBAGLIATA presa nello skatepark: -1 ⭐ (Giacomo, 6 nov). Mai
+     sotto zero; non tocca il tetto giornaliero delle parole giuste. */
+  function penaltySkWord(){
+    const s=ledger(); if(s.tot<=0) return 0;
+    s.tot-=1; _save(s); refreshStarHud(true); return 1;
+  }
   function speakToday(){ const s=ledger(); return s.daySpkDate===_today() ? s.daySpk : 0; }
   function awardFragment(fragId, missed){
     return award("f:"+fragId, missed?STAR_RULES.fragmentRetry:STAR_RULES.fragment, "frammento"); }
@@ -22553,7 +22559,7 @@ const Stars=(function(){
   }
   function reset(){ _save({tot:0,given:{},day:"",dayAmb:0,dayNpc:{},master:false}); refreshStarHud(); }
   return { total, award, awardStep, awardAmbient, awardAmbientNPC, awardAskNPC,
-           awardCafeOrder, awardShopping, awardGem, awardFkNote, awardSpeak, speakToday, awardSkWord, awardFragment, awardPhoto,
+           awardCafeOrder, awardShopping, awardGem, awardFkNote, awardSpeak, speakToday, awardSkWord, penaltySkWord, awardFragment, awardPhoto,
            checkYearBonus, setMaster, title, next, unitStars, ledger, reset };
 })();
 
@@ -49819,10 +49825,11 @@ function rideDropInTick(idle){
        top    1  sul piano del funbox.
      Si prende se si passa abbastanza vicino (raggio della categoria) con la
      parola fra 20 cm e 1,75 m sopra i piedi.
-   · PRESA: giusta = +1 ⭐ (tetto 20 al giorno, STAR_RULES.skWordDailyCap);
-     sbagliata = niente stelle, si legge la parola giusta e va nel ripasso
-     dei cristalli (gemDueArm). Subito ne nasce un'altra, nella stessa
-     categoria ma in un altro punto, giusta o sbagliata.
+   · PRESA: giusta = +1 ⭐ (tetto 20 al giorno, STAR_RULES.skWordDailyCap)
+     e RIGHT verde per un secondo; sbagliata = -1 ⭐ (mai sotto zero), WRONG
+     rosso per un secondo, si legge la parola giusta e va nel ripasso dei
+     cristalli (gemDueArm). Poi ne nasce un'altra, nella stessa categoria
+     ma in un altro punto, giusta o sbagliata.
    ===================================================================== */
 const SKW={ toks:null, vis:false, capSaid:"" };
 const SKW_CATS=[ ["floor",3,0.6], ["ramp",2,0.6], ["air",2,0.7], ["grind",2,0.35], ["top",1,0.55] ];
@@ -49917,19 +49924,35 @@ function _skwRenew(t){
   if(!t.p || !t.word){ t.m.setEnabled(false); t.dead=true; return; }
   t.dead=false; _skwDraw(t); t.m.position.set(t.p.x,t.p.y,t.p.z); t.pop=1; t.m.setEnabled(true);
 }
+/* 🛹🔤 RIGHT / WRONG (Giacomo, 6 nov: «se prendo una parola sbagliata mi
+   toglie una stella e appare scritto wrong in rosso al posto della parola
+   per un secondo; se e' giusta right in verde»): al posto della parola,
+   per un secondo, RIGHT verde o WRONG rosso (non si puo' riprendere), poi
+   la parola nuova altrove (skwTick). */
+function _skwShowResult(t,ok){
+  const c=t.dt.getContext(), W=512, H=128, txt=ok?"RIGHT":"WRONG", col=ok?"#1f9d55":"#d93025";
+  c.clearRect(0,0,W,H);
+  const r=56, tw=360, x0=(W-tw)/2;
+  c.fillStyle=col; c.beginPath(); c.moveTo(x0+r,8); c.lineTo(x0+tw-r,8); c.arc(x0+tw-r,H/2,r,-Math.PI/2,Math.PI/2); c.lineTo(x0+r,H-8); c.arc(x0+r,H/2,r,Math.PI/2,Math.PI*1.5); c.closePath(); c.fill();
+  c.lineWidth=6; c.strokeStyle="#ffffff"; c.stroke();
+  c.fillStyle="#ffffff"; c.font="bold 68px Arial"; c.textAlign="center"; c.textBaseline="middle"; c.fillText(txt,W/2,H/2+3);
+  t.dt.update(); t.m.scaling.x=tw/W; t.m.scaling.y=1; t.pop=0;
+  t.shown=performance.now()+1000;                       // un secondo, poi _skwRenew
+}
 function _skwTake(t){
   const W=t.word;
+  _skwShowResult(t,W.ok);
   if(W.ok){
     let got=0; try{ got=Stars.awardSkWord(); }catch(e){}
     try{ SFX.correct(); }catch(e){}
     if(got) toast("✅ "+W.shown+" +1 ⭐",1600);
     else { const d=new Date().toDateString(); toast("✅ "+W.shown+(SKW.capSaid!==d?" · 20 ⭐ today: that's all for today! · Per oggi le stelle delle parole sono finite":""),SKW.capSaid!==d?3600:1400); SKW.capSaid=d; }
   } else {
+    let lost=0; try{ lost=Stars.penaltySkWord(); }catch(e){}
     try{ SFX.wrong(); }catch(e){}
-    toast("❌ «"+W.shown+"» is wrong → "+W.right+" · ortografia sbagliata",3200);
+    toast("\u274C \u00ab"+W.shown+"\u00bb is wrong \u2192 "+W.right+(lost?" \u00b7 \u22121 \u2b50":"")+" \u00b7 ortografia sbagliata",3200);
     try{ gemDueArm(W.key); }catch(e){}
   }
-  _skwRenew(t);
 }
 function skwTick(){
   let on=false;
@@ -49939,6 +49962,7 @@ function skwTick(){
   const now=performance.now()/1000, px=player.position.x, pz=player.position.z, py=player.position.y;
   SKW.toks.forEach(t=>{
     if(t.dead){ if(Math.random()<0.01) _skwRenew(t); return; }
+    if(t.shown){ t.m.position.y=t.p.y; if(performance.now()>=t.shown){ t.shown=0; _skwRenew(t); } return; }   // RIGHT / WRONG per un secondo
     if(!SKW.vis) t.m.setEnabled(true);
     t.m.position.y=t.p.y+0.06*Math.sin(now*2+t.ph);
     if(t.pop>0){ t.pop=Math.max(0,t.pop-0.06); const k=1-t.pop; t.m.scaling.y=k; } else t.m.scaling.y=1;
