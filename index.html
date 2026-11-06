@@ -417,6 +417,16 @@
        ::-webkit-scrollbar la rendono fissa) e finche' resta testo sotto
        compare «▼ scroll down» in fondo al corpo (classe more, vedi open). */
   #quest-modal #qm-card.qm-wide{width:min(660px,94vw);max-width:none;max-height:90vh;background:rgba(251,247,236,.97);}
+  /* la foto nelle domande (etZoomThumb) sugli schermi bassi: fuori dalla finestra, dove c'e' posto */
+  @media (max-height:500px) and (min-width:641px){
+    #qm-card .et-thumb{position:absolute;right:calc(100% + 12px);top:0;margin:0!important;width:min(340px,calc(100vw - 486px));}
+    #qm-card .et-thumb > span{display:block!important;}
+    #qm-card .et-thumb img{width:100%;max-height:none!important;}
+  }
+  @media (max-width:640px){
+    #qm-card .et-thumb{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);margin:0!important;width:max-content;max-width:calc(100vw - 32px);}
+    #qm-card .et-thumb img{max-height:min(170px,calc(38vh - 30px))!important;}
+  }
   @media (max-width:640px){ #quest-modal #qm-card.qm-wide{max-height:86vh;} }
   #qm-card .qm-body::-webkit-scrollbar{width:9px;}
   #qm-card .qm-body::-webkit-scrollbar-track{background:rgba(0,0,0,.06);border-radius:9px;}
@@ -8553,7 +8563,7 @@ function streetBench(x,z,ry){ if(insideSolid(x,z,1.6)) return;
   if(gy>0.01) root.position.y+=gy-bb.min.y;
   const r=(ry||0)+PROP_YAW.bench, lines=[-1,1].map(s=>{
     /* la panca corre lungo la z locale: la fila e' quella, lo sguardo verso il centro */
-    const L=_benchLine(x,z,r+Math.PI/2,0,-s*0.80*k,0.55*k,null,{ hip:0.0, stand:-1 }); L.k=k;
+    const L=_benchLine(x,z,r+Math.PI/2,0,-s*0.80*k,0.55*k,null,{ hip:0.0, stand:-1, pad:0.3*k }); L.k=k;   // pad: la gamba a «A» del tavolo
     if(s<0){ L.fx=-L.fx; L.fz=-L.fz; } return L; });
   /* ⚠️ lo sguardo va sempre verso il tavolo: dal punto della fila al centro */
   lines.forEach(L=>{ const dx=x-L.cx, dz=z-L.cz, d=Math.hypot(dx,dz)||1; L.fx=dx/d; L.fz=dz/d; });
@@ -11680,7 +11690,7 @@ function _benchLine(x,z,ry,lx,lz,half,seatY,o){ o=o||{};
   const c=Math.cos(ry), s=Math.sin(ry);
   /* rotazione y di Babylon: x locale -> (cos, 0, -sin), z locale -> (sin, 0, cos) */
   return { cx:x+lx*c+lz*s, cz:z-lx*s+lz*c, ax:c, az:-s, fx:s, fz:c, half, seatY,
-           hip:o.hip!=null?o.hip:0.05, stand:o.stand||1, slots:o.slots||null }; }
+           hip:o.hip!=null?o.hip:0.05, stand:o.stand||1, slots:o.slots||null, pad:o.pad||0 }; }
 function _benchGround(x,z,y0){
   const h=scene.pickWithRay(new BABYLON.Ray(new BABYLON.Vector3(x,(y0||0)+3,z),new BABYLON.Vector3(0,-1,0),8),m=>m.__ground===true&&m.isEnabled());
   return (h&&h.hit)?h.pickedPoint.y:0; }
@@ -11714,7 +11724,12 @@ function benchSit(b){
   /* la fila e il punto piu' vicini a te */
   let best=null;
   b.lines.forEach(L=>{
-    const cand=L.slots?L.slots:[Math.max(-L.half,Math.min(L.half,(P.x-L.cx)*L.ax+(P.z-L.cz)*L.az))];
+    /* pad (Giacomo, 6 nov: «quando si siede nelle panchine vicino al bordo,
+       un asse gli trapassa una gamba»): seduti in fondo alla fila le gambe
+       finivano dentro i sostegni — la gamba a «A» del tavolo da picnic, il
+       piedino della panchina lunga. Il punto si ferma pad metri prima. */
+    const lim=Math.max(0,L.half-(L.pad||0));
+    const cand=L.slots?L.slots:[Math.max(-lim,Math.min(lim,(P.x-L.cx)*L.ax+(P.z-L.cz)*L.az))];
     cand.forEach(t=>{ const x=L.cx+L.ax*t, z=L.cz+L.az*t, d=Math.hypot(P.x-x,P.z-z);
       if(!best||d<best.d) best={ L, t, x, z, d }; }); });
   if(!best) return;
@@ -13827,7 +13842,8 @@ function bench(x,z,ry,opt){
     ls.material=mat("blm","#3a4148"); ls.position.set(dx,gy+0.72,-0.34); ls.rotation.x=-0.12; ls.parent=b; });
   /* seduta 3.6 larga + schienale che sporge a z=-0.47 → 3.8 x 1.2 */
   addSolidRot(x,z,ry,1.9,0.6,"town");
-  return regBench("bench",x,z,[_benchLine(x,z,ry,0,-0.14,1.5,gy+0.50,{ hip:0.02 })],{ radius:2.6, noInter:opt.noInter });
+  /* pad 0,3: i piedini stanno a 1,5-1,7 m dal centro, seduti a 1,5 la gamba ci finiva dentro */
+  return regBench("bench",x,z,[_benchLine(x,z,ry,0,-0.14,1.5,gy+0.50,{ hip:0.02, pad:0.3 })],{ radius:2.6, noInter:opt.noInter });
 }
 
 
@@ -16411,8 +16427,14 @@ function buildSkatepark(){
     PARKFUN.people.rapping={ always:true, now:()=>!!skPhoto("rap"), img:()=>skPhoto("rap") };
     /* la crew in skate dal vivo: la foto inquadra Jay e Leon insieme */
     PARKFUN.people.skating={ npc:jay.n, now:()=>{ const D=SKATE.dancers[0]; return !!(D && D.st==="skate" && D.sk && D.sk.on && D.sk.waitK==null && !D.sk.glide); },
+      /* ⚠️ (6 nov) la camera non puo' andare oltre z 47 (fuori dal recinto) e
+         stava a ~10 m: con Jay e Leon su due rampe lontane (20 m e piu') la
+         foto inquadrava il cemento in mezzo, senza nessuno. Ora si alza
+         quanto basta perche' ci stiano tutti e due (apertura 0,85 a 16:10). */
       snap:()=>{ const a=SKATE.dancers[0].n.carrier.position, b=(SKATE.dancers[2]||SKATE.dancers[0]).n.carrier.position, lx=(a.x+b.x)/2, lz=(a.z+b.z)/2;
-        return { cam:new BABYLON.Vector3(lx,4.8,Math.max(47,lz-13)), look:new BABYLON.Vector3(lx,0.9,lz) }; } };
+        const cz=Math.max(47,lz-13), hd=Math.max(0.5,lz-cz), sp=Math.hypot(a.x-b.x,a.z-b.z), need=Math.max(Math.hypot(hd,3.9),sp*0.8+2.5);
+        const y=0.9+Math.sqrt(Math.max(3.9*3.9,need*need-hd*hd));
+        return { cam:new BABYLON.Vector3(lx,y,cz), look:new BABYLON.Vector3(lx,0.9,lz) }; } };
     PARKFUN.people.cinema={ always:true, now:()=>!!skPhoto("cinema"), img:()=>skPhoto("cinema") }; }
 }
 /* le pose si calcolano quando le pin delle gambe ci sono (qualche
@@ -17982,8 +18004,17 @@ function etZoomImg(src){
   z.querySelector("img").src=src; z.style.display="flex";
 }
 /* la foto nel dialogo: piccola, con la lente, e si apre col tocco */
+/* ⚠️ (Giacomo, 6 nov: «il ranger mi dice delle foto ma non me le mostra
+   piu'»). Da quando il corpo della finestra scorre (v402, «▼ scroll
+   down»), sugli schermi bassi la foto finiva SOTTO il bordo: sul telefono
+   in orizzontale la finestra e' alta 280 px, domanda e riga in italiano ne
+   prendono 130 e della foto restava una striscia. Ora la foto (et-thumb)
+   esce dalla finestra e va dove c'e' posto: a SINISTRA della finestra sul
+   telefono in orizzontale, SOPRA la finestra sul telefono in verticale.
+   E' posizionata rispetto a #qm-card (position:relative), non al corpo che
+   scorre, quindi non viene tagliata. Sul computer resta dov'era. */
 function etZoomThumb(img){
-  return '<div style="text-align:center;margin-bottom:6px"><span style="position:relative;display:inline-block;cursor:zoom-in" onclick="etZoomImg(this.querySelector(\'img\').src)" title="Tap to zoom">'
+  return '<div class="et-thumb" style="text-align:center;margin-bottom:6px"><span style="position:relative;display:inline-block;cursor:zoom-in" onclick="etZoomImg(this.querySelector(\'img\').src)" title="Tap to zoom">'
     +'<img alt="" style="display:block;max-width:100%;max-height:150px;border-radius:10px;border:3px solid #fbf7ec;box-shadow:0 3px 10px rgba(0,0,0,.35)" src="'+img+'">'
     +'<span style="position:absolute;right:6px;bottom:6px;background:rgba(15,22,28,.72);color:#fff;border-radius:12px;padding:2px 8px;font-size:12px;pointer-events:none">\u{1F50D} Zoom</span></span></div>';
 }
