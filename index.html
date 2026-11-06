@@ -50665,7 +50665,7 @@ function fkSpinCycle(){
 function fkSpinHud(){
   const b=document.querySelector('#fkHud [data-fk="spin"]'); if(!b || !FK.aim) return;
   const S=FK_SPIN[FK.aim.spin||0];
-  b.textContent=S.ic+" "+S.en; b.style.background=FK.aim.spin?"#3d7fa6":"#e8dfc8"; b.style.color=FK.aim.spin?"#fff":"#1d2a32";
+  b.innerHTML=S.ic+"<span class=\"fk-txt\"> "+S.en+"</span>"; b.style.background=FK.aim.spin?"#3d7fa6":"#e8dfc8"; b.style.color=FK.aim.spin?"#fff":"#1d2a32";
 }
 function _fkPlace(){ const S=FK.sets.me; player.position.x=S.spot.x-S.dir.x*2.4+S.perp.x*0.5; player.position.z=S.spot.z-S.dir.z*2.4+S.perp.z*0.5;
   player.rotation.y=Math.atan2(S.dir.x,S.dir.z); moveTarget=null; pendingInteract=null;
@@ -50944,20 +50944,61 @@ function fkNotesShow(on){ const N=FK.notes; if(N) N.root.setEnabled(!!on && !!FK
 /* l'elenco piccolo sopra la barra: da 11 metri i foglietti si leggono male */
 function fkNotesList(){
   const N=FK.notes; let L=document.getElementById("fkNotesList");
-  if(!L){ L=document.createElement("div"); L.id="fkNotesList";
-    L.style.cssText="position:fixed;left:50%;transform:translateX(-50%);bottom:64px;z-index:30;background:rgba(251,247,236,.94);"
-      +"border-radius:12px;padding:6px 10px;box-shadow:0 6px 18px rgba(0,0,0,.22);font:600 12.5px system-ui,sans-serif;color:#1d2a32;"
-      +"max-width:calc(100vw - 16px);box-sizing:border-box;display:none";
+  if(!L){ _fkCss(); L=document.createElement("div"); L.id="fkNotesList"; L.style.display="none";
     document.body.appendChild(L);
     L.addEventListener("click",e=>{ const t=e.target.closest("[data-fkn]"); if(t) fkNoteZoom(+t.getAttribute("data-fkn")); }); }
   if(!N || !N.set || !FK.aim){ L.style.display="none"; return; }
   const verbi=N.set.kind==="verbs";
   L.innerHTML="<div style=\"font-weight:800;margin-bottom:2px\">\u{1F4DD} "+(verbi?"Hit the right verb forms!":"Hit the correct sentence!")
-    +" <span style=\"font-weight:600;opacity:.7\">\u00b7 "+(verbi?"Colpisci le forme giuste":"Colpisci la frase giusta")+" (+3 \u2b50)</span></div>"
-    +N.set.opts.map((o,i)=>"<div data-fkn=\""+i+"\" style=\"cursor:pointer;padding:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\">"
-      +FK_NOTE_SPOTS[i].d+" "+_escHtml(o.t)+"</div>").join("");
+    +" <span class=\"fkn-it\">\u00b7 "+(verbi?"Colpisci le forme giuste":"Colpisci la frase giusta")+" (+3 \u2b50)</span></div>"
+    +"<div class=\"fkn-grid\">"+N.set.opts.map((o,i)=>"<div data-fkn=\""+i+"\" class=\"fkn-o\">"
+      +FK_NOTE_SPOTS[i].d+" "+_escHtml(o.t)+"</div>").join("")+"</div>";
   L.style.display="block";
-  try{ const h=document.getElementById("fkHud"); if(h) L.style.bottom=(h.offsetHeight+14)+"px"; }catch(e){}   // sopra la barra, anche quando va a capo
+}
+/* ⚽📝 DOVE STANNO LISTA E BARRA (Giacomo, 6 nov: «le frasi che appaiono una
+   sotto l'altra appaiono in mezzo e non fanno vedere bene il giocatore, su
+   smartphone e' anche peggio»). In mira la telecamera sta dietro al
+   giocatore: lui e' al centro in BASSO, la porta coi foglietti al centro
+   all'orizzonte, e in alto al centro c'e' solo cielo. Quindi:
+     · la lista va in ALTO AL CENTRO, sotto la riga dei toast (top 18) e fra
+       il riquadro del luogo (sinistra) e i bottoni (destra); il riquadro della
+       quest (in alto a sinistra) si nasconde finche' si mira (body.fk-aim);
+     · sugli schermi bassi (telefono in orizzontale) in alto al centro non
+       c'e' posto (i bottoni in alto a destra arrivano a meta' schermo): la
+       lista va A SINISTRA, sotto il riquadro del luogo, stretta (le frasi
+       lunghe vanno a capo) — copre solo il bordo del campo, non la porta;
+     · sul telefono la barra diventa una riga sola e bassa (bottoni piu'
+       piccoli, «Straight» solo icona) e sta fra la levetta e il tasto E:
+       prima andava su due righe e copriva proprio il giocatore. */
+function _fkCss(){
+  if(document.getElementById("fkCss")) return;
+  const st=document.createElement("style"); st.id="fkCss";
+  st.textContent=
+    "#fkNotesList{position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:30;background:rgba(251,247,236,.9);"
+   +"border-radius:12px;padding:6px 10px;box-shadow:0 6px 18px rgba(0,0,0,.22);font:600 12.5px system-ui,sans-serif;color:#1d2a32;"
+   +"width:max-content;max-width:min(560px,calc(100vw - 340px));box-sizing:border-box}"
+   +"#fkNotesList .fkn-it{font-weight:600;opacity:.7}"
+   +"#fkNotesList .fkn-grid{display:grid;grid-template-columns:1fr;column-gap:14px}"
+   +"#fkNotesList .fkn-o{cursor:pointer;padding:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
+   +"body.fk-aim #quest-hud{visibility:hidden}"
+   /* schermi stretti (telefono in verticale): sotto i bottoni in alto */
+   +"@media (max-width:620px){#fkNotesList{top:104px;max-width:calc(100vw - 16px)}#fkNotesList .fkn-o{white-space:normal}}"
+   /* telefono in orizzontale: a sinistra sotto il riquadro del luogo, stretta, le frasi vanno a capo */
+   +"@media (max-height:500px) and (min-width:621px){"
+   +"#fkNotesList{left:10px;top:68px;transform:none;padding:4px 9px;font-size:11.5px;max-width:min(300px,calc(50vw - 120px))}"
+   +"#fkNotesList .fkn-it{display:none}"
+   +"#fkNotesList .fkn-o{white-space:normal;line-height:1.25;padding:1px 0 2px}}"
+   /* telefono (orizzontale o verticale): barra compatta su una riga */
+   +"@media (max-height:500px),(max-width:620px){"
+   +"#fkHud{gap:5px!important;padding:3px 6px!important;bottom:4px!important;flex-wrap:nowrap!important;max-width:calc(100vw - 8px)!important}"
+   +"#fkHud button{min-width:30px!important;height:30px!important;font-size:14px!important}"
+   +"#fkHud [data-fk=kick]{padding:0 9px!important;font-size:13px!important}"
+   +"#fkHud [data-fk=spin]{padding:0 6px!important}"
+   +"#fkHud .fk-txt,#fkHud .fk-ball{display:none}"
+   +"#fkHud .fk-pow{width:64px!important}"
+   +"#fkHud .fk-loft{height:30px!important}}"
+   +"@media (max-height:500px) and (min-width:621px){#fkHud{max-width:calc(100vw - 300px)!important}}";
+  document.head.appendChild(st);
 }
 function fkNoteZoom(i){
   const N=FK.notes; if(!N || !N.set || !N.set.opts[i]) return;
@@ -51002,11 +51043,12 @@ function fkHud(on){
       +"align-items:center;gap:10px;touch-action:manipulation;user-select:none;-webkit-user-select:none;"
       +"flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 12px);box-sizing:border-box";   // ⚽ col bottone dell'effetto: sugli schermi stretti va a capo
     const B=(id,t)=>'<button type="button" data-fk="'+id+'" style="min-width:34px;height:34px;border:none;border-radius:10px;background:#e8dfc8;font:800 16px system-ui;cursor:pointer;touch-action:manipulation">'+t+'</button>';
-    h.innerHTML='<span>⚽</span>'+B("l","◀")+B("r","▶")
-      +'<div title="Height" style="width:10px;height:44px;border-radius:5px;background:#e8dfc8;position:relative;overflow:hidden"><i id="fkLoft" style="position:absolute;left:0;right:0;bottom:0;background:#3d7fa6"></i></div>'
+    _fkCss();
+    h.innerHTML='<span class="fk-ball">⚽</span>'+B("l","◀")+B("r","▶")
+      +'<div class="fk-loft" title="Height" style="width:10px;height:44px;border-radius:5px;background:#e8dfc8;position:relative;overflow:hidden"><i id="fkLoft" style="position:absolute;left:0;right:0;bottom:0;background:#3d7fa6"></i></div>'
       +B("u","▲")+B("d","▼")
-      +'<div title="Power" style="width:120px;height:14px;border-radius:7px;background:#e8dfc8;overflow:hidden"><i id="fkPow" style="display:block;height:100%;width:0;background:linear-gradient(90deg,#58b368,#e8b04b,#e0673a)"></i></div>'
-      +'<button type="button" data-fk="spin" title="Spin: straight / inside / outside (Q)" style="height:34px;padding:0 9px;border:none;border-radius:10px;background:#e8dfc8;font:800 13px system-ui;cursor:pointer;touch-action:manipulation;white-space:nowrap">\u{1F9B6} Straight</button>'
+      +'<div class="fk-pow" title="Power" style="width:120px;height:14px;border-radius:7px;background:#e8dfc8;overflow:hidden"><i id="fkPow" style="display:block;height:100%;width:0;background:linear-gradient(90deg,#58b368,#e8b04b,#e0673a)"></i></div>'
+      +'<button type="button" data-fk="spin" title="Spin: straight / inside / outside (Q)" style="height:34px;padding:0 9px;border:none;border-radius:10px;background:#e8dfc8;font:800 13px system-ui;cursor:pointer;touch-action:manipulation;white-space:nowrap">\u{1F9B6}<span class="fk-txt"> Straight</span></button>'
       +'<button type="button" data-fk="kick" style="height:36px;padding:0 12px;border:none;border-radius:10px;background:#e0673a;color:#fff;font:800 14px system-ui;cursor:pointer">KICK</button>'
       +B("x","✕");
     document.body.appendChild(h);
@@ -51021,6 +51063,7 @@ function fkHud(on){
       const on=e=>{ e.preventDefault(); FK.hold[k]=true; }, off=()=>{ FK.hold[k]=false; };
       b.addEventListener("pointerdown",on); b.addEventListener("pointerup",off); b.addEventListener("pointerleave",off); b.addEventListener("pointercancel",off); }); }
   h.style.display=on?"flex":"none";
+  try{ document.body.classList.toggle("fk-aim",!!on); }catch(e){}   // via il riquadro della quest, in alto c'e' la lista
   try{ const kb=document.getElementById("kbhelp"); if(kb) kb.style.visibility=on?"hidden":""; }catch(e){}   // la legenda dei tasti finirebbe sotto la barra
   if(!on && FK.aimN) FK.aimN.root.setEnabled(false);
 }
