@@ -50523,6 +50523,11 @@ function singTick(){
 
 /* ---- D · DANCE & SAY ---------------------------------------------------- */
 const DC={ next:0, act:null, queue:[], last:"" };
+/* v546 (Giacomo, 7 nov: «nella dance challenge le indicazioni con minore
+   pausa tra una e l'altra»): dalla fine di un comando al successivo 5 s
+   (erano 15). Il pannello resta ancora 2-4 s col risultato e i gesti giusti
+   l'avatar li fa prima del comando nuovo (DC.queue): un comando ogni 10-20 s. */
+const DC_PAUSE=5000;
 const DC_ACTS={ L:{ ic:"⬅️", en:"turn left",   it:"girati a sinistra", lab:"left",  beats:1 },
                 R:{ ic:"➡️", en:"turn right",  it:"girati a destra",   lab:"right", beats:1 },
                 J:{ ic:"⬆️", en:"jump",        it:"salta",             lab:"jump",  beats:1 },
@@ -50578,7 +50583,7 @@ function dcTick(){
     need:c.seq.length, opts:K.map(k=>({ html:DC_ACTS[k].ic+"<small>"+DC_ACTS[k].lab+"</small>", val:k, ic:DC_ACTS[k].ic })),
     check:v=>v.join("")===c.seq.join(""), right:"→ "+c.seq.map(k=>DC_ACTS[k].ic).join(" "),
     it:"\u{1F1EE}\u{1F1F9} "+_escHtml(c.it), itAlways:yr<2, capMsg:"no more ⭐ today",
-    onEnd:(ok)=>{ DC.next=performance.now()+15000; if(!ok) return 0;
+    onEnd:(ok)=>{ DC.next=performance.now()+DC_PAUSE; if(!ok) return 0;
       DC.queue=c.seq.slice();                                   // l'avatar lo fa, a tempo
       let g=0; try{ g=Stars.awardDanceCmd(c.seq.length>1?STAR_RULES.dcSeq:STAR_RULES.dc); }catch(e){} return g; } });
 }
