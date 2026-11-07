@@ -17242,6 +17242,7 @@ function talkToDancer(D){
   if(topics.length) ch.push({ label:"\u{1F4AC} Let's talk!"+(isChatty(npc)?" \u2b50\u00d7"+STAR_RULES.chattyMul:""),
     act:()=>openAmbient(npc,null,icon,sub) });
   ch.push({ label:"\u2753 Ask me", act:()=>openAskMenu(npc,icon,sub,null) });
+  skDirectChoices(npc).forEach(c=>ch.push(c));            // v545: 🎤 🕺 🛹 le sfide dirette
   /* v309h: il saluto in pausa cambia (prima era sempre lo stesso) */
   if(skPhase()==="skate"){ const a=(SKATE.dancers[0]&&SKATE.dancers[0].n.name)||"Jay", b=(SKATE.dancers[2]&&SKATE.dancers[2].n.name)||"Leon";
     const B2=_cyPick([["Look at "+a+" and "+b+"! They're skating on the ramps.","Guarda "+a+" e "+b+"! Vanno in skate sulle rampe."],
@@ -17257,8 +17258,78 @@ function talkToDancer(D){
   DialogueBox.open({ npc, icon, sub,
     text:greetJoin(g.en,(first?"I'm "+npc.name+". ":"")+B[0]),
     italian:greetJoin(g.it,(first?"Sono "+npc.name+". ":"")+B[1])
-      +" (\u{1F4A1} Con \u00abAsk me\u00bb \u2192 \u270D\uFE0E puoi chiedergli se vuole ballare, se va in skate \u{1F6F9} \u00abCan you skate?\u00bb\u2026 o se sa rappare: \u{1F3A4} \u00abCan you rap?\u00bb)",
+      +" (\u{1F4A1} Le sfide partono anche dai bottoni qui sotto, ma se le chiedi tu in inglese con \u00abAsk me\u00bb \u2192 \u270D\uFE0E \u2014 \u{1F3A4} \u00abCan you rap?\u00bb, \u{1F57A} \u00abCan you dance?\u00bb, \u{1F6F9} \u00abCan you skate?\u00bb \u2014 prendi \u2b50 in pi\u00f9!)",
     choices:ch, buttons:[{ label:"Goodbye", cls:"ghost", act:()=>{} }] });
+}
+/* =====================================================================
+   v545 — 🎤🕺🛹 LE SFIDE DIRETTE (Giacomo, 7 nov: «per la sfida rap fai in
+   modo che ci sia l'opzione diretta rap cypher, dance challenge e skate
+   challenge affianco a Ask me e Let's talk ... ovviamente chi arriva a fare
+   le sfide facendo la domanda prende qualche stella in piu'»).
+   · I BOTTONI (talkToDancer): 🎤 Rap cypher = cypherStart; 🕺 Dance
+     challenge = la crew balla (skCrewInvite) e ci balli anche tu, quindi
+     parte Dance & say; 🛹 Skate challenge = la crew va in skate
+     (skCrewSkateInvite) e tu sali sullo skate, se ce l'hai: parole giuste.
+   · CHI LO CHIEDE IN INGLESE (Ask me -> «Can you rap?», «Can you dance?»,
+     «Can you skate?»...) prende, oltre alla stella della domanda, un BONUS
+     (STAR_RULES.askChRap/askChDance/askChSkate), una volta al giorno per
+     sfida (skAskBonus, et_askch). Il bonus del cypher arriva quando ci si
+     entra davvero (cypherStart(npc,true)).
+   ===================================================================== */
+const SK_DANCE_OK=[["Sure! Let's dance! Come on, crew!","Certo! Balliamo! Dai, ragazzi!"],
+                   ["Yes, of course! Music on, guys!","Ma certo! Musica, ragazzi!"],
+                   ["Why not? Let's go! Watch our moves!","Perch\u00e9 no? Andiamo! Guarda le nostre mosse!"]];
+function skSkateOkLine(){
+  const a=(SKATE.dancers[0]&&SKATE.dancers[0].n.name)||"Jay", b=(SKATE.dancers[2]&&SKATE.dancers[2].n.name)||"Leon";
+  return _cyPick([["Sure! "+a+", "+b+", get your boards!","Certo! "+a+", "+b+", prendete gli skate!"],
+                  ["Yes, we can! Watch the ramps!","S\u00ec che sappiamo! Guarda le rampe!"],
+                  ["Why not? Let's skate! Kickflips time!","Perch\u00e9 no? Andiamo in skate! \u00c8 l'ora dei kickflip!"]]);
+}
+/* il bonus di chi la sfida l'ha chiesta in inglese: una volta al giorno per
+   sfida (k = "Rap" | "Dance" | "Skate"); 0 se oggi l'ha gia' preso */
+const SK_ASKCH_K="et_askch";
+function skAskBonusLeft(k){ let s=null; try{ s=Sync.get(SK_ASKCH_K,null); }catch(e){}
+  return !(s && typeof s==="object" && s.d===new Date().toDateString() && s[k]); }
+function skAskBonus(k){
+  const n=(typeof STAR_RULES!=="undefined" && STAR_RULES["askCh"+k])||0;
+  if(!n || !skAskBonusLeft(k)) return 0;
+  let s=null; try{ s=Sync.get(SK_ASKCH_K,null); }catch(e){}
+  const d=new Date().toDateString(); s=(s && typeof s==="object" && s.d===d)?s:{ d };
+  s[k]=1; try{ Sync.set(SK_ASKCH_K,s); }catch(e){}
+  try{ return Stars.award(null,n,"sfida chiesta in inglese")||0; }catch(e){ return 0; }
+}
+function _skBonusHtml(n){ return n>0?'<div style="margin-top:6px;font-weight:700;color:#a05a2c">\u{1F381} +'+n+' \u2b50 bonus: la sfida l\u2019hai chiesta tu, in inglese!</div>':''; }
+function skDirectChoices(npc){ return [
+  { label:"\u{1F3A4} Rap cypher \u00b7 \u{1F525}", act:()=>skDirectRap(npc) },
+  { label:"\u{1F57A} Dance challenge", act:()=>skDirectDance(npc) },
+  { label:"\u{1F6F9} Skate challenge", act:()=>skDirectSkate(npc) } ]; }
+function skDirectRap(npc){
+  const st=_cyState();
+  if(st.used && !_cyTeacher()){ const R=_cyT("already");
+    DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:"The Cypher \u00b7 \u{1F525} hard", autoSpeak:false, text:R[0], italian:R[1],
+      buttons:[{ label:"OK", cls:"primary", act:()=>{} }] });
+    _cySay(npc,R[0]); return; }
+  cypherStart(npc,false);
+}
+function skDirectDance(npc){
+  npcTouch(npc); const R=_cyPick(SK_DANCE_OK); _npcTTS(npc,R[0]);
+  skCrewInvite(); skJoinDance();
+}
+function skDirectSkate(npc){
+  npcTouch(npc); const R=skSkateOkLine(); _npcTTS(npc,R[0]);
+  skCrewSkateInvite(); skJoinSkate();
+}
+/* ci balli anche tu: Dance & say parte solo mentre l'avatar balla (dcTick).
+   Lo skate si lascia lì; col monopattino prima si parcheggia. */
+function skJoinDance(){
+  try{ if(RIDE.on){ if(rideMustPark()){ rideParkFirstMsg(); return; } rideOff(true); } }catch(e){}
+  try{ if(!SKDANCE.on) skDanceE(); }catch(e){}
+}
+/* sali sullo skate: le parole giuste/sbagliate compaiono solo in skate
+   (skwTick). Se non ce l'hai, rideMount dice come averlo. */
+function skJoinSkate(){
+  try{ if(SKDANCE.on) skDanceStop(); }catch(e){}
+  try{ if(!(RIDE.on && RIDE.on.id==="skate")) rideMount("skate"); }catch(e){}
 }
 /* e' un invito a ballare? «Can you dance?», «Do you want to dance?»,
    «Would you like to dance?», «Shall we dance?», «Let's dance!», «Dance
@@ -17284,15 +17355,15 @@ function skInvitoRisposta(ta,fb,typed){
   const npc=_ASKFREE.npc; npcTouch(npc);
   const bad=askFormCheck(typed, ftLevel());
   const got=Stars.awardAskNPC(npcCardId(npc), bad?"retry":"first");
-  const R=[["Sure! Let's dance! Come on, crew!","Certo! Balliamo! Dai, ragazzi!"],
-           ["Yes, of course! Music on, guys!","Ma certo! Musica, ragazzi!"],
-           ["Why not? Let's go! Watch our moves!","Perch\u00e9 no? Andiamo! Guarda le nostre mosse!"]][(Math.random()*3)|0];
+  const R=_cyPick(SK_DANCE_OK), bonus=skAskBonus("Dance");
   fb.innerHTML=(bad?'<div style="opacity:.72;font-size:.93em;margin-bottom:6px;">\u{1F7E1} '+bad.it+'</div>':'')
     +'<div style="font-weight:800;">\u{1F7E2} '+_escHtml(R[0])+(got>0?' <span style="color:#a05a2c">\u2b50 +'+got+'</span>':'')+'</div>'
-    +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">'+_escHtml(R[1])+'</div>';
+    +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">'+_escHtml(R[1])+'</div>'+_skBonusHtml(bonus)
+    +'<button type="button" class="qm-btn primary" id="sk-join" style="margin-top:10px">\u{1F57A} Dance challenge!</button>';
   _npcTTS(npc,R[0]);
   _askDone(ta,null);
   skCrewInvite();
+  const b=document.getElementById("sk-join"); if(b) b.onclick=()=>{ try{ DialogueBox.close(); }catch(e){} skJoinDance(); };
 }
 /* 🛹 «CAN YOU SKATE?» (Giacomo, 2 nov: «se gli chiedi can you skate o dici
    let's skate, e varianti, si mettono a skateare»). Come l'invito a ballare:
@@ -17319,16 +17390,15 @@ function skSkateInvitoRisposta(ta,fb,typed){
   const npc=_ASKFREE.npc; npcTouch(npc);
   const bad=askFormCheck(typed, ftLevel());
   const got=Stars.awardAskNPC(npcCardId(npc), bad?"retry":"first");
-  const a=(SKATE.dancers[0]&&SKATE.dancers[0].n.name)||"Jay", b=(SKATE.dancers[2]&&SKATE.dancers[2].n.name)||"Leon";
-  const R=[["Sure! "+a+", "+b+", get your boards!","Certo! "+a+", "+b+", prendete gli skate!"],
-           ["Yes, we can! Watch the ramps!","Sì che sappiamo! Guarda le rampe!"],
-           ["Why not? Let's skate! Kickflips time!","Perché no? Andiamo in skate! È l'ora dei kickflip!"]][(Math.random()*3)|0];
+  const R=skSkateOkLine(), bonus=skAskBonus("Skate");
   fb.innerHTML=(bad?'<div style="opacity:.72;font-size:.93em;margin-bottom:6px;">\u{1F7E1} '+bad.it+'</div>':'')
     +'<div style="font-weight:800;">\u{1F7E2} '+_escHtml(R[0])+(got>0?' <span style="color:#a05a2c">⭐ +'+got+'</span>':'')+'</div>'
-    +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">'+_escHtml(R[1])+'</div>';
+    +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">'+_escHtml(R[1])+'</div>'+_skBonusHtml(bonus)
+    +'<button type="button" class="qm-btn primary" id="sk-join" style="margin-top:10px">\u{1F6F9} Skate challenge!</button>';
   _npcTTS(npc,R[0]);
   _askDone(ta,null);
   skCrewSkateInvite();
+  const b=document.getElementById("sk-join"); if(b) b.onclick=()=>{ try{ DialogueBox.close(); }catch(e){} skJoinSkate(); };
 }
 /* =====================================================================
    v309h — 🎤 IL CYPHER DELLA CREW (Giacomo, 11 ott: «con la crew vorrei
@@ -17518,6 +17588,32 @@ function _cyVoice(npc,text,rate){
   let p; try{ p=TTS.say(text,{ accent:"us", rate:rate||undefined, gender:(npc&&npc.gender)||undefined }); }catch(e){ p=Promise.resolve(false); }
   return p.then(r=>{ if(ges && D.st==="cypher") try{ npc.play("Idle"); }catch(e){} return r; });
 }
+/* v545 — 🎤 L'AVATAR RAPPA (Giacomo, 7 nov: «quando rappa l'avatar gesticola
+   come gli npc, stesso movimento»). Quando la tua rima passa, nel cerchio
+   la rappi TU: la voce del gioco la dice (americana, a velocita' da barre,
+   maschile o femminile come il corpo scelto) e l'avatar fa la clip
+   Interact, la stessa della crew (_cyVoice). Gesticola anche mentre rappi
+   al microfono (🎤 Speak nella casella del cypher). La clip la sceglie il
+   giro del movimento (vedi _cyMeGes, accanto a playAvatarAnim): in skate o
+   ballando no. Prima la crew ti rappava indietro la tua rima; ora tocca a te. */
+function _cyMe(text){
+  try{ if(Mic.listening()) return Promise.resolve(false); }catch(e){}
+  const t0=performance.now(), est=Math.max(1600,_cyWords(text).length*380);
+  CYPHER.meUntil=t0+60000;                                // finche' la voce non ha finito
+  let gen="m"; try{ if(Look.rig()==="f") gen="f"; }catch(e){}
+  try{ speechSynthesis.resume(); }catch(e){}
+  let p; try{ p=TTS.say(text,{ accent:"us", rate:CY_RATE, gender:gen }); }catch(e){ p=Promise.resolve(false); }
+  const end=()=>{ CYPHER.meUntil=Math.max(performance.now(),t0+est); };   // senza voce: gesticola il tempo della riga
+  return Promise.resolve(p).then(r=>{ end(); return r; },()=>{ end(); return false; });
+}
+function _cyMeGes(){
+  try{
+    if(!CYPHER.circle || !avatarAnims["Interact"]) return false;
+    if(RIDE.on || SKDANCE.on || PDANCE.on) return false;
+    if(performance.now()<(CYPHER.meUntil||0)) return true;
+    return !!(Mic.listening() && document.getElementById("cy-in"));
+  }catch(e){ return false; }
+}
 function _cySay(npc,text){ return _cyVoice(npc,text,null); }
 function _cyRap(npc,text){ return _cyVoice(npc,text,CY_RATE); }
 /* una frase dopo l'altra, ma solo finche' si e' ancora nello stesso momento
@@ -17571,7 +17667,7 @@ function _cyBack(D){ const ph=skPhase(); if(ph==="dance") skGoDance(D,true,SKATE
 /* fine del cerchio: chi e' al suo posto nel cerchio torna alle chiacchiere
    (o a ballare); chi stava ancora arrivando ci pensa da se' all'arrivo */
 function _cyDisband(){
-  if(!CYPHER.circle) return; CYPHER.circle=false; _cyStop();
+  if(!CYPHER.circle) return; CYPHER.circle=false; CYPHER.meUntil=0; _cyStop();
   (CYPHER.crew||[]).forEach(D=>{ if(D.st==="cypher") _cyBack(D); });
 }
 /* in skateTick: la finestra del cypher non c'e' piu' (Leave, chiusa, la
@@ -17643,23 +17739,26 @@ function skCypherRisposta(ta,fb,typed){
   fb.innerHTML=(bad?'<div style="opacity:.72;font-size:.93em;margin-bottom:6px;">\u{1F7E1} '+bad.it+'</div>':'')
     +'<div style="font-weight:800;">\u{1F7E2} '+_escHtml(R[0])+(got>0?' <span style="color:#a05a2c">⭐ +'+got+'</span>':'')+'</div>'
     +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">'+_escHtml(R[1])+'</div>'
+    +(can && skAskBonusLeft("Rap") && STAR_RULES.askChRap?'<div style="margin-top:6px;font-weight:700;color:#a05a2c">\u{1F381} Entrando prendi +'+STAR_RULES.askChRap+' \u2b50 bonus: la sfida l\u2019hai chiesta tu, in inglese!</div>':'')
     +(can?'<button type="button" class="qm-btn primary" id="cy-go" style="margin-top:10px">\u{1F3A4} Enter the cypher · \u{1F525} hard</button>':'');
   _cySay(npc,R[0]);
   _askDone(ta,null);
-  const b=document.getElementById("cy-go"); if(b) b.onclick=()=>cypherStart(npc);
+  const b=document.getElementById("cy-go"); if(b) b.onclick=()=>cypherStart(npc,true);
 }
-function cypherStart(npc){
+/* viaAsk: ci si arriva dall'«Ask me» scritto o detto (v545: bonus) */
+function cypherStart(npc,viaAsk){
   const st=_cyState();
   if(st.used && !_cyTeacher()){ toast("\u{1F3A4} Cypher: una sfida al giorno, torna domani!"); return; }
   try{ TTS.stop(); }catch(e){}
   const r2=_cyFresh(CY_R2,"r2",st,8), r3=_cyFresh(CY_R3,"r3",st,6);
   const r1=_cyFresh(CY_R1,"r1",st,8,q=>q.fam!==r2.fam && q.fam!==r3.fam);
   st.used=true; _cySave(st);                         // vale anche se si esce a meta': niente «riprovo il round 1»
-  Object.assign(CYPHER,{ on:true, npc, pts:0, perfect:true, r1, r2, r3 });
+  Object.assign(CYPHER,{ on:true, npc, pts:0, perfect:true, r1, r2, r3, meUntil:0 });
   const g=++CYPHER.gen;
+  const bonus=viaAsk?skAskBonus("Rap"):0;
   DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:"The Cypher · \u{1F525} hard", autoSpeak:false,
     text:"Welcome to the cypher! Three rounds, no mercy. Round one: rhyme fire. Round two: finish my bar. Round three: drop your own bar. You ready?",
-    italian:"Il cypher è una sfida di freestyle per chi è bravo davvero, con un inglese più difficile delle unit. Tre round a tempo, e scrivi (o dici) sempre TU: 1) tre parole in rima; 2) chiudi tu la riga della crew; 3) una riga tutta tua. Ogni round lo rappa un ragazzo diverso. Una sfida al giorno, fino a 80 ⭐.",
+    italian:(bonus?"\u{1F381} +"+bonus+" \u2b50 bonus: la sfida l'hai chiesta tu, in inglese! ":"")+"Il cypher è una sfida di freestyle per chi è bravo davvero, con un inglese più difficile delle unit. Tre round a tempo, e scrivi (o dici) sempre TU: 1) tre parole in rima; 2) chiudi tu la riga della crew; 3) una riga tutta tua. Ogni round lo rappa un ragazzo diverso. Una sfida al giorno, fino a 80 ⭐.",
     buttons:[{ label:"\u{1F525} Let's go!", cls:"primary", act:()=>_cyR1() }] });
   _cyCircle(npc);                                     // la crew si mette in cerchio con te
   _cySeq(g,[()=>_cySay(npc,_cyT("welcome"))]);
@@ -17708,7 +17807,7 @@ function _cyR1Res(q,res,timeout,dirty,text){
       :(ok?"Tre rime giuste!":"Servivano tre parole diverse in rima con «"+q.key+"» (suono "+CY_FAM[q.fam].snd+"): ne hai azzeccate "+good.length+"."),
     html:_cyBars([q.a])+'<div style="font-size:15px;line-height:1.8">'+list+'</div>',
     buttons:[{ label:"▶ Round 2", cls:"primary", act:()=>_cyR2() }] });
-  _cySeq(g,ok?[()=>_cySay(npc,hype),()=>_cyRap(npc,q.key+", "+good.slice(0,3).join(", ")+"!")]
+  _cySeq(g,ok?[()=>_cyMe(q.key+", "+good.slice(0,3).join(", ")+"!"),()=>_cySay(npc,hype)]   // v545: le rime le rappi tu
              :[()=>_cySay(npc,_cyT("miss"))]);
 }
 function _cyR2(){
@@ -17736,10 +17835,11 @@ function _cyR2Res(q,ok,tries,text,bad){
   const hype=_cyPick(CY_HYPE), line=q.b+" "+(ok?text.replace(/[.!?]+$/,""):q.ex[0])+(ok?"!":".");
   DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:ok?"\u{1F525} +"+pts+" ⭐":(text?"Ooooh!":"⏱ Time's up!"), autoSpeak:false,
     text:ok?hype:"Nah, not this time! Here's how I'd close it:",
-    italian:ok?"Rima chiusa! La crew te la rappa indietro.":((bad?bad.it+" ":(text?"":"Tempo scaduto. "))+"Per esempio: «"+q.b+" "+q.ex.join("» oppure «"+q.b+" ")+"»."),
+    italian:ok?"Rima chiusa! E ora la rappi tu, nel cerchio.":((bad?bad.it+" ":(text?"":"Tempo scaduto. "))+"Per esempio: «"+q.b+" "+q.ex.join("» oppure «"+q.b+" ")+"»."),
     html:_cyBars([q.a,line]),
     buttons:[{ label:"▶ Round 3", cls:"primary", act:()=>_cyR3() }] });
-  _cySeq(g,[()=>_cySay(npc,ok?hype+" "+_cyT("back"):_cyT("mine")),()=>_cyRap(npc,q.a+" "+line)]);
+  _cySeq(g,ok?[()=>_cyMe(line),()=>_cySay(npc,hype)]
+             :[()=>_cySay(npc,_cyT("mine")),()=>_cyRap(npc,q.a+" "+line)]);
 }
 function _cyR3(){
   const q=CYPHER.r3, g=++CYPHER.gen, npc=_cyRapper(2); let tries=0, done=false;
@@ -17766,10 +17866,11 @@ function _cyR3Res(q,ok,tries,text,bad){
   const hype=_cyPick(CY_HYPE), line=ok?text.replace(/[.!?]+$/,"")+"!":q.ex+".";
   DialogueBox.open({ npc, icon:"\u{1F3A4}", sub:ok?"\u{1F525} +"+pts+" ⭐":(text?"Ooooh!":"⏱ Time's up!"), autoSpeak:false,
     text:ok?hype+" That's YOUR bar!":"Nah, not this time! Here's mine:",
-    italian:ok?"Rima tua, tema giusto, parola obbligatoria: la crew te la rappa!":((bad?bad.it+" ":(text?"":"Tempo scaduto. "))+"Per esempio: «"+q.ex+"»."),
+    italian:ok?"Rima tua, tema giusto, parola obbligatoria: e ora la rappi tu, nel cerchio!":((bad?bad.it+" ":(text?"":"Tempo scaduto. "))+"Per esempio: «"+q.ex+"»."),
     html:_cyBars([q.a,line]),
     buttons:[{ label:"\u{1F3C6} Results", cls:"primary", act:()=>_cyEnd() }] });
-  _cySeq(g,[()=>_cySay(npc,ok?hype+" "+_cyT("back"):_cyT("mine")),()=>_cyRap(npc,q.a+" "+line)]);
+  _cySeq(g,ok?[()=>_cyMe(line),()=>_cySay(npc,hype+" That's YOUR bar!")]
+             :[()=>_cySay(npc,_cyT("mine")),()=>_cyRap(npc,q.a+" "+line)]);
 }
 function _cyEnd(){
   const npc=CYPHER.npc, g=++CYPHER.gen;
@@ -22543,6 +22644,9 @@ const STAR_RULES={
   dc:1,               // 🕺 v544: comando di ballo giusto allo skatepark (un gesto)
   dcSeq:2,            //    ... due o piu' gesti in fila
   dcDailyCap:20,      // tetto ⭐ giornaliero di Dance & say
+  askChRap:5,         // 🎤 v545: bonus a chi chiede il cypher in inglese («Can you rap?») invece del bottone; 1 al giorno
+  askChDance:3,       // 🕺 v545: ... chi chiede di ballare («Can you dance?»)
+  askChSkate:3,       // 🛹 v545: ... chi chiede di andare in skate («Can you skate?»)
   spkDailyCap:30,     // 🎤 Speakers' Corner: tutto giusto = 30 ⭐ (Giacomo, 5 nov: «e' piu' difficile»); conta il migliore del giorno
 };
 /* Anni il cui curricolo e' DAVVERO tutto implementato: solo per questi ha
@@ -51891,7 +51995,7 @@ scene.registerBeforeRender(()=>{
   /* 💃 chi balla e poi cammina smette di ballare (vedi PDANCE) */
   if(PDANCE.on && (kbMove||moveTarget)) danceStop();
   if(!FK.aim) playAvatarAnim(RIDE.on ? IDLE_ANIM      // in sella le gambe stanno ferme: va la tavola (⚽ in mira decide la punizione)
-    : (kbMove||moveTarget) ? (running&&(kbMove||tgtMove)?"Run":"Walk") : (PDANCE.on?PDANCE.anim:IDLE_ANIM));
+    : (kbMove||moveTarget) ? (running&&(kbMove||tgtMove)?"Run":"Walk") : (PDANCE.on?PDANCE.anim:(_cyMeGes()?"Interact":IDLE_ANIM)));   // 🎤 v545: rappa nel cypher
   // CINEMA: l\u0027avatar segue il dislivello (sale sulle gradinate, non sprofonda)
   if(area==="cinema"){
     _gTmp.set(player.position.x, player.position.y+8, player.position.z);
