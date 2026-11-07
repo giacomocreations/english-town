@@ -17974,6 +17974,8 @@ function skDanceTick(){
     const pista=club ? Math.hypot(nx-S.home.x,nz-S.home.z)<1.2      // nel club: entro 1,2 m dal tuo posto, in mezzo alla folla
                      : skInZone(nx,nz,false);                       // v308e: allo skatepark non si esce sul prato
     if(pista && !blocked(nx,nz)){ player.position.x=nx; player.position.z=nz; } }
+  /* 🕺 v544: i gesti di Dance & say (solo allo skatepark) */
+  if(!club){ try{ dcOverlay(S,B); }catch(e){} }
 }
 
 /* ---- LE FOTO DEI LOCALI (per il Ranger) ----------------------------------
@@ -22536,6 +22538,11 @@ const STAR_RULES={
   fkNoteDailyCap:15,  // tetto ⭐ giornaliero dei foglietti = 5 frasi giuste
   skWord:1,           // 🛹🔤 parola giusta presa in skate allo skatepark
   skWordDailyCap:20,  // tetto ⭐ giornaliero delle parole dello skatepark (Giacomo, 6 nov)
+  sing:1,             // 🎤 v544: parola giusta nel sing-along del concerto (Beat Club)
+  singDailyCap:15,    // tetto ⭐ giornaliero del sing-along
+  dc:1,               // 🕺 v544: comando di ballo giusto allo skatepark (un gesto)
+  dcSeq:2,            //    ... due o piu' gesti in fila
+  dcDailyCap:20,      // tetto ⭐ giornaliero di Dance & say
   spkDailyCap:30,     // 🎤 Speakers' Corner: tutto giusto = 30 ⭐ (Giacomo, 5 nov: «e' piu' difficile»); conta il migliore del giorno
 };
 /* Anni il cui curricolo e' DAVVERO tutto implementato: solo per questi ha
@@ -22577,6 +22584,8 @@ const Stars=(function(){
              dayFk:s.dayFk||0, dayFkDate:s.dayFkDate||"",              // ⚽📝 foglietti della porta
              daySkw:s.daySkw||0, daySkwDate:s.daySkwDate||"",          // 🛹🔤 parole dello skatepark
              daySpk:s.daySpk||0, daySpkDate:s.daySpkDate||"",          // 🎤 Speakers' Corner (miglior punteggio di oggi)
+             daySing:s.daySing||0, daySingDate:s.daySingDate||"",      // 🎤 v544 sing-along del Beat Club
+             dayDc:s.dayDc||0, dayDcDate:s.dayDcDate||"",              // 🕺 v544 Dance & say allo skatepark
              master:!!s.master };
   }
   function total(){ return ledger().tot; }
@@ -22723,6 +22732,24 @@ const Stars=(function(){
     if(give>0) flash(give, "skatepark");
     return give;
   }
+  /* v544: sing-along (Beat Club) e Dance & say (skatepark), tetto giornaliero
+     con data propria come i foglietti della porta */
+  function awardSing(){
+    const s=ledger(), t=_today();
+    if(s.daySingDate!==t){ s.daySingDate=t; s.daySing=0; }
+    const give=Math.min(STAR_RULES.sing, Math.max(0, STAR_RULES.singDailyCap - s.daySing));
+    s.daySing+=give; s.tot+=give; _save(s);
+    if(give>0) flash(give, "sing-along");
+    return give;
+  }
+  function awardDanceCmd(n){
+    const s=ledger(), t=_today();
+    if(s.dayDcDate!==t){ s.dayDcDate=t; s.dayDc=0; }
+    const give=Math.min(Math.max(1,n|0), Math.max(0, STAR_RULES.dcDailyCap - s.dayDc));
+    s.dayDc+=give; s.tot+=give; _save(s);
+    if(give>0) flash(give, "dance & say");
+    return give;
+  }
   /* 🛹🔤 parola SBAGLIATA presa nello skatepark: -1 ⭐ (Giacomo, 6 nov). Mai
      sotto zero; non tocca il tetto giornaliero delle parole giuste. */
   function penaltySkWord(){
@@ -22767,7 +22794,7 @@ const Stars=(function(){
   }
   function reset(){ _save({tot:0,given:{},day:"",dayAmb:0,dayNpc:{},master:false}); refreshStarHud(); }
   return { total, award, awardStep, awardAmbient, awardAmbientNPC, awardAskNPC,
-           awardCafeOrder, awardShopping, awardGem, awardFkNote, awardSpeak, speakToday, awardSkWord, penaltySkWord, awardFragment, awardPhoto,
+           awardCafeOrder, awardShopping, awardGem, awardFkNote, awardSpeak, speakToday, awardSkWord, penaltySkWord, awardSing, awardDanceCmd, awardFragment, awardPhoto,
            checkYearBonus, setMaster, title, next, unitStars, ledger, reset };
 })();
 
@@ -50220,6 +50247,254 @@ function skwTick(){
   SKW.vis=true;
 }
 scene.onBeforeRenderObservable.add(()=>{ try{ skwTick(); }catch(e){} });
+
+/* =====================================================================
+   v544 — 🎤 SING-ALONG AL BEAT CLUB e 🕺 DANCE & SAY ALLO SKATEPARK
+   (Giacomo, 7 nov: «pensiamo ad un'attivita' che si puo' fare durante la
+   serata al Beat Club per prendere stellette: la band suona, tu puoi
+   ballare gia', cosa si puo' mettere in mezzo di didattico? Idem quando si
+   balla allo skate park»; scelte le proposte A e D).
+   Un pannello in alto al centro (QQ), che non ferma il ballo: si risponde
+   toccando, il ballo continua sotto. Compare SOLO mentre si balla.
+
+   A · SING-ALONG (Beat Club, concerto delle 20, ballando): ogni ~15 s una
+       riga della canzone che sta suonando con un buco sulla parola della
+       sua grammatica, tre scelte, 10 secondi. Giusta: +1 ⭐ (tetto 15 al
+       giorno, STAR_RULES.singDailyCap). Le frasi sono scritte a mano in
+       SING_ITEMS (una sola scelta sta in piedi, come nei quiz di Miss
+       Grace, v409). Solo le canzoni del proprio anno o di quelli prima: chi
+       e' in prima balla il present perfect e basta.
+   D · DANCE & SAY (skatepark, ballando in skate-zone): ogni ~15 s Jay della
+       crew chiama un comando, scritto e detto (🔊 per riascoltarlo):
+       «Turn left!», «Jump twice!», «Don't spin — turn right!», «First turn
+       right, then jump!», «Before you jump, turn left!»… Si toccano le
+       icone nell'ordine giusto (⬅️ ➡️ ⬆️ 🔄); se e' giusto l'avatar lo
+       fa, a tempo (dcOverlay, dentro skDanceTick). Le mosse speciali si
+       sbloccano con le stelle (da 800): questi quattro gesti li fanno
+       tutti, quindi l'attivita' e' per tutti dal primo giorno. Il comando
+       cresce con l'anno: in prima imperativo, destra/sinistra, twice; in
+       seconda la negativa e first/then; in terza before/after/instead.
+       Giusto: +1 ⭐ (+2 se sono due o piu' gesti), tetto 20 al giorno
+       (STAR_RULES.dcDailyCap). In prima, dopo la risposta, c'e' anche
+       l'italiano; per tutti dopo un errore.
+   Nessuna penalita' per l'errore: si legge la risposta giusta e si va avanti.
+   ===================================================================== */
+const SING_ITEMS={
+  "we_are_stars.mp3":[["I ___, you are, he is, she is!","am","is","are"],["It is, we ___, you are, they are!","are","is","am"],
+    ["Yes, we are here — yes, we ___ stars!","are","is","am"],["No, we ___ sad — no, we aren't far!","aren't","isn't","am not"]],
+  "is_there_a_sofa.mp3":[["Is there? Yes, there ___.","is","are","isn't"],["Are there? Yes, there ___.","are","is","aren't"],
+    ["Is there? No, there ___.","isn't","aren't","is"],["___ there? No, there aren't.","Are","Is","Am"]],
+  "lemme_see_what_youve_got.mp3":[["Have you got? Yes, I ___!","have","has","am"],["Has she got? No, she ___!","hasn't","haven't","isn't"],
+    ["___ he got? No, he hasn't!","Has","Have","Is"],["Has he got? No, he ___!","hasn't","haven't","doesn't"]],
+  "shake_it_off.mp3":[["I ___ know, I don't know","don't","doesn't","not"],["She ___ know, she doesn't know","doesn't","don't","isn't"],
+    ["Cook the sauce and ___ it off!","turn","turns","turning"],["My brother ___ like this song!","doesn't","don't","isn't"]],
+  "yes_you_can.mp3":[["Can I play the game with you? Yes, you ___!","can","can't","are"],["I can run, I can ___, I can fly so high,","jump","jumps","jumping"],
+    ["You can ___ for the stars in the big blue sky.","reach","reaches","to reach"],["I ___ speak English now, I can beat the test!","can","cans","am"]],
+  "im_wearing_a_tshirt.mp3":[["Are you wearing a skirt? Yes, I ___!","am","are","is"],["Is he wearing a hoodie? Yes, he ___!","is","are","does"],
+    ["I'm ___ a T-shirt,","wearing","wear","wears"],["___ he wearing a hoodie? Yes, he is!","Is","Are","Does"]],
+  "from_present_to_past.mp3":[["From the present to the past: get → ___","got","getted","gets"],["From the present to the past: build → ___","built","builded","builds"],
+    ["From the present to the past: know → ___","knew","knowed","knows"],["From the present to the past: do → ___","did","doed","does"]],
+  "change_the_form.mp3":[["Change the form with me: go, went, ___!","gone","goed","wented"],["Change the form with me: see, ___, seen!","saw","seed","sawn"],
+    ["Change the form with me: eat, ate, ___!","eaten","eated","ated"],["Change the form with me: write, ___, written!","wrote","writed","writ"]],
+  "i_didnt_do_it.mp3":[["Did you do it? I ___ do it.","didn't","don't","not"],["Did you see it? I didn't ___ it.","see","saw","seen"],
+    ["___ you see it? I didn't see it.","Did","Does","Done"],["Did you do it? I didn't ___ it.","do","did","done"]],
+  "count_it_up.mp3":[["How ___ time? How many friends?","much","many","lot"],["How much time? How ___ friends?","many","much","lot"],
+    ["How ___ money in your hands?","much","many","lot"],["Got ___ energy, got any doubts?","some","many","a few"]],
+  "i_have_to.mp3":[["Do you have to follow your dreams? Yes, I ___!","do","have","does"],["Does she have to speak her own mind? Yes, she ___!","does","do","has"],
+    ["I ___ judge the others,","mustn't","don't must","not must"],["I ___ have to be so perfect,","don't","mustn't","doesn't"]],
+  "cars_will_fly.mp3":[["Cars ___ fly in the sky!","will","wills","are"],["Teachers will ___ AI!","be","are","being"],
+    ["If we plant more trees, the world ___ be green!","will","wills","is"],["If we ___ more trees, the world will be green!","plant","will plant","planted"]],
+  "how_long_have_you_been_here.mp3":[["How long ___ you been here?","have","has","are"],["How long have you ___ here?","been","be","was"],
+    ["I've been here ___ seven o'clock!","since","for","from"],["I've been here ___ two hours!","for","since","from"]],
+};
+
+/* ---- il pannello delle domande lampo ------------------------------------- */
+const QQ={ el:null, cur:null, t:null };
+function _qqEl(){
+  if(QQ.el) return QQ.el;
+  const st=document.createElement("style");
+  st.textContent="#qq{position:fixed;left:50%;top:108px;transform:translateX(-50%);z-index:22;width:min(460px,92vw);background:rgba(29,42,50,.95);color:#fbf7ec;"
+    +"border-radius:16px;padding:10px 12px 12px;box-shadow:0 6px 24px rgba(0,0,0,.4);display:none;text-align:center;touch-action:manipulation}"
+    +"#qq .qq-h{font-size:12px;font-weight:800;letter-spacing:.4px;color:#e8b04b;display:flex;justify-content:space-between;gap:8px;align-items:center}"
+    +"#qq .qq-h button{flex:0 0 auto;min-width:0;padding:2px 8px;font-size:14px;background:#ffffff22;color:#fbf7ec}"
+    +"#qq .qq-t{font-size:20px;font-weight:800;margin:6px 0 8px;line-height:1.3}"
+    +"#qq .qq-gap{display:inline-block;min-width:54px;border-bottom:3px solid #e8b04b;color:#e8b04b}"
+    +"#qq .qq-row{display:flex;gap:8px;justify-content:center}"
+    +"#qq button{flex:1 1 0;min-width:0;padding:10px 6px;border-radius:12px;border:0;background:#fbf7ec;color:#1d2a32;font-weight:800;font-size:17px;cursor:pointer;font-family:inherit;line-height:1.1}"
+    +"#qq button small{display:block;font-size:11px;font-weight:700;opacity:.75;margin-top:2px}"
+    +"#qq button.ok{background:#43a047;color:#fff}#qq button.no{background:#d93025;color:#fff}#qq button:disabled{cursor:default}"
+    +"#qq .qq-seq{display:flex;gap:6px;justify-content:center;margin:0 0 8px}"
+    +"#qq .qq-slot{width:38px;height:38px;border-radius:10px;border:2px dashed #ffffff55;display:flex;align-items:center;justify-content:center;font-size:22px}"
+    +"#qq .qq-slot.f{border:2px solid #e8b04b;background:#ffffff14}"
+    +"#qq .qq-bar{height:5px;background:#ffffff22;border-radius:3px;margin-top:9px;overflow:hidden}#qq .qq-bar i{display:block;height:100%;background:#e8b04b;width:100%}"
+    +"#qq .qq-res{font-size:16px;font-weight:800;margin-top:8px}#qq .qq-it{font-size:13px;color:#bfe3f0;margin-top:4px}";
+  document.head.appendChild(st);
+  const d=document.createElement("div"); d.id="qq";
+  /* i tocchi sul pannello non arrivano alla scena (un tocco sulla scena = camminare = smettere di ballare) */
+  ["pointerdown","pointerup","click","touchstart","mousedown","wheel"].forEach(ev=>d.addEventListener(ev,e=>e.stopPropagation(),{ passive:true }));
+  document.body.appendChild(d); QQ.el=d; return d;
+}
+function qqOpen(){ return !!QQ.cur; }
+/* le caselle della sequenza: piene con l'icona toccata, vuote tratteggiate */
+function _qqSlots(o,vals){ let h=""; for(let i=0;i<o.need;i++){ const v=vals[i], b=(v!=null)?o.opts.find(x=>x.val===v):null;
+  h+='<span class="qq-slot'+(b?' f':'')+'">'+(b?b.ic:'')+'</span>'; } return h; }
+function qqHide(){ clearInterval(QQ.t); QQ.t=null; QQ.cur=null; if(QQ.el) QQ.el.style.display="none"; }
+/* o = { kind, head, html, say (testo da riascoltare), opts:[{html,val}], need (gesti da toccare; 0 = una scelta),
+         ms, check(vals), right (html della risposta giusta), it, onEnd(ok, vals) } */
+function qqShow(o){
+  const d=_qqEl(); clearInterval(QQ.t);
+  const C=QQ.cur={ o, vals:[], done:false, t0:performance.now() };
+  d.innerHTML='<div class="qq-h"><span>'+o.head+'</span>'+(o.say?'<button type="button" id="qq-say" title="Listen again">\u{1F50A}</button>':'')+'</div>'
+    +'<div class="qq-t">'+o.html+'</div>'+(o.need?'<div class="qq-seq" id="qq-seq">'+_qqSlots(o,[])+'</div>':'')
+    +'<div class="qq-row">'+o.opts.map((b,i)=>'<button type="button" data-i="'+i+'">'+b.html+'</button>').join("")+'</div>'
+    +'<div class="qq-bar"><i id="qq-bar"></i></div><div id="qq-out"></div>';
+  d.style.display="block";
+  if(o.say){ const sb=document.getElementById("qq-say"); if(sb) sb.onclick=()=>{ try{ o.sayFn ? o.sayFn() : TTS.say(o.say); }catch(e){} }; }
+  d.querySelectorAll(".qq-row button").forEach(b=>b.onclick=()=>{
+    if(C.done || QQ.cur!==C) return;
+    const i=+b.dataset.i;
+    if(!o.need){ C.vals=[o.opts[i].val]; _qqEnd(C,o.check(C.vals),b); return; }
+    C.vals.push(o.opts[i].val);
+    const sq=document.getElementById("qq-seq");
+    if(sq) sq.innerHTML=_qqSlots(o,C.vals);
+    if(C.vals.length>=o.need) _qqEnd(C,o.check(C.vals),null);
+  });
+  QQ.t=setInterval(()=>{
+    if(QQ.cur!==C){ return; }
+    const u=(performance.now()-C.t0)/o.ms, bar=document.getElementById("qq-bar");
+    if(bar && !C.done) bar.style.width=Math.max(0,100-u*100)+"%";
+    if(u>=1 && !C.done) _qqEnd(C,false,null,true);
+  },100);
+}
+function _qqEnd(C,ok,btn,late){
+  if(C.done) return; C.done=true;
+  const o=C.o, d=QQ.el;
+  d.querySelectorAll(".qq-row button").forEach(b=>{ b.disabled=true;
+    const v=o.opts[+b.dataset.i].val;
+    if(!o.need && v===o.rightVal) b.classList.add("ok"); });
+  if(btn && !ok) btn.classList.add("no");
+  let got=0; try{ got=o.onEnd(ok,C.vals)||0; }catch(e){}
+  try{ ok ? SFX.correct() : SFX.wrong(); }catch(e){}
+  const out=document.getElementById("qq-out");
+  if(out) out.innerHTML='<div class="qq-res" style="color:'+(ok?"#7ee08a":"#ffb4a8")+'">'
+    +(ok?("✅ Right!"+(got?" +"+got+" ⭐":(o.capMsg?" · "+o.capMsg:""))):((late?"⏱ Time's up! ":"❌ Not quite! ")+o.right))+'</div>'
+    +((o.it && (!ok || o.itAlways))?'<div class="qq-it">'+o.it+'</div>':'');
+  const bar=document.getElementById("qq-bar"); if(bar) bar.style.width="0%";
+  setTimeout(()=>{ if(QQ.cur===C) qqHide(); }, ok?2200:3800);
+}
+function _qqModal(){ const qm=document.getElementById("quest-modal"); return !!(qm && qm.classList.contains("show")); }
+function _qqShuffle(a){ a=a.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)), x=a[i]; a[i]=a[j]; a[j]=x; } return a; }
+function _qqHint(k,msg){ const d=new Date().toDateString(); let v=""; try{ v=localStorage.getItem(k)||""; }catch(e){}
+  if(v===d) return; try{ localStorage.setItem(k,d); }catch(e){} toast(msg,6500); }
+function _qqYear(){ let y=1; try{ y=studentYear(); }catch(e){} return y||1; }
+
+/* ---- A · SING-ALONG ----------------------------------------------------- */
+const SING={ next:0, last:"", skipped:{} };
+function singTick(){
+  const now=performance.now();
+  let dancing=false, live=false;
+  try{ dancing=!!(PDANCE.on || (SKDANCE.on && SKDANCE.area===UNIT_MUSIC.area));
+       live=!!(started && GIG.on && !GIG.soundcheck && area===UNIT_MUSIC.area && AUDIO.playing()); }catch(e){}
+  const mine=QQ.cur && QQ.cur.o.kind==="sing";
+  if(!live || !dancing){ if(mine && !QQ.cur.done) qqHide(); SING.next=Math.max(SING.next, now+6000); return; }
+  if(qqOpen() || now<SING.next || _qqModal()) return;
+  const S=GIG_SONGS[GIG.idx]; if(!S) return;
+  const L=SING_ITEMS[S.f]; if(!L || !L.length){ SING.next=now+5000; return; }
+  if((S.yr||1)>_qqYear()){
+    if(!SING.skipped[S.f]){ SING.skipped[S.f]=1; toast("\u{1F3B5} «"+S.t+"» is for older students: just dance! · Questa canzone è per le classi più avanti: balla e basta",4200); }
+    SING.next=now+8000; return; }
+  let R=null; try{ R=radioAt("club"); }catch(e){}
+  if(R && (R.gap || R.left<13)){ SING.next=now+4000; return; }      // non a fine brano: la risposta arriverebbe nel silenzio
+  _qqHint("et_sing_hint","\u{1F3A4} Sing along! Tap the missing word before the band sings it: +1 ⭐ · Tocca la parola che manca nella riga della canzone");
+  const pool=L.filter(it=>it[0]!==SING.last), it=pool[Math.floor(Math.random()*pool.length)]||L[0];
+  SING.last=it[0];
+  const opts=_qqShuffle([it[1],it[2],it[3]]).map(w=>({ html:_escHtml(w), val:w }));
+  const full=it[0].replace("___",it[1]);
+  qqShow({ kind:"sing", head:"\u{1F3A4} SING ALONG · "+_escHtml(S.t), ms:10000,
+    html:_escHtml(it[0]).replace("___",'<span class="qq-gap">&nbsp;?&nbsp;</span>'),
+    opts, rightVal:it[1], check:v=>v[0]===it[1], right:"→ "+_escHtml(full),
+    capMsg:"no more ⭐ today",
+    onEnd:(ok)=>{ SING.next=performance.now()+15000; if(!ok) return 0; let g=0; try{ g=Stars.awardSing(); }catch(e){} return g; } });
+}
+
+/* ---- D · DANCE & SAY ---------------------------------------------------- */
+const DC={ next:0, act:null, queue:[], last:"" };
+const DC_ACTS={ L:{ ic:"⬅️", en:"turn left",   it:"girati a sinistra", lab:"left",  beats:1 },
+                R:{ ic:"➡️", en:"turn right",  it:"girati a destra",   lab:"right", beats:1 },
+                J:{ ic:"⬆️", en:"jump",        it:"salta",             lab:"jump",  beats:1 },
+                S:{ ic:"\u{1F504}",    en:"spin around", it:"fai una giravolta", lab:"spin",  beats:2 } };
+const _dcCap=s=>s.charAt(0).toUpperCase()+s.slice(1);
+const _dcTimes={ 2:["twice","due volte"], 3:["three times","tre volte"] };
+/* un comando: { en, it, seq } — seq = i gesti da toccare, in ordine */
+function dcCommand(yr){
+  const K=Object.keys(DC_ACTS), r=a=>a[Math.floor(Math.random()*a.length)];
+  const two=()=>{ const a=r(K); let b=r(K); while(b===a) b=r(K); return [a,b]; };
+  const A=k=>DC_ACTS[k], rep=(k,n)=>Array(n).fill(k);
+  const T=[];
+  /* prima: imperativo, destra/sinistra, twice, «and» */
+  T.push(()=>{ const a=r(K); return { en:_dcCap(A(a).en)+"!", it:_dcCap(A(a).it)+"!", seq:[a] }; });
+  T.push(()=>{ const a=r(["J","L","R"]); return { en:_dcCap(A(a).en)+" twice!", it:_dcCap(A(a).it)+" due volte!", seq:rep(a,2) }; });
+  T.push(()=>{ const [a,b]=two(); return { en:_dcCap(A(a).en)+" and "+A(b).en+"!", it:_dcCap(A(a).it)+" e "+A(b).it+"!", seq:[a,b] }; });
+  if(yr>=2){
+    /* seconda: la negativa, first/then, three times */
+    T.push(()=>{ const [a,b]=two(); return { en:"Don't "+A(a).en+"! "+_dcCap(A(b).en)+"!", it:"Non "+A(a).it.replace(/^girati/,"girarti").replace(/^salta$/,"saltare").replace(/^fai/,"fare")+"! "+_dcCap(A(b).it)+"!", seq:[b] }; });
+    T.push(()=>{ const [a,b]=two(); return { en:"First "+A(a).en+", then "+A(b).en+"!", it:"Prima "+A(a).it+", poi "+A(b).it+"!", seq:[a,b] }; });
+    T.push(()=>{ return { en:"Jump three times!", it:"Salta tre volte!", seq:rep("J",3) }; });
+    T.push(()=>{ const [a,b]=two(); const n=r([2,3]); return { en:"First "+A(a).en+", then "+A(b).en+" "+_dcTimes[n][0]+"!", it:"Prima "+A(a).it+", poi "+A(b).it+" "+_dcTimes[n][1]+"!", seq:[a].concat(rep(b,n)) }; });
+  }
+  if(yr>=3){
+    /* terza: before/after (l'ordine detto non e' l'ordine fatto), instead */
+    T.push(()=>{ const [a,b]=two(); return { en:"Before you "+A(b).en+", "+A(a).en+"!", it:"Prima di "+({J:"saltare",L:"girarti a sinistra",R:"girarti a destra",S:"fare una giravolta"})[b]+", "+A(a).it+"!", seq:[a,b] }; });
+    T.push(()=>{ const [a,b]=two(); return { en:"After you "+A(a).en+", "+A(b).en+"!", it:"Dopo "+({J:"il salto",L:"la girata a sinistra",R:"la girata a destra",S:"la giravolta"})[a]+", "+A(b).it+"!", seq:[a,b] }; });
+    T.push(()=>{ const [a,b]=two(); return { en:"Don't "+A(a).en+" — "+A(b).en+" twice instead!", it:"Non "+({J:"saltare",L:"girarti a sinistra",R:"girarti a destra",S:"fare una giravolta"})[a]+": invece "+A(b).it+" due volte!", seq:rep(b,2) }; });
+  }
+  /* i comandi dell'anno si sentono piu' spesso di quelli facili */
+  const base=3, extra=T.length-base;
+  const f=(extra>0 && Math.random()<0.65) ? T[base+Math.floor(Math.random()*extra)] : T[Math.floor(Math.random()*base)];
+  return f();
+}
+function _dcCaller(){ try{ const D=SKATE.dancers.find(x=>x.i===0)||SKATE.dancers[0]; return D?D.n:null; }catch(e){ return null; } }
+function _dcSay(t){ const n=_dcCaller(); try{ speechSynthesis.resume(); }catch(e){}
+  try{ TTS.say(t,{ accent:"us", gender:(n&&n.gender)||undefined }); }catch(e){} }
+function dcTick(){
+  const now=performance.now();
+  let on=false;
+  try{ on=!!(started && SKDANCE.on && SKDANCE.area==="town" && area==="town" && !(SKATE.crewOn && SKATE.gap)); }catch(e){}
+  const mine=QQ.cur && QQ.cur.o.kind==="dc";
+  if(!on){ if(mine && !QQ.cur.done) qqHide(); DC.next=Math.max(DC.next, now+6000); if(!SKDANCE.on){ DC.act=null; DC.queue=[]; } return; }
+  if(qqOpen() || now<DC.next || _qqModal() || DC.act || DC.queue.length) return;
+  const yr=_qqYear();
+  let c=null; for(let k=0;k<6;k++){ c=dcCommand(yr); if(c.en!==DC.last) break; }
+  DC.last=c.en;
+  _qqHint("et_dc_hint","\u{1F57A} Dance & say! Listen to Jay and tap the moves in the right order: +⭐ · Ascolta il comando e tocca le mosse nell'ordine giusto");
+  _dcSay(c.en);
+  const K=["L","R","J","S"];
+  qqShow({ kind:"dc", head:"\u{1F57A} DANCE & SAY · Jay says…", ms:9000+2500*c.seq.length,
+    html:_escHtml(c.en), say:c.en, sayFn:()=>_dcSay(c.en),
+    need:c.seq.length, opts:K.map(k=>({ html:DC_ACTS[k].ic+"<small>"+DC_ACTS[k].lab+"</small>", val:k, ic:DC_ACTS[k].ic })),
+    check:v=>v.join("")===c.seq.join(""), right:"→ "+c.seq.map(k=>DC_ACTS[k].ic).join(" "),
+    it:"\u{1F1EE}\u{1F1F9} "+_escHtml(c.it), itAlways:yr<2, capMsg:"no more ⭐ today",
+    onEnd:(ok)=>{ DC.next=performance.now()+15000; if(!ok) return 0;
+      DC.queue=c.seq.slice();                                   // l'avatar lo fa, a tempo
+      let g=0; try{ g=Stars.awardDanceCmd(c.seq.length>1?STAR_RULES.dcSeq:STAR_RULES.dc); }catch(e){} return g; } });
+}
+/* i gesti dentro il ballo (chiamata alla fine di skDanceTick): si parte sul
+   mezzo battito dopo, un gesto alla volta; il salto alza tutto l'avatar, le
+   girate cambiano la direzione del ballo (e restano), la giravolta torna dov'era */
+function dcOverlay(S,B){
+  if(!DC.act){ if(!DC.queue.length) return; DC.act={ k:DC.queue.shift(), b0:Math.ceil(B*2)/2, f0:null }; }
+  const A=DC.act, def=DC_ACTS[A.k], u=(B-A.b0)/def.beats;
+  if(u<0) return;
+  if(A.f0==null) A.f0=S.face;
+  if(u>=1){
+    if(A.k==="L") S.face=A.f0-Math.PI/2; else if(A.k==="R") S.face=A.f0+Math.PI/2; else if(A.k==="S") S.face=A.f0;
+    player.rotation.y=S.face; DC.act=null; return; }
+  if(A.k==="J"){ avatarRoot.position.y+=0.34*Math.sin(Math.PI*u); return; }
+  const d=A.k==="L"?-Math.PI/2:(A.k==="R"?Math.PI/2:2*Math.PI);
+  S.face=A.f0+d*_skEase(u);
+  player.rotation.y=S.face;
+}
+scene.onBeforeRenderObservable.add(()=>{ try{ singTick(); }catch(e){} try{ dcTick(); }catch(e){} });
 
 function rideStepSpeed(){
   const R=RIDE.on; RIDE.v+=(1-RIDE.v)*R.acc; if(RIDE.v<0.3) RIDE.v=0.3;
