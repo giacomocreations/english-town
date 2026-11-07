@@ -19,6 +19,85 @@
 <script>window.ET_BUILD="261";</script>
 <script>
 /* =====================================================================
+   v544 — ⚠️ GLI ERRORI DELL'AVVIO SI VEDONO (Giacomo, 7 nov: «scrivere con
+   quali cellulari e tablet puo' funzionare… e un'indicazione nel caso di
+   scrivere l'errore che compare sullo schermo per darlo al docente»).
+   Prima, se il dispositivo non aveva la grafica 3D (WebGL) o se le librerie
+   non arrivavano, lo script principale si fermava alla prima riga che le
+   usava e la schermata di caricamento restava su «Carico i modelli…» per
+   sempre: niente da fotografare, niente da riferire.
+   Ora, FINCHE' LA SCHERMATA DI CARICAMENTO E' APERTA, il primo errore
+   compare sotto la barra in un riquadro: spiegazione in italiano, messaggio
+   tecnico, dispositivo e browser, e l'invito a fotografarlo per il prof.
+   Non ferma niente: se l'avvio va avanti lo stesso, la schermata si chiude
+   e il riquadro sparisce con lei. A gioco partito non si mostra niente.
+   (StudentApp, card QuestTown: «Ho provato ma non funziona…» rimanda qui.)
+   ===================================================================== */
+(function(){
+  var fatto=false;
+  function disp(){
+    var u=navigator.userAgent||"", os="?", br="?", m;
+    var ipad=/Macintosh/.test(u) && (navigator.maxTouchPoints||0)>1;
+    if(/iPhone|iPad|iPod/.test(u) || ipad){ m=u.match(/OS (\d+)[_.](\d+)/); os=(ipad||/iPad/.test(u)?"iPadOS ":"iOS ")+(m?m[1]+"."+m[2]:(ipad?"(come Mac)":"")); }
+    else if((m=u.match(/Android ([\d.]+)/))){ os="Android "+m[1]; var mod=u.match(/Android [\d.]+;(?: [a-z]{2}-[a-z]{2};)? ([^;)]+)/i); if(mod && !/^K$/.test(mod[1])) os+=" · "+mod[1].trim(); }
+    else if(/CrOS/.test(u)) os="Chromebook";
+    else if(/Windows/.test(u)) os="Windows";
+    else if(/Mac OS X/.test(u)) os="Mac";
+    else if(/Linux/.test(u)) os="Linux";
+    if((m=u.match(/Edg\/(\d+)/))) br="Edge "+m[1];
+    else if((m=u.match(/SamsungBrowser\/(\d+)/))) br="Samsung Internet "+m[1];
+    else if((m=u.match(/Silk\/(\d+)/))) br="Silk "+m[1];
+    else if((m=u.match(/(?:Chrome|CriOS)\/(\d+)/))) br="Chrome "+m[1];
+    else if((m=u.match(/(?:Firefox|FxiOS)\/(\d+)/))) br="Firefox "+m[1];
+    else if((m=u.match(/Version\/(\d+)[.\d]* .*Safari/))) br="Safari "+m[1];
+    return os+" · "+br;
+  }
+  function spiega(t){
+    t=String(t||"");
+    if(/webgl|web gl|getcontext/i.test(t)) return "Questo dispositivo (o questo browser) non ha la grafica 3D che serve al gioco. Prova con Chrome aggiornato o con un altro dispositivo.";
+    if(/BABYLON is not defined|Can't find variable: BABYLON|babylon/i.test(t)) return "Le librerie 3D non si sono scaricate. Controlla internet e ricarica la pagina.";
+    if(/memory|out of memory|allocation/i.test(t)) return "Il dispositivo non ha abbastanza memoria per il gioco. Chiudi le altre app e riprova.";
+    if(/SyntaxError|Unexpected token|is not a function|undefined is not/i.test(t)) return "Il browser e' troppo vecchio per il gioco. Aggiornalo (o usa Chrome) e riprova.";
+    return "C'e' stato un errore durante il caricamento. Se il gioco non parte entro un minuto, ricarica la pagina; se si blocca ancora, avvisa il prof.";
+  }
+  function mostra(tecnico){
+    if(fatto) return;
+    var b=document.getElementById("boot"), msg=document.getElementById("boot-msg");
+    if(!b || !msg || b.style.display==="none") return;       // gioco gia' partito (o pagina non ancora pronta)
+    fatto=true;
+    var box=document.createElement("div");
+    box.id="boot-err";
+    box.style.cssText="margin-top:14px;text-align:left;background:#fff4e5;color:#5a3a00;border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.45;user-select:text;-webkit-user-select:text;";
+    var esc=function(x){ return String(x).replace(/[&<>]/g,function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c]; }); };
+    box.innerHTML="<b>⚠️ "+esc(spiega(tecnico))+"</b>"
+      +"<div style=\"margin-top:8px;font-family:monospace;font-size:12px;background:#fff;border-radius:8px;padding:6px 8px;word-break:break-word\">Errore: "+esc(String(tecnico).slice(0,300))
+      +"<br>Dispositivo: "+esc(disp())+"<br>Versione: "+esc(window.ET_BUILD||"?")+"</div>"
+      +"<div style=\"margin-top:8px\">📸 <b>Fai una foto o uno screenshot</b> di questo riquadro e mandalo al prof, con la marca e il modello del dispositivo.</div>";
+    msg.parentNode.insertBefore(box, msg.nextSibling);
+  }
+  function webglOk(){
+    try{ var c=document.createElement("canvas"); return !!(c.getContext("webgl2")||c.getContext("webgl")||c.getContext("experimental-webgl")); }catch(err){ return false; }
+  }
+  window.ET_BOOT_ERR=mostra;
+  /* errori di script (anche «BABYLON is not defined» se la libreria non e' arrivata) */
+  window.addEventListener("error",function(e){
+    var t=e && e.target;
+    if(t && t!==window && t.tagName==="SCRIPT"){ mostra("non riesco a scaricare "+String(t.src||"uno script").split("/").slice(-2).join("/")+" (internet?)"); return; }
+    if(!e || !e.message) return;
+    /* un errore dentro una libreria di un altro sito (Babylon dal CDN) arriva
+       come «Script error.» senza dettagli: la causa piu' comune all'avvio e'
+       la grafica 3D che manca, e quella si puo' controllare da qui */
+    if(/^Script error\.?$/i.test(e.message) && !webglOk()){ mostra("WebGL non disponibile"); return; }
+    mostra(e.message+(e.lineno?" (riga "+e.lineno+")":""));
+  },true);
+  /* nessuna grafica 3D: lo si dice subito, prima ancora di scaricare i modelli */
+  document.addEventListener("DOMContentLoaded",function(){
+    if(!webglOk()) mostra("WebGL non disponibile");
+  });
+})();
+</script>
+<script>
+/* =====================================================================
    APP INSTALLABILE (v217-218) — gira PRIMA di tutto il resto.
 
    1. IL CODICE LO SCRIVE LO STUDENTE, SEMPRE (Giacomo, 22 set). Niente
