@@ -49959,8 +49959,19 @@ function rideDropInTick(idle){
      rosso per un secondo, si legge la parola giusta e va nel ripasso dei
      cristalli (gemDueArm). Poi ne nasce un'altra, nella stessa categoria
      ma in un altro punto, giusta o sbagliata.
+   · v543 (Giacomo, 7 nov: «dopo 2 minuti cambiano tutte, se no a volte ci
+     sono solo sbagliate e l'alunno rimarrebbe senza fare niente... bilancia
+     giuste con sbagliate»):
+       - OGNI 2 MINUTI di skate nello skatepark si rinnovano TUTTE le parole
+         (SKW_ALL_MS; il tempo conta solo mentre le parole si vedono);
+       - il 55% a caso per ogni parola non c'e' piu': la parola nuova e'
+         giusta o sbagliata secondo quelle gia' in pista (piu' sbagliate che
+         giuste -> giusta, e viceversa; a parita' a caso), e il rinnovo di
+         tutte ne fa meta' e meta', mescolate fra i posti. Cosi' in pista ci
+         sono sempre parole giuste da prendere.
    ===================================================================== */
-const SKW={ toks:null, vis:false, capSaid:"" };
+const SKW={ toks:null, vis:false, capSaid:"", allT:0, lastT:0 };
+const SKW_ALL_MS=120000;
 const SKW_CATS=[ ["floor",3,0.6], ["ramp",2,0.6], ["air",2,0.7], ["grind",2,0.35], ["top",1,0.55] ];
 function _skwWords(){
   const ix=gemLexIndex();
@@ -49983,7 +49994,8 @@ function _skwMisspell(w,known){
   const m=good[Math.floor(Math.random()*good.length)];
   return (w[0]===w[0].toUpperCase()) ? m[0].toUpperCase()+m.slice(1) : m;
 }
-function _skwWord(){
+/* want: true = scritta giusta, false = sbagliata, undefined = a caso */
+function _skwWord(want){
   const W=_skwWords(); if(!W.ok.length) return null;
   const sp=gemLexSplit(W.ok), pool=(sp.recent.length && (Math.random()<GEM_LEX_RECENT || !sp.older.length))?sp.recent:sp.older;
   /* un errore che sia un'ALTRA parola vera non vale: si escludono tutte le
@@ -49993,10 +50005,28 @@ function _skwWord(){
        GEM_ADJ.forEach(a=>{ known[a[0]]=1; const f=gemForms(a); if(f){ known[String(f.comp).replace(/^more /,"")]=1; known[String(f.sup).replace(/^most /,"")]=1; } }); }catch(e){}
   for(let t=0;t<12;t++){
     const key=pool[Math.floor(Math.random()*pool.length)], w=key.slice(key.indexOf(":",4)+1);
-    if(Math.random()<0.55) return { key, right:w, shown:w, ok:true };
+    const ok=(want===undefined)?(Math.random()<0.5):want;
+    if(ok) return { key, right:w, shown:w, ok:true };
     const bad=_skwMisspell(w,known); if(bad) return { key, right:w, shown:bad, ok:false };
   }
-  return null;
+  /* nessuna parola si lascia sbagliare: meglio una giusta che un posto vuoto */
+  const key=pool[Math.floor(Math.random()*pool.length)], w=key.slice(key.indexOf(":",4)+1);
+  return { key, right:w, shown:w, ok:true };
+}
+/* giusta o sbagliata, guardando le parole gia' in pista (non quella che si rinnova) */
+function _skwWant(t){
+  let r=0, w=0;
+  (SKW.toks||[]).forEach(o=>{ if(o===t || o.dead || o.shown || !o.word) return; if(o.word.ok) r++; else w++; });
+  return r<w ? true : (r>w ? false : Math.random()<0.5);
+}
+/* tutte nuove: meta' giuste e meta' sbagliate, mescolate fra i posti (la
+   parola appena presa che mostra RIGHT/WRONG si rinnova da sola dopo) */
+function _skwRenewAll(){
+  const L=(SKW.toks||[]).filter(t=>!t.shown);
+  const want=L.map((t,i)=>i<Math.ceil(L.length/2));
+  for(let i=want.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const x=want[i]; want[i]=want[j]; want[j]=x; }
+  L.forEach(t=>{ t.p=null; t.m.setEnabled(false); });       // i posti vecchi non frenano quelli nuovi
+  L.forEach((t,i)=>_skwRenew(t,want[i]));
 }
 /* un punto nuovo per la categoria: { x, y, z } (y = quota della parola) */
 function _skwSpot(cat){
@@ -50043,13 +50073,13 @@ function _skwBuild(){
     const t={ cat, rad, m, dt, word:null, p:null, ph:Math.random()*6 };
     SKW.toks.push(t); _skwRenew(t); } });
 }
-function _skwRenew(t){
+function _skwRenew(t,want){
   /* mai addosso a chi l'ha appena presa (la riprenderebbe al fotogramma dopo) */
   /* ...e non sopra un'altra parola (due «air» sulla stessa rampa a 30 cm) */
   const lontana=q=>q && Math.hypot(q.x-player.position.x,q.z-player.position.z)>3
     && (SKW.toks||[]).every(o=>o===t || o.dead || !o.p || Math.hypot(q.x-o.p.x,q.z-o.p.z)>2.5);
   let p=null; for(let k=0;k<12;k++){ p=_skwSpot(t.cat); if(lontana(p)) break; }
-  t.p=p; t.word=_skwWord();
+  t.p=p; t.word=_skwWord(want===undefined?_skwWant(t):want);
   if(!t.p || !t.word){ t.m.setEnabled(false); t.dead=true; return; }
   t.dead=false; _skwDraw(t); t.m.position.set(t.p.x,t.p.y,t.p.z); t.pop=1; t.m.setEnabled(true);
 }
@@ -50086,14 +50116,19 @@ function _skwTake(t){
 function skwTick(){
   let on=false;
   try{ on=!!(started && area==="town" && RIDE.on && RIDE.on.ramps && Math.abs(player.position.x-SKATE.C.x)<24 && Math.abs(player.position.z-SKATE.C.z)<17 && SKATE.ramps); }catch(e){ on=false; }
-  if(!on){ if(SKW.vis && SKW.toks){ SKW.toks.forEach(t=>t.m.setEnabled(false)); SKW.vis=false; } return; }
+  if(!on){ SKW.lastT=0; if(SKW.vis && SKW.toks){ SKW.toks.forEach(t=>t.m.setEnabled(false)); SKW.vis=false; } return; }
   if(!SKW.toks){ try{ _skwBuild(); }catch(e){ console.warn("[skw]",e); SKW.toks=[]; } }
   /* la prima volta del giorno che le parole compaiono si dice come funziona:
      senza, l'alunno vedeva scritte sospese senza sapere cosa farne */
   if(!SKW.vis){ const d=new Date().toDateString(); let k=""; try{ k=localStorage.getItem("et_skw_hint")||""; }catch(e){}
     if(k!==d){ try{ localStorage.setItem("et_skw_hint",d); }catch(e){}
       toast("\u{1F6F9}\u{1F524} Ride through the words spelt RIGHT: +1 \u2b50 \u00b7 spelt WRONG: \u22121 \u2b50 \u00b7 Passa sulle parole scritte giuste, evita quelle sbagliate",6000); } }
-  const now=performance.now()/1000, px=player.position.x, pz=player.position.z, py=player.position.y;
+  /* ogni 2 minuti di parole sullo schermo si cambiano tutte */
+  const ms=performance.now();
+  if(SKW.vis && SKW.lastT) SKW.allT+=Math.min(1000,ms-SKW.lastT);
+  SKW.lastT=ms;
+  if(SKW.allT>=SKW_ALL_MS){ SKW.allT=0; _skwRenewAll(); try{ toast("\u{1F504} New words! \u00b7 Parole nuove",1800); }catch(e){} }
+  const now=ms/1000, px=player.position.x, pz=player.position.z, py=player.position.y;
   SKW.toks.forEach(t=>{
     if(t.dead){ if(Math.random()<0.01) _skwRenew(t); return; }
     if(t.shown){ t.m.position.y=t.p.y; if(performance.now()>=t.shown){ t.shown=0; _skwRenew(t); } return; }   // RIGHT / WRONG per un secondo
