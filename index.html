@@ -52365,7 +52365,7 @@ function mapPlaces(){
       const q=b.qid||b.openQuest||"";
       let open=true;
       if(q){ try{ open=Gate.unlocked(q); }catch(e){ open=true; } }
-      out.push({ ic:b.ic||"🏢", name:b.t||"", yr:b.yr||1, x:b.x, z:b.z,
+      out.push({ ic:b.ic||"🏢", name:b.t||"", yr:b.yr||1, x:b.x, z:b.z, qid:(q||(b.role==="home"?"u3":"")),
                  ax:b.x, az: b.flip ? b.z-9 : (b.z>=0 ? b.z-9 : b.z+9), open:open,
                  /* l'interazione della porta: per quasi tutti unit_<qid>; il
                     cinema e casa tua hanno la loro, la Plaza la sua openq_ */
@@ -52380,7 +52380,7 @@ function mapPlaces(){
     TOWN_OPEN.forEach(function(p){
       const s=Gate.info(p.qid); if(!s) return;
       let open=true; try{ open=Gate.unlocked(p.qid); }catch(e){ open=true; }
-      out.push({ ic:s.ic, name:s.t, yr:s.yr, x:p.x, z:p.z,
+      out.push({ ic:s.ic, name:s.t, yr:s.yr, x:p.x, z:p.z, qid:p.qid,
                  ax:(p.ax==null?p.x:p.ax), az:(p.az==null?p.z:p.az), face:p.face, inter:p.inter, open:open });
     });
   }catch(e){}
@@ -52760,6 +52760,68 @@ function taxiTo(d){ closeMap(); _fade(true);
     updateProximity(); toast("🚕 "+d.name);
     setTimeout(()=>_fade(false),120);
   },360); }
+/* =====================================================================
+   SI NASCE DAVANTI ALL'ULTIMA UNIT APERTA DAL PROF (Giacomo, 8 nov: «fai
+   in modo che gli alunni siano spawnati davanti all'ultima Unit aperta dal
+   prof»). Prima si nasceva sempre davanti a casa, e la prima cosa da fare
+   a ogni lezione era attraversare la citta' per arrivare alla unit nuova.
+   L'«ultima aperta» e' quella del CURSORE della classe (Gate.cursor: la
+   copia da englishtown/classi/<CLASSE>, o COORTI): la piu' avanti in
+   ordine di curricolo che il cursore copre. Le unit gia' finite che il
+   cursore non copre (Gate.unlocked le riapre per Progress) NON contano:
+   conta dove e' arrivata la classe, non dove e' arrivato il singolo.
+   Il punto d'arrivo e' quello del taxi della mappa (mapPlaces +
+   _taxiNearInter): a due passi dal «press E» della unit, girati verso di
+   lei. Le unit che stanno in casa (u3, u2_7) nascono davanti a casa.
+   · Il docente resta davanti a casa, a meno che non stia simulando una
+     classe (cosi' si collauda come la vedono loro).
+   · Se il cursore vero arriva dal cloud DOPO l'ingresso (aggiornaGate) si
+     ricolloca, ma solo se il ragazzo non si e' ancora mosso da dove e'
+     nato: mai uno strattone a chi sta gia' camminando.
+   ===================================================================== */
+const SPAWN_U={ id:null, x:null, z:null };
+function lastOpenUnitPlace(){
+  let c=null; try{ c=Gate.cursor(); }catch(e){ return null; }
+  let places=[]; try{ places=mapPlaces(); }catch(e){ return null; }
+  for(let i=SYLLABUS.length-1;i>=0;i--){ const s=SYLLABUS[i];
+    if(!(s.yr<c.yr || (s.yr===c.yr && s.n<=c.n))) continue;
+    if(typeof QUESTS!=="undefined" && !QUESTS[s.id]) continue;   // unit ancora da costruire (vetrina): la precedente
+    const want=(s.id==="u2_7")?"u3":s.id;              // Casa · At home sta in casa tua
+    const p=places.find(x=>x.qid===want);
+    if(p) return { s:s, p:p };
+  }
+  return null;
+}
+function spawnAtLastUnit(){
+  try{
+    if(Student.teacher && !Sync.get("et_sim",null)) return false;
+    if(typeof area!=="undefined" && area!=="town") return false;
+    const r=lastOpenUnitPlace(); if(!r) return false;
+    const d={ x:r.p.ax, z:r.p.az, face:r.p.face, inter:r.p.inter };
+    try{ standUpAll(); }catch(e){}
+    const ni=_taxiNearInter(d);
+    const sp=ni||_taxiSpot(d.x,d.z);
+    player.position.set(sp.x,0,sp.z);
+    if(typeof d.face==="number") player.rotation.y=d.face;
+    else if(ni) player.rotation.y=ni.face;
+    moveTarget=null; pendingInteract=null; if(typeof tapMark!=="undefined"&&tapMark) tapMark.setEnabled(false);
+    camera.target.copyFrom(player.position); camera.target.y+=2.0;
+    SPAWN_U.id=r.s.id; SPAWN_U.x=sp.x; SPAWN_U.z=sp.z;
+    try{ updateProximity(); }catch(e){}
+    return true;
+  }catch(e){ console.warn("[spawn] unit",e); return false; }
+}
+/* il cursore e' cambiato dopo l'ingresso: si ricolloca solo chi e' ancora
+   fermo dove e' nato (e non ha una finestra aperta davanti) */
+function respawnIfStill(){
+  if(SPAWN_U.x==null) return;
+  try{
+    if(area!=="town" || _dlgOpen()) return;
+    if(Math.hypot(player.position.x-SPAWN_U.x, player.position.z-SPAWN_U.z)>1.0) return;
+    const r=lastOpenUnitPlace(); if(!r || r.s.id===SPAWN_U.id) return;
+    spawnAtLastUnit();
+  }catch(e){}
+}
 (function(){ const s=document.getElementById("star-btn"); if(s) s.onclick=()=>toggleDiary();
   const d=document.getElementById("diary-close"); if(d) d.onclick=closeDiary;
   /* v294 (Giacomo: «il menu teca si puo' chiudere cliccando fuori dalla
@@ -54761,6 +54823,7 @@ function verificaIdentita(){
 }
 function aggiornaGate(prima){
   teacherBadge(); refreshStarHud();
+  try{ respawnIfStill(); }catch(e){}        // il cursore vero e' arrivato dopo: se sei ancora fermo, alla unit giusta
   toast("\u{1F513} "+(Student.cls||"")+" \u2014 ora aperto fino a "+Gate.label()
         +(prima?" (prima: "+prima+")":""));
 }
@@ -54870,6 +54933,7 @@ function welcomeStudent(){
      scelte (segnalato da Giacomo su PROF-COSSU, misurato: Look diceva
      ragazza + cappellino + sciarpa, in scena c'era il ragazzo nudo). */
   try{ syncLook(); }catch(e){}
+  try{ spawnAtLastUnit(); }catch(e){}       // davanti all'ultima unit aperta dal prof (vedi SPAWN_U)
   if(Student.teacher){ toast("\u{1F469}\u200D\u{1F3EB} Modalit\u00e0 docente \u2014 "+Gate.label());
     verificaDocente();
     /* v302 (Giacomo: «fatto, ma non si vedono»). Il ramo docente usciva qui,
@@ -71076,7 +71140,7 @@ function buildGems(){
     g.inter=addInteract({ id:"gem"+i, area:"town", radius:2.6, meshes:[m],
       pos:()=>m.position,
       prompt:()=>{ const k=g.item?GEM_KINDS[g.item.kind]:null;
-        return (k?k.ic:"\u{1F48E}")+" <b>"+(k?k.nome.toUpperCase():"CRISTALLO")+"</b> \u00b7 press <b>E</b>"; },
+        return (k?k.ic:"\u{1F48E}")+" <b>"+(k?k.nome.toUpperCase():"CRISTALLO")+"</b> \u00b7 press <b>E</b> or walk into it"; },
       interact:()=>gemOpen(g) });
     GEMS.push(g);
     gemRespawn(g,true);
@@ -71095,7 +71159,40 @@ function buildGems(){
       g.mesh.position.y=g.baseY+0.55+Math.sin(t*1.7+g.phase)*0.09;
       g.dmat.alpha=0.30+Math.sin(t*1.7+g.phase)*0.12;
     }
+    try{ gemBumpCheck(); }catch(e){}
   });
+}
+/* =====================================================================
+   SI PRENDE ANCHE ANDANDOCI ADDOSSO (Giacomo, 8 nov: «fai in modo che le
+   gemme vengano "prese" o si possa rispondere anche andandoci addosso»).
+   Camminando sopra un cristallo si apre la stessa domanda della E
+   (gemOpen): nessuna strada nuova, stessi punti, stessi errori.
+   ⚠️ ARMATO SOLO DA FUORI: un cristallo scatta quando ci entri, non mentre
+   ci resti sopra. Chi chiude la finestra senza rispondere, o nasce con un
+   cristallo ai piedi, deve prima allontanarsi (GEM_BUMP_ARM) — se no la
+   domanda si riaprirebbe a ogni fotogramma.
+   Mai con una finestra aperta, prima del login, da seduti al buio del
+   cinema o mentre si balla (li' la E e' solo del ballo). */
+const GEM_BUMP_R=0.85, GEM_BUMP_ARM=1.6;
+function gemBumpCheck(){
+  if(!GEMS.length || area!=="town") return;
+  if(typeof started!=="undefined" && !started) return;
+  if(typeof loginPending!=="undefined" && loginPending) return;
+  const busy=_dlgOpen()
+    || (typeof SHOW!=="undefined" && SHOW.seated)
+    || (typeof PDANCE!=="undefined" && PDANCE.on)
+    || (typeof SKDANCE!=="undefined" && SKDANCE.on);
+  const px=player.position.x, pz=player.position.z, py=player.position.y||0;
+  for(let i=0;i<GEMS.length;i++){ const g=GEMS[i];
+    if(!g.item || !g.inter.enabled || !g.mesh.isEnabled()){ g.bumpArmed=false; continue; }
+    const d=Math.hypot(px-g.mesh.position.x, pz-g.mesh.position.z);
+    if(d>GEM_BUMP_ARM){ g.bumpArmed=true; continue; }
+    if(busy || !g.bumpArmed || d>GEM_BUMP_R || Math.abs(py-(g.baseY||0))>1.5) continue;
+    g.bumpArmed=false;
+    moveTarget=null; pendingInteract=null;
+    gemOpen(g);
+    return;                              // una domanda alla volta
+  }
 }
 /* Riposiziona un cristallo su uno spot libero e gli assegna un item.
    `keep` = mantieni l'item (e' il ricompare dopo un errore: stesso verbo,
