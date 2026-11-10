@@ -12048,7 +12048,11 @@ const NEWS_ARMS={
 function _newsMat(){
   if(NEWS.mat) return NEWS.mat;
   /* una texture sola: a sinistra la prima pagina, a destra una pagina interna */
-  const W=1024, H=720, dt=new BABYLON.DynamicTexture("newsDT",{width:W,height:H},scene,true), c=dt.getContext();
+  /* v547: TRE riquadri da 512 px: [prima pagina | pagina interna sinistra |
+     pagina interna destra]. Le due interne sono quelle che si vedono
+     leggendo, e ci si scrive la pagina della Gazette aperta nel pop-up
+     (newsPaint): prima erano la stessa finta pagina ripetuta due volte. */
+  const W=1536, H=720, dt=new BABYLON.DynamicTexture("newsDT",{width:W,height:H},scene,true), c=dt.getContext();
   c.fillStyle="#f4f0e4"; c.fillRect(0,0,W,H);
   const lines=(x0,y0,w,rows,step)=>{ c.fillStyle="#8d8a82"; for(let i=0;i<rows;i++) c.fillRect(x0,y0+i*step,w*(i%5===4?0.6:1),5); };
   /* prima pagina */
@@ -12057,11 +12061,9 @@ function _newsMat(){
   c.fillStyle="#b8b2a2"; c.fillRect(30,236,220,150); c.fillStyle="#6f8aa0"; c.fillRect(44,250,192,122);
   c.fillStyle="#d9b25a"; c.beginPath(); c.arc(140,300,26,0,Math.PI*2); c.fill();
   lines(266,244,220,14,11); lines(30,400,220,26,11); lines(266,400,220,26,11);
-  /* pagina interna */
-  c.fillStyle="#1d2a32"; c.font="bold 30px Georgia"; c.fillText("LETTERS",768,56); c.fillRect(536,70,464,4);
-  lines(540,90,140,50,11); lines(698,90,140,50,11); lines(856,90,140,32,11);
-  c.fillStyle="#b8b2a2"; c.fillRect(856,450,140,110); c.fillStyle="#86a37a"; c.fillRect(866,460,120,90);
-  dt.update();
+  /* le pagine interne: newsPaint (finche' non si apre la Gazette, la prima pagina) */
+  NEWS.dt=dt;
+  try{ newsPaint("front"); }catch(e){ dt.update(); }
   const m=new BABYLON.StandardMaterial("newsM",scene); m.diffuseTexture=dt; m.specularColor=new BABYLON.Color3(0.04,0.04,0.04);
   /* ⚠️ backFaceCulling ACCESO: i piani sono DOUBLESIDE (una faccia per lato,
      ognuna con le sue UV); senza culling si vedevano le due facce insieme,
@@ -12070,6 +12072,69 @@ function _newsMat(){
   const pm=mat("newsEdgeM","#ece6d6");
   return (NEWS.mat={ m, pm });
 }
+/* =====================================================================
+   v547 — SUL GIORNALE C'E' SCRITTO DAVVERO (Giacomo, 10 nov: «sarebbe
+   interessante se sul giornale ci fossero scritte le cose che poi appaiono
+   nel pop-up: con la vista del personaggio si vedono proprio le scritte»).
+   Ogni volta che si apre una pagina della Gazette (readGazette) le due
+   pagine interne del giornale in mano si ridisegnano con il suo testo
+   INGLESE: a sinistra testata, titolo della pagina e l'inizio, a destra il
+   seguito (e, se avanza spazio, colonne e foto come prima). L'italiano
+   resta solo nel pop-up: il giornale della citta' e' in inglese.
+   Testo grande (30 px su 512 = ~1,7 cm sulla pagina): si legge in prima
+   persona (O), non e' un fondino decorativo. ===================== */
+function _newsPlain(t){
+  return String(t||"").replace(/<br\s*\/?>/gi,"\n").replace(/<\/?(div|p|li)\b[^>]*>/gi,"\n").replace(/<[^>]+>/g," ")
+    .replace(/&nbsp;/g," ").replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"')
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\uFE0F\u200D]/gu,"").replace(/[ \t]+/g," ")
+    .split("\n").map(x=>x.trim()).filter(Boolean).join("\n");
+}
+function newsPaint(page,P){
+  const dt=NEWS.dt; if(!dt) return;
+  if(!P){ try{ P=gazPage(page,currentGazetteIssue()); }catch(e){ P={ en:"" }; } }
+  NEWS.pg={ page, P };
+  /* il giornale in mano si stringe sulla distanza fra le mani (newsTick, k):
+     si scrive gia' allargato di 1/k, cosi' le lettere non escono schiacciate */
+  let k=0.8; try{ if(NEWS.open && NEWS.open.isEnabled()) k=NEWS.open.scaling.x; }catch(e){}
+  k=Math.max(0.45,Math.min(1.2,k)); NEWS.paintK=k;
+  const sx=1/k, c=dt.getContext(), X0=512, PW=512, H=720, M=26, LH=33, TOP=300, BOT=H-24;
+  const i=Math.max(0,GAZ_PAGES.indexOf(page)), tit=(GAZ_TITLE[page]||"").toUpperCase();
+  c.fillStyle="#f4f0e4"; c.fillRect(X0,0,PW*2,H);
+  c.fillStyle="#d8d1bf"; c.fillRect(X0+PW-2,0,4,H);                    // la piega
+  const lines=(x0,y0,w,rows,step)=>{ c.fillStyle="#8d8a82"; for(let r=0;r<rows;r++) c.fillRect(x0,y0+r*step,w*(r%5===4?0.6:1),5); };
+  /* scrive con le lettere allargate di sx, centrate o da x; larghezza utile w */
+  const scrivi=(t,x,y,center)=>{ c.save(); c.translate(x,y); c.scale(sx,1); c.textAlign=center?"center":"left"; c.fillText(t,0,0); c.restore(); };
+  const larga=t=>c.measureText(t).width*sx;
+  /* in prima persona si vede soprattutto la meta' BASSA delle pagine: in
+     alto testata e titolo, il testo vero comincia a TOP */
+  c.fillStyle="#1d2a32";
+  c.font="bold 20px Georgia"; scrivi("QUESTTOWN GAZETTE \u00b7 PAGE "+(i+1)+"/"+GAZ_PAGES.length,X0+PW/2,48,true);
+  c.fillRect(X0+M,62,PW-2*M,3);
+  c.font="bold 44px Georgia"; scrivi(tit,X0+PW/2,TOP-110,true);
+  c.fillRect(X0+M,TOP-88,PW-2*M,2);
+  lines(X0+M,TOP-70,PW-2*M,3,14);
+  lines(X0+PW+M,30,PW-2*M,Math.floor((TOP-60)/14),14);
+  c.fillStyle="#1d2a32"; c.fillRect(X0+PW+M,TOP-26,PW-2*M,2);
+  /* il testo: inglese della pagina + le righe del riquadro (html), a capo sulle parole */
+  const txt=[_newsPlain(P.en), _newsPlain(P.html||"")].filter(Boolean).join("\n");
+  c.font="28px Georgia";
+  const righe=[], larg=PW-2*M;
+  txt.split("\n").forEach((par,pi)=>{ if(pi) righe.push("");
+    let r=""; par.split(" ").forEach(w=>{ const t=r?r+" "+w:w;
+      if(larga(t)>larg && r){ righe.push(r); r=w; } else r=t; });
+    if(r) righe.push(r); });
+  /* diviso sulle due pagine: se sta tutto a sinistra resta li', altrimenti a meta' */
+  const per=Math.floor((BOT-TOP)/LH)+1;
+  let nL=righe.length<=Math.min(per,7)?righe.length:Math.min(per,Math.ceil(righe.length/2));
+  const col=(list,x)=>{ let y=TOP; list.forEach(r=>{ if(y>BOT) return; if(r){ c.fillStyle="#1d2a32"; scrivi(r,x,y,false); } y+=r?LH:LH*0.5; }); return y; };
+  const yL=col(righe.slice(0,nL),X0+M), yR=col(righe.slice(nL),X0+PW+M);
+  if(yL<BOT-40) lines(X0+M,yL+10,PW-2*M,Math.floor((BOT-yL-10)/14),14);
+  if(yR<BOT-170){ c.fillStyle="#b8b2a2"; c.fillRect(X0+PW+M,yR+6,170,130); c.fillStyle="#86a37a"; c.fillRect(X0+PW+M+10,yR+16,150,110);
+    lines(X0+PW+M+190,yR+10,PW-2*M-190,9,14);
+    if(yR+150<BOT-20) lines(X0+PW+M,yR+150,PW-2*M,Math.floor((BOT-yR-150)/14),14); }
+  else if(yR<BOT-20) lines(X0+PW+M,yR+6,PW-2*M,Math.floor((BOT-yR-6)/14),14);
+  dt.update();
+}
 function _newsBuild(){
   if(NEWS.fold) return;
   const M=_newsMat();
@@ -12077,7 +12142,7 @@ function _newsBuild(){
   const fold=new BABYLON.TransformNode("newsFold",scene);
   const box=BABYLON.MeshBuilder.CreateBox("newsFb",{width:0.012,height:0.28,depth:0.19},scene); box.material=M.pm; box.parent=fold;
   [-1,1].forEach(s=>{ const p=BABYLON.MeshBuilder.CreatePlane("newsFp",{width:0.19,height:0.28,
-      frontUVs:new BABYLON.Vector4(0,0.25,0.5,1), backUVs:new BABYLON.Vector4(0.5,0.25,0,1), sideOrientation:BABYLON.Mesh.DOUBLESIDE},scene);
+      frontUVs:new BABYLON.Vector4(0,0.25,1/3,1), backUVs:new BABYLON.Vector4(1/3,0.25,0,1), sideOrientation:BABYLON.Mesh.DOUBLESIDE},scene);
     p.material=M.m; p.rotation.y=s*Math.PI/2; p.position.x=s*0.0065; p.parent=fold; });
   /* aperto: due pagine a V (dal lato di chi legge le pagine interne, da fuori la prima pagina).
      ⚠️ La V si apre VERSO chi legge: la piega al centro sta piu' lontana e i
@@ -12087,7 +12152,7 @@ function _newsBuild(){
   const open=new BABYLON.TransformNode("newsOpen",scene);
   [-1,1].forEach(s=>{ const hinge=new BABYLON.TransformNode("newsH",scene); hinge.parent=open; hinge.rotation.y=s*0.22;
     const p=BABYLON.MeshBuilder.CreatePlane("newsOp",{width:0.29,height:0.40,
-      frontUVs:new BABYLON.Vector4(0.5,0,1,1), backUVs:new BABYLON.Vector4(0.5,0,0,1), sideOrientation:BABYLON.Mesh.DOUBLESIDE},scene);
+      frontUVs:(s<0?new BABYLON.Vector4(1/3,0,2/3,1):new BABYLON.Vector4(2/3,0,1,1)), backUVs:new BABYLON.Vector4(1/3,0,0,1), sideOrientation:BABYLON.Mesh.DOUBLESIDE},scene);
     p.material=M.m; p.position.x=s*0.145; p.parent=hinge; });
   [fold,open].forEach(n=>{ n.getChildMeshes().forEach(m=>{ m.isPickable=false; m.alwaysSelectAsActiveMesh=true; }); n.setEnabled(false); });
   NEWS.fold=fold; NEWS.open=open;
@@ -12159,8 +12224,8 @@ function newsTick(){
        la pagina arretra verso il centro: stanno tutte dietro, almeno 1 cm. */
     const lato=(B,w)=>B?B.c.add(B.n.scale(0.005)):w;
     const la=lato(ha,a), lb=lato(hb,b);
-    const k=Math.max(0.6,Math.min(1.3,BABYLON.Vector3.Distance(la,lb)/(2*NEWS_MEZZO*Math.cos(0.22))));
-    const pend=Math.tan(0.22)/k;                      // quanto arretra la pagina per ogni metro verso il centro
+    let k=Math.max(0.6,Math.min(1.3,BABYLON.Vector3.Distance(la,lb)/(2*NEWS_MEZZO*Math.cos(0.22))));
+    let pend=Math.tan(0.22)/k;                        // quanto arretra la pagina per ogni metro verso il centro
     const presa=(B,g,altro,list)=>{ if(!B) return g;
       const ds=list[0]?list[0].getDescendants(false):[], osso=re=>ds.find(d=>re.test(d.name));
       const ix=osso(/(^|_)Index2\.[LR]$/), th=osso(/(^|_)Thumb3\.[LR]$/)||osso(/(^|_)Thumb2\.[LR]$/);
@@ -12177,14 +12242,53 @@ function newsTick(){
           const x=Math.max(0,BABYLON.Vector3.Dot(q.subtract(g),dentro));
           z=Math.min(z, D(q)-0.010-x*pend); }); });
       return g.add(pnW.scale(z-D(g))); };
-    const pa=presa(ha,la,lb,H.L), pb=presa(hb,lb,la,H.R), mid=pa.add(pb).scale(0.5);
-    NEWS.open.scaling.set(k,1,1);
-    NEWS.open.rotation.set(-tl,ry,0);                 // la pagina inclinata verso lo sguardo (newsTilt)
-    /* il punto fra i due bordi, un po' sotto il centro: i bordi della V
-       stanno ~6 cm piu' vicini a chi legge della piega */
-    NEWS.open.position.set(0,0,0); NEWS.open.computeWorldMatrix(true);
-    const g=BABYLON.Vector3.TransformCoordinates(BSIT.tab?new BABYLON.Vector3(0,NEWS_TAV.presaY,NEWS_PRESA.z):NEWS_PRESA, NEWS.open.getWorldMatrix());
-    NEWS.open.position.set(mid.x-g.x, mid.y-g.y, mid.z-g.z);
+    const metti=()=>{
+      pend=Math.tan(0.22)/k;
+      const pa=presa(ha,la,lb,H.L), pb=presa(hb,lb,la,H.R), mid=pa.add(pb).scale(0.5);
+      NEWS.open.scaling.set(k,1,1);
+      NEWS.open.rotation.set(-tl,ry,0);               // la pagina inclinata verso lo sguardo (newsTilt)
+      /* il punto fra i due bordi, un po' sotto il centro: i bordi della V
+         stanno ~6 cm piu' vicini a chi legge della piega */
+      NEWS.open.position.set(0,0,0); NEWS.open.computeWorldMatrix(true);
+      const g=BABYLON.Vector3.TransformCoordinates(BSIT.tab?new BABYLON.Vector3(0,NEWS_TAV.presaY,NEWS_PRESA.z):NEWS_PRESA, NEWS.open.getWorldMatrix());
+      NEWS.open.position.set(mid.x-g.x, mid.y-g.y, mid.z-g.z);
+      NEWS.open.computeWorldMatrix(true);
+      NEWS.open.getChildMeshes().forEach(m=>m.computeWorldMatrix(true)); };
+    metti();
+    /* v547 (Giacomo, 10 nov, con screenshot in prima persona: «i pollici
+       entrano dentro e sbucano dal giornale invece di prenderlo ai lati»).
+       Misurato: il pollice corre lungo il bordo ma ~1 cm DENTRO il foglio,
+       con la radice 5-6 cm DIETRO la pagina e la punta 1 cm davanti, cioe'
+       la attraversa. E con le mani piu' vicine di 2x29 cm il giornale non
+       si stringeva sotto il 60%: i bordi finivano ben oltre le mani e i
+       pollici spuntavano in mezzo alle colonne. Ora il bordo esterno si
+       ferma 8 mm PRIMA di ogni punto del pollice che non sta chiaramente
+       davanti alla pagina: il pollice resta sul bordo, a fianco del foglio,
+       e solo la punta (davanti) puo' appoggiarsi sulla carta. */
+    /* v547b (Giacomo: «il pollice deve essere SOPRA il foglio, non puo'
+       sbucare da dentro»). Misurato con la ragazza: per tenere le quattro
+       dita dietro, il foglio finiva DAVANTI a tutta la mano, pollice
+       compreso (1-3 cm dietro la carta), e ne usciva solo la punta.
+       Ora, in ordine:
+         1. il foglio arretra quanto basta perche' ogni pezzo di pollice che
+            sta sulla pagina le sia DAVANTI (4 mm), purche' le quattro dita
+            che stanno sulla pagina restino DIETRO (6 mm): la presa vera,
+            pollice sopra e dita sotto;
+         2. se non si puo' (pollice piu' profondo delle dita), il bordo si
+            stringe finche' quel pezzo di pollice cade fuori dal foglio. */
+    for(let it=0; it<3; it++){
+      const g=newsGrip(H);
+      if(g.need<=0.0005) break;
+      if(g.need<=g.max){
+        const fw=BABYLON.Vector3.TransformNormal(new BABYLON.Vector3(0,0,1),NEWS.open.getWorldMatrix()).normalize();
+        NEWS.open.position.addInPlace(fw.scale(g.need/Math.cos(0.22)));
+        NEWS.open.computeWorldMatrix(true); NEWS.open.getChildMeshes().forEach(m=>m.computeWorldMatrix(true));
+        continue; }
+      const kk=newsThumbK(k,H); if(!(kk<k-0.004)) break;
+      k=Math.max(0.35,kk); metti(); }
+    /* il testo e' scritto per una certa larghezza (newsPaint): se il giornale
+       si e' stretto o allargato parecchio, si riscrive */
+    if(NEWS.pg && Math.abs(Math.max(0.45,Math.min(1.2,k))-(NEWS.paintK||0))>0.05){ try{ newsPaint(NEWS.pg.page,NEWS.pg.P); }catch(e){} }
     return;
   }
   if(BSIT.b){                                         // seduto senza leggere: sulla seduta accanto a te
@@ -12217,6 +12321,56 @@ function newsTick(){
   const rx=Math.cos(ry), rz=-Math.sin(ry);            // il «destra» del giocatore
   NEWS.fold.position.set(r.x-rx*0.035+f.x*0.03, r.y-0.11, r.z-rz*0.035+f.z*0.03);
   NEWS.fold.rotation.set(0,ry,0.06);
+}
+/* v547b: i punti di pollice e dita di un lato (ossa + punta dei
+   polpastrelli), con il loro ruolo */
+function _newsGripPts(list){
+  /* per ogni dito la catena 1-2-3(-4) + la punta del polpastrello, e lungo
+     ogni tratto 4 punti in mezzo: conta anche DOVE il dito attraversa il
+     piano della pagina, non solo le articolazioni */
+  const out=[], chains={};
+  list.forEach((h,hi)=>h.getDescendants(false).forEach(d=>{
+    const m=/(^|_)(Thumb|Index|Middle|Ring|Pinky)([1-4])\.[LR]$/.exec(d.name);
+    if(!m || !d.getAbsolutePosition) return;
+    const ch=[]; for(let n=d;n;n=n.parent) ch.unshift(n); ch.forEach(n=>n.computeWorldMatrix&&n.computeWorldMatrix(true));
+    (chains[hi+m[2]]=chains[hi+m[2]]||{ th:m[2]==="Thumb", b:[] }).b.push({ n:+m[3], q:d.getAbsolutePosition().clone() }); }));
+  Object.keys(chains).forEach(k=>{ const C=chains[k], b=C.b.sort((x,y)=>x.n-y.n).map(x=>x.q);
+    if(b.length>=2){ const a=b[b.length-1], p=b[b.length-2]; b.push(a.add(a.subtract(p).scale(0.8))); }
+    b.forEach((q,i)=>{ out.push({ q, th:C.th });
+      if(i) for(let t=1;t<5;t++) out.push({ q:BABYLON.Vector3.Lerp(b[i-1],q,t/5), th:C.th }); }); });
+  return out;
+}
+/* di quanto deve arretrare il foglio (need) perche' il pollice gli stia
+   davanti dove lo copre, e di quanto puo' (max) senza che le dita escano */
+function newsGrip(H){
+  const V=BABYLON.Vector3, pages=NEWS.open.getChildMeshes();
+  let need=0, max=1;
+  ["L","R"].forEach(sd=>_newsGripPts(H[sd]).forEach(P=>pages.forEach(pm=>{
+    const s=pm.position.x>0?1:-1, l=V.TransformCoordinates(P.q,pm.getWorldMatrix().clone().invert());
+    const dal=0.145+s*l.x;
+    if(dal<=0.005 || dal>0.29+0.006 || Math.abs(l.y)>0.21) return;   // non sta su questa pagina
+    if(P.th) need=Math.max(need,l.z+0.004);
+    else max=Math.min(max,l.z-0.006); })));
+  return { need, max };
+}
+/* v547: fin dove puo' arrivare la scala k perche' nessun pezzo di pollice
+   che sta dietro (o dentro) la pagina cada dentro il foglio. Lavora nello
+   spazio di ciascuna delle due pagine (piani 0,29 x 0,40, centrati a ±0,145
+   dalla piega): la distanza dalla piega di un punto e' (0,145 + s*x). */
+function newsThumbK(k,H){
+  const V=BABYLON.Vector3, C=Math.cos(0.22), pages=NEWS.open.getChildMeshes();
+  let best=k;
+  ["L","R"].forEach(sd=>{
+    const pts=_newsGripPts(H[sd]).filter(P=>P.th).map(P=>P.q);
+    pts.forEach(q=>pages.forEach(pm=>{
+      const s=pm.position.x>0?1:-1, l=V.TransformCoordinates(q,pm.getWorldMatrix().clone().invert());
+      if(Math.abs(l.y)>0.22 || l.z<-0.006) return;          // fuori in altezza, o ben davanti alla carta: va bene
+      const dal=0.145+s*l.x;                                // distanza dalla piega, nelle unita' della pagina
+      if(dal<=0.02 || dal>0.29+0.02) return;                // non e' sul lato esterno di questa pagina
+      const kk=(k*dal*C-0.008)/(0.29*C);
+      if(kk<best) best=kk; }));
+  });
+  return best;
 }
 /* v405: il punto della pagina aperta (spazio di NEWS.open) a meta' fra i
    due bordi tenuti in mano, un po' sotto il centro (vedi newsTick) */
@@ -12634,6 +12788,7 @@ function readGazette(npc,page){
   if(i>0){ const pv=GAZ_PAGES[i-1];
     bt.push({ label:"◀ "+GAZ_TITLE[pv], act:()=>readGazette(npc,pv) }); }
   bt.push({ label:(BSIT.b?"\u{1F5DE}️ Close the newspaper":"Thank you!"), cls:"ghost", act:()=>{} });
+  try{ newsPaint(page,P); }catch(e){}        // v547: le stesse parole sul giornale in mano
   DialogueBox.open({ npc, name:npc?null:"QuestTown Gazette", icon:"\u{1F4F0}",
     sub:"QuestTown Gazette · page "+(i+1)+" of "+GAZ_PAGES.length+" · "+GAZ_TITLE[page],
     text:P.en, italian:P.it, html:P.html||undefined, autoSpeak:false, buttons:bt });
@@ -51308,7 +51463,13 @@ function fkStart(){
   /* ⚠️ (Giacomo: «dopo che arriva il Ranger non puoi piu' calciare per la
      sessione, se no gli alunni fanno solo quello»): FK_KICKS tiri a sessione (9) */
   if(FK.sessionDone){ toast("⚽ That's enough free kicks for now! Come back next time. · Basta punizioni per oggi: torna la prossima volta!",4200); return; }
-  if(RIDE.on) rideDrop();
+  /* v547 (Giacomo, 10 nov: «sullo scooter, se decido di calciare le
+     punizioni, lo scooter non deve scomparire: deve arrivare il messaggio
+     "parcheggia prima lo scooter", come per altre cose, col parcheggio piu'
+     vicino»). Come Dance & say allo skatepark (skJoinDance): l'alunno in
+     monopattino prima lo lascia alla rastrelliera, poi calcia. Lo skate
+     (e il docente) scendono e basta, come prima. */
+  if(RIDE.on){ if(rideMustPark()){ rideParkFirstMsg(); return; } rideOff(true); }
   try{ standUpAll(); }catch(e){}
   _fkReset(S);
   FK.aim={ yaw:0, loft:14*Math.PI/180, t0:performance.now(), kick:null, res:null, resT:0, spin:FK.spin||0 };
