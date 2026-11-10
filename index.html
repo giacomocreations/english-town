@@ -72149,9 +72149,14 @@ let _gemFloatT=null;
 function gemFloat(title,line,why,note){
   let el=document.getElementById("gem-float");
   if(!el){ el=document.createElement("div"); el.id="gem-float";
-    el.style.cssText="position:fixed;z-index:16;left:50%;bottom:96px;transform:translateX(-50%);width:min(380px,88vw);box-sizing:border-box;"
-      +"background:rgba(255,255,255,.9);color:#1d2a32;border-radius:14px;padding:10px 14px;pointer-events:none;"
-      +"font:600 14px/1.4 system-ui,sans-serif;box-shadow:0 6px 18px rgba(20,30,40,.28);transition:opacity .35s;text-align:center";
+    /* v555 (Giacomo: «e' al centro, lasciala laterale come prima»): in basso
+       a destra, dove stanno le schede del gioco (#qm-card), con lo stesso
+       fondo carta trasparente; su telefono largo quanto lo schermo */
+    el.style.cssText="position:fixed;z-index:16;right:16px;bottom:16px;width:min(380px,calc(100vw - 16px));box-sizing:border-box;"
+      +"background:rgba(251,247,236,.88);color:#1d2a32;border-radius:18px;padding:12px 16px;pointer-events:none;"
+      +"-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.6);"
+      +"font:600 14px/1.4 system-ui,sans-serif;box-shadow:0 14px 40px rgba(0,0,0,.30);transition:opacity .35s;text-align:center";
+    if(window.innerWidth<=640){ el.style.right="8px"; el.style.bottom="8px"; el.style.width="calc(100vw - 16px)"; }
     document.body.appendChild(el); }
   el.innerHTML='<div style="font-size:17px;font-weight:800">'+title+'</div>'
     +'<div style="margin-top:2px;font-size:16px">'+line+'</div>'
