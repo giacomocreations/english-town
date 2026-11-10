@@ -26675,15 +26675,27 @@ function shopOpenFor(U){
 /* una battuta dello studente. o = { npc, icon, sub, text (chi vende),
    italian, right:[frasi giuste], wrong:[frasi sbagliate], ok(v) per chi
    scrive, ph, model, hint, next(frase scelta o scritta, errori) } */
+/* v554 — L'ORDINE E' LIBERO DOVE NELLA REALTA' LO E' (Giacomo, 10 nov:
+   «se scrivi I'll take them prima di Can I try them on va bene lo stesso:
+   l'ordine, se non c'e' una domanda diretta come How are you paying?,
+   deve essere flessibile come nella realta'»). o.alt = altre battute che
+   in quel momento hanno senso: [{ re, label?, go(v,e) }]. Chi scrive puo'
+   usarle al posto di quella attesa; in prima, quelle con `label` diventano
+   un'altra tessera giusta. Dove chi vende fa una domanda diretta (la
+   taglia, come paghi) l'alt non si mette: li' la risposta e' una sola. */
+function _shopAlt(o,v){ return (o.alt||[]).find(a=>a.re.test(v))||null; }
 function shopLine(o){
   if(yrEnglish()){
     let last="";
     return mktTyped({ npc:o.npc, icon:o.icon, sub:o.sub, text:o.text, italian:o.italian, ph:o.ph, model:o.model, hint:o.hint,
-      ok:v=>{ last=v; return o.ok(v); }, next:e=>o.next(last, e?1:0) });
+      ok:v=>{ last=v; return o.ok(v) || !!_shopAlt(o,v); },
+      next:e=>{ const A=!o.ok(last) && _shopAlt(o,last); if(A) return A.go(last, e?1:0); o.next(last, e?1:0); } });
   }
   let errs=0;
+  const altL=(o.alt||[]).filter(a=>a.label);
   const ask=()=>DialogueBox.open({ npc:o.npc, icon:o.icon, sub:o.sub, text:o.text, italian:o.italian,
-    choices:shuffle(o.right.concat(o.wrong||[])).map(fr=>({ label:fr, act:()=>{
+    choices:shuffle(o.right.concat(o.wrong||[]).concat(altL.map(a=>a.label))).map(fr=>({ label:fr, act:()=>{
+      const A=altL.find(a=>a.label===fr); if(A){ A.go(fr.toLowerCase(), errs); return; }
       if(o.right.indexOf(fr)>=0){ o.next(fr.toLowerCase(), errs); return; }
       errs++;
       if(errs>=2){ toast("✓ OK! We say: “"+o.model+"”"); o.next(o.right[0].toLowerCase(), errs); return; }
@@ -26715,7 +26727,7 @@ function freeShopMenu(npc,U,icon,who,start,talk){
     italian:open?"Vuoi fare shopping o "+(inQuest?"continuare la quest":"fare due chiacchiere")+"?":"Lo shopping si apre quando finisci la quest di questo negozio.",
     choices:[
       { label:(open?"\u{1F6CD}\uFE0F ":"\u{1F512} ")+"I'd like to buy something.", act:()=>{
-        if(open) return start(npc);
+        if(open){ npc.__greeted=true; return start(npc); }   // v554: ha gia' salutato, non ricomincia da «Hello!»
         DialogueBox.open({ npc, icon, sub:who, text:"Come back when you finish your work here \u2014 then you can go shopping!",
           italian:"\u{1F512} Prima finisci la quest di "+(U.areaName||"questo negozio")+" ("+(U.title||"")+"): poi puoi comprare qui.",
           buttons:[{ label:"OK!", cls:"primary", act:()=>{} }] }); } },
@@ -26812,6 +26824,10 @@ function clothesFitWalls(){
   addSolid(x-hw-t,x+hw+t,z+hd-t,z+hd+t,UNIT8.area);                 // fondo
   addSolid(x-hw-t,x-hw+t,z-hd,z+hd,UNIT8.area);                     // fianco
   addSolid(x+hw-t,x+hw+t,z-hd,z+hd,UNIT8.area);                     // fianco
+  /* v554: la tenda raccolta (vedi fittingRoom), 30 cm a ridosso del fianco
+     sinistro della cabina; la cabina e' girata di 180 gradi, quindi sta a +x.
+     Varco libero: 1,26 m (l'avatar ne occupa 1,10) */
+  addSolid(x+hw-0.09-0.26,x+hw-0.06,z-hd-0.02,z-hd+0.12,UNIT8.area);
 }
 function clothesFitInit(){
   clothesFitWalls();
@@ -26820,7 +26836,7 @@ function clothesFitInit(){
     pos:()=>new BABYLON.Vector3(C.x+3.40,1.0,C.z+4.85), meshes:[],
     prompt:'Press <b>E</b> to <b>try it on</b> in the fitting room', interact:clothesFitting });
 }
-function clothesReset(){ shopTryOff(); CSHOP.on=false; CSHOP.stage=null; CSHOP.cat=null; CSHOP.it=null; CSHOP.asked=false; CSHOP.tried=[]; clothesTick(); }
+function clothesReset(){ shopTryOff(); CSHOP.on=false; CSHOP.stage=null; CSHOP.cat=null; CSHOP.it=null; CSHOP.asked=false; CSHOP.tried=[]; CSHOP.priceSaid=false; clothesTick(); }
 /* che cosa cerca chi scrive: il nome della categoria nella frase */
 function clothesCatFrom(v,cats){
   const syn={ hoodie:/hoodie|sweatshirt/, jacket:/jacket|coat|blazer|raincoat/, trousers:/trousers|jeans|joggers|pants/,
@@ -26830,23 +26846,30 @@ function clothesCatFrom(v,cats){
 }
 function startClothesShop(npc){
   clothesFitInit(); shopTryOff();
-  Object.assign(CSHOP,{ on:true, stage:null, cat:null, it:null, npc, errors:0, asked:false, tried:[] }); clothesTick();
+  Object.assign(CSHOP,{ on:true, stage:null, cat:null, it:null, npc, errors:0, asked:false, tried:[], priceSaid:false }); clothesTick();
   const icon="\u{1F457}", cats=clothesCats();
-  const ask=c=>{ const ok="I'm looking for "+c.en+".";
+  /* v554 (Giacomo: «quando vuoi comprare, Nina ti ripete hello dopo averlo
+     detto prima»): dal menu di Nina il saluto c'e' gia' stato («Hi! I'm
+     Nina» / «Hello again!»), quindi qui si va al punto. Il «Yes,» davanti
+     alla risposta ha senso solo dopo «Can I help you?» */
+  const greeted=!!npc.__greeted; npc.__greeted=false;
+  const Q=greeted?"Sure! What are you looking for?":"Hello! Can I help you?", Y=greeted?"":"Yes, ";
+  const ask=c=>{ const ok=Y+"I'm looking for "+c.en+".";
     shopLine({ npc, icon, sub:"Shopping with Nina", text:"\u{1F4AC} Your answer:", italian:"Rispondi a Nina: stai cercando "+c.en+".",
-      right:["Yes, I'm looking for "+c.en+"."], wrong:["Yes, I look for "+c.en+".","Yes, I'm looking "+c.en+"."],
+      right:[Y+"I'm looking for "+c.en+"."], wrong:[Y+"I look for "+c.en+".",Y+"I'm looking "+c.en+"."],
       ok:v=>/looking for/.test(v), ph:"", model:ok, hint:"I'm <b>looking for</b> "+c.en+".",
       next:(v,e)=>{ CSHOP.errors+=e||0; clothesShow(c); } }); };
   const scegli=txt=>DialogueBox.open({ npc, icon, sub:"Shopping with Nina", text:txt,
     italian:"Che cosa cerchi? Scegli, poi rispondi a Nina in inglese.",
     choices:cats.map(c=>({ label:c.en, act:()=>ask(c) })).concat([{ label:"Nothing, thanks.", cls:"ghost", act:()=>clothesReset() }]) });
-  if(!yrEnglish()) return scegli("Hello! Can I help you?");
-  /* anni 2-3: si scrive, e Nina capisce che cosa cerchi */
+  if(!yrEnglish()) return scegli(Q);
+  /* anni 2-3: si scrive, e Nina capisce che cosa cerchi (anche «I'd like a
+     jacket», «Have you got any boots?»: in un negozio vero si dice cosi') */
   let last="";
-  mktTyped({ npc, icon, sub:"Shopping with Nina", text:"Hello! Can I help you?",
-    italian:"Di' che cosa cerchi: I'm looking for…", ph:"Yes, I'm looking for ...", model:"Yes, I'm looking for a jacket.",
+  mktTyped({ npc, icon, sub:"Shopping with Nina", text:Q,
+    italian:"Di' che cosa cerchi: I'm looking for…", ph:Y+"I'm looking for ...", model:Y+"I'm looking for a jacket.",
     hint:"<b>I'm looking for</b> a hoodie / a jacket / some trainers…",
-    ok:v=>{ last=v; return /looking for/.test(v) && !!clothesCatFrom(v,cats); },
+    ok:v=>{ last=v; return /looking for|i'?d like|i want|i need|have you got|do you have|can i (see|have)/.test(v) && !!clothesCatFrom(v,cats); },
     next:e=>{ CSHOP.errors+=e?1:0; const c=clothesCatFrom(last,cats);
       if(c) clothesShow(c); else scegli("Sorry? What are you looking for?"); } });
 }
@@ -26864,7 +26887,7 @@ function clothesShow(c){
 /* 3 · Can I try it on? -> la taglia -> il camerino */
 function clothesTry(c,it){
   const npc=CSHOP.npc, icon="\u{1F457}", P=c.pl, O=P?"them":"it", ok="Can I try "+O+" on?";
-  CSHOP.it=it;
+  CSHOP.it=it; CSHOP.priceSaid=false;                // il prezzo sentito era quello del capo di prima
   const toFit=line=>{ CSHOP.stage="fitting"; clothesTick();
     DialogueBox.open({ npc, icon, sub:"Shopping with Nina", text:line,
       italian:"Entra nel camerino (la cabina con la tenda) e premi E per provar"+(P?"li":"lo")+".",
@@ -26873,9 +26896,12 @@ function clothesTry(c,it){
      cliccato una volta, vengono riproposte»): dal secondo capo in poi
      «Can I try it on?» e la taglia non si richiedono, Nina lo da' e basta */
   if(CSHOP.asked) return toFit("Here you are: the "+it.en.toLowerCase()+(c.__size?", in a "+(c.size==="shoes"?c.__size:({S:"small",M:"medium",L:"large"}[c.__size]||"your size")):"")+". Go and try "+O+" on!");
-  shopLine({ npc, icon, sub:"Shopping with Nina", text:"Here you are: the "+it.en.toLowerCase()+". "+(P?"They're":"It's")+" very nice!",
+  const stepA=txt=>shopLine({ npc, icon, sub:"Shopping with Nina", text:txt,
     italian:"Chiedi se puoi provar"+(P?"li":"lo")+".",
     right:[ok], wrong:["Can I try on "+O+"?","Can I trying "+O+" on?"],
+    /* v554: qui Nina non fa domande: si puo' anche chiedere il prezzo,
+       prenderlo subito, lasciarlo o chiederne un altro */
+    alt:clothesAlt(c,it,()=>stepA("Would you like to try "+O+" on?"),true),
     ok:v=>new RegExp("can i try "+O+" on").test(v), ph:"Can I ...", model:ok, hint:"Can I <b>try "+O+" on</b>?",
     next:(v,e)=>{ CSHOP.errors+=e||0; CSHOP.asked=true;
       if(!c.size) return toFit("Of course. The fitting room is over there.");
@@ -26890,6 +26916,32 @@ function clothesTry(c,it){
           const m=/size (\w+)/.exec(v), z=/\b(small|medium|large)\b/.exec(v);
           c.__size=shoes?(m?"size "+m[1]:""):(z?z[1][0].toUpperCase():"");
           toFit("Here you are"+(shoes?(m?": a "+m[0]:""):(z?": a "+z[1]:""))+". The fitting room is over there."); } }); } });
+  stepA("Here you are: the "+it.en.toLowerCase()+". "+(P?"They're":"It's")+" very nice!");
+}
+/* v554: le battute che hanno senso quando Nina NON ha fatto una domanda.
+   back = si torna alla stessa battuta (dopo aver sentito il prezzo).
+   tryAllowed = si puo' ancora chiederne un altro */
+function clothesAlt(c,it,back,tryAllowed){
+  const P=c.pl, O=P?"them":"it";
+  const A=[
+    { re:/how much/, label:P?"How much are they?":"How much is it?", go:(v,e)=>{ CSHOP.errors+=e||0; clothesPrice1(c,it,back); } },
+    { re:/(i'?ll|i will|i'?d like to) (take|buy|have)|i want (it|them|to buy)/, label:"I'll take "+O+".", go:(v,e)=>{ CSHOP.errors+=e||0; clothesBuy(c,it); } },
+    { re:/(i'?ll|i will) leave|no,? thank|i don'?t (want|like)/, go:(v,e)=>{ CSHOP.errors+=e||0; clothesBye("No problem! Come back soon!"); } } ];
+  if(tryAllowed) A.push({ re:/another|something else|a different|other one/, go:(v,e)=>{ CSHOP.errors+=e||0; clothesAnother(); } });
+  return A;
+}
+/* il prezzo detto da Nina (si ascolta e si sceglie), poi si torna dov'eri */
+function clothesPrice1(c,it,next){
+  const price=clothesPrice(c,it), P=c.pl;
+  pricePick({ npc:CSHOP.npc, icon:"\u{1F4B7}", sub:"Shopping with Nina", said:(P?"They're ":"It's ")+priceWords(price)+".", price,
+    next:t=>{ CSHOP.errors+=t?1:0; CSHOP.priceSaid=true; next(); } });
+}
+function clothesBye(line){ const npc=CSHOP.npc; clothesReset();
+  DialogueBox.open({ npc, icon:"\u{1F457}", sub:"Shopping with Nina", text:line, italian:"", buttons:[{ label:"Bye!", cls:"primary", act:()=>{} }] }); }
+/* lo prendi: se il prezzo non l'hai ancora sentito te lo dice lei, poi si paga */
+function clothesBuy(c,it){
+  if(!CSHOP.priceSaid) return clothesPrice1(c,it,()=>clothesPay(c,it,true));
+  clothesPay(c,it,false);
 }
 /* 4 · nel camerino: il capo addosso, la foto dello specchio, «Is it OK?» */
 function clothesFitting(){
@@ -26921,36 +26973,43 @@ function clothesBackTo(){
   CSHOP.stage="back"; clothesTick();
   toast("\u{1F457} Go back to Nina to pay — or to leave it.",3500);
 }
-/* 5 · di nuovo da Nina: il prezzo, la decisione, il pagamento */
+/* 5 · di nuovo da Nina: il prezzo, la decisione, il pagamento.
+   v554: «So, do you want it?» non e' una domanda a risposta obbligata: si
+   puo' chiedere il prezzo (come prima) o dire subito I'll take / I'll
+   leave it. Anche a «What do you think?» si puo' richiedere il prezzo. */
 function clothesAtCounter(npc){
   const c=CSHOP.cat, it=CSHOP.it, P=c.pl, O=P?"them":"it", icon="\u{1F457}";
-  const ok=P?"How much are they?":"How much is it?", price=clothesPrice(c,it);
-  const bye=line=>{ clothesReset();
-    DialogueBox.open({ npc, icon, sub:"Shopping with Nina", text:line, italian:"", buttons:[{ label:"Bye!", cls:"primary", act:()=>{} }] }); };
+  const ok=P?"How much are they?":"How much is it?";
+  const decide=()=>shopLine({ npc, icon, sub:"Shopping with Nina", text:"What do you think?",
+    italian:"Decidi tu: lo prendi (I'll take…) o lo lasci (I'll leave…)?",
+    right:["I'll take "+O+".","I'll leave "+O+"."], wrong:["I'll taking "+O+"."],
+    alt:[{ re:/how much/, go:(v,e)=>{ CSHOP.errors+=e||0; clothesPrice1(c,it,decide); } }],
+    ok:v=>new RegExp("(i'?ll|i will) (take|leave) "+O).test(v), ph:"I'll ...", model:"I'll take "+O+".",
+    hint:"<b>I'll take "+O+"</b> / <b>I'll leave "+O+"</b>.",
+    next:(v,e)=>{ CSHOP.errors+=e||0;
+      if(/leave/.test(v)) return clothesBye("No problem! Come back soon!");
+      clothesPay(c,it,false); } });
+  if(CSHOP.priceSaid) return decide();
   shopLine({ npc, icon, sub:"Shopping with Nina", text:"So, do you want "+O+"?", italian:"Prima chiedi quanto cost"+(P?"ano":"a")+".",
     right:[ok], wrong:P?["How many are they?","How much they are?"]:["How many is it?","How much it is?"],
+    alt:clothesAlt(c,it,decide,false).filter(a=>!/how much/.test(a.re.source)),
     ok:v=>(P?/how much are they/:/how much is it/).test(v), ph:"How much ...", model:ok, hint:"<b>"+ok+"</b>",
+    next:(v,e)=>{ CSHOP.errors+=e||0; clothesPrice1(c,it,decide); } });
+}
+/* il pagamento: «How are you paying?» E' una domanda diretta: risposta obbligata */
+function clothesPay(c,it,justPriced){
+  const npc=CSHOP.npc, price=clothesPrice(c,it);
+  shopLine({ npc, icon:"\u{1F4B3}", sub:"Shopping with Nina", text:(justPriced?"OK! ":"Great! ")+"How are you paying?",
+    italian:"Di' come paghi: con la carta o in contanti.",
+    right:["I'm paying by card.","I'm paying with cash."], wrong:["I'm pay by card."],
+    ok:v=>/\b(card|cash)\b/.test(v), ph:"I'm paying ...", model:"I'm paying by card.", hint:"<b>I'm paying</b> by card / with cash.",
     next:(v,e)=>{ CSHOP.errors+=e||0;
-      pricePick({ npc, icon:"\u{1F4B7}", sub:"Shopping with Nina", said:(P?"They're ":"It's ")+priceWords(price)+".", price,
-        next:t=>{ CSHOP.errors+=t?1:0;
-          shopLine({ npc, icon, sub:"Shopping with Nina", text:"What do you think?",
-            italian:"Decidi tu: lo prendi (I'll take…) o lo lasci (I'll leave…)?",
-            right:["I'll take "+O+".","I'll leave "+O+"."], wrong:["I'll taking "+O+"."],
-            ok:v=>new RegExp("(i'?ll|i will) (take|leave) "+O).test(v), ph:"I'll ...", model:"I'll take "+O+".",
-            hint:"<b>I'll take "+O+"</b> / <b>I'll leave "+O+"</b>.",
-            next:(v,e)=>{ CSHOP.errors+=e||0;
-              if(/leave/.test(v)) return bye("No problem! Come back soon!");
-              shopLine({ npc, icon:"\u{1F4B3}", sub:"Shopping with Nina", text:"Great! How are you paying?",
-                italian:"Di' come paghi: con la carta o in contanti.",
-                right:["I'm paying by card.","I'm paying with cash."], wrong:["I'm pay by card."],
-                ok:v=>/\b(card|cash)\b/.test(v), ph:"I'm paying ...", model:"I'm paying by card.", hint:"<b>I'm paying</b> by card / with cash.",
-                next:(v,e)=>{ CSHOP.errors+=e||0;
-                  try{ Stars.awardShopping(CSHOP.errors===0); refreshStarHud(true); }catch(err){}
-                  const html=shopReceiptHtml("THE CLOTHES SHOP","style for everyone",[[it.en+(c.__size?" ("+c.__size+")":""),price]],price);
-                  clothesReset();
-                  QModal.open({ title:"\u{1F9FE} Your receipt", sub:"",
-                    html:html+'<div style="text-align:center;margin-top:10px;font-size:13px;color:#6b7780">\u{1F6CD}️ Shopping in inglese fatto! Per indossarlo in città, sbloccalo nella \u{1F48E} Teca.</div>',
-                    buttons:[{ label:"Thank you, bye!", cls:"primary" }] }); } }); } }); } }); } });
+      try{ Stars.awardShopping(CSHOP.errors===0); refreshStarHud(true); }catch(err){}
+      const html=shopReceiptHtml("THE CLOTHES SHOP","style for everyone",[[it.en+(c.__size?" ("+c.__size+")":""),price]],price);
+      clothesReset();
+      QModal.open({ title:"\u{1F9FE} Your receipt", sub:"",
+        html:html+'<div style="text-align:center;margin-top:10px;font-size:13px;color:#6b7780">\u{1F6CD}️ Shopping in inglese fatto! Per indossarlo in città, sbloccalo nella \u{1F48E} Teca.</div>',
+        buttons:[{ label:"Thank you, bye!", cls:"primary" }] }); } });
 }
 
 /* ---- IL CORNER SHOP: il cestino e la cassa di Sam -------------------- */
@@ -28382,7 +28441,17 @@ const LEXPROPS={
     lpBox(r,t,H,d,"#b7a184", w/2,H/2,0);                           // parete dx
     lpBox(r,w+0.10,0.08,d+0.10,"#8a7358",0,H+0.04,0);              // tetto
     lpBox(r,w-0.14,0.05,0.05,"#8a8f96",0,H-0.12,d/2-0.05);         // bastone tenda
-    lpBox(r,(w-0.18)*0.60,H-0.34,0.05,o.hex||"#7a3f6a",-(w-0.18)*0.19,(H-0.34)/2+0.07,d/2-0.06);
+    /* v554 (Giacomo: «nella fitting room a volte puoi fonderti con la
+       tendina!»). Era un pannello piatto sul 60% dell'apertura, da
+       attraversare (chiusa e solida, il varco restante sarebbe stato di 63
+       cm: non si entrava). Ora e' TIRATA DA UNA PARTE, a pieghe, ed e'
+       solida (clothesFitWalls): si entra dal varco libero, la tenda non si
+       attraversa piu'. */
+    { const ch=H-0.32, x0=-(w/2)+0.09, n=5, cw=0.24;
+      for(let i=0;i<n;i++){ const px=x0+(i+0.5)*cw/n, pz=d/2-0.06+((i%2)?0.035:-0.035);
+        lpCyl(r,cw/n*1.5,ch,o.hex||"#7a3f6a",px,ch/2+0.08,pz); }
+      lpBox(r,cw+0.04,0.05,0.10,_hexMul(o.hex||"#7a3f6a",0.7),x0+cw/2,H-0.18,d/2-0.06);   // la mantovana degli anelli
+    }
     return r; },
   /* manichino della vetrina: figura low-poly + 3 CAPI INDOSSABILI nascosti
      (top / bottom / shoes) con materiali DEDICATI, ricolorabili a runtime:
