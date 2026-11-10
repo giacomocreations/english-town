@@ -14921,7 +14921,16 @@ function cafe(x,z,opt){
   _mergeGroups(G,c);
   /* ⚠️ Tavolini e sgabelli erano ATTRAVERSABILI: il solido copriva solo il
      blocco del bancone. Il giocatore passava in mezzo ai tavoli. */
-  [[-2.6,-3],[-2.6,3]].forEach(t=>addSolid(x+t[0]-0.75,x+t[0]+0.75,z+t[1]-0.75,z+t[1]+0.75,"town"));
+  /* v548 (Giacomo, 10 nov, con screenshot: «non riesco a passare tra il
+     palo e il tavolino»). Il tavolino e' TONDO (piano Ø 1,44) ma il solido
+     era un QUADRATO di 1,5 m: l'angolo sporgeva di 30 cm verso il palo
+     della tettoia e fra i due restavano 1,03 m, meno del diametro
+     dell'avatar (1,10). Ora una CROCE di due rettangoli dentro il tondo
+     (gli spigoli a 0,74 dal centro): fra palo e tavolino si passa, attorno
+     al tavolino si gira, e attraverso no. */
+  [[-2.6,-3],[-2.6,3]].forEach(t=>{ const tx=x+t[0], tz=z+t[1];
+    addSolid(tx-0.66,tx+0.66,tz-0.34,tz+0.34,"town");
+    addSolid(tx-0.34,tx+0.34,tz-0.66,tz+0.66,"town"); });
   for(let i=-1;i<=1;i++) addSolid(x+0.1-0.32,x+0.1+0.32,z+i*2.2-0.32,z+i*2.2+0.32,"town");
   /* ⚠️ L'insegna e' un PIANO: la normale guarda +z, quindi chi arriva dal lato
      opposto legge il testo specchiato («EFAC» nelle prove). Va girata verso
