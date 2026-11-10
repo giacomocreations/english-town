@@ -7706,16 +7706,93 @@ function _propFruit(C,a,d){ const g=_frontGeo(C), P=(da,dd)=>g.at(a+da,d+dd), rn
       s.position.set(q[0],0.99+rnd()*0.03,q[1]); C.colorize(s,col); } });
   _frontSolid(C,a,d,2.1,0.9); }
 /* stender dei saldi davanti al Clothes Shop */
+/* v550 (Giacomo, 10 nov: «le tshirt esposte fuori dal negozio vanno
+   migliorate graficamente, ora sono grezze»). Erano due parallelepipedi
+   colorati per capo (spalle + corpo), appesi DI TAGLIO: dalla strada si
+   vedevano sette strisce. Ora sono magliette vere, rivolte verso la strada:
+   sagoma con corpo, maniche corte e scollo, IMBOTTITE (anelli concentrici
+   che si gonfiano verso il centro, davanti e dietro, come stoffa su una
+   gruccia), bordino dello scollo e delle maniche di un tono piu' scuro,
+   gruccia di legno col gancio cromato, e su qualcuna una stampa (una
+   striscia o un cerchio). Tutto colorato per vertice e fuso con il resto
+   della facciata (C.colorize), quindi zero materiali e zero draw call in
+   piu'. Lo stender: tubo cromato con i pomoli, piedi a T. */
+function _teePillow(out,c,th,name){
+  /* out: contorno [x,y] (stellato rispetto a c); th: spessore massimo */
+  const S=[1,0.84,0.62,0.36,0.12], Z=[0.18,0.55,0.8,0.95,1].map(z=>z*th), n=out.length, R=S.length;
+  const P=[], I=[];
+  [1,-1].forEach((f,fi)=>{ S.forEach((sc,r)=>out.forEach(o=>P.push(c[0]+(o[0]-c[0])*sc, c[1]+(o[1]-c[1])*sc, f*Z[r]))); });
+  const v=(fi,r,i)=>fi*R*n+r*n+((i+n)%n);
+  [0,1].forEach(fi=>{ for(let r=0;r<R-1;r++) for(let i=0;i<n;i++){
+      const a=v(fi,r,i), b=v(fi,r,i+1), cc=v(fi,r+1,i+1), d=v(fi,r+1,i);
+      if(fi===0) I.push(a,b,cc, a,cc,d); else I.push(a,cc,b, a,d,cc); }
+    /* il centro: un ventaglio sull'ultimo anello */
+    const ctr=P.length/3; P.push(c[0],c[1],(fi?-1:1)*th*1.02);
+    for(let i=0;i<n;i++){ const a=v(fi,R-1,i), b=v(fi,R-1,i+1); if(fi===0) I.push(a,b,ctr); else I.push(a,ctr,b); } });
+  for(let i=0;i<n;i++){ const a=v(0,0,i), b=v(0,0,i+1), cc=v(1,0,i+1), d=v(1,0,i); I.push(a,cc,b, a,d,cc); }   // il bordo
+  /* il verso giusto delle facce: la faccia davanti deve guardare +z */
+  const N=[]; BABYLON.VertexData.ComputeNormals(P,I,N);
+  const k=(R*n)*0+ (P.length/3-1);   // centro del dietro (ultimo vertice): deve guardare -z
+  if(N[k*3+2]>0){ for(let t=0;t<I.length;t+=3){ const q=I[t+1]; I[t+1]=I[t+2]; I[t+2]=q; } N.length=0; BABYLON.VertexData.ComputeNormals(P,I,N); }
+  /* ⚠️ le UV servono anche se non c'e' texture: la facciata si fonde in un
+     mesh solo (MergeMeshes) e pezzi con attributi diversi non si fondono —
+     senza, saltava tutto lo stender */
+  const UV=new Array(P.length/3*2).fill(0);
+  const vd=new BABYLON.VertexData(); vd.positions=P; vd.indices=I; vd.normals=N; vd.uvs=UV;
+  const m=new BABYLON.Mesh(name||"bldp",scene); vd.applyToMesh(m); return m;
+}
+/* sagome in metri, y=0 all'orlo, meta' destra (la sinistra e' speculare) */
+const TEE_BODY=[[0.185,0],[0.196,0.12],[0.200,0.30],[0.198,0.43],[0.170,0.505],[0.078,0.540],[0.052,0.518],[0.026,0.505],[0,0.501]];
+const TEE_SLEEVE=[[0.150,0.520],[0.285,0.432],[0.248,0.352],[0.190,0.388],[0.178,0.448]];
+const TEE_NECK=[[-0.078,0.540],[-0.052,0.518],[-0.026,0.505],[0,0.501],[0.026,0.505],[0.052,0.518],[0.078,0.540]];
+const _TEE_OUT=(function(){ const R=TEE_BODY, L=R.slice(0,-1).reverse().map(p=>[-p[0],p[1]]); return R.concat(L).reverse(); })();
+function _hexMul(hex,k){ const c=BABYLON.Color3.FromHexString(hex); return new BABYLON.Color3(Math.min(1,c.r*k),Math.min(1,c.g*k),Math.min(1,c.b*k)).toHexString(); }
+/* una maglietta sulla gruccia appesa al tubo (x,yR,z) che corre lungo la
+   facciata; la maglietta guarda la strada (ry). hs = da che parte del tubo
+   cade (+1/-1): il gancio gira attorno al tubo e le magliette si alternano
+   davanti e dietro, cosi' le maniche si sovrappongono senza compenetrarsi */
+function _railTee(C,hex,x,yR,z,ry,variant,hs){
+  const sc=0.78, HK=0.034, YC=0.66;               // raggio del gancio e quota del suo centro (locale)
+  const nx=Math.sin(ry), nz=Math.cos(ry), off=hs*HK*sc;
+  const R=new BABYLON.TransformNode("teeR",scene);
+  R.rotation.y=ry; R.scaling.setAll(sc); R.position.set(x+nx*off, yR-YC*sc, z+nz*off);
+  const add=(m,hex2)=>{ m.parent=R; R.computeWorldMatrix(true); m.computeWorldMatrix(true); m.setParent(null); C.colorize(m,hex2); return m; };
+  const dark=_hexMul(hex,0.72);
+  /* corpo e maniche imbottiti (le maniche un filo piu' sottili) */
+  add(_teePillow(_TEE_OUT,[0,0.27],0.026),hex);
+  [1,-1].forEach(sg=>{ const sl=TEE_SLEEVE.map(p=>[p[0]*sg,p[1]]); if(sg<0) sl.reverse();
+    const cx=sl.reduce((a,p)=>a+p[0],0)/sl.length, cy=sl.reduce((a,p)=>a+p[1],0)/sl.length;
+    add(_teePillow(sl,[cx,cy],0.019),hex);
+    const a=TEE_SLEEVE[1], b=TEE_SLEEVE[2];        // bordino del polsino
+    add(BABYLON.MeshBuilder.CreateTube("bldp",{path:[new BABYLON.Vector3(a[0]*sg,a[1],0),new BABYLON.Vector3(b[0]*sg,b[1],0)],radius:0.011,tessellation:8,cap:BABYLON.Mesh.CAP_ALL},scene),dark); });
+  /* bordino dello scollo */
+  add(BABYLON.MeshBuilder.CreateTube("bldp",{path:TEE_NECK.map(p=>new BABYLON.Vector3(p[0],p[1],0)),radius:0.012,tessellation:8,cap:BABYLON.Mesh.CAP_ALL},scene),dark);
+  /* la stampa, davanti e dietro: una striscia chiara o un cerchio giallo */
+  [1,-1].forEach(f=>{
+    if(variant===1){ const st=BABYLON.MeshBuilder.CreateBox("bldp",{width:0.36,height:0.055,depth:0.004},scene); st.position.set(0,0.30,f*0.0265); add(st,hex==="#f4f1e8"?"#2d6f8f":"#f4f1e8"); }
+    if(variant===2){ const d=BABYLON.MeshBuilder.CreateCylinder("bldp",{diameter:0.13,height:0.004,tessellation:18},scene); d.rotation.x=Math.PI/2; d.position.set(0,0.31,f*0.0265); add(d,hex==="#f2c93e"?"#c8323a":"#f2c93e"); } });
+  /* la gruccia: braccio di legno sulle spalle, gancio cromato attorno al tubo */
+  add(BABYLON.MeshBuilder.CreateTube("bldp",{path:[[-0.185,0.505],[-0.09,0.552],[0,0.566],[0.09,0.552],[0.185,0.505]].map(p=>new BABYLON.Vector3(p[0],p[1]+0.008,0)),radius:0.012,tessellation:8,cap:BABYLON.Mesh.CAP_ALL},scene),"#b88a52");
+  const hk=[new BABYLON.Vector3(0,0.57,0)];
+  for(let k=0;k<=12;k++){ const t=Math.PI*1.2*k/12; hk.push(new BABYLON.Vector3(0,YC+HK*Math.sin(t),-hs*(HK-HK*Math.cos(t)))); }
+  add(BABYLON.MeshBuilder.CreateTube("bldp",{path:hk,radius:0.0045,tessellation:6},scene),"#c9ced3");
+  R.dispose();
+}
 function _propRail(C,a,d){ const g=_frontGeo(C), P=(da,dd)=>g.at(a+da,d+dd);
   let q;
-  [-0.92,0.92].forEach(o=>{ q=P(o,0); C.cyl("#3a3a3a",{diameter:0.05,height:1.5,tessellation:6}, q[0],0.75,q[1]);
-    C.box("#3a3a3a",0.06,0.04,0.5, q[0],0.02,q[1],g.ry); });
-  q=P(0,0); C.box("#8c8c8c",1.9,0.04,0.04, q[0],1.48,q[1],g.ry);
+  /* montanti tondi con il pomolo, piedi a T */
+  [-0.95,0.95].forEach(o=>{ q=P(o,0); C.cyl("#2e3236",{diameter:0.045,height:1.62,tessellation:10}, q[0],0.81,q[1]);
+    C.box("#2e3236",0.07,0.035,0.56, q[0],0.0175,q[1],g.ry);
+    const kn=BABYLON.MeshBuilder.CreateSphere("bldp",{diameter:0.07,segments:6},scene); kn.position.set(q[0],1.64,q[1]); C.colorize(kn,"#c9ced3"); });
+  /* il tubo: cromato, orizzontale lungo la facciata */
+  q=P(0,0); const tb=BABYLON.MeshBuilder.CreateCylinder("bldp",{diameter:0.032,height:1.95,tessellation:10},scene);
+  tb.rotation.set(0,g.ry,Math.PI/2); tb.position.set(q[0],1.56,q[1]); C.colorize(tb,"#c9ced3");
+  /* quattro magliette rivolte alla strada, un po' sfalsate in profondita'
+     (le maniche si sovrappongono come su uno stender vero) */
   const cols=["#c8323a","#2d6f8f","#f2c93e","#2f8f5b","#f4f1e8","#7a3f6a","#e8761c"];
-  for(let i=0;i<7;i++){ q=P(-0.75+i*0.25,0); const c=cols[i];
-    C.box("#bbbbbb",0.02,0.1,0.3, q[0],1.42,q[1],g.ry);                 // gruccia
-    C.box(c,0.05,0.18,0.62, q[0],1.3,q[1],g.ry);                         // spalle e maniche
-    C.box(c,0.05,0.55,0.42, q[0],0.98,q[1],g.ry); }                      // corpo
+  const sh=(a*7919)|0;
+  [-0.66,-0.22,0.22,0.66].forEach((o,i)=>{ q=P(o,0); const c=cols[(i+Math.abs(sh))%cols.length];
+    _railTee(C,c,q[0],1.56,q[1],g.ry,[0,1,2,0][i],i%2?1:-1); });
   _frontSolid(C,a,d,2.0,0.7); }
 
 /* ---- HALLOWEEN: materiali condivisi (una texture per tipo) ---- */
@@ -8939,7 +9016,7 @@ function _smoothLoop(pts){
    auto dello stesso percorso). */
 function _loopSpeedLimit(loop,seg){
   if(loop.vlim) return loop.vlim;
-  const N=loop.length, V=new Float32Array(N), AL=2.8, DEC=2.5;
+  const N=loop.length, V=new Float32Array(N), AL=3.2, DEC=3.0;
   for(let i=0;i<N;i++){
     const a=loop[(i-3+N)%N], b=loop[i], c=loop[(i+3)%N];
     const ab=Math.hypot(b[0]-a[0],b[1]-a[1]), bc=Math.hypot(c[0]-b[0],c[1]-b[1]), ac=Math.hypot(c[0]-a[0],c[1]-a[1]);
@@ -9181,8 +9258,12 @@ function buildTraffic(){
     .concat(_arcPts(48,-36,3.6,150,-150,60))
     .concat([[43,-38.75],[-58,-38.75]])
     .concat(_arcPts(-64,-36,3.6,-30,-330,60)));
-  [0,0.25,0.5,0.75].forEach((ph,i)=>_addTrafficCar(R1,ph,7.4,i));
-  [0.1,0.43,0.76].forEach((ph,i)=>_addTrafficCar(R2,ph,6.6,i+4));
+  /* v550 (Giacomo: «aumenta la velocita' media, troppo lente anche in
+     rettilineo»): 7,4/6,6 -> 11/10 m/s sui rettilinei (~40/36 km/h, la
+     velocita' di una via di citta'). In curva comanda _loopSpeedLimit, che
+     frena prima delle rotatorie: li' si resta sui 3-4 m/s di prima. */
+  [0,0.25,0.5,0.75].forEach((ph,i)=>_addTrafficCar(R1,ph,11,i));
+  [0.1,0.43,0.76].forEach((ph,i)=>_addTrafficCar(R2,ph,10,i+4));
   scene.onBeforeRenderObservable.add(()=>{
     const dt=Math.min(0.05, engine.getDeltaTime()/1000);
     /* Chiusura notturna: le auto spariscono con tutto il resto dopo le 22.
@@ -9210,9 +9291,9 @@ function buildTraffic(){
          dove ahead/lat non lo vedono): fermarsi per prudenza e' un conto,
          suonare e' un altro. Chi sta sul marciapiede accanto a una coda ha
          lat>2,1 e non si prende nessun clacson. */
-      const near=(Math.abs(rx)<7 && Math.abs(rz)<7);
+      const near=(Math.abs(rx)<10 && Math.abs(rz)<10);     // v550: piu' veloci, si guarda piu' lontano
       const onRoad=near && pedOnCarriageway();          // sul marciapiede non si frena (v297)
-      const inCorsia=onRoad && (ahead>-0.5 && ahead<6 && lat<2.1);
+      const inCorsia=onRoad && (ahead>-0.5 && ahead<Math.max(6,c.cv*0.85) && lat<2.1);
       let vw=(onRoad && (Math.hypot(rx,rz)<3.4 || inCorsia))?0:c.v;
       if(c.vlim) vw=Math.min(vw,c.vlim[i]);           // v549: piano in curva, frenando prima
       // CODA: distanza (lungo il percorso) dall'auto piu' vicina DAVANTI
