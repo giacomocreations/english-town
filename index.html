@@ -8912,6 +8912,56 @@ function pedOnCarriageway(){
 function _arcPts(cx,cz,R,a0,a1,steps){ const p=[];
   for(let i=0;i<=steps;i++){ const a=(a0+(a1-a0)*i/steps)*Math.PI/180;
     p.push([cx+R*Math.cos(a), cz+R*Math.sin(a)]); } return p; }
+/* v549 — CURVE FLUIDE (Giacomo, 10 nov: «rendi i movimenti delle macchine
+   in curva piu' fluidi, adesso sono scattosi»). Il giro era una SPEZZATA:
+   le rotatorie fatte con 8-10 punti (37 gradi di svolta a ogni vertice),
+   all'imbocco della rotatoria uno spigolo di 60 gradi, e il muso inseguiva
+   la direzione del tratto, che cambiava di colpo a ogni vertice. Ora il giro
+   si ricampiona ogni 0,5 m e si ammorbidisce (media mobile su ±1,5 m, due
+   passate: le curve si allargano su qualche metro, il raggio delle
+   rotatorie cala di ~20 cm), e il muso guarda la TANGENTE (vedi
+   _tcHeading). Il conto si fa una volta per percorso, non per auto. */
+function _smoothLoop(pts){
+  const D=[];
+  for(let i=0;i<pts.length;i++){ const a=pts[i], b=pts[(i+1)%pts.length], L=Math.hypot(b[0]-a[0],b[1]-a[1]);
+    const n=Math.max(1,Math.ceil(L/0.5));
+    for(let k=0;k<n;k++) D.push([a[0]+(b[0]-a[0])*k/n, a[1]+(b[1]-a[1])*k/n]); }
+  let P=D;
+  for(let pass=0;pass<2;pass++){ const N=P.length, Q=new Array(N);
+    for(let i=0;i<N;i++){ let x=0,z=0; for(let k=-3;k<=3;k++){ const q=P[(i+k+N)%N]; x+=q[0]; z+=q[1]; } Q[i]=[x/7,z/7]; }
+    P=Q; }
+  return P;
+}
+/* v549: la velocita' massima in ogni punto del giro. In curva come un'auto
+   vera: accelerazione laterale <= 2,8 m/s2 (rotatoria piccola ~3 m/s,
+   grande ~3,6), e si frena PRIMA della curva (<= 2,5 m/s2), non dentro.
+   Una volta per percorso, appesa all'array del giro (lo condividono le
+   auto dello stesso percorso). */
+function _loopSpeedLimit(loop,seg){
+  if(loop.vlim) return loop.vlim;
+  const N=loop.length, V=new Float32Array(N), AL=2.8, DEC=2.5;
+  for(let i=0;i<N;i++){
+    const a=loop[(i-3+N)%N], b=loop[i], c=loop[(i+3)%N];
+    const ab=Math.hypot(b[0]-a[0],b[1]-a[1]), bc=Math.hypot(c[0]-b[0],c[1]-b[1]), ac=Math.hypot(c[0]-a[0],c[1]-a[1]);
+    const cr=Math.abs((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]));      // 2 x area
+    const R=cr>1e-6 ? (ab*bc*ac)/(2*cr) : 1e9;                                // raggio della curva per tre punti
+    V[i]=Math.max(2.4,Math.sqrt(AL*R)); }
+  /* la frenata: all'indietro lungo il giro (due giri, perche' e' chiuso) */
+  for(let r=0;r<2;r++) for(let i=N-1;i>=0;i--){ const j=(i+1)%N;
+    V[i]=Math.min(V[i],Math.sqrt(V[j]*V[j]+2*DEC*seg[i])); }
+  return (loop.vlim=V);
+}
+/* il tratto del giro che contiene s: si riparte dall'ultimo trovato (le auto
+   vanno sempre avanti), cosi' sui giri fitti non si scorre tutto l'elenco */
+function _tcSeg(c,s){
+  let i=c.si||0; if(i>=c.seg.length || c.L[i]>s) i=0;
+  while(i<c.seg.length-1 && c.L[i+1]<=s) i++;
+  c.si=i; return i; }
+/* la direzione di marcia: dal punto 1 m dietro a quello 1 m davanti (la
+   corda attraverso la curva, cioe' la tangente, senza scalini) */
+function _tcHeading(c){
+  const a=carLoopPos(c,c.s-1.0), b=carLoopPos(c,c.s+1.0);
+  return Math.atan2(b[0]-a[0],b[1]-a[1]); }
 function _addTrafficCar(loop,phase,speed,ci){
   // la GLB va orientata col canale validato delle auto parcheggiate
   // (yaw:PROP_YAW.car); poi la si mette dentro un CARRIER pulito, perche'
@@ -8924,11 +8974,11 @@ function _addTrafficCar(loop,phase,speed,ci){
   root.parent=townRoot; root.position.set(loop[0][0],0,loop[0][1]);
   car.parent=root; car.position.set(0,car.position.y,0);
   // yaw iniziale = direzione del primo segmento (niente giravolta al via)
-  root.rotation.y=Math.atan2(loop[1][0]-loop[0][0],loop[1][1]-loop[0][1])+TRAFFIC_YAW;
+  root.rotation.y=Math.atan2(loop[2][0]-loop[0][0],loop[2][1]-loop[0][1])+TRAFFIC_YAW;
   const seg=[],L=[]; let tot=0;
   for(let i=0;i<loop.length;i++){ const a=loop[i], b=loop[(i+1)%loop.length];
     const dl=Math.hypot(b[0]-a[0],b[1]-a[1]); seg.push(dl); L.push(tot); tot+=dl; }
-  const tc={root,loop,seg,L,tot,s:phase*tot,v:speed,cv:speed,near:false,halt:0};
+  const tc={root,loop,seg,L,tot,s:phase*tot,v:speed,cv:speed,near:false,halt:0,vlim:_loopSpeedLimit(loop,seg)};
   _trafficCars.push(tc);
   /* v301: le ruote si staccano dopo (non rallenta l'avvio), una auto alla volta */
   setTimeout(()=>{ try{ tc.wh=carWheelsRig(tc); }catch(e){ console.warn("[ruote]",e); }
@@ -8975,7 +9025,12 @@ function carGroundRig(c){
   for(let k=0;k<=n;k++){ const p=carLoopPos(c,(k/n)*c.tot); G[k]=_pedGroundY(p[0],p[1]); }
   c.gy=G; c.gyN=n;
 }
-function carLoopPos(c,s){ s=((s%c.tot)+c.tot)%c.tot; let i=0; while(i<c.seg.length-1 && c.L[i+1]<=s) i++;
+function carLoopPos(c,s){ s=((s%c.tot)+c.tot)%c.tot;
+  /* v549: si cerca vicino al tratto dell'auto (c.si): i punti chiesti sono
+     a un metro da lei, e il giro ammorbidito ha ~500 tratti */
+  let i=Math.min(c.si||0,c.seg.length-1);
+  while(i>0 && c.L[i]>s) i--;
+  while(i<c.seg.length-1 && c.L[i+1]<=s) i++;
   const a=c.loop[i], b=c.loop[(i+1)%c.loop.length], t=(s-c.L[i])/c.seg[i];
   return [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t]; }
 function carWheelsRig(c){
@@ -9116,15 +9171,16 @@ function buildTraffic(){
   [-5,-2.5,0,2.5,5].forEach(z=>bollard(-58.5,z));
   // ROUTE 1 — High Street: andata corsia nord z=+2.75, rotatoria (senso
   // orario, all'inglese), ritorno corsia sud z=-2.75, U-turn a Station Ave
-  const R1=[[-46,2.75],[41,2.75]]
-    .concat(_arcPts(47,0,4.75,150,-150,10))
+  // v549: archi a 5 gradi (erano 30-37) e giro ammorbidito (_smoothLoop)
+  const R1=_smoothLoop([[-46,2.75],[41,2.75]]
+    .concat(_arcPts(47,0,4.75,150,-150,60))
     .concat([[41,-2.75],[-46,-2.75]])
-    .concat(_arcPts(-52,0,3.6,-30,-330,8));
+    .concat(_arcPts(-52,0,3.6,-30,-330,60)));
   // ROUTE 2 — Modern Boulevard: corsie z=-33.25 / z=-38.75
-  const R2=[[-58,-33.25],[43,-33.25]]
-    .concat(_arcPts(48,-36,3.6,150,-150,8))
+  const R2=_smoothLoop([[-58,-33.25],[43,-33.25]]
+    .concat(_arcPts(48,-36,3.6,150,-150,60))
     .concat([[43,-38.75],[-58,-38.75]])
-    .concat(_arcPts(-64,-36,3.6,-30,-330,8));
+    .concat(_arcPts(-64,-36,3.6,-30,-330,60)));
   [0,0.25,0.5,0.75].forEach((ph,i)=>_addTrafficCar(R1,ph,7.4,i));
   [0.1,0.43,0.76].forEach((ph,i)=>_addTrafficCar(R2,ph,6.6,i+4));
   scene.onBeforeRenderObservable.add(()=>{
@@ -9140,7 +9196,7 @@ function buildTraffic(){
     for(let k=0;k<_trafficCars.length;k++){ const c=_trafficCars[k];
       // FRENATA "civile": se il giocatore e' davanti all'auto (entro 6 m,
       // scarto laterale < 2.1 m) la velocita' scivola a 0; riparte da sola
-      let i=0; while(i<c.seg.length-1 && c.L[i+1]<=c.s) i++;
+      let i=_tcSeg(c,c.s);
       let A=c.loop[i], B=c.loop[(i+1)%c.loop.length];
       const ux=(B[0]-A[0])/c.seg[i], uz=(B[1]-A[1])/c.seg[i];
       const rx=player.position.x-c.root.position.x, rz=player.position.z-c.root.position.z;
@@ -9158,6 +9214,7 @@ function buildTraffic(){
       const onRoad=near && pedOnCarriageway();          // sul marciapiede non si frena (v297)
       const inCorsia=onRoad && (ahead>-0.5 && ahead<6 && lat<2.1);
       let vw=(onRoad && (Math.hypot(rx,rz)<3.4 || inCorsia))?0:c.v;
+      if(c.vlim) vw=Math.min(vw,c.vlim[i]);           // v549: piano in curva, frenando prima
       // CODA: distanza (lungo il percorso) dall'auto piu' vicina DAVANTI
       // sullo stesso loop; auto lunghe ~4.4 m, quindi gap centri 7 m ~=
       // 2.6 m tra paraurti. <14 rallenta, <8.5 target 0, <7 stop netto.
@@ -9201,16 +9258,18 @@ function buildTraffic(){
       if(c.wh){ const W=c.wh; W.ang+=Math.min(WHEEL_STEP, c.cv*TRAFFIC_SPEED*dt/W.wheels[0].r)*W.sgn;      // v301: le ruote rotolano
         for(let q=0;q<W.wheels.length;q++){ const pv=W.wheels[q].piv;
           pv.rotationQuaternion=BABYLON.Quaternion.RotationAxis(W.axis,W.ang*(W.wheels[0].r/W.wheels[q].r)); } }
-      i=0; while(i<c.seg.length-1 && c.L[i+1]<=c.s) i++;
+      i=_tcSeg(c,c.s);
       const a=c.loop[i], b=c.loop[(i+1)%c.loop.length], t=(c.s-c.L[i])/c.seg[i];
       c.root.position.x=a[0]+(b[0]-a[0])*t;
       if(c.gy){ const u=c.s/c.tot*c.gyN, k0=Math.floor(u), f=u-k0;            // v301: sulla strada, non dentro
         c.root.position.y=c.lift+c.gy[k0]*(1-f)+c.gy[Math.min(c.gyN,k0+1)]*f; }
       c.root.position.z=a[1]+(b[1]-a[1])*t;
-      const tgt=Math.atan2(b[0]-a[0],b[1]-a[1])+TRAFFIC_YAW;
+      /* v549: il muso sulla tangente del giro ammorbidito; il filo di
+         smorzamento resta solo per assorbire i fotogrammi lunghi */
+      const tgt=_tcHeading(c)+TRAFFIC_YAW;
       let d=tgt-c.root.rotation.y;
       while(d>Math.PI)d-=2*Math.PI; while(d<-Math.PI)d+=2*Math.PI;
-      c.root.rotation.y+=d*Math.min(1,10*dt);
+      c.root.rotation.y+=d*Math.min(1,25*dt);
       _trafficNudge(c);          // l'auto scosta il pedone, non lo attraversa
       _trafficPassCheck(c);
     } });
