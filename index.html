@@ -10087,15 +10087,27 @@ function checkFragments(announce){
    Si aggiorna a ogni comparsa e raccolta, al login, e ogni 5 s. ---- */
 (function(){ try{
   const st=document.createElement("style");
-  st.textContent="@keyframes clueBeat{0%,40%,100%{transform:scale(1);box-shadow:0 2px 10px rgba(0,0,0,.28),0 0 0 0 rgba(245,158,11,0)}"
-    +"10%{transform:scale(1.04);box-shadow:0 2px 10px rgba(0,0,0,.28),0 0 0 5px rgba(245,158,11,.6)}"
-    +"20%{transform:scale(1);box-shadow:0 2px 10px rgba(0,0,0,.28),0 0 0 2px rgba(245,158,11,.25)}"
-    +"30%{transform:scale(1.04);box-shadow:0 2px 10px rgba(0,0,0,.28),0 0 0 6px rgba(245,158,11,.55)}}"
+  st.textContent="@keyframes clueBeat{0%,40%,100%{transform:scale(1);box-shadow:0 2px 8px rgba(0,0,0,.12),0 0 0 0 rgba(245,158,11,0)}"
+    +"10%{transform:scale(1.04);box-shadow:0 2px 8px rgba(0,0,0,.12),0 0 0 5px rgba(245,158,11,.6)}"
+    +"20%{transform:scale(1);box-shadow:0 2px 8px rgba(0,0,0,.12),0 0 0 2px rgba(245,158,11,.25)}"
+    +"30%{transform:scale(1.04);box-shadow:0 2px 8px rgba(0,0,0,.12),0 0 0 6px rgba(245,158,11,.55)}}"
     +"@keyframes clueBeatTxt{0%,40%,100%{opacity:1}10%,30%{opacity:.45}20%{opacity:1}}"
     +"#clue-pin{animation:clueBeat 1s ease-in-out infinite;transform-origin:right center}"
-    +"#clue-pin .clue-t{animation:clueBeatTxt 1s ease-in-out infinite}";
+    +"#clue-pin .clue-t{animation:clueBeatTxt 1s ease-in-out infinite}"
+    ;
   document.head.appendChild(st); }catch(e){} })();
 let _clueSig="";
+/* v546 (Giacomo: «meno invadente: semi trasparente e a tendina richiudibile
+   volendo»). Toccando la riga del titolo la tendina si chiude: resta solo
+   «🔎 You have a clue to collect! ▸», che continua a battere. La scelta si
+   ricorda per studente (et_clue_min) INSIEME alle lettere che c'erano: se
+   compare una lettera nuova la tendina si riapre da sola, una volta. */
+const CLUE_MIN_K="et_clue_min";
+function _clueIds(){ try{ return (Frag.available()||[]).map(x=>x.id).join(","); }catch(e){ return ""; } }
+function clueMini(){ const m=Sync.get(CLUE_MIN_K,null); return !!(m && m.ids===_clueIds()); }
+function clueGira(){
+  if(clueMini()) Sync.del(CLUE_MIN_K); else Sync.set(CLUE_MIN_K,{ ids:_clueIds() });
+  _clueSig=""; clueBadge(); }
 function clueBadge(){
   let el=document.getElementById("clue-pin");
   let av=[];
@@ -10104,8 +10116,9 @@ function clueBadge(){
   if(!el){
     el=document.createElement("div"); el.id="clue-pin";
     el.style.cssText="position:fixed;z-index:15;right:14px;width:270px;max-width:46vw;box-sizing:border-box;"
-      +"background:#FFF4E5;color:#7A4B00;border:1.5px solid #F5C77E;border-radius:12px;padding:8px 10px;"
-      +"font:600 13px/1.35 system-ui,sans-serif;pointer-events:none";
+      +"background:rgba(255,244,229,.62);color:#6a4100;border:1.5px solid rgba(245,199,126,.75);border-radius:12px;padding:8px 10px;"
+      +"backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);"
+      +"font:600 13px/1.35 system-ui,sans-serif";
     document.body.appendChild(el);
   }
   /* sotto il piano di Miss Grace, se c'e', altrimenti al suo posto */
@@ -10114,15 +10127,22 @@ function clueBadge(){
   el.style.top=top+"px";
   const f=av[0];
   let yr=1; try{ yr=studentYear(); }catch(e){}
-  const sig=av.map(x=>x.id).join(",")+"|"+yr;
+  const mini=clueMini();
+  const sig=av.map(x=>x.id).join(",")+"|"+yr+"|"+mini;
   if(sig===_clueSig) return;
   _clueSig=sig;
+  el.classList.toggle("mini",mini);
+  el.style.width=mini?"auto":"270px"; el.style.padding=mini?"6px 10px":"8px 10px";
+  const head='<div style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="clueGira()" title="'+(mini?"Open":"Close")+'">'
+    +'<span style="flex:1">\u{1F50E} <b class="clue-t">You have a clue to collect!</b></span>'
+    +'<span style="font-size:15px;color:#8a6a3a">'+(mini?"\u25b8":"\u25be")+'</span></div>';
+  if(mini){ el.innerHTML=head; return; }
   const where=(f.ch==="gazette")?"Read the Letters column in the newspaper ("+f.where+")."
                                 :"A letter from The Architect is waiting for you: "+f.where+".";
   const more=av.length>1?" And it's not the only one: you have <b>"+av.length+"</b> to collect.":"";
   const it=(yr<=1)?'<div style="margin-top:4px;font-size:11.5px;font-weight:500;opacity:.8">Hai un indizio da prendere: '
       +_escHtml(f.place||f.where)+'. Leggi la lettera e rispondi alla domanda.</div>':"";
-  el.innerHTML='\u{1F50E} <b class="clue-t">You have a clue to collect!</b>'
+  el.innerHTML=head
     +'<div style="margin-top:3px;font-weight:500">'+_escHtml(where)+more+' Read it and answer the question to get the word.</div>'+it;
 }
 setInterval(function(){ try{ clueBadge(); }catch(e){} }, 5000);
