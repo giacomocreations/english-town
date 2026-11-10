@@ -10044,6 +10044,13 @@ function fragNewsTell(npc,cont){
 /* Chiamata a ogni unit completata e all'accesso: fa comparire i frammenti la
    cui soglia e' stata raggiunta. La notifica e' DISCRETA come da canone:
    dice la zona, non le coordinate — cercare fa parte del gioco. */
+/* v545 — il toast di comparsa in INGLESE (Giacomo, 10 nov: «magari meglio
+   in inglese»): e' contenuto di gioco, come le voci di paese e il giornale. */
+function fragNewToast(f){
+  return f.ch==="gazette"
+    ? "\u{1F4DC} A new letter from The Architect! Read the Letters column in the newspaper."
+    : "\u{1F4DC} A new letter from The Architect! Where? "+f.where+".";
+}
 function checkFragments(announce){
   try{ refreshBenchMark(); }catch(e){}
   try{ refreshNightBenchMark(); }catch(e){}
@@ -10053,18 +10060,72 @@ function checkFragments(announce){
     if(f.ch==="pickup"){
       if(FRAG_MESHES[f.id]) continue;
       if(spawnFragment(f) && announce)
-        toast("\u{1F4DC} Si dice che qualcosa sia apparso "+f.place+"\u2026");
+        toast(fragNewToast(f),6000);
     } else if(f.ch==="bench" && announce && !Frag.__ann_[f.id]){
       Frag.__ann_[f.id]=1;
-      toast("\u{1F4DC} Si dice che qualcosa sia apparso "+f.place+"\u2026");
+      toast(fragNewToast(f),6000);
     } else if(announce && !Frag.__ann_[f.id]){
       /* panchina ed edicola esistono sempre: non c'e' niente da materializzare,
          ma l'annuncio ci vuole lo stesso o nessuno saprebbe di doverci tornare. */
       Frag.__ann_[f.id]=1;
-      toast("\u{1F4DC} Si dice che qualcosa sia apparso "+f.place+"\u2026");
+      toast(fragNewToast(f),6000);
     }
   }
+  try{ clueBadge(); }catch(e){}
 }
+/* =====================================================================
+   v545 — «YOU HAVE A CLUE TO COLLECT!» RESTA SULLO SCHERMO (Giacomo, 10
+   nov). In StudentApp c'era gia' il riquadro «Hai un indizio da prendere»,
+   nel gioco no: il toast di comparsa passa in pochi secondi (e all'accesso
+   non c'era nemmeno), le voci di paese e il giornale bisogna andarseli a
+   cercare. Ora, finche' c'e' una lettera dell'Architetto sbloccata e non
+   ancora presa, un riquadro fisso a destra lo ricorda, in inglese, e pulsa
+   a battito come quello di StudentApp. In prima sotto c'e' anche
+   l'italiano (stessa regola delle consegne: Anno 1 traduzione visibile).
+   ⚠️ Dice la ZONA (f.where), mai le coordinate e niente bussola: cercare
+   la lettera fa parte del gioco (stesso canone di checkFragments).
+   Si aggiorna a ogni comparsa e raccolta, al login, e ogni 5 s. ---- */
+(function(){ try{
+  const st=document.createElement("style");
+  st.textContent="@keyframes clueBeat{0%,40%,100%{transform:scale(1);box-shadow:0 2px 10px rgba(0,0,0,.28),0 0 0 0 rgba(245,158,11,0)}"
+    +"10%{transform:scale(1.04);box-shadow:0 2px 10px rgba(0,0,0,.28),0 0 0 5px rgba(245,158,11,.6)}"
+    +"20%{transform:scale(1);box-shadow:0 2px 10px rgba(0,0,0,.28),0 0 0 2px rgba(245,158,11,.25)}"
+    +"30%{transform:scale(1.04);box-shadow:0 2px 10px rgba(0,0,0,.28),0 0 0 6px rgba(245,158,11,.55)}}"
+    +"@keyframes clueBeatTxt{0%,40%,100%{opacity:1}10%,30%{opacity:.45}20%{opacity:1}}"
+    +"#clue-pin{animation:clueBeat 1s ease-in-out infinite;transform-origin:right center}"
+    +"#clue-pin .clue-t{animation:clueBeatTxt 1s ease-in-out infinite}";
+  document.head.appendChild(st); }catch(e){} })();
+let _clueSig="";
+function clueBadge(){
+  let el=document.getElementById("clue-pin");
+  let av=[];
+  try{ if(!(typeof loginPending!=="undefined" && loginPending) && typeof started!=="undefined" && started) av=Frag.available()||[]; }catch(e){ av=[]; }
+  if(!av.length){ if(el) el.remove(); _clueSig=""; return; }
+  if(!el){
+    el=document.createElement("div"); el.id="clue-pin";
+    el.style.cssText="position:fixed;z-index:15;right:14px;width:270px;max-width:46vw;box-sizing:border-box;"
+      +"background:#FFF4E5;color:#7A4B00;border:1.5px solid #F5C77E;border-radius:12px;padding:8px 10px;"
+      +"font:600 13px/1.35 system-ui,sans-serif;pointer-events:none";
+    document.body.appendChild(el);
+  }
+  /* sotto il piano di Miss Grace, se c'e', altrimenti al suo posto */
+  let top=198; try{ const pp=document.getElementById("piano-pin");
+    if(pp){ const r=pp.getBoundingClientRect(); if(r.height) top=Math.round(r.bottom+8); } }catch(e){}
+  el.style.top=top+"px";
+  const f=av[0];
+  let yr=1; try{ yr=studentYear(); }catch(e){}
+  const sig=av.map(x=>x.id).join(",")+"|"+yr;
+  if(sig===_clueSig) return;
+  _clueSig=sig;
+  const where=(f.ch==="gazette")?"Read the Letters column in the newspaper ("+f.where+")."
+                                :"A letter from The Architect is waiting for you: "+f.where+".";
+  const more=av.length>1?" And it's not the only one: you have <b>"+av.length+"</b> to collect.":"";
+  const it=(yr<=1)?'<div style="margin-top:4px;font-size:11.5px;font-weight:500;opacity:.8">Hai un indizio da prendere: '
+      +_escHtml(f.place||f.where)+'. Leggi la lettera e rispondi alla domanda.</div>':"";
+  el.innerHTML='\u{1F50E} <b class="clue-t">You have a clue to collect!</b>'
+    +'<div style="margin-top:3px;font-weight:500">'+_escHtml(where)+more+' Read it and answer the question to get the word.</div>'+it;
+}
+setInterval(function(){ try{ clueBadge(); }catch(e){} }, 5000);
 /* ---- stato: le foto scattate + le sfide gia' annunciate col toast ------
    Slot unico `et_photos` (namespacizzato per studente come tutto il resto):
    { shots:{ id:{img,cap,ts} }, seen:{ id:true } }. */
@@ -10421,7 +10482,7 @@ function askFragment(f){
         if(!ok) Frag.markMiss(f.id);
         return { ok, msg: ok ? "\u2713 Yes! You read it well."
           : "Rileggi la lettera: la risposta \u00e8 l\u00ec." }; },
-      onSuccess:()=>{ Frag.collect(f.id); despawnFragment(f.id); fragFound(f); } },
+      onSuccess:()=>{ Frag.collect(f.id); despawnFragment(f.id); fragFound(f); try{ clueBadge(); }catch(e){} } },
     buttons:[{ label:"\u{1F4C4} Read the letter again", cls:"ghost", keepOpen:true, act:()=>openFragment(f) },
              { label:"Maybe later", cls:"ghost", act:()=>fragLater(f) }] });
 }
@@ -54924,6 +54985,7 @@ function welcomeStudent(){
   loginPending=false;
   teacherBadge(); guestBadge(); badgeSincro(); refreshStarHud();
   try{ checkFragments(false); }catch(e){}   // cambio studente: i suoi frammenti, non quelli di prima
+  try{ clueBadge(); }catch(e){}             // v545: l'indizio da prendere, se c'e'
   try{ photoCheckUnlocks(false); }catch(e){}   // 📷 le sue foto, e nessun annuncio arretrato
   /* ⚠️ IL SUO ASPETTO. Il personaggio si costruisce PRIMA del codice, quando
      Look legge ancora le chiavi senza nome (cioe' il default); dopo il login
@@ -56053,6 +56115,7 @@ function switchStudent(){
      entra, o non finirebbero da nessuna parte. */
   try{ Sincro.spingi(); Sincro.scollega(); }catch(e){}
   Student.logout(); teacherBadge(); guestBadge(); badgeSincro(); refreshStarHud(); loginPending=true;
+  try{ clueBadge(); }catch(e){}
   try{ pianoPinDisegna(); }catch(e){}           // v403: il piano del ragazzo che esce se ne va con lui
   askCode();
 }
