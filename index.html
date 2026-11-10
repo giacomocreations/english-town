@@ -71625,7 +71625,7 @@ function buildGems(){
       pos:()=>m.position,
       prompt:()=>{ const k=g.item?GEM_KINDS[g.item.kind]:null;
         return (k?k.ic:"\u{1F48E}")+" <b>"+(k?k.nome.toUpperCase():"CRISTALLO")+"</b> \u00b7 press <b>E</b> or walk into it"; },
-      interact:()=>gemOpen(g) });
+      interact:()=>{ g.__bumpInfo=null; gemOpen(g); } });
     GEMS.push(g);
     gemRespawn(g,true);
   }
@@ -71673,6 +71673,9 @@ function gemBumpCheck(){
     if(d>GEM_BUMP_ARM){ g.bumpArmed=true; continue; }
     if(busy || !g.bumpArmed || d>GEM_BUMP_R || Math.abs(py-(g.baseY||0))>1.5) continue;
     g.bumpArmed=false;
+    /* v552: come ti stavi muovendo, per riprendere dopo la risposta */
+    g.__bumpInfo={ mt:moveTarget?moveTarget.clone():null,
+      ride:(typeof RIDE!=="undefined" && RIDE.on)?{ id:RIDE.on.id, v:RIDE.v, dir:RIDE.dir?{x:RIDE.dir.x,z:RIDE.dir.z}:null }:null };
     moveTarget=null; pendingInteract=null;
     gemOpen(g);
     return;                              // una domanda alla volta
@@ -71980,6 +71983,37 @@ function gemSpeak(text){
   }, 470);
 }
 
+/* v552: la voce senza scheda aperta (presa in corsa): una say() sola, a
+   jingle finito, come gemSpeak ma senza la guardia sul modale */
+function gemSpeakFree(text){
+  setTimeout(function(){ try{ TTS.say(String(text).replace(/\u2014/g,",")); }catch(e){} }, 470); }
+/* il riquadro del risultato che non blocca niente: in basso, sopra i
+   comandi, sparisce da solo (piu' a lungo se c'e' la spiegazione) */
+let _gemFloatT=null;
+function gemFloat(title,line,why,note){
+  let el=document.getElementById("gem-float");
+  if(!el){ el=document.createElement("div"); el.id="gem-float";
+    el.style.cssText="position:fixed;z-index:16;left:50%;bottom:96px;transform:translateX(-50%);width:min(380px,88vw);box-sizing:border-box;"
+      +"background:rgba(255,255,255,.9);color:#1d2a32;border-radius:14px;padding:10px 14px;pointer-events:none;"
+      +"font:600 14px/1.4 system-ui,sans-serif;box-shadow:0 6px 18px rgba(20,30,40,.28);transition:opacity .35s;text-align:center";
+    document.body.appendChild(el); }
+  el.innerHTML='<div style="font-size:17px;font-weight:800">'+title+'</div>'
+    +'<div style="margin-top:2px;font-size:16px">'+line+'</div>'
+    +(why?'<div style="margin-top:6px;font-weight:500;font-size:12.5px;color:#5d6b72">'+why+'</div>':'')
+    +(note?'<div style="margin-top:5px;font-weight:600;font-size:12px;color:#7b5aa8">'+note+'</div>':'');
+  el.style.opacity="1";
+  if(_gemFloatT) clearTimeout(_gemFloatT);
+  _gemFloatT=setTimeout(function(){ el.style.opacity="0"; }, why?5200:3600);
+}
+/* si riparte come si stava andando: la tavola riprende lo slancio (la
+   finestra aperta l'aveva fermata, vedi dlgLock), il tocco sullo schermo
+   riprende la sua meta; i tasti tenuti premuti fanno da soli */
+function gemResume(g){
+  const B=g.__bumpInfo; g.__bumpInfo=null; if(!B) return;
+  try{ if(B.ride && RIDE.on && RIDE.on.id===B.ride.id && B.ride.v>0.05){
+    RIDE.v=B.ride.v; if(B.ride.dir) RIDE.dir={ x:B.ride.dir.x, z:B.ride.dir.z }; RIDE.coast=true; RIDE.inpT=performance.now(); } }catch(e){}
+  try{ if(B.mt && area==="town" && Math.hypot(B.mt.x-player.position.x,B.mt.z-player.position.z)>0.8) moveTarget=B.mt; }catch(e){}
+}
 /* Raccolta. `discovered` = era la scheda di scoperta, non una risposta:
    vale meno in stelle, ma vale — guardarlo bene E' il lavoro, quel giro. */
 function gemTake(g,it,discovered){
@@ -71994,8 +72028,22 @@ function gemTake(g,it,discovered){
   /* ⚠️ Sul lessico si legge SOLO la parola inglese: gemSpeak(it.full)
      direbbe "sofa, divano" con la voce inglese sopra una parola
      italiana, e la pronuncia e' proprio la cosa da portare a casa. */
-  gemSpeak(it.kind==="lex" ? it.word : it.full);
   const nf=gemNextFit();
+  /* v552 (Giacomo, 10 nov: «se cammini e prendi la gemma, dopo che hai
+     risposto continua a camminare, skatare o andare in monopattino mentre
+     viene ripetuta la parola»): presa andandoci addosso, il risultato non
+     e' piu' una scheda da chiudere con «Next» — un riquadro che non blocca
+     niente, la voce che ripete, e si riparte come si stava andando. */
+  if(g && g.__bumpInfo){
+    gemHide(g, 1500);
+    gemFloat("\u2705 "+_escHtml(it.answer), _escHtml(it.full), it.why,
+      stelle===0 ? "\u2B50 Per oggi i cristalli non danno pi\u00f9 stelle: il cristallo conta lo stesso \u{1F48E}" : "\u{1F48E} Cristalli: "+r.tot);
+    gemSpeakFree(it.kind==="lex" ? it.word : it.full);
+    gemResume(g);
+    gemCheckFits(r.tot);
+    return;
+  }
+  gemSpeak(it.kind==="lex" ? it.word : it.full);
   gemHide(g, 1500);                       // sparisce subito, ricompare altrove
   DialogueBox.open({
     name:"\u2705 "+it.answer, sub:"Cristalli: "+r.tot,
@@ -72018,6 +72066,13 @@ function gemMiss(g,it,chosen){
   const kd=GEM_KINDS[it.kind];
   if(it.kind!=="lex") gemMarkMiss(it);    // v306: la prossima volta si ripresenta con le tre forme
   gemHide(g, GEM_RESPAWN, true);          // stesso item, spot nuovo
+  if(g && g.__bumpInfo){                  // v552: presa in corsa, si riparte (vedi gemTake)
+    gemFloat(kd.ic+" Non <s>"+_escHtml(chosen)+"</s> \u2014 <b>"+_escHtml(it.answer)+"</b>", _escHtml(it.word)+" \u2192 "+_escHtml(it.answer), it.why,
+      "Il cristallo \u00e8 tornato in citt\u00e0, da un\u2019altra parte.");
+    gemSpeakFree(it.kind==="lex" ? it.answer : it.full);
+    gemResume(g);
+    return;
+  }
   /* niente jingle: non ha raccolto niente, e un suono di premio dopo un
      errore e' esattamente il segnale sbagliato. La voce resta, ed e' il
      recast: e' quella la seconda occasione.
