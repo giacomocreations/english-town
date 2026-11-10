@@ -7746,7 +7746,6 @@ const TEE_BODY=[[0.185,0],[0.196,0.12],[0.200,0.30],[0.198,0.43],[0.170,0.505],[
 const TEE_SLEEVE=[[0.150,0.520],[0.285,0.432],[0.248,0.352],[0.190,0.388],[0.178,0.448]];
 const TEE_NECK=[[-0.078,0.540],[-0.052,0.518],[-0.026,0.505],[0,0.501],[0.026,0.505],[0.052,0.518],[0.078,0.540]];
 const _TEE_OUT=(function(){ const R=TEE_BODY, L=R.slice(0,-1).reverse().map(p=>[-p[0],p[1]]); return R.concat(L).reverse(); })();
-function _hexMul(hex,k){ const c=BABYLON.Color3.FromHexString(hex); return new BABYLON.Color3(Math.min(1,c.r*k),Math.min(1,c.g*k),Math.min(1,c.b*k)).toHexString(); }
 /* una maglietta sulla gruccia appesa al tubo (x,yR,z) che corre lungo la
    facciata; la maglietta guarda la strada (ry). hs = da che parte del tubo
    cade (+1/-1): il gancio gira attorno al tubo e le magliette si alternano
@@ -25757,6 +25756,83 @@ function u8Loft(root,hex,secs,o){ o=o||{};
   m.parent=root; return m;
 }
 /* anello di stoffa (scollo, cintura, polsino): toro schiacciato in profondita' */
+/* v553: un capo appeso, nel sistema della barra (che corre lungo x a quota
+   H). kind: tee | dress | hoodie | jumper | jacket | jeans | skirt.
+   hs: da che parte della barra cade (il gancio la avvolge). v: variante
+   della stampa (solo tee). Sagome in metri, y=0 all'orlo del capo. */
+const U8G={
+  /* meta' destra dei contorni (la sinistra e' speculare) */
+  dress:[[0.255,0],[0.215,0.20],[0.150,0.47],[0.130,0.58],[0.150,0.72],[0.135,0.86],[0.105,0.92],[0.080,0.86],[0.040,0.835],[0,0.83]],
+  longBody:[[0.190,0],[0.198,0.15],[0.200,0.36],[0.198,0.50],[0.172,0.585],[0.080,0.620],[0.054,0.598],[0.027,0.585],[0,0.581]],
+  longSleeve:[[0.152,0.600],[0.236,0.540],[0.300,0.080],[0.222,0.070],[0.192,0.430]],
+  skirt:[[0.240,0],[0.175,0.44],[0,0.44]],
+};
+function _u8Full(h){ const R=h, L=R.slice(0,-1).reverse().map(p=>[-p[0],p[1]]); return R.concat(L).reverse(); }
+function _u8Mesh(G,m,hex){ m.material=lpMat(hex); m.parent=G; m.isPickable=false; return m; }
+function _u8Tube(G,pts,rad,hex,cap){ return _u8Mesh(G,BABYLON.MeshBuilder.CreateTube("lpt"+(_lpN++),{path:pts.map(p=>new BABYLON.Vector3(p[0],p[1],p[2]||0)),radius:rad,tessellation:8,cap:cap===false?0:BABYLON.Mesh.CAP_ALL},scene),hex); }
+function _u8Sleeve(G,poly,hex,th){ [1,-1].forEach(sg=>{ const sl=poly.map(p=>[p[0]*sg,p[1]]); if(sg<0) sl.reverse();
+  const cx=sl.reduce((a,p)=>a+p[0],0)/sl.length, cy=sl.reduce((a,p)=>a+p[1],0)/sl.length;
+  _u8Mesh(G,_teePillow(sl,[cx,cy],th),hex); }); }
+function u8Garment(root,kind,hex,x,H,hs,v){
+  const HK=0.034, dark=_hexMul(hex,0.72);
+  let ys;                                        // quota della gruccia (spalle o vita)
+  if(kind==="tee") ys=0.566; else if(kind==="dress") ys=0.925;
+  else if(kind==="jeans") ys=0.84; else if(kind==="skirt") ys=0.50; else ys=0.63;
+  const YC=ys+0.10;                              // centro del gancio = la barra
+  const G=new BABYLON.TransformNode("u8g"+(_lpN++),scene); G.parent=root; G.position.set(x,H-YC,hs*HK);
+  if(kind==="tee"){
+    _u8Mesh(G,_teePillow(_TEE_OUT,[0,0.27],0.026),hex);
+    _u8Sleeve(G,TEE_SLEEVE,hex,0.019);
+    [1,-1].forEach(sg=>_u8Tube(G,[[TEE_SLEEVE[1][0]*sg,TEE_SLEEVE[1][1]],[TEE_SLEEVE[2][0]*sg,TEE_SLEEVE[2][1]]],0.011,dark));
+    _u8Tube(G,TEE_NECK,0.012,dark);
+    if(v===1) [1,-1].forEach(f=>{ const b=lpBox(G,0.36,0.055,0.004,hex==="#e8e2d2"?"#2f5a9e":"#f4f1e8",0,0.30,f*0.0265); });
+    if(v===2) [1,-1].forEach(f=>{ const d=lpCyl(G,0.13,0.004,hex==="#d8a72e"?"#c0392b":"#f2c93e",0,0.31,f*0.0265,Math.PI/2); });
+  } else if(kind==="dress"){
+    _u8Mesh(G,_teePillow(_u8Full(U8G.dress),[0,0.55],0.024),hex);
+    _u8Tube(G,[[-0.255,0.004],[0,0.0],[0.255,0.004]],0.009,dark);                    // orlo
+    _u8Tube(G,[[-0.132,0.585],[0.132,0.585]],0.013,dark);                            // cintura in vita
+    [1,-1].forEach(sg=>_u8Tube(G,[[0.12*sg,0.89],[0.105*sg,0.925]],0.008,hex));      // spalline
+  } else if(kind==="jeans"){
+    _u8Mesh(G,_teePillow([[-0.205,0.60],[0.205,0.60],[0.205,0.80],[-0.205,0.80]],[0,0.70],0.022),hex);   // bacino
+    [1,-1].forEach(sg=>{ const L=[[0.004*sg,0.62],[0.205*sg,0.64],[0.185*sg,0],[0.045*sg,0]]; if(sg<0) L.reverse();
+      _u8Mesh(G,_teePillow(L,[0.11*sg,0.32],0.02),hex);
+      _u8Tube(G,[[0.05*sg,0.004],[0.18*sg,0.004]],0.008,dark); });                   // risvolto
+    _u8Tube(G,[[-0.205,0.79],[0.205,0.79]],0.016,dark);                              // cintura
+    lpBox(G,0.012,0.16,0.004,dark,0,0.70,0.024);                                     // patta
+    [-0.12,0.12].forEach(px=>lpBox(G,0.03,0.05,0.02,"#c9ced3",px,0.815,0));           // mollette
+  } else if(kind==="skirt"){
+    _u8Mesh(G,_teePillow(_u8Full(U8G.skirt),[0,0.25],0.02),hex);
+    _u8Tube(G,[[-0.178,0.43],[0.178,0.43]],0.014,dark);
+    [-0.10,0.10].forEach(px=>lpBox(G,0.03,0.05,0.02,"#c9ced3",px,0.47,0));
+  } else {                                       // hoodie, jumper, jacket: maniche lunghe
+    _u8Mesh(G,_teePillow(_u8Full(U8G.longBody),[0,0.30],0.028),hex);
+    _u8Sleeve(G,U8G.longSleeve,hex,0.021);
+    const c2=(kind==="jacket")?"#2b2b2b":dark;
+    [1,-1].forEach(sg=>_u8Tube(G,[[0.300*sg,0.085],[0.222*sg,0.075]],0.014,c2));     // polsini
+    _u8Tube(G,[[-0.19,0.012],[0.19,0.012]],0.014,c2);                                // orlo
+    if(kind==="hoodie"){
+      /* il cappuccio ricade dietro il collo, e la tasca a marsupio davanti */
+      const hd=_teePillow([[-0.11,0.50],[0.11,0.50],[0.13,0.62],[0.08,0.69],[-0.08,0.69],[-0.13,0.62]],[0,0.6],0.02);
+      _u8Mesh(G,hd,dark); hd.position.z=-0.026;                                     // dietro le spalle
+      lpBox(G,0.22,0.11,0.006,dark,0,0.15,0.029);                                   // tasca: solo davanti
+      [-1,1].forEach(sg=>_u8Tube(G,[[0.03*sg,0.585,0.03],[0.035*sg,0.47,0.032]],0.004,"#f4f1e8"));   // laccetti
+    } else if(kind==="jacket"){
+      lpBox(G,0.012,0.56,0.006,"#c9ced3",0,0.30,0.031);                               // zip
+      _u8Tube(G,[[-0.09,0.615],[0,0.585],[0.09,0.615]],0.02,c2);                       // collo
+      [-1,1].forEach(sg=>lpBox(G,0.08,0.012,0.006,c2,sg*0.11,0.24,0.031));             // tasche
+    } else {
+      _u8Tube(G,[[-0.08,0.62],[-0.054,0.598],[-0.027,0.585],[0,0.581],[0.027,0.585],[0.054,0.598],[0.08,0.62]],0.014,dark);   // girocollo
+      [0.2,0.25,0.3].forEach(yy=>[1,-1].forEach(f=>lpBox(G,0.34,0.012,0.004,dark,0,yy,f*0.0295)));   // righe a maglia
+    }
+  }
+  /* la gruccia: braccio di legno (o barretta con le mollette), gancio cromato */
+  const wd=(kind==="dress")?0.13:(kind==="jeans"||kind==="skirt")?0.22:0.185;
+  if(kind==="jeans"||kind==="skirt") _u8Tube(G,[[-wd,ys],[wd,ys]],0.01,"#b88a52");
+  else _u8Tube(G,[[-wd,ys-0.06],[-wd*0.5,ys-0.014],[0,ys],[wd*0.5,ys-0.014],[wd,ys-0.06]].map(p=>[p[0],p[1]+0.008]),0.012,"#b88a52");
+  const hk=[[0,ys+0.004,0]];
+  for(let k=0;k<=12;k++){ const t=Math.PI*1.2*k/12; hk.push([0,YC+HK*Math.sin(t),-hs*(HK-HK*Math.cos(t))]); }
+  _u8Tube(G,hk,0.0045,"#c9ced3",false);
+}
 function u8Band(root,dia,th,hex,px,py,pz,sz){
   const t=BABYLON.MeshBuilder.CreateTorus("lpqb"+(_lpN++),
     {diameter:dia,thickness:th,tessellation:14},scene);
@@ -28271,20 +28347,31 @@ const LEXPROPS={
     return r; },
   /* stender: 2 montanti + barra + capi appesi (DECOR, non lessicale: riempie
      il negozio senza creare doppioni tappabili — stesso ruolo di stockRow). */
+  /* v553 (Giacomo, 10 nov, con screenshot: «puoi migliorare questi vestiti
+     che non capisco neanche cosa sono? dentro clothes shop»). Ogni capo era
+     un parallelepipedo 20x7 cm: da vicino sette lastre colorate. Ora capi
+     VERI e diversi fra loro, quelli della Unit 8 (T-shirt, dress, hoodie,
+     jumper, jacket, jeans, skirt): sagome imbottite (_teePillow, come lo
+     stender fuori), rivolte verso chi guarda, ognuno sulla sua gruccia col
+     gancio attorno alla barra, alternati davanti e dietro. */
   clothesRail(id,o){ o=o||{}; const r=new BABYLON.TransformNode(id,scene);
     const w=o.w||3.0, H=1.62;
     let sd=(((o.seed||7)>>>0)||7); const rnd=()=>((sd=(sd*1664525+1013904223)>>>0)/4294967296);
     const PAL=["#c0392b","#2f5a9e","#3e7a3a","#d8a72e","#7a3f6a","#3a3a42","#e8e2d2","#c25b8e"];
     [-1,1].forEach(k=>{
-      lpCyl(r,0.06,H,"#8a8f96",k*(w/2-0.05),H/2,0);                // montante
-      lpBox(r,0.42,0.05,0.42,"#5b646c",k*(w/2-0.05),0.025,0);      // piede
+      lpCyl(r,0.05,H,"#8a8f96",k*(w/2-0.05),H/2,0);                // montante
+      lpBox(r,0.07,0.035,0.46,"#5b646c",k*(w/2-0.05),0.018,0);     // piede a T
+      const kn=BABYLON.MeshBuilder.CreateSphere("lps"+(_lpN++),{diameter:0.075,segments:8},scene);
+      kn.material=lpMat("#c9ced3"); kn.position.set(k*(w/2-0.05),H+0.03,0); kn.parent=r;
     });
-    lpCyl(r,0.05,w-0.06,"#b8bcc2",0,H,0,0,Math.PI/2);              // barra
-    const n=Math.max(3,Math.round((w-0.6)/0.26)), span=(w-0.7);
+    lpCyl(r,0.04,w-0.06,"#c9ced3",0,H,0,0,Math.PI/2);              // barra cromata
+    const KINDS=["tee","dress","hoodie","jeans","jacket","skirt","jumper","tee"];
+    const n=Math.max(3,Math.round((w-0.55)/0.40)), span=(w-0.75);
+    const k0=(rnd()*KINDS.length)|0;
     for(let i=0;i<n;i++){ const x=-span/2+(n>1?i*(span/(n-1)):0);
-      const c=PAL[(rnd()*PAL.length)|0], hh=0.50+rnd()*0.24;
-      lpBox(r,0.20,hh,0.07,c,x,H-0.11-hh/2,0);                     // capo appeso
-      lpBox(r,0.13,0.02,0.02,"#c9c2b0",x,H-0.03,0);                // gruccia
+      const kind=KINDS[(k0+i)%KINDS.length];
+      const c=kind==="jeans"?["#3f5f86","#2c3e5a","#5a7aa6"][(rnd()*3)|0]:PAL[(rnd()*PAL.length)|0];
+      u8Garment(r,kind,c,x,H,i%2?1:-1,(rnd()*3)|0);
     }
     return r; },
   /* camerino di prova: 3 pareti + tetto + tenda (apertura verso +z locale) */
