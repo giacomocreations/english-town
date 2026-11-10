@@ -12097,7 +12097,27 @@ function newsPaint(page,P){
      si scrive gia' allargato di 1/k, cosi' le lettere non escono schiacciate */
   let k=0.8; try{ if(NEWS.open && NEWS.open.isEnabled()) k=NEWS.open.scaling.x; }catch(e){}
   k=Math.max(0.45,Math.min(1.2,k)); NEWS.paintK=k;
-  const sx=1/k, c=dt.getContext(), X0=512, PW=512, H=720, M=26, LH=33, TOP=300, BOT=H-24;
+  /* v548 (Giacomo: «caratteri troppo grandi, non si legge tutto, frasi
+     interrotte, Your mission e' troncata»): l'allargamento si ferma a 1,3
+     (un filo stretto ma molte piu' parole per riga), il corpo del testo si
+     sceglie in modo che TUTTO stia nelle due pagine, e il passaggio dalla
+     pagina sinistra alla destra cade a fine frase. */
+  const sx=Math.min(1.3,1/k), c=dt.getContext(), X0=512, PW=512, H=720, M=24;
+  /* v548b: DOVE si scrive dipende da cosa si vede. Al tavolo da picnic il
+     giornale sta lontano e in prima persona se ne vede la meta' bassa; sulla
+     panchina sta a una spanna dagli occhi e se ne vede la meta' ALTA. In
+     prima persona si misura (newsVista: i raggi dal bordo alto e basso dello
+     schermo sulla pagina) e il testo va nella fascia visibile; altrimenti
+     (terza persona) la meta' bassa, come al tavolo. */
+  const V=newsVista(); NEWS.vista=V;
+  const vy0=V?V.y0:290, BOT=V?Math.max(220,Math.min(H-20,V.y1-12)):H-20;
+  /* il titolo sopra il testo, dentro la fascia visibile; se non c'e' posto
+     per tutti e due, niente titolo grande (resta la testata) */
+  let tY=Math.max(112,vy0+44), TOP=tY+50;
+  if(BOT-TOP<170){ tY=null; TOP=Math.max(80,Math.min(BOT-120,vy0+34)); }
+  /* in orizzontale: da dove a dove si vede ciascuna pagina (la panchina
+     tiene il giornale cosi' vicino che le pagine escono dai lati) */
+  const xL0=V?Math.max(X0,Math.min(X0+PW-200,V.xl0)):X0, xR1=V?Math.min(X0+2*PW,Math.max(X0+PW+200,V.xr1)):X0+2*PW;
   const i=Math.max(0,GAZ_PAGES.indexOf(page)), tit=(GAZ_TITLE[page]||"").toUpperCase();
   c.fillStyle="#f4f0e4"; c.fillRect(X0,0,PW*2,H);
   c.fillStyle="#d8d1bf"; c.fillRect(X0+PW-2,0,4,H);                    // la piega
@@ -12105,35 +12125,101 @@ function newsPaint(page,P){
   /* scrive con le lettere allargate di sx, centrate o da x; larghezza utile w */
   const scrivi=(t,x,y,center)=>{ c.save(); c.translate(x,y); c.scale(sx,1); c.textAlign=center?"center":"left"; c.fillText(t,0,0); c.restore(); };
   const larga=t=>c.measureText(t).width*sx;
-  /* in prima persona si vede soprattutto la meta' BASSA delle pagine: in
-     alto testata e titolo, il testo vero comincia a TOP */
+  /* in prima persona si vede soprattutto la meta' BASSA delle pagine
+     (misurato: dal pixel ~310 in giu' su 720): in alto testata e titolo,
+     il testo vero comincia a TOP */
   c.fillStyle="#1d2a32";
   c.font="bold 20px Georgia"; scrivi("QUESTTOWN GAZETTE \u00b7 PAGE "+(i+1)+"/"+GAZ_PAGES.length,X0+PW/2,48,true);
   c.fillRect(X0+M,62,PW-2*M,3);
-  c.font="bold 44px Georgia"; scrivi(tit,X0+PW/2,TOP-110,true);
-  c.fillRect(X0+M,TOP-88,PW-2*M,2);
-  lines(X0+M,TOP-70,PW-2*M,3,14);
-  lines(X0+PW+M,30,PW-2*M,Math.floor((TOP-60)/14),14);
-  c.fillStyle="#1d2a32"; c.fillRect(X0+PW+M,TOP-26,PW-2*M,2);
+  if(tY!==null){
+    c.font="bold 40px Georgia"; scrivi(tit,(Math.max(X0+M+46,xL0+16)+X0+PW-M)/2,tY,true);
+    c.fillRect(X0+M,tY+18,PW-2*M,2);
+    if(TOP-30>tY+40) lines(X0+M,tY+36,PW-2*M,Math.floor((TOP-30-tY-36)/14),14); }
+  if(TOP>110){ lines(X0+PW+M,30,PW-2*M,Math.floor((TOP-60)/14),14);
+    c.fillStyle="#1d2a32"; c.fillRect(X0+PW+M,TOP-30,PW-2*M,2); }
   /* il testo: inglese della pagina + le righe del riquadro (html), a capo sulle parole */
   const txt=[_newsPlain(P.en), _newsPlain(P.html||"")].filter(Boolean).join("\n");
-  c.font="28px Georgia";
-  const righe=[], larg=PW-2*M;
-  txt.split("\n").forEach((par,pi)=>{ if(pi) righe.push("");
-    let r=""; par.split(" ").forEach(w=>{ const t=r?r+" "+w:w;
-      if(larga(t)>larg && r){ righe.push(r); r=w; } else r=t; });
-    if(r) righe.push(r); });
-  /* diviso sulle due pagine: se sta tutto a sinistra resta li', altrimenti a meta' */
-  const per=Math.floor((BOT-TOP)/LH)+1;
-  let nL=righe.length<=Math.min(per,7)?righe.length:Math.min(per,Math.ceil(righe.length/2));
-  const col=(list,x)=>{ let y=TOP; list.forEach(r=>{ if(y>BOT) return; if(r){ c.fillStyle="#1d2a32"; scrivi(r,x,y,false); } y+=r?LH:LH*0.5; }); return y; };
-  const yL=col(righe.slice(0,nL),X0+M), yR=col(righe.slice(nL),X0+PW+M);
+  /* dal lato del bordo esterno c'e' il pollice, che ora sta SOPRA il foglio:
+     li' il margine e' piu' largo, se no copre le prime lettere delle righe */
+  const OUT=46;
+  const xA=Math.max(X0+M+OUT,xL0+18), xB=X0+PW+M;                       // dove cominciano le due colonne
+  const larg=Math.min(X0+PW-M-xA, Math.min(X0+2*PW-M-OUT,xR1-18)-xB);   // la stessa larghezza per tutte e due
+  const avvolgi=fs=>{ c.font=fs+"px Georgia"; const R=[];
+    txt.split("\n").forEach((par,pi)=>{ if(pi) R.push("");
+      let r=""; par.split(" ").forEach(w=>{ const t=r?r+" "+w:w;
+        if(larga(t)>larg && r){ R.push(r); r=w; } else r=t; });
+      if(r) R.push(r); });
+    return R; };
+  /* quanto e' alta una colonna (la prima riga ha la base a TOP) */
+  const alta=(L,LH)=>{ let h=0; L.forEach((r,ix)=>{ if(ix) h+=(L[ix-1]?LH:LH*0.5); }); return h; };
+  const pulisci=L=>{ while(L.length && !L[0]) L.shift(); while(L.length && !L[L.length-1]) L.pop(); return L; };
+  /* il corpo piu' grande (da 22 a 14 px) per cui il testo sta tutto, diviso a
+     fine frase (o fra due paragrafi) il piu' vicino possibile a meta' */
+  let LH=31, fs=26, scelta=null, ripiego=null;
+  for(fs=22; fs>=14 && !scelta; fs--){
+    const L=avvolgi(fs), lh=Math.round(fs*1.2), cap=BOT-TOP;
+    for(let sp=0; sp<=L.length; sp++){
+      const a=pulisci(L.slice(0,sp)), b=pulisci(L.slice(sp));
+      if(alta(a,lh)>cap || alta(b,lh)>cap) continue;
+      const fine=sp===L.length || !L[sp] || /[.!?:]["')]?$/.test(L[sp-1]||"");
+      const d=Math.abs(sp-L.length/2)+(sp===L.length?0.5:0);
+      if(fine && (!scelta || d<scelta.d)) scelta={ fs, lh, L, sp, d };
+      if(!ripiego || (ripiego.fs===fs && d<ripiego.d)) ripiego={ fs, lh, L, sp, d };   // il piu' grande che ci sta, anche a meta' frase
+    }
+  }
+  const S=scelta||ripiego||{ fs:15, lh:18, L:avvolgi(15), sp:0 };
+  c.font=S.fs+"px Georgia"; LH=S.lh;
+  const sin=pulisci(S.L.slice(0,S.sp)), des=pulisci(S.L.slice(S.sp));
+  const col=(list,x)=>{ let y=TOP; list.forEach((r,ix)=>{ if(ix) y+=(list[ix-1]?LH:LH*0.5); if(y>BOT) return; if(r){ c.fillStyle="#1d2a32"; scrivi(r,x,y,false); } }); return list.length?y+LH:TOP; };
+  /* con poco testo, tutto a sinistra */
+  const sinistra=(S.L.length<=6)?pulisci(S.L.slice()):sin, destra=(S.L.length<=6)?[]:des;
+  const yL=col(sinistra,xA), yR=col(destra,xB);
   if(yL<BOT-40) lines(X0+M,yL+10,PW-2*M,Math.floor((BOT-yL-10)/14),14);
   if(yR<BOT-170){ c.fillStyle="#b8b2a2"; c.fillRect(X0+PW+M,yR+6,170,130); c.fillStyle="#86a37a"; c.fillRect(X0+PW+M+10,yR+16,150,110);
     lines(X0+PW+M+190,yR+10,PW-2*M-190,9,14);
     if(yR+150<BOT-20) lines(X0+PW+M,yR+150,PW-2*M,Math.floor((BOT-yR-150)/14),14); }
   else if(yR<BOT-20) lines(X0+PW+M,yR+6,PW-2*M,Math.floor((BOT-yR-6)/14),14);
   dt.update();
+}
+/* v548b: la fascia della pagina (in pixel della texture, 0 = in alto) che
+   si vede adesso in prima persona, o null. Due raggi per bordo dello
+   schermo (al centro di ciascuna pagina); un raggio che non tocca la pagina
+   vuol dire che quel bordo dello schermo e' gia' oltre il foglio. */
+function newsVista(){
+  try{
+    if(!(typeof POV!=="undefined" && POV.on) || !NEWS.open || !NEWS.open.isEnabled()) return null;
+    /* ⚠️ i raggi vogliono i pixel dello SCHERMO: con la qualita' ridotta il
+       gioco disegna a meno pixel (hardware scaling) e coi pixel interni si
+       misurava solo il 77% dello schermo */
+    const hs=engine.getHardwareScalingLevel()||1;
+    const cam=scene.activeCamera, W=engine.getRenderWidth()*hs, Hh=engine.getRenderHeight()*hs, pages=NEWS.open.getChildMeshes();
+    pages.forEach(m=>m.computeWorldMatrix(true));
+    const fila=fy=>{ let y=null;
+      [0.3,0.7].forEach(fx=>{ const ray=scene.createPickingRay(W*fx,Hh*fy,BABYLON.Matrix.Identity(),cam);
+        pages.forEach(pm=>{ const pi=ray.intersectsMesh(pm,false); if(!pi||!pi.hit) return;
+          const uv=pi.getTextureCoordinates(); if(!uv) return; const v=(1-uv.y)*720;
+          y=(y===null)?v:(fy<0.5?Math.max(y,v):Math.min(y,v)); }); });
+      return y; };
+    /* 8% dall'alto (sotto i bottoni) e 86% (sopra la barra del prompt) */
+    const a=fila(0.08), b=fila(0.86);
+    if(a===null && b===null) return null;
+    /* ai lati: il bordo sinistro dello schermo sulla pagina sinistra, il destro sulla destra */
+    const lato=(fx,sg)=>{ const ray=scene.createPickingRay(W*fx,Hh*0.5,BABYLON.Matrix.Identity(),cam); let x=null;
+      pages.forEach(pm=>{ if((pm.position.x>0?1:-1)!==sg) return; const pi=ray.intersectsMesh(pm,false); if(!pi||!pi.hit) return;
+        const uv=pi.getTextureCoordinates(); if(uv) x=uv.x*1536; }); return x; };
+    const l=lato(0.03,-1), r=lato(0.97,1);
+    return { y0:(a===null?0:a), y1:(b===null?720:b), xl0:(l===null?512:l), xr1:(r===null?1536:r) };
+  }catch(e){ return null; }
+}
+/* la vista cambia (O, si gira la testa, il giornale si muove): si riscrive,
+   ma al massimo due volte al secondo e solo se la fascia si e' spostata */
+let _newsVistaT=0;
+function newsVistaTick(){
+  if(!NEWS.pg || !NEWS.open || !NEWS.open.isEnabled()) return;
+  const t=performance.now(); if(t-_newsVistaT<500) return; _newsVistaT=t;
+  const V=newsVista(), O=NEWS.vista;
+  if(!V && !O) return;
+  if(!V || !O || Math.abs(V.y0-O.y0)>40 || Math.abs(V.y1-O.y1)>40 || Math.abs(V.xl0-O.xl0)>40 || Math.abs(V.xr1-O.xr1)>40){ try{ newsPaint(NEWS.pg.page,NEWS.pg.P); }catch(e){} }
 }
 function _newsBuild(){
   if(NEWS.fold) return;
@@ -12289,6 +12375,7 @@ function newsTick(){
     /* il testo e' scritto per una certa larghezza (newsPaint): se il giornale
        si e' stretto o allargato parecchio, si riscrive */
     if(NEWS.pg && Math.abs(Math.max(0.45,Math.min(1.2,k))-(NEWS.paintK||0))>0.05){ try{ newsPaint(NEWS.pg.page,NEWS.pg.P); }catch(e){} }
+    else newsVistaTick();
     return;
   }
   if(BSIT.b){                                         // seduto senza leggere: sulla seduta accanto a te
