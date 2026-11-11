@@ -6875,8 +6875,13 @@ const NYC_WT={ "The Beat Club":[0.20,0.14],
    c=tinta neutra, pad=marciapiede 16x16 sotto la base. */
 const FILLER=[
   // skyline nord (fondale, oltre z=-66)
-  {m:"sky", x:-78, z:-72, r: 0.30, s:1.25, c:"#8f9bb0"},
-  {m:"bJ",  x:-60, z:-70, r: 0.00, s:1.05, c:"#a8b4c4"},
+  /* v554 (Giacomo, 11 nov: «manda indietro questi palazzi nella strada
+     dell'aeroporto, sono praticamente in strada»): i primi due arrivavano a
+     z -67,3 e -68,4, cioe' DENTRO la carreggiata (bordo a z -69), da quando
+     la strada e' percorsa dalle auto. Arretrati di 6 m: ora la facciata sta
+     dietro il marciapiede nord (che finisce a z -72,8). */
+  {m:"sky", x:-78, z:-78, r: 0.30, s:1.25, c:"#8f9bb0"},
+  {m:"bJ",  x:-60, z:-76, r: 0.00, s:1.05, c:"#a8b4c4"},
   {m:"bA",  x:-44, z:-74, r: 0.20, s:1.15, c:"#9aa6b8"},
   {m:"bI",  x: 62, z:-70, r: 0.15, s:1.10, c:"#a0aabb"},
   {m:"sky", x: 78, z:-74, r: 0.00, s:1.30, c:"#8b97ab"},
@@ -9377,10 +9382,10 @@ const TRAFFIC_LOOPS=[], TRAFFIC_ZONES=[];
    rosso, poi rosso+giallo 1,5 (all'inglese). `off` sfasa i quattro. */
 const SIG_T=32, SIG_G=18;
 const SIGNALS=[
-  { id:"hs",   off:0,  stops:[[-13.2,2.75],[13.2,-2.75]],                 veh:[], ped:[] },
-  { id:"blvd", off:8,  stops:[[-13.2,-33.25],[13.2,-38.75]],              veh:[], ped:[] },
-  { id:"conn", off:16, stops:[[CONN_X+2.75,-13.9],[CONN_X-2.75,-22.1]],   veh:[], ped:[] },
-  { id:"apt",  off:24, stops:[[-6.1,APT_Z+2.75],[2.1,APT_Z-2.75]],        veh:[], ped:[] } ];
+  { id:"hs",   off:0,  stops:[[-13.2,2.75,1,0],[13.2,-2.75,-1,0]],                 veh:[], ped:[], wait:[] },
+  { id:"blvd", off:8,  stops:[[-13.2,-33.25,1,0],[13.2,-38.75,-1,0]],              veh:[], ped:[], wait:[] },
+  { id:"conn", off:16, stops:[[CONN_X+2.75,-13.9,0,-1],[CONN_X-2.75,-22.1,0,1]],   veh:[], ped:[], wait:[] },
+  { id:"apt",  off:24, stops:[[-6.1,APT_Z+2.75,1,0],[2.1,APT_Z-2.75,-1,0]],        veh:[], ped:[], wait:[] } ];
 let _sigT=0;
 /* 0 verde · 1 giallo · 2 rosso · 3 rosso+giallo */
 function _sigState(S){ const u=((_sigT+S.off)%SIG_T+SIG_T)%SIG_T; return u<SIG_G?0 : u<SIG_G+3?1 : u<SIG_T-1.5?2 : 3; }
@@ -9397,7 +9402,8 @@ function _sigUpdate(dt,open){
     if(S.key===key) continue; S.key=key;
     const r=open&&(st===2||st===3), y=open?(st===1||st===3):(key===11), g=open&&st===0;
     S.veh.forEach(v=>{ _sigLamp(v[0],r); _sigLamp(v[1],y); _sigLamp(v[2],g); });
-    S.ped.forEach(v=>{ _sigLamp(v[0],open&&!pg); _sigLamp(v[1],open&&pg); }); } }
+    S.ped.forEach(v=>{ _sigLamp(v[0],open&&!pg); _sigLamp(v[1],open&&pg); });
+    S.wait.forEach(m=>m.setEnabled(open&&!pg)); } }                    // v554: la scritta WAIT accesa finche' l'omino e' rosso
 function _tourPts(steps){
   let P=[]; const LN=2.75, D=6;
   steps.forEach(([nk,ia,oa])=>{ const n=TRAFFIC_NODES[nk], ti=TRAFFIC_ARM[ia], to=TRAFFIC_ARM[oa];
@@ -9459,6 +9465,21 @@ function buildTraffic(){
   [-4.4,-2.2,0,2.2,4.4].forEach(d=>{ bollard(CONN_X-6.5,d); bollard(CONN_X+d,6.5); bollard(CONN_X-6.5,-36+d); });
   Object.keys(TRAFFIC_NODES).forEach(k=>{ const n=TRAFFIC_NODES[k]; if(n.zone) TRAFFIC_ZONES.push({ id:k, x:n.x, z:n.z, r:7.5, h:null }); });
   TRAFFIC_TOURS.forEach(t=>TRAFFIC_LOOPS.push(_loopMeta(_tourPts(t))));
+  /* v554 — LE LINEE CHE SPIEGANO LE FERMATE. Linea continua d'arresto a
+     ogni semaforo; linea tratteggiata del dare precedenza a ogni imbocco
+     delle tre rotonde d'incrocio (dove l'auto aspetta che la rotonda sia
+     libera). Materiale lnm*: per pedOnCarriageway sono carreggiata. */
+  try{ const lm=mat("lnmStop","#1d2a32","#dfe4e8"), bars=[];
+    const bar=(x,z,alongX,len,th)=>{ const g=BABYLON.MeshBuilder.CreateGround("stopln",{width:alongX?len:th,height:alongX?th:len},scene);
+      g.position.set(x,0.113,z); bars.push(g); };
+    SIGNALS.forEach(S=>S.stops.forEach(q=>bar(q[0]+2.5*q[2],q[1]+2.5*q[3],q[2]===0,5.0,0.35)));
+    const seen={};
+    TRAFFIC_TOURS.forEach(t=>t.forEach(([nk,ia])=>{ const n=TRAFFIC_NODES[nk]; if(!n.zone||seen[nk+ia]) return; seen[nk+ia]=1;
+      const r=TRAFFIC_ARM[ia]*Math.PI/180, ax=Math.cos(r), az=Math.sin(r), nx=Math.sin(r), nz=-Math.cos(r);
+      for(let k=-2;k<=2;k++) bar(n.x+6.9*ax+(2.75+k*1.1)*nx, n.z+6.9*az+(2.75+k*1.1)*nz, Math.abs(nx)>0.5, 0.65, 0.3); }));
+    const m=BABYLON.Mesh.MergeMeshes(bars,true,true,null,false,false);
+    if(m){ m.name="stopLines"; m.material=lm; m.parent=townRoot; m.isPickable=false; }
+  }catch(e){ console.warn("[linee d'arresto]",e); }
   TRAFFIC_GATE_PTS.forEach(g=>{ const G={ opts:[] };
     TRAFFIC_LOOPS.forEach(lp=>{ const i=lp.__find(g[0],g[1],g[2],g[3],0.5); if(i>=0){ G.opts.push({ loop:lp, s:lp.L[i] }); lp.gt.push({ G, s:lp.L[i] }); } });
   });
@@ -9517,7 +9538,7 @@ function buildTraffic(){
       // 2.6 m tra paraurti. <14 rallenta, <8.5 target 0, <7 stop netto.
       /* v553: «davanti» = sui prossimi 14 m del MIO percorso, qualunque
          giro stia facendo l'altra (le corsie sono condivise) */
-      let gap=1e9;
+      let gap=1e9, held=false;                          // held: ferma per il semaforo o per la precedenza (v554)
       { const n=c.loop.length, px=c.root.position.x, pz=c.root.position.z;
         for(let j=0;j<_trafficCars.length;j++){ if(j===k) continue;
           const o=_trafficCars[j].root.position;
@@ -9531,7 +9552,7 @@ function buildTraffic(){
       { const sg=c.loop.sg;
         for(let q=0;q<sg.length;q++){ const d=(sg[q].s-c.s+c.tot)%c.tot; if(d>18) continue;
           const st=sg[q].S.st|0;
-          if(st>=2 || (st===1 && d>c.cv*c.cv/9+1.5)) vw=Math.min(vw, d<0.4?0:c.v*Math.min(1,d/8)); } }
+          if(st>=2 || (st===1 && d>c.cv*c.cv/9+1.5)){ held=true; vw=Math.min(vw, d<0.4?0:c.v*Math.min(1,d/8)); } } }
       /* v553 — ROTONDE D'INCROCIO: una alla volta */
       { const zp=c.loop.zp;
         for(let q=0;q<zp.length;q++){ const p=zp[q], Z=p.Z, dIn=(p.sIn-c.s+c.tot)%c.tot;
@@ -9539,6 +9560,13 @@ function buildTraffic(){
           if(dIn>16) continue;
           c.zk=Z;
           if(Z.h===c) continue;
+          /* v554 (Giacomo: «non ho capito perche' a questa altezza le macchine
+             si fermano»): si prenotava a 16 m e ci si fermava col muso a 9 m
+             dal centro, senza niente per terra che lo spiegasse. Ora la
+             rotonda si prenota da 10 m (chi e' lontano non la tiene occupata
+             a vuoto), ci si ferma sulla LINEA DEL DARE PRECEDENZA disegnata
+             all'imbocco (vedi buildTraffic), e solo se serve davvero. */
+          if(Z.h==null && dIn>10) continue;
           let free=(Z.h==null) && gap>dIn;        // mai prenotare scavalcando chi mi sta davanti in coda
           /* ⚠️ L'USCITA DEV'ESSERE LIBERA PER 14 m, non «per un'auto». Fra
              due rotonde della Station Ave ci sono 11-21 m: se si entra
@@ -9553,7 +9581,7 @@ function buildTraffic(){
               for(let w=0;w<80;w++){ const ix=(p.iOut+w)%n; if((c.L[ix]-p.sOut+c.tot)%c.tot>14) break;
                 const P=c.loop[ix], dx=o.x-P[0], dz=o.z-P[1]; if(dx*dx+dz*dz<4){ free=false; break; } } } }
           if(free) Z.h=c;
-          else { const d=dIn-3.5; vw=Math.min(vw, d<0.3?0:c.v*Math.min(1,d/8)); } }
+          else { const d=dIn-1.8; held=true; vw=Math.min(vw, d<0.3?0:c.v*Math.min(1,d/8)); } }
         for(let q=0;q<TRAFFIC_ZONES.length;q++){ const Z=TRAFFIC_ZONES[q]; if(Z.h!==c) continue;
           let keep=false;
           for(let w=0;w<zp.length;w++){ if(zp[w].Z!==Z) continue; const dIn=(zp[w].sIn-c.s+c.tot)%c.tot;
@@ -9580,7 +9608,11 @@ function buildTraffic(){
          secondo. */
       /* gap>=7.5: se davanti c'e' la coda l'auto starebbe ferma comunque,
          la colpa non e' del pedone e non si suona lui. */
-      if(pedStop && gap>=7.5 && c.cv<0.15){
+      /* v554 (Giacomo, 11 nov: «quando sto attraversando col verde, le
+         macchine ferme al semaforo non mi devono suonare!»): l'auto ferma
+         al ROSSO, o in attesa alla rotonda, starebbe ferma comunque. Chi le
+         passa davanti non le sta bloccando: niente clacson, niente Ranger. */
+      if(pedStop && gap>=7.5 && c.cv<0.15 && !held){
         c.halt=(c.halt||0)+dt;
         if(c.halt>1.2){ try{ SFX.carHorn(c.root.position.x,c.root.position.z); }catch(e){} }
       } else c.halt=0;
@@ -13964,7 +13996,51 @@ function trafficLight(x,z,tx,tz,sig,pf){ if(insideSolid(x,z,0.5)) return; const 
     pb.material=M.metalD; pb.position.set(0,0,0.2); pb.parent=pn;
     const pv=[bulb("#e14b3b",pn,0,0.16,0.31,0.2), bulb("#37d06a",pn,0,-0.16,0.31,0.2)];
     pv.forEach(m=>_sigLamp(m,false));
-    if(S) S.ped.push(pv); } }
+    if(S) S.ped.push(pv);
+    /* v554 (Giacomo: «per i pedoni aggiungi le tipiche istruzioni in inglese
+       che si trovano nei semafori»): sotto l'omino, girata verso il
+       marciapiede (chi aspetta la legge arrivando), la targa dei semafori
+       inglesi — PEDESTRIANS · push button and wait for signal opposite —
+       con la scritta WAIT che resta accesa finche' l'omino e' rosso. */
+    try{ const T=_pedSignTex();
+      const pl=BABYLON.MeshBuilder.CreatePlane("tlPlate",{width:0.62,height:0.86},scene);
+      pl.material=T.plate; pl.position.set(0,-0.95,-0.10); pl.parent=pn; pl.isPickable=false;
+      const bk=BABYLON.MeshBuilder.CreateBox("tlh",{width:0.66,height:0.9,depth:0.06},scene);
+      bk.material=M.metalD; bk.position.set(0,-0.95,-0.065); bk.parent=pn; bk.isPickable=false;
+      const w=BABYLON.MeshBuilder.CreatePlane("tlWait",{width:0.5,height:0.2},scene);
+      w.material=T.wait; w.position.set(0,-0.66,-0.105); w.parent=pn; w.isPickable=false; w.setEnabled(false);
+      if(S) S.wait.push(w); }catch(e){ console.warn("[targa pedoni]",e); } } }
+/* le due texture della targa (una volta sola, condivise da tutti i pali) */
+let _pedSignT=null;
+function _pedSignTex(){ if(_pedSignT) return _pedSignT;
+  const mk=(name,W,H,draw,emis)=>{ const dt=new BABYLON.DynamicTexture(name,{width:W,height:H},scene,true), c=dt.getContext();
+    draw(c,W,H); dt.update(); const m=new BABYLON.StandardMaterial(name+"m",scene); m.diffuseTexture=dt; m.emissiveTexture=dt;
+    m.emissiveColor=new BABYLON.Color3(emis,emis,emis); dt.level=emis>0.9?1.6:0.75; m.specularColor=new BABYLON.Color3(0,0,0); return m; };
+  const plate=mk("pedPlateT",372,516,(c,W,H)=>{
+    c.fillStyle="#f4c20d"; c.fillRect(0,0,W,H); c.strokeStyle="#1b1b1b"; c.lineWidth=10; c.strokeRect(5,5,W-10,H-10);
+    c.fillStyle="#141414"; c.fillRect(34,34,W-68,128);                                   // la finestrella del WAIT, spenta
+    c.fillStyle="#3a3324"; c.font="bold 86px Arial,sans-serif"; c.textAlign="center"; c.textBaseline="middle"; c.fillText("WAIT",W/2,100);
+    c.fillStyle="#141414"; c.font="bold 46px Arial,sans-serif"; c.fillText("PEDESTRIANS",W/2,214);
+    c.font="bold 36px Arial,sans-serif"; ["push button and","wait for signal","opposite"].forEach((t,i)=>c.fillText(t,W/2,272+i*44));
+    c.beginPath(); c.arc(W/2,440,44,0,Math.PI*2); c.fillStyle="#1b1b1b"; c.fill();           // il pulsante
+    c.beginPath(); c.arc(W/2,440,30,0,Math.PI*2); c.fillStyle="#c9ccd0"; c.fill(); },0.5);
+  const wait=mk("pedWaitT",300,120,(c,W,H)=>{ c.fillStyle="#141414"; c.fillRect(0,0,W,H);
+    c.fillStyle="#ffb21a"; c.font="bold 96px Arial,sans-serif"; c.textAlign="center"; c.textBaseline="middle"; c.fillText("WAIT",W/2,H/2+4); },1.0);
+  return (_pedSignT={plate,wait}); }
+/* LOOK RIGHT — la scritta dipinta a terra dove si scende dal marciapiede,
+   come a Londra: qui si guida a sinistra, quindi la prima corsia che si
+   attraversa porta auto da DESTRA. (x,z) = il punto sul bordo, (fx,fz) =
+   da che parte guarda chi sta per attraversare. */
+let _lookM=null;
+function lookRight(x,z,fx,fz){
+  if(!_lookM){ const W=512,H=160, dt=new BABYLON.DynamicTexture("lookT",{width:W,height:H},scene,true), c=dt.getContext();
+    c.fillStyle="#22272c"; c.fillRect(0,0,W,H); c.strokeStyle="#f2f2ee"; c.lineWidth=8; c.strokeRect(6,6,W-12,H-12);
+    c.fillStyle="#f6f6f2"; c.font="bold 62px Arial,sans-serif"; c.textAlign="left"; c.textBaseline="middle"; c.fillText("LOOK RIGHT",24,H/2+4);
+    c.beginPath(); c.moveTo(W-28,H/2); c.lineTo(W-70,H/2-30); c.lineTo(W-70,H/2+30); c.closePath(); c.fill(); dt.update();
+    _lookM=new BABYLON.StandardMaterial("lookRightm",scene); _lookM.diffuseTexture=dt; _lookM.emissiveColor=new BABYLON.Color3(0.25,0.25,0.25);
+    _lookM.specularColor=new BABYLON.Color3(0,0,0); }
+  const g=BABYLON.MeshBuilder.CreateGround("lookRight",{width:2.6,height:0.8},scene);
+  g.material=_lookM; g.position.set(x,0.135,z); g.rotation.y=Math.atan2(fx,fz); g.parent=townRoot; g.isPickable=false; }
 
 /* WATER TOWER in legno sul tetto (x, quota tetto y, z) */
 function waterTower(x,y,z,s){ s=s||1; const M=_pm();
@@ -14050,6 +14126,12 @@ function buildNYC(){
   trafficLight(CONN_X-6.1,-20.1, CONN_X-6.1,-32,"conn",[CONN_X,-20.1]);       // ...e per chi scende dal Boulevard
   trafficLight(-4.1,APT_Z+7.6,-16,APT_Z+7.6,"apt",[-4.1,APT_Z]);              // strada dell'aeroporto, verso est
   trafficLight( 0.1,APT_Z-7.6, 12,APT_Z-7.6,"apt",[ 0.1,APT_Z]);              // ...verso ovest
+  /* v554: LOOK RIGHT ai due capi di ogni attraversamento col semaforo */
+  /* sull'asfalto, negli 80 cm fra il cordolo e la prima striscia: sul
+     marciapiede, alla High Street, ci sono le aiuole degli alberi d'angolo */
+  [-8.6,8.6].forEach(x=>{ lookRight(x,5.1,0,-1); lookRight(x,-5.1,0,1); lookRight(x,-30.9,0,-1); lookRight(x,-41.1,0,1); });
+  lookRight(CONN_X+5.1,-18,-1,0); lookRight(CONN_X-5.1,-18,1,0);
+  lookRight(-2,APT_Z+7.7,0,-1);   lookRight(-2,APT_Z-7.7,0,1);
 }
 
 /* ---- DISTRIBUZIONE PROPS (curata: ogni voce e' protetta da insideSolid) ---- */
