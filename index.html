@@ -8000,6 +8000,57 @@ function halloweenCafe(x,z,y0){ if(!HALLOWEEN.on) return;
 /* v273: dove ricomincia la Park Ave (verso sud). Fino a qui e' marciapiede:
    Home (pad z 7..23) + un lotto libero da 16 m per il ristorante (23..41). */
 const PARK_AVE_Z0=42;
+/* v552 — HIGH STREET PIU' LARGA (Giacomo, 11 nov: «voglio allargare le
+   strade dove stanno le macchine... ci sono lampioni proprio sul bordo, e
+   una rotonda che ha un pezzo sul marciapiede»). La carreggiata era larga
+   11 m (bordo a z ±5,5) e la rotonda est ha raggio 6,5: usciva di 1 m sul
+   marciapiede. Ora, nei due tratti dove passano le auto, il bordo sta a
+   z ±HS_HALF (7 m, carreggiata 14 m) e tutte le rotonde ci stanno dentro.
+   ⚠️ NON si allarga dappertutto, e non e' una dimenticanza:
+     · all'incrocio centrale (|x| < 12) il bordo resta a 5,5: il muro sud del
+       Cinema e' a z -7,1, e li' ci sono strisce, semafori e cartelli tarati
+       su quella misura. Il marciapiede che avanza alle strisce e' quello che
+       si fa nelle citta' vere (attraversamento piu' corto);
+     · a ovest di x -58,5 (piazzale della stazione) e a est di x 56 (parco)
+       non passano auto: resta com'era;
+     · il Modern Boulevard NON si tocca: il City Hospital e' a 0,6 m
+       dall'asfalto e la Job Centre Tower a 1,2.
+   I raccordi fra 5,5 e 7 sono quarti di cerchio (raggio 1,5 m). Lungo tutto
+   il bordo corre un CORDOLO di pietra largo HS_KERB.
+   ⚠️ Arredi, pedoni e cristalli della fascia z 5,5..7,3 sono stati
+   arretrati di conseguenza (lampioni a ±HS_LAMP, alberi a ±HS_TREE, idranti
+   e cestini a ±HS_PROP, PED_ROUTES, due GEM_SPOTS): chi cambia HS_HALF li
+   deve rivedere. */
+const HS_HALF=7.0, HS_KERB=0.3, HS_NECK=12, HS_W0=-58.5, HS_E1=56;
+const HS_LAMP=HS_HALF+0.9, HS_TREE=HS_HALF+1.5, HS_PROP=HS_HALF+1.0;
+/* nastro piatto fra due spezzate di pari lunghezza (A interna, B esterna).
+   UV = coordinate mondo: alignWorldUV da' a tutti i nastri la stessa
+   trasformazione, quindi l'asfalto prosegue senza cuciture dalla strada. */
+function _flatRibbon(name,A,B,y,material){
+  const pos=[],nor=[],uv=[],idx=[];
+  for(let i=0;i<A.length;i++) [A[i],B[i]].forEach(q=>{ pos.push(q[0],y,q[1]); nor.push(0,1,0); uv.push(q[0],q[1]); });
+  for(let i=0;i<A.length-1;i++){ const a=2*i,b=a+1,c=a+2,d=a+3; idx.push(a,c,b, b,c,d, a,b,c, b,d,c); }   // i due versi: uno lo toglie il culling
+  const m=new BABYLON.Mesh(name,scene), vd=new BABYLON.VertexData();
+  vd.positions=pos; vd.normals=nor; vd.uvs=uv; vd.indices=idx; vd.applyToMesh(m);
+  m.material=material; m.parent=townRoot; m.__ground=true; return m; }
+function buildHighStreetWidening(){
+  const R=HS_HALF-5.5, N=10, rm=roadMat("roadmWide"), km=stoneMat("hsKerbm",0.5,0.5,false,[0.70,0.71,0.72]);
+  /* il profilo del bordo: da x0 a x1 a piena larghezza, con il raccordo
+     (r0/r1) che scende a 5,5 FUORI dal tratto; r = raggio del raccordo */
+  const prof=(x0,x1,r0,r1,r,s)=>{ const P=[];
+    if(r0) for(let i=0;i<N;i++){ const t=i/N*Math.PI/2; P.push([x0-r*Math.cos(t), s*(5.5+r*Math.sin(t))]); }
+    P.push([x0,s*(5.5+r)],[x1,s*(5.5+r)]);
+    if(r1) for(let i=N-1;i>=0;i--){ const t=i/N*Math.PI/2; P.push([x1+r*Math.cos(t), s*(5.5+r*Math.sin(t))]); }
+    return P; };
+  [-1,1].forEach(s=>{
+    [[HS_W0+R,-HS_NECK-R,true,true],[HS_NECK+R,HS_E1,true,false]].forEach(([x0,x1,r0,r1],k)=>{
+      const edge=prof(x0,x1,r0,r1,R,s), out=prof(x0,x1,r0,r1,R+HS_KERB,s);
+      _flatRibbon("rhWide",edge.map(q=>[q[0],s*5.4]),edge,0.082,rm);        // 10 cm sotto la strada: niente fessura
+      const k1=_flatRibbon("hsKerb",edge,out,0.092,km); k1.isPickable=false; });
+    /* il cordolo del tratto stretto, all'incrocio */
+    const k2=_flatRibbon("hsKerb",[[-HS_NECK,s*5.5],[HS_NECK,s*5.5]],[[-HS_NECK,s*(5.5+HS_KERB)],[HS_NECK,s*(5.5+HS_KERB)]],0.092,km);
+    k2.isPickable=false; });
+}
 function buildTown(){
   const asph=BABYLON.MeshBuilder.CreateGround("asph",{width:320,height:300},scene);
   /* ⚠️ Il nome "asphm" NON va cambiato: la griglia dei confini (buildBounds,
@@ -8049,6 +8100,7 @@ function buildTown(){
   // oltre la stazione non c'e' piu' asfalto/carreggiata con strisce che taglia
   // il prato a vuoto, resta solo asfalto grigio piatto (asph) come il resto.
   roadH(0,180);        // HIGH STREET (Anno 1 sud / Anno 2 nord)
+  try{ buildHighStreetWidening(); }catch(e){ console.warn("[high street larga]",e); }   // v552
   roadH(-36,180,true); // MODERN BOULEVARD (Anno 3) — sul piazzale nbApron: niente strisce dedicate
   // cross centrale: si ferma all'altezza del Modern Boulevard (z=-36) per non
   // passare sotto le basi del New District (Job Centre Tower resta sul piazzale)
@@ -8546,8 +8598,11 @@ function cloud(x,y,z,s,kind){ const c=new BABYLON.TransformNode("cl",scene); c.p
   c.__drift=(kind==="strato"?0.35:(kind==="puffs"?0.9:0.55))+Math.random()*0.5;   // deriva lenta (u/s)
   cloudList.push(c); return c; }
 function buildLife(){
-  [[-9,7],[9,7],[-9,-7],[9,-7],[-31,7],[31,7],[-31,-7],[31,-7]].forEach(p=>tree(p[0],p[1],true));
-  [[-6,6],[6,6],[-6,-6],[6,-6],[-28,6],[28,6]].forEach(p=>lamp(p[0],p[1]));
+  /* v552: High Street allargata (vedi HS_HALF). All'incrocio (|x|<12) il
+     bordo e' rimasto a 5,5: gli alberi d'angolo restano, i lampioni si
+     staccano dal cordolo (erano a 0,5 m, ora a 1,1). */
+  [[-9,7],[9,7],[-9,-7],[9,-7],[-31,HS_TREE],[32.2,HS_TREE],[-31,-HS_TREE],[31,-HS_TREE]].forEach(p=>tree(p[0],p[1],true));   // 32.2: a 31 la facciata della scuola (z 10,7) lo faceva scartare da insideSolid
+  [[-6,6.6],[6,6.6],[-6,-6.6],[6,-6.6],[-28,HS_LAMP],[28,HS_LAMP]].forEach(p=>lamp(p[0],p[1]));
   // nuvole distribuite su TUTTO il cielo: griglia 4x4 jitterata (copertura uniforme
   // in ogni quadrante), quota e scala variabili -> niente addensamenti da un lato
   /* v293: ogni cella pesca una FORMA (cumuli i piu' comuni, poi batuffoli,
@@ -9245,7 +9300,7 @@ function buildTraffic(){
   buildRoundabout(-52,0,5.5,2.2,false);
   buildRoundabout(-64,-36,5.5,2.2,false);
   // paletti a chiudere gli ex imbocchi carrabili della zona pedonale
-  [-5,-2.5,0,2.5,5].forEach(z=>bollard(56.6,z));
+  [-6.6,-4.4,-2.2,0,2.2,4.4,6.6].forEach(z=>bollard(56.6,z));   // v552: la High Street qui e' larga 14 m
   [-31,-33.5,-36,-38.5,-41].forEach(z=>bollard(56.6,z));
   // paletti del piazzale stazione: il traffico gira PRIMA della stazione
   [-5,-2.5,0,2.5,5].forEach(z=>bollard(-58.5,z));
@@ -9481,12 +9536,15 @@ function trafficBlocked(x,z){
    indietro la citta' non e' rimasta congelata).
    ===================================================================== */
 const PED_ROUTES={
-  hs_sw:[[-56,8.9],[-42.5,9.9],[-22,8.9]],                    // High St SUD ovest: Market -> Corner Shop (34 m)
-  hs_se:[[9.5,9.9],[11.5,11.4],[15,11.4],[22,9.4],[42,9.4]],  // High St SUD est: Town School -> rotonda (33 m)
-  hs_ne:[[20,-9.7],[45.5,-10.2],[56,-9.7]],                   // High St NORD est: Style Salon -> Town Hall (36 m)
+  /* v552: High Street allargata, alberi arretrati a z ±8,5 (aiuola fino a
+     ±9,65): le quattro rotte lungo la via passano piu' vicino alle facciate.
+     Riverificate su blocked() reale: 0 campioni bloccati, 0 su asfalto. */
+  hs_sw:[[-56,10.6],[-42.5,10.8],[-22,10.6]],                    // High St SUD ovest: Market -> Corner Shop (34 m)
+  hs_se:[[9.5,9.9],[11.5,11.4],[15,11.4],[22,10.0],[42,10.0]],  // High St SUD est: Town School -> rotonda (33 m)
+  hs_ne:[[20,-10.9],[45.5,-11.0],[56,-10.6]],                   // High St NORD est: Style Salon -> Town Hall (36 m)
   park :[[8.5,12],[8.5,44]],                                  // trasversale est: High St -> Central Park (32 m)
   nd_w :[[-38,-42.7],[-7,-42.7]],                             // promenade New District, davanti a TechLab (31 m)
-  hs_nw:[[-56,-9.7],[-42.5,-10.2],[-20,-9.7]],                // High St NORD ovest: Eco Point -> Beat Club (36 m)
+  hs_nw:[[-56,-10.8],[-42.5,-11.0],[-20,-10.8]],                // High St NORD ovest: Eco Point -> Beat Club (36 m)
   /* ⚠️ Attivato il 24 ago: era la RISERVA verificata a suo tempo (v74 circa)
      ma mai attivata "per stare larghi sul budget Chromebook" (vedi MD). La
      nota del MD diceva "4 wp, 49 m": non corrispondeva più a queste
@@ -13753,8 +13811,10 @@ function buildNYC(){
      proprio dove si gira a piedi attorno — ora che le rotonde si
      attraversano ci passano tutti. Spostati di qualche metro lungo il
      marciapiede, lontano dall'anello. */
-  [[-16,7.0],[24,7.0],[37,7.0],[-40,7.0],
-   [-16,-7.0],[30,-7.0],[-40,-7.0],
+  /* v552: arretrati con il bordo della High Street allargata (HS_PROP); quello
+     a x 30 nord va a x 27, fuori dall'aiuola dell'albero (31,-HS_TREE). */
+  [[-16,HS_PROP],[24,HS_PROP],[37,HS_PROP],[-40,HS_PROP],
+   [-16,-HS_PROP],[27,-HS_PROP],[-40,-HS_PROP],
    [12,-28.2],[-24,-28.2],[-64.6,20],[-64.6,-16]].forEach(p=>hydrant(p[0],p[1]));
   // ---- CARTELLI stradali verdi agli angoli
   streetSign(-7.4,  7.4,"HIGH STREET",Math.PI,"PARK AVE",-Math.PI/2);
@@ -13821,7 +13881,7 @@ function buildProps(){
      l'aiuola (2,3 m di lato), addosso al tronco.
      bin() non se ne accorgeva perche' insideSolid ignora apposta i tronchi
      (flag tree, vedi tree()). Ora stanno a ~2 m, fuori dal cordolo. */
-  [[-11.5,7.0],[11.0,7.0],[-11.5,-7.0],[25,-7.0],[41,7.0]].forEach(p=>bin(p[0],p[1]));
+  [[-11.5,7.0],[11.0,7.0],[-11.5,-7.0],[25,-HS_PROP],[41,HS_PROP]].forEach(p=>bin(p[0],p[1]));   // v552: i due fuori dall'incrocio arretrano col bordo
 
   // ---- (v274: TOLTI i paletti a z ±5.6 che delimitavano l'attraversamento
   //      della Park Ave. L'attraversamento non c'e' piu' (v273), e fra la fila
@@ -13840,14 +13900,17 @@ function buildProps(){
   fenceRun(-78,-22,-78,22);
 
   // ---- ALBERI extra: raddoppio la fila lungo i boulevard
-  [[-18,8],[18,8],[-44,8],[44,8],[-66,8],[66,8],
-   [-18,-8],[18,-8],[-44,-8],[44,-8],[-66,-8],[66,-8],
+  [[-18,HS_TREE],[18,HS_TREE],[-44,HS_TREE],[44,HS_TREE],[-66,8],[66,8],          // v552: HS_TREE dove la strada e' larga
+   [-18,-HS_TREE],[18,-HS_TREE],[-44,-HS_TREE],[44,-HS_TREE],[-66,-8],[66,-8],
    [-15,-27],[15,-27],[-40,-27],[40,-27],[-58,-27],[58,-27]]
    .forEach(p=>tree(p[0],p[1],true));
 
   // ---- LAMPIONI extra per estendere l'illuminazione serale
-  [[-18,5.6],[18,5.6],[-44,5.6],[44,5.6],[-66,5.6],[66,5.6],
-   [-18,-5.6],[18,-5.6],[-44,-5.6],[44,-5.6],[-66,-5.6],[66,-5.6]]
+  /* v552 (Giacomo: «ci sono lampioni proprio sul bordo»): stavano a z ±5,6,
+     cioe' a 10 cm dall'asfalto. Ora a 0,9 m dal bordo nuovo (HS_LAMP), e
+     spostati di 3 m lungo la via, fuori dall'aiuola dell'albero accanto. */
+  [[-21,HS_LAMP],[21,HS_LAMP],[-47,HS_LAMP],[39,HS_LAMP],[-66,6.6],[66,6.6],          // 39: da 45 in poi insideSolid lo scarta (facciata del Clothes Shop)
+   [-21,-HS_LAMP],[21,-HS_LAMP],[-47,-HS_LAMP],[47,-HS_LAMP],[-66,-6.6],[66,-6.6]]
    .forEach(p=>lamp(p[0],p[1]));
 
   // ---- PASS NYC: attraversamenti, idranti, cartelli, semafori
@@ -67274,12 +67337,12 @@ const GEM_SPOTS=[
   [38,-42,0.05],[21,21,0.04],[-35,39,0.04],[-45,-21,0.04],[-35,-21,0.04],
   [32,20,0.04],[42,11,0.05],[45,-19,0.04],[-40,-10,0.05],[2,-53,0.09],
   [-45,15,0.04],[-92,-6,0.04],[-83,-6,0.05],[-63,16,0.04],[9,-43,0.08],
-  [35,-13,0.04],[7,-27,0.04],[58,-21,0.2],[43,-6,0.05],[63,-13,0.2],
+  [35,-13,0.04],[7,-27,0.04],[58,-21,0.2],[41,-8.6,0.05],[63,-13,0.2],
   [-43,-51,0.09],[20,-54,0.09],[97,1,0.18],[62,12,0.2],[38,-51,0.09],
   [46,41,0.04],[25,-23,0.04],[-51,-42,0.05],[18,12,0.04],[-80,3,0.6],
   [-17,44,0.03],[82,-22,0.2],[97,-8,0.14],[113,4,0.14],[-7,-54,0.09],
   [11,-7,0.05],[28,41,0.03],[-44,37,0.03],[-60,-58,0.09],[-34,-51,0.09],
-  [-47,6,0.05],[-64,7,0.05],[-92,11,0.04]
+  [-49.5,8.6,0.05],[-64,7,0.05],[-92,11,0.04]
 ];
 
 /* VERBI IRREGOLARI — base, past, participio, italiano.
