@@ -9297,7 +9297,18 @@ function buildTraffic(){
       const near=(Math.abs(rx)<10 && Math.abs(rz)<10);     // v550: piu' veloci, si guarda piu' lontano
       const onRoad=near && pedOnCarriageway();          // sul marciapiede non si frena (v297)
       const inCorsia=onRoad && (ahead>-0.5 && ahead<Math.max(6,c.cv*0.85) && lat<2.1);
-      let vw=(onRoad && (Math.hypot(rx,rz)<3.4 || inCorsia))?0:c.v;
+      /* ⚠️ FERMA PER COLPA TUA = SUONATA (Giacomo, 11 nov: «in questa
+         posizione non vengo suonato e non interviene il ranger, ma sto
+         bloccando il traffico comunque»). Accanto al muso, in strada ma un
+         filo fuori dalla corsia (lat>2,1), l'auto si fermava per il raggio
+         di 3,4 m e restava li' all'infinito, ma il clacson guardava solo
+         inCorsia: traffico bloccato in silenzio, Ranger mai chiamato.
+         Ora la tromba nasce dalla STESSA condizione che ferma l'auto
+         (pedStop). In cambio il raggio non vale piu' per chi sta DIETRO
+         (ahead<-1,5, oltre l'asse posteriore): un'auto non aspetta chi le
+         sta alle spalle, e suonarlo sarebbe ingiusto. */
+      const pedStop=onRoad && ((Math.hypot(rx,rz)<3.4 && ahead>-1.5) || inCorsia);
+      let vw=pedStop?0:c.v;
       if(c.vlim) vw=Math.min(vw,c.vlim[i]);           // v549: piano in curva, frenando prima
       // CODA: distanza (lungo il percorso) dall'auto piu' vicina DAVANTI
       // sullo stesso loop; auto lunghe ~4.4 m, quindi gap centri 7 m ~=
@@ -9325,7 +9336,9 @@ function buildTraffic(){
          suonato. Il cooldown e la scala delle frasi stanno dentro
          SFX.carHorn: da qui si chiama e basta, anche sessanta volte al
          secondo. */
-      if(inCorsia && c.cv<0.15){
+      /* gap>=7.5: se davanti c'e' la coda l'auto starebbe ferma comunque,
+         la colpa non e' del pedone e non si suona lui. */
+      if(pedStop && gap>=7.5 && c.cv<0.15){
         c.halt=(c.halt||0)+dt;
         if(c.halt>1.2){ try{ SFX.carHorn(c.root.position.x,c.root.position.z); }catch(e){} }
       } else c.halt=0;
