@@ -1579,11 +1579,19 @@ const TOWN_OPEN=[
   { qid:"u7",   x:112, z:34,   ax:113.5, az:22.5, face:Math.PI, inter:"pitch" },  // Sports Field (tabellone)
   { qid:"u2_3", x:105, z:-3.5, ax:105, az:2,     inter:"weatherstn"   },  // Weather Station (imbocco da sud)
   { qid:"u3_3", x:97,  z:-47,  ax:97,  az:-43.6, inter:"survivalcamp" },  // Hikers' Camp (riva ovest del lago)
-  { qid:"u2_5", x:-86, z:0,    ax:-78, az:7,     inter:"station"      },  // Central Station
+  { qid:"u2_5", x:-100, z:0,   ax:-92, az:7,     inter:"station"      },  // Central Station
 ];
 
 /* Stazione (gateway ovest) e Parco (zona verde est) sono costruiti a parte. */
-const STATION={ x:-86, z:0, yr:2, u:"Unit 5", t:"Central Station", ic:"🚉",
+/* v553 — LA STAZIONE E' 14 m PIU' A OVEST (Giacomo, 11 nov: «spostala a
+   ovest sul prato», per liberare la trasversale x -72 e collegare High
+   Street, Modern Boulevard e strada dell'aeroporto). Era a x -86: banchina,
+   binari e treno stavano SOPRA la Station Ave. Ora banchina x -94..-88,
+   binari x -86..-84,5, e la Station Ave e' una strada vera (vedi CONN_X).
+   ⚠️ Chi dipende da questa x e non la legge da qui: METRO_STATIONS,
+   RANGER_POSTS, RANGER_PLACES, CY8_PLACES, l'ancora del taxi qui sopra,
+   GEM_SPOTS. Sono stati spostati tutti insieme. */
+const STATION={ x:-100, z:0, yr:2, u:"Unit 5", t:"Central Station", ic:"🚉",
   lex:"mezzi di trasporto · biglietti e orari · phrasal verbs di viaggio" };
 
 /* ---- CONTENUTI UNIT 3 (pool lessicale per la randomizzazione) ---- */
@@ -4279,7 +4287,7 @@ let _metroCamTarget=null;                          // bersaglio camera fisso in 
 /* Fermate distribuite lungo una linea Ovest->Est, su pavimentazione aperta,
    lontane da strade (z=0,-36,-60 · x=0,-72,14) e dalle facciate dei palazzi. */
 const METRO_STATIONS=[
-  {id:"station",     name:"Central Station", ic:"\u{1F689}",       wx:-86, wz:20 },
+  {id:"station",     name:"Central Station", ic:"\u{1F689}",       wx:-93, wz:21 },
   {id:"oldtown",     name:"Old Town",        ic:"\u{1F3D8}\uFE0F", wx:-44, wz:28 },
   {id:"newdistrict", name:"New District",    ic:"\u{1F4BC}",       wx:-15, wz:-46.3},
   {id:"central",     name:"City Centre",     ic:"\u{1F3D9}\uFE0F", wx:16,  wz:-26},
@@ -8000,6 +8008,60 @@ function halloweenCafe(x,z,y0){ if(!HALLOWEEN.on) return;
 /* v273: dove ricomincia la Park Ave (verso sud). Fino a qui e' marciapiede:
    Home (pad z 7..23) + un lotto libero da 16 m per il ristorante (23..41). */
 const PARK_AVE_Z0=42;
+/* v552 — HIGH STREET PIU' LARGA (Giacomo, 11 nov: «voglio allargare le
+   strade dove stanno le macchine... ci sono lampioni proprio sul bordo, e
+   una rotonda che ha un pezzo sul marciapiede»). La carreggiata era larga
+   11 m (bordo a z ±5,5) e la rotonda est ha raggio 6,5: usciva di 1 m sul
+   marciapiede. Ora, nei due tratti dove passano le auto, il bordo sta a
+   z ±HS_HALF (7 m, carreggiata 14 m) e tutte le rotonde ci stanno dentro.
+   ⚠️ NON si allarga dappertutto, e non e' una dimenticanza:
+     · all'incrocio centrale (|x| < 12) il bordo resta a 5,5: il muro sud del
+       Cinema e' a z -7,1, e li' ci sono strisce, semafori e cartelli tarati
+       su quella misura. Il marciapiede che avanza alle strisce e' quello che
+       si fa nelle citta' vere (attraversamento piu' corto);
+     · a est di x 56 (parco) non passano auto: resta com'era; a ovest si
+       arriva fino alla Station Ave (v553), dove il raccordo riporta a 5,5;
+     · il Modern Boulevard NON si tocca: il City Hospital e' a 0,6 m
+       dall'asfalto e la Job Centre Tower a 1,2.
+   I raccordi fra 5,5 e 7 sono quarti di cerchio (raggio 1,5 m). Lungo tutto
+   il bordo corre un CORDOLO di pietra largo HS_KERB.
+   ⚠️ Arredi, pedoni e cristalli della fascia z 5,5..7,3 sono stati
+   arretrati di conseguenza (lampioni a ±HS_LAMP, alberi a ±HS_TREE, idranti
+   e cestini a ±HS_PROP, PED_ROUTES, due GEM_SPOTS): chi cambia HS_HALF li
+   deve rivedere. */
+const HS_HALF=7.0, HS_KERB=0.3, HS_NECK=12, HS_W0=-66.5, HS_E1=56;
+/* v553: la trasversale ovest (Station Ave) e la mezzeria della strada
+   dell'aeroporto, la cui carreggiata ora e' z -69..-55 (vedi buildAirport) */
+const CONN_X=-72, APT_Z=-62;
+const HS_LAMP=HS_HALF+0.9, HS_TREE=HS_HALF+1.5, HS_PROP=HS_HALF+1.0;
+/* nastro piatto fra due spezzate di pari lunghezza (A interna, B esterna).
+   UV = coordinate mondo: alignWorldUV da' a tutti i nastri la stessa
+   trasformazione, quindi l'asfalto prosegue senza cuciture dalla strada. */
+function _flatRibbon(name,A,B,y,material){
+  const pos=[],nor=[],uv=[],idx=[];
+  for(let i=0;i<A.length;i++) [A[i],B[i]].forEach(q=>{ pos.push(q[0],y,q[1]); nor.push(0,1,0); uv.push(q[0],q[1]); });
+  for(let i=0;i<A.length-1;i++){ const a=2*i,b=a+1,c=a+2,d=a+3; idx.push(a,c,b, b,c,d, a,b,c, b,d,c); }   // i due versi: uno lo toglie il culling
+  const m=new BABYLON.Mesh(name,scene), vd=new BABYLON.VertexData();
+  vd.positions=pos; vd.normals=nor; vd.uvs=uv; vd.indices=idx; vd.applyToMesh(m);
+  m.material=material; m.parent=townRoot; m.__ground=true; return m; }
+function buildHighStreetWidening(){
+  const R=HS_HALF-5.5, N=10, rm=roadMat("roadmWide"), km=stoneMat("hsKerbm",0.5,0.5,false,[0.70,0.71,0.72]);
+  /* il profilo del bordo: da x0 a x1 a piena larghezza, con il raccordo
+     (r0/r1) che scende a 5,5 FUORI dal tratto; r = raggio del raccordo */
+  const prof=(x0,x1,r0,r1,r,s)=>{ const P=[];
+    if(r0) for(let i=0;i<N;i++){ const t=i/N*Math.PI/2; P.push([x0-r*Math.cos(t), s*(5.5+r*Math.sin(t))]); }
+    P.push([x0,s*(5.5+r)],[x1,s*(5.5+r)]);
+    if(r1) for(let i=N-1;i>=0;i--){ const t=i/N*Math.PI/2; P.push([x1+r*Math.cos(t), s*(5.5+r*Math.sin(t))]); }
+    return P; };
+  [-1,1].forEach(s=>{
+    [[HS_W0+R,-HS_NECK-R,true,true],[HS_NECK+R,HS_E1,true,false]].forEach(([x0,x1,r0,r1],k)=>{
+      const edge=prof(x0,x1,r0,r1,R,s), out=prof(x0,x1,r0,r1,R+HS_KERB,s);
+      _flatRibbon("rhWide",edge.map(q=>[q[0],s*5.4]),edge,0.082,rm);        // 10 cm sotto la strada: niente fessura
+      const k1=_flatRibbon("hsKerb",edge,out,0.092,km); k1.isPickable=false; });
+    /* il cordolo del tratto stretto, all'incrocio */
+    const k2=_flatRibbon("hsKerb",[[-HS_NECK,s*5.5],[HS_NECK,s*5.5]],[[-HS_NECK,s*(5.5+HS_KERB)],[HS_NECK,s*(5.5+HS_KERB)]],0.092,km);
+    k2.isPickable=false; });
+}
 function buildTown(){
   const asph=BABYLON.MeshBuilder.CreateGround("asph",{width:320,height:300},scene);
   /* ⚠️ Il nome "asphm" NON va cambiato: la griglia dei confini (buildBounds,
@@ -8025,15 +8087,21 @@ function buildTown(){
      l'asfalto: nel gradino si vede la stessa lastra (UV allineate al mondo),
      cioe' niente. */
   const SW_UNDER=0.4;
-  function roadH(z,w,noSW){ const r=BABYLON.MeshBuilder.CreateGround("rh",{width:w||300,height:11},scene);
-    r.material=roadMat("roadm"); r.position.set(0,0.08,z); r.parent=townRoot;
+  function roadH(z,w,noSW,cx){ cx=cx||0; const r=BABYLON.MeshBuilder.CreateGround("rh",{width:w||300,height:11},scene);   // v553: cx = centro in x
+    r.material=roadMat("roadm"); r.position.set(cx,0.08,z); r.parent=townRoot;
     // marciapiedi larghi 5.5 su entrambi i lati (dal bordo strada z±5.5 fino a z±11)
     if(!noSW) [-8.25,8.25].forEach(dz=>{ const s=BABYLON.MeshBuilder.CreateGround("swh",{width:w||300,height:5.5+SW_UNDER},scene);
-      s.material=sidewalkMat("swm",w||300,5.5); s.position.set(0,0.046,z+dz-Math.sign(dz)*SW_UNDER/2); s.parent=townRoot; s.__ground=true; });
-    for(let i=-((w||300)/2)+4;i<((w||300)/2);i+=8){ const d=BABYLON.MeshBuilder.CreateGround("ln",{width:2.4,height:0.5},scene);
+      s.material=sidewalkMat("swm",w||300,5.5); s.position.set(cx,0.046,z+dz-Math.sign(dz)*SW_UNDER/2); s.parent=townRoot; s.__ground=true; });
+    for(let i=-90+4;i<cx+((w||300)/2);i+=8){ if(i<cx-(w||300)/2+1.5) continue;       // stessa griglia dei trattini di prima
+      const d=BABYLON.MeshBuilder.CreateGround("ln",{width:2.4,height:0.5},scene);
       d.material=wetFX(mat("lnm","#1d2a32","#d9c98f")); d.position.set(i,0.11,z); d.parent=townRoot; } }
-  function roadV(x,h){ const r=BABYLON.MeshBuilder.CreateGround("rv",{width:11,height:h||300},scene);
-    r.material=roadMat("roadm2"); r.position.set(x,0.08,0); r.parent=townRoot;
+  /* v553: z0..z1 = il tratto di CARREGGIATA (i marciapiedi restano lunghi h) */
+  function roadV(x,h,z0,z1){ if(z0==null){ z0=-(h||300)/2; z1=(h||300)/2; }
+    const r=BABYLON.MeshBuilder.CreateGround("rv",{width:11,height:z1-z0},scene);
+    r.material=roadMat("roadm2"); r.position.set(x,0.08,(z0+z1)/2); r.parent=townRoot;
+    for(let z=z0+14.5;z<z1-7;z+=6){ if(Math.abs(z+36)<8) continue;                        // mezzeria (non dentro le rotonde)
+      const d=BABYLON.MeshBuilder.CreateGround("ln",{width:0.5,height:2.4},scene);
+      d.material=wetFX(mat("lnm","#1d2a32","#d9c98f")); d.position.set(x,0.11,z); d.parent=townRoot; }
     // marciapiedi larghi 5.5 sui due lati (y=0.043 < 0.046 delle strisce H: niente z-fighting agli incroci)
     [-8.25,8.25].forEach(dx=>{ const s=BABYLON.MeshBuilder.CreateGround("swv",{width:5.5+SW_UNDER,height:h||300},scene);
       s.material=sidewalkMat("swm",5.5,h||300); s.position.set(x+dx-Math.sign(dx)*SW_UNDER/2,0.043,0); s.parent=townRoot; s.__ground=true; }); }
@@ -8048,8 +8116,14 @@ function buildTown(){
   // PRIMA del prato "OVEST oltre la stazione" (meadow inizia a x=-98) — cosi'
   // oltre la stazione non c'e' piu' asfalto/carreggiata con strisce che taglia
   // il prato a vuoto, resta solo asfalto grigio piatto (asph) come il resto.
-  roadH(0,180);        // HIGH STREET (Anno 1 sud / Anno 2 nord)
-  roadH(-36,180,true); // MODERN BOULEVARD (Anno 3) — sul piazzale nbApron: niente strisce dedicate
+  /* v553 — LE TRE STRADE SONO COLLEGATE (Giacomo, 11 nov). High Street e
+     Modern Boulevard finiscono a ovest sulla trasversale x CONN_X (bordo
+     ovest x -77,5: oltre c'e' il piazzale della stazione, non piu' un
+     moncone d'asfalto); la trasversale va dalla High Street (z +5,5) alla
+     strada dell'aeroporto (z -69). Vedi buildTraffic per incroci e giri. */
+  roadH(0,167.5,false,6.25);        // HIGH STREET (Anno 1 sud / Anno 2 nord): x -77,5..90
+  try{ buildHighStreetWidening(); }catch(e){ console.warn("[high street larga]",e); }   // v552
+  roadH(-36,167.5,true,6.25); // MODERN BOULEVARD (Anno 3) — sul piazzale nbApron: niente strisce dedicate
   // cross centrale: si ferma all'altezza del Modern Boulevard (z=-36) per non
   // passare sotto le basi del New District (Job Centre Tower resta sul piazzale)
   /* v273 (Giacomo, 29 set: «Home e Cinema sono nella strada, non hanno
@@ -8071,7 +8145,14 @@ function buildTown(){
     [[-30.5-SW_UNDER,-5.5+SW_UNDER],[5.5-SW_UNDER,Z0+SW_UNDER]].forEach(q=>{ const h=q[1]-q[0];
       const s=BABYLON.MeshBuilder.CreateGround("swp",{width:11,height:h},scene);
       s.material=sidewalkMat("swm",11,h); s.position.set(0,0.043,(q[0]+q[1])/2); s.parent=townRoot; s.__ground=true; }); }
-  roadV(-72);      // verso la stazione (ovest)
+  roadV(CONN_X,300,APT_Z-7,5.5);      // STATION AVE: High Street <-> Boulevard <-> strada dell'aeroporto (v553)
+  /* cordolo dove la carreggiata finisce contro il piazzale della stazione */
+  try{ const km=stoneMat("hsKerbm2",0.5,0.5,false,[0.70,0.71,0.72]), W=CONN_X-5.5, E=CONN_X+5.5;
+    [[[W,5.5],[E,5.5],[W-0.3,5.8],[E,5.8]],                 // lato sud dell'incrocio con la High Street
+     [[W,-5.5],[W,5.5],[W-0.3,-5.5],[W-0.3,5.8]],           // lato ovest
+     [[W,-41.5],[W,-30.5],[W-0.3,-41.5],[W-0.3,-30.5]]]     // lato ovest dell'incrocio col Boulevard
+     .forEach(q=>{ const k=_flatRibbon("hsKerb",[q[0],q[1]],[q[2],q[3]],0.092,km); k.isPickable=false; });
+  }catch(e){ console.warn("[cordolo station ave]",e); }
   // (rimossa la strada verticale x=72 che attraversava il parco: ci pensano i vialetti del parco)
   TOWN.forEach(p=>{ if(p.z<-40) return;   // New District: il piazzale nbApron fa gia' da pavimentazione (no z-fighting)
     const s=BABYLON.MeshBuilder.CreateGround("sw",{width:16,height:16},scene);
@@ -8546,8 +8627,11 @@ function cloud(x,y,z,s,kind){ const c=new BABYLON.TransformNode("cl",scene); c.p
   c.__drift=(kind==="strato"?0.35:(kind==="puffs"?0.9:0.55))+Math.random()*0.5;   // deriva lenta (u/s)
   cloudList.push(c); return c; }
 function buildLife(){
-  [[-9,7],[9,7],[-9,-7],[9,-7],[-31,7],[31,7],[-31,-7],[31,-7]].forEach(p=>tree(p[0],p[1],true));
-  [[-6,6],[6,6],[-6,-6],[6,-6],[-28,6],[28,6]].forEach(p=>lamp(p[0],p[1]));
+  /* v552: High Street allargata (vedi HS_HALF). All'incrocio (|x|<12) il
+     bordo e' rimasto a 5,5: gli alberi d'angolo restano, i lampioni si
+     staccano dal cordolo (erano a 0,5 m, ora a 1,1). */
+  [[-9,7],[9,7],[-9,-7],[9,-7],[-31,HS_TREE],[32.2,HS_TREE],[-31,-HS_TREE],[31,-HS_TREE]].forEach(p=>tree(p[0],p[1],true));   // 32.2: a 31 la facciata della scuola (z 10,7) lo faceva scartare da insideSolid
+  [[-6,6.6],[6,6.6],[-6,-6.6],[6,-6.6],[-28,HS_LAMP],[28,HS_LAMP]].forEach(p=>lamp(p[0],p[1]));
   // nuvole distribuite su TUTTO il cielo: griglia 4x4 jitterata (copertura uniforme
   // in ogni quadrante), quota e scala variabili -> niente addensamenti da un lato
   /* v293: ogni cella pesca una FORMA (cumuli i piu' comuni, poi batuffoli,
@@ -9055,10 +9139,18 @@ function _addTrafficCar(loop,phase,speed,ci){
   car.parent=root; car.position.set(0,car.position.y,0);
   // yaw iniziale = direzione del primo segmento (niente giravolta al via)
   root.rotation.y=Math.atan2(loop[2][0]-loop[0][0],loop[2][1]-loop[0][1])+TRAFFIC_YAW;
-  const seg=[],L=[]; let tot=0;
-  for(let i=0;i<loop.length;i++){ const a=loop[i], b=loop[(i+1)%loop.length];
-    const dl=Math.hypot(b[0]-a[0],b[1]-a[1]); seg.push(dl); L.push(tot); tot+=dl; }
-  const tc={root,loop,seg,L,tot,s:phase*tot,v:speed,cv:speed,near:false,halt:0,vlim:_loopSpeedLimit(loop,seg)};
+  const tc={root,s:0,v:speed,cv:speed,near:false,halt:0};
+  _tcBind(tc,loop);                                  // v553: tratti e limiti stanno sul giro (_loopMeta)
+  /* v553: i giri si sovrappongono, quindi la fase da sola non basta: si
+     avanza finche' il posto e' libero (10 m dalle altre, fuori dalle
+     rotonde d'incrocio) */
+  let s0=phase*tc.tot;
+  for(let t=0;t<80;t++){ const p=carLoopPos(tc,s0);
+    const busy=_trafficCars.some(o=>Math.hypot(o.root.position.x-p[0],o.root.position.z-p[1])<10)
+            || TRAFFIC_ZONES.some(Z=>Math.hypot(Z.x-p[0],Z.z-p[1])<Z.r+5);
+    if(!busy){ root.position.set(p[0],0,p[1]); const q=carLoopPos(tc,s0+1); root.rotation.y=Math.atan2(q[0]-p[0],q[1]-p[1])+TRAFFIC_YAW; break; }
+    s0+=6; }
+  tc.s=s0%tc.tot;
   _trafficCars.push(tc);
   /* v301: le ruote si staccano dopo (non rallenta l'avvio), una auto alla volta */
   setTimeout(()=>{ try{ tc.wh=carWheelsRig(tc); }catch(e){ console.warn("[ruote]",e); }
@@ -9101,9 +9193,9 @@ function carGroundRig(c){
     mn=Math.min(mn,m.getBoundingInfo().boundingBox.minimumWorld.y); });
   if(mn>1e8) return;
   c.lift=root.position.y-mn+0.004;
-  const n=Math.max(2,Math.ceil(c.tot)), G=new Float32Array(n+1);
-  for(let k=0;k<=n;k++){ const p=carLoopPos(c,(k/n)*c.tot); G[k]=_pedGroundY(p[0],p[1]); }
-  c.gy=G; c.gyN=n;
+  /* v553: il profilo del suolo e' del GIRO (lo condividono le auto che ci
+     passano e chi ci arriva cambiando strada), vedi _loopGround */
+  _loopGround(c.loop); c.gy=c.loop.gy; c.gyN=c.loop.gyN;
 }
 function carLoopPos(c,s){ s=((s%c.tot)+c.tot)%c.tot;
   /* v549: si cerca vicino al tratto dell'auto (c.si): i punti chiesti sono
@@ -9233,40 +9325,148 @@ function _trafficPassCheck(c){
   }
   else if(c.near && pd>17) c.near=false;
 }
+/* =====================================================================
+   v553 — LA RETE (Giacomo, 11 nov: «le strade possano comunicare... uno
+   puo' decidere di prendere la rotonda e tornare indietro o prendere
+   l'altra strada... anche la strada dell'aeroporto»).
+   Prima: due anelli separati (High Street, Modern Boulevard), ogni auto
+   sul suo per sempre. Ora le tre strade sono unite dalla Station Ave:
+
+        E1 (47,0) ─────── High Street ─────── J1 (-72,0)
+                                                 │  Station Ave
+        E2 (48,-36) ───── Modern Boulevard ──── J2 (-72,-36)
+                                                 │
+        E3 (14,APT_Z) ─── strada aeroporto ──── J3 (-72,APT_Z)
+
+   E = rotonda di testa (si torna indietro), J = rotonda d'incrocio.
+   · I GIRI (TRAFFIC_TOURS) sono anelli chiusi come prima — tutta la
+     matematica dell'ascissa curvilinea resta quella — ma piu' giri passano
+     sulle stesse corsie. Ai VARCHI (TRAFFIC_GATE_PTS, a meta' rettilineo,
+     dove i giri coincidono al centimetro) l'auto tira a sorte su quale giro
+     proseguire: e' cosi' che «decide» se tornare indietro o cambiare strada.
+   · ROTONDE D'INCROCIO: UNA auto alla volta (Z.h = chi la occupa). Chi
+     arriva e la trova occupata aspetta alla linea; e non entra se l'uscita
+     che vuole e' intasata, cosi' nessuno resta fermo dentro a bloccare gli
+     altri. Niente precedenze da calcolare e nessun incastro possibile.
+   · LA CODA non guarda piu' «l'auto davanti sul mio stesso giro» (le
+     corsie ora sono condivise da giri diversi) ma «c'e' un'auto sui
+     prossimi 14 m del MIO percorso?».
+   · SEMAFORI (SIGNALS): quattro attraversamenti pedonali. Col rosso le
+     auto si fermano alla linea; l'omino verde e' per chi attraversa.
+   ⚠️ Corsie: si guida a sinistra, centro corsia a 2,75 m dalla mezzeria;
+   l'andata verso est sta a z maggiore (come prima).
+   ⚠️ Se si sposta una rotonda o una corsia, GEM_SPOTS va ricontrollato.
+   ===================================================================== */
+const TRAFFIC_NODES={
+  E1:{x:47,z:0,R:4.75},       E2:{x:48,z:-36,R:3.6},       E3:{x:14,z:APT_Z,R:4.75},
+  J1:{x:CONN_X,z:0,R:3.6,zone:1}, J2:{x:CONN_X,z:-36,R:3.6,zone:1}, J3:{x:CONN_X,z:APT_Z,R:3.6,zone:1} };
+const TRAFFIC_ARM={E:0,S:90,W:180,N:-90};          // gradi: punto = centro + R(cos,sin) in (x,z)
+const TRAFFIC_TOURS=[
+  [["E1","W","W"],["J1","E","E"]],                                                        // 0 High Street e ritorno
+  [["E2","W","W"],["J2","E","E"]],                                                        // 1 Boulevard e ritorno
+  [["E3","W","W"],["J3","E","E"]],                                                        // 2 aeroporto e ritorno
+  [["E1","W","W"],["J1","E","N"],["J2","S","E"],["E2","W","W"],["J2","E","S"],["J1","N","E"]],   // 3 High Street <-> Boulevard
+  [["E2","W","W"],["J2","E","N"],["J3","S","E"],["E3","W","W"],["J3","E","S"],["J2","N","E"]],   // 4 Boulevard <-> aeroporto
+  [["E1","W","W"],["J1","E","N"],["J2","S","N"],["J3","S","E"],["E3","W","W"],["J3","E","S"],["J2","N","S"],["J1","N","E"]] ];   // 5 High Street <-> aeroporto
+/* varchi: [x, z, dirX, dirZ] sul centro corsia, lontano da curve e semafori */
+const TRAFFIC_GATE_PTS=[[-40,2.75,1,0],[-40,-2.75,-1,0],[CONN_X+2.75,-25,0,-1],[CONN_X-2.75,-11,0,1],
+  [-40,-33.25,1,0],[-40,-38.75,-1,0],[CONN_X+2.75,-49,0,-1],[CONN_X-2.75,-49,0,1],[-36,APT_Z+2.75,1,0],[-36,APT_Z-2.75,-1,0]];
+const TRAFFIC_LOOPS=[], TRAFFIC_ZONES=[];
+/* SEMAFORI: stops = dove si ferma il CENTRO dell'auto (muso 2,2 m piu'
+   avanti, a 1 m dalle strisce). Ciclo SIG_T secondi: verde SIG_G, giallo 3,
+   rosso, poi rosso+giallo 1,5 (all'inglese). `off` sfasa i quattro. */
+const SIG_T=32, SIG_G=18;
+const SIGNALS=[
+  { id:"hs",   off:0,  stops:[[-13.2,2.75],[13.2,-2.75]],                 veh:[], ped:[] },
+  { id:"blvd", off:8,  stops:[[-13.2,-33.25],[13.2,-38.75]],              veh:[], ped:[] },
+  { id:"conn", off:16, stops:[[CONN_X+2.75,-13.9],[CONN_X-2.75,-22.1]],   veh:[], ped:[] },
+  { id:"apt",  off:24, stops:[[-6.1,APT_Z+2.75],[2.1,APT_Z-2.75]],        veh:[], ped:[] } ];
+let _sigT=0;
+/* 0 verde · 1 giallo · 2 rosso · 3 rosso+giallo */
+function _sigState(S){ const u=((_sigT+S.off)%SIG_T+SIG_T)%SIG_T; return u<SIG_G?0 : u<SIG_G+3?1 : u<SIG_T-1.5?2 : 3; }
+function sigPedGreen(S){ const u=((_sigT+S.off)%SIG_T+SIG_T)%SIG_T; return u>SIG_G+4 && u<SIG_T-4; }
+function _sigLamp(m,on){ if(m.__on===on) return; m.__on=on;
+  m.emissiveColor=on?m.__c.scale(0.95):new BABYLON.Color3(0,0,0); m.diffuseColor=on?m.__c:m.__c.scale(0.22); }
+function _sigUpdate(dt,open){
+  _sigT+=dt;
+  for(let i=0;i<SIGNALS.length;i++){ const S=SIGNALS[i];
+    let st=_sigState(S), pg=sigPedGreen(S);
+    /* di notte (citta' chiusa, niente auto): giallo lampeggiante */
+    const key=open ? st*2+(pg?1:0) : 10+((_sigT*1.2|0)%2);
+    S.st=open?st:0;
+    if(S.key===key) continue; S.key=key;
+    const r=open&&(st===2||st===3), y=open?(st===1||st===3):(key===11), g=open&&st===0;
+    S.veh.forEach(v=>{ _sigLamp(v[0],r); _sigLamp(v[1],y); _sigLamp(v[2],g); });
+    S.ped.forEach(v=>{ _sigLamp(v[0],open&&!pg); _sigLamp(v[1],open&&pg); }); } }
+function _tourPts(steps){
+  let P=[]; const LN=2.75, D=6;
+  steps.forEach(([nk,ia,oa])=>{ const n=TRAFFIC_NODES[nk], ti=TRAFFIC_ARM[ia], to=TRAFFIC_ARM[oa];
+    const ri=ti*Math.PI/180, ro=to*Math.PI/180;
+    P.push([n.x+D*Math.cos(ri)+LN*Math.sin(ri), n.z+D*Math.sin(ri)-LN*Math.cos(ri)]);          // corsia d'arrivo
+    let a0=ti-30, a1=to+30; while(a1>=a0-1) a1-=360;                                           // senso orario, all'inglese
+    P=P.concat(_arcPts(n.x,n.z,n.R,a0,a1,Math.max(2,Math.ceil((a0-a1)/5))));
+    P.push([n.x+D*Math.cos(ro)-LN*Math.sin(ro), n.z+D*Math.sin(ro)+LN*Math.cos(ro)]); });       // corsia d'uscita
+  return _smoothLoop(P); }
+/* tutto quello che dipende dal GIRO e non dall'auto, calcolato una volta e
+   appeso all'array del giro: tratti, ascisse, limiti in curva, passaggi
+   nelle rotonde d'incrocio (zp), linee dei semafori (sg), varchi (gt) */
+function _loopMeta(loop){
+  if(loop.tot) return loop;
+  const n=loop.length, seg=[], L=[]; let tot=0;
+  for(let i=0;i<n;i++){ const a=loop[i], b=loop[(i+1)%n];
+    const dl=Math.hypot(b[0]-a[0],b[1]-a[1]); seg.push(dl); L.push(tot); tot+=dl; }
+  loop.seg=seg; loop.L=L; loop.tot=tot; _loopSpeedLimit(loop,seg);
+  loop.zp=[];
+  TRAFFIC_ZONES.forEach(Z=>{ const dd=i=>Math.hypot(loop[i][0]-Z.x,loop[i][1]-Z.z);
+    let st=0; while(st<n && dd(st)<Z.r) st++; if(st>=n) return;
+    let ins=false, sIn=0;
+    for(let q=1;q<=n;q++){ const i=(st+q)%n, d=dd(i);
+      if(!ins && d<Z.r){ ins=true; sIn=L[i]; }
+      else if(ins && d>=Z.r){ ins=false; loop.zp.push({Z,sIn,sOut:L[i],iOut:i,len:(L[i]-sIn+tot)%tot}); } } });
+  const find=(x,z,ux,uz,tol)=>{ let best=-1, bd=tol;
+    for(let i=0;i<n;i++){ const d=Math.hypot(loop[i][0]-x,loop[i][1]-z); if(d>=bd) continue;
+      const b2=loop[(i+1)%n]; if(ux!=null && ((b2[0]-loop[i][0])*ux+(b2[1]-loop[i][1])*uz)/seg[i]<0.8) continue;
+      bd=d; best=i; }
+    return best; };
+  loop.sg=[];
+  SIGNALS.forEach(S=>S.stops.forEach(q=>{ const i=find(q[0],q[1],null,0,0.6); if(i>=0) loop.sg.push({S,s:L[i]}); }));
+  loop.gt=[]; loop.__find=find;
+  return loop; }
+function _tcBind(c,loop){ _loopMeta(loop);
+  c.loop=loop; c.seg=loop.seg; c.L=loop.L; c.tot=loop.tot; c.vlim=loop.vlim; c.si=0;
+  c.gy=loop.gy||null; c.gyN=loop.gyN||0; }
+function _loopGround(loop){ if(loop.gy) return;
+  const n=Math.max(2,Math.ceil(loop.tot)), G=new Float32Array(n+1), f={loop,seg:loop.seg,L:loop.L,tot:loop.tot,si:0};
+  for(let k=0;k<=n;k++){ const p=carLoopPos(f,(k/n)*loop.tot); G[k]=_pedGroundY(p[0],p[1]); }
+  loop.gy=G; loop.gyN=n;
+  _trafficCars.forEach(c=>{ if(c.loop===loop){ c.gy=G; c.gyN=n; } }); }
 function buildTraffic(){
-  // rotatoria su High Street (con albero) + mini-rotatoria su Modern Blvd
-  // asfalto 8->6.5: le auto orbitano a r=4.75 (sporgenza max ~6.2 in curva),
-  // 6.5 basta e il marciapiede attorno guadagna 1.5 unita'
+  // rotonde di testa a est: High Street (con albero) e Modern Boulevard
+  // asfalto 8->6.5: le auto orbitano a r=4.75 (sporgenza max ~6.2 in curva)
   buildRoundabout(47,0,6.5,3.2,true);
   buildRoundabout(48,-36,5.5,2.2,false);
-  // rotatorie di RITORNO a ovest: su High Street arretrata a x=-52, cosi'
-  // il tratto x<-58.5 diventa PIAZZALE PEDONALE della stazione (come la
-  // promenade del parco a est); su Modern Blvd resta a x=-64
-  buildRoundabout(-52,0,5.5,2.2,false);
-  buildRoundabout(-64,-36,5.5,2.2,false);
+  /* v553: le due rotonde di ritorno a ovest (-52,0 e -64,-36) non ci sono
+     piu': al loro posto le tre rotonde d'incrocio sulla Station Ave, e la
+     rotonda di testa davanti al terminal */
+  buildRoundabout(CONN_X,0,5.5,2.2,false);
+  buildRoundabout(CONN_X,-36,5.5,2.2,false);
+  buildRoundabout(CONN_X,APT_Z,5.5,2.2,false);
+  buildRoundabout(14,APT_Z,6.5,3.2,true);
   // paletti a chiudere gli ex imbocchi carrabili della zona pedonale
-  [-5,-2.5,0,2.5,5].forEach(z=>bollard(56.6,z));
+  [-6.6,-4.4,-2.2,0,2.2,4.4,6.6].forEach(z=>bollard(56.6,z));   // v552: la High Street qui e' larga 14 m
   [-31,-33.5,-36,-38.5,-41].forEach(z=>bollard(56.6,z));
-  // paletti del piazzale stazione: il traffico gira PRIMA della stazione
-  [-5,-2.5,0,2.5,5].forEach(z=>bollard(-58.5,z));
-  // ROUTE 1 — High Street: andata corsia nord z=+2.75, rotatoria (senso
-  // orario, all'inglese), ritorno corsia sud z=-2.75, U-turn a Station Ave
-  // v549: archi a 5 gradi (erano 30-37) e giro ammorbidito (_smoothLoop)
-  const R1=_smoothLoop([[-46,2.75],[41,2.75]]
-    .concat(_arcPts(47,0,4.75,150,-150,60))
-    .concat([[41,-2.75],[-46,-2.75]])
-    .concat(_arcPts(-52,0,3.6,-30,-330,60)));
-  // ROUTE 2 — Modern Boulevard: corsie z=-33.25 / z=-38.75
-  const R2=_smoothLoop([[-58,-33.25],[43,-33.25]]
-    .concat(_arcPts(48,-36,3.6,150,-150,60))
-    .concat([[43,-38.75],[-58,-38.75]])
-    .concat(_arcPts(-64,-36,3.6,-30,-330,60)));
-  /* v550 (Giacomo: «aumenta la velocita' media, troppo lente anche in
-     rettilineo»): 7,4/6,6 -> 11/10 m/s sui rettilinei (~40/36 km/h, la
-     velocita' di una via di citta'). In curva comanda _loopSpeedLimit, che
-     frena prima delle rotatorie: li' si resta sui 3-4 m/s di prima. */
-  [0,0.25,0.5,0.75].forEach((ph,i)=>_addTrafficCar(R1,ph,11,i));
-  [0.1,0.43,0.76].forEach((ph,i)=>_addTrafficCar(R2,ph,10,i+4));
+  // v553: paletti fra le rotonde della Station Ave e il piazzale della stazione
+  [-4.4,-2.2,0,2.2,4.4].forEach(d=>{ bollard(CONN_X-6.5,d); bollard(CONN_X+d,6.5); bollard(CONN_X-6.5,-36+d); });
+  Object.keys(TRAFFIC_NODES).forEach(k=>{ const n=TRAFFIC_NODES[k]; if(n.zone) TRAFFIC_ZONES.push({ id:k, x:n.x, z:n.z, r:7.5, h:null }); });
+  TRAFFIC_TOURS.forEach(t=>TRAFFIC_LOOPS.push(_loopMeta(_tourPts(t))));
+  TRAFFIC_GATE_PTS.forEach(g=>{ const G={ opts:[] };
+    TRAFFIC_LOOPS.forEach(lp=>{ const i=lp.__find(g[0],g[1],g[2],g[3],0.5); if(i>=0){ G.opts.push({ loop:lp, s:lp.L[i] }); lp.gt.push({ G, s:lp.L[i] }); } });
+  });
+  /* v550: 11/10 m/s sui rettilinei (~40/36 km/h); in curva comanda
+     _loopSpeedLimit. v553: dieci auto invece di sette, sparse sui sei giri. */
+  [[0,0.05,11],[0,0.55,11],[1,0.30,10],[2,0.20,10],[3,0.15,11],[3,0.65,10],[4,0.10,10],[4,0.60,10],[5,0.35,11],[5,0.80,10]]
+    .forEach((q,i)=>_addTrafficCar(TRAFFIC_LOOPS[q[0]],q[1],q[2],i));
+  TRAFFIC_LOOPS.forEach((lp,i)=>setTimeout(()=>{ try{ _loopGround(lp); }catch(e){ console.warn("[quota giro]",e); } },3200+i*220));
   scene.onBeforeRenderObservable.add(()=>{
     const dt=Math.min(0.05, engine.getDeltaTime()/1000);
     /* Chiusura notturna: le auto spariscono con tutto il resto dopo le 22.
@@ -9275,7 +9475,9 @@ function buildTraffic(){
        c'e' nessun conto da fare, non solo nessuna auto da vedere. */
     const carsOpen=townOpen();
     if(carsOpen!==_carsOpenState){ _carsOpenState=carsOpen;
+      TRAFFIC_ZONES.forEach(Z=>{ Z.h=null; });
       _trafficCars.forEach(function(c){ if(c.root) c.root.setEnabled(carsOpen); }); }
+    _sigUpdate(dt,carsOpen);                            // v553: i semafori girano anche a citta' chiusa (giallo lampeggiante)
     if(!carsOpen) return;
     for(let k=0;k<_trafficCars.length;k++){ const c=_trafficCars[k];
       // FRENATA "civile": se il giocatore e' davanti all'auto (entro 6 m,
@@ -9313,10 +9515,50 @@ function buildTraffic(){
       // CODA: distanza (lungo il percorso) dall'auto piu' vicina DAVANTI
       // sullo stesso loop; auto lunghe ~4.4 m, quindi gap centri 7 m ~=
       // 2.6 m tra paraurti. <14 rallenta, <8.5 target 0, <7 stop netto.
+      /* v553: «davanti» = sui prossimi 14 m del MIO percorso, qualunque
+         giro stia facendo l'altra (le corsie sono condivise) */
       let gap=1e9;
-      for(let j=0;j<_trafficCars.length;j++){ if(j===k) continue;
-        const o=_trafficCars[j]; if(o.loop!==c.loop) continue;
-        const g=(o.s-c.s+c.tot)%c.tot; if(g>0.01&&g<gap) gap=g; }
+      { const n=c.loop.length, px=c.root.position.x, pz=c.root.position.z;
+        for(let j=0;j<_trafficCars.length;j++){ if(j===k) continue;
+          const o=_trafficCars[j].root.position;
+          if(Math.abs(o.x-px)>16||Math.abs(o.z-pz)>16) continue;
+          for(let q=1;q<90;q++){ const ix=(i+q)%n, g=(c.L[ix]-c.s+c.tot)%c.tot;
+            if(g>14) break; if(g<1.2) continue;
+            const P=c.loop[ix], dx=o.x-P[0], dz=o.z-P[1];
+            if(dx*dx+dz*dz<1.96){ if(g<gap) gap=g; break; } } } }
+      /* v553 — SEMAFORI: col rosso (e col rosso+giallo) ci si ferma alla
+         linea; col giallo solo se si fa in tempo a frenare */
+      { const sg=c.loop.sg;
+        for(let q=0;q<sg.length;q++){ const d=(sg[q].s-c.s+c.tot)%c.tot; if(d>18) continue;
+          const st=sg[q].S.st|0;
+          if(st>=2 || (st===1 && d>c.cv*c.cv/9+1.5)) vw=Math.min(vw, d<0.4?0:c.v*Math.min(1,d/8)); } }
+      /* v553 — ROTONDE D'INCROCIO: una alla volta */
+      { const zp=c.loop.zp;
+        for(let q=0;q<zp.length;q++){ const p=zp[q], Z=p.Z, dIn=(p.sIn-c.s+c.tot)%c.tot;
+          if(dIn>c.tot-p.len){ if(Z.h==null) Z.h=c; c.zk=Z; continue; }          // ci sono dentro
+          if(dIn>16) continue;
+          c.zk=Z;
+          if(Z.h===c) continue;
+          let free=(Z.h==null) && gap>dIn;        // mai prenotare scavalcando chi mi sta davanti in coda
+          /* ⚠️ L'USCITA DEV'ESSERE LIBERA PER 14 m, non «per un'auto». Fra
+             due rotonde della Station Ave ci sono 11-21 m: se si entra
+             dietro a un'auto che poi si ferma alla rotonda dopo (o al
+             semaforo), si resta con la coda DENTRO l'incrocio, e in due
+             minuti quattro auto si bloccano a vicenda in cerchio
+             (visto in simulazione). Con 14 m liberi chi entra esce sempre. */
+          if(free){ const n=c.loop.length;
+            for(let j=0;j<_trafficCars.length&&free;j++){ if(j===k) continue; const o=_trafficCars[j].root.position;
+              if(Math.hypot(o.x-Z.x,o.z-Z.z)<Z.r){ free=false; break; }
+              if(Math.abs(o.x-Z.x)>26||Math.abs(o.z-Z.z)>26) continue;
+              for(let w=0;w<80;w++){ const ix=(p.iOut+w)%n; if((c.L[ix]-p.sOut+c.tot)%c.tot>14) break;
+                const P=c.loop[ix], dx=o.x-P[0], dz=o.z-P[1]; if(dx*dx+dz*dz<4){ free=false; break; } } } }
+          if(free) Z.h=c;
+          else { const d=dIn-3.5; vw=Math.min(vw, d<0.3?0:c.v*Math.min(1,d/8)); } }
+        for(let q=0;q<TRAFFIC_ZONES.length;q++){ const Z=TRAFFIC_ZONES[q]; if(Z.h!==c) continue;
+          let keep=false;
+          for(let w=0;w<zp.length;w++){ if(zp[w].Z!==Z) continue; const dIn=(zp[w].sIn-c.s+c.tot)%c.tot;
+            if(dIn>c.tot-zp[w].len || dIn<=16){ keep=true; break; } }
+          if(!keep) Z.h=null; } }
       if(gap<7.5) vw=0;
       else if(gap<13) vw=Math.min(vw, c.v*(gap-7.5)/5.5);
       c.cv+=(vw-c.cv)*Math.min(1,6*dt);
@@ -9342,7 +9584,14 @@ function buildTraffic(){
         c.halt=(c.halt||0)+dt;
         if(c.halt>1.2){ try{ SFX.carHorn(c.root.position.x,c.root.position.z); }catch(e){} }
       } else c.halt=0;
-      c.s=(c.s+c.cv*TRAFFIC_SPEED*dt)%c.tot;
+      { const ds=c.cv*TRAFFIC_SPEED*dt, gt=c.loop.gt;
+        /* v553 — VARCHI: passato il punto, si tira a sorte il giro su cui
+           proseguire (posizione e direzione coincidono: nessuno scatto) */
+        let sw=null;
+        for(let q=0;q<gt.length;q++){ const d=(gt[q].s-c.s+c.tot)%c.tot; if(d>0 && d<=ds){ sw=gt[q]; break; } }
+        c.s=(c.s+ds)%c.tot;
+        if(sw){ const O=sw.G.opts, o=O[(Math.random()*O.length)|0];
+          if(o.loop!==c.loop){ const off=(c.s-sw.s+c.tot)%c.tot; _tcBind(c,o.loop); c.s=(o.s+off)%c.tot; } } }
       /* v302 (Giacomo, 3 ott: «le ruote non girano piu'? forse devono girare
          piu' veloci?»). Giravano, ma NON SI VEDEVA: a 7 m/s una ruota da 35 cm
          fa ~20 rad/s, cioe' 20° a fotogramma a 60 fps e 40° a 30 fps, e i
@@ -9358,7 +9607,7 @@ function buildTraffic(){
       i=_tcSeg(c,c.s);
       const a=c.loop[i], b=c.loop[(i+1)%c.loop.length], t=(c.s-c.L[i])/c.seg[i];
       c.root.position.x=a[0]+(b[0]-a[0])*t;
-      if(c.gy){ const u=c.s/c.tot*c.gyN, k0=Math.floor(u), f=u-k0;            // v301: sulla strada, non dentro
+      if(c.gy && c.lift!=null){ const u=c.s/c.tot*c.gyN, k0=Math.floor(u), f=u-k0;            // v301: sulla strada, non dentro
         c.root.position.y=c.lift+c.gy[k0]*(1-f)+c.gy[Math.min(c.gyN,k0+1)]*f; }
       c.root.position.z=a[1]+(b[1]-a[1])*t;
       /* v549: il muso sulla tangente del giro ammorbidito; il filo di
@@ -9481,12 +9730,15 @@ function trafficBlocked(x,z){
    indietro la citta' non e' rimasta congelata).
    ===================================================================== */
 const PED_ROUTES={
-  hs_sw:[[-56,8.9],[-42.5,9.9],[-22,8.9]],                    // High St SUD ovest: Market -> Corner Shop (34 m)
-  hs_se:[[9.5,9.9],[11.5,11.4],[15,11.4],[22,9.4],[42,9.4]],  // High St SUD est: Town School -> rotonda (33 m)
-  hs_ne:[[20,-9.7],[45.5,-10.2],[56,-9.7]],                   // High St NORD est: Style Salon -> Town Hall (36 m)
+  /* v552: High Street allargata, alberi arretrati a z ±8,5 (aiuola fino a
+     ±9,65): le quattro rotte lungo la via passano piu' vicino alle facciate.
+     Riverificate su blocked() reale: 0 campioni bloccati, 0 su asfalto. */
+  hs_sw:[[-56,10.6],[-42.5,10.8],[-22,10.6]],                    // High St SUD ovest: Market -> Corner Shop (34 m)
+  hs_se:[[9.5,9.9],[11.5,11.4],[15,11.4],[22,10.0],[42,10.0]],  // High St SUD est: Town School -> rotonda (33 m)
+  hs_ne:[[20,-10.9],[45.5,-11.0],[56,-10.6]],                   // High St NORD est: Style Salon -> Town Hall (36 m)
   park :[[8.5,12],[8.5,44]],                                  // trasversale est: High St -> Central Park (32 m)
   nd_w :[[-38,-42.7],[-7,-42.7]],                             // promenade New District, davanti a TechLab (31 m)
-  hs_nw:[[-56,-9.7],[-42.5,-10.2],[-20,-9.7]],                // High St NORD ovest: Eco Point -> Beat Club (36 m)
+  hs_nw:[[-56,-10.8],[-42.5,-11.0],[-20,-10.8]],                // High St NORD ovest: Eco Point -> Beat Club (36 m)
   /* ⚠️ Attivato il 24 ago: era la RISERVA verificata a suo tempo (v74 circa)
      ma mai attivata "per stare larghi sul budget Chromebook" (vedi MD). La
      nota del MD diceva "4 wp, 49 m": non corrispondeva più a queste
@@ -9728,7 +9980,7 @@ const RANGER_POSTS=[
   { id:"downtown", x:24,  z:-9.7 },   // High Street nord
   { id:"newdist",  x:-25, z:-42.7},   // promenade New District
   { id:"park",     x:70,  z:-24  },   // vialetto del parco / Clock Tower
-  { id:"station",  x:-86, z:-6   },   // piazzale stazione
+  { id:"station",  x:-100, z:-6  },   // piazzale stazione
   { id:"airport",  x:0,   z:-118 },   // atrio check-in
   { id:"sports",   x:104, z:20   },   // vialetto verso il campo
 ];
@@ -9744,7 +9996,7 @@ const RANGER_NAV=[
   { id:"u6",   ic:"\u{1F96A}",   en:"the Market",       it:"il Market",               x:-54, z:15   },
   { id:"u7",   ic:"\u26bd",      en:"the Sports Field", it:"il campo sportivo",       x:113, z:20   },
   { id:"u8",   ic:"\u{1F455}",   en:"the Clothes Shop", it:"il Clothes Shop",         x:54,  z:15   },
-  { id:"u2_5", ic:"\u{1F686}",   en:"Central Station",  it:"la stazione",             x:-86, z:0    },
+  { id:"u2_5", ic:"\u{1F686}",   en:"Central Station",  it:"la stazione",             x:-100, z:0   },
 ];
 const RANGER_TOPICS=["u0","u1","u2","u3","u4","u5","u6","u7","u8","u2_5"];
 /* bussola GENERICA: sorgente alternativa a quella delle quest open-world,
@@ -13638,10 +13890,10 @@ function hydrant(x,z){ if(insideSolid(x,z,0.5)) return; const M=_pm();
    acrossH=true: attraversa una strada che corre lungo X (barre parallele a X).
    Le 9 barre vengono FUSE in una sola mesh: 1 draw-call per attraversamento. */
 let _cwM=null;
-function crosswalk(cx,cz,acrossH){
+function crosswalk(cx,cz,acrossH,half){ half=half||4.4;   // v553: half = mezza larghezza della carreggiata da coprire
   if(!_cwM){ _cwM=mat("cwm","#dfe4e8"); _cwM.emissiveColor=new BABYLON.Color3(0.10,0.10,0.10); }
   const bars=[];
-  for(let t=-4.4;t<=4.41;t+=1.1){
+  for(let t=-half;t<=half+0.01;t+=1.1){
     const b=BABYLON.MeshBuilder.CreateGround("cwb",{width:acrossH?3.0:0.55,height:acrossH?0.55:3.0},scene);
     b.position.set(acrossH?cx:cx+t, 0.125, acrossH?cz+t:cz); bars.push(b); }
   const m=BABYLON.Mesh.MergeMeshes(bars,true,false,null,false,false);
@@ -13686,18 +13938,33 @@ function streetSign(x,z,n1,ry1,n2,ry2){ if(insideSolid(x,z,0.5)) return; const M
 /* SEMAFORO a palo (testa a 3 luci rivolta verso l'incrocio tx,tz);
    alterna verde/rosso acceso per varieta' (emissive -> glow anche di giorno). */
 let _tlN=0;
-function trafficLight(x,z,tx,tz){ if(insideSolid(x,z,0.5)) return; const M=_pm();
+/* v553 — I SEMAFORI FUNZIONANO (Giacomo, 11 nov: «metti anche dei semafori
+   per far passare pedoni e macchine»). Prima erano arredo: una luce accesa a
+   caso, per sempre. Ora ogni palo appartiene a un attraversamento di
+   SIGNALS (sig) e le tre luci le accende _sigUpdate. (tx,tz) = verso dove
+   guarda la lanterna delle auto; pf = [x,z] verso dove guarda l'omino dei
+   pedoni (rosso sopra, verde sotto), montato sullo stesso palo. */
+function trafficLight(x,z,tx,tz,sig,pf){ if(insideSolid(x,z,0.5)) return; const M=_pm();
+  const S=(typeof SIGNALS!=="undefined") ? SIGNALS.find(q=>q.id===sig) : null;
   const g=new BABYLON.TransformNode("tl",scene); g.parent=townRoot; g.position.set(x,0,z);
-  g.rotation.y=Math.atan2((tx||0)-x,(tz||0)-z);   // +Z locale verso l'incrocio
+  g.rotation.y=Math.atan2((tx||0)-x,(tz||0)-z);   // +Z locale verso chi arriva
   const pole=BABYLON.MeshBuilder.CreateCylinder("tlp",{diameter:0.16,height:4.6,tessellation:8},scene);
   pole.material=M.metalD; pole.position.y=2.3; pole.parent=g;
   const head=BABYLON.MeshBuilder.CreateBox("tlh",{width:0.5,height:1.15,depth:0.3},scene);
   head.material=M.metalD; head.position.set(0,4.0,0.22); head.parent=g; head.__occluder=true;
-  const cols=["#e14b3b","#f0b429","#37b45f"], lit=((_tlN++)%2===0)?2:0;
-  cols.forEach((cc,i)=>{ const s=BABYLON.MeshBuilder.CreateSphere("tll",{diameter:0.24,segments:6},scene);
-    const mm=mat("tlm"+(_sgN++),cc);
-    if(i===lit) mm.emissiveColor=BABYLON.Color3.FromHexString(cc).scale(0.85);
-    s.material=mm; s.position.set(0,4.36-0.36*i,0.40); s.parent=g; }); }
+  const bulb=(cc,par,px,py,pz,d)=>{ const s=BABYLON.MeshBuilder.CreateSphere("tll",{diameter:d,segments:6},scene);
+    const mm=mat("tlm"+(_sgN++),cc); mm.__c=BABYLON.Color3.FromHexString(cc); mm.__on=null;
+    s.material=mm; s.position.set(px,py,pz); s.parent=par; s.isPickable=false; return mm; };
+  const v=["#e14b3b","#f0b429","#37b45f"].map((cc,i)=>bulb(cc,g,0,4.36-0.36*i,0.40,0.24));
+  v.forEach((m,i)=>_sigLamp(m,S?false:i===2));
+  if(S) S.veh.push(v);
+  if(pf){ const pn=new BABYLON.TransformNode("tlped",scene); pn.parent=g; pn.position.y=2.5;
+    pn.rotation.y=Math.atan2(pf[0]-x,pf[1]-z)-g.rotation.y;
+    const pb=BABYLON.MeshBuilder.CreateBox("tlh",{width:0.34,height:0.66,depth:0.2},scene);
+    pb.material=M.metalD; pb.position.set(0,0,0.2); pb.parent=pn;
+    const pv=[bulb("#e14b3b",pn,0,0.16,0.31,0.2), bulb("#37d06a",pn,0,-0.16,0.31,0.2)];
+    pv.forEach(m=>_sigLamp(m,false));
+    if(S) S.ped.push(pv); } }
 
 /* WATER TOWER in legno sul tetto (x, quota tetto y, z) */
 function waterTower(x,y,z,s){ s=s||1; const M=_pm();
@@ -13742,7 +14009,11 @@ function buildNYC(){
   [-4.4,-2.2,0,2.2,4.4].forEach(x=>bollard(x,PARK_AVE_Z0+0.6));
   crosswalk( 8.6,-36,true);  crosswalk(-8.6,-36,true);   // Modern Boulevard
   // (zebra 'verso la stazione' RIMOSSA: finiva sopra la rotatoria ovest x=-64)
-  crosswalk(-72, 8.6,false); crosswalk(-72,-8.6,false);
+  /* v553: sulla Station Ave ora passano le auto. Un solo attraversamento,
+     a meta' fra le due rotonde e col semaforo (vedi SIGNALS); a sud della
+     High Street la carreggiata non c'e' piu'. */
+  crosswalk(CONN_X,-18,false);
+  crosswalk(-2,APT_Z,true,6.0);                       // davanti al terminal
   // ---- IDRANTI rossi sui marciapiedi (High Street: spostati verso la strada a
   //      z=±7.0 invece di ±9.3, cosi' NON tappano il corridoio lungo le facciate:
   //      con il raggio-giocatore l'idrante a ridosso del muro rendeva il passaggio
@@ -13753,22 +14024,32 @@ function buildNYC(){
      proprio dove si gira a piedi attorno — ora che le rotonde si
      attraversano ci passano tutti. Spostati di qualche metro lungo il
      marciapiede, lontano dall'anello. */
-  [[-16,7.0],[24,7.0],[37,7.0],[-40,7.0],
-   [-16,-7.0],[30,-7.0],[-40,-7.0],
+  /* v552: arretrati con il bordo della High Street allargata (HS_PROP); quello
+     a x 30 nord va a x 27, fuori dall'aiuola dell'albero (31,-HS_TREE). */
+  [[-16,HS_PROP],[24,HS_PROP],[37,HS_PROP],[-40,HS_PROP],
+   [-16,-HS_PROP],[27,-HS_PROP],[-40,-HS_PROP],
    [12,-28.2],[-24,-28.2],[-64.6,20],[-64.6,-16]].forEach(p=>hydrant(p[0],p[1]));
   // ---- CARTELLI stradali verdi agli angoli
   streetSign(-7.4,  7.4,"HIGH STREET",Math.PI,"PARK AVE",-Math.PI/2);
   streetSign( 7.4, -7.4,"HIGH STREET",0,      "PARK AVE", Math.PI/2);
   streetSign(-7.4,-28.6,"MODERN BLVD",Math.PI,"PARK AVE",-Math.PI/2);
-  streetSign(-61.4, 7.4,"HIGH STREET",0,      "STATION AVE",-Math.PI/2);
+  streetSign(-61.4, 7.8,"HIGH STREET",0,      "STATION AVE",-Math.PI/2);
   // ---- GRIGLIE della metro sui marciapiedi (piu' fitte vicino agli ingressi M)
   [[-12,9.3],[16,9.3],[36,9.3],[-30,9.3],
    [6,-9.3],[-36,-9.3],[40,-9.3],
    [20,-28.2],[-30,-28.2],[-44,24.7]].forEach(p=>subwayGrate(p[0],p[1]));
   // ---- SEMAFORI agli incroci principali
-  trafficLight( 7.6,  7.6, 0,  0); trafficLight(-7.6, -7.6, 0,  0);
-  trafficLight(-7.6,  7.6, 0,  0); trafficLight( 7.6, -7.6, 0,  0);
-  trafficLight( 7.6,-28.4, 0,-36); trafficLight(-7.6,-28.4, 0,-36);
+  /* v553: ogni palo guarda le auto che arrivano sulla SUA corsia (a
+     sinistra, all'inglese: verso est si viaggia a z maggiore) e porta
+     l'omino per chi attraversa. I due pali oltre le strisce sono i ripetitori. */
+  trafficLight(-7.6,  7.6,-20,  7.6,"hs",[-7.6,0]); trafficLight( 7.6,  7.6,-20,  7.6,"hs",[ 7.6,0]);   // per chi va a est
+  trafficLight( 7.6, -7.6, 20, -7.6,"hs",[ 7.6,0]); trafficLight(-7.6, -7.6, 20, -7.6,"hs",[-7.6,0]);   // per chi va a ovest
+  trafficLight(-7.6,-28.4,-20,-28.4,"blvd",[-7.6,-36]); trafficLight( 7.6,-28.4,-20,-28.4,"blvd",[ 7.6,-36]);
+  trafficLight(10.8,-42.1, 24,-42.1,"blvd",[10.8,-36]); trafficLight(-10.8,-42.1, 24,-42.1,"blvd",[-10.8,-36]);
+  trafficLight(CONN_X+6.1,-15.9, CONN_X+6.1, -4,"conn",[CONN_X,-15.9]);       // Station Ave, per chi sale da High Street
+  trafficLight(CONN_X-6.1,-20.1, CONN_X-6.1,-32,"conn",[CONN_X,-20.1]);       // ...e per chi scende dal Boulevard
+  trafficLight(-4.1,APT_Z+7.6,-16,APT_Z+7.6,"apt",[-4.1,APT_Z]);              // strada dell'aeroporto, verso est
+  trafficLight( 0.1,APT_Z-7.6, 12,APT_Z-7.6,"apt",[ 0.1,APT_Z]);              // ...verso ovest
 }
 
 /* ---- DISTRIBUZIONE PROPS (curata: ogni voce e' protetta da insideSolid) ---- */
@@ -13821,7 +14102,7 @@ function buildProps(){
      l'aiuola (2,3 m di lato), addosso al tronco.
      bin() non se ne accorgeva perche' insideSolid ignora apposta i tronchi
      (flag tree, vedi tree()). Ora stanno a ~2 m, fuori dal cordolo. */
-  [[-11.5,7.0],[11.0,7.0],[-11.5,-7.0],[25,-7.0],[41,7.0]].forEach(p=>bin(p[0],p[1]));
+  [[-11.5,7.0],[11.0,7.0],[-11.5,-7.0],[25,-HS_PROP],[41,HS_PROP]].forEach(p=>bin(p[0],p[1]));   // v552: i due fuori dall'incrocio arretrano col bordo
 
   // ---- (v274: TOLTI i paletti a z ±5.6 che delimitavano l'attraversamento
   //      della Park Ave. L'attraversamento non c'e' piu' (v273), e fra la fila
@@ -13837,17 +14118,20 @@ function buildProps(){
   hedge(-60,-30,-44,-30); hedge(44,-30,60,-30);
 
   // ---- STACCIONATA leggera lungo la spalla esterna verso la stazione
-  fenceRun(-78,-22,-78,22);
+  fenceRun(STATION.x+17.6,-22,STATION.x+17.6,22);   // v553: segue la stazione (fra marciapiede e binari)
 
   // ---- ALBERI extra: raddoppio la fila lungo i boulevard
-  [[-18,8],[18,8],[-44,8],[44,8],[-66,8],[66,8],
-   [-18,-8],[18,-8],[-44,-8],[44,-8],[-66,-8],[66,-8],
+  [[-18,HS_TREE],[18,HS_TREE],[-44,HS_TREE],[44,HS_TREE],[-63.5,HS_TREE],[66,8],          // v552: HS_TREE dove la strada e' larga (v553: anche a -63,5)
+   [-18,-HS_TREE],[18,-HS_TREE],[-44,-HS_TREE],[44,-HS_TREE],[-63.5,-HS_TREE],[66,-8],
    [-15,-27],[15,-27],[-40,-27],[40,-27],[-58,-27],[58,-27]]
    .forEach(p=>tree(p[0],p[1],true));
 
   // ---- LAMPIONI extra per estendere l'illuminazione serale
-  [[-18,5.6],[18,5.6],[-44,5.6],[44,5.6],[-66,5.6],[66,5.6],
-   [-18,-5.6],[18,-5.6],[-44,-5.6],[44,-5.6],[-66,-5.6],[66,-5.6]]
+  /* v552 (Giacomo: «ci sono lampioni proprio sul bordo»): stavano a z ±5,6,
+     cioe' a 10 cm dall'asfalto. Ora a 0,9 m dal bordo nuovo (HS_LAMP), e
+     spostati di 3 m lungo la via, fuori dall'aiuola dell'albero accanto. */
+  [[-21,HS_LAMP],[21,HS_LAMP],[-47,HS_LAMP],[39,HS_LAMP],[-60,HS_LAMP],[66,6.6],          // 39: da 45 in poi insideSolid lo scarta (facciata del Clothes Shop)
+   [-21,-HS_LAMP],[21,-HS_LAMP],[-47,-HS_LAMP],[47,-HS_LAMP],[-60,-HS_LAMP],[66,-6.6]]
    .forEach(p=>lamp(p[0],p[1]));
 
   // ---- PASS NYC: attraversamenti, idranti, cartelli, semafori
@@ -13925,6 +14209,10 @@ function buildStation(){
   // basta cambiare railS; per farli uscire anche a nord si abbassa railN.
   const railN=platZ-24, railS=platZ+185, railLEN=railS-railN, railC=(railN+railS)/2;
   const railm=mat("railm","#3a3f44","#222");
+  /* v553: i binari non corrono piu' sull'asfalto della Station Ave ma su
+     lastre e prato: sotto ci va la massicciata */
+  { const bal=BABYLON.MeshBuilder.CreateGround("ballast",{width:4.2,height:railLEN},scene);
+    bal.material=mat("ballastm","#77716a"); bal.position.set(platX+5.75,0.055,railC); bal.parent=townRoot; bal.__ground=true; }
   for(let i=0;i<2;i++){ const rail=BABYLON.MeshBuilder.CreateBox("rail",{width:0.25,height:0.2,depth:railLEN},scene);
     rail.material=railm; rail.position.set(platX+5+i*1.5,0.2,railC); rail.parent=townRoot; rail.isPickable=false; }
   // traverse su tutta la lunghezza, FUSE in 1 mesh (1 draw-call) per reggere su device deboli
@@ -14077,15 +14365,25 @@ function buildAirport(){
   // ACCORCIATA a est (termina a x=38, davanti al terminal): il vecchio tratto
   // che moriva sulla promenade di Central Park è ora ESPLANADE pedonale (v. sotto)
   const road=BABYLON.MeshBuilder.CreateGround("aprd",{width:116,height:18},scene);
-  road.material=roadMat("aprdm");   // v3 ott: stesso asfalto delle altre strade
+  road.material=roadMat("roadmApt");   // v3 ott: stesso asfalto delle altre strade. v553: nome roadm* (era aprdm) perche' ora e' carreggiata: pedOnCarriageway e i punti-quest la riconoscono dal nome
   /* ⚠️ v4 ott: questa riga era finita DENTRO il commento qui sopra: la strada
      restava a (0,0,0), complanare col fondo «asph» in mezzo alla citta'
      (z-fighting asfalto/lastre) e all'aeroporto mancava. */
   road.position.set(-20,0.086,zRoad); road.parent=townRoot;
-  for(let x=-74;x<=30;x+=8){ const d=BABYLON.MeshBuilder.CreateGround("aprdl",{width:3.6,height:0.6},scene);
-    d.material=mat("aprdlm","#1d2a32","#e8d99a"); d.position.set(RX+x,0.116,zRoad); d.parent=townRoot; }
-  [-7.6,7.6].forEach(dz=>{ const e=BABYLON.MeshBuilder.CreateGround("aprde",{width:116,height:0.45},scene);
-    e.material=mat("aprdem","#1d2a32","#cfd6da"); e.position.set(-20,0.106,zRoad+dz); e.parent=townRoot; });
+  /* v553 — ORA CI PASSANO LE AUTO (Giacomo, 11 nov: «si possa circolare
+     anche nella strada che porta all'aeroporto, che adesso e' vuota»).
+     L'asfalto resta largo 18 m, ma la CARREGGIATA e' la fascia z -69..-55
+     (14 m, mezzeria APT_Z): i 4 m a sud diventano marciapiede, perche' su
+     quel lato si aprono le porte del City Hospital e dei palazzi del New
+     District e li' davanti ci si deve poter stare. Le auto arrivano dalla
+     Station Ave, girano alla rotonda davanti al terminal (x 14) e tornano:
+     il tratto a est di x 22 resta pedonale, chiuso dai paletti. */
+  for(let x=-64;x<=0;x+=8){ const d=BABYLON.MeshBuilder.CreateGround("aprdl",{width:3.6,height:0.6},scene);
+    d.material=mat("lnmApt","#1d2a32","#e8d99a"); d.position.set(RX+x,0.116,APT_Z); d.parent=townRoot; }
+  [-6.6,6.6].forEach(dz=>{ const e=BABYLON.MeshBuilder.CreateGround("aprde",{width:116,height:0.45},scene);
+    e.material=mat("lnmAptE","#1d2a32","#cfd6da"); e.position.set(-20,0.106,APT_Z+dz); e.parent=townRoot; });
+  { const x0=CONN_X+5.5, x1=38, sw=BABYLON.MeshBuilder.CreateGround("aprswS",{width:x1-x0,height:4.4},scene);
+    sw.material=sidewalkMat("swm",x1-x0,4.4); sw.position.set((x0+x1)/2,0.10,APT_Z+9.2); sw.parent=townRoot; sw.__ground=true; }
   // marciapiede SUD dell'aeroporto RIMOSSO: era COMPLANARE (Y=0.05) e sovrapposto al
   // piazzale nbApron, causando z-fighting/sfarfallio dietro Job Centre/Hospital/City Life
   // Plaza. Il piazzale copre gia' quell'area con lo stesso grigio ed e' lui il receiver ombre.
@@ -14100,12 +14398,13 @@ function buildAirport(){
   { const esp=BABYLON.MeshBuilder.CreateGround("apEsp",{width:50,height:13},scene);
     esp.material=sidewalkMat("apEspm",50,13); esp.position.set(61,0.07,-63.5); esp.parent=townRoot; esp.__ground=true;
     // paletti a chiudere l'ex imbocco carrabile (stesso pattern del piazzale stazione)
-    [-66,-63,-60,-57,-54].forEach(z=>bollard(38.5,z)); }
+    [-67.5,-65,-62.5,-60,-57.5].forEach(z=>bollard(22.5,z)); }   // v553: da x 38,5 a 22,5, subito dopo la rotonda del terminal
 
   // ===== VIALE D'ACCESSO (N-S) + PIAZZALE =====
   const av=BABYLON.MeshBuilder.CreateGround("apav",{width:12,height:24},scene);
   av.material=roadMat("apavm"); av.position.set(AX,0.079,zAv); av.parent=townRoot;
-  for(let z=-10;z<=10;z+=4.5){ const d=BABYLON.MeshBuilder.CreateGround("apavl",{width:0.6,height:2.2},scene);
+  for(let z=-10;z<=10;z+=4.5){ if(Math.abs(zAv+z-APT_Z)<8) continue;       // v553: non dentro la rotonda del terminal
+    const d=BABYLON.MeshBuilder.CreateGround("apavl",{width:0.6,height:2.2},scene);
     d.material=mat("apavlm","#1d2a32","#d9c98f"); d.position.set(AX,0.12,zAv+z); d.parent=townRoot; }
   const fore=BABYLON.MeshBuilder.CreateGround("apfo",{width:42,height:22},scene);
   fore.material=sidewalkMat("apfom",42,22); fore.position.set(AX,0.052,zFore); fore.parent=townRoot; fore.__ground=true;
@@ -53001,7 +53300,7 @@ const DESTS=[
    prima (1,85 su una tela 1,55). */
 /* v309l: il bordo sud passa da z48 a z68, se no lo Skatepark (z 46..66,
    a nord-est del Diner) restava fuori dalla mappa */
-const MAP_W=480, MAP_H=340, WX0=-100, WX1=140, WZ0=-96, WZ1=68;
+const MAP_W=480, MAP_H=340, WX0=-118, WX1=140, WZ0=-96, WZ1=68;
 function worldToMap(x,z){ return { mx:(x-WX0)/(WX1-WX0)*MAP_W, my:(z-WZ0)/(WZ1-WZ0)*MAP_H }; }
 function _mapPct(x,z){ return { l:(x-WX0)/(WX1-WX0)*100, t:(z-WZ0)/(WZ1-WZ0)*100 }; }
 /* I LUOGHI DELLA MAPPA SI LEGGONO DA TOWN[], non da una seconda lista da
@@ -53071,7 +53370,7 @@ function buildMapPins(){
     e.style.left=Math.min(a.l,b.l)+"%"; e.style.top=Math.min(a.t,b.t)+"%";
     e.style.width=Math.max(0.9,Math.abs(b.l-a.l))+"%";
     e.style.height=Math.max(1.2,Math.abs(b.t-a.t))+"%"; cv.appendChild(e); }
-  road(-90,0,78,0); road(-86,-31,72,-31); road(0,PARK_AVE_Z0,0,48); road(-72,-30,-72,26);   // v273: la Park Ave parte a sud di Home
+  road(-77,0,78,0); road(-77,-31,72,-31); road(0,PARK_AVE_Z0,0,48); road(-72,-62,-72,0); road(-72,-62,20,-62);   // v553: trasversale e strada dell'aeroporto collegate   // v273: la Park Ave parte a sud di Home
   road(-66,-60,78,-60); road(14,-46,14,-72); road(78,-60,78,0);
   /* est: i due vialetti veri del parco (x=104 nord-sud, z=0 est-ovest, vedi
      buildPark) e il tratto di strada che porta al terminal. Senza, i nuovi
@@ -57177,7 +57476,7 @@ const CY8_IVY={ x:78.5, z:-6.5 };  // angolo strada: dove il giocatore arriva
    vicini distano 26 m, quindi non si sovrappongono mai. */
 const CY8_PLACES=[
   { en:"train station",  it:"stazione",        clue:"You catch a train here.",
-    box:[-96,-76,-12,12],   x:-86, z:0 },
+    box:[-110,-90,-12,12], x:-100, z:0 },
   { en:"town hall",      it:"municipio",       clue:"The mayor works in this building.",
     box:[44,64,-26,-6],     x:54,  z:-16 },
   { en:"market",         it:"mercato",         clue:"You buy fruit and vegetables here.",
@@ -67254,6 +67553,13 @@ MECH.stormNight=function(s){
    palazzo» alla lettera, ma in un posto dove non c'e' niente da fare e
    dove non ci si passa mai.
 
+   ⚠️ v553 (11 nov): la rete del traffico e' cambiata — vedi buildTraffic.
+   Ora le auto percorrono anche la Station Ave (x -72, da z 0 a z -62) e la
+   STRADA DELL'AEROPORTO da x -72 a x 20 (carreggiata z -69..-55): i
+   cristalli che stavano li' sono stati portati sui marciapiedi accanto
+   (z -53, lato sud), quelli della vecchia stazione sul piazzale
+   nuovo. Resta buona la strada a est di x 22, che e' pedonale.
+
    ⚠️ Il pool NON e' diviso per anno ed e' giusto cosi': i ragazzi di terza
    girano per tutta la citta', non solo nel loro distretto, e i nove
    cristalli attivi pescano da tutti i 71 punti senza guardare
@@ -67266,20 +67572,20 @@ const GEM_SPOTS=[
      deck, non il prato: a 0.14 il cristallo sarebbe affondato nel legno.
      Dentro la balaustra lo spazio libero e' x 89.6..96.4 / z 10.8..17.2. */
   [93,14,0.30],[94.6,15.4,0.30],
-  [-25,39,0.04],[-20,30,0.04],[-8,30,0.04],[-8,39,0.04],[-51,-67,0.09],
-  [-42,-67,0.09],[31,32,0.03],[49,32,0.03],[-71,-66,0.09],[-34,-72,0.05],
+  [-25,39,0.04],[-20,30,0.04],[-8,30,0.04],[-8,39,0.04],[-48,-53.2,0.14],
+  [-40,-53.2,0.14],[31,32,0.03],[49,32,0.03],[-81,-58,0.04],[-34,-72,0.05],
   [71,-67,0.07],[85,-67,0.07],[40,29,0.04],[-8,-24,0.04],[37,39,0.04],
   [-83,-65,0.04],[-8,-10,0.05],[42,20,0.04],[61,22,0.2],[11,-52,0.09],
-  [51,23,0.04],[-29,29,0.04],[-68,-53,0.09],[-52,-53,0.09],[34,-22,0.04],
+  [51,23,0.04],[-29,29,0.04],[-63,-53,0.14],[-52,-53,0.09],[34,-22,0.04],
   [38,-42,0.05],[21,21,0.04],[-35,39,0.04],[-45,-21,0.04],[-35,-21,0.04],
   [32,20,0.04],[42,11,0.05],[45,-19,0.04],[-40,-10,0.05],[2,-53,0.09],
-  [-45,15,0.04],[-92,-6,0.04],[-83,-6,0.05],[-63,16,0.04],[9,-43,0.08],
-  [35,-13,0.04],[7,-27,0.04],[58,-21,0.2],[43,-6,0.05],[63,-13,0.2],
-  [-43,-51,0.09],[20,-54,0.09],[97,1,0.18],[62,12,0.2],[38,-51,0.09],
+  [-45,15,0.04],[-108,-9,0.04],[-81,-6,0.05],[-63,16,0.04],[9,-43,0.08],
+  [35,-13,0.04],[7,-27,0.04],[58,-21,0.2],[41,-8.6,0.05],[63,-13,0.2],
+  [-43,-51,0.09],[20,-54,0.14],[97,1,0.18],[62,12,0.2],[38,-51,0.09],
   [46,41,0.04],[25,-23,0.04],[-51,-42,0.05],[18,12,0.04],[-80,3,0.6],
-  [-17,44,0.03],[82,-22,0.2],[97,-8,0.14],[113,4,0.14],[-7,-54,0.09],
-  [11,-7,0.05],[28,41,0.03],[-44,37,0.03],[-60,-58,0.09],[-34,-51,0.09],
-  [-47,6,0.05],[-64,7,0.05],[-92,11,0.04]
+  [-17,44,0.03],[82,-22,0.2],[97,-8,0.14],[113,4,0.14],[-7,-54,0.14],
+  [11,-7,0.05],[28,41,0.03],[-44,37,0.03],[-57,-53,0.14],[-34,-51,0.09],
+  [-49.5,8.6,0.05],[-61.5,10,0.05],[-106,11,0.04]
 ];
 
 /* VERBI IRREGOLARI — base, past, participio, italiano.
