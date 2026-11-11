@@ -1540,7 +1540,10 @@ const TOWN=[
     yr:3, u:"Unit 1", t:"Job Centre Tower", ic:"💼", lex:"professioni · aggettivi sulle persone", qid:"u3_1" },
   { model:"bJ",    x:-30, z:-47, rot:0,
     yr:3, u:"Unit 2", t:"TechLab", ic:"💻", lex:"tecnologia · oggetti tecnologici", qid:"u3_2" },
-  { model:"bG",    x:30,  z:-45.7, rot:Math.PI, flip:true,   // GIRATO: entrata a nord (strada aeroporto), via dal traffico del boulevard
+  /* v555 (Giacomo, 11 nov): z -45,7 -> -47. Il retro arrivava a z -40,8,
+     cioe' 70 cm DENTRO la carreggiata del Modern Boulevard (bordo a -41,5).
+     Ora sta a 60 cm dal bordo, e davanti restano 2 m di marciapiede. */
+  { model:"bG",    x:30,  z:-47.0, rot:Math.PI, flip:true,   // GIRATO: entrata a nord (strada aeroporto), via dal traffico del boulevard
     yr:3, u:"Unit 5", t:"City Hospital", ic:"🏥", lex:"malattie · infortuni · rimedi", qid:"u3_5" },
   { model:"bA",    x:-60, z:-47, rot:0,
     yr:3, u:"Unit 4", t:"Climate & Fire Stn", ic:"🔥", lex:"eventi estremi · disastri · ambiente", qid:"u3_4" },
@@ -6882,7 +6885,7 @@ const FILLER=[
      dietro il marciapiede nord (che finisce a z -72,8). */
   {m:"sky", x:-78, z:-78, r: 0.30, s:1.25, c:"#8f9bb0"},
   {m:"bJ",  x:-60, z:-76, r: 0.00, s:1.05, c:"#a8b4c4"},
-  {m:"bA",  x:-44, z:-74, r: 0.20, s:1.15, c:"#9aa6b8"},
+  {m:"bA",  x:-44, z:-81, r: 0.20, s:1.15, c:"#9aa6b8"},   // v555: era a z -74, con la facciata sul bordo della strada dell'aeroporto
   {m:"bI",  x: 62, z:-70, r: 0.15, s:1.10, c:"#a0aabb"},
   {m:"sky", x: 78, z:-74, r: 0.00, s:1.30, c:"#8b97ab"},
   // seconda fila sud, dietro la Old Town (facciate a nord)
@@ -8108,8 +8111,16 @@ function buildTown(){
       const d=BABYLON.MeshBuilder.CreateGround("ln",{width:0.5,height:2.4},scene);
       d.material=wetFX(mat("lnm","#1d2a32","#d9c98f")); d.position.set(x,0.11,z); d.parent=townRoot; }
     // marciapiedi larghi 5.5 sui due lati (y=0.043 < 0.046 delle strisce H: niente z-fighting agli incroci)
-    [-8.25,8.25].forEach(dx=>{ const s=BABYLON.MeshBuilder.CreateGround("swv",{width:5.5+SW_UNDER,height:h||300},scene);
-      s.material=sidewalkMat("swm",5.5,h||300); s.position.set(x+dx-Math.sign(dx)*SW_UNDER/2,0.043,0); s.parent=townRoot; s.__ground=true; }); }
+    /* v555 (Giacomo, 11 nov: «in un'altra strada una linea dritta che non
+       serve piu'»): i due marciapiedi restavano lunghi 300 m anche dopo che
+       la carreggiata era stata accorciata (v553): a sud della High Street e a
+       nord dell'aeroporto correvano da soli in mezzo al prato, due strisce
+       di lastre dritte verso il nulla. Ora accompagnano la carreggiata e
+       basta (5,5 m oltre i due capi, quanto i marciapiedi delle vie che
+       incrociano). */
+    const sz0=z0-4.5, sz1=z1+5.5, sh=sz1-sz0;
+    [-8.25,8.25].forEach(dx=>{ const s=BABYLON.MeshBuilder.CreateGround("swv",{width:5.5+SW_UNDER,height:sh},scene);
+      s.material=sidewalkMat("swm",5.5,sh); s.position.set(x+dx-Math.sign(dx)*SW_UNDER/2,0.043,(sz0+sz1)/2); s.parent=townRoot; s.__ground=true; }); }
   // PIAZZALE PAVIMENTATO del NEW DISTRICT (Anno 3): tutta la fila di palazzi
   // (Job Centre Tower, City Hospital, City Life Plaza, TechLab, Climate & Fire)
   // appoggia qui; la carreggiata del Modern Boulevard scorre DAVANTI alle
@@ -8249,7 +8260,9 @@ function buildTown(){
       /* v330: vetrina da negozio (SHOP_FRONT) e Halloween (HALLOWEEN.on) */
       _dr=dressBuilding(root,{ name:p.t, front:[0,_d], door:_dm?[_dm.c.x,_dm.c.z]:[p.x,(_d<0?b2.min.z:b2.max.z)],
         accent:_mixHex(_hx,"#1c1a18",0.42).toHexString(), avoid:_wtAt,
-        shop:SHOP_FRONT[p.t]||null, halloween:HALLOWEEN.on }); }
+        shop:SHOP_FRONT[p.t]||null, halloween:HALLOWEEN.on,
+        awnings:(p.t==="City Hospital")?false:undefined }); }       // v555: un ospedale non ha le tende da negozio
+    if(p.t==="City Hospital"){ try{ hospitalSigns(b2); }catch(e){ console.warn("[insegne ospedale]",e); } }
     // ---- CARTELLO unita' (vale per OGNI edificio) ----
     const active = (p.role==="home"||p.role==="cinema"||!!(p.qid&&QUESTS[p.qid]));
     const anc=anchorMesh(townRoot,p.x,Math.min(top+1.4,22),p.z);
@@ -14225,6 +14238,40 @@ function landmarkSign(x,y,z,ic,title,sub){
   const anc=anchorMesh(townRoot,x,y,z); guiLabel(anc, ic+" "+title, sub, false, "town"); return anc;
 }
 /* insegna fisica "da vetrina" su una facciata (due lati, NON specchiata) */
+/* v555 — INSEGNE DA OSPEDALE (Giacomo, 11 nov: «metti delle insegne da
+   ospedale»). Sulla facciata d'ingresso (nord, verso la strada
+   dell'aeroporto): la fascia bianca con la croce e CITY HOSPITAL, e il
+   rosso di A&E · EMERGENCY. La stessa fascia sul retro, verso il Modern
+   Boulevard. Sul marciapiede il cartello blu con la H. b = bbox dell'edificio. */
+function hospitalSigns(b){
+  const mk=(W,H,draw)=>{ const dt=new BABYLON.DynamicTexture("hospT"+(_sgN++),{width:W,height:H},scene,true), c=dt.getContext();
+    draw(c,W,H); dt.update(); const m=new BABYLON.StandardMaterial("hospSm"+(_sgN++),scene); m.diffuseTexture=dt; m.emissiveTexture=dt;
+    dt.level=0.8; m.specularColor=new BABYLON.Color3(0,0,0); return m; };
+  const cross=(c,x,y,r,col)=>{ c.fillStyle=col; c.fillRect(x-r*0.32,y-r,r*0.64,r*2); c.fillRect(x-r,y-r*0.32,r*2,r*0.64); };
+  const fascia=mk(1024,200,(c,W,H)=>{ c.fillStyle="#f7f9fb"; c.fillRect(0,0,W,H); c.fillStyle="#0b5fa5"; c.fillRect(0,H-22,W,22);
+    cross(c,104,H/2-8,62,"#d62828");
+    c.fillStyle="#0b3d6b"; c.font="bold 112px Arial,sans-serif"; c.textAlign="left"; c.textBaseline="middle"; c.fillText("CITY HOSPITAL",200,H/2-6); });
+  const ae=mk(640,160,(c,W,H)=>{ c.fillStyle="#c81e1e"; c.fillRect(0,0,W,H); c.strokeStyle="#ffffff"; c.lineWidth=8; c.strokeRect(8,8,W-16,H-16);
+    c.fillStyle="#ffffff"; c.font="bold 62px Arial,sans-serif"; c.textAlign="center"; c.textBaseline="middle"; c.fillText("A&E  EMERGENCY",W/2,H/2+4); });
+  const hb=mk(256,256,(c,W,H)=>{ c.fillStyle="#0b5fa5"; c.fillRect(0,0,W,H); c.strokeStyle="#ffffff"; c.lineWidth=12; c.strokeRect(10,10,W-20,H-20);
+    c.fillStyle="#ffffff"; c.font="bold 190px Arial,sans-serif"; c.textAlign="center"; c.textBaseline="middle"; c.fillText("H",W/2,H/2+10); });
+  /* il corpo alto del modello e' largo ~9,8 m e sta sul lato est del bbox
+     (a ovest c'e' solo la pensilina bassa); le fasce marcapiano sporgono
+     di ~30 cm, quindi le insegne stanno a 40 cm dal muro */
+  const cx=b.max.x-4.9, w=8.4, y=Math.min(b.max.y-1.0,9.6), OFF=0.4;   // sopra il cartello col nome, che sta a ~7 m
+  const plane=(m,pw,ph,x,py,z,ry)=>{ const p=BABYLON.MeshBuilder.CreatePlane("hospSign",{width:pw,height:ph},scene);
+    p.material=m; p.position.set(x,py,z); p.rotation.y=ry; p.parent=townRoot; p.isPickable=false; return p; };
+  plane(fascia,w,w*200/1024,cx,y,b.min.z-OFF,0);                 // ingresso (si legge da nord)
+  plane(fascia,w,w*200/1024,cx,y,b.max.z+OFF,Math.PI);           // retro, verso il Boulevard
+  plane(ae,3.6,0.9,cx,4.35,b.min.z-OFF,0);
+  /* il cartello blu con la H, su palo, sul marciapiede davanti */
+  const px=b.min.x+0.8, pz=b.min.z-1.5, M=_pm();
+  if(!insideSolid(px,pz,0.3)){
+    const pole=BABYLON.MeshBuilder.CreateCylinder("hospPole",{diameter:0.12,height:3.0,tessellation:8},scene);
+    pole.material=M.metalD; pole.position.set(px,1.5,pz); pole.parent=townRoot;
+    plane(hb,0.9,0.9,px,2.75,pz-0.07,0); plane(hb,0.9,0.9,px,2.75,pz+0.07,Math.PI);
+    plane(hb,0.9,0.9,px-0.07,2.75,pz,Math.PI/2); plane(hb,0.9,0.9,px+0.07,2.75,pz,-Math.PI/2);
+    addSolid(px-0.12,px+0.12,pz-0.12,pz+0.12,"town"); } }
 function facilitySign(x,y,z,ic,title){
   const W=560,H=130,worldW=4, wh=worldW*H/W;
   const dt=new BABYLON.DynamicTexture("fsg"+(_sgN++),{width:W,height:H},scene,false); dt.hasAlpha=true;
@@ -14462,8 +14509,16 @@ function buildAirport(){
      il tratto a est di x 22 resta pedonale, chiuso dai paletti. */
   for(let x=-64;x<=0;x+=8){ const d=BABYLON.MeshBuilder.CreateGround("aprdl",{width:3.6,height:0.6},scene);
     d.material=mat("lnmApt","#1d2a32","#e8d99a"); d.position.set(RX+x,0.116,APT_Z); d.parent=townRoot; }
-  [-6.6,6.6].forEach(dz=>{ const e=BABYLON.MeshBuilder.CreateGround("aprde",{width:116,height:0.45},scene);
-    e.material=mat("lnmAptE","#1d2a32","#cfd6da"); e.position.set(-20,0.106,APT_Z+dz); e.parent=townRoot; });
+  /* v555 (Giacomo, 11 nov: «e' rimasta una linea dritta di separazione nella
+     strada che va all'aeroporto»): le due linee di bordo erano lunghe 116 m,
+     da un capo all'altro dell'asfalto. Quella sud TAGLIAVA di traverso lo
+     sbocco della Station Ave, proprio dove le auto entrano in rotonda, e
+     tutte e due proseguivano nel tratto pedonale oltre i paletti. Ora vanno
+     solo lungo la carreggiata vera: a nord da x -77,5, a sud da dove
+     finisce la Station Ave, e si fermano alla rotonda del terminal. */
+  [[-6.6,CONN_X-5.5],[6.6,CONN_X+5.5]].forEach(([dz,x0])=>{ const x1=7.2;
+    const e=BABYLON.MeshBuilder.CreateGround("aprde",{width:x1-x0,height:0.45},scene);
+    e.material=mat("lnmAptE","#1d2a32","#cfd6da"); e.position.set((x0+x1)/2,0.106,APT_Z+dz); e.parent=townRoot; });
   { const x0=CONN_X+5.5, x1=38, sw=BABYLON.MeshBuilder.CreateGround("aprswS",{width:x1-x0,height:4.4},scene);
     sw.material=sidewalkMat("swm",x1-x0,4.4); sw.position.set((x0+x1)/2,0.10,APT_Z+9.2); sw.parent=townRoot; sw.__ground=true; }
   // marciapiede SUD dell'aeroporto RIMOSSO: era COMPLANARE (Y=0.05) e sovrapposto al
@@ -14483,9 +14538,14 @@ function buildAirport(){
     [-67.5,-65,-62.5,-60,-57.5].forEach(z=>bollard(22.5,z)); }   // v553: da x 38,5 a 22,5, subito dopo la rotonda del terminal
 
   // ===== VIALE D'ACCESSO (N-S) + PIAZZALE =====
-  const av=BABYLON.MeshBuilder.CreateGround("apav",{width:12,height:24},scene);
-  av.material=roadMat("apavm"); av.position.set(AX,0.079,zAv); av.parent=townRoot;
-  for(let z=-10;z<=10;z+=4.5){ if(Math.abs(zAv+z-APT_Z)<8) continue;       // v553: non dentro la rotonda del terminal
+  /* v555: l'asfalto del viale (12 x 24 m) non si posa piu'. Il tratto utile
+     ora e' dentro la strada dell'aeroporto e la rotonda del terminal; ne
+     avanzava un rettangolo scuro sotto il palazzo a sud, attraversato dal
+     marciapiede nuovo. */
+  /* v555: la mezzeria del viale non si disegna piu'. Del viale restano due
+     monconi ai lati della rotonda del terminal (uno finisce contro un
+     palazzo): un trattino li' in mezzo era una riga senza strada. */
+  for(let z=-10;z<=10;z+=4.5){ if(true) continue;
     const d=BABYLON.MeshBuilder.CreateGround("apavl",{width:0.6,height:2.2},scene);
     d.material=mat("apavlm","#1d2a32","#d9c98f"); d.position.set(AX,0.12,zAv+z); d.parent=townRoot; }
   const fore=BABYLON.MeshBuilder.CreateGround("apfo",{width:42,height:22},scene);
