@@ -5810,9 +5810,57 @@ function octDynRoots(){ const r=[];
   try{ if(typeof _trafficCars!=="undefined")
          _trafficCars.forEach(c=>{ if(c&&c.root) r.push(c.root); }); }catch(e){}
   return r; }
+/* =====================================================================
+   v556 — OCTREE CHE TAGLIA DAVVERO (Giacomo, 13 nov: «dopo le ultime
+   modifiche ci sono dei rallentamenti»). Misurato: con profondita' 2 su un
+   mondo di 840 m (l'orizzonte hzLawn arriva a ±420) le celle erano di 210 m,
+   cioe' TUTTA la citta' stava in 4 celle: l'albero restituiva 4586 candidate
+   su 5352 mesh, e Babylon le valutava una per una a ogni fotogramma (meta'
+   del tempo di CPU del fotogramma). Con profondita' 5 le celle sono di 26 m:
+   ~1900 candidate, valutazione dimezzata.
+
+   ⚠️ CELLE PICCOLE = IL RISCHIO DI PRIMA DIVENTA VERO: con celle da 210 m
+   niente usciva mai dalla sua; con 26 m un oggetto che si sposta senza
+   essere marcato __dyn (una porta, un carrello, un oggetto di quest messo
+   altrove) puo' uscire dalla sua cella e sparire. Da qui il GUARDIANO DEI
+   MOBILI: alla costruzione si fotografa la sfera d'ingombro di ogni mesh
+   ferma; a ogni fotogramma se ne ricontrolla una fetta (tutte in ~20
+   fotogrammi). Chi si e' mossa passa in dynamicContent PER SEMPRE (__dyn),
+   quindi viene restituita ovunque sia. Se in una fetta se ne muovono tante
+   insieme (un intero blocco riposizionato) si rifa' l'albero, una volta; chi
+   viene ripescata una seconda volta passa comunque fra le mobili.
+   __oS=true vuol dire «ferma e sorvegliata»: lo usano anche i raggi veloci
+   (_pvCerca) per scartare con la sfera PRIMA di ricalcolare la matrice.
+   Via d'uscita, come prima: ET.octree(false). */
+const OCT_PROF=5, OCT_FETTE=20, OCT_MASSA=40;
+let _octSt=[], _octI=0, _octFast=false;
+function _octFoto(m){ const bs=m.getBoundingInfo().boundingSphere, c=bs.centerWorld;
+  m.__oX=c.x; m.__oY=c.y; m.__oZ=c.z; m.__oR=bs.radiusWorld; }
+function _octSpegni(){ for(let i=0;i<_octSt.length;i++) _octSt[i].__oS=false; _octSt=[]; _octI=0; _octFast=false; }
+/* v556 — COSTRUZIONE A MANO. scene.createOrUpdateSelectionOctree infila
+   ogni mesh scendendo in TUTTE le celle dell'albero (OctreeBlock.addEntry non
+   guarda l'ingombro finche' non arriva alla foglia): con profondita' 5 una
+   ricostruzione costava il triplo di prima, e l'albero si rifa' ogni volta
+   che nasce o muore una mesh. Qui si scende solo nelle celle che la mesh
+   tocca. In piu':
+   · le mesh ENORMI (orizzonte, prati, strisce di strada: raggio >= 60 m)
+     non entrano nell'albero — toccherebbero centinaia di celle — e stanno
+     fra le sempre-candidate: sono una sessantina;
+   · il mondo dell'albero e' l'ingombro delle sole mesh che ci entrano, non
+     gli 840 m dell'orizzonte: celle piu' piccole a parita' di profondita'.
+   Se qualcosa va storto si torna al riempimento di serie di Babylon. */
+const OCT_GRANDE=60;
+function _octMetti(bl,m,bb,d){
+  if(!bb.intersectsMinMax(bl.minPoint,bl.maxPoint)) return;
+  if(bl.blocks){ for(let i=0;i<bl.blocks.length;i++) _octMetti(bl.blocks[i],m,bb,d+1); return; }
+  bl.entries.push(m);
+  if(bl.entries.length>bl.capacity && d<OCT_PROF) bl.createInnerBlocks(); }
 function rebuildOctree(){
   try{
-    const oct=scene.createOrUpdateSelectionOctree(64,2);
+    let oct=scene.selectionOctree;
+    if(!oct){ const M=scene.meshes; scene.meshes=[];           // prima volta: solo per far nascere albero e componente, vuoti
+      try{ oct=scene.createOrUpdateSelectionOctree(64,OCT_PROF); } finally { scene.meshes=M; } }
+    oct.maxDepth=OCT_PROF;
     /* Babylon aggancia il fornitore solo alla PRIMA creazione: dopo un
        ET.octree(false) l'albero si aggiornerebbe senza che nessuno lo guardi. */
     scene.getActiveMeshCandidates=function(){ return oct.select(scene.frustumPlanes); };
@@ -5822,12 +5870,56 @@ function rebuildOctree(){
     octDynRoots().forEach(r=>{ if(r.getTotalVertices) aggiungi(r);
       if(r.getChildMeshes) r.getChildMeshes().forEach(aggiungi); });
     /* cintura in piu': scheletri (personaggi), billboard (nuvole, targhette) e
-       qualunque mesh gia' marcata come sempre-attiva restano fuori dal taglio */
-    scene.meshes.forEach(m=>{ if(m.skeleton||m.alwaysSelectAsActiveMesh||m.__dyn===true) aggiungi(m); });
+       qualunque mesh gia' marcata come sempre-attiva restano fuori dal taglio.
+       v556: anche le istanze sottili (la sfera d'ingombro puo' non coprirle). */
+    scene.meshes.forEach(m=>{ if(m.skeleton||m.alwaysSelectAsActiveMesh||m.__dyn===true||m.hasThinInstances||m.billboardMode) aggiungi(m); });
+    /* le ferme: matrice ricalcolata (come faceva getWorldExtends), sfera
+       fotografata per il guardiano, e dentro l'albero se non sono enormi */
+    for(let i=0;i<_octSt.length;i++) _octSt[i].__oS=false;
+    _octSt=[]; _octI=0;
+    const dentro=[], mn=new BABYLON.Vector3(1e9,1e9,1e9), mx=new BABYLON.Vector3(-1e9,-1e9,-1e9);
+    scene.meshes.forEach(m=>{
+      if(visti.has(m)){ m.__oS=false; return; }
+      if(!m.subMeshes||!m.subMeshes.length||m.infiniteDistance){ m.__oS=false; aggiungi(m); return; }   // senza geometria o cielo: Babylon li scarta da se'
+      m.computeWorldMatrix(true); _octFoto(m); m.__oS=true; _octSt.push(m);
+      if(!(m.__oR<OCT_GRANDE)){ aggiungi(m); return; }
+      const bb=m.getBoundingInfo().boundingBox; mn.minimizeInPlace(bb.minimumWorld); mx.maximizeInPlace(bb.maximumWorld);
+      dentro.push(m); });
+    if(!dentro.length){ mn.set(-1,-1,-1); mx.set(1,1,1); }
+    mn.addInPlaceFromFloats(-1,-1,-1); mx.addInPlaceFromFloats(1,1,1);
+    let fatto=false;
+    try{ oct.update(mn,mx,[]);                                   // le 8 celle di testa, vuote
+      for(let i=0;i<dentro.length;i++){ const m=dentro[i], bb=m.getBoundingInfo().boundingBox;
+        for(let k=0;k<oct.blocks.length;k++) _octMetti(oct.blocks[k],m,bb,1); }
+      fatto=true;
+    }catch(e){ console.warn("octree: riempimento veloce fallito, uso quello di serie",e); }
+    if(!fatto) oct.update(mn,mx,dentro);
+    _octFast=true;
     _octN=scene.meshes.length;
-  }catch(e){ console.warn("octree non attivo:",e); }
+  }catch(e){ _octSpegni(); console.warn("octree non attivo:",e); }
 }
-scene.onBeforeRenderObservable.add(()=>{ if(_octN>=0 && scene.meshes.length!==_octN) rebuildOctree(); });
+function _octGuardia(){
+  const L=_octSt, n=L.length; if(!n) return;
+  const oct=scene.selectionOctree; if(!oct) return;
+  let k=Math.ceil(n/OCT_FETTE), mossi=null;
+  while(k-->0){ if(_octI>=n) _octI=0; const m=L[_octI++];
+    if(m.__oS!==true || m.isDisposed()) continue;
+    m.computeWorldMatrix();
+    const bs=m.getBoundingInfo().boundingSphere, c=bs.centerWorld;
+    const dx=c.x-m.__oX, dy=c.y-m.__oY, dz=c.z-m.__oZ, dr=bs.radiusWorld-m.__oR;
+    if(dx*dx+dy*dy+dz*dz>1e-4 || dr*dr>1e-4) (mossi||(mossi=[])).push(m); }
+  if(!mossi) return;
+  if(mossi.length>OCT_MASSA){
+    /* blocco intero spostato: albero nuovo (e foto nuove). Chi ci ricasca
+       una seconda volta si muove davvero di continuo: fra le mobili. */
+    for(let i=0;i<mossi.length;i++){ const m=mossi[i]; m.__oM=(m.__oM||0)+1; if(m.__oM>=2) m.__dyn=true; }
+    _octN=0; return; }
+  for(let i=0;i<mossi.length;i++){ const m=mossi[i]; m.__dyn=true; m.__oS=false; oct.dynamicContent.push(m); }
+}
+scene.onBeforeRenderObservable.add(()=>{
+  if(_octN<0) return;
+  if(scene.meshes.length!==_octN){ rebuildOctree(); return; }
+  try{ _octGuardia(); }catch(e){} });
 
 /* =====================================================================
    PERSONAGGI FUORI QUADRO: NIENTE OSSA, NIENTE DISEGNO (5 ott: «sul vecchio
@@ -5971,6 +6063,16 @@ function _pvCerca(ray,L,ok,multi){
   const dl=d.length()||1, len=ray.length*dl, dx=d.x/dl, dy=d.y/dl, dz=d.z/dl;
   const out=multi?[]:null; let best=null;
   for(let i=0;i<L.length;i++){ const m=L[i];
+    /* v556: una mesh FERMA e sorvegliata dal guardiano dell'octree (__oS) ha
+       la sfera fotografata alla costruzione dell'albero: se il raggio non la
+       sfiora si scarta SENZA ricalcolare la matrice (computeWorldMatrix
+       risale la catena dei genitori: era meta' del costo dei tre raggi per
+       fotogramma). Il filtro `ok` viene dopo, cosi' i filtri cari (isEnabled,
+       nomi dei materiali) girano solo sulle poche mesh sotto il raggio. */
+    if(_octFast && m.__oS===true){
+      const cx=m.__oX-o.x, cy=m.__oY-o.y, cz=m.__oZ-o.z; let t=cx*dx+cy*dy+cz*dz; t=t<0?0:(t>len?len:t);
+      const ex=cx-dx*t, ey=cy-dy*t, ez=cz-dz*t, r=m.__oR*1.01+0.06;
+      if(ex*ex+ey*ey+ez*ez>r*r) continue; }
     if(!ok(m) || m.isDisposed() || !m.subMeshes) continue;
     const w=m.computeWorldMatrix();
     if(!m.hasThinInstances){ const bs=m.getBoundingInfo().boundingSphere, c=bs.centerWorld;
@@ -9069,6 +9171,7 @@ function buildRoundabout(cx,cz,rApr,rIsl,withTree){
    compresa, ora che ci si cammina sopra: le auto in curva passano a un
    metro dal cordolo. Il raycast si rifa' ogni 120 ms, non a ogni auto. */
 const _PED_ROAD={ t:0, x:1e9, z:1e9, on:false };
+const _PED_ROAD_RE=/^(roadm|lnm|cwm)/;
 function pedOnCarriageway(){
   const px=player.position.x, pz=player.position.z, now=performance.now();
   if(now-_PED_ROAD.t<120 && Math.abs(px-_PED_ROAD.x)<0.25 && Math.abs(pz-_PED_ROAD.z)<0.25) return _PED_ROAD.on;
@@ -9078,9 +9181,12 @@ function pedOnCarriageway(){
     if(Math.hypot(px-R.cx,pz-R.cz)<R.rApr+0.3) on=true; }
   if(!on){
     try{
-      const ROAD=/^(roadm|lnm|cwm)/;
+      const ROAD=_PED_ROAD_RE;
+      /* v556: prima il controllo che non costa niente (__ground), poi il nome
+         del materiale, per ultimo isEnabled: questo filtro girava su tutte
+         le ~5400 mesh della scena a ogni rilancio del raggio */
       const h=pickVeloce(new BABYLON.Ray(new BABYLON.Vector3(px,3,pz),new BABYLON.Vector3(0,-1,0),6),
-        m=>m.isEnabled() && !!m.material && (m.__ground===true || ROAD.test(m.material.name)),true);
+        m=>{ const mt=m.material; return !!mt && (m.__ground===true || ROAD.test(mt.name)) && m.isEnabled(); },true);
       let top=null; if(h) for(const q of h){ const y=q.pickedPoint.y; if(y<=1.2 && (!top||y>top.y)) top={ y, n:q.pickedMesh.material.name }; }
       on=!!(top && ROAD.test(top.n));
     }catch(e){ on=true; }               // nel dubbio si frena, come prima
@@ -57518,9 +57624,10 @@ const ET={
    partita). ET.octree() da solo riporta i numeri. */
 ET.octree=function(on){
   if(on===false){ scene.getActiveMeshCandidates=_octStd;
-    _octN=-1; toast("Octree spento"); return "octree spento: selezione classica"; }
+    _octN=-1; _octSpegni(); toast("Octree spento"); return "octree spento: selezione classica"; }
   if(on===true){ rebuildOctree(); toast("Octree acceso"); }
-  return { attivo:_octN>=0, mesh:scene.meshes.length,
+  return { attivo:_octN>=0, mesh:scene.meshes.length, ferme:_octSt.length,
+           candidate:(function(){ try{ return scene.getActiveMeshCandidates().length; }catch(e){ return -1; } })(),
            dinamiche:(scene.selectionOctree&&scene.selectionOctree.dynamicContent)?scene.selectionOctree.dynamicContent.length:0,
            attive:scene.getActiveMeshes().length, fps:+engine.getFps().toFixed(1) }; };
 window.ET=ET;
