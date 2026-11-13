@@ -7616,7 +7616,14 @@ function _dressBuilding(root,o){
       const cx=fx?cA:fc.c+nx*(dep/2*Math.cos(tilt)), cz=fx?fc.c+nz*(dep/2*Math.cos(tilt)):cA;
       t.position.set(cx,y-dep/2*Math.sin(tilt),cz);
       /* piano: nasce verticale (normale -z); lo stendo in fuori e lo inclino verso il basso */
-      t.rotation.y=Math.atan2(nx,nz); t.rotation.x=Math.PI/2-tilt;
+      /* v560 (Giacomo, 15 nov, con la foto del Clothes Shop: «sono sospese in
+         aria, non capisco come sono messe»): con PI/2-tilt il telo SALIVA
+         verso l'esterno (bordo al muro basso, bordo fuori alto), mentre
+         centro e frangia sono calcolati per un telo che SCENDE: la frangia
+         restava appesa 40 cm sotto il bordo, staccata. PI/2+tilt: il bordo
+         al muro sta a y, quello esterno a y-dep*sin(tilt), dove comincia
+         la frangia. */
+      t.rotation.y=Math.atan2(nx,nz); t.rotation.x=Math.PI/2+tilt;
       tops.push(t);
       const v=BABYLON.MeshBuilder.CreatePlane("bldAwV",{width:w,height:0.3},scene);
       const ex=dep*Math.cos(tilt);
