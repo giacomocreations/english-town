@@ -14831,6 +14831,37 @@ function buildAirport(){
         toast("\u{1F4CB} "+((Quest.step&&Quest.step.introObj)||"Continua la quest!"));
       } else { tryStartQuest(UNIT1); } }});
 
+  /* AVVIO AUTOMATICO ALL'INGRESSO (Giacomo, 13 nov: «appena entrano in
+     aeroporto si avvia la quest»). Prima la quest partiva SOLO col tasto E
+     sul punto (RX, zBoard+5), 24 m dentro la hall: chi entrava girava fra
+     le bandiere senza sapere che c'era qualcosa da fare.
+     Scatta sul PASSAGGIO fuori -> dentro la hall (oltre la facciata
+     vetrata zFront), non a ogni frame: chi chiude la modale e resta dentro
+     non se la vede riaprire. Non parte se: la unit e' gia' completata, e'
+     gia' quella in corso, c'e' un'ALTRA quest in corso (non la si butta via
+     di nascosto: resta il tasto E), o una finestra e' aperta (si riprova
+     appena si chiude, finche' si e' dentro). Unit chiusa per la classe:
+     l'avviso gateDenied una sola volta per sessione, non a ogni ingresso. */
+  { const inHall=()=>area==="town" && player.position.x>RX-HW/2+0.3 && player.position.x<RX+HW/2-0.3
+        && player.position.z<zFront-1.0 && player.position.z>zBack+0.3;
+    const modalEl=document.getElementById("quest-modal");
+    let wasIn=true, pending=false, gateWarned=false, tAcc=0;   // wasIn=true: niente avvio al primo frame (caricamento/spawn)
+    scene.onBeforeRenderObservable.add(()=>{
+      tAcc+=scene.getEngine().getDeltaTime(); if(tAcc<250) return; tAcc=0;
+      let now=false; try{ now=inHall(); }catch(e){ return; }
+      if(now && !wasIn) pending=true;
+      if(!now) pending=false;
+      wasIn=now;
+      if(!pending) return;
+      if(modalEl && modalEl.classList.contains("show")) return;      // aspetta che si chiuda
+      pending=false;
+      try{
+        if(Progress.get(UNIT1.id).done || Quest.unit===UNIT1 || Quest.unit) return;
+        if(!Gate.unlocked(UNIT1.id)){ if(!gateWarned){ gateWarned=true; gateDenied(UNIT1.id); } return; }
+        tryStartQuest(UNIT1);
+      }catch(e){}
+    }); }
+
   // ingresso: lampioni sul piazzale (i due alberi qui davanti sono stati tolti su richiesta)
   lamp(AX-17,zFore+6); lamp(AX+17,zFore+6);
 }
@@ -15406,6 +15437,29 @@ function drawUkFlag(c,W,H){ c.fillStyle="#00247D"; c.fillRect(0,0,W,H);
   c.restore();
   c.fillStyle="#F5F5F0"; c.fillRect(0,H*0.38,W,H*0.24); c.fillRect(W*0.40,0,W*0.20,H);
   c.fillStyle="#CF142B"; c.fillRect(0,H*0.44,W,H*0.12); c.fillRect(W*0.44,0,W*0.12,H); }
+/* Egitto: tre strisce + AQUILA DI SALADINO d'oro al centro. Senza aquila
+   (com'era prima) rosso/bianco/nero e' la bandiera dello YEMEN, non
+   dell'Egitto. Aquila stilizzata a tracciati (ali, corpo, testa, scudo,
+   cartiglio) — come le altre, niente emoji/font. */
+function drawEgyptFlag(c,W,H){
+  drawStripesH(c,W,H,["#CE1126","#F5F5F0","#000000"]);
+  const cx=W/2, cy=H/2, u=H/3*0.9, G="#C09300", D="#8a6a00";
+  c.save(); c.translate(cx,cy); c.fillStyle=G; c.strokeStyle=D; c.lineWidth=Math.max(1,u*0.03);
+  [-1,1].forEach(sd=>{ c.beginPath();                               // ali aperte, punte in basso
+    c.moveTo(sd*u*0.10,-u*0.22); c.quadraticCurveTo(sd*u*0.55,-u*0.42,sd*u*0.62,-u*0.05);
+    c.lineTo(sd*u*0.52,u*0.02); c.lineTo(sd*u*0.56,u*0.16); c.lineTo(sd*u*0.44,u*0.12);
+    c.lineTo(sd*u*0.44,u*0.28); c.lineTo(sd*u*0.30,u*0.22); c.lineTo(sd*u*0.12,u*0.30);
+    c.closePath(); c.fill(); c.stroke(); });
+  c.beginPath(); c.ellipse(0,u*0.02,u*0.17,u*0.32,0,0,Math.PI*2); c.fill(); c.stroke();   // corpo
+  c.beginPath(); c.arc(0,-u*0.36,u*0.10,0,Math.PI*2); c.fill(); c.stroke();               // testa
+  c.beginPath(); c.moveTo(u*0.06,-u*0.38); c.lineTo(u*0.18,-u*0.33); c.lineTo(u*0.07,-u*0.30); c.closePath(); c.fill();  // becco
+  c.fillStyle="#F5F5F0"; c.fillRect(-u*0.11,-u*0.10,u*0.22,u*0.26);                       // scudo
+  c.fillStyle="#CE1126"; c.fillRect(-u*0.11,-u*0.10,u*0.073,u*0.26);
+  c.fillStyle="#000000"; c.fillRect(u*0.037,-u*0.10,u*0.073,u*0.26);
+  c.strokeRect(-u*0.11,-u*0.10,u*0.22,u*0.26);
+  c.fillStyle=G; c.beginPath(); c.moveTo(-u*0.34,u*0.36); c.quadraticCurveTo(0,u*0.50,u*0.34,u*0.36);   // cartiglio
+  c.lineTo(u*0.32,u*0.44); c.quadraticCurveTo(0,u*0.58,-u*0.32,u*0.44); c.closePath(); c.fill(); c.stroke();
+  c.restore(); }
 /* pannello-bandiera: stesso "guscio" (piano+DynamicTexture+cornice) di
    LEXPROPS.poster ma col disegno passato da fuori invece del testo/emoji
    — cosi' l'unico rischio font (emoji) sparisce del tutto. */
@@ -15434,11 +15488,18 @@ function buildAirportFlags(){
     { en:"American flag",  it:"la bandiera americana",   draw:drawUsaFlag },
     { en:"Japanese flag",  it:"la bandiera giapponese",  draw:drawJapanFlag },
     { en:"Brazilian flag", it:"la bandiera brasiliana",  draw:drawBrazilFlag },
-    { en:"Egyptian flag",  it:"la bandiera egiziana",    draw:(c,W,H)=>drawStripesH(c,W,H,["#CE1126","#F5F5F0","#000000"]) },
+    { en:"Egyptian flag",  it:"la bandiera egiziana",    draw:drawEgyptFlag },
   ];
-  const startX=RX-28, stepX=8, fz=zBoard+5, fw=1.05, fh=0.68;
+  /* FIX bandiera britannica sparita: la fila partiva da RX-28 (x -26) con
+     passo 8, e la PRIMA bandiera (British flag) finiva DENTRO la
+     scaffalatura del Duty Free (dutyFree(RX-26,-106,12): solido x
+     -25.9..-23.1, z -112..-100) — invisibile e quasi impossibile da
+     toccare con E. Ora: passo 6, simmetrica attorno all'asse RX con un
+     varco di 8 m al centro (li' c'e' l'interazione del cartello City
+     Airport, raggio 4), da x -20 a x 24 — tutta nel corridoio libero. */
+  const OFFS=[-22,-16,-10,-4,4,10,16,22], fz=zBoard+5, fw=1.05, fh=0.68;
   UNIT1.items = FLAGS.map((f,i)=>{
-    const fx=startX+i*stepX;
+    const fx=RX+OFFS[i];
     const r=flagPlane("apflag"+i, f.draw, fw, fh);
     r.position.set(fx,0,fz); r.rotation.y=0; r.parent=townRoot;   // yaw:0 = stessa convenzione validata per i muri "nord" (Town Hall)
     try{ apFlagStand(r,fw,fh); }catch(e){}                            // v270: asta con base, non piu' a mezz'aria
