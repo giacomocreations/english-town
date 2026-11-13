@@ -6760,6 +6760,23 @@ function blocked(x,z,ramps){ const PR=AREA_PLAYER_R[area]||PLAYER_R, R2=PR*PR;
     const dz=(z<s.z0)?(s.z0-z):((z>s.z1)?(z-s.z1):0);
     if(dx*dx+dz*dz < R2) return true; }
   return false; }
+/* v558 — QUANTO SI E' DENTRO UN SOLIDO (Giacomo, 14 nov: «gli avatar si
+   incastrano sulle rampe dello skatepark se ci passano vicinissimo e non si
+   puo' piu' muovere»). Stesso conto di blocked(), ma restituisce di quanti
+   metri il cerchio dell'avatar affonda nel solido piu' vicino (0 = libero).
+   Serve a move(): chi e' GIA' dentro un solido non deve restare murato, puo'
+   fare i passi che lo portano fuori (vedi move). */
+function solidPen(x,z,ramps){ const PR=AREA_PLAYER_R[area]||PLAYER_R; let pen=0;
+  for(let i=0;i<solids.length;i++){ const s=solids[i]; if(s.area!==area) continue;
+    if(ramps && s.skRamp && (ramps===2 || !s.skRail)) continue;
+    if(!(x>s.x0-PR && x<s.x1+PR && z>s.z0-PR && z<s.z1+PR)) continue;
+    const dx=(x<s.x0)?(s.x0-x):((x>s.x1)?(x-s.x1):0);
+    const dz=(z<s.z0)?(s.z0-z):((z>s.z1)?(z-s.z1):0);
+    let d;
+    if(dx===0 && dz===0) d=-Math.min(x-s.x0,s.x1-x,z-s.z0,s.z1-z);   // dentro il rettangolo: negativo, fino al bordo piu' vicino
+    else d=Math.sqrt(dx*dx+dz*dz);
+    if(PR-d>pen) pen=PR-d; }
+  return pen; }
 
 /* Rettangolo solido RUOTATO approssimato con una GRIGLIA di AABB.
    ⚠️ Il motore di collisione conosce solo rettangoli allineati agli assi
@@ -14023,6 +14040,13 @@ function npcBlocked(x,z){
         if(ex*ex+ez*ez < NPC_COLL_R*NPC_COLL_R) continue; }
       return true; } }
   return false; }
+/* v558: di quanto si e' dentro il raggio dell'NPC piu' vicino (0 = fuori) */
+function npcPen(x,z){ let pen=0;
+  for(let i=0;i<NPCS.length;i++){ const n=NPCS[i];
+    if(n.area!==area || n.__follow) continue;
+    const p=n.carrier.position, d=Math.hypot(x-p.x,z-p.z);
+    if(NPC_COLL_R-d>pen) pen=NPC_COLL_R-d; }
+  return pen; }
 
 /* =====================================================================
    PROPS "NYC" — Pass metropoli: taxi gialli, idranti, attraversamenti a
@@ -53178,7 +53202,29 @@ function move(nx,nz,spd){
      centimetro, misurato alla ruota davanti (si esce soltanto, se ci si
      trova gia' sopra). */
   const noRamp=area==="town" && RIDE.on && !RIDE.on.ramps && skRampTop(ox,oz)===null;
-  const blk=(x,z)=>blocked(x,z,ramps)||(ramps&&skRampStepBlocked(ox,oz,x,z))||(noRamp&&(skRampTop(x,z)!==null||skRampTop(x+nx*0.45,z+nz*0.45)!==null))||trafficBlocked(x,z)||npcBlocked(x,z)||(SHOP.cart&&cartBlocked(x,z,nx,nz));   // v256
+  /* v558 — ANTI-TRAPPOLA (Giacomo, 14 nov: incastrati accanto alle rampe
+     dello skatepark, e a scuola nell'angolo della lavagna vicino a Miss
+     Grace). In tutti e due i casi l'avatar era finito DENTRO il margine di
+     un ostacolo, e da li' ogni passo veniva rifiutato, anche quelli che lo
+     allontanavano:
+     · rampe: a piedi si sale sul tratto basso (libero), da sopra i solidi
+       delle rampe non contano (ramps=1); scendendo di lato accanto alla
+       parte alta si atterra dentro il suo margine, dove i solidi tornano a
+       contare;
+     · NPC fermi: npcBlocked rifiuta ogni punto entro 60 cm, quindi chi si
+       ritrova dentro quel raggio (l'NPC si e' girato o spostato, o si e'
+       stati posati li' da una scena) non ne esce piu' — l'eccezione c'era
+       solo per i pedoni che camminano.
+     Regola: se il punto di PARTENZA e' gia' dentro, vale ogni passo che NON
+     fa aumentare l'affondo (ci si allontana o si scorre di lato); chi e'
+     fuori resta fuori come prima. Non si attraversa niente: piu' dentro
+     non si va mai. */
+  const sp0=solidPen(ox,oz,ramps), np0=npcPen(ox,oz), EPS=1e-4;
+  /* «non aumenta», non «diminuisce»: fra due ostacoli vicini (la rampa e il
+     muretto a 60 cm) si esce scorrendo lungo il varco, a pari affondo */
+  const blkS=(sp0>0.001) ? ((x,z)=>solidPen(x,z,ramps)>sp0+EPS) : ((x,z)=>blocked(x,z,ramps));
+  const blkN=(np0>0.001) ? ((x,z)=>npcPen(x,z)>np0+EPS) : npcBlocked;
+  const blk=(x,z)=>blkS(x,z)||(ramps&&skRampStepBlocked(ox,oz,x,z))||(noRamp&&(skRampTop(x,z)!==null||skRampTop(x+nx*0.45,z+nz*0.45)!==null))||trafficBlocked(x,z)||blkN(x,z)||(SHOP.cart&&cartBlocked(x,z,nx,nz));   // v256
   if(!blk(px,pz)){ player.position.x=px; player.position.z=pz; }
   else if(!blk(px,oz)){ player.position.x=px; }
   else if(!blk(ox,pz)){ player.position.z=pz; }
