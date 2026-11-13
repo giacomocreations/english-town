@@ -7475,6 +7475,10 @@ function _dressBuilding(root,o){
   F.position.set(P.x,0,P.z); F.rotation.y=ry;
   /* vertici di ogni materiale, in F */
   const groups={}; let X0=1e9,X1=-1e9,Z0=1e9,Z1=-1e9,Y1=-1e9; const kids=root.getChildMeshes();
+  /* v559: ogni pezzo del palazzo sa qual e' il suo «vestito» (tende, vetri
+     accesi, zoccolo): quando il palazzo si dissolve fra camera e avatar si
+     dissolve anche quello (vedi il ciclo di gioco) */
+  kids.forEach(m=>{ m.__dress=F; });
   kids.forEach(m=>{ const pos=m.getVerticesData&&m.getVerticesData(BABYLON.VertexBuffer.PositionKind); if(!pos) return;
     const W=m.computeWorldMatrix(true), v=new BABYLON.Vector3(), out=new BABYLON.Vector3();
     const arr=[]; for(let i=0;i<pos.length;i+=3){ v.set(pos[i],pos[i+1],pos[i+2]);
@@ -53453,7 +53457,14 @@ scene.registerBeforeRender(()=>{
   if(dist>1.2 && !POV.on){ dir.scaleInPlace(1/dist);
     const ray=new BABYLON.Ray(camera.position,dir,dist-1.0);
     const hits=pickRaggio(ray,"__occluder",true);
-    if(hits) for(const h of hits){ const m=h.pickedMesh; if(m){ m.visibility=0.22; faded.push(m); } } }
+    if(hits) for(const h of hits){ const m=h.pickedMesh; if(m){ m.visibility=0.22; faded.push(m);
+      /* v559 (Giacomo, 15 nov: «tendine sospese in aria su alcuni palazzi»):
+         il palazzo si dissolveva, ma la frangia della tenda e i vetri accesi
+         di notte — che non sono «occlusori», il raggio non li cerca —
+         restavano pieni, appesi nel vuoto. Ora il vestito del palazzo segue
+         il palazzo. */
+      const D=m.__dress; if(D && !D.isDisposed()){ const ds=D.__dm||(D.__dm=D.getChildMeshes());
+        for(let k=0;k<ds.length;k++){ const d=ds[k]; if(d.visibility!==0.22){ d.visibility=0.22; faded.push(d); } } } } } }
   updateProximity(); updateLabelProximity();
   if(typeof updateNPCs==="function") updateNPCs();
   updatePlayerFacing(!(kbMove||tgtMove));
