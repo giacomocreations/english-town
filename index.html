@@ -5421,6 +5421,32 @@ glowL.customEmissiveColorSelector=function(mesh,sub,m,res){
   if(m.__glowK!=null) i*=m.__glowK;
   res.set(m.emissiveColor.r*i,m.emissiveColor.g*i,m.emissiveColor.b*i,m.alpha); };
 const WIN_GLOW_K=0.4;
+/* v557 — IL BAGLIORE NON RIDISEGNA TUTTA LA CITTA'. Misurato su Max verso il
+   parco: 3450 disegni a fotogramma, di cui ~740 solo per lo strato del
+   bagliore, che ridisegna OGNI oggetto inquadrato — anche quelli spenti, in
+   nero, perche' coprano le luci che hanno dietro. Ma un oggetto spento,
+   piccolo e lontano (raggio/distanza < 0,02: un albero oltre i 100 m, un
+   personaggio oltre i 50) in una texture da 512 px sfocata non copre niente
+   che si veda. Quelli si saltano: verso il parco ~500 disegni in meno.
+   Restano SEMPRE: tutto cio' che e' acceso (colore o texture emissiva,
+   multi-materiali compresi) e tutti gli oggetti spenti grandi o vicini.
+   Con una lista propria Babylon non guarda il layerMask: lo si fa qui
+   (i personaggi nascosti dal loro taglio hanno layerMask 0).
+   Via d'uscita: ET.bagliorePieno(true). */
+const GLOW_K=0.02; let _glowPieno=false; const _glowList=[];
+function _glowAcceso(m){ const mt=m.material; if(!mt) return false;
+  if(mt.subMaterials) return true;
+  const e=mt.emissiveColor; return !!(mt.emissiveTexture || (e && (e.r+e.g+e.b)>0.001)); }
+function _glowLista(layer,list,n){
+  if(_glowPieno || scene.activeCamera!==camera) return null;
+  const out=_glowList; out.length=0; const cp=camera.globalPosition, lm=camera.layerMask;
+  for(let i=0;i<n;i++){ const m=list[i]; if(!m || (m.layerMask&lm)===0) continue;
+    if(!_glowAcceso(m)){ const bs=m.getBoundingInfo().boundingSphere, c=bs.centerWorld, lim=bs.radiusWorld/GLOW_K;
+      const dx=c.x-cp.x, dy=c.y-cp.y, dz=c.z-cp.z;
+      if(dx*dx+dy*dy+dz*dz>lim*lim) continue; }
+    out.push(m); }
+  return out; }
+try{ if(glowL._mainTexture) glowL._mainTexture.getCustomRenderList=_glowLista; }catch(e){ console.warn("bagliore: lista corta non agganciata",e); }
 
 // riflessi finestre: sonda d'ambiente (riflette cielo/edifici sui materiali PBR)
 const probe=new BABYLON.ReflectionProbe("etProbe",96,scene); probe.position.set(0,10,0);
@@ -5975,7 +6001,11 @@ scene.onBeforeActiveMeshesEvaluationObservable.add(()=>{ try{ taglioPersonaggi()
    __noCull, e qualunque cosa se la camera non e' quella di gioco (le
    cartoline della macchina fotografica escono complete).
    Via d'uscita in aula: ET.taglioDistanza(false). */
-const CULL_K={ basso:0.012, medio:0.006, alto:0.003, max:0.0015 };
+/* v557 (Giacomo, 13 nov: «alleggerisci il parco su Max»): Max taglia come
+   High (era 0,0015). «Max e' High con in piu' la nitidezza»: verso il parco
+   la soglia dimezzata costava ~240 disegni in piu' per oggetti da 30 cm a
+   oltre 100 m, cioe' un paio di pixel dentro la nebbia. */
+const CULL_K={ basso:0.012, medio:0.006, alto:0.003, max:0.003 };
 let _cullK=0.006, _cullOn=true;
 scene.customLODSelector=function(m,cam){
   const k=_cullOn?_cullK:0;
@@ -6005,7 +6035,7 @@ const OMBRA_S=80, OMBRA_D=160;
 /* in piu': un oggetto piccolo e lontano dalla camera non ha bisogno della
    sua ombra (una panchina a 40 m: due pixel grigi). Soglia raggio/distanza
    per livello; i palazzi non ci arrivano mai. */
-const OMBRA_K={ basso:0.02, medio:0.02, alto:0.02, max:0.012 };
+const OMBRA_K={ basso:0.02, medio:0.02, alto:0.02, max:0.02 };   // v557: Max come High (era 0,012)
 let _oOn=true, _oA=0, _oB=0;
 const _oX=new BABYLON.Vector3(), _oY=new BABYLON.Vector3(), _oZ=new BABYLON.Vector3(), _oList=[];
 function ombraSegui(){
@@ -8899,7 +8929,31 @@ function spawnProp(key,x,z,target,opt){ opt=opt||{};
   if(opt.lift) root.position.y += opt.lift;             // rialzo (es. treno sulle rotaie)
   if(opt.occluder!==false) root.getChildMeshes().forEach(m=>{ if(m) m.__occluder=true; });
   if(opt.solid) _solidify(root, opt.solidInset);
+  if(PROP_FUSI[key]===true){ try{ fondiProp(root); }catch(e){ console.warn("[fusione prop]",key,e); } }
   return root; }
+/* v557 — ARREDI FERMI IN POCHI PEZZI. Yard.glb (l'aiuola del parco) sono 66
+   mesh, ogni fila di rocce 5: ognuna e' un disegno, e ognuna si ridisegna
+   per le ombre. Sono arredi che nessuno tocca dopo averli posati, quindi a
+   posa finita (scala, quota, solido gia' calcolati) i pezzi con lo stesso
+   materiale e gli stessi attributi si fondono in una mesh sola: 66 -> 6.
+   La mesh fusa resta figlia della radice (setParent tiene la posizione nel
+   mondo), cosi' chi cerca i figli della radice la trova, ed eredita le
+   bandierine del primo pezzo. Solo per i modelli elencati qui. */
+const PROP_FUSI={ pk_yard:true, pk_rocks:true, pk_rock2:true };
+function fondiProp(root){
+  const G=new Map();
+  root.getChildMeshes(false).forEach(m=>{
+    if(!m.geometry || m.skeleton || m.isAnInstance || !m.material || m.material.subMaterials || !m.getTotalVertices()) return;
+    if(m.getChildMeshes(true).length) return;                       // un pezzo con figli resta com'e'
+    const k=m.material.uniqueId+"|"+m.getVerticesDataKinds().slice().sort().join(",")+"|"+(m.isPickable?1:0)+(m.receiveShadows?1:0)+"|"+m.layerMask+"|"+m.renderingGroupId;
+    let g=G.get(k); if(!g){ g=[]; G.set(k,g); } g.push(m); });
+  G.forEach(arr=>{ if(arr.length<2) return;
+    const a=arr[0], mat=a.material, nome=a.name, pick=a.isPickable, rs=a.receiveShadows, lm=a.layerMask, rg=a.renderingGroupId;
+    const occ=arr.some(m=>m.__occluder===true), gr=arr.every(m=>m.__ground===true), nt=a.__noTint;
+    const mm=BABYLON.Mesh.MergeMeshes(arr,true,true,undefined,false,false); if(!mm) return;
+    mm.name=nome+"_fuso"; mm.material=mat; mm.isPickable=pick; mm.receiveShadows=rs; mm.layerMask=lm; mm.renderingGroupId=rg;
+    if(occ) mm.__occluder=true; if(gr) mm.__ground=true; if(nt!==undefined) mm.__noTint=nt;
+    mm.setParent(root); }); }
 
 /* PANCHINA (GLB) — ry orienta verso la strada; PROP_YAW.bench per il verso */
 /* v291: e' un tavolo da picnic con una panca per lato (misurato: piano a
@@ -57657,6 +57711,8 @@ const ET={
     let g="?"; try{ g=AUDIO.gain(); }catch(e){}
     out.gainBottone=g; out.ripiegoMuto=!!SHOW.muted;
     return out; },
+  /* v557: ET.bagliorePieno(true) rimette nel bagliore tutti gli oggetti */
+  bagliorePieno(on){ if(on!==undefined) _glowPieno=!!on; return _glowPieno?"bagliore: tutti gli oggetti":"bagliore: lista corta"; },
   resetTutto(conferma){
     const cand=[];
     try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i);
