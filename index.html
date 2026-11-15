@@ -3153,7 +3153,7 @@ const UNIT_CITY={ id:"u2_8", area:"town", openWorld:true,
     target:()=>cy8NpcPos("ivy") },
   { id:"func",  strand:"funzioni",   type:"giveDirections",
     intro:"Qualcuno si \u00e8 perso e chiede a <b>te</b> la strada. Componi le indicazioni con le "
-         +"tessere: lui <b>cammina davvero</b>. Se sbagli, sbaglia strada \u2014 e torna indietro.",
+         +"tessere: lui <b>fa esattamente quello che dici</b>. Guarda la mappa con le frecce.",
     introObjEn:"Give the directions and get him there.", introObj:"Da' le indicazioni e portalo a destinazione.",
     target:()=>cy8NpcPos("sam") },
   { id:"listen",strand:"listening",  type:"followDirections",
@@ -29757,7 +29757,7 @@ function npcWalkSeq(npc,targets,arrive,onDone,areaName,onAbort,opts){
     // per un tempo ragionevole, si rinuncia e si conclude comunque la
     // sequenza invece di restare incastrati per sempre.
     if(d<bestD-0.03){ bestD=d; stuckFrames=0; }
-    else if(++stuckFrames>150){
+    else if(++stuckFrames>(opts.stuckFrames||150)){
       scene.onBeforeRenderObservable.remove(obs);
       npc.__noPin=false; npc.play("Idle");
       /* ⚠️ arrendersi NON e' arrivare. Prima si chiamava onDone() comunque, e
@@ -50010,6 +50010,31 @@ function questInProgress(target){
   try{ if((Progress.get(q.id)||{}).done) return null; }catch(e){}
   return q;
 }
+/* v559 — UNA QUEST ALLA VOLTA (Giacomo, 15 nov: «quando è aperta una quest
+   e vai in un altro posto, non puoi iniziarne un'altra nella stessa
+   sessione: alla City Plaza devi andare in giro a mostrare posti, nel
+   tragitto non puoi aprire un'altra quest»). Prima si chiedeva conferma
+   («Go in anyway») e i cartelli delle unit open-world non chiedevano
+   nemmeno: la quest in corso veniva sostituita. Ora per l'alunno e' un
+   blocco: finche' la quest in corso non e' finita non se ne apre un'altra
+   (porte, cinema e cartelli passano tutti da qui). Vale per la sessione:
+   Quest.unit vive in memoria, i passi finiti restano salvati.
+   Il docente conserva la vecchia conferma, per poter saltare fra le unit. */
+function questBusyBlock(target, act){
+  const q=questInProgress(target); if(!q) return false;
+  let doc=false; try{ doc=!!Student.teacher; }catch(e){}
+  if(doc){ confirmLeaveQuest(q, target, act); return true; }
+  const sy=(typeof Gate!=="undefined" && Gate.info) ? (Gate.info(q.id)||{}) : {};
+  const nome=(q.title||q.id);
+  QModal.open({
+    title:"\u26A0\uFE0F One quest at a time!",
+    sub:(sy.ic||"\u{1F4CB}")+" "+nome,
+    html:"<div style='line-height:1.55'>You're in the middle of a quest: <b>finish it first</b>, "
+        +"then come back here.<br><span style='opacity:.75'>Stai gi\u00e0 facendo la quest <b>"+nome
+        +"</b>: finiscila, poi torna qui. Le quest si fanno una alla volta.</span></div>",
+    buttons:[{label:"OK", cls:"primary"}] });
+  return true;
+}
 function confirmLeaveQuest(q, target, act){
   const sy=(typeof Gate!=="undefined" && Gate.info) ? (Gate.info(q.id)||{}) : {};
   const stepName=(Quest.step&&Quest.step.strand)||"";
@@ -50097,8 +50122,7 @@ function shadowSweepRoot(root,walls){
   });
   return n; }
 function enterUnit(u, noQuest, _ok){
-  if(!_ok){ const q=questInProgress(u);
-    if(q){ confirmLeaveQuest(q, u, ()=>enterUnit(u,noQuest,true)); return; } }
+  if(!_ok && questBusyBlock(u, ()=>enterUnit(u,noQuest,true))) return;
   if(u.build) u.build(); else buildInterior(u);
   enterArea(u.area);
   const A=AREAS[u.area];
@@ -50261,6 +50285,8 @@ function tryStartQuest(U){
      quest dal diario e da altre strade, e bloccarlo la' impedirebbe pure di
      guardare a che punto si era. Si ferma l'avvio, non il motore. */
   if(showBusyNotice(U)) return false;
+  /* v559: una quest alla volta, anche per le unit open-world (cartelli) */
+  if(questBusyBlock(U, ()=>{ Quest.start(U); })) return false;
   Quest.start(U); return true;
 }
 function gateDenied(id){
@@ -50290,8 +50316,7 @@ function enterCinema(_ok){
   /* ⚠️ il cinema NON passa da enterUnit (ha un ingresso suo): la guardia
      "quest in corso" va ripetuta qui o entrando all'ODEON si perdeva il
      passo di qualunque unit open-world in corso. */
-  if(!_ok){ const q=questInProgress(QUESTS.u2_4);
-    if(q){ confirmLeaveQuest(q, QUESTS.u2_4, ()=>enterCinema(true)); return; } }
+  if(!_ok && questBusyBlock(QUESTS.u2_4, ()=>enterCinema(true))) return;
   buildCinema(); enterArea("cinema");
   player.position.copyFrom(AREAS.cinema.spawn); player.rotation.y=AREAS.cinema.faceY||0;
   camera.target.copyFrom(player.position); camera.target.y+=2.0; camera.alpha=(AREAS.cinema.camAlpha!=null?AREAS.cinema.camAlpha:Math.PI/2);
@@ -58830,8 +58855,32 @@ MECH.alibiWitness=function(s){
    usare blocked() con il PLAYER_R originale (nessuna modifica alla
    collisione reale, solo al calcolo di dove conviene camminare). */
 const CY8_PATH_MARGIN=0.45;
+/* v559 — SAM STA SUL MARCIAPIEDE (Giacomo, 15 nov: «il tizio cammina sul
+   bordo della strada, mandalo sul marciapiede»). Con High Street allargata
+   a 14 m la vecchia corsia z=±6 e' diventata asfalto. Quando CY8_SIDEWALK
+   e' acceso (solo mentre si calcola un percorso di Sam) la carreggiata conta
+   come ostacolo, tranne le due strisce pedonali: l'A* tiene Sam sul
+   marciapiede e lo fa attraversare solo sulle strisce.
+   Misure prese dal vivo sulla scena: carreggiata |z|<6.9 fino a x=56 (oltre
+   c'e' la piazza pedonale); fra x=-12 e x=12 il marciapiede si allarga e il
+   cordolo e' a |z|=5.25..5.75; strisce a x -10..-7 e 7.5..10.5. */
+let CY8_SIDEWALK=false;
+function cy8OnRoad(x,z){
+  if(x>56.2) return false;
+  const az=Math.abs(z);
+  if(Math.abs(x)<11.6){
+    if(az>=5.3) return false;
+    return !((x>=-10&&x<=-7)||(x>=7.5&&x<=10.5));
+  }
+  return az<7.4;
+}
 function cy8Blocked(x,z){
-  const R=PLAYER_R+CY8_PATH_MARGIN;
+  /* in modalita' marciapiede: niente carreggiata, niente giri DIETRO le case
+     (fra gli alberi e le facciate restano 40 cm col margine pieno, e l'A*
+     preferiva il retro: «go straight on» finiva in un vicolo), e margine
+     ridotto a 0.2 — se Sam sfiora qualcosa lo aggira cy8SamWalk. */
+  if(CY8_SIDEWALK && (cy8OnRoad(x,z) || (x<56.2 && Math.abs(z)>12.4))) return true;
+  const R=PLAYER_R+(CY8_SIDEWALK?0.2:CY8_PATH_MARGIN);
   for(let i=0;i<solids.length;i++){ const s=solids[i]; if(s.area!=="town") continue;
     if(x>s.x0-R && x<s.x1+R && z>s.z0-R && z<s.z1+R) return true; }
   return false;
@@ -58948,89 +58997,237 @@ function cy8Route(sx,sz,tx,tz){
    dopo un errore o un retry, mai da un punto fisso. CP3 (il market) usa la
    porta VERA della quest u6 (QUESTS.u6.doorPos), cosi' se la porta si
    sposta in una revisione futura della citta' Sam la trova comunque. */
-const CY8_CP={ p0:[82,-6], p1:[-14,-6], p2:[-14,6] };
+/* v559 — LE INDICAZIONI A SAM, RIFATTE PER ESSERE COERENTI (Giacomo, 15
+   nov). Quattro difetti, uno solo dei quali si vedeva subito:
+   1) Sam correva a z=-6: dopo l'allargamento di High Street e' asfalto.
+      Ora i percorsi si calcolano con la carreggiata chiusa (CY8_SIDEWALK):
+      marciapiede, e strada solo sulle strisce.
+   2) Una frase sbagliata, anche solo a meta', mandava Sam in un punto FISSO
+      («wrongTo») che con la frase non c'entrava: «Turn left» da solo lo
+      faceva correre 20 m dritto. Ora la frase si LEGGE (cy8DirParse) e Sam
+      fa esattamente quello che c'e' scritto: se gli dici solo di girare,
+      gira e aspetta; se lo mandi dalla parte sbagliata ci va; se la frase
+      non sta in piedi dice che non ha capito e non si muove.
+   3) DESTRA E SINISTRA ERANO SCAMBIATE rispetto alla scena. Misurato in 3D
+      (proiezione a schermo da dietro le spalle di Sam): camminando verso
+      ovest sul lato del cinema, la strada e il mercato stanno a DESTRA. La
+      frase diceva «Turn left and cross the road» e tornava solo sulla
+      mappina, che era disegnata specchiata (z verso il basso). Adesso frasi,
+      scena e mappina dicono la stessa cosa: la mappina e' una vera vista
+      dall'alto (z verso l'alto).
+   4) L'incrocio «crossroads» non esiste piu': davanti al cinema ci sono le
+      strisce. I tre punti sono: piazza -> oltre il cinema, alle strisce
+      (CY8_N1) -> dall'altra parte (CY8_N2) -> porta VERA del market. */
+const CY8_CP={ p0:[82,-6] };
+const CY8_N1=[-7.2,-6.2], CY8_N2=[-7.2,6.2];
 function cy8Market(){
   try{ if(QUESTS.u6 && QUESTS.u6.doorPos) return [QUESTS.u6.doorPos.x, QUESTS.u6.doorPos.z]; }catch(e){}
   return [-54,10];   // fallback se la porta non e' ancora stata calcolata
 }
+/* `head` = da che parte guarda Sam all'inizio della tratta (x,z): serve a
+   leggere «left/right» e a disegnare la freccia sulla mappina. */
 const CY8_DIR_LEGS=[
   { tokens:["Go","past","the","cinema."],
     distr:["Turn","left","right","school."],
-    say:"Go past the cinema.",
-    it:"Sam \u00e8 in piazza e cerca il mercato. Prima indicazione: mandalo lungo la strada, oltre il cinema.",
+    say:"Go past the cinema.", head:[-1,0],
+    it:"Sam è in piazza e cerca il mercato. Prima indicazione: mandalo lungo la strada, oltre il cinema.",
     ask:"Excuse me! I'm looking for the market. Can you help me?",
-    to:()=>CY8_CP.p1, wrongTo:()=>[104,-6],
-    recast:"Wrong way! The cinema is the other way \u2014 go past the cinema.",
-    recastIt:"Sam \u00e8 andato verso il parco: il cinema \u00e8 dall'altra parte." },
-  { tokens:["Turn","left","and","cross","the","road."],
-    distr:["right","go","straight","on"],
-    say:"Turn left and cross the road.",
-    it:"Sam \u00e8 all'incrocio, sul lato nord. Il mercato \u00e8 sull'altro lato della strada.",
-    ask:"OK, I'm at the crossroads. Now what?",
-    to:()=>CY8_CP.p2, wrongTo:()=>[-34,-6],
-    recast:"I'm still on this side of the road! Turn left and cross the road.",
-    recastIt:"Sam ha tirato dritto: \u00e8 rimasto sul lato sbagliato della strada." },
-  { tokens:["Turn","right","and","go","straight","on."],
-    distr:["left","back","past","the"],
-    say:"Turn right and go straight on.",
-    it:"Ultima indicazione: il mercato \u00e8 in fondo a questa strada.",
+    to:()=>CY8_N1 },
+  { tokens:["Turn","right","and","cross","the","road."],
+    distr:["left","go","straight","on"],
+    say:"Turn right and cross the road.", head:[-1,0],
+    it:"Sam ha superato il cinema ed è davanti alle strisce. Il mercato è sull'altro lato della strada: guarda la mappa.",
+    ask:"OK, I'm past the cinema. Now what?",
+    to:()=>CY8_N2 },
+  { tokens:["Turn","left","and","go","straight","on."],
+    distr:["right","back","past","the"],
+    say:"Turn left and go straight on.", head:[0,1],
+    it:"Ultima indicazione: Sam ha attraversato. Il mercato è in fondo a questo marciapiede: guarda la mappa.",
     ask:"I'm across the road. Where now?",
-    to:cy8Market, wrongTo:()=>[9,5],
-    recast:"There's nothing here! Turn right and go straight on.",
-    recastIt:"Sam ha girato a sinistra: il mercato \u00e8 dall'altra parte." },
-    /* ⚠️ (9,5), non (4,6): il primo punto scelto cadeva DENTRO il margine
-       di sicurezza gonfiato (+0.45 m) di un paletto poco distante -- l'A*
-       si rifiutava, giustamente, di mandare Sam in una zona-cuscinetto,
-       quindi nessun percorso esisteva ne' sul marciapiede ne' sulla
-       carreggiata. Non era un problema di spazio: era il bersaglio stesso
-       irraggiungibile. */
+    to:cy8Market },
 ];
+
+/* ---- LA FRASE SI LEGGE. Una o due azioni unite da «and»; maiuscole e
+   punto non contano per Sam (conta che cosa gli si dice di fare). Se non
+   e' una frase che sta in piedi -> null: Sam non ha capito. ---- */
+function cy8DirParse(said){
+  const t=String(said||"").toLowerCase().replace(/[.!?]/g,"").replace(/\s+/g," ").trim();
+  if(!t) return null;
+  const acts=[], parts=t.split(" and ");
+  if(parts.length>2) return null;
+  for(const c of parts){
+    let m;
+    if((m=/^turn (left|right)$/.exec(c))) acts.push({ a:"turn", d:m[1] });
+    else if(c==="cross the road") acts.push({ a:"cross" });
+    else if(c==="go straight on") acts.push({ a:"straight" });
+    else if(c==="go back") acts.push({ a:"back" });
+    else if((m=/^go past the (cinema|school)$/.exec(c))) acts.push({ a:"past", p:m[1] });
+    else return null;
+  }
+  return acts;
+}
+/* Che cosa SUCCEDE se Sam esegue quella frase, tratta per tratta.
+   kind: "ok"   = arriva dove deve (anche con parole diverse dal modello:
+                  «Cross the road.» lo porta di la' lo stesso)
+         "stay" = gira e si ferma (frase giusta a meta', o strada chiusa)
+         "move" = va davvero da un'altra parte; back=true -> poi torna
+         "huh"  = non e' una frase: non si muove.
+   ⚠️ sinistra/destra nel mondo vero (misurato): destra di (hx,hz) e'
+   (hz,-hx), sinistra e' (-hz,hx). */
+function cy8DirResolve(idx,said,kept){
+  const leg=CY8_DIR_LEGS[idx], acts=cy8DirParse(said);
+  if(!leg || !acts) return { kind:"huh" };
+  /* v559 — META' GIUSTA, POI BASTA L'ALTRA META' (Giacomo: «se metà è giusta,
+     poi basta dire l'altra metà»). `kept` = da che parte Sam e' rimasto
+     girato dopo un «Turn …» giusto: una frase SENZA «Turn» riparte da li'
+     («cross the road.», «go straight on.»). Una frase che ricomincia con
+     «Turn» e' l'indicazione intera ridetta: si legge dall'orientamento di
+     inizio tratta, se no girerebbe due volte. */
+  const fresh=acts.some(a=>a.a==="turn");
+  let h=((kept&&!fresh)?kept:leg.head).slice(), turned=null;
+  const itDir=d=>(d==="left"?"sinistra":"destra");
+  for(const a of acts){
+    if(a.a==="turn"){ h=(a.d==="left")?[-h[1],h[0]]:[h[1],-h[0]]; turned=a.d; continue; }
+    if(a.a==="past"){
+      if(idx!==0) return { kind:"huh" };
+      if(a.p==="cinema") return { kind:"ok", turned };
+      return { kind:"move", turned, to:[21,-9.2], back:false,
+        en:"OK, I'm past the school. But I can't see the market here! Where now?",
+        it:"Sam ha superato la scuola e si è fermato lì: il mercato è più avanti. Guarda la mappa: che cosa deve superare?" };
+    }
+    if(a.a==="cross"){
+      if(idx!==1) return { kind:"huh" };
+      if(h[1]<0) return { kind:"stay", turned, face:h,
+        en:"I turned left, but there's no road here — only buildings! The road is behind me.",
+        it:"Sam ha girato a sinistra: lì ci sono solo edifici, la strada è alle sue spalle. Guarda la mappa: da che parte deve girare?" };
+      return { kind:"ok", turned };
+    }
+    if(a.a==="straight"){
+      if(idx===1){
+        if(h[1]>0) return { kind:"ok", turned };          // girato verso la strada: dritto = attraversare
+        if(h[1]<0) return { kind:"stay", turned, face:h,
+          en:"I turned left, but I can't go straight on: there's a building in front of me!",
+          it:"Sam ha girato a sinistra e ha un edificio davanti: di lì non si passa. Guarda la mappa." };
+        return { kind:"move", turned, to:[-24,-9.4], back:true,
+          en:"I went straight on, but I'm still on this side of the road! The market is on the other side.",
+          it:"Sam è andato dritto ed è rimasto sul lato del cinema: non gli hai detto di attraversare." };
+      }
+      if(idx===2){
+        if(h[0]<0) return { kind:"ok", turned };
+        if(h[0]>0) return { kind:"move", turned, to:[15.5,8.6], back:true,
+          en:"I turned right and went straight on, but there's no market here. I can see the school!",
+          it:"Sam ha girato a destra ed è andato dritto: è finito verso la scuola. Il mercato è dall'altra parte." };
+        return { kind:"stay", turned, face:h,
+          en:"I can't go straight on: there are houses in front of me! Left or right?",
+          it:"Sam ha le case davanti: prima deve girare. Guarda la mappa: da che parte?" };
+      }
+      return { kind:"huh" };
+    }
+    if(a.a==="back"){
+      if(idx!==2) return { kind:"huh" };
+      return { kind:"move", turned, to:CY8_N1.slice(), back:true,
+        en:"I went back across the road. Now I'm on the cinema side again!",
+        it:"Sam è tornato indietro, dall'altra parte della strada: il mercato non è lì." };
+    }
+  }
+  /* solo «Turn left/right»: gira e aspetta. Niente corsa in una direzione a
+     caso: era questo che confondeva. */
+  const good=(idx===1&&turned==="right")||(idx===2&&turned==="left");
+  return { kind:"stay", turned, face:h, keep:good,
+    en:"OK, I turned "+turned+". And now? What do I do?",
+    it: good
+      ? "Sam ha girato a "+itDir(turned)+" e resta girato così: la direzione è giusta! Adesso digli solo che cosa fare dopo."
+      : "Sam ha girato a "+itDir(turned)+" e si è fermato. Guarda la mappa: è la direzione giusta? E poi che cosa deve fare?" };
+}
 
 /* ---- MAPPINA D'AIUTO durante la composizione. Richiesta da Giacomo: senza
    una mappa lo studente deve tenere a mente la geometria della citta' MENTRE
-   costruisce la frase, e sono due carichi cognitivi insieme — per una unit
-   che per i suoi ragazzi e' primo incontro e' troppo. Con la mappa il compito
-   torna a essere linguistico: la strada la vedi, devi solo dirla.
-   Mostra dove E' Sam adesso (pallino) e dove deve ARRIVARE (bandierina), non
-   il percorso: il percorso e' la risposta. ---- */
+   costruisce la frase, e sono due carichi cognitivi insieme.
+   v559: e' una VERA vista dall'alto (x a destra, z in alto: la stessa che si
+   ha guardando la scena dal cielo), cosi' destra e sinistra sulla mappa sono
+   quelle che si vedono in 3D. E ha le FRECCE (Giacomo: «metti delle frecce
+   per aiutare»): le tre tratte numerate fino al market — arancione quella
+   da dire adesso, verde quelle fatte, grigio tratteggiato quelle dopo — e
+   una freccetta su Sam che dice da che parte sta guardando. ---- */
 function cy8DirMapURL(idx){
-  const W=560,H=280,cv=document.createElement("canvas"); cv.width=W; cv.height=H;
+  const W=560,H=300,cv=document.createElement("canvas"); cv.width=W; cv.height=H;
   const c=cv.getContext("2d");
-  /* mondo -> mappa: x da -60..+92, z da -14..+20 */
-  const X0=-60,X1=92,Z0=-14,Z1=20;
-  const mx=x=>28+(x-X0)/(X1-X0)*(W-56);
-  const mz=z=>48+(z-Z0)/(Z1-Z0)*(H-96);
+  const X0=-64,X1=92,Z0=-25,Z1=25;
+  const mx=x=>24+(x-X0)/(X1-X0)*(W-48);
+  const mz=z=>(H-22)-(z-Z0)/(Z1-Z0)*(H-64);          // z cresce verso l'ALTO
+  const rect=(x0,x1,z0,z1)=>c.fillRect(mx(x0),mz(z1),mx(x1)-mx(x0),mz(z0)-mz(z1));
   c.fillStyle="#f4efe2"; c.fillRect(0,0,W,H);
   c.fillStyle="#1e4c6b"; c.font="bold 17px Segoe UI"; c.textAlign="left";
-  c.fillText("\u{1F5FA}\uFE0F  HIGH STREET \u2014 where is Sam?",20,26);
-  // carreggiate
-  c.strokeStyle="#cdc3ae"; c.lineWidth=Math.abs(mz(5.5)-mz(-5.5));
-  c.beginPath(); c.moveTo(mx(X0),mz(0)); c.lineTo(mx(X1),mz(0)); c.stroke();
-  c.lineWidth=Math.abs(mx(5.5)-mx(-5.5));
-  c.beginPath(); c.moveTo(mx(0),mz(Z0)); c.lineTo(mx(0),mz(Z1)); c.stroke();
-  // mezzeria tratteggiata
-  c.strokeStyle="#e8dcc0"; c.lineWidth=2; c.setLineDash([9,7]);
-  c.beginPath(); c.moveTo(mx(X0),mz(0)); c.lineTo(mx(X1),mz(0)); c.stroke();
+  c.fillText("\u{1F5FA}️  HIGH STREET — where is Sam?",20,26);
+  // marciapiedi, piazza pedonale, carreggiata
+  c.fillStyle="#e3dccb"; rect(X0,56,-11,11);
+  c.fillStyle="#e9e2cf"; rect(56,X1,-25,25);
+  c.fillStyle="#8f8a80"; rect(X0,56,-7,7);
+  c.fillStyle="#e3dccb"; rect(-12,12,5.4,7); rect(-12,12,-7,-5.4);   // marciapiede allargato davanti al cinema
+  c.strokeStyle="#f1e9c9"; c.lineWidth=2; c.setLineDash([9,7]);
+  c.beginPath(); c.moveTo(mx(X0),mz(0)); c.lineTo(mx(56),mz(0)); c.stroke();
   c.setLineDash([]);
-  // edifici che servono per orientarsi, con il NOME INGLESE (e' anche ripasso
-  // del lessico dello step precedente)
-  const B=[["market",-54,15,"#a8623c"],["cinema",0,-16,"#5a4a7a"],
-           ["school",26,15,"#3f7a4e"],["town hall",54,-16,"#3d6b8f"],
-           ["plaza",78,-16,"#6b6f78"]];
+  // strisce pedonali
+  [[-10,-7],[7.5,10.5]].forEach(([a,b])=>{
+    c.fillStyle="#8f8a80"; rect(a,b,-5.4,5.4);
+    c.fillStyle="#ffffff";
+    for(let z=-4.9;z<4.9;z+=1.5) rect(a,b,z,z+0.8);
+  });
+  // edifici che servono per orientarsi, col NOME INGLESE (ripasso del lessico)
+  const B=[["market",-54,18,"#a8623c"],["school",26,18,"#3f7a4e"],["clothes shop",54,18,"#8a5a8f"],
+           ["cinema",0,-18,"#5a4a7a"],["town hall",54,-18,"#3d6b8f"],["plaza",80,-18,"#6b6f78"]];
   B.forEach(([nm,bx,bz,col])=>{
-    const w=Math.abs(mx(8)-mx(-8)), h=Math.abs(mz(8)-mz(-8));
-    c.fillStyle=col; c.fillRect(mx(bx)-w/2,mz(bz)-h/2,w,h);
-    c.fillStyle="#ffffff"; c.font="bold 12px Segoe UI"; c.textAlign="center";
+    c.fillStyle=col; rect(bx-9,bx+9,bz-6,bz+6);
+    c.fillStyle="#ffffff"; c.font="bold "+(nm.length>9?10:12)+"px Segoe UI"; c.textAlign="center";
     c.fillText(nm,mx(bx),mz(bz)+4);
   });
-  // Sam adesso (posizione REALE, non un waypoint fisso) / destinazione
+  // ---- le frecce: la strada fino al market, una tratta per indicazione
+  const mk=cy8Market();
+  const LEGS=[ [[80,-6],[58,-9],[-8.5,-9]], [[-8.5,-8.2],[-8.5,8.2]], [[-8.5,9],[mk[0]+3,9]] ];
+  const arrow=(pts,col,lw,dash)=>{
+    c.strokeStyle=col; c.fillStyle=col; c.lineWidth=lw; c.lineJoin="round"; c.lineCap="round";
+    c.setLineDash(dash||[]);
+    c.beginPath(); pts.forEach((p,i)=>{ const x=mx(p[0]), y=mz(p[1]); if(i) c.lineTo(x,y); else c.moveTo(x,y); }); c.stroke();
+    c.setLineDash([]);
+    const a=pts[pts.length-2], b=pts[pts.length-1];
+    const ax=mx(a[0]),ay=mz(a[1]),bx=mx(b[0]),by=mz(b[1]), L=Math.hypot(bx-ax,by-ay)||1;
+    const ux=(bx-ax)/L, uy=(by-ay)/L, s=lw*2.4+4;
+    c.beginPath(); c.moveTo(bx+ux*s*0.6,by+uy*s*0.6);
+    c.lineTo(bx-ux*s-uy*s*0.7,by-uy*s+ux*s*0.7); c.lineTo(bx-ux*s+uy*s*0.7,by-uy*s-ux*s*0.7); c.closePath(); c.fill();
+  };
+  const badge=(p,n,col)=>{ const x=mx(p[0]), y=mz(p[1]);
+    c.fillStyle="#ffffff"; c.beginPath(); c.arc(x,y,10,0,7); c.fill();
+    c.strokeStyle=col; c.lineWidth=2.5; c.beginPath(); c.arc(x,y,10,0,7); c.stroke();
+    c.fillStyle=col; c.font="bold 13px Segoe UI"; c.textAlign="center"; c.fillText(String(n),x,y+4.5); };
+  const mid=pts=>{ const a=pts[pts.length-2], b=pts[pts.length-1]; return [(a[0]+b[0])/2,(a[1]+b[1])/2]; };
+  LEGS.forEach((pts,i)=>{
+    const col=(i<idx)?"#2e8b57":((i===idx)?"#e8730c":"#9aa0a6");
+    arrow(pts, col, (i===idx)?5:3, (i>idx)?[6,6]:null);
+  });
+  LEGS.forEach((pts,i)=>{
+    const col=(i<idx)?"#2e8b57":((i===idx)?"#e8730c":"#9aa0a6");
+    badge(i===1?[pts[0][0]+4.5,0]:mid(pts), (i<idx)?"✓":(i+1), col);
+  });
+  // destinazione
+  c.fillStyle="#1e6b45"; c.beginPath(); c.arc(mx(mk[0]),mz(9),8,0,7); c.fill();
+  c.fillStyle="#1e6b45"; c.font="bold 13px Segoe UI"; c.textAlign="center";
+  c.fillText("\u{1F6A9} market door",mx(mk[0])+4,mz(9)-14);
+  // Sam adesso (posizione REALE) + da che parte guarda
   const samNow=CY8_NPC.sam, at = samNow ? [samNow.carrier.position.x, samNow.carrier.position.z] : CY8_CP.p0;
-  c.fillStyle="#d8402e"; c.beginPath(); c.arc(mx(at[0]),mz(at[1]),9,0,7); c.fill();
-  c.fillStyle="#ffffff"; c.font="bold 11px Segoe UI"; c.textAlign="center";
-  c.fillText("SAM",mx(at[0]),mz(at[1])-14);
-  c.fillStyle="#1e6b45"; c.beginPath(); c.arc(mx(-54),mz(9),9,0,7); c.fill();
-  c.fillStyle="#1e6b45"; c.font="bold 13px Segoe UI";
-  c.fillText("\u{1F6A9} market",mx(-54)+6,mz(9)+26);
+  const _dr=(Quest.state&&Quest.state.dr)||{};
+  const hd=_dr.h||(CY8_DIR_LEGS[idx]||CY8_DIR_LEGS[0]).head;
+  const sx=mx(at[0]), sy=mz(at[1]), hx=hd[0], hy=-hd[1];
+  c.fillStyle="#d8402e"; c.beginPath(); c.arc(sx,sy,8,0,7); c.fill();
+  c.beginPath(); c.moveTo(sx+hx*19,sy+hy*19);
+  c.lineTo(sx+hx*8-hy*7,sy+hy*8+hx*7); c.lineTo(sx+hx*8+hy*7,sy+hy*8-hx*7); c.closePath(); c.fill();
+  c.fillStyle="#b02a1b"; c.font="bold 11px Segoe UI"; c.textAlign="center";
+  c.fillText("SAM",sx-hx*4,sy+((at[1]<0)?22:-13));
+  // legenda
+  c.textAlign="left"; c.font="600 11.5px Segoe UI";
+  c.fillStyle="#d8402e"; c.fillText("▶ Sam is looking this way",20,H-7);
+  c.fillStyle="#e8730c"; c.fillText("➜ say this part now",190,H-7);
+  c.fillStyle="#7a8087"; c.fillText("➜ next",330,H-7);
+  c.fillStyle="#2e8b57"; c.fillText("➜ done",385,H-7);
   return cv.toDataURL("image/png");
 }
 
@@ -59042,7 +59239,7 @@ function cy8DirHtml(dr){
   CY8_DIR_LEGS.forEach((r,i)=>{
     const done=i<dr.idx, cur=(i===dr.idx);
     const cell = done ? _escHtml(r.say)
-      : (cur ? '<i>\u2026</i>' : '<span style="color:#9aa7ad;">\u2014</span>');
+      : (cur ? '<i>…</i>' : '<span style="color:#9aa7ad;">—</span>');
     h+='<tr style="border-bottom:1px solid #d9d2c4;'+(cur?'background:#fdf3d0;':'')+'">'
       +'<td style="padding:4px 6px;"><b>'+(i+1)+'</b></td>'
       +'<td style="padding:4px 6px;">'+cell+'</td></tr>';
@@ -59051,77 +59248,131 @@ function cy8DirHtml(dr){
 }
 function cy8Pts(arr){ return arr.map(p=>()=>new BABYLON.Vector3(p[0],0,p[1])); }
 
-/* Sam esegue l'ultima frase detta. `right` decide se percorre la tratta
-   giusta o la strada sbagliata con ritorno. In entrambi i casi CORRE
-   (opts.anim "Run", 3.4 m/s): le tratte sono lunghe 40-100 m e a passo
-   d'uomo l'attesa era morta — richiesta di Giacomo. */
-function cy8SamGo(right){
+/* Sam si gira sul posto verso (hx,hz), in modo visibile. */
+function cy8SamFace(h,cb,ms){
+  const sam=CY8_NPC.sam; if(!sam||!h){ if(cb) cb(); return; }
+  sam.watch=false;
+  const c=sam.carrier, a0=c.rotation.y, a1=Math.atan2(h[0],h[1])+NPC_FACE_OFFSET;
+  let d=a1-a0; while(d>Math.PI) d-=2*Math.PI; while(d<-Math.PI) d+=2*Math.PI;
+  const T=ms||420, t0=performance.now();
+  const obs=scene.onBeforeRenderObservable.add(()=>{
+    const u=Math.min(1,(performance.now()-t0)/T);
+    c.rotation.y=a0+d*u;
+    if(u>=1){ scene.onBeforeRenderObservable.remove(obs); if(cb) cb(); }
+  });
+}
+/* Sam CORRE fino a `dest` (3.4 m/s: le tratte sono lunghe 40-100 m e a passo
+   d'uomo l'attesa era morta — richiesta di Giacomo), sul marciapiede.
+   v559 — SE TROVA UN OSTACOLO LO AGGIRA (Giacomo, 15 nov: «lo puo' evitare,
+   come fa gia' l'avatar, trascinandosi e spostandosi lateralmente»).
+   npcWalkSeq fa gia' scivolare lungo un asse; se nonostante quello Sam non
+   avanza piu' (stuckFrames), qui NON ci si arrende: si cerca un passo di lato
+   libero, perpendicolare alla marcia, e da li' si ricalcola il percorso.
+   Solo dopo sei tentativi andati a vuoto si chiama onFail.
+   ⚠️ NIENTE opts.detour di npcWalkSeq: scartava a ogni micro-esitazione di
+   un percorso gia' buono e nel test dal vivo e' stato lui a incastrare Sam
+   sulla tratta lunga. Qui lo scarto parte solo da fermo vero. */
+function cy8SamWalk(dest,onDone,onFail){
+  const sam=CY8_NPC.sam; if(!sam){ if(onFail) onFail(); return; }
+  let tries=0;
+  const side=()=>{                    // un punto libero di lato, o null
+    const p=sam.carrier.position; let dx=dest[0]-p.x, dz=dest[1]-p.z; const L=Math.hypot(dx,dz)||1; dx/=L; dz/=L;
+    for(const amp of [0.7,1.3,2.0,2.8]) for(const sg of [1,-1]) for(const fw of [0.4,0,-0.6]){
+      const x=p.x-dz*sg*amp+dx*fw, z=p.z+dx*sg*amp+dz*fw;
+      if(!blocked(x,z) && !cy8Blocked(x,z)) return [x,z];
+    }
+    return null;
+  };
+  const go=(via)=>{
+    let route=null;
+    CY8_SIDEWALK=true;
+    try{
+      const p0=sam.carrier.position;
+      const a=via||cy8SnapClear(p0.x,p0.z), b=cy8SnapClear(dest[0],dest[1]);
+      route=cy8Route(a[0],a[1],b[0],b[1]);
+      if(via) route=[via].concat(route);
+      /* cy8Route senza percorso restituisce due punti uguali: non e' un arrivo */
+      const e=route[route.length-1];
+      if(Math.hypot(e[0]-b[0],e[1]-b[1])>1.2) route=null;
+    }catch(e){ route=null; }
+    finally{ CY8_SIDEWALK=false; }
+    if(!route){ if(onFail) onFail(); return; }
+    npcWalkSeq(sam, cy8Pts(route), 0.6, onDone, "town", ()=>{ if(onFail) onFail(true); },
+      { anim:"Run", speed:3.4, stuckFrames:50, onStuck:()=>{
+          if(++tries>6){ if(onFail) onFail(); return; }
+          let v=null; CY8_SIDEWALK=true; try{ v=side(); } finally{ CY8_SIDEWALK=false; }
+          go(v||undefined);
+        } });
+  };
+  go();
+}
+
+/* Sam esegue la frase appena detta: `res` e' quello che cy8DirResolve ha
+   letto. Giusta -> arriva e si passa alla tratta dopo. Sbagliata -> fa
+   quello che c'e' scritto, lo dice (recast) e poi, se si era allontanato,
+   torna dov'era a inizio tratta. */
+function cy8SamDo(res){
   const st=Quest.state, dr=st&&st.dr; const sam=CY8_NPC.sam;
-  if(!dr||!sam) return;
+  if(!dr||!sam||!res) return;
   const leg=CY8_DIR_LEGS[dr.idx]; if(!leg) return;
+  if(dr.busy) return;                  // doppio tocco su «Dillo a Sam»
   DialogueBox.close();
   dr.busy=true;
-  /* ⚠️⚠️ NIENTE opts.detour QUI. Era stato aggiunto per far scansare a Sam
-     gli alberi delle vecchie corsie fisse; con cy8Route() il percorso e'
-     GIA' verificato libero (line-of-sight ogni 0.35 m sulla geometria
-     reale), quindi lo scarto laterale non doveva piu' servire — e infatti
-     nel test dal vivo (frame simulati a mano su questo stesso file) e'
-     stato lui a incastrare Sam sulla tratta piu' lunga (94 m, "past the
-     cinema"): scartava di lato ad ogni micro-esitazione del percorso gia'
-     corretto, finendo per intrappolarsi da solo in un punto che senza
-     scarto era regolarmente attraversabile. Rimosso qui; resta disponibile
-     in npcWalkSeq per chi in futuro dovesse ancora usare corsie fisse. */
-  const RUN={ anim:"Run", speed:3.4,
-    onStuck:()=>{ /* rete di sicurezza: con cy8Route() non dovrebbe piu'
-      succedere (il percorso e' sempre libero sulla geometria vera), ma se
-      capita comunque NON conta come arrivo. */
-      dr.busy=false;
-      try{ speechSynthesis.resume(); TTS.say("Sorry, I can't get through here."); }catch(e){}
-      DialogueBox.open({ npc:sam, icon:"\u{1F6A7}", sub:"Lost visitor",
-        text:"Sorry, I can't get through here!",
-        italian:"Sam si \u00e8 trovato la strada bloccata e non \u00e8 arrivato. Ridagli l'indicazione.",
-        buttons:[{label:"Try again", cls:"primary", act:()=>runGiveDirections()}] });
-    } };
   try{ speechSynthesis.resume(); TTS.say(dr.said); }catch(e){}
-  /* ⚠️ IL PUNTO DI PARTENZA E' SEMPRE DOVE SAM E' ADESSO, mai un waypoint
-     fisso: e' quello che risolve il "torna indietro e si incastra di
-     nuovo" — un retry (giusto o sbagliato che sia) riparte da qui, non da
-     un punto che potrebbe essere di nuovo bloccato. */
-  const p0=sam.carrier.position, from=cy8SnapClear(p0.x,p0.z);
-  const destRaw = right ? (typeof leg.to==="function"?leg.to():leg.to)
-                         : (typeof leg.wrongTo==="function"?leg.wrongTo():leg.wrongTo);
-  const dest=cy8SnapClear(destRaw[0],destRaw[1]);
-  const route=cy8Route(from[0],from[1],dest[0],dest[1]);
-  if(right){
-    questHudSet("funzioni", HOBJ("\u{1F3C3} Sam is running\u2026","\u{1F3C3} Sam sta correndo\u2026"), Quest.i, Quest.total);
-    npcWalkSeq(sam, cy8Pts(route), 0.6, ()=>{
-      dr.busy=false; dr.idx++; dr.tries=0;
+  const fail=(left)=>{
+    dr.busy=false;
+    if(left===true) return;            // si e' usciti dalla citta' a meta' corsa
+    try{ speechSynthesis.resume(); TTS.say("Sorry, I can't get through here."); }catch(e){}
+    DialogueBox.open({ npc:sam, icon:"\u{1F6A7}", sub:"Lost visitor",
+      text:"Sorry, I can't get through here!",
+      italian:"Sam si è trovato la strada bloccata e non è arrivato. Ridagli l'indicazione.",
+      buttons:[{label:"Try again", cls:"primary", act:()=>runGiveDirections()}] });
+  };
+  const turnDir=(d)=>{ const h=leg.head; return (d==="left")?[-h[1],h[0]]:[h[1],-h[0]]; };
+  const base=()=>dr.h||leg.head;       // dove guarda quando aspetta la prossima frase
+  const recast=(after)=>{
+    try{ speechSynthesis.resume(); TTS.say(res.en); }catch(e){}
+    DialogueBox.open({ npc:sam, icon:"↺", sub:"Not quite!",
+      text:res.en, italian:res.it,
+      buttons:[{label:"Try again", cls:"primary", act:after}] });
+  };
+  if(res.kind==="ok"){
+    questHudSet("funzioni", HOBJ("\u{1F3C3} Sam is running…","\u{1F3C3} Sam sta correndo…"), Quest.i, Quest.total);
+    const dest=(typeof leg.to==="function")?leg.to():leg.to;
+    const run=()=>cy8SamWalk(dest, ()=>{
+      dr.idx++; dr.tries=0; dr.home=null; dr.h=null;
       if(dr.idx>=CY8_DIR_LEGS.length){
+        dr.busy=false;
         try{ TTS.say("The market! Thank you very much."); }catch(e){}
-        Quest.complete("\u{1F5FA}\uFE0F Funzioni completate! Sam \u00e8 arrivato al mercato."); return; }
-      runGiveDirections();
-    }, "town", ()=>{ dr.busy=false; }, RUN);
-  } else {
-    dr.tries++;
-    questHudSet("funzioni", HOBJ("\u{1F3C3} Sam is running\u2026 but where to?","\u{1F3C3} Sam sta correndo\u2026 ma dove?"), Quest.i, Quest.total);
-    npcWalkSeq(sam, cy8Pts(route), 0.6, ()=>{
-      dr.busy=false;
-      try{ speechSynthesis.resume(); TTS.say(leg.recast); }catch(e){}
-      /* il ritorno lo ricalcola cy8Route() da dove Sam e' ADESSO (il punto
-         sbagliato) verso `from` (dove si trovava a inizio tratta): non e'
-         detto sia la stessa strada dell'andata sbagliata. */
-      const backTo=from;
-      DialogueBox.open({ npc:sam, icon:"\u21ba", sub:"Wrong way!",
-        text:leg.recast, italian:leg.recastIt,
-        buttons:[{label:"Try again", cls:"primary", act:()=>{
-          const bp0=sam.carrier.position, bp=cy8SnapClear(bp0.x,bp0.z);
-          const backRoute=cy8Route(bp[0],bp[1],backTo[0],backTo[1]);
-          dr.busy=true;
-          npcWalkSeq(sam, cy8Pts(backRoute), 0.6, ()=>{ dr.busy=false; runGiveDirections(); },
-            "town", ()=>{ dr.busy=false; runGiveDirections(); }, RUN);
-        }}] });
-    }, "town", ()=>{ dr.busy=false; }, RUN);
+        Quest.complete("\u{1F5FA}️ Funzioni completate! Sam è arrivato al mercato."); return; }
+      cy8SamFace(CY8_DIR_LEGS[dr.idx].head, ()=>{ dr.busy=false; runGiveDirections(); });
+    }, fail);
+    if(res.turned) cy8SamFace(turnDir(res.turned), run); else run();
+    return;
   }
+  dr.tries++;
+  if(res.kind==="stay"){
+    questHudSet("funzioni", HOBJ("\u{1F914} Sam did what you said…","\u{1F914} Sam ha fatto quello che hai detto…"), Quest.i, Quest.total);
+    /* meta' giusta: resta girato (dr.h) e aspetta l'altra meta'. Girata
+       sbagliata o strada chiusa: dopo il recast torna com'era. */
+    if(res.keep) dr.h=res.face.slice(); else if(res.turned) dr.h=null;
+    cy8SamFace(res.face, ()=>setTimeout(()=>{
+      recast(()=>cy8SamFace(base(), ()=>{ dr.busy=false; runGiveDirections(); }));
+    }, 650));
+    return;
+  }
+  /* "move": ci va davvero */
+  questHudSet("funzioni", HOBJ("\u{1F3C3} Sam is running… but where to?","\u{1F3C3} Sam sta correndo… ma dove?"), Quest.i, Quest.total);
+  dr.h=null;
+  const home=dr.home||[sam.carrier.position.x, sam.carrier.position.z];
+  const run=()=>cy8SamWalk(res.to, ()=>{
+    recast(()=>{
+      if(!res.back){ dr.home=null; cy8SamFace(leg.head, ()=>{ dr.busy=false; runGiveDirections(); }); return; }
+      const again=()=>cy8SamFace(leg.head, ()=>{ dr.busy=false; runGiveDirections(); });
+      cy8SamWalk(home, again, (left)=>{ dr.busy=false; if(left!==true) runGiveDirections(); });
+    });
+  }, fail);
+  if(res.turned) cy8SamFace(turnDir(res.turned), run); else run();
 }
 
 function runGiveDirections(){
@@ -59129,30 +59380,37 @@ function runGiveDirections(){
   const sam=CY8_NPC.sam; if(!sam) return;
   if(dr.busy) return;
   if(dr.idx>=CY8_DIR_LEGS.length){
-    Quest.complete("\u{1F5FA}\uFE0F Funzioni completate! Sam \u00e8 arrivato al mercato."); return; }
+    Quest.complete("\u{1F5FA}️ Funzioni completate! Sam è arrivato al mercato."); return; }
   const leg=CY8_DIR_LEGS[dr.idx];
-  questHudSet("funzioni", HOBJ("\u{1F9ED} Direction <b>"+(dr.idx+1)+"/"+CY8_DIR_LEGS.length+"</b> \u2014 Sam is going to the <b>market</b>","\u{1F9ED} Indicazione <b>"+(dr.idx+1)+"/"+CY8_DIR_LEGS.length+"</b> \u2014 Sam sta andando al <b>market</b>"), Quest.i, Quest.total);
+  /* il punto di inizio tratta: e' li' che Sam torna dopo una strada sbagliata */
+  if(!dr.home) dr.home=[sam.carrier.position.x, sam.carrier.position.z];
+  questHudSet("funzioni", HOBJ("\u{1F9ED} Direction <b>"+(dr.idx+1)+"/"+CY8_DIR_LEGS.length+"</b> — Sam is going to the <b>market</b>","\u{1F9ED} Indicazione <b>"+(dr.idx+1)+"/"+CY8_DIR_LEGS.length+"</b> — Sam sta andando al <b>market</b>"), Quest.i, Quest.total);
   DialogueBox.open({ npc:sam, icon:"\u{1F9ED}", sub:"Lost visitor",
     text:leg.ask, italian:leg.it,
     html:cy8DirHtml(dr),
     tiles:{ tokens:leg.tokens, distractors:leg.distr, checkLabel:"\u{1F5E3} Dillo a Sam",
-      /* ⚠️ IL VERDE DEVE DIRE LA VERITA'. Prima si restituiva sempre ok:true
-         perche' Sam deve camminare comunque: il pannello mostrava «✓ Giusto!»
-         in verde anche su una frase sbagliata, e lo studente vedeva Sam
-         tornare indietro senza capire se aveva sbagliato o cosa stesse
-         succedendo. Ora ok riflette la frase reale — verde se giusta, rosso
-         se no — ma in entrambi i casi Sam parte: la partenza la lancia
-         onSuccess se giusta, un setTimeout qui se sbagliata. */
+      /* ⚠️ IL VERDE DEVE DIRE LA VERITA': verde solo se la frase porta Sam
+         dove deve andare. In tutti gli altri casi rosso, e Sam fa comunque
+         quello che c'e' scritto (parte da un setTimeout qui; se la frase e'
+         giusta lo lancia onSuccess). Una frase che non sta in piedi non lo
+         muove: resta aperta la finestra e si riprova subito. */
       onCheck:(w)=>{
         dr.said=w.join(" ");
-        const right=(dr.said===leg.tokens.join(" "));
-        if(right) return {ok:true, msg:"\u2713 "+leg.say+"  \u2014 Sam parte!"};
-        setTimeout(()=>cy8SamGo(false), 700);
-        return {ok:false, msg:"\u2717 Sam va comunque: guarda dove finisce\u2026"};
+        const res=cy8DirResolve(dr.idx, dr.said, dr.h);
+        dr.res=res;
+        if(res.kind==="ok") return {ok:true, msg:"✓ "+dr.said+"  — Sam parte!"};
+        if(res.kind==="huh"){
+          dr.tries++;
+          try{ speechSynthesis.resume(); TTS.say("Sorry, I don't understand."); }catch(e){}
+          return {ok:false, msg:"✗ «Sorry, I don't understand.» Sam non capisce questa frase: non si muove."};
+        }
+        setTimeout(()=>cy8SamDo(res), 700);
+        return {ok:false, msg:"✗ Sam fa quello che gli hai detto: guarda che cosa succede…"};
       },
-      onSuccess:()=>cy8SamGo(true) },
+      onSuccess:()=>cy8SamDo(dr.res) },
     buttons:[{label:"Leave", cls:"ghost", act:()=>{}}] });
 }
+
 
 MECH.giveDirections=function(s){
   buildCityNPCs();
@@ -59190,12 +59448,12 @@ MECH.giveDirections=function(s){
 const CY8_LISTEN=[
   { place:"town hall",
     text:"Go straight along the High Street. Go past the caf\u00e9. "
-        +"The town hall is on your right, past the corner." },
+        +"The town hall is on your left, past the corner." },
   { place:"cinema",
     text:"Go straight along the High Street, past the town hall. "
-        +"The cinema is on your right, at the crossroads." },
+        +"The cinema is on your left, next to the zebra crossing." },
   { place:"school",
-    text:"Cross the road at the crossroads. The school is on the other side, "
+    text:"Cross the road at the zebra crossing. The school is on the other side, "
         +"past the cinema, next to the clothes shop." },
   { place:"sports centre",
     text:"Go past the park. The sports centre is behind the park, on the right." },
