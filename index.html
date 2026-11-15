@@ -690,7 +690,7 @@
   #map-head .ey{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--plum);font-weight:700;display:block;}
   #map-close{background:none;border:none;font-size:18px;color:#7a8790;cursor:pointer;line-height:1;}
   #map-canvas{position:relative;margin:16px;height:clamp(320px,56vh,520px);border-radius:14px;overflow:hidden;
-    background:linear-gradient(180deg,#2c3945 0%,#33424d 34%,#38473e 62%,#44503a 100%);
+    background:linear-gradient(0deg,#2c3945 0%,#33424d 34%,#38473e 62%,#44503a 100%);
     box-shadow:inset 0 0 0 2px rgba(0,0,0,.12);}
   .map-band{position:absolute;left:9px;font-size:9.5px;font-weight:800;letter-spacing:.06em;
     color:rgba(255,255,255,.42);text-transform:uppercase;pointer-events:none;}
@@ -54037,8 +54037,17 @@ const DESTS=[
 /* v309l: il bordo sud passa da z48 a z68, se no lo Skatepark (z 46..66,
    a nord-est del Diner) restava fuori dalla mappa */
 const MAP_W=480, MAP_H=340, WX0=-118, WX1=140, WZ0=-96, WZ1=68;
-function worldToMap(x,z){ return { mx:(x-WX0)/(WX1-WX0)*MAP_W, my:(z-WZ0)/(WZ1-WZ0)*MAP_H }; }
-function _mapPct(x,z){ return { l:(x-WX0)/(WX1-WX0)*100, t:(z-WZ0)/(WZ1-WZ0)*100 }; }
+/* v560 — LA MAPPA ERA SPECCHIATA (Giacomo, 15 nov: «raddrizzala»). Si
+   disegnava con la z verso il BASSO: con la x a destra e' l'immagine allo
+   specchio della citta', quindi cio' che in 3D sta a destra sulla mappa
+   stava a sinistra (misurato proiettando la scena a schermo; e' lo stesso
+   difetto trovato nella mappina delle indicazioni di City life).
+   Ora la z cresce verso l'ALTO: e' la vista dall'alto vera, ed e' anche
+   orientata come la visuale di partenza (camera alpha -90°: si guarda verso
+   +z con +x a destra). Old Town finisce in alto, l'aeroporto in basso.
+   Tutto il resto della mappa passa da qui, quindi non c'e' altro da girare. */
+function worldToMap(x,z){ return { mx:(x-WX0)/(WX1-WX0)*MAP_W, my:(WZ1-z)/(WZ1-WZ0)*MAP_H }; }
+function _mapPct(x,z){ return { l:(x-WX0)/(WX1-WX0)*100, t:(WZ1-z)/(WZ1-WZ0)*100 }; }
 /* I LUOGHI DELLA MAPPA SI LEGGONO DA TOWN[], non da una seconda lista da
    tenere allineata a mano: se domani un edificio cambia posto o nome, la
    mappa lo sa. `az` e' il punto DAVANTI all'edificio dove sbuca il taxi:
@@ -54087,17 +54096,20 @@ function buildMapPins(){
   // etichette delle fasce, ancorate alla z VERA e non a un pixel scritto a mano
   /* z scelte nei VUOTI fra una fila e l'altra, verificate in Chromium: una
      fascia che finisce sopra il nome di un edificio lo rende illeggibile. */
-  [["Aeroporto",-74],["Anno 3 · New District",-58],
+  [["Aeroporto",-77],["Anno 3 · New District",-63],
    ["Anno 2 · Downtown",-29],["Anno 1 · Old Town",6]]
     .forEach(function(b){ const e=document.createElement("div"); e.className="map-band";
-      e.textContent=b[0]; e.style.top=_mapPct(0,b[1]).t+"%"; cv.appendChild(e); });
+      e.textContent=b[0]; e.style.top=_mapPct(0,b[1]).t+"%";
+      /* v560: con la z in alto la scritta deve stare SOPRA il suo punto, se
+         no scende sulla strada invece di restare nel vuoto fra le file */
+      e.style.transform="translateY(-100%)"; cv.appendChild(e); });
   /* IL LAGO. Unico elemento non schematico della tela, e serve: senza, il
      quadrante est e' una macchia vuota e i tre luoghi che gli stanno
      intorno (stazione meteo, campo dei camminatori, torre) sembrano messi
      a caso. Coordinate del lago vero: centro (118,-34), raggio 16. */
   (function(){ const r=16;
     const e=document.createElement("div"); e.className="map-lake";
-    e.style.left=_mapPct(118-r,0).l+"%"; e.style.top=_mapPct(0,-34-r).t+"%";
+    e.style.left=_mapPct(118-r,0).l+"%"; e.style.top=_mapPct(0,-34+r).t+"%";   // v560: con la z in alto il bordo superiore e' a z+r
     e.style.width=(2*r/(WX1-WX0)*100)+"%"; e.style.height=(2*r/(WZ1-WZ0)*100)+"%";
     cv.appendChild(e); })();
   // strade schematiche (high street, modern blvd, cross, ovest stazione, nord aeroporto)
