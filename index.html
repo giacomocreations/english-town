@@ -568,6 +568,19 @@
   #qm-card .qm-btn.wt-hint{background:#fff3c4;color:#6b4e00;border:1px solid #e8b04b;animation:wtHint 1.6s ease-in-out 3;}
   @keyframes wtHint{0%,100%{box-shadow:0 0 0 0 rgba(232,176,75,0);}50%{box-shadow:0 0 0 6px rgba(232,176,75,.45);}}
   .wt-slot.wt-hinted{outline:2px dashed #e8b04b;outline-offset:2px;}
+  /* v561: gli aiuti dei writing (vedi writeHelpOffer) */
+  .wh-box{margin-top:10px;text-align:left;}
+  .wh-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:999px;cursor:pointer;
+    background:#fff3c4;color:#6b4e00;border:1px solid #e8b04b;font:inherit;font-size:13px;font-weight:800;
+    animation:wtHint 1.6s ease-in-out 3;}
+  .wh-pan{background:#fffbea;border:1px solid #f0dc9a;border-radius:10px;padding:8px 10px;margin:0 0 8px;color:#4a3b10;font-size:13px;}
+  .wh-pan b{color:#6b4e00;}
+  .wh-chip{display:inline-block;margin:4px 4px 0 0;padding:5px 11px;border-radius:14px;cursor:pointer;
+    border:1px solid #e0c36a;background:#fff;color:#4a3b10;font-weight:700;user-select:none;}
+  .wh-chip:active{transform:scale(.95);}
+  .wh-mod{font-style:italic;line-height:1.6;margin-top:4px;}
+  .wh-gap{display:inline-block;min-width:42px;border-bottom:2px dashed #c9a23a;margin:0 2px;}
+  @media (prefers-reduced-motion:reduce){.wh-btn{animation:none;}}
   /* v310: PROMEMORIA DELLA CONSEGNA (vedi QuestNudge) */
   #quest-hud.nudge{animation:qhNudge 1.4s ease-in-out 3;}
   #quest-hud.nudge-loop{animation:qhNudge 2.4s ease-in-out infinite;}
@@ -23725,7 +23738,9 @@ function erroriFrequenti(text){
 function _copiaEsempio(text){
   let ex="";
   try{ const L=document.querySelectorAll("textarea[data-ex]");
-    for(let i=0;i<L.length;i++) if(L[i].value.trim()===text){ ex=L[i].getAttribute("data-ex")||""; break; } }catch(e){}
+    for(let i=0;i<L.length;i++) if(L[i].value.trim()===text){
+      if((L[i].__whLvl|0)>=3) return false;     // v561: il modello l'ha dato l'aiuto 3 (gia' pagato)
+      ex=L[i].getAttribute("data-ex")||""; break; } }catch(e){}
   if(!ex) return false;
   const parole=function(t){ return (String(t).toLowerCase().replace(/\u2019/g,"'").match(/[a-z']+/g)||[]); };
   const terne=function(w){ const o=[]; for(let i=0;i+2<w.length;i++) o.push(w[i]+" "+w[i+1]+" "+w[i+2]); return o; };
@@ -23830,6 +23845,154 @@ function produzioneFeedbackHTML(res){
     +(c.detail?' <span style="color:#9aa7ad;">('+c.detail+')</span>':'')+'</li>'; });
   html+='</ul>'; return html;
 }
+/* =====================================================================
+   v561 — GLI AIUTI NEI WRITING (Giacomo, 15 nov: «controlla se i writing di
+   ogni unit hanno degli aiuti per i piu' fragili cosi' non rimangono fermi,
+   con gli aiuti meno stelle pero'»).
+   Prima un writing dava solo l'inizio della prima frase nel segnaposto e la
+   lista ✅/❌ dei criteri: chi non sapeva da dove partire restava fermo.
+   Ora, dopo la PRIMA consegna che non passa (anche a campo vuoto), sotto il
+   feedback compare «💡 Aiuto». Tre gradini, uno per tocco, dal piu' leggero:
+     1. COME INIZIARE — l'inizio di OGNI frase dell'esempio (tre parole), da
+        toccare: va nel campo, e la frase la finisce lui;
+     2. PAROLE UTILI — il lessico che il correttore conta (req.vocab,
+        req.preps) o, se lo step non ne ha, le parole piene dell'esempio;
+     3. IL MODELLO CON I BUCHI — l'esempio intero con una parola piena su due
+        tolta: si completa con parole proprie.
+   ⚠️ COSTA STELLE come il 💡 Hint delle tessere: ogni gradino e' un
+   QuestHints.use() e Quest.complete li passa a Stars.awardStep (−4 ⭐ l'uno,
+   mai sotto la meta' dello step). Il bottone lo dice PRIMA del tocco.
+   ⚠️ Dal gradino 3 «non ricopiare l'esempio» (_copiaEsempio) tace per quel
+   campo: il modello l'ha dato il gioco, e l'ha gia' fatto pagare.
+   ⚠️ Le parole da toccare sono <span>, non <button>: btnPerEtichetta()
+   cerca i bottoni per etichetta (/next/…) e un esempio come «Next month
+   I'm…» gli avrebbe rubato il bottone giusto.
+   Un punto solo per tutte le unit: lo chiamano submitProduzione e il diario
+   del campo (svLogSubmit) quando la consegna non passa.
+   ===================================================================== */
+const WH_STOP=new Set(("a an the and or but so to of in on at for with from by is are was were am be been "
+  +"i you he she it we they my your his her its our their me him us them this that these those there here "
+  +"very really too also not don't didn't doesn't isn't aren't wasn't weren't haven't hasn't have has had "
+  +"got do does did can can't will would i'm it's i've we've they're you're because when while then what "
+  +"some any every about going should shouldn't must mustn't may might never ever always usually often "
+  +"sometimes than more most much many lot like").split(" "));
+function _whEsempio(ta){
+  const t=String(ta.getAttribute("data-ex")||ta.getAttribute("placeholder")||"").replace(/’/g,"'").replace(/\s+/g," ").trim();
+  return /^(write|answer)\b/i.test(t)?"":t;
+}
+function _whFrasi(ex){
+  return (ex.match(/[^.!?…\/]+/g)||[]).map(x=>x.trim()).filter(x=>x.split(" ").length>=2);
+}
+function _whPiena(w){ const c=w.toLowerCase().replace(/[^a-z']/g,""); return c.length>=4 && !WH_STOP.has(c); }
+/* nel modello non si buca la grammatica dell'unit: le forme in -ing (was
+   living, I'm wearing, going to) e i nomi propri restano visibili */
+function _whBucabile(w){ const c=w.replace(/[^A-Za-z']/g,"");
+  return _whPiena(w) && !/ing$/i.test(c) && !/^[A-Z]/.test(c); }
+function _whInizi(ex){
+  const out=[];
+  /* un pezzo gia' corto («I've never…», «You should…») e' gia' un inizio e
+     resta intero; le frasi lunghe si fermano alla terza parola */
+  _whFrasi(ex).forEach(f=>{ const w=f.split(" ");
+    const st=w.slice(0,Math.min(3,w.length)).join(" ").replace(/[,;:]+$/,"");
+    if(st && out.indexOf(st)<0) out.push(st); });
+  return out.slice(0,6);
+}
+function _whParole(ex,req){
+  let pool=[].concat((req.vocab&&req.vocab.pool)||[], (req.preps&&req.preps.pool)||[]);
+  if(!pool.length){ const seen=new Set();
+    (ex.match(/[A-Za-z][A-Za-z'-]*/g)||[]).forEach(w=>{ const k=w.toLowerCase();
+      if(_whPiena(w) && !/^[A-Z]/.test(w) && !seen.has(k)){ seen.add(k); pool.push(w); } }); }
+  return pool.filter((w,i)=>pool.indexOf(w)===i).slice(0,16);
+}
+/* il modello con i buchi: le prime due parole di ogni frase restano (sono
+   gia' l'aiuto 1), poi una parola piena su due diventa ____ */
+function _whModello(ex){
+  let pos=0, alt=true, buchi=0;
+  const html=ex.split(" ").map(w=>{
+    let out=_escHtml(w);
+    if(pos>=2 && _whBucabile(w)){
+      if(alt){ const m=w.match(/^([^A-Za-z]*)([A-Za-z'-]+)(.*)$/);
+        if(m){ out=_escHtml(m[1])+'<span class="wh-gap">&nbsp;</span>'+_escHtml(m[3]); buchi++; } }
+      alt=!alt; }
+    pos++; if(/[.!?…\/]$/.test(w) || w==="/"){ pos=0; alt=true; }
+    return out; }).join(" ");
+  return { html, buchi };
+}
+function _whMetti(ta,txt,frase){
+  let v=ta.value;
+  if(frase){
+    v=v.replace(/\s+$/,"");
+    if(v && !/[.!?]$/.test(v)) v+=".";
+    v=(v?v+" ":"")+txt+" ";
+    ta.value=v; try{ ta.setSelectionRange(v.length,v.length); }catch(e){}
+  } else {
+    /* la parola va dove c'e' il cursore (o dove era prima di uscire dal
+       campo); se non ci si e' mai stati, in fondo */
+    let a, b;
+    if(document.activeElement===ta){ a=ta.selectionStart; b=ta.selectionEnd; }
+    else a=b=(ta.__whCaret!=null ? Math.min(ta.__whCaret,v.length) : v.length);
+    const pre=v.slice(0,a), post=v.slice(b);
+    const ins=(pre && !/\s$/.test(pre)?" ":"")+txt+(/^\s/.test(post)?"":" ");
+    ta.value=pre+ins+post; const c=(pre+ins).length;
+    try{ ta.setSelectionRange(c,c); }catch(e){}
+  }
+  ta.__whCaret=ta.selectionStart;
+  try{ ta.focus(); }catch(e){}
+  try{ ta.dispatchEvent(new Event("input",{bubbles:true})); }catch(e){}
+}
+function _whRender(ta){
+  const box=ta.__whBox; if(!box) return;
+  const ex=_whEsempio(ta), req=ta.__whReq||{};
+  const gr=[];
+  const inizi=_whInizi(ex);   if(inizi.length) gr.push({ k:"start", t:"come iniziare", d:inizi });
+  const parole=_whParole(ex,req); if(parole.length) gr.push({ k:"words", t:"parole utili", d:parole });
+  const mod=ex?_whModello(ex):null;   // con meno di 2 buchi il modello e' solo l'esempio: niente gradino 3
+  if(mod && mod.buchi>=2) gr.push({ k:"model", t:"il modello con i buchi", d:mod.html });
+  const lvl=Math.min(ta.__whLvl|0, gr.length);
+  box.innerHTML="";
+  for(let i=0;i<lvl;i++){
+    const g=gr[i], pan=document.createElement("div"); pan.className="wh-pan";
+    if(g.k==="start"){
+      pan.innerHTML="<div>\u{1F4A1} <b>Come iniziare</b> — tocca un inizio e finisci la frase con parole tue:</div>";
+    } else if(g.k==="words"){
+      pan.innerHTML="<div>\u{1F4A1} <b>Parole utili</b> — toccane una per metterla nel testo:</div>";
+    } else {
+      pan.innerHTML="\u{1F4A1} <b>Il modello con i buchi</b> — riscrivilo nel campo e riempi i buchi "
+        +"con parole <b>tue</b> (puoi cambiare anche il resto):<div class=\"wh-mod\">"+g.d+"</div>";
+    }
+    if(g.k!=="model") g.d.forEach(w=>{
+      const c=document.createElement("span"); c.className="wh-chip"; c.setAttribute("role","button"); c.tabIndex=0;
+      c.textContent=(g.k==="start")?(w+" …"):w;
+      const go=e=>{ e.preventDefault(); e.stopPropagation(); _whMetti(ta,w,g.k==="start"); };
+      c.addEventListener("mousedown",e=>e.preventDefault());   // il campo tiene il cursore
+      c.addEventListener("click",go);
+      c.addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" ") go(e); });
+      pan.appendChild(c); });
+    box.appendChild(pan);
+  }
+  if(lvl<gr.length && !ta.__passed){
+    const inQuest=!!QuestHints._k();
+    const b=document.createElement("span"); b.className="wh-btn"; b.setAttribute("role","button"); b.tabIndex=0;
+    b.textContent="\u{1F4A1} Aiuto "+(lvl+1)+"/"+gr.length+": "+gr[lvl].t+(inQuest?" (−"+STAR_RULES.hintCost+" ⭐)":"");
+    const go=e=>{ e.preventDefault(); e.stopPropagation();
+      ta.__whLvl=lvl+1; try{ QuestHints.use(); }catch(err){} _whRender(ta); };
+    b.addEventListener("click",go);
+    b.addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" ") go(e); });
+    box.appendChild(b);
+  }
+}
+function writeHelpOffer(ta,fb,req){
+  if(!ta||!fb||!fb.parentNode) return;
+  if(!ta.__whBox || !document.body.contains(ta.__whBox)){
+    const box=document.createElement("div"); box.className="wh-box";
+    fb.parentNode.insertBefore(box, fb.nextSibling); ta.__whBox=box;
+    ta.addEventListener("blur",()=>{ ta.__whCaret=ta.selectionStart; });
+  }
+  ta.__whReq=req||{};
+  _whRender(ta);
+}
+/* a consegna superata il bottone sparisce (gli aiuti gia' aperti restano) */
+function writeHelpDone(ta){ if(ta && ta.__whBox) _whRender(ta); }
 /* Invio di una produzione scritta (Writing/final): valida, mostra il
    feedback e ATTENDE la conferma esplicita dello studente prima di
    completare lo step — MAI una chiusura a tempo (i precedenti 900ms non
@@ -23850,7 +24013,8 @@ function submitProduzione(cfg){
     ta.__doneMsg = cfg.completeMsg + (cfg.useIcon ? (" "+res.icon) : "");
     const btn=btnPerEtichetta(BTN_CONSEGNA);
     if(btn) btn.textContent="✔ OK, next!";
-  }
+    writeHelpDone(ta);
+  } else writeHelpOffer(ta, fb, cfg.req);   // v561: gli aiuti (meno stelle)
 }
 
 /* =====================================================================
@@ -64405,8 +64569,9 @@ function svLogSubmit(){
   if(ta.__passed){ DialogueBox.close(); Quest.complete(ta.__doneMsg); return; }
   const res=checkProduzione(ta.value, SV_WRITE_REQ);
   fb.innerHTML=produzioneFeedbackHTML(res);
+  if(!res.pass) writeHelpOffer(ta, fb, SV_WRITE_REQ);   // v561: gli aiuti (meno stelle)
   if(res.pass){
-    ta.__passed=true;
+    ta.__passed=true; writeHelpDone(ta);
     ta.__doneMsg="\u270d\ufe0f Writing completato! La tua pagina \u00e8 sul leggio del campo. "+res.icon;
     const txt=String(ta.value||"").trim();
     try{ Sync.set("et_sv_log",{ text:txt, band:res.band, ts:Date.now() }); }catch(e){}
