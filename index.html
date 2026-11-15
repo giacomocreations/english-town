@@ -3194,8 +3194,8 @@ const UNIT_CITY={ id:"u2_8", area:"town", openWorld:true,
        (Unit 5). Testi allineati a Milo + bussola su di lui dopo 3 posti. */
     target:()=>(typeof CY8_MILO_BROCHURE!=="undefined" && CY8_MILO_BROCHURE.length>=3 && CY8_NPC.milo) ? cy8NpcPos("milo") : null,
     intro:"<b>Ultimo passo!</b> Alla <b>Central Station</b> scende un turista, <b>Milo</b>. Portalo in giro per "
-         +"la citt\u00e0 e scrivigli il giro turistico.",
-    introObjEn:"Write the tour of the city.", introObj:"Scrivi il giro turistico della citt\u00e0." },
+         +"la citt\u00e0 e fagli vedere almeno 3 posti.",
+    introObjEn:"Show Milo around the city.", introObj:"Porta Milo in giro per la citt\u00e0." },
 ]};
 
 /* =====================================================================
@@ -59521,7 +59521,11 @@ function onListenTap(entry,fl){
 
 
 /* =====================================================================
-   FINAL — «cityTour»: la tourist brochure (compito di realt\u00e0, p.135).
+   FINAL — «cityTour»: il giro turistico con Milo (compito di realt\u00e0, p.135).
+   ⚠️ NIENTE OPUSCOLO DA SCRIVERE (Giacomo, nov 2026: «troppi writing, quello
+   dove si descrivono i posti e' di troppo»). La scrittura della unit e' gia'
+   la targa blu: qui si porta Milo a 3 posti e si chiude a voce con lui.
+   (La descrizione sotto e' quella storica, con l'opuscolo.)
    ---------------------------------------------------------------------
    Tom scende dal treno alla stazione e chiede consigli. Lo studente
    sceglie DA SOLO almeno 3 luoghi (non scriptati: sono i 10 della lista
@@ -59665,44 +59669,34 @@ function cy8FollowTick(){
 }
 function cy8TourHud(){
   const n=CY8_MILO_BROCHURE.length;
-  questHudSet("final", HOBJ(n<3 ? ("Show Milo at least <b>3 places</b> in town: he follows you. Go there and press <b>E</b> ("+n+"/3)") : "Great! Now talk to <b>Milo</b> (press <b>E</b>) and write the tourist leaflet.",n<3 ? ("Mostra a Milo almeno <b>3 posti</b> della citt\u00e0: lui ti segue. Vai l\u00ec e premi <b>E</b> ("+n+"/3)")
-        : "Ottimo! Ora parla con <b>Milo</b> (premi <b>E</b>) e scrivi l'opuscolo turistico."),
+  questHudSet("final", HOBJ(n<3 ? ("Show Milo at least <b>3 places</b> in town: he follows you. Go there and press <b>E</b> ("+n+"/3)") : "Great! Now talk to <b>Milo</b> (press <b>E</b>) to finish the tour.",n<3 ? ("Mostra a Milo almeno <b>3 posti</b> della citt\u00e0: lui ti segue. Vai l\u00ec e premi <b>E</b> ("+n+"/3)")
+        : "Ottimo! Ora parla con <b>Milo</b> (premi <b>E</b>) per chiudere il giro."),
     Quest.i, Quest.total);
 }
 function runCityTour(){
   if(CY8_MILO_BROCHURE.length<3){
     DialogueBox.open({ npc:CY8_NPC.milo, icon:"\ud83c\udff7\ufe0f", sub:"Tourist",
       text:"Hi! I'm visiting for a few days. What should I see in this town?",
-      italian:"Milo ti segue: cammina in citt\u00e0 e premi E in almeno 3 posti diversi per consigliarglieli, poi parla con lui per scrivere l'opuscolo.",
+      italian:"Milo ti segue: cammina in citt\u00e0 e premi E in almeno 3 posti diversi per consigliarglieli, poi parla con lui.",
       buttons:[{label:"Sure, let's go!", cls:"primary", act:()=>{ cy8FollowStart(); cy8TourHud(); }}] });
   } else {
-    cy8OpenBrochure();
+    cy8EndTour();
   }
 }
 function cy8CollectPlace(p){
-  if(CY8_MILO_BROCHURE.includes(p.en)){ toast("\u2713 The "+p.en+" is already in your leaflet."); return; }
+  if(CY8_MILO_BROCHURE.includes(p.en)){ toast("\u2713 You already showed Milo the "+p.en+"."); return; }
   CY8_MILO_BROCHURE.push(p.en);
-  toast("\ud83d\udcdd Added to the leaflet: "+p.en);
+  toast("\ud83d\udccd You showed Milo the "+p.en);
   cy8TourHud();
-  if(CY8_MILO_BROCHURE.length>=3) toast("\u2728 Now talk to Milo and write the leaflet!");
+  if(CY8_MILO_BROCHURE.length>=3) toast("\u2728 Now talk to Milo!");
 }
-const CY8_TOUR_REQ={ minSent:3,
-  patterns:[{re:/\b(you can|there is|there are|visit)\b/i, label:"Usa un registro da guida turistica (you can, there is/are, visit...)"}],
-  vocab:{ pool:["market","cinema","school","park","town hall","sports centre","caf\u00e9","train station",
-    "bus stop","clothes shop"], min:2 },
-  passBand:"yellow" };
-function cy8OpenBrochure(){
-  questHudSet("final", HOBJ("Write the tourist leaflet: at least 3 sentences about the places you chose.","Scrivi l'opuscolo turistico: almeno 3 frasi sui posti che hai scelto."), Quest.i, Quest.total);
-  DialogueBox.open({ npc:CY8_NPC.milo, icon:"\ud83c\udff7\ufe0f", sub:"Final task \u2014 tourist brochure",
-    text:"Great choices! Now write them down for me \u2014 what can I do there?",
-    italian:"Scrivi l'opuscolo (3+ frasi) usando i posti che hai scelto: "+CY8_MILO_BROCHURE.join(", ")+".",
-    html:'<textarea id="cy8TourTA" rows="5" style="width:100%;box-sizing:border-box;font:inherit;'
-      +'padding:8px;border-radius:10px;border:1px solid #ccd6da;resize:vertical;" '
-      +'placeholder="Welcome to our town! You can visit the market on Saturdays. There is a nice park near..."></textarea>'
-      +'<div id="cy8TourFb" style="margin-top:10px;"></div>',
-    buttons:[ {label:"\u2714 Hand it in", cls:"primary", keepOpen:true,
-        act:()=>submitProduzione({ taId:"cy8TourTA", fbId:"cy8TourFb", req:CY8_TOUR_REQ,
-          completeMsg:"\ud83c\udfe1 Unit 8 completata! La tua tourist brochure \u00e8 pronta." }) },
+function cy8EndTour(){
+  const L=CY8_MILO_BROCHURE.map(x=>"the "+x), list=L.slice(0,-1).join(", ")+" and "+L[L.length-1];
+  DialogueBox.open({ npc:CY8_NPC.milo, icon:"\ud83c\udff7\ufe0f", sub:"Tourist",
+    text:"Great tour! I can visit "+list+". Thank you!",
+    italian:"Milo ti ringrazia per il giro: rispondigli per chiudere la Unit 8.",
+    buttons:[ {label:"You're welcome! Enjoy the town!", cls:"primary",
+        act:()=>Quest.complete("\ud83c\udfe1 Unit 8 completata! Milo ha visto la citt\u00e0.") },
       {label:"Leave", cls:"ghost", act:()=>{}} ] });
 }
 
@@ -59712,7 +59706,7 @@ MECH.cityTour=function(s){
     Quest.questInteract({ id:"cy8brochure_"+p.en.replace(/[^a-z]+/gi,"_"), area:"town", radius:3.0,
       pos:()=>cy8PlaceVec(p),
       prompt:()=>CY8_MILO_BROCHURE.includes(p.en)
-        ? ("\u2713 The "+p.en+" is already in your leaflet")
+        ? ("\u2713 You already showed Milo the "+p.en)
         : ("Press <b>E</b>: recommend the <b>"+p.en+"</b> to Milo"),
       interact:()=>cy8CollectPlace(p) });
   });
