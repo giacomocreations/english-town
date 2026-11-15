@@ -22774,9 +22774,106 @@ function assegnaTinta(rig, id, tint, applica){
   _TINTE_USATE[firma]=id;
   return passo;
 }
+/* =====================================================================
+   v498 — IL GUARDAROBA PER IDENTITA' (Giacomo, 15 nov 2026: «vesti gli NPC
+   che sono rimasti in formato originale con gli accessori, vestendoli in
+   quello che puoi mettere nella lista in base all'identita' che hanno.
+   Alcuni hanno gia' questa vestizione»).
+   Chi sta in questa lista NON passa dal sorteggio dei modelli (NPC_POOL):
+   prende il rig del giocatore (avatar / avatarW secondo il genere chiesto),
+   l'unico che porta i capi della Teca, ed e' vestito a mano secondo il
+   mestiere: la postina col berretto e la borsa, il dottore e l'ingegnera
+   col camice (un blazer bianco), il ranger in verde, la nonna con chignon,
+   occhiali e sciarpa... Come Ryan il runner, la crew dello skatepark e Dev
+   il fonico, che avevano gia' il loro look a mano (cfg.look vince sempre).
+   Chiave = id dell'NPC a runtime. Campi come cfg.look: bottom, bcol, coat,
+   coatc, cut, hat, hatc, face, facec, neck, neckc, bag, bagc.
+   ⚠️ FUORI DALLA LISTA, apposta: chi ha una divisa o una posa sua
+   (dress:false: Ray e Lucy del diner), chi e' legato al suo rig da
+   keepModel (la band, i clienti seduti, la gente del parco con i suoi
+   oggetti), il Sindaco, l'Architetto, Mr. Bell, Kim, Wren e gli otto
+   pazienti del pronto soccorso (bende e stampelle sono misurate su quei
+   corpi). Per aggiungerne uno basta una riga qui.
+   ===================================================================== */
+const NPC_WARDROBE={
+  /* --- in citta' --- */
+  nora:      { bottom:"trousers", bcol:"navy",  coat:"raincoat", cut:"bun", face:"glasses" },                       // Weather officer
+  otto:      { bottom:"shorts",   hat:"bucket", face:"aviator",  bag:"canvasbag" },                                 // Tourist
+  kai:       { bottom:"cargo",    bcol:"beige", coat:"softshell", hat:"bucket", hatc:"green", face:"shades", neck:"" },   // Lake guide
+  vik:       { bottom:"cargo",    bcol:"green", coat:"softshell", coatc:"orange", hat:"beanie", hatc:"orange", face:"", neck:"" }, // Camp guide
+  sv_ana:    { bottom:"cargo",    bcol:"beige", coat:"puffer",   coatc:"blue", hat:"beanie", hatc:"red", cut:"ponytail" },  // Camper
+  sv_sam:    { bottom:"cargo",    bcol:"green", coat:"raincoat", hat:"bucket", face:"", neck:"" },                  // Camper
+  sv_zoe:    { bottom:"joggers",  bcol:"grey",  coat:"softshell", hat:"beanie", hatc:"purple", neck:"scarf" },      // Camper
+  coach:     { bottom:"joggers",  bcol:"navy",  hat:"cap", hatc:"blue" },                                           // Coach
+  u7alex:    { bottom:"shorts",   hat:"headband", hatc:"blue" },                                                    // Athlete
+  u7ravi:    { bottom:"joggers",  bcol:"black", hat:"headband", hatc:"green", cut:"curly" },                        // Athlete
+  ruby:      { bottom:"tights",   bcol:"red",   cut:"ponytail", bag:"canvasbag", bagc:"blue" },                     // Student
+  reed:      { bottom:"smart",    bcol:"navy",  coat:"blazer", cut:"fade" },                                        // Check-in Staff
+  cole:      { bottom:"smart",    bcol:"black", coat:"bomber", coatc:"black", hat:"cap", hatc:"black", cut:"fade" },// Security Officer
+  theo:      { bottom:"trousers", bcol:"black", cut:"curly", hat:"cap", hatc:"brown" },                             // Barista
+  lena:      { bottom:"trousers", bcol:"denim", coat:"denim", face:"shades", bag:"leatherbag" },                    // Traveller
+  tc_greta:  { bottom:"capri",    bcol:"beige", coat:"blazer", coatc:"red", neck:"scarf", neckc:"white", cut:"bob", bag:"designerbag" }, // Traveller
+  tc_silas:  { bottom:"smart",    bcol:"navy",  coat:"blazer", face:"aviator", hat:"cap", hatc:"blue", cut:"fade" }, // Pilot
+  ped_molly: { bottom:"trousers", bcol:"navy",  coat:"bomber", coatc:"blue", hat:"cap", hatc:"blue", cut:"ponytail", bag:"canvasbag", bagc:"red" }, // Postwoman
+  ped_jack:  { bottom:"trousers", bcol:"denim", hat:"cap", hatc:"red", bag:"canvasbag", cut:"" },                   // Student
+  ped_priya: { bottom:"capri",    bcol:"beige", hat:"bucket", hatc:"white", face:"shades", bag:"canvasbag", cut:"long" }, // Tourist
+  ped_hall:  { bottom:"skirt",    bcol:"grey",  coat:"denim", coatc:"purple", cut:"bun", face:"glasses", neck:"scarf", neckc:"pink" }, // Neighbour
+  ped_ross:  { bottom:"smart",    bcol:"navy",  coat:"blazer", coatc:"white", face:"glasses", cut:"fade" },         // Doctor: il camice
+  ranger:    { bottom:"cargo",    bcol:"green", coat:"bomber", hat:"bucket", hatc:"green" },                        // Town Ranger
+  rosa:      { bottom:"trousers", bcol:"black", cut:"ponytail", neck:"necklace" },                                  // Barista
+  finch:     { bottom:"smart",    bcol:"grey",  coat:"blazer", coatc:"brown", face:"glasses", neck:"scarf", neckc:"red" }, // Regular
+  nadia:     { bottom:"tights",   bcol:"purple", cut:"bob", face:"glasses", bag:"canvasbag" },                      // Student
+  news:      { bottom:"trousers", bcol:"grey",  coat:"denim", face:"glasses", cut:"curly" },                        // Newsagent
+  cy8ivy:    { bottom:"smart",    bcol:"navy",  coat:"blazer", coatc:"blue", face:"glasses", neck:"medallion", neckc:"silver" }, // Tourist information
+  cy8sam:    { bottom:"shorts",   hat:"bucket", face:"aviator", bag:"canvasbag", bagc:"orange" },                   // Lost visitor
+  nico:      { bottom:"trousers", bcol:"beige", coat:"denim", coatc:"green", hat:"cap", hatc:"green" },             // Flower seller
+  /* --- cinema, casa --- */
+  vance:     { bottom:"smart",    bcol:"black", coat:"blazer", coatc:"red", hat:"", cut:"fade" },                   // Box office
+  iris:      { bottom:"smart",    bcol:"black", coat:"leather", face:"designer", cut:"bob", neck:"scarf", neckc:"red" }, // Film director
+  chris:     { bottom:"trousers", bcol:"denim", coat:"denim", face:"glasses", cut:"curly" },                        // Film club
+  maya:      { bottom:"trousers", bcol:"denim", coat:"denim", coatc:"white", cut:"ponytail", neck:"necklace" },     // Mum
+  jack:      { bottom:"joggers",  bcol:"grey",  hat:"headphones", cut:"buzz" },                                     // Brother
+  vera:      { bottom:"skirt",    bcol:"navy",  coat:"denim", coatc:"pink", cut:"bun", face:"glasses", neck:"scarf", neckc:"purple" }, // Grandma
+  emma:      { bottom:"capri",    bcol:"white", coat:"blazer", coatc:"green", cut:"bob", neck:"necklace" },         // Neighbour
+  /* --- negozi, scuola, stazione, municipio --- */
+  sam:       { bottom:"trousers", bcol:"beige", coat:"denim", coatc:"green", face:"glasses", neck:"" },             // Shopkeeper
+  mia:       { bottom:"skirt",    bcol:"pink",  cut:"ponytail", bag:"canvasbag", bagc:"purple" },                   // Friend
+  anna:      { bottom:"trousers", bcol:"black", cut:"bun", neck:"scarf", neckc:"green" },                           // Shop assistant
+  oscar:     { bottom:"trousers", bcol:"denim", coat:"puffer", coatc:"green", hat:"cap", hatc:"grey", bag:"canvasbag" }, // Customer
+  grace:     { bottom:"tights",   bcol:"navy",  coat:"blazer", coatc:"red", cut:"bun", face:"glasses", neck:"necklace" }, // Teacher
+  tom:       { bottom:"smart",    bcol:"navy",  coat:"blazer", hat:"cap", hatc:"blue", face:"" },                   // Ticket clerk
+  zoe:       { bottom:"joggers",  bcol:"grey",  coat:"puffer", hat:"headphones", bag:"leatherbag" },                // Traveller
+  dunn:      { bottom:"smart",    bcol:"grey",  coat:"blazer", face:"glasses", cut:"fade" },                        // Registrar
+  ivy:       { bottom:"trousers", bcol:"denim", coat:"denim", coatc:"yellow", neck:"necklace", bag:"canvasbag" },   // Resident
+  nina:      { bottom:"skirt",    bcol:"black", coat:"blazer", coatc:"pink", cut:"bob", neck:"medallion", neckc:"gold" }, // Shop Assistant
+  /* --- Beat Club, salone, Eco Point --- */
+  rita:      { bottom:"smart",    bcol:"black", coat:"leather", cut:"curly", neck:"royal", neckc:"gold" },          // Club owner
+  yara:      { bottom:"trousers", bcol:"black", coat:"leather", coatc:"purple", cut:"short", neck:"necklace", neckc:"silver" }, // Hairstylist
+  tess:      { bottom:"skirt",    bcol:"navy",  coat:"blazer", coatc:"white", cut:"bun", face:"glasses" },          // Receptionist
+  omar:      { bottom:"cargo",    bcol:"black", coat:"denim", coatc:"black", hat:"cap", hatc:"black", bag:"leatherbag" }, // Photographer
+  fern:      { bottom:"cargo",    bcol:"green", coat:"denim", coatc:"green", cut:"ponytail", neck:"earthmedal" },   // Eco Point Manager
+  hugo:      { bottom:"cargo",    bcol:"beige", hat:"cap", hatc:"green", neck:"earthmedal" },                       // Recycling Volunteer
+  mila:      { bottom:"trousers", bcol:"white", coat:"blazer", coatc:"white", cut:"bun", hat:"headband", hatc:"white" }, // Cook: la giacca da cuoca
+  /* --- Job Centre, Tech Lab, Climate, ospedale --- */
+  okoro:     { bottom:"smart",    bcol:"grey",  coat:"blazer", cut:"bun", face:"glasses", bag:"workbag" },          // Career adviser
+  danny:     { bottom:"smart",    bcol:"navy",  coat:"blazer", coatc:"grey", cut:"fade", bag:"workbag" },           // First interview
+  vega:      { bottom:"cargo",    bcol:"navy",  coat:"puffer", coatc:"red", cut:"short" },                          // Firefighter
+  ito:       { bottom:"trousers", bcol:"black", coat:"blazer", coatc:"white", cut:"bob", face:"glasses" },          // Lab engineer: il camice
+  marcus:    { bottom:"trousers", bcol:"denim", coat:"blazer", coatc:"blue", face:"glasses", bag:"workbag", bagc:"brown" }, // Young entrepreneur
+  hale:      { bottom:"smart",    bcol:"navy",  coat:"bomber", coatc:"blue", hat:"cap", hatc:"blue" },              // Station chief
+  cfnadia:   { bottom:"trousers", bcol:"green", coat:"raincoat", cut:"ponytail", neck:"earthmedal" },               // Climate officer
+  erRoss:    { bottom:"smart",    bcol:"navy",  coat:"blazer", coatc:"white", face:"glasses", cut:"fade" },         // Doctor: il camice
+  erNoor:    { bottom:"joggers",  bcol:"navy",  cut:"bun", neck:"necklace", neckc:"silver" },                       // Night nurse
+  erJonah:   { bottom:"joggers",  bcol:"grey",  cut:"curly", hat:"headphones" },                                    // Patient, 15
+  erInes:    { bottom:"trousers", bcol:"denim", coat:"denim", coatc:"orange", cut:"ponytail" },                     // Volunteer
+};
+function npcWardrobe(cfg){ return (cfg && cfg.dress!==false && cfg.id && !cfg.keepModel) ? (NPC_WARDROBE[cfg.id]||null) : null; }
 function pickNpcModel(cfg){
   const want=cfg.model||"avatar";
   if(cfg.keepModel) return want;
+  /* v498: chi ha il suo guardaroba in NPC_WARDROBE sta sul rig che lo puo' portare */
+  if(npcWardrobe(cfg)){ const rig=FEMALE_MODELS[want]?"avatarW":"avatar";
+    if(containers[rig] && !containers[rig].__placeholder){ cfg.__wardrobe=NPC_WARDROBE[cfg.id]; return rig; } }
   const pool=NPC_POOL[want];
   if(!pool) return want;                       // modello esplicito (npcSuit...) = rispettato
   const ok=pool.filter(k=>containers[k]&&!containers[k].__placeholder);
@@ -31732,6 +31829,7 @@ function lessonOnSchoolEnter(){
     LESSON.pending=pid; LESSON.greetAt=0;
     lessonGreetWhenFree(pid);
     try{ ripassoCarica(); }catch(e){}            // v400: gli errori dell'ultimo test, mentre Miss Grace saluta
+    try{ oraleCarica(); }catch(e){}              // v498: gli esercizi di speaking dell'ultimo orale
     try{ pianoCarica(); }catch(e){}              // v401: il piano personalizzato, per la fine della lezione
   }
   try{ pianoAllIngresso(); }catch(e){}         // v404: il piano personalizzato, subito, a tutti gli alunni
@@ -32427,6 +32525,183 @@ function _ripAsk(it,n,st,next){
       { label:"↺ Again", cls:"ghost", keepOpen:true, act:_ripTilesReset }, _lessonStandBtn()] });
 }
 
+/* ==== v498 — IL RIPASSO DELL'ULTIMO ORALE (Giacomo, 15 nov 2026: «quando
+   entrano in Town School dopo uno scritto Miss Grace fa domande sugli errori
+   dello scritto. Dopo un orale dovrebbe fare lo stesso: gli errori sono
+   scritti nello storico di ogni alunno... potresti riprendere i piani
+   personalizzati orali e usare 2-3 domande di quelli. Usano la funzione
+   Speak per rispondere»).
+   COM'ERA: dopo un orale non succedeva niente. Il ripasso (v400) guarda
+   solo i test di LiveLearn; un'interrogazione non e' una sessione di
+   LiveLearn, e nello storico che arriva all'alunno (history_priv/<codice>/
+   myclass/votiOrale) ci sono data, voto e titolo, non gli errori. Gli
+   errori stanno nelle note del docente, da cui MyClass genera il piano
+   orale: il testo per l'alunno e gli esercizi di speaking.
+   ADESSO: a inizio lezione, dopo il ripasso dello scritto e per una volta,
+   Miss Grace riprende l'ULTIMO piano orale e fa fino a ORA_MAX domande:
+     studentapp/personal_plan/<codice>                            il piano (piccolo)
+     livelearn/recovery_sessions/<codice>/<piano>/activity/questions   gli esercizi
+   Solo letture, sugli stessi rami che il gioco legge gia'. Si scelgono gli
+   esercizi guidati (una frase); il parlato libero solo se mancano.
+   · Si risponde A VOCE: il campo e' una <textarea>, quindi «🎤 Speak» (Mic)
+     compare da solo; col microfono disponibile non si scrive a tastiera, a
+     meno di dichiarare che il microfono non si puo' usare.
+   · La correzione e' _spkEval, la stessa di LiveLearn e dello Speakers'
+     Corner: obiettivi (targets) ed errori tipici (avoid). Al primo errore si
+     riprova una volta, poi arriva la frase modello da ascoltare.
+   · Recuperi orali vecchi, col solo testo del docente (senza esercizi): le
+     indicazioni si leggono per intero e si parla su due temi dello Speakers'
+     Corner della unit dell'orale (o di quella della lezione).
+   · «Gia' fatto» = chiave locale et_ripasso_orale_fatto, come et_ripasso_fatto.
+   · Una stella per domanda riuscita, una volta sola (chiave «ora:<piano>»). ==== */
+const ORA_K="et_ripasso_orale_fatto";
+const ORA_MAX=3;
+const ORA={ prom:null, code:null, at:0 };
+/* la unit del piano («Unit 3», «Starter»...) fra quelle con i temi dello Speakers' Corner */
+function _oraUnit(nome){
+  const s=String(nome||"").toLowerCase(); let yr=1; try{ yr=studentYear(); }catch(e){}
+  const m=s.match(/\bunit[aà]?\s*(\d+)/), n=m?Number(m[1]):(/starter/.test(s)?0:null);
+  if(n==null) return null;
+  const u=SYLLABUS.find(x=>x.yr===yr && x.n===n && SPK_TOPICS[x.id]);
+  return u?u.id:null;
+}
+function _oraDaTema(id){
+  return (SPK_TOPICS[id]||[]).map(t=>({ text:t[0], it:t[1], minWords:t[2], model:t[3], free:true, corner:true,
+    targets:t[4].map(x=>({ label:x[0], say:x[1] })), avoid:t[5].map(x=>({ say:x[0], tip:x[1] })) }));
+}
+async function _oraCarica(code){
+  const P=await Cloud.leggi("studentapp/personal_plan/"+code,8000);
+  if(!P.risposto) return null;
+  const orali=Object.keys(P.val||{}).map(k=>Object.assign({ _key:k },P.val[k]||{}))
+    .filter(p=>p.type==="recovery_orale").sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  if(!orali.length) return { vuoto:true };
+  const p=orali[0], id=String(p.code||p._key);
+  const fatto=Sync.get(ORA_K,null);
+  if(fatto && fatto.code===id) return { code:id, fatto:true };
+  let items=[];
+  if(p.code){
+    const Q=await Cloud.leggi("livelearn/recovery_sessions/"+code+"/"+p.code+"/activity/questions",10000);
+    if(!Q.risposto) return null;                              // rete muta: si riprovera'
+    const qs=_ripArr(Q.val).filter(q=>q && q.type==="speaking" && (_spkArr(q.targets).length || Number(q.minWords)>0))
+      .map(q=>({ text:String(q.text||""), model:q.model?String(q.model):"", free:!!q.free, minWords:Number(q.minWords)||0,
+                 targets:_spkArr(q.targets), avoid:_spkArr(q.avoid), hint:q.hint?String(q.hint):"", tts:q.ttsText?String(q.ttsText):"" }));
+    const guidati=shuffle(qs.filter(q=>!q.free)), liberi=qs.filter(q=>q.free);
+    items=guidati.slice(0,ORA_MAX);
+    while(items.length<2 && liberi.length) items.push(liberi.shift());
+  }
+  let unit=null;
+  if(!items.length){                                          // solo il testo del docente: i temi dello Speakers' Corner
+    unit=_oraUnit(p.unitName||p.title);
+    items=shuffle(_oraDaTema(unit||"")).slice(0,2);
+  }
+  return { code:id, title:String(p.unitName||p.title||""), ts:p.createdAt||0, text:p.text?String(p.text):"", items,
+           corner:!p.code || !!unit, attivita:!!(p.code && p.status!=="completed") };
+}
+function oraleCarica(){
+  let code=""; try{ code=String(Student.code||"").trim().toUpperCase(); }catch(e){}
+  if(!code || Student.ospite || typeof Cloud==="undefined") return Promise.resolve(null);
+  if(ORA.prom && ORA.code===code && Date.now()-ORA.at<RIP_TTL) return ORA.prom;
+  ORA.code=code; ORA.at=Date.now();
+  const p=ORA.prom=_oraCarica(code).catch(e=>{ console.warn("[orale]",e); return null; });
+  p.then(d=>{ if(!d && ORA.prom===p) ORA.prom=null; });
+  return p;
+}
+function oraleFatto(code){ try{ Sync.set(ORA_K,{ code, t:Date.now() }); }catch(e){} ORA.prom=null; }
+/* «non posso usare il microfono»: il campo si sblocca e si scrive */
+function _oraTastiera(){
+  const el=document.getElementById("ora-in"), a=document.getElementById("ora-kb");
+  if(el){ el.readOnly=false; el.placeholder="Answer in English."; try{ el.focus(); }catch(e){} }
+  if(a) a.style.display="none";
+  return false;
+}
+function _oraPulisci(){ try{ Mic.stop(); }catch(e){} const el=document.getElementById("ora-in"); if(el) el.value=""; }
+/* lo step della lezione, subito dopo quello dello scritto (stesso schema di ripassoSteps) */
+function oraleSteps(lessonId,next,cb){
+  const pronto=oraleCarica(), attesa=new Promise(r=>setTimeout(()=>r(null),8000));
+  Promise.race([pronto,attesa]).then(d=>{
+    if(!LESSON.on) return;
+    const steps=[];
+    if(!d || d.fatto || d.vuoto){ cb(steps); return; }
+    if(!d.items.length && SPK_TOPICS[lessonId]) d.items=shuffle(_oraDaTema(lessonId)).slice(0,2);
+    if(!d.items.length){ cb(steps); return; }
+    const st={ code:d.code, tot:d.items.length, done:0, ok:0 };
+    const quando=d.ts?new Date(d.ts).toLocaleDateString("en-GB",{ day:"numeric", month:"long" }):"";
+    const note=d.text.length>700?d.text.slice(0,697)+"…":d.text;
+    steps.push(()=>_say(GRACE,"Now, your last oral test. I've read your teacher's notes: let's practise speaking! Answer out loud, in English.",
+      "Ora il tuo ultimo orale: ho letto le indicazioni del prof. Rispondi a voce, in inglese: premi \u{1F3A4} Speak e parla.",next,"OK, let's talk!",
+      lesCard("les-p","\u{1F5E3}️ Your last oral test",
+        '<div class="les-title">'+_escHtml(d.title||"Oral test")+'</div>'+(quando?'<div style="font-size:13px;color:#6b6358">'+_escHtml(quando)+'</div>':'')
+        +(note?'<div style="font-size:13.5px;line-height:1.5;text-align:left;background:#fff;border-radius:10px;padding:8px 11px;margin-top:6px">'+_ripRich(note)+'</div>':'')
+        +'<div style="margin-top:6px;font-weight:800">\u{1F3A4} '+st.tot+' speaking question'+(st.tot>1?"s":"")+'</div>')));
+    d.items.forEach((it,i)=>steps.push(()=>_oraAsk(it,i+1,st,next,0)));
+    steps.push(()=>{
+      if(st.done<st.tot){ next(); return; }              // in piedi qualcuna e' saltata: si riproporra'
+      oraleFatto(st.code);
+      const stars=st.ok; if(stars) try{ Stars.award("ora:"+st.code,stars,"ripasso orale"); }catch(e){}
+      _say(GRACE,(st.ok===st.tot?"Brilliant speaking!":"Good try! You got "+st.ok+" out of "+st.tot+".")
+          +(d.attivita?" The full speaking activity is in your personal plan: do it at home.":"")+" Now, on to today's lesson!",
+        (st.ok===st.tot?"Ottimo orale!":"Bene: "+st.ok+" su "+st.tot+".")+(d.attivita?" L'attività di speaking completa è nel tuo piano personalizzato: falla a casa.":"")+" Ora la lezione di oggi.",
+        next,"Great!",
+        lesCard("les-end","\u{1F5E3}️ Oral review",'<div class="les-score">'+st.ok+' / '+st.tot+' ⭐</div>'
+          +(stars?'<div style="text-align:center;font-size:13px;color:#6b6358">+'+stars+' stars</div>':'')));
+    });
+    cb(steps);
+  });
+}
+function _oraRighe(e){
+  const y1=_spkYr1();
+  return '<ul style="list-style:none;padding:0;margin:6px 0 0;font-size:14px;font-weight:700;text-align:left">'
+    +e.rows.map(r=>{ const n=(r.min>1||r.words)?' <span style="opacity:.75">'+r.count+' / '+r.min+'</span>':'';
+      return '<li style="margin:3px 0;color:'+(r.ok?"#166534":r.count?"#92400e":"#991b1b")+'">'+(r.ok?"✅":r.count?"\u{1F7E1}":"❌")+' '+_escHtml(_spkWordsLabel(r))+n+'</li>'; }).join("")
+    +'</ul>'+e.tips.map(t=>'<div style="color:#991b1b;font-size:13px;margin-top:4px;text-align:left">⚠️ '+_escHtml(t)+'</div>').join("");
+}
+/* tent: 0 = primo tentativo, 1 = il secondo (e ultimo) */
+function _oraAsk(it,n,st,next,tent){
+  /* in piedi: le domande del TUO orale non le prende un compagno, si saltano */
+  if(LESSON.paused){ LESSON.curDone=true; next(); return; }
+  const y1=_spkYr1(), mic=!!(typeof Mic!=="undefined" && Mic.available);
+  const chips=it.targets.map(t=>'<span style="display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border-radius:999px;background:#ede9ff;color:#4c1d95;font-size:12.5px;font-weight:700">'
+      +_escHtml(String(t.label||String(t.say||"").split("|")[0]))+'</span>').join("")
+    +(it.minWords?'<span style="display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border-radius:999px;background:#f1f5f9;color:#334155;font-size:12.5px;font-weight:700">'
+      +(y1?"almeno ":"at least ")+it.minWords+(y1?" parole":" words")+'</span>':'');
+  const body=(it.tts?lesSayBtn(it.tts):'')
+    +'<div style="font-size:16px;font-weight:700;line-height:1.5;text-align:left">'+_ripRich(it.text)+'</div>'
+    +(it.it && y1?'<div style="font-size:13px;color:#6b6358;margin-top:3px;text-align:left">'+_escHtml(it.it)+'</div>':'')
+    +(it.hint?'<div style="font-size:13px;color:#6b6358;margin-top:4px">\u{1F4A1} '+_escHtml(it.hint)+'</div>':'')
+    +(chips?'<div style="margin-top:7px;font-size:12.5px;color:#6b6358;text-align:left">'+(y1?"Prova a usare:":"Try to use:")+'</div><div style="text-align:left">'+chips+'</div>':'');
+  const card=lesCard("les-p","\u{1F5E3}️ Speaking · "+n+" / "+st.tot+(tent?" · second try":""),body);
+  DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:"Your oral test", wide:true,
+    text:it.tts?"Listen, then answer out loud.":(it.free?"Speak about this: say a few sentences.":"Say it out loud, in English."),
+    italian:mic?"Premi \u{1F3A4} Speak, parla con calma, poi premi Check.":"Questo browser non riconosce la voce (usa Chrome o Safari): per ora scrivi la risposta.",
+    html:card+'<textarea id="ora-in" class="gem-input" rows="2" style="min-height:62px;resize:none;font-weight:600;text-align:left" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" '
+      +(mic?'readonly placeholder="Answer out loud: press \u{1F3A4} Speak."':'placeholder="Answer in English."')+'></textarea>'
+      +(mic?'<div id="ora-kb" style="text-align:left;margin-top:2px"><a href="#" onclick="return _oraTastiera()" style="font-size:12.5px;color:#6b6358">\u{1F6AB}\u{1F3A4} '+(y1?"Non posso usare il microfono":"I can't use the microphone")+'</a></div>':''),
+    buttons:[{ label:"✔ Check", cls:"primary", keepOpen:true, act:()=>{
+        const el=document.getElementById("ora-in"), v=el?el.value.replace(/\s+/g," ").trim():"";
+        if(!v){ try{ toast(mic?"\u{1F3A4} Press Speak and say your answer.":"✏️ Write your answer."); }catch(e){} return; }
+        try{ Mic.stop(); }catch(e){}
+        _oraEsito(it,n,st,next,tent,v); } },
+      { label:"↺ Clear", cls:"ghost", keepOpen:true, act:_oraPulisci }, _lessonStandBtn()] });
+}
+function _oraEsito(it,n,st,next,tent,v){
+  if(!LESSON.on) return;
+  const e=_spkEval(it,v), ok=e.frac>=1, ultimo=ok||tent>=1;
+  const heard='<div style="font-size:12px;color:#64748b;text-align:left">\u{1F442} I heard:</div>'
+    +'<div style="font-size:15px;font-style:italic;color:#1e293b;text-align:left">“'+_escHtml(v)+'”</div>'+_oraRighe(e);
+  const model=it.model?'<div class="les-rule" style="margin-top:8px;text-align:left">'+lesSayBtn(it.model)+'<span class="les-hl">'+_escHtml(it.model)+'</span></div>':'';
+  if(ultimo){ LESSON.curDone=true; st.done++; if(ok) st.ok++; }
+  if(ok){ try{ SFX.correct(); }catch(err){} }
+  const praise=["Well done!","Excellent!","That's right!","Very good!","Perfect!"][Math.floor(Math.random()*5)];
+  DialogueBox.open({ npc:GRACE, icon:"\u{1F34E}", sub:ok?"✅ Well said!":(ultimo?"Not quite":"Almost!"), wide:true,
+    text:ok?praise:(ultimo?"Not quite. Listen to a good answer and say it again.":"Almost! Look at what's missing and try once more."),
+    italian:ok?"Giusto: l'hai detto bene.":(ultimo?"Non ancora: ascolta l'esempio e ripetilo ad alta voce.":"Quasi: guarda che cosa manca e riprova."),
+    html:ok ? lesCard("les-ok","✅ "+praise,heard+(it.free?model:""))
+            : lesCard("les-no",ultimo?"\u{1F4A1} A good answer":"\u{1F4A1} Try once more",heard+(ultimo?model:"")),
+    buttons:ultimo ? [{ label:"Next", cls:"primary", act:()=>{ if(LESSON.on) next(); } }]
+                   : [{ label:"\u{1F3A4} Try again", cls:"primary", act:()=>{ if(LESSON.on) _oraAsk(it,n,st,next,1); } },
+                      { label:"Skip", cls:"ghost", act:()=>{ if(LESSON.on) _oraEsito(it,n,st,next,9,v); } }] });
+}
+
 /* ==== v401 — IL PIANO PERSONALIZZATO A FINE LEZIONE (Giacomo, 19 ott 2026:
    «alla fine della lezione Miss Grace ricorda il piano personalizzato
    dell'alunno, se c'e', con il link cliccabile per svolgerlo»).
@@ -32464,7 +32739,11 @@ async function _pianoCarica(code){
     .sort((a,b)=>(PIANO_TIPI[a.type].ord-PIANO_TIPI[b.type].ord)||((b.createdAt||0)-(a.createdAt||0)))
     .forEach(p=>{
       const titolo=String(p.unitName||p.title||"");
-      if(p.type==="recovery_orale"){ if(p.text && !p.readAt) orali.push({ titolo, text:String(p.text) }); return; }
+      /* v498: il recupero orale NUOVO ha un codice: e' un'attivita' di speaking
+         su LiveLearn e va fra le attivita' col suo link (prima finiva fra i
+         testi da leggere, senza link e, non avendo readAt, per sempre). Solo
+         quello vecchio, col testo e basta, resta una nota da leggere. */
+      if(p.type==="recovery_orale" && !p.code){ if(p.text && !p.readAt) orali.push({ titolo, text:String(p.text) }); return; }
       if(!p.code || p.status==="completed") return;
       cand.push(p);
     });
@@ -32732,6 +33011,11 @@ function lessonStart(id){
   let ripVia=false;
   steps.push(()=>{ if(ripVia) return; ripVia=true; const at=k;
     ripassoSteps(next,extra=>{ if(!LESSON.on || k!==at) return; if(extra.length) steps.splice(k,0,...extra); next(); }); });
+  /* 0b — v498: una volta per orale, due o tre domande di speaking prese dal
+     piano orale dell'alunno (vedi oraleSteps). Stesso schema dello scritto. */
+  let oraVia=false;
+  steps.push(()=>{ if(oraVia) return; oraVia=true; const at=k;
+    oraleSteps(id,next,extra=>{ if(!LESSON.on || k!==at) return; if(extra.length) steps.splice(k,0,...extra); next(); }); });
   /* 1 — PAROLE: Lily fa la prima, poi tocca a te */
   if(W.length){ const w0=W[0];
     steps.push(()=>{ lessonBoard("Words",W.map(w=>(w[2]?w[2]+" ":"")+w[0]+" = "+w[1]));
@@ -73574,6 +73858,9 @@ function npcDressLater(npc,cfg){
   npc.__look=npcLookFor(npc.id,rig,{ counter:npcAtCounter(cfg), sport:npcIsSporty(cfg), school:npcIsPupil(cfg) });
   /* cfg.look: i pezzi decisi a mano (es. le cuffie al fonico del Beat Club)
      vincono sul sorteggio */
+  /* v498: prima il guardaroba per identita' (NPC_WARDROBE), poi cfg.look.
+     Chi e' in lista non tiene niente del sorteggio: solo quello che e' scritto. */
+  if(cfg && cfg.__wardrobe) Object.assign(npc.__look,{ coat:"", coatc:"", cut:"", hat:"", hatc:"", face:"", facec:"", neck:"", neckc:"", bag:"", bagc:"" },cfg.__wardrobe);
   if(cfg && cfg.look) Object.assign(npc.__look,cfg.look);
   _npcDressQ.push({ npc, step:0 });
 }
@@ -73593,7 +73880,7 @@ const _NPC_DRESS_STEPS=[
   function(n,L,ms){ if(!L.cut) return;
     const hm=ms.find(m=>/Casual_Head/.test(m.name)&&m.material&&/Hair/.test(m.material.name)&&m.getTotalVertices()>300);
     dressHair(ms,L.rig,L.cut,_npcCol(hm&&hm.material)||"#3a2a18"); },
-  function(n,L,ms){ dressAcc(ms,{ head:L.hat, face:L.face, neck:L.neck, headc:L.hatc, facec:L.facec, neckc:L.neckc }); },
+  function(n,L,ms){ dressAcc(ms,{ head:L.hat, face:L.face, neck:L.neck, bag:L.bag, headc:L.hatc, facec:L.facec, neckc:L.neckc, bagc:L.bagc }); },   // v498: anche la borsa
 ];
 function _npcDressDone(npc){
   /* le mesh nuove sono figlie del corpo: fanno ombra come l'NPC, non si
