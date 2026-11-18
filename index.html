@@ -50688,7 +50688,30 @@ function teacherQuestUnit(){
   let byArea=null;
   try{ if(area && area!=="town"){ for(const id in QUESTS){ const u=QUESTS[id];
     if(u && u.area===area){ byArea=u; break; } } } }catch(e){}
-  return byArea || Quest.unit || null;
+  return byArea || Quest.unit || teacherNearOpenUnit();
+}
+/* v587 (Giacomo: «voglio riprovare da docente la City Life Plaza, ma premendo
+   1 mi dice "nessuna quest qui"»). Le unit open-world vivono in "town": non
+   c'e' un edificio in cui entrare, e a quest finita Quest.unit e' vuoto. In
+   citta', senza quest in corso, vale quella del CARTELLO-QUEST piu' vicino
+   (entro TEACHER_OPEN_R metri): stai davanti alla piazza -> City Life Plaza. */
+const TEACHER_OPEN_R=30;
+function teacherNearOpenUnit(){
+  try{
+    const ids={ airport:"u1", clocktower:"u5", pitch:"u7", weatherstn:"u2_3",
+                cy8plaza:"u2_8", survivalcamp:"u3_3" };
+    let best=null, bd=TEACHER_OPEN_R;
+    for(const o of interactables){
+      if(!o || o.area!==area) continue;
+      const qid=ids[o.id] || (typeof o.id==="string" && o.id.indexOf("openq_")===0 ? o.id.slice(6) : null);
+      const u=qid && QUESTS[qid];
+      if(!u || !u.openWorld) continue;
+      const w=typeof o.pos==="function"?o.pos():o.pos;
+      const d=Math.hypot(player.position.x-w.x, player.position.z-w.z);
+      if(d<bd){ bd=d; best=u; }
+    }
+    return best;
+  }catch(e){ return null; }
 }
 function teacherRearm(u){
   try{ NPCS.forEach(n=>{ if(n && n.area===u.area) n.metPlayer=false; }); }catch(e){}
@@ -50710,7 +50733,7 @@ function teacherRearm(u){
 function teacherRestartQuest(){
   if(!Student.teacher) return false;
   const u=teacherQuestUnit();
-  if(!u){ toast("\u{1F469}\u200D\u{1F3EB} Nessuna quest qui: entra in un edificio (o avviane una) e premi 1."); return false; }
+  if(!u){ toast("\u{1F469}\u200D\u{1F3EB} Nessuna quest qui: entra in un edificio o avvicinati al cartello di una quest in citt\u00e0 e premi 1."); return false; }
   try{ DialogueBox.close(); }catch(e){}
   try{ QModal.close(); }catch(e){}
   Quest.dispose();
