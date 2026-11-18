@@ -3198,17 +3198,16 @@ const UNIT_CITY={ id:"u2_8", area:"town", openWorld:true,
       vocab:{ pool:["was","were","lived","born","famous","wrote","painted","invented","because","remember",
         "writer","artist","scientist","teacher","doctor"], min:2 },
       passBand:"yellow" },
-    intro:"Sotto il <b>muro delle targhe</b> c'\u00e8 il leggio del Comune: scrivi la targa che "
-         +"vuoi appendere. Resta in citt\u00e0.",
-    introObjEn:"Write your blue plaque.", introObj:"Scrivi la tua targa blu." },
-  { id:"final", strand:"final",      type:"plaqueHunt",
-    /* v562: il giro con Milo e' stato tolto (non ti seguiva e si poteva
-       consigliargli la bus stop). Il finale chiude il giallo della targa:
-       vedi MECH.plaqueHunt. */
-    target:()=>cy8HuntTarget(),
-    intro:"<b>Ultimo passo!</b> La <b>targa blu</b> della piazza non \u00e8 ancora tornata, ma <b>Ivy</b> ha una "
-         +"notizia: qualcuno ha visto chi la portava via. Segui i testimoni di posto in posto e riportala in piazza.",
-    introObjEn:"Find the blue plaque and bring it back.", introObj:"Ritrova la targa blu e riportala in piazza." },
+    intro:"<b>Ultimo passo!</b> La vecchia <b>targa blu</b> non si \u00e8 pi\u00f9 trovata: il Comune ne "
+         +"appende una nuova e la scrivi <b>tu</b>. Vai al leggio sotto il <b>muro delle targhe</b>.",
+    introObjEn:"Write the new blue plaque.", introObj:"Scrivi la nuova targa blu." },
+  /* v588 (Giacomo, 18 nov: «il final task della City Plaza e' noioso, finiamo
+     la prova con il writing»). Tolto lo step "final" (plaqueHunt): la unit si
+     chiude con la targa blu scritta qui sopra, che vale come ultimo passo
+     (stelle doppie: vedi Quest.complete, "ultimo step = final").
+     MECH.plaqueHunt resta nel codice, non piu' usato: per rimetterlo basta
+     riaggiungere lo step. Chi aveva un salvataggio fermo sul vecchio finale
+     (step 5 di 6) riapre la unit e la trova completata. */
 ]};
 
 /* =====================================================================
@@ -25806,7 +25805,10 @@ const Quest={
       buttons:[{ label: mech?"Let's go!":"OK", cls:"primary", act:()=>{ (mech||mechStub)(s); } }] });
   },
   complete(msg,score){ if(this.unit && this.step){ Progress.completeStep(this.unit.id, this.step.id, score!=null?score:100, this.i);
-      Stars.awardStep(this.unit.id, this.step.id, this.step.strand==="final",
+      /* v588: conta doppio anche l'ultimo step di una unit senza "final"
+         (City Life Plaza chiude col writing); per tutte le altre e' lo stesso. */
+      Stars.awardStep(this.unit.id, this.step.id,
+        this.step.strand==="final" || this.i===this.unit.steps.length-1,
         QuestHints.take(this.unit.id+":"+this.step.id));
       /* traccia per il bentornato: l'ultima unit su cui ha davvero lavorato.
          Sta QUI e non in Quest.start perche' aprire una porta non e' lavorare
@@ -58541,7 +58543,7 @@ function buildCityPlaza(){
       ? "\u{1F3D9}\uFE0F <b>City Life Plaza</b> \u00b7 press <b>E</b>"
       : "\u{1F3D9}\uFE0F <b>City Life Plaza</b> \u00b7 press <b>E</b> to start",
     interact:()=>{ if(Progress.get(UNIT_CITY.id).done){
-        toast("\u{1F3D9}\uFE0F City Life Plaza \u2014 Unit 8 completata! La targa blu \u00e8 tornata in piazza.");
+        toast("\u{1F3D9}\uFE0F City Life Plaza \u2014 Unit 8 completata! La tua targa blu \u00e8 sul muro della piazza.");
       } else if(Quest.unit===UNIT_CITY){
         toast("\u{1F4CB} "+((Quest.step&&Quest.step.introObj)||"Continua la quest!"));
       } else { tryStartQuest(UNIT_CITY); } } });
