@@ -49134,8 +49134,13 @@ const HM7_CHORES=[
     place:"il piano cottura", enPlace:"the cooker",        x:HM7_KHOB_X,  z:HM7_KHOB_Z,  room:"Kitchen", prop:null },
   { key:"clear",     en:"clear the table",    it:"sparecchiare",
     place:"il tavolo da pranzo", enPlace:"the dining table",     x:3.80, z:4.20, r:2.00, room:"Kitchen", prop:null },
+  /* ⚠️ `also`: ALTRI bersagli che valgono per questa faccenda. «Lay the
+     table» si fa AL TAVOLO: chi la sentiva andava (giustamente) al tavolo,
+     dove l'unico bersaglio era «clear the table», e riceveva «Not here»
+     (Giacomo, 20 nov: «non riconosce lay the table»). La credenza dei
+     piatti resta valida, ma il tavolo non puo' dare torto. */
   { key:"lay",       en:"lay the table",      it:"apparecchiare",
-    place:"la credenza dei piatti", enPlace:"the cupboard",  x:3.00, z:-1.40, room:"Kitchen", prop:null },
+    place:"la credenza dei piatti", enPlace:"the cupboard",  x:3.00, z:-1.40, room:"Kitchen", prop:null, also:["clear"] },
   { key:"bed",       en:"make my bed",        it:"rifare il letto",
     place:"il letto", enPlace:"the bed",                x:-6.60, z:-5.00, r:2.00, room:"Bedroom", prop:null },
   { key:"tidy",      en:"tidy my room",       it:"mettere in ordine la stanza",
@@ -49409,6 +49414,17 @@ function hm7LexNext(){
   if(ch.idx>=ch.list.length){ Quest.complete("\u{1F9F9} Lessico completato!"); return; }
   hm7LexHud(); setTimeout(hm7SayChore,320);
 }
+/* mesh cliccabili di un bersaglio: i nodi todo/done del prop e, per i
+   bersagli che sono arredo di Unit 3, il mobile stesso (tavolo, credenza,
+   letto). Mai homeRoot: marcherebbe tutta la casa. */
+const HM7_FURN_OF={ clear:"table", lay:"cupboard", bed:"bed" };
+function hm7ChoreMeshes(key){
+  const out=[], n=HM7_NODES[key];
+  if(n){ if(n.todo) out.push(n.todo); if(n.done) out.push(n.done); }
+  const fe=HM7_FURN_OF[key] && furniture.filter(f=>f.en===HM7_FURN_OF[key])[0];
+  if(fe && fe.mesh && fe.mesh!==homeRoot) out.push(fe.mesh);
+  return out;
+}
 MECH.choreHunt=function(s){
   buildHm7Props(); buildHm7NPCs();
   if(!HM7_ITEMS.length){ mechStub(s); return; }
@@ -49429,10 +49445,15 @@ MECH.choreHunt=function(s){
          italiana come ovunque nel gioco: quella e' l'istruzione. */
       label:entry.enPlace||entry.place,
       prompt:()=>'Press <b>E</b>: <b>'+(entry.enPlace||entry.place)+'</b>',
+      /* cliccabile: il tap su un oggetto cerca `__inter` sulla mesh o sui
+         suoi genitori. Senza `meshes` il clic sul tavolo/credenza faceva
+         solo camminare, mai l'azione. */
+      meshes:hm7ChoreMeshes(entry.key),
       interact:()=>{
         const t=ch.list[ch.idx]; if(!t) return;
-        if(entry.key===t.key){
-          hm7Mark(entry.key);
+        const tc=hm7Chore(t.key)||{};
+        if(entry.key===t.key || (tc.also||[]).indexOf(entry.key)>=0){
+          hm7Mark(t.key);
           toast("\u2713 "+t.en+" \u2014 "+t.it);
           hm7Speak("Well done. "+t.en.replace(/^./,c=>c.toUpperCase())+", done!")
             .then(()=>setTimeout(hm7LexNext,150));
