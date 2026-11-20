@@ -23419,6 +23419,38 @@ const DialogueBox=(function(){
     if(!b) return;
     e.preventDefault(); e.stopPropagation(); b.click();
   }, true);
+  /* v499 (Giacomo, 20 nov: «quando bisogna premere ok dopo un messaggio,
+     anche calcando un tasto per muoversi con mouse o tastiera si possa
+     andare avanti»). Vale SOLO per i messaggi da prendere atto: un unico
+     bottone (OK, Ho capito, ▶ Next…) e niente da scegliere o da scrivere.
+     Con due o piu' bottoni, scelte, tessere o una casella di testo il
+     tasto di movimento non decide niente al posto tuo.
+     ⚠️ W A S D e ↑ ↓ si', ← → no: le frecce laterali girano la visuale
+     anche col popup aperto (v320) e restano solo quello.
+     ⚠️ Mai sullo stesso gesto che ha aperto la finestra: chi cammina col W
+     tenuto giu' fino a un NPC non deve chiudere il messaggio prima di
+     vederlo. Quindi niente e.repeat (tasto gia' giu') e almeno 400 ms dall'apertura.
+     Il click passa dal bottone vero: se la voce sta ancora parlando
+     (SpeakLock) non succede niente, esattamente come col mouse sull'OK. */
+  function okSolo(){
+    if(!el.classList.contains("show")) return null;
+    if(performance.now()-(el.__t0||0)<400) return null;
+    if(card.querySelector("input:not([type=hidden]),textarea,select,[contenteditable=true],[role=button],[onclick]")) return null;
+    const bs=[...card.querySelectorAll("button")].filter(b=>b.offsetParent && !b.disabled
+      && !b.classList.contains("dlg-speak") && !b.classList.contains("dlg-tr-btn")
+      && !b.classList.contains("listen-replay-btn"));
+    if(bs.length!==1 || !bs[0].closest(".qm-btns")) return null;
+    return bs[0];
+  }
+  window._dlgOkAdvance=function(){ const b=okSolo(); if(!b) return false; b.click(); return true; };
+  const _OK_KEYS={ w:1, a:1, s:1, d:1, arrowup:1, arrowdown:1 };
+  document.addEventListener("keydown", function(e){
+    if(e.repeat || e.altKey || e.ctrlKey || e.metaKey) return;
+    if(!_OK_KEYS[String(e.key||"").toLowerCase()]) return;
+    const t=e.target, tag=t&&t.tagName;
+    if(tag==="INPUT"||tag==="TEXTAREA"||tag==="SELECT"||(t&&t.isContentEditable)) return;
+    window._dlgOkAdvance();
+  });
   function speakBtn(text,opts){
     const b=document.createElement("button"); b.type="button"; b.className="dlg-speak"; b.textContent="🔊";
     b.onclick=()=>{ if(b.classList.contains("playing")) return; b.classList.add("playing");
@@ -23426,7 +23458,7 @@ const DialogueBox=(function(){
     return b;
   }
   function open(cfg){
-    cfg=cfg||{}; card.innerHTML=""; SpeakLock.sync();
+    cfg=cfg||{}; card.innerHTML=""; SpeakLock.sync(); el.__t0=performance.now();
     card.classList.toggle("qm-wide",!!cfg.wide);          // v402: finestre grandi della lezione
     /* v309g (Giacomo: «quando parli con la crew metti il tasto Leave per
        finire la discussione»): nelle finestre con un ballerino (Ask me,
@@ -25570,7 +25602,7 @@ const QModal=(function(){
     e.preventDefault(); close();
   });
   function open(cfg){
-    cfg=cfg||{}; card.innerHTML=""; SpeakLock.sync();
+    cfg=cfg||{}; card.innerHTML=""; SpeakLock.sync(); el.__t0=performance.now();   // per _dlgOkAdvance
     card.classList.remove("qm-wide");                     // v402: la card e' la stessa di DialogueBox
     if(cfg.title){ const h=document.createElement("div"); h.className="qm-title"; h.innerHTML=cfg.title; card.appendChild(h); }
     if(cfg.sub){ const s=document.createElement("div"); s.className="qm-sub"; s.innerHTML=cfg.sub; card.appendChild(s); }
@@ -51055,7 +51087,8 @@ window.addEventListener("keydown",e=>{ if(__typingNow(e)) return;   // non rubar
 window.addEventListener("keyup",e=>{ if(__typingNow(e)) return; keys[e.key.toLowerCase()]=false; });
 document.addEventListener("focusin",e=>{ if(__typingNow(e)) for(const k in keys) keys[k]=false; });
 let stickVec={x:0,y:0}; const stick=document.getElementById("stick"),knob=document.getElementById("knob"); let sid=null;
-stick.addEventListener("touchstart",e=>{ sid=e.changedTouches[0].identifier; sMove(e); },{passive:true});
+stick.addEventListener("touchstart",e=>{ sid=e.changedTouches[0].identifier; sMove(e);
+  try{ _dlgOkAdvance(); }catch(err){} },{passive:true});   // toccare la levetta = «vado avanti» sui messaggi col solo OK
 stick.addEventListener("touchmove",sMove,{passive:true});
 function stickRelease(){ sid=null; stickVec={x:0,y:0}; knob.style.left="35px"; knob.style.top="35px";
   if(typeof stickRunOn!=="undefined"){ stickRunOn=false; _stickDeepSince=0; } }   // mollato il joystick, la corsa da profondita' si spegne
@@ -53708,7 +53741,9 @@ let moveTarget=null, pendingInteract=null, started=false;
 scene.onPointerObservable.add(pi=>{
   if(pi.type!==BABYLON.PointerEventTypes.POINTERTAP||!started) return;
   if(typeof SHOW!=="undefined" && SHOW.seated) return;
-  if(typeof _dlgOpen==="function" && _dlgOpen()) return;     // v301: col popup aperto il tocco sullo schermo non fa camminare (si gira solo la visuale)
+  if(typeof _dlgOpen==="function" && _dlgOpen()){              // v301: col popup aperto il tocco sullo schermo non fa camminare (si gira solo la visuale)
+    try{ _dlgOkAdvance(); }catch(e){}                          // ...ma un messaggio con il solo OK va avanti (vedi okSolo)
+    return; }
   const pick=scene.pick(scene.pointerX,scene.pointerY); if(!pick.hit||!pick.pickedPoint) return;
   let cur=pick.pickedMesh, inter=null; while(cur){ if(cur.__inter){ inter=cur.__inter; break; } cur=cur.parent; }
   if(inter&&inter.enabled&&inter.area===area){ const w=typeof inter.pos==="function"?inter.pos():inter.pos;
@@ -61619,7 +61654,7 @@ const TL_MISSION=[
 /* ---------------------------------------------------------------------
    THE 2050 PROJECT — i cinque prototipi del banco maker e i loro effetti.
    Il first conditional non e' una trasformazione a freddo: e' causa ->
-   effetto, e alla fine si preme davvero il bottone.
+   effetto, e alla fine Bit preme il bottone del prototipo.
    --------------------------------------------------------------------- */
 const TL_PROTOS=[
   { key:"robot",  emo:"\u{1F916}", name:"a robot",        it:"un robot",
@@ -62535,7 +62570,7 @@ function tlRunTask(){
   DialogueBox.open({ name:"\u{1F916} Bit", sub:T.icon+" "+T.name+" \u2014 step "+(bt.k+1)+"/"+T.seq.length,
     autoSpeak:false,
     text:(bt.k===0?"What do I do first?":"And then? What do I do now?"),
-    italian:"Scegli l'azione giusta: Bit la esegue davvero, subito.",
+    italian:"Scegli l'azione giusta: Bit esegue un'istruzione alla volta.",
     choices:opts.map(a=>({ label:(TL_ACTS[a]?TL_ACTS[a].emo+" ":"")+a,
       act:()=>tlBitDo(T,a) })) });
 }
@@ -62749,9 +62784,9 @@ MECH.cityWrite=function(s){
 /* =====================================================================
    FINAL TASK — «patentCard»: THE 2050 PROJECT, al banco maker.
    Scegli il prototipo, scegli che cosa fara', di' la frase al FIRST
-   CONDITIONAL e poi PREMI IL BOTTONE: Bit fa vedere che cosa succede.
-   Il first conditional non e' una trasformazione a freddo, e' causa ->
-   effetto, e l'effetto lo vedi. La scheda resta appesa nella Future Room.
+   CONDITIONAL e poi Bit PREME IL BOTTONE del prototipo (che dice che
+   cosa FARA': in scena non succede niente, quindi Bit non dice mai
+   «It works!»). La scheda resta appesa nella Future Room.
    ===================================================================== */
 const TL_FINAL_REQ={ minSent:2,
   patterns:[
@@ -62807,8 +62842,11 @@ function tlProtoSay(){
 function tlProtoDemo(){
   const pr=Quest.state.pr, P=tlProto(pr.key), F=P.fx[pr.fx];
   DialogueBox.open({ name:"\u{1F916} Bit", sub:"Pressing the button\u2026", autoSpeak:true,
-    text:"Three\u2026 two\u2026 one\u2026 click! Look: it "+F.tok.join(" ").replace(/\.$/,"")+"! It works!",
-    italian:"",
+    /* \u26a0\ufe0f NIENTE \u00abLook: it cooks your dinner! It works!\u00bb: in scena non
+       succede niente, e Bit che giura il contrario stona (segnalato da Giacomo).
+       E' un prototipo: la frase resta al futuro, come il brevetto. */
+    text:"Three\u2026 two\u2026 one\u2026 click! It's only a prototype for now. But in 2050, if you press the button, it will "+F.lab+".",
+    italian:"\u00c8 solo un prototipo: scrivi il brevetto per spiegare che cosa far\u00e0.",
     buttons:[{label:"\u2714 Now I'll write the patent", cls:"primary", act:()=>tlProtoWrite()}] });
 }
 function tlProtoWrite(){
