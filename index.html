@@ -50971,7 +50971,8 @@ function _povBody(){
 function povSet(on,silent){
   on=!!on; if(POV.on===on) return POV.on;
   if(on){
-    if((typeof SHOW!=="undefined" && SHOW.seated) || metroCinematic || (typeof FIN!=="undefined" && FIN.on)) return false;
+    if((typeof SHOW!=="undefined" && SHOW.seated) || metroCinematic || (typeof FIN!=="undefined" && FIN.on)
+       || (typeof SKY!=="undefined" && SKY.on)) return false;
     POV.save={ lr:camera.lowerRadiusLimit, ur:camera.upperRadiusLimit, lb:camera.lowerBetaLimit, ub:camera.upperBetaLimit,
                radius:camWish, beta:camera.beta, fov:camera.fov, minZ:camera.minZ };
     POV.on=true;
@@ -51625,6 +51626,7 @@ function rideBusy(){
   try{ if(typeof LESSON!=="undefined" && LESSON.seated) return true; }catch(e){}
   try{ if(typeof SHOP!=="undefined" && SHOP.cart) return true; }catch(e){}
   try{ if(typeof FIN!=="undefined" && FIN.on) return true; }catch(e){}
+  try{ if(typeof SKY!=="undefined" && SKY.on) return true; }catch(e){}
   try{ if(metroCinematic) return true; }catch(e){}
   return false;
 }
@@ -53878,6 +53880,8 @@ scene.registerBeforeRender(()=>{
        all'ultima scena del gioco, sopra le parole dell'Architetto. */
     try{ SFX.tick(); }catch(e){}
     return; }
+  /* v499: in volo su SKY-1 il giocatore e' fermo (la camera la guida tlSkyTick) */
+  if(typeof SKY!=="undefined" && SKY.on){ updateDayNight(engine.getDeltaTime()/1000); try{ SFX.tick(); }catch(e){} return; }
   updateDayNight(engine.getDeltaTime()/1000);
   sfxTick();   // PASS AUDIO tranche 3: campana sull'ora reale + acqua del lago
   // deriva lenta delle nuvole (con avvolgimento) -> anche le ombre scorrono
@@ -61583,21 +61587,22 @@ function tlDev(en){ for(let i=0;i<TL_DEVICES.length;i++) if(TL_DEVICES[i].en===e
   return { en:en, it:en, emo:"\u{1F50B}", kind:"box", need:"" }; }
 
 /* ---------------------------------------------------------------------
-   IL FUTURE SCANNER — quattro scene del 2050. Per ogni scena lo studente
+   IL FUTURE SCANNER — quattro scene del 2050 (v499: in volo, una per
+   fermata di SKY-1 — l'ordine e' quello della rotta). Per ogni scena lo studente
    sceglie LA SUA previsione (opinione vera, nessuna e' giusta) e poi gira
    la manopola della certezza: SURE -> will, NOT SURE -> may / might.
    Le tessere non servono a indovinare: servono a DIRE quello che ha
    scelto (stesso principio della Career Card della torre).
    --------------------------------------------------------------------- */
 const TL_SCENES=[
-  { key:"homes", emo:"\u{1F3E0}", title:"HOMES IN 2050", it:"Le case nel 2050",
-    ideas:[ { sub:["Robots"], verb:["cook","our","meals."], lab:"Robots cook our meals" },
-            { sub:["Houses"], verb:["clean","themselves."], lab:"Houses clean themselves" },
-            { sub:["We"],     verb:["grow","food","at","home."], lab:"We grow food at home" } ] },
   { key:"transport", emo:"\u{1F697}", title:"TRANSPORT IN 2050", it:"I trasporti nel 2050",
     ideas:[ { sub:["Cars"],   verb:["fly","over","the","city."], lab:"Cars fly over the city" },
             { sub:["Trains"], verb:["travel","in","tunnels."], lab:"Trains travel in tunnels" },
             { sub:["Nobody"], verb:["drive","a","car."], lab:"Nobody drives a car" } ] },
+  { key:"homes", emo:"\u{1F3E0}", title:"HOMES IN 2050", it:"Le case nel 2050",
+    ideas:[ { sub:["Robots"], verb:["cook","our","meals."], lab:"Robots cook our meals" },
+            { sub:["Houses"], verb:["clean","themselves."], lab:"Houses clean themselves" },
+            { sub:["We"],     verb:["grow","food","at","home."], lab:"We grow food at home" } ] },
   { key:"school", emo:"\u{1F3EB}", title:"SCHOOL IN 2050", it:"La scuola nel 2050",
     ideas:[ { sub:["Students"], verb:["study","at","home."], lab:"Students study at home" },
             { sub:["Computers"],verb:["correct","our","tests."], lab:"Computers correct our tests" },
@@ -62756,12 +62761,17 @@ function tlGramHud(){
 function tlRunScanner(){
   const st=Quest.state; st.fs=st.fs||{ idx:0, tries:0 };
   const fs=st.fs;
-  if(fs.idx>=TL_SCENES.length){ Quest.complete("\u{1F52E} Grammatica completata! Will \u00b7 may \u00b7 might \u2713"); return; }
+  if(fs.idx>=TL_SCENES.length){ tlGramDone(); return; }
   const SC=TL_SCENES[fs.idx];
+  /* v499: in volo, prima si va alla fermata della scena */
+  if(SKY.on){ if(SKY.flying) return; if(SKY.at!==SC.key){ tlSkyFlyTo(SC.key, tlRunScanner); return; } }
   tlGramHud(); tlScanDraw(SC,"What do you think?");
   DialogueBox.open({ name:"\u{1F52E} Future Scanner", sub:SC.title+" ("+(fs.idx+1)+"/"+TL_SCENES.length+")",
     autoSpeak:false, text:"Choose your prediction.",
     italian:"Scegli quello che pensi TU: qui non c'\u00e8 una risposta giusta.",
+    html:(SKY.on?'<div style="opacity:.8;font-size:.92em;margin-bottom:4px;">'+({ transport:"\u{1F441}\uFE0F Look down: the station and the roads.",
+      homes:"\u{1F441}\uFE0F Look down: the houses of High Street.", school:"\u{1F441}\uFE0F Look down: the Town School.",
+      space:"\u{1F441}\uFE0F Look up: the sky. Space is up there!" }[SC.key]||"")+'</div>':""),
     choices:SC.ideas.map((idea,k)=>({ label:SC.emo+" "+idea.lab,
       act:()=>{ fs.idea=k; tlRunDial(); } })) });
 }
@@ -62791,18 +62801,20 @@ function tlRunSay(){
         if(fs.tries>=2) m+="  \ud83d\udca1 "+tokens[0]+" "+tokens[1]+" \u2026";
         return {ok:false,msg:m}; },
       onSuccess:()=>{ fs.tries=0;
-        if(fs.idx===1){ setTimeout(tlMarcusNo, 400); }
-        else if(fs.idx===3){ setTimeout(tlMarcusAsk, 400); }
+        /* v499: per CHIAVE, non per posizione (l'ordine segue la rotta) */
+        if(SC.key==="transport"){ setTimeout(tlMarcusNo, 400); }
+        else if(SC.key==="space"){ setTimeout(tlMarcusAsk, 400); }
         else { fs.idx++; setTimeout(tlRunScanner, 400); } } },
     buttons:[{label:"\u21a9\ufe0e Change my mind", cls:"ghost", act:()=>{ tlRunScanner(); }}] });
 }
 /* la NEGATIVA: Marcus non e' d'accordo e chiede di registrare la sua
    previsione al negativo. Non e' una trasformazione, e' un'altra voce. */
 function tlMarcusNo(){
-  const fs=Quest.state.fs, SC=TL_SCENES[1];
+  const fs=Quest.state.fs;
   const tokens=["Cars","won't","fly","over","the","city."];
   DialogueBox.open({ npc:TL_NPC.marcus, icon:"\u{1F9D1}\u200D\u{1F4BB}", sub:"Marcus disagrees", autoSpeak:true,
-    text:"I don't think so! Cars are too heavy. Put my prediction in the scanner \u2014 the negative one.",
+    text:(SKY.on?"Ha! We are flying, I know \u2014 but SKY-1 is only a prototype. I don't think so! Cars are too heavy and too expensive. Put my prediction in the scanner \u2014 the negative one."
+                :"I don't think so! Cars are too heavy. Put my prediction in the scanner \u2014 the negative one."),
     italian:"Marcus non \u00e8 d'accordo: registra la SUA previsione, al negativo.",
     tiles:{ tokens, distractors:["will","not","don't"], checkLabel:"\u2714 Registra",
       onCheck:(w)=>{ if(w.join(" ")===tokens.join(" ")) return {ok:true,msg:"\u2713 Saved. Marcus is happy."};
@@ -62838,9 +62850,204 @@ function tlMarcusEnd(ans){
   DialogueBox.open({ npc:TL_NPC.marcus, icon:"\u{1F9D1}\u200D\u{1F4BB}", sub:"Marcus", autoSpeak:true,
     text:"\u201c"+ans+"\u201d \u2014 nobody knows. That's why I build things.",
     italian:"",
-    buttons:[{label:"\u2714 Done", cls:"primary", act:()=>{ fs.idx++;
-      tlScanDraw(null);
-      Quest.complete("\u{1F52E} Grammatica completata! Will \u00b7 may \u00b7 might \u2713"); }}] });
+    buttons:[{label:"\u2714 Done", cls:"primary", act:()=>{ fs.idx++; tlGramDone(); }}] });
+}
+/* v499: fine strand — se si e' in volo si riatterra sul TechLab, poi si chiude */
+function tlGramDone(){
+  const done=()=>{ try{ tlScanDraw(null); }catch(e){}
+    Quest.complete("\u{1F52E} Grammatica completata! Will \u00b7 may \u00b7 might \u2713"); };
+  if(SKY.on){ if(SKY.flying) return; toast("\u{1F6EC} SKY-1: back to the TechLab\u2026"); tlSkyLand(done); return; }
+  done();
+}
+/* =====================================================================
+   v499 — SKY-1, L'AUTO VOLANTE (Giacomo, 20 nov: «un'altra car puo'
+   volare e portarti in giro per QuestTown, come alla fine del gioco»).
+   Il Future Scanner non e' piu' una consolle: le quattro previsioni si
+   fanno IN VOLO sopra la citta', a bordo del prototipo del TechLab, con
+   Marcus copilota. Ogni scena ha la sua fermata: TRANSPORT sopra la
+   stazione (e Marcus che detta «Cars won't fly over the city» mentre si
+   vola...), HOMES sopra le case di High Street, SCHOOL sopra la Town
+   School, SPACE in alto sopra la Job Centre Tower, a guardare il cielo.
+   Poi si riatterra sul tetto del TechLab e si rientra alla consolle.
+   Stessa regia del finale (finFade, limiti della camera allargati e poi
+   rimessi, nebbia allontanata, targhette spente), ma il mondo NON si
+   ferma: il traffico continua a girare sotto. Si ferma solo il giocatore
+   (SKY.on nel ciclo principale, come FIN.on), e il suo corpo resta a
+   terra davanti al TechLab, nascosto: in volo sopra la Station Ave il
+   traffico lo avrebbe preso per un pedone in carreggiata (frenate,
+   clacson, Ranger).
+   ===================================================================== */
+const SKY={ on:false, ship:null, obs:null, flying:false, at:null, face:0, cam:null, fog:null, idle:0, t:0, thr:[] };
+const SKY_CRUISE=34;                         // quota di crociera fra una fermata e l'altra
+const SKY_STOPS={
+  transport:{ x:-84, y:21, z:-10, look:{ x:-100, z:0 } },
+  homes:    { x:0,   y:21, z:-3,  look:{ x:0,    z:15 } },
+  school:   { x:26,  y:21, z:-3,  look:{ x:26,   z:15 } },
+  space:    { x:-8,  y:64, z:-28, look:{ x:0,    z:-46.3 }, up:true } };
+/* il tetto vero del TechLab (il modello non ha un'altezza scritta da nessuna parte) */
+function tlSkyRoof(){
+  let y=14;
+  try{ const ray=new BABYLON.Ray(new BABYLON.Vector3(-30,140,-47),new BABYLON.Vector3(0,-1,0),160);
+    const h=scene.pickWithRay(ray,m=>m.__occluder===true && m.isEnabled() && m.isVisible);   // solo edifici (non la cupola del cielo)
+    if(h && h.hit && h.pickedPoint) y=h.pickedPoint.y; }catch(e){}
+  return { x:-30, y:y+2.6, z:-47 };
+}
+function tlSkyBuild(){
+  const ship=new BABYLON.TransformNode("sky1",scene); ship.parent=townRoot;
+  const hold=new BABYLON.TransformNode("sky1h",scene); hold.parent=ship; hold.rotation.y=TRAFFIC_YAW;
+  try{ const car=spawnProp("car_sport",0,0,4.4,{ byHeight:false, ry:0, yaw:PROP_YAW.car, occluder:false });
+    if(car){ car.parent=hold; car.position.set(0,car.position.y,0); } }catch(e){ console.warn("[sky1]",e); }
+  /* il «2050»: quattro propulsori accesi sotto, due alette, un anello */
+  const em=new BABYLON.StandardMaterial("sky1m"+(_lpN++),scene);
+  em.diffuseColor=BABYLON.Color3.FromHexString("#6fd0e8"); em.emissiveColor=BABYLON.Color3.FromHexString("#6fd0e8");
+  SKY.thrMat=em; SKY.thr=[];
+  [[-0.85,1.35],[0.85,1.35],[-0.85,-1.35],[0.85,-1.35]].forEach(q=>{
+    const c=BABYLON.MeshBuilder.CreateCylinder("sky1t",{ diameter:0.46, height:0.10, tessellation:18 },scene);
+    c.material=em; c.parent=ship; c.position.set(q[0],0.02,q[1]); c.isPickable=false; SKY.thr.push(c); });
+  const wm=lpMat("#e9edf0");
+  [-1,1].forEach(sd=>{ const w=BABYLON.MeshBuilder.CreateBox("sky1w",{ width:0.9, height:0.06, depth:0.7 },scene);
+    w.material=wm; w.parent=ship; w.position.set(sd*1.30,0.55,-0.4); w.rotation.z=sd*0.18; w.isPickable=false;
+    const e=BABYLON.MeshBuilder.CreateBox("sky1e",{ width:0.9, height:0.07, depth:0.06 },scene);
+    e.material=em; e.parent=w; e.position.set(0,0,-0.34); e.isPickable=false; });
+  try{ ship.getChildMeshes().forEach(m=>{ m.isPickable=false; }); }catch(e){}
+  SKY.ship=ship; return ship;
+}
+/* camera dietro la nave: alpha dalla direzione in cui guarda */
+function tlSkyCamAlpha(face){ return Math.atan2(-Math.cos(face),-Math.sin(face)); }
+function tlSkyStart(){
+  if(SKY.on) return;
+  try{ povSet(false,true); }catch(e){}
+  try{ DialogueBox.close(); }catch(e){}
+  SKY.on=true; SKY.flying=true; SKY.at=null;
+  finFade(1,650,function(){
+    try{ enterArea("town"); }catch(e){}
+    /* il corpo resta a terra davanti al TechLab, invisibile (vedi sopra) */
+    try{ const d=UNIT_TECH.doorPos; if(d) player.position.set(d.x,0,d.z+(d.z>0?1.5:-1.5)); }catch(e){}
+    try{ avatarMeshes.forEach(m=>{ m.visibility=0; }); }catch(e){}
+    try{ setLabelsVisible("__sky__"); }catch(e){}
+    try{ promptEl.style.display="none"; }catch(e){}
+    moveTarget=null; pendingInteract=null;
+    SKY.cam={ a:camera.alpha, b:camera.beta, r:camera.radius, lr:camera.lowerRadiusLimit, ur:camera.upperRadiusLimit,
+              lb:camera.lowerBetaLimit, ub:camera.upperBetaLimit };
+    try{ camera.detachControl(); }catch(e){}
+    camera.lowerRadiusLimit=2; camera.upperRadiusLimit=200; camera.lowerBetaLimit=0.05; camera.upperBetaLimit=3.0;
+    SKY.fog={ s:scene.fogStart, e:scene.fogEnd }; scene.fogStart=170; scene.fogEnd=720;
+    const ship=tlSkyBuild(), R=tlSkyRoof();
+    SKY.roof=R; ship.position.set(R.x,R.y,R.z); SKY.face=0; ship.rotation.y=0;
+    camera.setTarget(ship.position.clone(),false,false,true);
+    camera.alpha=tlSkyCamAlpha(0)+0.6; camera.beta=1.2; camera.radius=11;
+    SKY.t=0; SKY.idle=0;
+    SKY.obs=scene.onBeforeRenderObservable.add(tlSkyTick);
+    finFade(0,800,function(){
+      DialogueBox.open({ npc:TL_NPC.marcus, icon:"\u{1F9D1}‍\u{1F4BB}", sub:"SKY-1 · flying car prototype", autoSpeak:true,
+        text:"Welcome to SKY-1! No wheels, no roads. Today the Future Scanner is up in the sky — look at QuestTown and tell me about 2050!",
+        italian:"Sei sull'auto volante del TechLab, con Marcus. Ad ogni fermata guardi la città e fai la tua previsione sul 2050.",
+        buttons:[{ label:"\u{1F680} Let's fly!", cls:"primary", act:()=>{ SKY.flying=false; tlRunScanner(); } }] });
+    });
+  });
+}
+/* ogni fotogramma: la nave galleggia, i propulsori pulsano, la camera
+   insegue; se la finestra si e' chiusa (Esc) con la nave ferma, la si
+   riapre — in cielo non c'e' altro da fare, e restare li' senza dialogo
+   sarebbe un vicolo cieco. */
+function tlSkyTick(){
+  if(!SKY.on || !SKY.ship) return;
+  const dt=Math.min(0.05,engine.getDeltaTime()/1000); SKY.t+=dt;
+  const ship=SKY.ship;
+  if(!(Quest.unit===UNIT_TECH && Quest.step && Quest.step.id==="gram")){ tlSkyEnd(null,true); return; }
+  if(!SKY.flying){
+    if(SKY.base) ship.position.y=SKY.base+Math.sin(SKY.t*1.8)*0.14;
+    ship.rotation.z=Math.sin(SKY.t*1.1)*0.025;
+    if(!_dlgOpen()){ SKY.idle+=dt; if(SKY.idle>1.6){ SKY.idle=0; try{ tlRunScanner(); }catch(e){} } }
+    else SKY.idle=0;
+  }
+  const k=0.75+0.25*Math.sin(SKY.t*9);
+  if(SKY.thrMat) SKY.thrMat.emissiveColor.set(0.44*k,0.82*k,0.91*k);
+  /* camera: dietro, un po' sopra; alla fermata SPACE da sotto, verso il cielo */
+  const st=SKY.at&&SKY_STOPS[SKY.at];
+  const wa=tlSkyCamAlpha(SKY.face)+(SKY.flying?0:0.35+Math.sin(SKY.t*0.15)*0.25);
+  /* alla fermata si guarda GIU' sulla citta' (piu' alti e piu' lontani),
+     in volo da dietro; a SPACE da sotto, verso il cielo */
+  const wb=(!SKY.flying && st && st.up)?1.78:(SKY.flying?1.18:0.92);
+  const wr=SKY.flying?11:13;
+  const f=1-Math.exp(-dt*2.2);
+  const wa2=tlAngTo(camera.alpha,wa); camera.alpha+=(wa2-camera.alpha)*f;
+  camera.beta+=(wb-camera.beta)*f; camera.radius+=(wr-camera.radius)*f;
+  camera.setTarget(BABYLON.Vector3.Lerp(camera.target,ship.position,Math.min(1,f*2.5)),false,false,true);
+}
+/* un tratto di volo: Bezier A -> su -> su -> B, quota di crociera in mezzo */
+function tlSkyLeg(B,faceTo,cb){
+  const ship=SKY.ship; if(!ship){ if(cb) cb(); return; }
+  SKY.flying=true; SKY.base=null;
+  const A=ship.position.clone(), Bv=new BABYLON.Vector3(B.x,B.y,B.z);
+  const C=Math.max(A.y,B.y,SKY_CRUISE);
+  const P1=new BABYLON.Vector3(A.x,C,A.z), P2=new BABYLON.Vector3(B.x,C,B.z);
+  const L=Math.hypot(B.x-A.x,B.z-A.z)+Math.abs(C-A.y)+Math.abs(C-B.y);
+  const T=Math.max(3200,L/15*1000), t0=performance.now();
+  const bez=(u)=>{ const v=1-u; return A.scale(v*v*v).add(P1.scale(3*v*v*u)).add(P2.scale(3*v*u*u)).add(Bv.scale(u*u*u)); };
+  let prev=A.clone(), lastFace=SKY.face;
+  const ob=scene.onBeforeRenderObservable.add(()=>{
+    if(!SKY.on){ scene.onBeforeRenderObservable.remove(ob); return; }
+    const k=Math.min(1,(performance.now()-t0)/T), u=k*k*(3-2*k);
+    const p=bez(u); ship.position.copyFrom(p);
+    const dx=p.x-prev.x, dz=p.z-prev.z;
+    if(Math.hypot(dx,dz)>0.004){ const want=Math.atan2(dx,dz);
+      const turn=tlAngTo(SKY.face,want)-SKY.face;
+      SKY.face+=turn*0.12; ship.rotation.z=Math.max(-0.35,Math.min(0.35,-turn*2.2)); }
+    ship.rotation.x=Math.max(-0.2,Math.min(0.2,-(p.y-prev.y)*0.6));
+    ship.rotation.y=SKY.face; prev=p;
+    if(k>=1){ scene.onBeforeRenderObservable.remove(ob);
+      /* arrivati: la nave si gira verso quello che c'e' da guardare */
+      const want=(faceTo!=null)?faceTo:SKY.face, f0=SKY.face, f1=tlAngTo(f0,want), t1=performance.now();
+      const ob2=scene.onBeforeRenderObservable.add(()=>{
+        const q=Math.min(1,(performance.now()-t1)/900); SKY.face=f0+(f1-f0)*q*q*(3-2*q); ship.rotation.y=SKY.face;
+        ship.rotation.x*=0.9; ship.rotation.z*=0.9;
+        if(q>=1){ scene.onBeforeRenderObservable.remove(ob2); SKY.base=ship.position.y; SKY.flying=false; SKY.idle=0; if(cb) cb(); } });
+    } });
+}
+function tlSkyFlyTo(key,cb){
+  const S=SKY_STOPS[key]; if(!S){ if(cb) cb(); return; }
+  try{ DialogueBox.close(); }catch(e){}
+  try{ toast(key==="space"?"\u{1F680} SKY-1: going up…":"\u{1F6F8} SKY-1: flying…"); }catch(e){}
+  tlSkyLeg(S, Math.atan2(S.look.x-S.x, S.look.z-S.z), ()=>{ SKY.at=key; if(cb) cb(); });
+}
+/* ritorno: si riatterra sul tetto del TechLab, poi dissolvenza e consolle */
+function tlSkyLand(cb){
+  try{ DialogueBox.close(); }catch(e){}
+  const R=SKY.roof||tlSkyRoof();
+  tlSkyLeg(R, 0, ()=>{ tlSkyEnd(cb,false); });
+}
+function tlSkyEnd(cb,abort){
+  if(!SKY.on) { if(cb) cb(); return; }
+  SKY.flying=true;
+  const fin=function(){
+    if(SKY.obs){ scene.onBeforeRenderObservable.remove(SKY.obs); SKY.obs=null; }
+    try{ if(SKY.ship) SKY.ship.dispose(false,true); }catch(e){} SKY.ship=null;
+    const c=SKY.cam;
+    if(SKY.fog){ scene.fogStart=SKY.fog.s; scene.fogEnd=SKY.fog.e; }
+    if(c){ camera.lowerRadiusLimit=c.lr; camera.upperRadiusLimit=c.ur; camera.lowerBetaLimit=c.lb; camera.upperBetaLimit=c.ub; }
+    try{ camera.attachControl(document.getElementById("rc"),true); }catch(e){ try{ camera.attachControl(true); }catch(e2){} }
+    try{ avatarMeshes.forEach(m=>{ m.visibility=1; }); }catch(e){}
+    try{ promptEl.style.display=""; }catch(e){}
+    SKY.on=false; SKY.at=null;
+    /* si rientra al TechLab, davanti alla consolle — salvo che la quest sia
+       stata fermata (cambio studente, docente): allora si resta in citta',
+       davanti alla porta */
+    try{
+      const I=INTERIORS[UNIT_TECH.area];
+      if(Quest.unit===UNIT_TECH && I && I.center){ enterArea(UNIT_TECH.area); player.position.set(I.center.x,0,I.center.z-5.6); player.rotation.y=Math.PI; }
+      else { setLabelsVisible(area); }
+    }catch(e){}
+    if(c){ camera.beta=c.b; camera.radius=c.r; if(typeof camWish!=="undefined") camWish=c.r; }
+    /* ⚠️ NON l'alpha salvata: era quella della citta', e dentro il TechLab
+       metteva la camera oltre il muro nord (visto a schermo). Si sta dietro
+       al giocatore, che guarda la consolle (nord). */
+    camera.alpha=(area===UNIT_TECH.area)?Math.PI/2:(c?c.a:camera.alpha);
+    try{ camera.setTarget(player.position.add(new BABYLON.Vector3(0,1.4,0)),false,false,true); }catch(e){}
+    finFade(0,700,function(){ if(cb) cb(); });
+  };
+  if(abort){ fin(); return; }
+  finFade(1,650,fin);
 }
 MECH.futureScanner=function(s){
   buildTechNPCs();
@@ -62852,7 +63059,16 @@ MECH.futureScanner=function(s){
   Quest.questInteract({ id:"tl_console", area:UNIT_TECH.area, radius:2.2,
     pos:()=>new BABYLON.Vector3(C.x, 0, C.z-6.55),
     prompt:'Press <b>E</b>: turn on the <b>Future Scanner</b>',
-    interact:()=>tlRunScanner() });
+    interact:()=>tlSkyIntro() });
+};
+/* v499: alla consolle Marcus propone il volo; chi rientra dopo averlo
+   finito (strand gia' chiusa) non arriva qui: MECH non c'e' piu'. */
+function tlSkyIntro(){
+  if(SKY.on) return;
+  DialogueBox.open({ npc:TL_NPC.marcus, icon:"\u{1F9D1}\u200D\u{1F4BB}", sub:"The Future Scanner", autoSpeak:true,
+    text:"The scanner shows pictures of 2050. Boring! Come with me: our flying car prototype is on the roof. Let's look at the real town from the sky!",
+    italian:"Marcus ti porta in volo sull'auto volante del TechLab: le previsioni sul 2050 le fai guardando la citt\u00e0 dall'alto.",
+    buttons:[{ label:"\u{1F6F8} Yes, let's go!", cls:"primary", act:()=>tlSkyStart() }] });
 };
 
 /* =====================================================================
