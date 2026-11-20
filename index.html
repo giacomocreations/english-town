@@ -62138,9 +62138,18 @@ UNIT_TECH.props=(function(){
   P.push({ prop:"tPad",     s:2.40, x: 3.30, z:-4.20, yaw:0, solid:false });
   P.push({ prop:"tBit",     x:0.00, z:-3.20, yaw:0 });
   /* i due tabelloni che restano appesi, uno per parete, dentro la Future
-     Room (dove nascono): CITY 2050 a est, INVENTION OF THE WEEK a ovest. */
-  P.push({ prop:"tPatent", x:-5.92, z:-3.00, yaw: Math.PI/2, solid:false });
-  P.push({ prop:"tCity",   x: 5.92, z:-3.00, yaw:-Math.PI/2, solid:false });
+     Room (dove nascono): CITY 2050 a est, INVENTION OF THE WEEK a ovest.
+     \u26a0\ufe0f z -4.80, non -3.00: la rastrelliera (w 8.8 su z 1.80) arriva a
+     z -2.60 ed esce 0.80 m dal muro, alta 2.10 — a z -3.00 la bacheca (larga
+     1.62, z -3.81..-2.19) aveva il terzo destro coperto (visto a schermo).
+     OVEST z -4.80 (z -5.61..-3.99): 1.39 m dalla rastrelliera; davanti c'e'
+     solo il banco basso (0.78 + lampada < 1.25, bordo inferiore della bacheca)
+     e il banco maker (z -7.25..-6.35) resta fuori.
+     EST z -6.00, NON -4.80: li' davanti c'e' il display su palo della
+     piattaforma (x 3.30, z -4.94, alto fino a 1.69) e la copriva in basso.
+     A -6.00 (z -6.81..-5.19) passa fra quel display e il server (z <= -6.90). */
+  P.push({ prop:"tPatent", x:-5.92, z:-4.80, yaw: Math.PI/2, solid:false });
+  P.push({ prop:"tCity",   x: 5.92, z:-6.00, yaw:-Math.PI/2, solid:false });
   /* \u26a0\ufe0f py 2.84 con h 0.34: lo schermo arriva a 2.58 e la fascia parte da
      2.67. A py 2.86 con h 0.42 i due si toccavano (visto a schermo). */
   P.push({ prop:"poster",  x:0.00, z:-7.94, yaw:0, w:2.60, h:0.34, py:2.84, twoSided:true,
