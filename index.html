@@ -25793,6 +25793,7 @@ const Quest={
   dispose(){ while(this.disposables.length){ try{ this.disposables.pop()(); }catch(e){} }
     nearInter=null; promptEl.classList.remove("show"); },
   start(unit){ this.dispose(); this.unit=unit; this.total=unit.steps.length;
+    try{ QPAUSE=null; }catch(e){}                       // v499: si rientra (o si cambia quest): via il promemoria
     const prog=Progress.get(unit.id);
     /* ⚠️ `done` è la fonte di verità salvata da Progress.setUnitDone, non lo
        step ricostruito. PRIMA si decideva SOLO confrontando step con
@@ -25810,7 +25811,8 @@ const Quest={
     this.i=resumeAt-1; questHudShow(true);
     if(resumeAt>0 && resumeAt<unit.steps.length) toast("👋 Welcome back! You can carry on where you stopped.");
     this.advance(); },
-  stop(){ this.dispose(); this.unit=null; this.step=null; questHudShow(false); QModal.close(); },
+  stop(){ this.dispose(); this.unit=null; this.step=null; questHudShow(false); QModal.close();
+    try{ QPAUSE=null; }catch(e){} },                    // v499: exitUnit/exitHome lo rimettono subito dopo
   advance(){ this.dispose(); this.i++;
     if(!this.unit) return;
     if(this.i>=this.unit.steps.length){ this.finish(); return; }
@@ -50542,12 +50544,36 @@ function gateDenied(id){
         +"Intanto la citt\u00e0 \u00e8 tutta tua \u2014 puoi girare dove vuoi.</div>",
     buttons:[{label:"OK", cls:"primary"}] });
 }
+/* v499 — LA QUEST IN PAUSA RESTA IN VISTA (Giacomo, 20 nov: «se si e' in
+   mezzo a una quest deve rimanere un avviso che dice quale quest e' in atto
+   e a che punto, anche se si esce dall'edificio»). Uscendo, Quest.stop()
+   spegneva l'HUD: in citta' non restava nessuna traccia della quest lasciata
+   a meta'. Ora l'HUD resta, con lo strand e il numero del passo, e dice dove
+   tornare. E' SOLO un promemoria: non blocca niente e non tocca Progress
+   (i passi finiti erano gia' salvati, e rientrando Quest.start riprende da
+   li'). Lo cancella qualunque Quest.start o Quest.stop.
+   Non vale per lo Starter della scuola (riparte da solo a ogni ingresso) ne'
+   per le open-world (Quest.unit resta vivo in citta' e l'HUD con lui). */
+let QPAUSE=null;
+function questPauseSnap(){
+  const u=Quest.unit, st=Quest.step;
+  if(!u || !st || u.id==="u0" || u.openWorld) return null;
+  try{ if((Progress.get(u.id)||{}).done) return null; }catch(e){}
+  return { u:u, i:Quest.i, strand:st.strand };
+}
+function questPauseShow(p){
+  QPAUSE=p; if(!p) return;
+  const home=(p.u.area==="home"), nm=p.u.areaName||p.u.area;
+  const en="\u23F8\uFE0F Quest paused \u2014 go back "+(home?"<b>home</b>":"to <b>"+nm+"</b>")+" to carry on.";
+  const it="Quest in pausa: torna "+(home?"a <b>casa</b>":"a <b>"+nm+"</b>")+" per continuare da qui.";
+  try{ questHudSet(p.strand, HOBJ(en,it), p.i, p.u.steps.length); questHudShow(true); }catch(e){}
+}
 /* uscita generica: torna in citta' davanti alla porta della unit */
-function exitUnit(u){ Quest.stop(); try{ gigStop(); }catch(e){} enterArea("town");
+function exitUnit(u){ const _qp=questPauseSnap(); Quest.stop(); questPauseShow(_qp); try{ gigStop(); }catch(e){} enterArea("town");
   const p=(u&&u.doorPos)||homeDoorPos||new BABYLON.Vector3(0,0,10);
   player.position.copyFrom(p); player.position.z += (p.z>0?1:-1)*1.5;
   camera.target.copyFrom(player.position); toast("\u{1F3D9}\uFE0F Back in town"); }
-function exitHome(){ Quest.stop(); enterArea("town");
+function exitHome(){ const _qp=questPauseSnap(); Quest.stop(); questPauseShow(_qp); enterArea("town");
   player.position.copyFrom(homeDoorPos); player.position.z += (homeDoorPos.z>0?1:-1)*1.5;
   camera.target.copyFrom(player.position); toast("\u{1F3D9}\uFE0F Back in town"); }
 function enterCinema(_ok){
