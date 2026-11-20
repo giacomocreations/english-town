@@ -3062,9 +3062,9 @@ const UNIT_ECO={ id:"u2_6", area:"ecopoint", areaName:"the Eco Point",
       soqquadro senza sapere perche'.
    ===================================================================== */
 const UNIT_HOME7={ id:"u2_7", area:"home", title:"Anno 2 \u00b7 Unit 7 \u2014 At home",
-  build:()=>{ buildHome(); buildHm7Props(); },
+  build:()=>{ buildHome(); buildHm7Props(); u3HomeMarkersShow(false); },
   enterToast:"\u{1F9F9} Sei a casa \u2014 c'\u00e8 da fare!",
-  onEnter:()=>{ setTimeout(buildHm7NPCs,0); setTimeout(()=>{ try{ hm7ResetMess(); hm7RestoreFridge(); }catch(e){} },60); },
+  onEnter:()=>{ u3HomeMarkersShow(false); setTimeout(buildHm7NPCs,0); setTimeout(()=>{ try{ hm7ResetMess(); hm7RestoreFridge(); }catch(e){} },60); },
   steps:[
   { id:"lex",   strand:"lessico",    type:"choreHunt", count:6,
     intro:"<b>Jack</b> ti legge la lista delle faccende \ud83d\udd0a. Per ognuna vai <b>dove si fa</b> "
@@ -26163,6 +26163,28 @@ function openGate(gate){
   if(!remaining) Quest.complete("🚪 Grammatica completata! Tutte le porte sono aperte.");
   else questHudSet("grammatica", HOBJ("Unlock the doors with <b>there is / isn\'t / is there\u2026?</b> ("+remaining+" left)","Sblocca le porte con <b>there is / isn't / is there…?</b> ("+remaining+" rimaste)"), Quest.i, Quest.total);
 }
+/* ⚠️ PORTE E CERCHI DI UNIT 3 FUORI DA UNIT 3 (Giacomo, 20 nov: «in home
+   unit 7 un'alunna non riesce a entrare nella bedroom: la porta e' chiusa,
+   lampeggiante, e non puo' selezionarla»). La casa e' UNA sola: le porte
+   della grammatica di Unit 3 (e i cerchi verdi del tour) costruite in
+   questa sessione e non risolte restavano li', solide e pulsanti, anche
+   in Unit 7 — dove nessuno registra la loro interazione. Quindi: fuori
+   dagli step di Unit 3 che le usano si SPENGONO (niente solido, niente
+   mesh, niente pulse); si riaccendono, se ancora da risolvere, quando lo
+   step le richiede. Lo stato «risolta» non si tocca. */
+function u3HomeMarkersShow(on){
+  try{ (GATES||[]).forEach(g=>{ if(g.solved) return;
+    if(g.solid) g.solid.area=on?"home":"_gateoff";
+    if(g.mesh) g.mesh.setEnabled(!!on);
+    const i=gatePanels.indexOf(g.mat);
+    if(on && i<0 && g.mat) gatePanels.push(g.mat);
+    if(!on && i>=0) gatePanels.splice(i,1); }); }catch(e){}
+  try{ (TOUR_STOPS||[]).forEach(t=>{ if(t.solved) return;
+    if(t.mesh) t.mesh.setEnabled(!!on);
+    const i=gatePanels.indexOf(t.mat);
+    if(on && i<0 && t.mat) gatePanels.push(t.mat);
+    if(!on && i>=0) gatePanels.splice(i,1); }); }catch(e){}
+}
 function buildGates(){
   if(gatesBuilt) return; gatesBuilt=true;
   const C=HOME_C;
@@ -26571,6 +26593,7 @@ function buildTourStops(){
   });
 }
 function registerTourInteracts(){
+  u3HomeMarkersShow(true);
   TOUR_STOPS.filter(s=>!s.solved).forEach(stop=>{
     stop.inter=Quest.questInteract({ id:"tourstop_"+stop.room, area:"home", radius:2.2,
       pos:()=>stop.pos, meshes:[stop.mesh],
@@ -30734,7 +30757,7 @@ const MECH={
   },
   // GRAMMATICA → riapri le 3 porte chiuse con there is/isn't/is there…?
   sentenceGate(s){
-    buildGates();
+    buildGates(); u3HomeMarkersShow(true);
     const active=GATES.filter(g=>!g.solved);
     if(!active.length){ Quest.complete("🚪 Grammatica completata!"); return; }
     active.forEach(g=>{
