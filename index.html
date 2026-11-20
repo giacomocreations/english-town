@@ -3319,7 +3319,8 @@ const UNIT_TECH={ id:"u3_2", area:"techlab", areaName:"the TechLab",
   contactShadows:true, wallHex:"#dfe4e8", ceilHex:"#e8ecef",   // v269: ombre sotto gli arredi, pareti e soffitto da laboratorio
   enterToast:"\u{1F4BB} Sei entrato al TechLab",
   onEnter:()=>{ setTimeout(buildTechNPCs,0);
-    setTimeout(()=>{ try{ tlRestoreBoards(); tlScanDraw(null); tlPadDraw(); }catch(e){} },60); },
+    setTimeout(()=>{ try{ tlRestoreBoards(); tlScanDraw(null); tlPadDraw(); }catch(e){}
+      try{ if(!tlFuncLive() || !(Quest.state&&Quest.state.tr&&Quest.state.tr.done)) tlKitReset(); }catch(e){} },60); },   // v499
   steps:[
   { id:"lex",   strand:"lessico",    type:"repairBench", count:7,
     intro:"Sei al banco riparazioni del <b>TechLab</b>. La gente porta i suoi problemi, ma "
@@ -61609,8 +61610,8 @@ const TL_SCENES=[
 
 /* ---------------------------------------------------------------------
    BIT — i tre lavori. Ogni lavoro e' una sequenza di AZIONI del Word bank
-   («Technology actions»): Bit le esegue alla lettera, quindi l'ordine
-   sbagliato produce un disastro visibile invece di una X.
+   («Technology actions»): Bit le esegue alla lettera nella Smart Kitchen,
+   quindi l'ordine sbagliato produce un disastro visibile invece di una X.
    I dodici verbi del libro ci sono tutti.
    --------------------------------------------------------------------- */
 const TL_ACTS={
@@ -61627,31 +61628,119 @@ const TL_ACTS={
   "share":    { emo:"\u{1F517}", it:"condividere" },
   "delete":   { emo:"\u{1F5D1}\uFE0F", it:"cancellare" },
 };
+/* v499: i tre lavori si svolgono nella SMART KITCHEN e si vedono (vedi
+   LEXPROPS.tKitchen). Ogni lavoro ha:
+     scene(k)   lo stato fermo della cucina dopo k istruzioni giuste
+     intro()    la scena dopo la richiesta (es. la foto ai pancake)
+     act[a]()   la scena dell'istruzione giusta a
+     bad(a,k)   la scena del disastro (istruzione a fuori ordine al passo k)
+     gag(a,k)   la battuta di Bit sul disastro
+     payoff()   la scena a lavoro finito (cucina, invia, pulisce)
+   Le funzioni tlKit... e tlBit... stanno piu' sotto, accanto a LEXPROPS.tKitchen. */
 const TL_TASKS=[
-  { key:"hw", icon:"\u{1F4C4}", name:"THE HOMEWORK",
-    ask:"My teacher put the exercises on the school website. I want them on paper!",
-    it:"Bit deve stampare i compiti che stanno sul sito della scuola.",
+  { key:"recipe", icon:"\u{1F95E}", name:"GRANDMA'S PANCAKES",
+    ask:"Grandma's pancake recipe is on her website. I want it on paper, here in the kitchen. Then I will cook it!",
+    it:"La ricetta dei pancake è sul sito della nonna: Bit deve stamparla, poi la cucina.",
     seq:["log in","download","print","log out"],
-    gag:{ "download":"\u274C Bit says: \u201cDownload what? I am not on the website!\u201d",
-          "print":"\u274C Bit prints an empty page. \u{1F5A8}\uFE0F \u201cThere was nothing on it!\u201d",
-          "log out":"\u274C Bit logs out. \u201cNow I can't do anything at all!\u201d",
-          "copy":"\u274C Bit copies nothing. \u201cMy clipboard is empty.\u201d" } },
-  { key:"mail", icon:"\u2709\uFE0F", name:"THE CLASS EMAIL",
-    ask:"I want to send this photo to my class, in an email.",
-    it:"Bit deve mettere la foto in una email e mandarla alla classe.",
+    scene(k){ tlKitProps({ paper:k>=3 });
+      tlKitDraw(k>=4 ? { ok:true, big:"Logged out ✔", lines:["Bye, Grandma!"] }
+              : k>=3 ? Object.assign({}, TLK_RECIPE, { ok:true, hdr:"PANCAKES.pdf · PRINTED ✔" })
+              : k>=2 ? TLK_RECIPE
+              : k>=1 ? { hdr:"GRANDMAS-KITCHEN.COM", big:"Welcome, Bit!", lines:["Recipes:","PANCAKES ⬇"] }
+              : { hdr:"GRANDMAS-KITCHEN.COM", big:"\u{1F512} Members only", lines:["Please log in","to see the recipes."] }); },
+    act:{
+      "log in":   ()=>[...tlBitGo(TLK_TAB), tlDo(()=>tlKitDraw({ hdr:"GRANDMAS-KITCHEN.COM", big:"bit · ••••••", lines:["Logging in…"] })), tlStepWork(1100)],
+      "download": ()=>[...tlBitGo(TLK_TAB), tlStepWork(400),
+                   { d:1600, f(k){ tlKitDraw({ hdr:"GRANDMAS-KITCHEN.COM", big:"Downloading…", lines:["pancakes.pdf"], bar:{ p:k, label:Math.round(k*100)+"%", col:"#6fd0e8" } }); } }],
+      "print":    ()=>[...tlKitPaperOut(true,false)],
+      "log out":  ()=>[...tlBitGo(TLK_TAB), tlStepWork(600)] },
+    bad(a,k){
+      if(a==="download") return [...tlBitGo(TLK_TAB), tlStepWork(500),
+        tlDo(()=>tlKitDraw({ bad:true, hdr:"GRANDMAS-KITCHEN.COM", big:"⛔ ACCESS DENIED", lines:["You are not logged in."] })), tlStepShake(1100), tlWait(500)];
+      if(a==="print") return [tlDo(()=>tlKitDraw({ bad:true, big:"Printing…", lines:["…an empty page!"] })), ...tlKitPaperOut(false,true), tlStepShake(800)];
+      return [...tlBitGo(TLK_TAB), tlStepWork(500),
+        tlDo(()=>tlKitDraw({ bad:true, big:"Logged out!", lines:["Bit can't do anything now."] })), tlStepShake(1000), tlWait(400)]; },
+    gag(a,k){
+      if(a==="download") return "❌ ACCESS DENIED! “I am not on the website. I can't download anything!”";
+      if(a==="print") return k>=1 ? "❌ Bit prints an empty page. It falls on the floor! “The recipe isn't on my tablet yet!”"
+                                   : "❌ Bit prints an empty page. It falls on the floor! “There was nothing to print!”";
+      return k>=1 ? "❌ Bit logs out. “Now I can't do anything at all — and I haven't got the recipe!”"
+                  : "❌ Bit logs out… but he wasn't logged in! “Now what?”"; },
+    payoff:()=>tlKitCook(),
+    done:"Look! Three pancakes. First the recipe, then the cooking. I like clear people." },
+
+  { key:"mail", icon:"✉️", name:"A PHOTO FOR MUM",
+    ask:"The pancakes look great — I took a photo! Send it to Mum in an email. Her address is in my contacts.",
+    it:"Bit deve mandare la foto dei pancake alla mamma: copia l'indirizzo dai contatti, lo incolla nell'email, allega la foto e la invia.",
     seq:["copy","paste","attach","share"],
-    gag:{ "paste":"\u274C Bit pastes nothing. \u201cPaste what? My clipboard is empty!\u201d",
-          "attach":"\u274C Bit attaches an empty file. \u{1F4CE} \u201cThere's no photo in it.\u201d",
-          "share":"\u274C Bit shares an empty email. \u201cThe class is confused.\u201d",
-          "delete":"\u274C Bit deletes the photo. \u{1F631} \u201cOh. That was fast.\u201d" } },
-  { key:"space", icon:"\u{1F4F1}", name:"SPACE ON THE TABLET",
-    ask:"My tablet is full. I want this video in the cloud \u2014 and then off my tablet.",
-    it:"Bit deve tagliare il video, salvarlo, caricarlo nel cloud e poi cancellarlo dal tablet.",
+    scene(k){ tlKitProps({ paper:true, cakes:true });
+      tlKitDraw(k>=4 ? { ok:true, hdr:"EMAIL", email:{ to:TLK_MAIL, att:true, sent:1, reply:"Mum: WOW! Save one for me! \u{1F60B}" } }
+              : k>=3 ? { hdr:"EMAIL", email:{ to:TLK_MAIL, att:true } }
+              : k>=2 ? { hdr:"EMAIL", email:{ to:TLK_MAIL } }
+              : k>=1 ? { hdr:"CONTACTS", big:"Mum", lines:[TLK_MAIL,"Copied ✔"] }
+              : { hdr:"PHOTOS", photo:{ y:215, s:1 }, big:"pancakes.jpg", bigPx:30, bigY:95 }); },
+    intro:()=>[...tlBitGo(TLK_PLATE), tlStepWork(500),
+      { d:260, start(){ TL_KIT.flash.setEnabled(true); }, end(){ TL_KIT.flash.setEnabled(false); } },
+      tlDo(()=>tlKitDraw({ hdr:"PHOTOS", photo:{ y:215, s:1 }, big:"pancakes.jpg", bigPx:30, bigY:95 })), tlStepHop()],
+    act:{
+      "copy":   ()=>[...tlBitGo(TLK_TAB), tlDo(()=>tlKitDraw({ hdr:"CONTACTS", big:"Mum", lines:[TLK_MAIL] })), tlStepWork(900)],
+      "paste":  ()=>[...tlBitGo(TLK_TAB), tlDo(()=>tlKitDraw({ hdr:"EMAIL", email:{} })), tlStepWork(800)],
+      "attach": ()=>[...tlBitGo(TLK_TAB), tlStepWork(900)],
+      "share":  ()=>[...tlBitGo(TLK_TAB), tlStepWork(500),
+                 { d:1300, f(k){ tlKitDraw({ hdr:"EMAIL", email:{ to:TLK_MAIL, att:true, sent:Math.min(0.999,k) } }); } },
+                 tlDo(()=>tlKitDraw({ ok:true, hdr:"EMAIL", email:{ to:TLK_MAIL, att:true, sent:1 } })), tlWait(300)] },
+    bad(a,k){
+      const S=[...tlBitGo(TLK_TAB), tlStepWork(600)];
+      if(a==="paste") S.push(tlDo(()=>tlKitDraw({ bad:true, hdr:"EMAIL", email:{} })));
+      else if(a==="attach") S.push(tlDo(()=>tlKitDraw({ bad:true, hdr:"EMAIL", email:{ att:true } })));
+      else if(k<2) S.push({ d:1100, f(q){ tlKitDraw({ bad:true, hdr:"EMAIL", email:{ sent:Math.min(0.999,q) } }); } },
+                          tlDo(()=>tlKitDraw({ bad:true, hdr:"EMAIL", big:"\u{1F4ED} Sent to… nobody!", lines:["There's no address."] })));
+      else S.push({ d:1100, f(q){ tlKitDraw({ bad:true, hdr:"EMAIL", email:{ to:TLK_MAIL, sent:Math.min(0.999,q) } }); } },
+                  tlDo(()=>tlKitDraw({ bad:true, hdr:"EMAIL", email:{ to:TLK_MAIL, sent:1, reply:"Mum: Where are the pancakes? \u{1F914}" } })));
+      S.push(tlStepShake(1000), tlWait(400)); return S; },
+    gag(a,k){
+      if(a==="paste") return "❌ Bit pastes… nothing. “Paste what? My clipboard is empty!”";
+      if(a==="attach") return "❌ Bit attaches the photo to an email for… nobody. “Who is it for? There's no address!”";
+      return k<2 ? "❌ Bit sends the email to… nobody! \u{1F4ED} “There's no address in it!”"
+                 : "❌ Bit sends the email with no photo. Mum: “Where are the pancakes?”"; },
+    payoff:()=>[tlWait(700),
+      tlDo(()=>tlKitDraw({ ok:true, hdr:"EMAIL", email:{ to:TLK_MAIL, att:true, sent:1, reply:"Mum: WOW! Save one for me! \u{1F60B}" } })),
+      tlStepHop()],
+    done:"Mum answered: she wants a pancake! Copy, paste, attach, share. Perfect order." },
+
+  { key:"space", icon:"\u{1F9F9}", name:"MEMORY FULL",
+    ask:"Dr. Ito ate all the pancakes! I want to clean, but my memory is full: I filmed a 45-minute cooking show. Cut the boring part, put the video in the cloud — and then off my memory!",
+    it:"La memoria di Bit è piena: taglia la parte noiosa del video, salvalo, caricalo nel cloud e poi cancellalo dalla memoria. Poi Bit pulisce.",
     seq:["cut","save","upload","delete"],
-    gag:{ "delete":"\u274C Bit deletes the video. \u{1F631} \u201cIt isn't in the cloud. It isn't anywhere now.\u201d",
-          "upload":"\u274C Bit uploads an old version. \u201cYou didn't save it first!\u201d",
-          "save":"\u274C Bit saves the whole video. \u201cThe tablet is still full!\u201d",
-          "print":"\u274C Bit prints a video. \u{1F5A8}\uFE0F \u201cFour hundred pages of pixels.\u201d" } },
+    scene(k){ tlKitProps({ paper:true, crumbs:true }); tlKitDraw(tlKitMemory(k)); },
+    act:{
+      "cut":    ()=>[...tlBitGo(TLK_TAB), tlStepWork(1000)],
+      "save":   ()=>[...tlBitGo(TLK_TAB), tlStepWork(800)],
+      "upload": ()=>[...tlBitGo(TLK_TAB), tlStepWork(400),
+                 { d:1600, f(k){ tlKitDraw({ hdr:"BIT MEMORY", big:"☁️ Uploading…", lines:["cooking-show.mp4"], bar:{ p:k, label:Math.round(k*100)+"%", col:"#6fd0e8" } }); } }],
+      "delete": ()=>[...tlBitGo(TLK_TAB), tlStepWork(500),
+                 { d:1000, f(k){ const p=0.98-0.86*k; tlKitDraw({ hdr:"BIT MEMORY", big:"\u{1F5D1}️ Deleting…", bar:{ p:p, label:Math.round(p*100)+"%" } }); } }] },
+    bad(a,k){
+      const S=[...tlBitGo(TLK_TAB), tlStepWork(700)];
+      if(a==="save") S.push(tlDo(()=>tlKitDraw({ bad:true, hdr:"BIT MEMORY", big:"Saved: 45 minutes", lines:["Memory: 100% FULL!"], bar:{ p:1, label:"100% FULL" } })));
+      else if(a==="upload") S.push(tlDo(()=>tlKitDraw({ bad:true, hdr:"BIT MEMORY", big:"☁️ Uploaded…", lines:["…an OLD version!"], bar:{ p:0.98, label:"98% FULL" } })));
+      else S.push(tlDo(()=>tlKitDraw({ bad:true, hdr:"BIT MEMORY", big:"\u{1F631} File not found", lines:["Not in the cloud.","Not anywhere!"] })));
+      S.push(tlStepShake(1100), tlWait(400)); return S; },
+    gag(a,k){
+      if(a==="save") return "❌ Bit saves all 45 minutes. “My memory is 100% full now!”";
+      if(a==="upload") return "❌ Bit uploads an old version. “You didn't save it first!”";
+      return "❌ Bit deletes the video. \u{1F631} “It isn't in the cloud. It isn't anywhere now!” (Luckily, Dr. Ito has a copy.)"; },
+    payoff:()=>{ const K=TL_KIT; return [tlWait(500), ...tlBitGo(TLK_PLATE),
+      tlDo(()=>{ K.cloth.setEnabled(true); tlKitDraw({ hdr:"CLEANING MODE", big:"\u{1F9FD} Cleaning…" }); }),
+      { d:2400, f(k){ K.cloth.position.x=TLK_PLATE+Math.sin(k*Math.PI*5)*0.28; K.cloth.position.z=0.05+Math.cos(k*Math.PI*3)*0.12;
+          K.crumbs.forEach((c,i)=>c.setEnabled(k<(i+1)/(K.crumbs.length+1)));
+          const w=Math.sin(k*30)*0.35; if(TL_BIT_ARMS[0]) TL_BIT_ARMS[0].rotation.x=-0.7+w; if(TL_BIT_ARMS[1]) TL_BIT_ARMS[1].rotation.x=-0.7-w; },
+        end(){ TL_BIT_ARMS.forEach(a=>{ if(a) a.rotation.x=0; }); } },
+      tlDo(()=>{ K.cloth.setEnabled(false); K.crumbs.forEach(c=>c.setEnabled(false)); K.spark.forEach(s=>s.setEnabled(true)); }),
+      { d:800, f(k){ K.spark.forEach((s,i)=>{ s.scaling.setAll(Math.sin(Math.min(1,k*1.3+i*0.1)*Math.PI)+0.01); s.rotation.y=k*3; }); } },
+      tlDo(()=>{ K.spark.forEach(s=>s.setEnabled(false)); tlKitDraw({ ok:true, hdr:"KITCHEN", big:"Clean! ✨", lines:["Memory: 12%"] }); }),
+      tlStepHop()]; },
+    done:"Cut, save, upload, delete — and now the kitchen is clean. Perfect order!" },
 ];
 /* la frase-istruzione finale, UNA sola per tutta la strand: Bit la impara
    e la ripete la prossima volta. Non tre, per non trasformare il gioco in
@@ -61996,24 +62085,270 @@ let TL_BIT_NODE=null;
 LEXPROPS.tBit=function(id,o){ o=o||{};
   const r=new BABYLON.TransformNode(id,scene);
   lpCyl(r,0.62,0.09,"#3a4048",0,0.045,0);                     // pedana di ricarica
-  lpBox(r,0.42,0.44,0.32,"#c9d1d8",0,0.34,0);                 // corpo
-  lpBox(r,0.30,0.14,0.02,"#1b2430",0,0.40,0.17,"#16323d");    // pannello
-  lpBox(r,0.09,0.26,0.09,"#8a939b",-0.27,0.34,0);             // braccia
-  lpBox(r,0.09,0.26,0.09,"#8a939b", 0.27,0.34,0);
-  lpBox(r,0.36,0.28,0.30,"#e6ebef",0,0.72,0);                 // testa
-  lpCyl(r,0.10,0.03,"#6fd0e8",-0.09,0.75,0.155,Math.PI/2,0,"#2f6f80");  // occhi
-  lpCyl(r,0.10,0.03,"#6fd0e8", 0.09,0.75,0.155,Math.PI/2,0,"#2f6f80");
-  lpBox(r,0.22,0.03,0.02,"#3a4048",0,0.64,0.16);              // bocca
-  lpCyl(r,0.03,0.16,"#8a939b",0,0.94,0);                      // antenna
-  lpCyl(r,0.09,0.09,"#c0574f",0,1.04,0,0,0,"#5e2620");
-  TL_BIT_NODE=r;
+  /* v499: il corpo e' un nodo suo: Bit va a lavorare nella Smart Kitchen
+     e la pedana resta al suo posto (e' lei a fare da ingombro solido). */
+  const b=new BABYLON.TransformNode(id+"_body",scene); b.parent=r;
+  lpBox(b,0.42,0.44,0.32,"#c9d1d8",0,0.34,0);                 // corpo
+  lpBox(b,0.30,0.14,0.02,"#1b2430",0,0.40,0.17,"#16323d");    // pannello
+  const armL=lpBox(b,0.09,0.26,0.09,"#8a939b",-0.27,0.34,0);  // braccia
+  const armR=lpBox(b,0.09,0.26,0.09,"#8a939b", 0.27,0.34,0);
+  lpBox(b,0.36,0.28,0.30,"#e6ebef",0,0.72,0);                 // testa
+  lpCyl(b,0.10,0.03,"#6fd0e8",-0.09,0.75,0.155,Math.PI/2,0,"#2f6f80");  // occhi
+  lpCyl(b,0.10,0.03,"#6fd0e8", 0.09,0.75,0.155,Math.PI/2,0,"#2f6f80");
+  lpBox(b,0.22,0.03,0.02,"#3a4048",0,0.64,0.16);              // bocca
+  lpCyl(b,0.03,0.16,"#8a939b",0,0.94,0);                      // antenna
+  lpCyl(b,0.09,0.09,"#c0574f",0,1.04,0,0,0,"#5e2620");
+  /* v499: Bit e' alto 1,09 e il bancone della cucina 0,91 — dietro sparivano
+     tutti e due gli occhi (visto a schermo). Lontano dalla pedana FLUTTUA
+     (e' un robot del 2050): si alza di TL_BIT_HOVER con l'anello acceso. */
+  const ring=lpCyl(b,0.40,0.02,"#6fd0e8",0,0.10,0,0,0,"#6fd0e8"); ring.setEnabled(false); b.__ring=ring;
+  TL_BIT_NODE=r; TL_BIT_BODY=b; TL_BIT_ARMS=[armL,armR];
   /* v269: Bit respira (oscilla sulla pedana) e sbatte gli occhi */
-  const kids=r.getChildMeshes().slice(1), eyes=kids.filter(m=>m.material&&m.material.emissiveColor&&m.material.emissiveColor.b>0.4&&m.position.y>0.7);
+  const kids=b.getChildMeshes(), eyes=kids.filter(m=>m.material&&m.material.emissiveColor&&m.material.emissiveColor.b>0.4&&m.position.y>0.7);
   kids.forEach(m=>{ m.__y0=m.position.y; });
   let t=0; scene.onBeforeRenderObservable.add(()=>{ if(area!=="techlab") return; t+=engine.getDeltaTime()/1000;
     const dy=Math.sin(t*2.2)*0.025; kids.forEach(m=>{ m.position.y=m.__y0+dy; });
     const blink=((t%3.6)<0.12); eyes.forEach(e=>{ e.scaling.y=blink?0.15:1; }); });
   return r; };
+
+/* =====================================================================
+   v499 — LA SMART KITCHEN (Giacomo, 20 nov: «non sono soddisfatto del
+   robot che fa finta di fare le cose»). Bit non «esegue» piu' a parole:
+   lavora davvero, dietro il bancone della cucina nella Future Room. I 12
+   verbi del libro restano tutti (deciso con Giacomo), ma ognuno ha un
+   effetto in scena: il tablet mostra login, download, email e cloud, la
+   stampante fa uscire un foglio, il fornello si accende e i pancake
+   finiscono nel piatto, alla fine Bit pulisce il bancone. L'ordine
+   sbagliato si VEDE (accesso negato, foglio bianco che cade per terra...).
+   ⚠️ NIENTE SOPRA 1,25 m: la bacheca INVENTION OF THE WEEK sta sul muro
+   ovest a z -4,80 col bordo inferiore a 1,25, e il bancone le sta davanti.
+   Tutto quello che c'e' sopra il piano (tablet inclinato compreso, cima a
+   1,23; il pancake che salta arriva a 1,15) resta sotto quella quota:
+   dalla camera, che sta piu' in alto, la bacheca non si copre mai.
+   ===================================================================== */
+const TLK={ x:-3.30, z:-4.20 };          // centro del bancone (coordinate dell'interno)
+const TL_BIT_HOME={ x:0.00, z:-3.20 };   // la pedana di Bit
+const TLK_BEHIND=-0.95;                  // Bit lavora dietro il bancone (z locale della cucina)
+const TL_BIT_HOVER=0.36;                 // quanto si alza Bit lontano dalla pedana (testa a 1,22)
+const TLK_TAB=-0.80, TLK_COOK=0.00, TLK_PLATE=0.58, TLK_PRN=0.95;   // le postazioni (x locale)
+let TL_KIT=null, TL_BIT_BODY=null, TL_BIT_ARMS=[], TL_BIT_AT="home", TL_BIT_INTER=null, TLK_BUSY=false;
+LEXPROPS.tKitchen=function(id,o){ o=o||{};
+  const r=new BABYLON.TransformNode(id,scene), K={ root:r };
+  lpBox(r,2.40,0.86,0.80,"#e9edf0",0,0.43,0);                       // mobile
+  lpBox(r,2.46,0.05,0.84,"#2b323a",0,0.885,0);                      // piano (superficie a 0.91)
+  for(let i=0;i<5;i++) lpBox(r,0.012,0.70,0.01,"#b9c2c9",-1.2+i*0.6,0.43,0.402);   // ante
+  lpBox(r,2.30,0.025,0.01,"#6fd0e8",0,0.80,0.405,"#2f6f80");        // led sotto il piano
+  /* piano cottura: il fornello ha un materiale SUO (lpMat e' condiviso) */
+  lpBox(r,0.62,0.012,0.50,"#14181c",TLK_COOK,0.916,0.02);
+  const bm=new BABYLON.StandardMaterial("tlkBurn"+(_lpN++),scene);
+  bm.diffuseColor=BABYLON.Color3.FromHexString("#3a2420"); bm.specularColor=new BABYLON.Color3(0.05,0.05,0.05);
+  const burner=BABYLON.MeshBuilder.CreateCylinder("tlkBurner",{diameter:0.32,height:0.004,tessellation:28},scene);
+  burner.material=bm; burner.position.set(TLK_COOK,0.923,0.02); burner.parent=r; K.burnMat=bm;
+  const pan=new BABYLON.TransformNode("tlkPan",scene); pan.parent=r; pan.position.set(TLK_COOK,0.925,0.02);
+  lpCyl(pan,0.30,0.035,"#30353b",0,0.0175,0); lpCyl(pan,0.27,0.004,"#4a5058",0,0.036,0);
+  lpBox(pan,0.22,0.02,0.035,"#1b1f24",0.25,0.03,0);
+  K.cake=lpCyl(pan,0.22,0.016,"#d9a24a",0,0.046,0); K.cake.setEnabled(false);
+  /* piatto: la pila di pancake, il burro, le briciole */
+  lpCyl(r,0.27,0.014,"#f4f4f2",TLK_PLATE,0.917,0.12);
+  K.stack=[0,1,2].map(i=>{ const d=lpCyl(r,0.21,0.016,"#d9a24a",TLK_PLATE,0.932+i*0.017,0.12); d.setEnabled(false); return d; });
+  K.butter=lpBox(r,0.05,0.022,0.04,"#f6e27a",TLK_PLATE,0.986,0.12); K.butter.setEnabled(false);
+  K.crumbs=[[-0.07,0.05],[0.05,0.09],[0.09,-0.03],[-0.03,-0.08],[0.20,0.14],[-0.16,0.20],[0.28,-0.02]].map(q=>{
+    const b=lpBox(r,0.03,0.012,0.025,"#b9853a",TLK_PLATE+q[0],0.93,0.12+q[1]); b.setEnabled(false); return b; });
+  /* stampante e foglio (righe = c'e' la ricetta; senza = pagina bianca) */
+  lpBox(r,0.36,0.15,0.30,"#d7dde2",TLK_PRN,0.985,-0.14);
+  lpBox(r,0.26,0.012,0.02,"#1b2430",TLK_PRN,0.99,0.015);
+  lpBox(r,0.04,0.010,0.02,"#7fe0a8",TLK_PRN+0.12,1.062,-0.02,"#2f7f52");
+  const paper=new BABYLON.TransformNode("tlkPaper",scene); paper.parent=r;
+  lpBox(paper,0.21,0.003,0.28,"#ffffff",0,0,0);
+  K.lines=[0,1,2,3,4].map(i=>lpBox(paper,i===0?0.12:0.16,0.002,0.012,i===0?"#c0574f":"#8a939b",-0.01,0.0026,-0.09+i*0.045));
+  K.paper=paper; paper.setEnabled(false);
+  K.paperAt=function(k){ paper.position.set(TLK_PRN,0.913,-0.12+k*0.30); };
+  /* tablet inclinato: cima a 1,23 (vedi la nota sulla bacheca) */
+  const tab=new BABYLON.TransformNode("tlkTab",scene); tab.parent=r; tab.position.set(TLK_TAB,0.91,-0.12);
+  lpBox(tab,0.07,0.10,0.10,"#8a939b",0,0.05,-0.04);
+  const face=new BABYLON.TransformNode("tlkFace",scene); face.parent=tab; face.position.set(0,0.15,0); face.rotation.x=-0.50;
+  lpBox(face,0.60,0.38,0.025,"#1b2430",0,0,-0.016);
+  const dt=new BABYLON.DynamicTexture("tlkScr"+(_lpN++),{width:600,height:380},scene,true);
+  K.dt=dt; tlPlane(face,0.56,0.35,0,dt,"#16323d");
+  /* vapore, straccio, scintille, flash della foto */
+  const sm=new BABYLON.StandardMaterial("tlkSteam"+(_lpN++),scene);
+  sm.diffuseColor=new BABYLON.Color3(1,1,1); sm.emissiveColor=new BABYLON.Color3(0.85,0.85,0.85); sm.alpha=0.35;
+  K.steam=[0,1,2,3].map(i=>{ const s=BABYLON.MeshBuilder.CreateSphere("tlkSt",{diameter:0.06,segments:6},scene);
+    s.material=sm; s.parent=r; s.isPickable=false; s.setEnabled(false); return s; });
+  K.cloth=lpBox(r,0.13,0.02,0.10,"#3f8fd6",TLK_PLATE,0.93,0.05); K.cloth.setEnabled(false);
+  K.spark=[[-0.1,0.1],[0.12,0.18],[0.02,-0.06]].map(q=>{ const s=lpBox(r,0.035,0.035,0.035,"#fff4b0",TLK_PLATE+q[0],1.0,0.12+q[1],"#fff4b0");
+    s.rotation.y=Math.PI/4; s.setEnabled(false); return s; });
+  K.flash=lpCyl(r,0.14,0.02,"#ffffff",TLK_PLATE,1.12,-0.45,Math.PI/2,0,"#ffffff"); K.flash.setEnabled(false);
+  K.steamOn=false;
+  let t=0; scene.onBeforeRenderObservable.add(()=>{ if(area!=="techlab" || !K.steamOn) return;
+    t+=engine.getDeltaTime()/1000;
+    K.steam.forEach((s,i)=>{ const u=(t*0.5+i/4)%1;
+      s.position.set(TLK_COOK+Math.sin(t*2+i)*0.05,0.97+u*0.22,0.02+Math.cos(t*1.7+i)*0.04);
+      s.scaling.setAll(0.6+u*0.9); }); });
+  TL_KIT=K; tlKitDraw({ big:"Hello!", lines:["Smart Kitchen ready."] });
+  return r; };
+function tlKitBurner(on){ const K=TL_KIT; if(!K) return;
+  K.burnMat.emissiveColor=on?new BABYLON.Color3(0.95,0.32,0.10):new BABYLON.Color3(0,0,0); }
+function tlKitSteam(on){ const K=TL_KIT; if(!K) return; K.steamOn=!!on; K.steam.forEach(s=>s.setEnabled(!!on)); }
+/* lo stato FERMO della cucina: chiamato a ogni passo, cosi' dopo un
+   disastro (foglio bianco per terra, accesso negato) tutto torna com'era. */
+function tlKitProps(o){ const K=TL_KIT; if(!K) return; o=o||{};
+  K.stack.forEach(d=>d.setEnabled(!!o.cakes)); K.butter.setEnabled(!!o.cakes);
+  K.crumbs.forEach(d=>d.setEnabled(!!o.crumbs));
+  K.paper.setEnabled(!!o.paper); K.paper.rotation.set(0,0,0); K.paperAt(1);
+  K.lines.forEach(l=>l.setEnabled(true));
+  K.cake.setEnabled(false); K.cake.position.y=0.046; K.cake.rotation.x=0;
+  tlKitBurner(false); tlKitSteam(false);
+  K.cloth.setEnabled(false); K.flash.setEnabled(false); K.spark.forEach(s=>s.setEnabled(false));
+}
+/* il tablet: header, una riga grande, righe piccole, barra, foto, email */
+function tlKitDraw(o){
+  const K=TL_KIT; if(!K||!K.dt) return; o=o||{};
+  const c=K.dt.getContext(), W=600, H=380;
+  c.fillStyle=o.bad?"#3a1416":"#101a24"; c.fillRect(0,0,W,H);
+  c.fillStyle=o.bad?"#e05a4f":(o.ok?"#7fe0a8":"#6fd0e8"); c.fillRect(0,0,W,48);
+  c.textAlign="left"; c.fillStyle="#0d1b22"; c.font="bold 24px monospace";
+  c.fillText(o.hdr||"SMART KITCHEN · BIT OS",18,33);
+  c.textAlign="center";
+  let y=o.photo||o.email?0:(o.lines&&o.lines.length>2?112:132);
+  if(o.big){ c.fillStyle=o.bad?"#ffb3ab":(o.ok?"#9ff0c4":"#f6f1e2"); c.font="bold "+(o.bigPx||46)+"px sans-serif";
+    c.fillText(o.big,W/2,o.bigY||y||110); }
+  (o.lines||[]).forEach((t,i)=>{ c.fillStyle=o.bad?"#f2c4be":"#cfe6ee"; c.font=(o.linePx||29)+"px sans-serif";
+    c.fillText(t,W/2,(o.linesY||(y+58))+i*40); });
+  if(o.bar){ const B=o.bar, x0=60, w=W-120, yb=o.bar.y||300;
+    c.strokeStyle="#cfe6ee"; c.lineWidth=3; c.strokeRect(x0,yb,w,34);
+    c.fillStyle=B.col||(B.p>0.8?"#e05a4f":"#7fe0a8"); c.fillRect(x0+4,yb+4,(w-8)*Math.max(0,Math.min(1,B.p)),26);
+    if(B.label){ c.fillStyle="#cfe6ee"; c.font="bold 24px monospace"; c.fillText(B.label,W/2,yb-12); } }
+  if(o.photo) tlKitPhoto(c,o.photo.x||W/2,o.photo.y||200,o.photo.s||1);
+  if(o.email){ const E=o.email;
+    c.fillStyle="#f6f1e2"; c.fillRect(30,62,W-60,H-80);
+    c.textAlign="left"; c.font="bold 24px sans-serif"; c.fillStyle="#2b2318";
+    c.fillText("To:",48,102);
+    c.fillStyle=E.to?"#2b2318":"#fde3df"; if(!E.to){ c.fillRect(100,78,300,34); }
+    c.fillStyle=E.to?"#1f5f8a":"#c0392b"; c.font="24px sans-serif"; c.fillText(E.to||"(empty)",108,102);
+    c.fillStyle="#2b2318"; c.font="bold 24px sans-serif"; c.fillText("Subject:",48,146);
+    c.font="24px sans-serif"; c.fillText("My pancakes!",160,146);
+    c.strokeStyle="#c9c2b4"; c.lineWidth=2; c.beginPath(); c.moveTo(48,162); c.lineTo(W-48,162); c.stroke();
+    if(E.att){ c.fillStyle="#e3eef3"; c.fillRect(48,178,250,60); tlKitPhoto(c,82,210,0.32);
+      c.fillStyle="#2b2318"; c.font="22px sans-serif"; c.fillText("\u{1F4CE} pancakes.jpg",112,216); }
+    if(E.sent!=null){ const k=E.sent;
+      c.fillStyle="#3f9a45"; c.font="bold 30px sans-serif";
+      if(k>=1) c.fillText("✔ Sent!",W-200,300);
+      else { const px=60+k*(W-160), py=300-k*120;            // l'aeroplanino di carta vola via
+        c.fillStyle="#1f5f8a"; c.beginPath(); c.moveTo(px,py); c.lineTo(px+46,py+12); c.lineTo(px,py+24); c.lineTo(px+10,py+12); c.closePath(); c.fill(); } }
+    if(E.reply){ c.fillStyle="#fff4b0"; c.fillRect(48,250,W-96,62);
+      c.fillStyle="#2b2318"; c.font="bold 25px sans-serif"; c.fillText(E.reply,64,290); }
+    c.textAlign="center"; }
+  K.dt.update();
+}
+/* la foto dei pancake (anche in miniatura nell'allegato) */
+function tlKitPhoto(c,x,y,s){
+  c.save(); c.translate(x,y); c.scale(s,s);
+  c.fillStyle="#f6f1e2"; c.fillRect(-120,-80,240,160); c.strokeStyle="#cfe6ee"; c.lineWidth=6; c.strokeRect(-120,-80,240,160);
+  c.fillStyle="#ffffff"; c.beginPath(); c.ellipse(0,40,100,26,0,0,Math.PI*2); c.fill();
+  for(let i=0;i<3;i++){ c.fillStyle=i%2?"#c98e3a":"#d9a24a"; c.beginPath(); c.ellipse(0,30-i*18,74,18,0,0,Math.PI*2); c.fill(); }
+  c.fillStyle="#f6e27a"; c.fillRect(-14,-28,28,16);
+  c.restore();
+}
+
+/* ---- il motore delle scene: passi in fila, ognuno con durata e frame ----
+   s = { d:ms, start(), f(k 0..1), end() }; d puo' essere deciso in start().
+   ⚠️ Chi apre la finestra successiva lo fa nel `done` di tlKitPlay, che
+   controlla di essere ancora nella strand: chi esce dall'edificio a meta'
+   animazione non si ritrova un dialogo di Bit in mezzo alla citta'. */
+function tlSeq(steps,done){
+  let i=-1, t0=0, ob=null;
+  function next(){ i++; if(i>=steps.length){ if(ob) scene.onBeforeRenderObservable.remove(ob); ob=null; if(done) done(); return false; }
+    t0=performance.now(); try{ steps[i].start&&steps[i].start(); }catch(e){} return true; }
+  if(!next()) return;
+  ob=scene.onBeforeRenderObservable.add(()=>{
+    const s=steps[i]; const k=Math.min(1,(performance.now()-t0)/Math.max(1,s.d||1));
+    try{ s.f&&s.f(k); }catch(e){}
+    if(k>=1){ try{ s.end&&s.end(); }catch(e){} next(); } });
+}
+function tlFuncLive(){ return area==="techlab" && Quest.unit===UNIT_TECH && !!Quest.step && Quest.step.id==="func"; }
+function tlKitPlay(steps,done){
+  TLK_BUSY=true;
+  tlSeq(steps||[],()=>{ TLK_BUSY=false; if(tlFuncLive() && done) done(); });
+}
+const tlWait=ms=>({ d:ms });
+const tlDo=fn=>({ d:1, start:fn });
+/* ---- Bit si muove: coordinate LOCALI della pedana (la pedana resta) ---- */
+function tlBitSpot(lx){ return { x:TLK.x+lx-TL_BIT_HOME.x, z:TLK.z+TLK_BEHIND-TL_BIT_HOME.z }; }
+function tlAngTo(a,b){ let d=b-a; while(d>Math.PI) d-=2*Math.PI; while(d<-Math.PI) d+=2*Math.PI; return a+d; }
+function tlStepWalk(x,z,cond){ let a=null; const s={ d:1,
+  start(){ const B=TL_BIT_BODY; a=null; if(!B || (cond && !cond())){ s.d=1; return; } a={ x:B.position.x, z:B.position.z, r:B.rotation.y };
+    const dx=x-a.x, dz=z-a.z, L=Math.hypot(dx,dz); s.d=Math.max(60,L/1.1*1000);
+    a.r2=(L>0.02)?tlAngTo(a.r,Math.atan2(dx,dz)):a.r; },
+  f(k){ const B=TL_BIT_BODY; if(!B||!a) return;
+    B.position.x=a.x+(x-a.x)*k; B.position.z=a.z+(z-a.z)*k;
+    B.rotation.y=a.r+(a.r2-a.r)*Math.min(1,k*4); } }; return s; }
+function tlStepFace(ry){ let a=0; return { d:260, start(){ a=TL_BIT_BODY?TL_BIT_BODY.rotation.y:0; },
+  f(k){ if(TL_BIT_BODY) TL_BIT_BODY.rotation.y=a+(tlAngTo(a,ry)-a)*k; } }; }
+function tlStepWork(ms){ return { d:ms||900, f(k){ const w=Math.sin(k*(ms||900)/80)*0.35;
+    if(TL_BIT_ARMS[0]) TL_BIT_ARMS[0].rotation.x=-0.7+w; if(TL_BIT_ARMS[1]) TL_BIT_ARMS[1].rotation.x=-0.7-w; },
+  end(){ TL_BIT_ARMS.forEach(a=>{ if(a) a.rotation.x=0; }); } }; }
+function tlStepShake(ms){ let a=0; return { d:ms||900, start(){ a=TL_BIT_BODY?TL_BIT_BODY.rotation.y:0; },
+  f(k){ if(TL_BIT_BODY) TL_BIT_BODY.rotation.y=a+Math.sin(k*Math.PI*6)*0.35*(1-k); },
+  end(){ if(TL_BIT_BODY) TL_BIT_BODY.rotation.y=a; } }; }
+function tlStepHop(){ let y0=0; return { d:520, start(){ y0=TL_BIT_BODY?TL_BIT_BODY.position.y:0; },
+  f(k){ if(TL_BIT_BODY) TL_BIT_BODY.position.y=y0+Math.sin(k*Math.PI)*0.12; },
+  end(){ if(TL_BIT_BODY) TL_BIT_BODY.position.y=y0; } }; }
+/* si alza (up) o si posa sulla pedana; l'anello si accende solo in volo */
+function tlStepHover(up,cond){ let y0=0; const s={ d:450,
+  start(){ const B=TL_BIT_BODY; if(!B || (cond && !cond())){ s.d=1; y0=null; return; } y0=B.position.y; if(B.__ring) B.__ring.setEnabled(true); },
+  f(k){ if(TL_BIT_BODY && y0!==null) TL_BIT_BODY.position.y=y0+((up?TL_BIT_HOVER:0)-y0)*k; },
+  end(){ const B=TL_BIT_BODY; if(B && B.__ring && y0!==null && !up) B.__ring.setEnabled(false); } }; return s; }
+/* va alla postazione lx della cucina; se e' sulla pedana, prima passa dietro
+   il bancone dal lato est. ⚠️ La scelta si fa MENTRE cammina (cond), non
+   quando si compone la scena: una scena chiama tlBitGo piu' volte e alla
+   seconda Bit e' gia' in cucina. */
+function tlBitGo(lx){
+  const p=tlBitSpot(lx), q=tlBitSpot(1.70);
+  return [ tlStepHover(true,()=>TL_BIT_AT!=="kitchen"), tlStepWalk(q.x,q.z,()=>TL_BIT_AT!=="kitchen"), tlStepWalk(p.x,p.z), tlStepFace(0),
+    tlDo(()=>{ TL_BIT_AT="kitchen"; if(TL_BIT_INTER) TL_BIT_INTER.radius=2.6; }) ];
+}
+function tlBitGoHome(){
+  const q=tlBitSpot(1.70);
+  return [tlStepWalk(q.x,q.z,()=>TL_BIT_AT!=="home"), tlStepWalk(0,0), tlStepFace(0), tlStepHover(false),
+    tlDo(()=>{ TL_BIT_AT="home"; if(TL_BIT_INTER) TL_BIT_INTER.radius=2.2; })];
+}
+function tlKitReset(){
+  if(TL_BIT_BODY){ TL_BIT_BODY.position.set(0,0,0); TL_BIT_BODY.rotation.y=0; if(TL_BIT_BODY.__ring) TL_BIT_BODY.__ring.setEnabled(false); }
+  TL_BIT_ARMS.forEach(a=>{ if(a) a.rotation.x=0; });
+  TL_BIT_AT="home"; if(TL_BIT_INTER) TL_BIT_INTER.radius=2.2; TLK_BUSY=false;
+  tlKitProps({}); tlKitDraw({ big:"Hello!", lines:["Smart Kitchen ready."] });
+}
+/* ---- le scene dei tre lavori ---- */
+function tlKitCook(){ const K=TL_KIT; return [
+  ...tlBitGo(TLK_COOK),
+  tlDo(()=>{ tlKitBurner(true); tlKitDraw({ hdr:"PANCAKES · COOKING", big:"Cooking…", lines:["2 minutes each side"] }); }),
+  tlStepWork(800),
+  tlDo(()=>{ K.cake.setEnabled(true); tlKitSteam(true); }),
+  tlWait(1100),
+  { d:650, f(k){ K.cake.position.y=0.046+Math.sin(k*Math.PI)*0.18; K.cake.rotation.x=k*Math.PI*2; },
+    end(){ K.cake.position.y=0.046; K.cake.rotation.x=0; } },
+  tlWait(800),
+  { d:1100, f(k){ K.stack.forEach((d,i)=>d.setEnabled(k>(i+0.5)/3)); } },
+  tlDo(()=>{ K.cake.setEnabled(false); K.butter.setEnabled(true); tlKitBurner(false); tlKitSteam(false);
+    tlKitDraw({ ok:true, hdr:"PANCAKES · READY", big:"Ready! ✔", lines:["Three pancakes with butter."] }); }),
+  ...tlBitGo(TLK_PLATE), tlStepHop() ]; }
+function tlKitPaperOut(lines,fall){ const K=TL_KIT; return [
+  ...tlBitGo(TLK_PRN),
+  tlDo(()=>{ K.lines.forEach(l=>l.setEnabled(!!lines)); K.paper.rotation.set(0,0,0); K.paperAt(0); K.paper.setEnabled(true); }),
+  { d:1200, f(k){ K.paperAt(k); } },
+  ...(fall ? [{ d:700, f(k){ K.paper.position.set(TLK_PRN+0.1*k,0.913-0.9*k*k,0.18+0.45*k); K.paper.rotation.x=k*1.3; K.paper.rotation.z=k*0.6; } },
+              tlWait(900), tlDo(()=>{ K.paper.setEnabled(false); })] : []) ]; }
+const TLK_RECIPE={ hdr:"PANCAKES.pdf", big:"Grandma's pancakes", bigPx:40,
+  lines:["2 eggs · 200 g flour","300 ml milk · sugar","Cook 2 minutes each side."] };
+const TLK_MAIL="mum@questmail.com";
+function tlKitMemory(k){
+  if(k>=4) return { ok:true, hdr:"BIT MEMORY", big:"Memory: 12%", lines:["Free! Now I can clean."], bar:{ p:0.12, label:"12%", col:"#7fe0a8" } };
+  if(k>=3) return { hdr:"BIT MEMORY", big:"☁️ In the cloud ✔", lines:["cooking-show.mp4 · 5 min"], bar:{ p:0.98, label:"98% FULL" } };
+  if(k>=2) return { hdr:"BIT MEMORY", big:"Saved ✔", lines:["cooking-show.mp4 · 5 min"], bar:{ p:0.98, label:"98% FULL" } };
+  if(k>=1) return { hdr:"BIT MEMORY", big:"✂️ Cut ✔", lines:["cooking-show.mp4 · 5 min","(no boring part!)"], bar:{ p:0.98, label:"98% FULL" } };
+  return { hdr:"BIT MEMORY", big:"cooking-show.mp4", bigPx:40, lines:["45 minutes · 40 are boring!"], bar:{ p:0.98, label:"98% FULL" } };
+}
 
 /* ---------------------------------------------------------------------
    IL FUTURE SCANNER — schermo del muro nord. Disegna la scena corrente
@@ -62195,7 +62530,7 @@ UNIT_TECH.props=(function(){
   P.push({ prop:"tConsole", w:2.60, x:0.00, z:-6.90, yaw:0 });
   P.push({ prop:"tBench",   w:2.20, x:-3.90, z:-6.80, yaw:0, hex:"#8a6a45", maker:true });
   P.push({ prop:"tServer",  w:1.80, x: 3.90, z:-7.20, yaw:0 });
-  P.push({ prop:"tBench",   w:2.20, x:-3.30, z:-4.20, yaw:0, hex:"#6b5a42" });
+  P.push({ prop:"tKitchen", x:TLK.x, z:TLK.z, yaw:0 });    // v499: la Smart Kitchen di Bit (era un banco da lavoro)
   P.push({ prop:"tPad",     s:2.40, x: 3.30, z:-4.20, yaw:0, solid:false });
   P.push({ prop:"tBit",     x:0.00, z:-3.20, yaw:0 });
   /* i due tabelloni che restano appesi, uno per parete, dentro la Future
@@ -62265,8 +62600,10 @@ function buildTechNPCs(){
   guiLabel(anchorMesh(I.root, C.x-3.90, 1.62, C.z-6.80), "\u{1F6E0}\uFE0F MAKER BENCH", null, true, UNIT_TECH.area);
   /* BIT: interazione PERMANENTE dell'interno, non della quest — cosi'
      risponde anche a unit finita (e a chi entra solo per curiosare). */
-  addInteract({ id:"tl_bit", area:UNIT_TECH.area, radius:2.2,
-    pos:()=>new BABYLON.Vector3(C.x, 0, C.z-3.20),
+  TL_BIT_INTER=addInteract({ id:"tl_bit", area:UNIT_TECH.area, radius:2.2,
+    /* v499: segue il corpo di Bit (pedana o Smart Kitchen) */
+    pos:()=>{ if(TL_BIT_BODY){ const p=TL_BIT_BODY.getAbsolutePosition(); return new BABYLON.Vector3(p.x,0,p.z); }
+      return new BABYLON.Vector3(C.x+TL_BIT_HOME.x, 0, C.z+TL_BIT_HOME.z); },
     meshes:(TL_BIT_NODE?TL_BIT_NODE.getChildMeshes():[]),
     prompt:'Press <b>E</b> to talk to <b>Bit</b>',
     interact:tlTalkBit });
@@ -62313,6 +62650,7 @@ function tlTalkMarcus(npc){
     italian:"", buttons:[{label:"Good luck!", cls:"primary", act:()=>{}}] });
 }
 function tlTalkBit(){
+  if(TLK_BUSY){ toast("\u{1F916} Bit is busy \u2014 watch him work!"); return; }   // v499: sta facendo la scena
   if(Quest.unit===UNIT_TECH && Quest.step && Quest.step.id==="func"
      && Quest.state && Quest.state.tr && Quest.state.tr.done){ tlRunTask(); return; }
   if(Quest.unit===UNIT_TECH && Quest.step && Quest.step.id==="final"
@@ -62556,9 +62894,10 @@ function tlRunTrays(npc){
   const tr=st.tr;
   if(tr.idx>=TL_TRAYS.length){
     tr.done=true;
-    questHudSet("funzioni","\u{1F916} Now go to <b>Bit</b>, in the middle of the Future Room", Quest.i, Quest.total);
+    questHudSet("funzioni","\u{1F916} Now go to <b>Bit</b>, in the <b>Smart Kitchen</b> (Future Room)", Quest.i, Quest.total);
+    try{ tlSeq(tlBitGo(TLK_TAB)); }catch(e){}           // v499: Bit va a mettersi dietro il bancone della cucina
     DialogueBox.open({ npc, icon:"\u{1F527}", sub:"Job board \u2014 done", autoSpeak:false,
-      text:"Good. Planned jobs on the left, new jobs on the right. Now go and talk to Bit \u2014 he needs instructions.",
+      text:"Good. Planned jobs on the left, new jobs on the right. Now go to the Smart Kitchen and talk to Bit \u2014 he needs instructions.",
       italian:"Quello che era gi\u00e0 in agenda si dice con be going to, quello che decidi sul momento con will. "
         +"Adesso vai da Bit.",
       buttons:[{label:"\u2714 I'll go to Bit", cls:"primary", act:()=>{}}] });
@@ -62585,11 +62924,14 @@ function tlBitHud(){
     +((bt.k||0)+1)+"/"+(T?T.seq.length:0)+" \u2014 dai l'istruzione a <b>Bit</b>"), Quest.i, Quest.total);
 }
 function tlRunTask(){
+  if(TLK_BUSY) return;
   const st=Quest.state; st.bt=st.bt||{ idx:0, k:0, wrong:0 };
   const bt=st.bt;
+  /* v499: se Bit e' ancora sulla pedana (salto docente, rientro) prima va in cucina */
+  if(TL_BIT_AT!=="kitchen"){ tlKitPlay(tlBitGo(TLK_TAB), tlRunTask); return; }
   if(bt.idx>=TL_TASKS.length){ tlBitOrder(); return; }
   const T=TL_TASKS[bt.idx];
-  if(bt.k===0 && !bt.asked){ bt.asked=true; tlBitBrief(T); return; }
+  if(bt.k===0 && !bt.asked){ bt.asked=true; T.scene(0); tlBitBrief(T); return; }
   tlBitHud();
   const rest=T.seq.filter((a,i)=>i>=bt.k);
   const opts=shuffle(rest.slice(0, Math.min(4, rest.length)));
@@ -62604,32 +62946,40 @@ function tlBitBrief(T){
   DialogueBox.open({ name:"\u{1F916} Bit", sub:T.icon+" "+T.name, autoSpeak:true,
     text:T.ask+" Tell me what to do. One instruction at a time!",
     italian:T.it,
-    buttons:[{label:"\u2714 Ok, I'll tell you", cls:"primary", act:()=>tlRunTask()}] });
+    buttons:[{label:"\u2714 Ok, I'll tell you", cls:"primary", act:()=>tlKitPlay(T.intro?T.intro():[], tlRunTask)}] });
 }
 function tlBitDo(T,act){
   const bt=Quest.state.bt;
   const want=T.seq[bt.k];
   if(act===want){
-    bt.wrong=0; bt.k++;
-    toast("\u2713 Bit: \u201c"+act+"\u201d \u2014 done!");
-    if(bt.k>=T.seq.length){
+    bt.wrong=0;
+    /* v499: prima Bit lo FA (la scena), poi si va avanti */
+    tlKitPlay(T.act[act](), ()=>{
+      bt.k++; T.scene(bt.k);
+      toast("\u2713 Bit: \u201c"+act+"\u201d \u2014 done!");
+      if(bt.k<T.seq.length){ setTimeout(tlRunTask, 320); return; }
       const last=(bt.idx>=TL_TASKS.length-1);
-      DialogueBox.open({ name:"\u{1F916} Bit", sub:T.icon+" "+T.name+" \u2014 finished", autoSpeak:true,
-        text:"Perfect order! "+T.seq.join(", then ")+". I like clear people.",
-        italian:"",
-        buttons:[{ label:(last?"\u2714 Ultimo lavoro":"\u25b6\ufe0e Prossimo lavoro"), cls:"primary",
-          act:()=>{ bt.idx++; bt.k=0; bt.asked=false; setTimeout(tlRunTask, 260); } }] });
-      return;
-    }
-    setTimeout(tlRunTask, 320);
+      tlKitPlay(T.payoff?T.payoff():[], ()=>{
+        DialogueBox.open({ name:"\u{1F916} Bit", sub:T.icon+" "+T.name+" \u2014 finished", autoSpeak:true,
+          text:T.done||("Perfect order! "+T.seq.join(", then ")+". I like clear people."),
+          italian:"",
+          buttons:[{ label:(last?"\u2714 Ultimo lavoro":"\u25b6\ufe0e Prossimo lavoro"), cls:"primary",
+            act:()=>{ bt.idx++; bt.k=0; bt.asked=false; setTimeout(tlRunTask, 260); } }] });
+      });
+    });
   } else {
     bt.wrong++;
-    const gag=(T.gag&&T.gag[act])||("\u274C Bit does \u201c"+act+"\u201d. Nothing works. \u201cWrong order!\u201d");
+    const g=T.gag?T.gag(act,bt.k):"";
+    const gag=g||("\u274C Bit does \u201c"+act+"\u201d. Nothing works. \u201cWrong order!\u201d");
     let it=null;
     if(bt.wrong>=2) it="\ud83d\udca1 Prova con: "+want+" ("+((TL_ACTS[want]&&TL_ACTS[want].it)||"")+").";
-    DialogueBox.open({ name:"\u{1F916} Bit", sub:"Disaster!", autoSpeak:true,
-      text:gag, italian:it||"Bit esegue alla lettera: rimetti le istruzioni nell'ordine giusto.",
-      buttons:[{label:"\u21a9\ufe0e Try again", cls:"primary", act:()=>setTimeout(tlRunTask, 200)}] });
+    /* v499: il disastro si VEDE (accesso negato, foglio bianco per terra...),
+       poi Bit lo commenta; «Try again» rimette la cucina com'era */
+    tlKitPlay(T.bad?T.bad(act,bt.k):[], ()=>{
+      DialogueBox.open({ name:"\u{1F916} Bit", sub:"Disaster!", autoSpeak:true,
+        text:gag, italian:it||"Bit esegue alla lettera: rimetti le istruzioni nell'ordine giusto.",
+        buttons:[{label:"\u21a9\ufe0e Try again", cls:"primary", act:()=>{ T.scene(bt.k); setTimeout(tlRunTask, 200); }}] });
+    });
   }
 }
 /* la frase-istruzione, UNA sola per tutta la strand: Bit la impara. */
@@ -62643,11 +62993,13 @@ function tlBitOrder(){
       onCheck:(w)=>{ if(w.join(" ")===TL_ORDER_TOKENS.join(" ")) return {ok:true,msg:"\u2713 Bit: \u201cSaved!\u201d"};
         return {ok:false,msg:"Riprova: prima First, poi then \u2014 e i verbi restano all'imperativo."}; },
       onSuccess:()=>{ setTimeout(()=>{ DialogueBox.close();
+        try{ tlSeq(tlBitGoHome()); }catch(e){}         // v499: lavoro finito, Bit torna alla pedana
         Quest.complete("\u{1F916} Funzioni completate! Dare istruzioni \u2713"); }, 420); } },
     buttons:[] });
 }
 MECH.robotInstructions=function(s){
   buildTechNPCs(); if(!TL_NPC.ito){ mechStub(s); return; }
+  try{ tlKitReset(); }catch(e){}                         // v499: cucina pulita, Bit sulla pedana
   questHudSet("funzioni","\u{1F5C2}\uFE0F Go to <b>Dr. Ito</b>, at the counter: there's the job board",
     Quest.i, Quest.total);
 };
