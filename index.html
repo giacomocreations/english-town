@@ -9270,6 +9270,7 @@ function buildRoundabout(cx,cz,rApr,rIsl,withTree){
 const _PED_ROAD={ t:0, x:1e9, z:1e9, on:false };
 const _PED_ROAD_RE=/^(roadm|lnm|cwm)/;
 function pedOnCarriageway(){
+  if((typeof SKY!=="undefined" && SKY.on) || (typeof AUTO!=="undefined" && AUTO.on)) return false;   // v500: in un veicolo non si e' pedoni
   const px=player.position.x, pz=player.position.z, now=performance.now();
   if(now-_PED_ROAD.t<120 && Math.abs(px-_PED_ROAD.x)<0.25 && Math.abs(pz-_PED_ROAD.z)<0.25) return _PED_ROAD.on;
   _PED_ROAD.t=now; _PED_ROAD.x=px; _PED_ROAD.z=pz;
@@ -9894,6 +9895,7 @@ function buildTraffic(){
    scostare, e scostarlo suonerebbe comunque il clacson. */
 function _trafficNudge(c){
   if(!townOpen()) return false;
+  if((typeof SKY!=="undefined" && SKY.on) || (typeof AUTO!=="undefined" && AUTO.on)) return false;   // v500
   if(area!=="town") return false;
   const px=player.position.x, pz=player.position.z;
   if(Math.abs(px-c.root.position.x)>6||Math.abs(pz-c.root.position.z)>6) return false;
@@ -25787,6 +25789,7 @@ const QuestNudge=(function(){
   }
   function occupato(){
     if(document.hidden) return true;
+    try{ if((typeof SKY!=="undefined" && SKY.on) || (typeof AUTO!=="undefined" && AUTO.on)) return true; }catch(e){}   // v500: in volo / in auto c'e' il pannello del veicolo
     if(typeof started!=="undefined" && !started) return true;
     const qm=document.getElementById("quest-modal");
     if(qm && qm.classList.contains("show")) return true;    // dialogo o esercizio aperto: sta lavorando
@@ -26124,6 +26127,8 @@ qcompass.box.addEventListener("click", function(e){
 /* la ricerca si rifa' tre volte al secondo, la posizione a ogni fotogramma */
 const QC={ t:-1e9, get:null };
 function updateQuestCompass(){
+  /* v500: in volo e in auto la bussola indicherebbe una meta a terra che non c'entra */
+  if((typeof SKY!=="undefined" && SKY.on) || (typeof AUTO!=="undefined" && AUTO.on)){ qcompass.box.classList.remove("show"); return; }
   const ora=performance.now();
   if(ora-QC.t>300){ QC.t=ora; QC.get=null; try{ QC.get=qcFindTarget(); }catch(e){ QC.get=null; } }
   /* DUE sorgenti: lo step della quest (prioritaria) e la meta generica NAV
@@ -53813,6 +53818,7 @@ let moveTarget=null, pendingInteract=null, started=false;
 scene.onPointerObservable.add(pi=>{
   if(pi.type!==BABYLON.PointerEventTypes.POINTERTAP||!started) return;
   if(typeof SHOW!=="undefined" && SHOW.seated) return;
+  if((typeof SKY!=="undefined" && SKY.on) || (typeof AUTO!=="undefined" && AUTO.on)){ try{ _dlgOkAdvance(); }catch(e){} return; }   // v500: in volo / in auto il clic non fa camminare
   if(typeof _dlgOpen==="function" && _dlgOpen()){              // v301: col popup aperto il tocco sullo schermo non fa camminare (si gira solo la visuale)
     try{ _dlgOkAdvance(); }catch(e){}                          // ...ma un messaggio con il solo OK va avanti (vedi okSolo)
     return; }
@@ -62979,6 +62985,158 @@ function tlSkyBuild(){
 }
 /* camera dietro la nave: alpha dalla direzione in cui guarda */
 function tlSkyCamAlpha(face){ return Math.atan2(-Math.cos(face),-Math.sin(face)); }
+/* =====================================================================
+   v500 — SKY-1 SI PILOTA (Giacomo, 21 nov: «il volo rendi possibile
+   muoverla con mouse o tastiera»; «non mettere due domande una dietro
+   l'altra»; «la frase ha un buco e la risposta la scelgono indirizzando
+   la flying car sull'opzione giusta che appare nel cielo, luminosa»).
+   Una sola domanda per fermata. La frase compare in alto col buco; nel
+   cielo, alla fermata, tre anelli luminosi con le parole: si vola dentro
+   quello giusto. L'indizio dice la certezza (Marcus e' SICURO / Yuki NON
+   e' sicura / Dr. Ito dice NO / fai una domanda), quindi c'e' davvero
+   una risposta giusta: will, might, won't, Will...?
+   Comandi: W/↑ piu' veloce, S/↓ piu' piano, A/D o ←/→ gira, Spazio su,
+   Shift giu'; oppure tieni premuto il mouse (o il dito) e trascina; la
+   levetta su tablet. Vicino agli anelli la quota si aggiusta da sola:
+   basta sterzare. Il traffico sotto non vede il giocatore (il corpo resta
+   nascosto fuori strada, AUTO_HIDE; e pedOnCarriageway tace in volo).
+   ===================================================================== */
+const SKY_QS=[
+  { key:"transport", where:"the station", cue:"\u{1F60E} Marcus is SURE.", before:"In 2050, cars", after:"fly over the city.",
+    opts:["will","might","won't"], ok:"will", it:"Marcus è sicuro: si usa will.",
+    say:"Ha! I'm sure. And look — you're flying one right now!" },
+  { key:"homes", where:"High Street", cue:"\u{1F914} Yuki is NOT SURE.", before:"In 2050, robots", after:"cook our meals.",
+    opts:["will","might","won't"], ok:"might", it:"Yuki non è sicura: may o might.",
+    say:"Maybe! Bit can already cook pancakes." },
+  { key:"school", where:"the Town School", cue:"\u{1F645} Dr. Ito says NO.", before:"In 2050, teachers", after:"be robots.",
+    opts:["will","may","won't"], ok:"won't", it:"Dr. Ito dice di no: la negativa di will è won't.",
+    say:"Phew! Good news for teachers." },
+  { key:"space", where:"up into the sky", cue:"❓ Ask Marcus a question.", before:"", after:"people live on Mars?",
+    opts:["Will","Do","Are"], ok:"Will", it:"La domanda con will comincia da Will.",
+    say:"They might! Nobody knows. That's why I build things." } ];
+const SKY_PTR={ on:false, x0:0, y0:0, x:0, y:0 };
+(function(){ const cv=document.getElementById("rc")||document.querySelector("canvas"); if(!cv) return;
+  cv.addEventListener("pointerdown",e=>{ if(!(SKY.on&&SKY.free)) return; SKY_PTR.on=true; SKY_PTR.x0=SKY_PTR.x=e.clientX; SKY_PTR.y0=SKY_PTR.y=e.clientY; });
+  window.addEventListener("pointermove",e=>{ if(!SKY_PTR.on) return; SKY_PTR.x=e.clientX; SKY_PTR.y=e.clientY; });
+  window.addEventListener("pointerup",()=>{ SKY_PTR.on=false; });
+  window.addEventListener("pointercancel",()=>{ SKY_PTR.on=false; }); })();
+function tlSkyQ(){ return SKY_QS[SKY.qi]||null; }
+function tlSkyStop(q){ return q?SKY_STOPS[q.key]:null; }
+/* il pannello in alto: dove andare, la frase col buco, i comandi */
+function tlSkyUi(on){
+  if(on){ if(!SKY.ui){ const d=document.createElement("div");
+      d.style.cssText="position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:30;background:rgba(14,22,30,.88);"
+        +"color:#e6f6fb;border:1px solid #2f6f80;border-radius:14px;padding:8px 16px;font:15px/1.4 system-ui,sans-serif;"
+        +"pointer-events:none;text-align:center;max-width:min(620px,90vw);";
+      document.body.appendChild(d); SKY.ui=d; } SKY.ui.style.display=""; }
+  else if(SKY.ui) SKY.ui.style.display="none";
+}
+function tlSkyUiDraw(dist,rel){
+  if(!SKY.ui) return; const q=tlSkyQ(); if(!q){ SKY.ui.innerHTML="\u{1F6EC} SKY-1 is landing…"; return; }
+  const gap=SKY.solved?'<b style="color:#9ff0c4">'+_escHtml(q.ok)+'</b>':'<b style="color:#f2c93e">___</b>';
+  const arrow=SKY.gates.length?"\u{1F3AF}":'<span style="display:inline-block;transform:rotate('+Math.round(rel*180/Math.PI)+'deg)">⬆️</span>';
+  SKY.ui.innerHTML='<div style="font-size:13px;opacity:.85">\u{1F6F8} SKY-1 · stop '+(SKY.qi+1)+'/'+SKY_QS.length+' · '
+      +(SKY.gates.length?"fly through the right word!":"fly to "+_escHtml(q.where)+" "+arrow+" "+Math.round(dist)+" m")+'</div>'
+    +'<div style="font-weight:700;margin-top:2px">'+_escHtml(q.cue)+' “'+(q.before?_escHtml(q.before)+" ":"")+gap+" "+_escHtml(q.after)+'”</div>'
+    +'<div style="font-size:12px;opacity:.7;margin-top:2px">W/S speed · A/D turn · Space/Shift up/down · or drag with the mouse</div>';
+}
+/* la colonna di luce sulla fermata: si vede da lontano */
+function tlSkyBeacon(S){
+  if(SKY.beacon){ try{ SKY.beacon.dispose(); }catch(e){} SKY.beacon=null; }
+  if(!S) return;
+  const m=new BABYLON.StandardMaterial("skyBm"+(_lpN++),scene);
+  m.diffuseColor=new BABYLON.Color3(0.4,0.85,0.95); m.emissiveColor=new BABYLON.Color3(0.35,0.8,0.92); m.alpha=0.28; m.backFaceCulling=false;
+  const b=BABYLON.MeshBuilder.CreateCylinder("skyBeacon",{ diameter:2.2, height:140, tessellation:16 },scene);
+  b.material=m; b.parent=townRoot; b.position.set(S.x,70,S.z); b.isPickable=false; SKY.beacon=b;
+}
+/* i tre anelli con le parole, in fila, di fronte a chi arriva */
+function tlSkyGates(q,S){
+  tlSkyGatesOff();
+  const ship=SKY.ship, dx=S.x-ship.position.x, dz=S.z-ship.position.z, h=Math.atan2(dx,dz);
+  const rx=Math.cos(h), rz=-Math.sin(h);                              // la destra di chi arriva
+  const opts=shuffle(q.opts.slice());
+  opts.forEach((w,i)=>{ const off=(i-1)*9.5, c=new BABYLON.Vector3(S.x+rx*off, S.y, S.z+rz*off);
+    const root=new BABYLON.TransformNode("skyGate",scene); root.parent=townRoot; root.position.copyFrom(c); root.rotation.y=h;
+    const mt=new BABYLON.StandardMaterial("skyGm"+(_lpN++),scene);
+    mt.diffuseColor=new BABYLON.Color3(0.95,0.8,0.25); mt.emissiveColor=new BABYLON.Color3(0.95,0.78,0.22);
+    const ring=BABYLON.MeshBuilder.CreateTorus("skyRing",{ diameter:6.4, thickness:0.55, tessellation:36 },scene);
+    ring.material=mt; ring.parent=root; ring.rotation.x=Math.PI/2; ring.isPickable=false;
+    const dt=new BABYLON.DynamicTexture("skyW"+(_lpN++),{ width:512, height:160 },scene,true);
+    const cx=dt.getContext(); cx.fillStyle="#0e161e"; cx.fillRect(0,0,512,160); cx.strokeStyle="#f2c93e"; cx.lineWidth=10; cx.strokeRect(5,5,502,150);
+    cx.fillStyle="#ffffff"; cx.font="bold 96px sans-serif"; cx.textAlign="center"; cx.textBaseline="middle"; cx.fillText(w,256,84); dt.update();
+    const lm=new BABYLON.StandardMaterial("skyLm"+(_lpN++),scene); lm.diffuseTexture=dt; lm.emissiveColor=new BABYLON.Color3(1,1,1); lm.disableLighting=true; lm.backFaceCulling=false;
+    /* la parola DENTRO l'anello: sopra finiva tagliata dietro i riquadri in
+       alto (visto a schermo), e cosi' si vola proprio attraverso la parola */
+    const lab=BABYLON.MeshBuilder.CreatePlane("skyLab",{ width:4.4, height:1.38 },scene);
+    lab.material=lm; lab.parent=root; lab.position.y=0; lab.billboardMode=BABYLON.Mesh.BILLBOARDMODE_ALL; lab.isPickable=false;
+    SKY.gates.push({ root, mt, word:w, c, cool:0 }); });
+}
+function tlSkyGatesOff(){ (SKY.gates||[]).forEach(g=>{ try{ g.root.dispose(false,true); }catch(e){} }); SKY.gates=[]; }
+function tlSkyGateColor(g,r,gr,b){ g.mt.emissiveColor.set(r,gr,b); g.mt.diffuseColor.set(r,gr,b); }
+function tlSkyHit(g){
+  const q=tlSkyQ(); if(!q || SKY.solved) return;
+  if(g.word===q.ok){
+    SKY.solved=true; tlSkyGateColor(g,0.35,0.95,0.55);
+    SKY.gates.forEach(o=>{ if(o!==g) o.root.setEnabled(false); });
+    const full=(q.before?q.before+" ":"")+q.ok+" "+q.after;
+    toast("✓ “"+full.charAt(0).toUpperCase()+full.slice(1)+"”");
+    try{ TTS.say(full+" … "+q.say,{ gender:"m" }); }catch(e){}
+    try{ SFX.correct(); }catch(e){}
+    setTimeout(()=>{ if(!SKY.on) return; tlSkyGatesOff(); SKY.qi++; SKY.solved=false;
+      const n=tlSkyQ(); tlSkyBeacon(tlSkyStop(n));
+      if(!n){ SKY.free=false; tlSkyUiDraw(0,0); tlSkyBeacon(null); tlGramDone(); } }, 2200);
+  } else {
+    g.cool=2.5; tlSkyGateColor(g,0.95,0.25,0.2);
+    try{ SFX.wrong(); }catch(e){}
+    toast("❌ Not “"+g.word+"” — "+q.it);
+  }
+}
+/* il volo libero (al posto della vecchia tlSkyTick a fermate) */
+function tlSkyFree(){
+  SKY.free=true; SKY.flying=false; SKY.qi=0; SKY.solved=false; SKY.gates=[]; SKY.v=9; SKY.turn=0;
+  SKY.ay=Math.max(SKY.ship.position.y+6, 26);
+  tlSkyBeacon(tlSkyStop(tlSkyQ())); tlSkyUi(true);
+  try{ document.getElementById("quest-nudge").classList.remove("show"); }catch(e){}
+  questHudSet("grammatica", HOBJ("\u{1F6F8} Fly <b>SKY-1</b> and fly through the right word: <i>will \u00b7 may \u00b7 might \u00b7 won't</i>",
+    "\u{1F6F8} Pilota <b>SKY-1</b> e vola dentro la parola giusta"), Quest.i, Quest.total);
+}
+function tlSkyFly(dt){
+  const ship=SKY.ship, K=keys;
+  /* l'input: tastiera + mouse/dito trascinato + levetta */
+  let turn=(K["a"]||K["arrowleft"]?-1:0)+(K["d"]||K["arrowright"]?1:0);
+  let climb=(K[" "]?1:0)-(K["shift"]||K["shiftleft"]||K["shiftright"]?1:0);
+  let acc=(K["w"]||K["arrowup"]?1:0)-(K["s"]||K["arrowdown"]?1:0);
+  if(SKY_PTR.on){ turn+=Math.max(-1,Math.min(1,(SKY_PTR.x-SKY_PTR.x0)/140)); climb+=Math.max(-1,Math.min(1,-(SKY_PTR.y-SKY_PTR.y0)/140)); }
+  try{ if(stickVec.x||stickVec.y){ turn+=stickVec.x; acc+=-stickVec.y; } }catch(e){}
+  turn=Math.max(-1,Math.min(1,turn)); climb=Math.max(-1,Math.min(1,climb));
+  SKY.v=Math.max(4,Math.min(18,SKY.v+acc*7*dt+(acc===0?(9-SKY.v)*0.3*dt:0)));
+  /* fuori dalla citta' si torna indietro da soli, piano */
+  const cx=10, cz=-30, ox=ship.position.x-cx, oz=ship.position.z-cz, far=Math.hypot(ox,oz);
+  if(far>230){ const back=Math.atan2(-ox,-oz); turn+=Math.max(-1,Math.min(1,(tlAngTo(SKY.face,back)-SKY.face)*1.5)); turn=Math.max(-1,Math.min(1,turn)); }
+  SKY.turn+=(turn-SKY.turn)*Math.min(1,dt*5);
+  SKY.face+=SKY.turn*1.35*dt;
+  /* quota: comandata, ma vicino agli anelli si porta da sola alla loro altezza */
+  const q=tlSkyQ(), S=tlSkyStop(q);
+  const dS=S?Math.hypot(S.x-ship.position.x,S.z-ship.position.z):1e9;
+  if(climb!==0) SKY.ay+=climb*9*dt;
+  else if(S && dS<90) SKY.ay+=(S.y-SKY.ay)*Math.min(1,dt*1.6);
+  SKY.ay=Math.max(9,Math.min(95,SKY.ay));
+  const fx=Math.sin(SKY.face), fz=Math.cos(SKY.face);
+  ship.position.x+=fx*SKY.v*dt; ship.position.z+=fz*SKY.v*dt;
+  const vy=(SKY.ay-ship.position.y)*Math.min(1,dt*2.2);
+  ship.position.y+=vy;
+  ship.rotation.y=SKY.face;
+  ship.rotation.z+=((-SKY.turn*0.38)-ship.rotation.z)*Math.min(1,dt*4);
+  ship.rotation.x+=((-vy/Math.max(dt,0.001)*0.03)-ship.rotation.x)*Math.min(1,dt*4);
+  ship.rotation.x=Math.max(-0.3,Math.min(0.3,ship.rotation.x));
+  /* gli anelli compaiono a 70 m dalla fermata */
+  if(S && !SKY.gates.length && !SKY.solved && dS<70) tlSkyGates(q,S);
+  SKY.gates.forEach(g=>{ if(g.cool>0){ g.cool-=dt; if(g.cool<=0) tlSkyGateColor(g,0.95,0.78,0.22); return; }
+    if(!SKY.solved && BABYLON.Vector3.Distance(ship.position,g.c)<3.6) tlSkyHit(g); });
+  /* il pannello: freccia relativa a dove punta il muso */
+  const rel=S?tlAngTo(0,Math.atan2(S.x-ship.position.x,S.z-ship.position.z)-SKY.face):0;
+  SKY.uiT=(SKY.uiT||0)+dt; if(SKY.uiT>0.2){ SKY.uiT=0; tlSkyUiDraw(dS,rel); }
+}
 function tlSkyStart(){
   if(SKY.on) return;
   try{ povSet(false,true); }catch(e){}
@@ -63004,10 +63162,11 @@ function tlSkyStart(){
     SKY.t=0; SKY.idle=0;
     SKY.obs=scene.onBeforeRenderObservable.add(tlSkyTick);
     finFade(0,800,function(){
+      SKY.phase="intro";
       DialogueBox.open({ npc:TL_NPC.marcus, icon:"\u{1F9D1}‍\u{1F4BB}", sub:"SKY-1 · flying car prototype", autoSpeak:true,
-        text:"Welcome to SKY-1! No wheels, no roads. Today the Future Scanner is up in the sky — look at QuestTown and tell me about 2050!",
-        italian:"Sei sull'auto volante del TechLab, con Marcus. Ad ogni fermata guardi la città e fai la tua previsione sul 2050.",
-        buttons:[{ label:"\u{1F680} Let's fly!", cls:"primary", act:()=>{ SKY.flying=false; tlRunScanner(); } }] });
+        text:"Welcome to SKY-1! Today YOU fly it. Follow the light, read the sentence, and fly through the right word!",
+        italian:"Piloti tu: W/S più veloce o più piano, A/D (o ← →) per girare, Spazio/Shift su e giù — oppure tieni premuto il mouse e trascina. Segui la colonna di luce: alla fermata compaiono tre anelli con le parole, vola dentro quella giusta.",
+        buttons:[{ label:"\u{1F680} Let's fly!", cls:"primary", act:()=>{ SKY.phase="fly"; tlSkyFree(); } }] });
     });
   });
 }
@@ -63020,21 +63179,23 @@ function tlSkyTick(){
   const dt=Math.min(0.05,engine.getDeltaTime()/1000); SKY.t+=dt;
   const ship=SKY.ship;
   if(!(Quest.unit===UNIT_TECH && Quest.step && Quest.step.id==="gram")){ tlSkyEnd(null,true); return; }
-  if(!SKY.flying){
+  if(SKY.free) tlSkyFly(dt);                                   // v500: pilota lo studente
+  else if(!SKY.flying){
     if(SKY.base) ship.position.y=SKY.base+Math.sin(SKY.t*1.8)*0.14;
     ship.rotation.z=Math.sin(SKY.t*1.1)*0.025;
-    if(!_dlgOpen()){ SKY.idle+=dt; if(SKY.idle>1.6){ SKY.idle=0; try{ tlRunScanner(); }catch(e){} } }
-    else SKY.idle=0;
+    /* l'introduzione chiusa con Esc: si parte lo stesso */
+    if(SKY.phase==="intro" && !_dlgOpen()){ SKY.idle+=dt; if(SKY.idle>1.2){ SKY.idle=0; SKY.phase="fly"; tlSkyFree(); } }
   }
   const k=0.75+0.25*Math.sin(SKY.t*9);
   if(SKY.thrMat) SKY.thrMat.emissiveColor.set(0.44*k,0.82*k,0.91*k);
   /* camera: dietro, un po' sopra; alla fermata SPACE da sotto, verso il cielo */
   const st=SKY.at&&SKY_STOPS[SKY.at];
-  const wa=tlSkyCamAlpha(SKY.face)+(SKY.flying?0:0.35+Math.sin(SKY.t*0.15)*0.25);
+  const moving=SKY.flying||SKY.free;
+  const wa=tlSkyCamAlpha(SKY.face)+(moving?0:0.35+Math.sin(SKY.t*0.15)*0.25);
   /* alla fermata si guarda GIU' sulla citta' (piu' alti e piu' lontani),
      in volo da dietro; a SPACE da sotto, verso il cielo */
-  const wb=(!SKY.flying && st && st.up)?1.78:(SKY.flying?1.18:0.92);
-  const wr=SKY.flying?11:13;
+  const wb=SKY.free?1.24:(!SKY.flying && st && st.up)?1.78:(SKY.flying?1.18:0.92);
+  const wr=SKY.free?12:SKY.flying?11:13;
   const f=1-Math.exp(-dt*2.2);
   const wa2=tlAngTo(camera.alpha,wa); camera.alpha+=(wa2-camera.alpha)*f;
   camera.beta+=(wb-camera.beta)*f; camera.radius+=(wr-camera.radius)*f;
@@ -63087,6 +63248,8 @@ function tlSkyEnd(cb,abort){
   SKY.flying=true;
   const fin=function(){
     if(SKY.obs){ scene.onBeforeRenderObservable.remove(SKY.obs); SKY.obs=null; }
+    SKY.free=false; SKY_PTR.on=false;                     // v500
+    try{ tlSkyGatesOff(); tlSkyBeacon(null); tlSkyUi(false); }catch(e){}
     try{ if(SKY.ship) SKY.ship.dispose(false,true); }catch(e){} SKY.ship=null;
     const c=SKY.cam;
     if(SKY.fog){ scene.fogStart=SKY.fog.s; scene.fogEnd=SKY.fog.e; }
