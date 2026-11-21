@@ -9381,13 +9381,13 @@ function _loopSpeedLimit(loop,seg){
    Non c'e' abbastanza rettilineo?»). Proprio cosi': il rettilineo piu'
    lungo della citta' e' di ~100 m e il traffico frena prima delle curve a
    3,5 m/s2 come un'auto qualunque, quindi il massimo era 100 km/h
-   (misurato sui giri). TURBO-1 di fretta ha i FRENI DA SUPERCAR: 16 m/s2
+   (misurato sui giri). TURBO-1 di fretta ha i FRENI DA SUPERCAR: 20 m/s2
    (e un filo di piu' in curva, 7 m/s2): al centro del rettilineo tocca i
    200-210 km/h e frena in tempo per la rotonda. Vede anche piu' lontano
    semafori e arrivo (vedi c.fast nel giro del traffico). */
 function _loopSpeedLimitFast(loop){
   if(loop.vlimF) return loop.vlimF;
-  const N=loop.length, seg=loop.seg, V=new Float32Array(N), AL=7.0, DEC=16;
+  const N=loop.length, seg=loop.seg, V=new Float32Array(N), AL=7.0, DEC=20;   // 16 bastava sulla carta (210) ma l'accelerazione morbida arrivava a 190: 20 -> si toccano i 200
   for(let i=0;i<N;i++){
     const a=loop[(i-3+N)%N], b=loop[i], c=loop[(i+3)%N];
     const ab=Math.hypot(b[0]-a[0],b[1]-a[1]), bc=Math.hypot(c[0]-b[0],c[1]-b[1]), ac=Math.hypot(c[0]-a[0],c[1]-a[1]);
