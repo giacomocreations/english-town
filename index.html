@@ -42710,20 +42710,33 @@ const SFX=(function(){
      «quando vai super veloce si sentono i freni nella curva»). Due toni
      acuti che oscillano (il fischio) + fruscio passa-banda (lo strisciare),
      ~0,9 s con rampa di uscita. k 0..1 = quanto e' forte. */
+  /* v503 (Giacomo: «il suono della frenata non va bene, cambialo»). Prima
+     erano due oscillatori a dente di sega: ronzava come un clacson rotto.
+     Ora e' fatto di RUMORE, come le gomme vere: fruscio passato in tre
+     filtri strettissimi (il fischio della gomma che slitta, ~1-2 kHz) che
+     scivolano un po' in giu' e tremano a caso, piu' lo «strisciare» largo
+     e un colpo sordo all'inizio (il peso che va avanti). Piu' basso di
+     volume e mai due volte in 1,8 s. */
   let scLast=0;
   function screech(k){
-    const c=ready(); if(!c) return; const now=c.currentTime; if(now-scLast<1.1) return; scLast=now;
-    const g0=lvl()*Math.max(0.3,Math.min(1,k||1)), T=0.9;
-    const out=c.createGain(); out.gain.setValueAtTime(0,now); out.gain.linearRampToValueAtTime(0.16*g0,now+0.06);
-    out.gain.setValueAtTime(0.16*g0,now+T*0.6); out.gain.linearRampToValueAtTime(0,now+T); out.connect(master);
-    [1180,1730].forEach((f,i)=>{ const o=c.createOscillator(); o.type="sawtooth"; o.frequency.setValueAtTime(f,now);
-      o.frequency.linearRampToValueAtTime(f*0.86,now+T);
-      const lfo=c.createOscillator(), lg=c.createGain(); lfo.frequency.value=13+i*4; lg.gain.value=f*0.04; lfo.connect(lg); lg.connect(o.frequency);
-      const bp=c.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=f; bp.Q.value=6;
-      const v=c.createGain(); v.gain.value=i?0.35:0.55; o.connect(bp); bp.connect(v); v.connect(out);
-      o.start(now); lfo.start(now); o.stop(now+T+0.05); lfo.stop(now+T+0.05); });
-    const n=c.createBufferSource(); n.buffer=noise; const nb=c.createBiquadFilter(); nb.type="bandpass"; nb.frequency.value=2600; nb.Q.value=1.2;
-    const nv=c.createGain(); nv.gain.value=0.5; n.connect(nb); nb.connect(nv); nv.connect(out); n.start(now,Math.random()*0.4); n.stop(now+T+0.05);
+    const c=ready(); if(!c) return; const now=c.currentTime; if(now-scLast<1.8) return; scLast=now;
+    const g0=lvl()*Math.max(0.35,Math.min(1,k||1)), T=0.75+0.35*Math.random();
+    const out=c.createGain(); out.gain.setValueAtTime(0.0001,now); out.gain.exponentialRampToValueAtTime(0.11*g0,now+0.05);
+    out.gain.setValueAtTime(0.11*g0,now+T*0.55); out.gain.exponentialRampToValueAtTime(0.0001,now+T); out.connect(master);
+    const src=c.createBufferSource(); src.buffer=noise; src.loop=true;
+    [[1050,22,0.9],[1580,26,0.55],[2250,30,0.3]].forEach(q=>{
+      const bp=c.createBiquadFilter(); bp.type="bandpass"; bp.Q.value=q[1];
+      const f0=q[0]*(0.92+0.16*Math.random());
+      bp.frequency.setValueAtTime(f0,now); bp.frequency.linearRampToValueAtTime(f0*0.84,now+T);
+      const lfo=c.createOscillator(), lg=c.createGain(); lfo.type="triangle"; lfo.frequency.value=5+Math.random()*4; lg.gain.value=f0*0.025;
+      lfo.connect(lg); lg.connect(bp.frequency); lfo.start(now); lfo.stop(now+T+0.05);
+      const v=c.createGain(); v.gain.value=q[2]*3.2; src.connect(bp); bp.connect(v); v.connect(out); });
+    const wide=c.createBiquadFilter(); wide.type="bandpass"; wide.frequency.value=900; wide.Q.value=0.8;
+    const wv=c.createGain(); wv.gain.value=0.18; src.connect(wide); wide.connect(wv); wv.connect(out);
+    src.start(now,Math.random()*0.5); src.stop(now+T+0.05);
+    /* il colpo sordo */
+    const th=c.createOscillator(), tg=c.createGain(); th.type="sine"; th.frequency.setValueAtTime(70,now); th.frequency.exponentialRampToValueAtTime(38,now+0.18);
+    tg.gain.setValueAtTime(0.06*g0,now); tg.gain.exponentialRampToValueAtTime(0.0001,now+0.22); th.connect(tg); tg.connect(master); th.start(now); th.stop(now+0.25);
   }
   const WIND_SOGLIA=0.62, WIND_MAX=0.055;
   let gSrc=null, gVol=null, gLp=null, gLast=-1;
@@ -63907,14 +63920,24 @@ function tlAutoCabin(C,E){
   box(0.46,0.006,0.14,black,hx,D+0.004,zW-0.12);
   [zW-0.19,zW-0.05].forEach(z=>box(0.46,0.008,0.012,led,hx,D+0.008,z));
   /* le porte: pelle scura, inserto panna trapuntato, bracciolo, LED sulla cintura e in basso */
-  [-1,1].forEach(sd=>{ const x=sd*W;
-    box(0.06,B-F,zW-zRW-0.2,dark,x,(B+F)/2,(zW+zRW)/2-0.1);
-    box(0.02,0.24,0.95,cream,x-sd*0.035,B-0.20,0.05);
-    box(0.02,0.22,0.70,cream,x-sd*0.035,B-0.20,-0.85);
-    box(0.10,0.05,0.62,cognac,x-sd*0.07,B-0.36,0.0);
-    box(0.08,0.04,0.95,trim,x-sd*0.04,B+0.01,(zW+zRW)/2-0.1);
-    box(0.025,0.025,zW-zRW-0.35,led,x-sd*0.075,B-0.02,(zW+zRW)/2-0.1);               // la linea di cintura che si illumina
-    box(0.02,0.02,zW-zRW-0.5,led2,x-sd*0.04,F+0.10,(zW+zRW)/2-0.1);
+  /* v503 (Giacomo: «negli sportelli vedo rettangoli lunghi e stretti,
+     irreali: rendi piu' smooth»). Via le stecche: il bordo alto della
+     portiera e' un rullo imbottito, i LED e il filo di metallo sono tubi,
+     gli inserti trapuntati sono cuscini dagli spigoli tondi, il bracciolo
+     un rullo; e c'e' la maniglia. */
+  const tubeZ=(r,len,m,x,y,z)=>{ const c=BABYLON.MeshBuilder.CreateCylinder("a1tz",{ diameter:r*2, height:len, tessellation:14 },scene);
+    c.material=m; c.parent=ck; c.position.set(x,y,z); c.rotation.x=Math.PI/2; c.isPickable=false; return c; };
+  const pillow=(w,h,len,m,x,y,z)=>{ const c=capZ(h/2,len,m,x,y,z); c.scaling.x=w/h; return c; };   // cuscino: capsula schiacciata
+  [-1,1].forEach(sd=>{ const x=sd*W, zc=(zW+zRW)/2-0.1, zl=zW-zRW-0.2;
+    box(0.06,B-F-0.04,zl,dark,x,(B+F-0.04)/2,zc);
+    capZ(0.05,zl-0.04,dark,x-sd*0.012,B-0.03,zc);                                   // il rullo sopra (era una stecca)
+    tubeZ(0.009,zl-0.16,trim,x-sd*0.058,B-0.055,zc);                                 // filo di metallo sotto il rullo
+    tubeZ(0.012,zl-0.30,led,x-sd*0.052,B-0.085,zc);                                  // la linea di cintura che si illumina
+    pillow(0.035,0.22,0.92,cream,x-sd*0.032,B-0.22,0.05);                            // inserti trapuntati
+    pillow(0.035,0.20,0.66,cream,x-sd*0.032,B-0.22,-0.85);
+    capZ(0.042,0.58,cognac,x-sd*0.07,B-0.37,0.0);                                    // bracciolo
+    { const h=capZ(0.016,0.12,trim,x-sd*0.045,B-0.30,0.36); }                        // la maniglia
+    tubeZ(0.01,zl-0.5,led2,x-sd*0.04,F+0.10,zc);
     const sp=BABYLON.MeshBuilder.CreateCylinder("a1sp",{ diameter:0.16, height:0.02, tessellation:24 },scene);
     sp.material=trim; sp.parent=ck; sp.rotation.z=Math.PI/2; sp.position.set(x-sd*0.035,F+0.22,0.55); sp.isPickable=false;
     /* montanti: A (parabrezza), B (fra le porte), C (lunotto) */
@@ -63949,21 +63972,43 @@ function tlAutoCabin(C,E){
   [[gx*2,0.02,gz1],[gx*2,0.02,gz0]].forEach(q=>box(q[0],0.02,0.02,warm,0,R-0.02,q[2]));
   [-1,1].forEach(sd=>box(0.02,0.02,gz1-gz0,warm,sd*gx,R-0.02,(gz1+gz0)/2));
   box(rw*2,0.05,0.06,alc,0,R-0.01,zH);                                              // bordo sopra il parabrezza
-  /* fuori: il cofano bianco oltre la plancia e la coda oltre il lunotto */
-  /* il cofano scende subito: se ne vede solo una striscia bianca oltre la plancia */
-  { const len=C.HL-zW+0.05, y0=D-0.12, y1=0.72, h=box(W*2+0.06,0.05,len,body,0,0,zW+len/2);
-    h.position.y=(y0+y1)/2; h.rotation.x=Math.atan2(y0-y1,len);
-    /* la nervatura al centro e la fessura scura fra cofano e parabrezza: senza, era una mensola bianca */
-    [-0.32,0.32].forEach(x=>{ const r=box(0.03,0.012,len,trim,x,0,zW+len/2); r.position.y=h.position.y+0.03; r.rotation.x=h.rotation.x; });
-    box(W*2+0.06,0.03,0.08,black,0,D-0.075,zW+0.04); }
-  box(W*2+0.06,0.05,0.06,led,0,0.72,C.HL-0.02);                                     // la luce davanti del 2050
-  if(SP){ /* due strisce nere sul cofano e il bottone rosso «TURBO» sulla console */
-    const len=C.HL-zW+0.05, y0=D-0.12, y1=0.72;
-    [-0.16,0.16].forEach(x=>{ const r=box(0.14,0.01,len,black,x,0,zW+len/2); r.position.y=(y0+y1)/2+0.032; r.rotation.x=Math.atan2(y0-y1,len); });
+  /* v503 — IL COFANO VERO (Giacomo: «il cofano davanti visto da dentro e'
+     troppo finto»). Era una lastra inclinata. Ora e' una superficie curva
+     (ribbon) costruita per righe: bombata al centro, i passaruota che si
+     alzano ai lati come nelle sportive, i bordi che girano in giu', piu'
+     stretta e tonda verso il muso; vernice lucida (PBR, riflette il cielo).
+     La texture fa le strisce: nere su TURBO-1, due nervature leggere su
+     AUTO-1. Stessa costruzione, rovesciata e piu' piatta, per la coda. */
+  const paintTex=(()=>{ const t=new BABYLON.DynamicTexture("a1paint"+(_lpN++),{ width:256, height:64 },scene,true), c=t.getContext();
+    c.fillStyle=SP?"#e99a1c":"#e3e8ec"; c.fillRect(0,0,256,64);
+    if(SP){ c.fillStyle="#141416"; c.fillRect(96,0,22,64); c.fillRect(138,0,22,64); }
+    else { c.fillStyle="rgba(0,0,0,.10)"; c.fillRect(84,0,3,64); c.fillRect(169,0,3,64); c.fillStyle="rgba(255,255,255,.35)"; c.fillRect(88,0,2,64); c.fillRect(173,0,2,64); }
+    t.update(); return t; })();
+  const paint=new BABYLON.PBRMaterial("a1pbr"+(_lpN++),scene); mats.push(paint);
+  paint.albedoTexture=paintTex; paint.metallic=0.15; paint.roughness=0.28; paint.backFaceCulling=false;
+  try{ paint.clearCoat.isEnabled=true; paint.clearCoat.intensity=0.8; paint.clearCoat.roughness=0.08; }catch(e){}
+  const shell=(z0,z1,yA,yB,crown,fend,narrow)=>{
+    const Wh=W+0.05, rows=14, cols=22, paths=[];
+    for(let i=0;i<=rows;i++){ const t=i/rows, z=z0+(z1-z0)*t;
+      let yc=yA-(yA-yB)*Math.pow(t,1.35); if(t>0.86) yc-=0.10*Math.pow((t-0.86)/0.14,2);     // il muso gira giu'
+      const sc=1-narrow*t*t, row=[];
+      for(let j=0;j<=cols;j++){ const u=j/cols*2-1, au=Math.abs(u);
+        let y=yc-crown*u*u+fend*Math.exp(-Math.pow((au-0.80)/0.11,2));
+        if(au>0.93) y-=0.16*Math.pow((au-0.93)/0.07,2);                                       // il bordo gira in giu'
+        row.push(new BABYLON.Vector3(u*Wh*sc,y,z)); }
+      paths.push(row); }
+    const m=BABYLON.MeshBuilder.CreateRibbon("a1hood",{ pathArray:paths, sideOrientation:BABYLON.Mesh.DOUBLESIDE },scene);
+    m.material=paint; m.parent=ck; m.isPickable=false; return m; };
+  shell(zW+0.02, C.HL, D-0.06, 0.68, 0.06, SP?0.08:0.06, 0.14);                     // il cofano: i passaruota spuntano oltre la plancia
+  shell(zRW-0.02, -C.HL, B-0.05, B-0.22, 0.04, 0.03, 0.10);                            // la coda, oltre il lunotto
+  /* la fessura scura fra cofano e parabrezza: un tubo, non una stecca */
+  { const c=BABYLON.MeshBuilder.CreateCylinder("a1cowl",{ diameter:0.07, height:W*2+0.04, tessellation:14 },scene);
+    c.material=black; c.parent=ck; c.rotation.z=Math.PI/2; c.position.set(0,D-0.06,zW+0.03); c.isPickable=false; }
+  { const c=BABYLON.MeshBuilder.CreateCylinder("a1nose",{ diameter:0.045, height:W*1.6, tessellation:12 },scene);     // la luce davanti del 2050
+    c.material=led; c.parent=ck; c.rotation.z=Math.PI/2; c.position.set(0,0.64,C.HL-0.02); c.isPickable=false; }
+  if(SP){ /* il bottone rosso «TURBO» sulla console */
     const tb=BABYLON.MeshBuilder.CreateCylinder("a1tb",{ diameter:0.07, height:0.02, tessellation:24 },scene);
     tb.material=led2; tb.parent=ck; tb.position.set(0,F+0.35,0.32); tb.isPickable=false; }
-  { const len=C.HL+zRW+0.05; box(W*2+0.06,0.05,len,body,0,B-0.06,zRW-len/2); }
-  box(W*2+0.06,0.30,0.05,body,0,B-0.20,-C.HL+0.02);
   /* luci: tutto fuori dalle ombre del sole; il vetro del tetto non va nel glow */
   ck.getChildMeshes().forEach(m=>{ m.isPickable=false; m.receiveShadows=false; });
   try{ if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(gl); }catch(e){}
