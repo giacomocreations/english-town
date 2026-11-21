@@ -3363,7 +3363,7 @@ const UNIT_TECH={ id:"u3_2", area:"techlab", areaName:"the TechLab", resumeBySco
   contactShadows:true, wallHex:"#dfe4e8", ceilHex:"#e8ecef",   // v269: ombre sotto gli arredi, pareti e soffitto da laboratorio
   enterToast:"\u{1F4BB} Sei entrato al TechLab",
   onEnter:()=>{ setTimeout(buildTechNPCs,0);
-    try{ if(Student.teacher) setTimeout(()=>toast("\u{1F469}\u200D\u{1F3EB} Docente: tasto 4 (o il badge DOCENTE) = prova subito SKY-1, AUTO-1 o TURBO-1",4200),1800); }catch(e){}   // v500
+    try{ if(Student.teacher) setTimeout(()=>toast("\u{1F469}\u200D\u{1F3EB} Docente: tasto 4 (o il badge DOCENTE) = prova subito SKY-1, Nelson 1 o The Beast",4200),1800); }catch(e){}   // v500
     setTimeout(()=>{ try{ tlRestoreBoards(); tlScanDraw(null); tlPadDraw(); }catch(e){}
       try{ if(!tlFuncLive() || !(Quest.state&&Quest.state.tr&&Quest.state.tr.done)) tlKitReset(); }catch(e){} },60); },   // v499
   steps:[
@@ -51172,11 +51172,11 @@ function teacherTechMenu(){
   try{ QModal.close(); }catch(e){}
   DialogueBox.open({ icon:"\u{1F469}\u200D\u{1F3EB}", name:"Docente", sub:"TechLab \u00b7 scorciatoie", autoSpeak:false,
     text:"Try the TechLab vehicles now.",
-    italian:"Provi subito i veicoli, senza fare prima le attivit\u00e0 (anche dal tablet: dal badge DOCENTE). SKY-1 \u00e8 la Grammar del TechLab (le domande con gli anelli); AUTO-1 \u00e8 il giro finale; TURBO-1 \u00e8 la supercar arancione (per gli alunni da \u2B50 3000).",
+    italian:"Provi subito i veicoli, senza fare prima le attivit\u00e0 (anche dal tablet: dal badge DOCENTE). SKY-1 \u00e8 la Grammar del TechLab (le domande con gli anelli); Nelson 1 \u00e8 il giro finale; The Beast \u00e8 la supercar arancione (per gli alunni da \u2B50 3000).",
     buttons:[{ label:"Chiudi", cls:"ghost" },
              { label:"\u{1F6F8} SKY-1 \u00b7 flying car", cls:"primary", act:()=>teacherTryVehicle("sky") },
-             { label:"\u{1F697} AUTO-1 \u00b7 self-driving car", cls:"primary", act:()=>teacherTryVehicle("auto") },
-             { label:"\u{1F3CE}\uFE0F TURBO-1 \u00b7 supercar", cls:"primary", act:()=>teacherTryVehicle("turbo") }] });
+             { label:"\u{1F697} Nelson 1 \u00b7 self-driving car", cls:"primary", act:()=>teacherTryVehicle("auto") },
+             { label:"\u{1F3CE}\uFE0F The Beast \u00b7 supercar", cls:"primary", act:()=>teacherTryVehicle("turbo") }] });
 }
 function teacherTryVehicle(which){
   if(!Student.teacher) return;
@@ -64005,9 +64005,9 @@ const AUTO_STALL={ x:-39, z:-27.25 };
    un'altra (il ritorno usa AUTO.car).
    ===================================================================== */
 const AUTO_FLEET={
-  auto1:{ id:"auto1", name:"AUTO-1",  key:null, home:{ x:-39, z:-27.25 }, kmh:{ min:20, max:50, top:90 },  theme:"lux",
+  auto1:{ id:"auto1", name:"Nelson 1",  key:null, home:{ x:-39, z:-27.25 }, kmh:{ min:20, max:50, top:90 },  theme:"lux",
           sub:"Self-driving car · TechLab prototype", car:null, spot:null },
-  turbo:{ id:"turbo", name:"TURBO-1", key:null, home:{ x:39,  z:-27.25 }, kmh:{ min:20, max:50, top:200 }, theme:"sport",
+  turbo:{ id:"turbo", name:"The Beast", key:null, home:{ x:39,  z:-27.25 }, kmh:{ min:20, max:50, top:200 }, theme:"sport",
           sub:"Self-driving supercar · ⭐ 3000", car:null, spot:null, stars:3000 } };
 AUTO.fid="auto1";
 function tlAutoF(id){ return AUTO_FLEET[id||AUTO.fid]||AUTO_FLEET.auto1; }
@@ -64468,7 +64468,7 @@ function tlDashDraw(C,o){
   c.fillStyle="rgba(255,255,255,.12)"; c.fillRect(1740,22,2,84);
   /* 5) il nome dell'auto, con la sfumatura del tema */
   const lg=c.createLinearGradient(1770,0,2010,0); lg.addColorStop(0,acc); lg.addColorStop(1,acc2);
-  c.textAlign="right"; c.fillStyle=lg; c.font="italic bold 48px sans-serif"; c.fillText(SKYM?"SKY-1":(F?F.name:"AUTO-1"),2010,56);
+  c.textAlign="right"; c.fillStyle=lg; c.font="italic bold 48px sans-serif"; c.fillText(SKYM?"SKY-1":(F?F.name:"Nelson 1"),2010,56);
   c.fillStyle="#9fb6c2"; c.font="18px sans-serif"; c.fillText(SKYM?"flying car \u00b7 2050":(SP?"supercar \u00b7 2050":"self-driving \u00b7 2050"),2010,98);
   /* il riflesso del vetro: una banda chiara obliqua in alto */
   const gl=c.createLinearGradient(0,0,0,H*0.45); gl.addColorStop(0,"rgba(255,255,255,.16)"); gl.addColorStop(1,"rgba(255,255,255,0)");
@@ -64498,10 +64498,10 @@ function tlAutoBookInit(){
     AUTO_BOOK[id]=addInteract({ id:id+"_book", area:"town", radius:3.4,
       pos:()=>{ const s=tlAutoSpot(id); return new BABYLON.Vector3(s.x,0,s.z); },
       prompt:()=>{
-        if(id==="turbo") return tlTurboUnlocked()?'\u{1F3CE}️ Press <b>E</b>: book <b>TURBO-1</b>, the self-driving supercar'
-                                                 :'\u{1F3CE}️ <b>TURBO-1</b> · self-driving supercar — \u{1F512} ⭐ '+F.stars+' to ride';
-        return tlAutoUnlocked()?'\u{1F697} Press <b>E</b>: book <b>AUTO-1</b>, the self-driving car'
-                               :'\u{1F697} <b>AUTO-1</b> · TechLab prototype — finish the TechLab quest to use it'; },
+        if(id==="turbo") return tlTurboUnlocked()?'\u{1F3CE}️ Press <b>E</b>: book <b>The Beast</b>, the self-driving supercar'
+                                                 :'\u{1F3CE}️ <b>The Beast</b> · self-driving supercar — \u{1F512} ⭐ '+F.stars+' to ride';
+        return tlAutoUnlocked()?'\u{1F697} Press <b>E</b>: book <b>Nelson 1</b>, the self-driving car'
+                               :'\u{1F697} <b>Nelson 1</b> · TechLab prototype — finish the TechLab quest to use it'; },
       interact:()=>tlAutoBook(id) });
     /* il cartello allo stallo di casa: solo quando l'auto e' altrove */
     AUTO_BOOK[id+"_where"]=addInteract({ id:id+"_where", area:"town", radius:3.0,
@@ -64524,8 +64524,8 @@ setTimeout(()=>tlTurboPark(0),1500);
 function tlAutoBook(id){
   id=id||"auto1"; const F=tlAutoF(id);
   if(id==="turbo"){ if(!tlTurboUnlocked()){ let st=0; try{ st=Stars.total(); }catch(e){}
-      toast("\u{1F512} TURBO-1 is for champions: you need ⭐ "+F.stars+" (you've got "+st+") · Servono "+F.stars+" stelle",4800); return; } }
-  else if(!tlAutoUnlocked()){ toast("\u{1F512} AUTO-1 is a TechLab prototype: finish the TechLab quest and it's yours!"); return; }
+      toast("\u{1F512} The Beast is for champions: you need ⭐ "+F.stars+" (you've got "+st+") · Servono "+F.stars+" stelle",4800); return; } }
+  else if(!tlAutoUnlocked()){ toast("\u{1F512} Nelson 1 is a TechLab prototype: finish the TechLab quest and it's yours!"); return; }
   if(AUTO.on){ return; }
   if(AUTO.busy){ toast("\u{1F697} "+tlAutoName()+" is still driving back to the car park — wait a moment!"); return; }
   if(!townOpen()){ toast("\u{1F319} "+F.name+" sleeps at night. Come back in the morning!"); return; }
@@ -64595,8 +64595,8 @@ function tlAutoAsk(){
   const mic=_SpkRec?'<button type="button" id="tlAutoMic" class="qm-btn" style="margin-left:6px;">\u{1F3A4}</button>':"";
   const F=tlAutoF(), turbo=F.id==="turbo";
   DialogueBox.open({ name:(turbo?"\u{1F3CE}\uFE0F ":"\u{1F697} ")+F.name, sub:F.sub, autoSpeak:true, ttsOpts:{ gender:"f" },
-    text:turbo?"Hello, champion! I'm TURBO-1, the fastest car in town. No steering wheel: just tell me where to go. Where would you like to go?"
-              :"Hello! I'm AUTO-1. I have no steering wheel: you just tell me where to go. Where would you like to go?",
+    text:turbo?"Hello, champion! I'm The Beast, the fastest car in town. No steering wheel: just tell me where to go. Where would you like to go?"
+              :"Hello! I'm Nelson 1. I have no steering wheel: you just tell me where to go. Where would you like to go?",
     italian:"Scrivi (o di' col microfono) una frase: «Take me to the school, please». "+F.name+" ti porta nel punto più vicino e ti lascia sul marciapiede. Per fare il giro della città: «Take me on a tour of the town, please». Puoi anche chiedere «Play some music, please» o «What's my next quest?». Premi O per guardare dentro.",
     html:'<div style="display:flex;align-items:center;"><input id="tlAutoIn" type="text" autocomplete="off" '
       +'placeholder="Take me to …, please." style="flex:1;font:inherit;padding:8px 10px;border-radius:10px;border:1px solid #ccd6da;">'+mic+'</div>'
@@ -65294,7 +65294,8 @@ function tlAutoNavDraw(){
   const hg=c.createLinearGradient(0,0,W,0); hg.addColorStop(0,SP?"rgba(160,40,20,.6)":"rgba(47,111,128,.58)"); hg.addColorStop(1,SP?"rgba(255,138,28,.6)":"rgba(111,208,232,.58)");
   _rr(c,4,4,W-8,52,24); c.fillStyle=hg; c.fill();
   c.fillStyle="#06121a"; c.font="bold 26px sans-serif"; c.textAlign="left"; c.textBaseline="middle"; c.fillText(tlAutoName(),22,28);
-  c.font="20px sans-serif"; c.fillText(tlAutoF().id==="turbo"?"supercar · 2050":"self-driving · 2050",tlAutoF().id==="turbo"?140:120,29);
+  const nw=c.measureText(tlAutoName()).width;       // v509: i nomi nuovi hanno lunghezze diverse
+  c.font="20px sans-serif"; c.fillText(tlAutoF().id==="turbo"?"supercar · 2050":"self-driving · 2050",22+nw+16,29);
   c.textAlign="right"; c.font="bold 22px sans-serif"; c.fillText(AUTO.place?AUTO.place.name:"",W-22,28);
   _rr(c,18,70,452,392,22); c.fillStyle="rgba(19,36,47,.30)"; c.fill();
   if(R && R.pts && R.pts.length>1){
@@ -65380,8 +65381,8 @@ function tlAutoOffer(){
   /* v500 (Giacomo): a fine quest si dice chiaro che cosa si puo' provare
      adesso, e il «si'» ti porta DRITTO nello stallo, a bordo */
   DialogueBox.open({ npc, icon:"\u{1F697}", sub:"A present from the TechLab", autoSpeak:true,
-    text:"Well done! Now you can try AUTO-1, our self-driving car. It has no steering wheel: it drives by itself, you just tell it where to go. Shall I take you to its parking space now?",
-    italian:"Adesso puoi provare AUTO-1, l'auto che si guida da sola: niente volante, le dici tu dove andare e ci va. Con \u00abYes\u00bb ti porto subito al suo posto nel parcheggio, gi\u00e0 a bordo. Da ora la prenoti anche da solo, con E, nel parcheggio davanti al TechLab.",
+    text:"Well done! Now you can try Nelson 1, our self-driving car. It has no steering wheel: it drives by itself, you just tell it where to go. Shall I take you to its parking space now?",
+    italian:"Adesso puoi provare Nelson 1, l'auto che si guida da sola: niente volante, le dici tu dove andare e ci va. Con \u00abYes\u00bb ti porto subito al suo posto nel parcheggio, gi\u00e0 a bordo. Da ora la prenoti anche da solo, con E, nel parcheggio davanti al TechLab.",
     buttons:[{ label:"Not now", cls:"ghost" },
              { label:"\u{1F697} Yes, take me to the car!", cls:"primary", act:()=>tlAutoStart("finale","auto1") }] });
 }
@@ -77532,6 +77533,22 @@ function _tecaParts(ids){
     h+='</div><div class="dy-note">Buy them at the <b>Corner Shop</b> \u{1F6D2}: take a <b>trolley</b>, put it in, '
       +'and pay at <b>Sam</b>\'s till. To <b>ride</b> them you need the \u2B50 stars (or finish the year). '
       +'Ride them outside: press <b>R</b>.</div>';
+    /* v509 (Giacomo, 21 nov: «tra i veicoli in teca fai apparire le auto
+       automatiche, e cambiamo i nomi: la piu' veloce diventa The Beast,
+       l'altra Nelson 1»). Le due auto senza volante del TechLab: se sono
+       tue (Nelson 1 = quest del TechLab finita, The Beast = ⭐ 3000) e dove
+       sono parcheggiate adesso; il tocco dice dove andare a prenotarle. */
+    try{ if(typeof AUTO_FLEET!=="undefined"){
+      h+='<div class="dy-sec">\u{1F697} Self-driving cars \u00b7 <span style="font-weight:400">no steering wheel</span></div><div class="gem-fits">';
+      [["auto1","\u{1F697}",{ acc:"#6fd0e8", body:"#e3e8ec" }],["turbo","\u{1F3CE}\uFE0F",{ acc:"#e99a1c", body:"#141416" }]].forEach(function(q){
+        const F=AUTO_FLEET[q[0]], turbo=q[0]==="turbo", own=turbo?tlTurboUnlocked():tlAutoUnlocked();
+        const inIt=!!(AUTO.on && AUTO.fid===q[0]);
+        h+=_tcCard('data-car="'+q[0]+'"',inIt,!own,_tcSw(q[2].acc,q[2].body,q[1]),F.name,
+          inIt?"you're in it":(own?"yours \u00b7 tap: where is it?"
+            :(turbo?"\u{1F512} \u2B50 "+F.stars+" to ride":"\u{1F512} finish the TechLab quest")),
+          turbo?"the fastest car in town \u00b7 up to "+F.kmh.top+" km/h":"self-driving \u00b7 TechLab prototype"); });
+      h+='</div><div class="dy-note">Go to the <b>car park</b> and press <b>E</b> next to the car to book it. '
+        +'Then tell it where to go, in English: \u201cTake me to the school, please\u201d.</div>'; } }catch(e){}
   }
   else if(id.indexOf("acc:")===0){ const slot=id.slice(4);
     /* uno per slot, «None» sempre libero e per primo; sotto l'accessorio che
@@ -77563,7 +77580,9 @@ function _tecaWire(el,after){
     "data-acc":v=>{ const p=v.split(":"); return setPlayerAcc(p[0],p[1]); },
     "data-acol":v=>{ const p=v.split(":"); return setPlayerAccCol(p[0],p[1]); },
     "data-coat":v=>setPlayerCoat(v), "data-coatc":v=>setPlayerCoatCol(v),
-    "data-face":v=>{ const p=v.split(":"); return setPlayerFace(p[0],p[1]); } };
+    "data-face":v=>{ const p=v.split(":"); return setPlayerFace(p[0],p[1]); },
+    "data-car":v=>{ try{ const F=AUTO_FLEET[v]; if(AUTO.on && AUTO.fid===v) return false;     // v509: dov'e' la tua auto
+      toast((v==="turbo"?"\u{1F3CE}\uFE0F ":"\u{1F697} ")+F.name+" is parked "+tlAutoWhere(v)+". Go there and press E! \u00b7 Vai al parcheggio e premi E",5200); }catch(e){} return false; } };
   Object.keys(W).forEach(function(attr){ const rs=el.querySelectorAll("["+attr+"]");
     for(let i=0;i<rs.length;i++) rs[i].onclick=(function(v){ return ()=>{ if(W[attr](v)) after(); }; })(rs[i].getAttribute(attr)); });
 }
