@@ -3160,10 +3160,11 @@ const UNIT_HOME7={ id:"u2_7", area:"home", title:"Anno 2 \u00b7 Unit 7 \u2014 At
    contenuto: chiedere la strada dentro una citta' 3D che i ragazzi
    esplorano da tre anni non e' la simulazione della funzione, e' la
    funzione. Le altre unit le abbiamo dovute ambientare; questa era gia'
-   ambientata. Cornice: la TARGA BLU della piazza (le blue plaques del
-   Reading p.126) e' sparita ieri pomeriggio. Tre testimoni erano qui e
-   ognuno stava facendo altro: il past continuous nasce dove serve
-   davvero, cioe' l'alibi e lo sfondo di un fatto.
+   ambientata. Cornice (v501, prima era la targa blu sparita, che non si
+   ritrovava mai): ieri alle quattro e' scoppiato un TEMPORALE in piazza e
+   Ivy scrive l'articolo per il giornale; dalla foto si dice che cosa stava
+   facendo ognuno quando ha cominciato a piovere: il past continuous nasce
+   dove serve davvero, cioe' lo sfondo di un fatto.
 
    ⚠️ PERIMETRO GRAMMATICALE (deciso con Giacomo):
    - past continuous SOLO ancorato alla foto-alibi e alle risposte brevi.
@@ -3191,14 +3192,19 @@ const UNIT_CITY={ id:"u2_8", area:"town", openWorld:true,
     introObjEn:"Spot the places in town and tag them on the map.", introObj:"Riconosci i luoghi della citt\u00e0 e taggali sulla mappa.",
     target:()=>cy8LexTarget() },
   { id:"gram",  strand:"grammatica", type:"alibiWitness",
-    intro:"\ud83d\udd75\ufe0f La <b>targa blu</b> della piazza \u00e8 sparita ieri alle quattro. Nella <b>foto</b> "
-         +"di ieri si vede che cosa <b>stava facendo</b> ognuno dei tre testimoni: guarda l'immagine, "
-         +"poi componi la riga con le tessere.",
-    introObjEn:"Rebuild the three witnesses' alibis.", introObj:"Ricostruisci gli alibi dei tre testimoni.",
+    /* v501 (Giacomo, 21 nov: «non capisco la targa dove va a finire: togli
+       il task finale e cambia l'interrogatorio» \u2192 scelto «il temporale»).
+       Stesse tessere e stessa foto-ancora, ma la storia si chiude: l'articolo
+       di Ivy esce alla fine dello step (vedi cy8StormArticle). */
+    intro:"\u{1F327}\uFE0F Ieri alle <b>quattro</b> in piazza \u00e8 scoppiato un <b>temporale</b>! <b>Ivy</b> scrive "
+         +"un articolo per il giornale della citt\u00e0. Nella <b>foto</b> si vede che cosa <b>stava facendo</b> "
+         +"ognuno quando ha cominciato a piovere: guarda l'immagine, poi componi la frase con le tessere.",
+    introObjEn:"Help Ivy write her article about the storm.", introObj:"Aiuta Ivy a scrivere l'articolo sul temporale.",
     target:()=>cy8NpcPos("ivy") },
   { id:"func",  strand:"funzioni",   type:"giveDirections",
     intro:"Qualcuno si \u00e8 perso e chiede a <b>te</b> la strada. Componi le indicazioni con le "
-         +"tessere: lui <b>fa esattamente quello che dici</b>. Guarda la mappa con le frecce.",
+         +"tessere: lui <b>fa esattamente quello che dici</b>. Guarda la mappa con le frecce. "
+         +"\u{1F3C3} Quando Sam parte, <b>seguilo</b>! Dove si ferma, raggiungilo e premi <b>E</b> per dargli l'indicazione dopo.",
     introObjEn:"Give the directions and get him there.", introObj:"Da' le indicazioni e portalo a destinazione.",
     target:()=>cy8NpcPos("sam") },
   { id:"listen",strand:"listening",  type:"followDirections",
@@ -3212,27 +3218,11 @@ const UNIT_CITY={ id:"u2_8", area:"town", openWorld:true,
        potrebbe interrompere con un suggerimento casuale (rangerExempt usa
        lo stesso target() per restare in silenzio vicino a un obiettivo);
        capita raramente e non blocca nulla. */
-  { id:"write", strand:"writing",    type:"writeMessage",
-    pad:{ x:84, z:-18, title:"\u{1F535} Blue plaque", sub:"Writing \u2014 a chi dedichi la targa",
-      /* \u26a0\ufe0f DialogueBox.italian usa textContent: niente tag HTML qui dentro. */
-      italian:"Scegli una persona famosa e scrivi almeno 3 frasi per la sua targa blu: chi era, "
-        +"che cosa faceva e perch\u00e9 la ricordiamo. Usa il past simple e almeno un past continuous.",
-      hint:"Vai al <b>leggio</b> della piazza, sotto il muro delle targhe, e scrivi (3+ frasi).", hintEn:"Go to the <b>writing stand</b> in the square, under the plaque wall, and write (3+ sentences).",
-      placeholder:"Grazia Deledda was a writer from Sardinia. She lived in Nuoro. While she was living in Rome, she wrote..." },
-    /* \u26a0\u26a0 QUESTO `req` MANCAVA. Senza, openWritePad() ripiega su
-       `s.req||U4_WRITE_REQ` -- il controllo scritto per l'Anno 1 Unit 4
-       ("I have got..."), che qui non c'entra: e' cosi' che Giacomo si e'
-       visto correggere una targa blu con "Usa 'I have got'". Ogni altro
-       step writeMessage del gioco dichiara il proprio req esplicito;
-       questo era l'unico dimenticato. */
-    req:{ minSent:3,
-      patterns:[{re:/\b(was|were)\s+[a-z]+ing\b/i, label:"Usa almeno un past continuous (was/were + -ing)"}],
-      vocab:{ pool:["was","were","lived","born","famous","wrote","painted","invented","because","remember",
-        "writer","artist","scientist","teacher","doctor"], min:2 },
-      passBand:"yellow" },
-    intro:"<b>Ultimo passo!</b> La vecchia <b>targa blu</b> non si \u00e8 pi\u00f9 trovata: il Comune ne "
-         +"appende una nuova e la scrivi <b>tu</b>. Vai al leggio sotto il <b>muro delle targhe</b>.",
-    introObjEn:"Write the new blue plaque.", introObj:"Scrivi la nuova targa blu." },
+  /* v501 (Giacomo, 21 nov: «non capisco per la targa dove va a finire:
+     eliminiamo il task finale di scrivere la targa»). Tolto lo step
+     "write" (la targa blu al leggio): la unit si chiude con il listening
+     qui sopra, che vale come ultimo passo (stelle doppie). Chi aveva un
+     salvataggio fermo sul writing riapre la unit e la trova completata. */
   /* v588 (Giacomo, 18 nov: «il final task della City Plaza e' noioso, finiamo
      la prova con il writing»). Tolto lo step "final" (plaqueHunt): la unit si
      chiude con la targa blu scritta qui sopra, che vale come ultimo passo
@@ -42704,6 +42694,25 @@ const SFX=(function(){
          skOscV.gain.linearRampToValueAtTime(k>0?0.025*g0:0, t+0.3);
          skOsc.frequency.linearRampToValueAtTime(62+40*k, t+0.3); }catch(e){}
   }
+  /* v501 — AUTO-1 troppo veloce in curva: lo stridio delle gomme (Giacomo:
+     «quando vai super veloce si sentono i freni nella curva»). Due toni
+     acuti che oscillano (il fischio) + fruscio passa-banda (lo strisciare),
+     ~0,9 s con rampa di uscita. k 0..1 = quanto e' forte. */
+  let scLast=0;
+  function screech(k){
+    const c=ready(); if(!c) return; const now=c.currentTime; if(now-scLast<1.1) return; scLast=now;
+    const g0=lvl()*Math.max(0.3,Math.min(1,k||1)), T=0.9;
+    const out=c.createGain(); out.gain.setValueAtTime(0,now); out.gain.linearRampToValueAtTime(0.16*g0,now+0.06);
+    out.gain.setValueAtTime(0.16*g0,now+T*0.6); out.gain.linearRampToValueAtTime(0,now+T); out.connect(master);
+    [1180,1730].forEach((f,i)=>{ const o=c.createOscillator(); o.type="sawtooth"; o.frequency.setValueAtTime(f,now);
+      o.frequency.linearRampToValueAtTime(f*0.86,now+T);
+      const lfo=c.createOscillator(), lg=c.createGain(); lfo.frequency.value=13+i*4; lg.gain.value=f*0.04; lfo.connect(lg); lg.connect(o.frequency);
+      const bp=c.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=f; bp.Q.value=6;
+      const v=c.createGain(); v.gain.value=i?0.35:0.55; o.connect(bp); bp.connect(v); v.connect(out);
+      o.start(now); lfo.start(now); o.stop(now+T+0.05); lfo.stop(now+T+0.05); });
+    const n=c.createBufferSource(); n.buffer=noise; const nb=c.createBiquadFilter(); nb.type="bandpass"; nb.frequency.value=2600; nb.Q.value=1.2;
+    const nv=c.createGain(); nv.gain.value=0.5; n.connect(nb); nb.connect(nv); nv.connect(out); n.start(now,Math.random()*0.4); n.stop(now+T+0.05);
+  }
   const WIND_SOGLIA=0.62, WIND_MAX=0.055;
   let gSrc=null, gVol=null, gLp=null, gLast=-1;
   function windBuild(c){
@@ -42928,7 +42937,7 @@ const SFX=(function(){
     rdOscG.gain.setTargetAtTime((sk||gr)?0:0.22*k, t, 0.1);
     rdOsc.frequency.setTargetAtTime(150+330*k, t, 0.1);
   }
-  return { wake, step, walked, roll, splash, carHorn, carPass, setCarPass, correct, wrong, panOf, fly,
+  return { wake, step, walked, roll, splash, carHorn, carPass, setCarPass, correct, wrong, panOf, fly, screech,
            shout, voiceState, sip, chew, snap,
            gemChime, gemFit, thunder,
            bell, bellHear, shutter, tick, waterLevel, fountLevel, clubLevel, cricketLevel, windLevel,
@@ -58820,7 +58829,7 @@ function buildCityPlaza(){
       ? "\u{1F3D9}\uFE0F <b>City Life Plaza</b> \u00b7 press <b>E</b>"
       : "\u{1F3D9}\uFE0F <b>City Life Plaza</b> \u00b7 press <b>E</b> to start",
     interact:()=>{ if(Progress.get(UNIT_CITY.id).done){
-        toast("\u{1F3D9}\uFE0F City Life Plaza \u2014 Unit 8 completata! La tua targa blu \u00e8 sul muro della piazza.");
+        toast("\u{1F3D9}\uFE0F City Life Plaza \u2014 Unit 8 completata! L'articolo di Ivy sul temporale \u00e8 sul giornale della citt\u00e0.");
       } else if(Quest.unit===UNIT_CITY){
         toast("\u{1F4CB} "+((Quest.step&&Quest.step.introObj)||"Continua la quest!"));
       } else { tryStartQuest(UNIT_CITY); } } });
@@ -59112,28 +59121,28 @@ MECH.townMap=function(s){
    forma pronominale: come determinanti sono Unit 6.
    ===================================================================== */
 const CY8_ALIBI=[
-  { who:"Ivy",  q:"It was four o'clock. What were you doing?",
-    it:"Guarda la foto: che cosa STAVA FACENDO Ivy in quel momento?",
+  { who:"Ivy",  q:"The storm started at four o'clock. What were you doing?",
+    it:"Guarda la foto: che cosa STAVA FACENDO Ivy quando ha cominciato a piovere?",
     tokens:["I","was","reading","a","newspaper."],
     distr:["read","am","were"],
     alts:[{ w:["I","read","a","newspaper."],
-            recast:"At four o'clock \u2014 I was reading a newspaper.",
+            recast:"When the storm started — I was reading a newspaper.",
             it:"Non un fatto concluso: era in corso in quel momento. was + -ing." },
           { w:["I","am","reading","a","newspaper."],
-            recast:"It was yesterday \u2014 I was reading a newspaper.",
-            it:"\u00c8 ieri: al passato si dice was, non am." }] },
-  { who:"Sam",  q:"And you? Were you looking at the wall?",
-    it:"Nella foto Sam guarda dall'altra parte: componi la frase NEGATIVA.",
-    tokens:["I","wasn't","looking","at","the","wall."],
+            recast:"It was yesterday — I was reading a newspaper.",
+            it:"È ieri: al passato si dice was, non am." }] },
+  { who:"Sam",  q:"And you, Sam? Were you looking at the sky?",
+    it:"Nella foto Sam guarda il telefono, non il cielo (per questo non ha visto arrivare il temporale!): componi la frase NEGATIVA.",
+    tokens:["I","wasn't","looking","at","the","sky."],
     distr:["didn't","not","was"],
-    alts:[{ w:["I","didn't","looking","at","the","wall."],
-            recast:"With -ing we use wasn't: I wasn't looking at the wall.",
-            it:"Con la forma in -ing la negazione \u00e8 wasn't, non didn't." },
-          { w:["I","was","not","looking","at","the","wall."],
-            recast:"Right \u2014 and we usually say it short: I wasn't looking at the wall.",
+    alts:[{ w:["I","didn't","looking","at","the","sky."],
+            recast:"With -ing we use wasn't: I wasn't looking at the sky.",
+            it:"Con la forma in -ing la negazione è wasn't, non didn't." },
+          { w:["I","was","not","looking","at","the","sky."],
+            recast:"Right — and we usually say it short: I wasn't looking at the sky.",
             it:"Corretto, ma qui usiamo la forma contratta: wasn't." }] },
   { who:"Nico", q:"Nico, I have a photo of you. Ask him yourself!",
-    it:"Adesso la domanda la fai TU a Rosa. Guarda che cosa fa nella foto.",
+    it:"Adesso la domanda la fai TU a Nico. Guarda che cosa fa nella foto.",
     tokens:["Were","you","watering","the","flowers?"],
     distr:["Did","Was","water"],
     alts:[{ w:["Did","you","watering","the","flowers?"],
@@ -59142,25 +59151,25 @@ const CY8_ALIBI=[
           { w:["Was","you","watering","the","flowers?"],
             recast:"You + were: Were you watering the flowers?",
             it:"Con you si usa sempre were, mai was." }] },
-  { who:"Nico", q:"Were you watering the flowers?",
-    it:"Rosa risponde. Nella foto ha l'annaffiatoio in mano: risposta BREVE.",
+  { who:"Nico", q:"Were you watering the flowers? — Ha ha, in the rain!",
+    it:"Nico risponde. Nella foto ha l'annaffiatoio in mano: risposta BREVE.",
     tokens:["Yes,","I","was."],
     distr:["were.","did.","am."],
     alts:[{ w:["Yes,","I","did."],
-            recast:"The question was Were you\u2026 \u2014 so: Yes, I was.",
-            it:"La risposta breve ripete l'ausiliare della domanda: were \u2192 was." },
+            recast:"The question was Were you… — so: Yes, I was.",
+            it:"La risposta breve ripete l'ausiliare della domanda: were → was." },
           { w:["Yes,","I","were."],
             recast:"I + was: Yes, I was.",
             it:"Con I si usa was, non were." }] },
-  { who:"Ivy",  q:"One last thing. Did you see anybody near the plaque?",
-    it:"Ultima riga: nessuno era vicino alla targa. Attenzione alla doppia negazione.",
-    tokens:["I","didn't","see","anybody","near","the","plaque."],
+  { who:"Ivy",  q:"One last thing for my article. Did you see anybody with an umbrella?",
+    it:"Ultima riga: nella foto nessuno ha l'ombrello. Attenzione alla doppia negazione.",
+    tokens:["I","didn't","see","anybody","with","an","umbrella."],
     distr:["nobody","somebody","everybody"],
-    alts:[{ w:["I","didn't","see","nobody","near","the","plaque."],
-            recast:"One negative is enough: I didn't see anybody near the plaque.",
+    alts:[{ w:["I","didn't","see","nobody","with","an","umbrella."],
+            recast:"One negative is enough: I didn't see anybody with an umbrella.",
             it:"In inglese una sola negazione: didn't + anybody (non nobody)." },
-          { w:["I","didn't","see","somebody","near","the","plaque."],
-            recast:"In negative sentences we use anybody: I didn't see anybody near the plaque.",
+          { w:["I","didn't","see","somebody","with","an","umbrella."],
+            recast:"In negative sentences we use anybody: I didn't see anybody with an umbrella.",
             it:"somebody sta nelle affermative; nelle negative si usa anybody." }] },
 ];
 
@@ -59174,7 +59183,7 @@ function cy8PhotoURL(){
   const c=cv.getContext("2d");
   c.fillStyle="#e9e2d2"; c.fillRect(0,0,W,H);
   c.fillStyle="#1f3b4d"; c.font="bold 20px Segoe UI"; c.textAlign="left";
-  c.fillText("\u{1F4F7} CITY LIFE PLAZA \u2014 yesterday, 4:00 p.m.",16,28);
+  c.fillText("\u{1F4F7} CITY LIFE PLAZA \u2014 yesterday, 4:00 p.m. \u2014 the storm starts!",16,28);
   const CW=200,CH=170,Y=48;
   const scenes=[
     { name:"Ivy",  draw:(x)=>{ // giornale aperto
@@ -59182,8 +59191,7 @@ function cy8PhotoURL(){
         c.strokeStyle="#8b8578"; c.lineWidth=2; c.strokeRect(x+58,Y+62,84,54);
         c.beginPath(); c.moveTo(x+100,Y+62); c.lineTo(x+100,Y+116); c.stroke();
         c.fillStyle="#b5ae9e"; for(let i=0;i<4;i++){ c.fillRect(x+64,Y+70+i*11,30,4); c.fillRect(x+106,Y+70+i*11,30,4); } } },
-    { name:"Sam",  draw:(x)=>{ // guarda il telefono, di spalle al muro
-        c.fillStyle="#8a8f96"; c.fillRect(x+40,Y+40,26,80);          // muro a sinistra
+    { name:"Sam",  draw:(x)=>{ // guarda il telefono, non il cielo
         c.fillStyle="#243040"; c.fillRect(x+112,Y+70,26,42);         // telefono
         c.fillStyle="#7fd1e6"; c.fillRect(x+115,Y+74,20,30);
         c.strokeStyle="#243040"; c.lineWidth=3; c.beginPath();       // sguardo verso il telefono
@@ -59198,13 +59206,17 @@ function cy8PhotoURL(){
   ];
   scenes.forEach((s,i)=>{
     const x=16+i*(CW+12);
-    c.fillStyle="#cfe3ee"; c.fillRect(x,Y,CW,CH);
+    c.fillStyle="#a9b8c4"; c.fillRect(x,Y,CW,CH);            // cielo grigio di temporale
+    c.fillStyle="#6f7b86"; [[40,22,26],[70,16,30],[104,22,26],[140,18,28]].forEach(q=>{ c.beginPath(); c.arc(x+q[0],Y+q[1],q[2],0,7); c.fill(); });
     c.fillStyle="#b9b2a2"; c.fillRect(x,Y+CH-38,CW,38);      // pavimento della piazza
     /* la sagoma: testa + corpo, la stessa per tutti — a distinguere sono
        gli OGGETTI, non le persone. */
     c.fillStyle="#3d4a57"; c.beginPath(); c.arc(x+82,Y+52,15,0,7); c.fill();
     c.fillRect(x+68,Y+68,28,52);
     s.draw(x);
+    /* la pioggia: righe oblique azzurre sopra tutto */
+    c.strokeStyle="rgba(40,90,150,.55)"; c.lineWidth=2;
+    for(let k=0;k<34;k++){ const rx=x+((k*37)%CW), ry=Y+40+((k*53)%(CH-70)); c.beginPath(); c.moveTo(rx,ry); c.lineTo(rx-5,ry+12); c.stroke(); }
     c.fillStyle="#1f3b4d"; c.fillRect(x,Y+CH-22,CW,22);
     c.fillStyle="#f6f1e2"; c.font="bold 15px Segoe UI"; c.textAlign="center";
     c.fillText(s.name,x+CW/2,Y+CH-6);
@@ -59217,7 +59229,7 @@ function cy8AlibiHtml(ab){
   let h='<img src="'+cy8PhotoURL()+'" style="width:100%;border-radius:10px;display:block;margin-bottom:8px;">';
   h+='<table style="width:100%;border-collapse:collapse;font-size:0.92em;text-align:left;">'
    +'<tr style="background:#12467e;color:#ffd873;">'
-   +'<th style="padding:4px 6px;">WITNESS</th><th style="padding:4px 6px;">STATEMENT</th></tr>';
+   +'<th style="padding:4px 6px;">WHO</th><th style="padding:4px 6px;">WHAT WERE THEY DOING?</th></tr>';
   CY8_ALIBI.forEach((r,i)=>{
     const done=i<ab.idx, cur=(i===ab.idx);
     const cell = done ? _escHtml(ab.lines[i]||"")
@@ -59231,14 +59243,14 @@ function cy8AlibiHtml(ab){
 
 function runAlibiWitness(){
   const st=Quest.state; const ab=st.ab=st.ab||{ idx:0, tries:0, lines:[] };
-  if(ab.idx>=CY8_ALIBI.length){ Quest.complete("\u{1F575}\uFE0F Grammatica completata! Gli alibi sono a verbale."); return; }
+  if(ab.idx>=CY8_ALIBI.length){ cy8StormArticle(ab); return; }
   const r=CY8_ALIBI[ab.idx];
   const npc=CY8_NPC[r.who.toLowerCase()]||CY8_NPC.ivy;
-  questHudSet("grammatica", HOBJ("\u{1F575}\uFE0F Witness statements: row <b>"+(ab.idx+1)+"/"+CY8_ALIBI.length+"</b>","\u{1F575}\uFE0F Verbale dei testimoni: riga <b>"+(ab.idx+1)+"/"+CY8_ALIBI.length+"</b>"), Quest.i, Quest.total);
-  DialogueBox.open({ npc:npc, icon:"\u{1F535}", sub:"The missing plaque",
+  questHudSet("grammatica", HOBJ("\u{1F4F0} Ivy's article about the storm: line <b>"+(ab.idx+1)+"/"+CY8_ALIBI.length+"</b>","\u{1F4F0} L'articolo di Ivy sul temporale: riga <b>"+(ab.idx+1)+"/"+CY8_ALIBI.length+"</b>"), Quest.i, Quest.total);
+  DialogueBox.open({ npc:npc, icon:"\u{1F327}\uFE0F", sub:"The storm \u00b7 City Life News",
     text:r.q, italian:r.it,
     html:cy8AlibiHtml(ab),
-    tiles:{ tokens:r.tokens, distractors:r.distr, checkLabel:"\u2714 Metti a verbale",
+    tiles:{ tokens:r.tokens, distractors:r.distr, checkLabel:"\u2714 Write it",
       onCheck:(w)=>{
         const said=w.join(" ");
         if(said===r.tokens.join(" ")) return {ok:true,msg:"\u2713 Perfect!"};
@@ -59258,10 +59270,31 @@ function runAlibiWitness(){
       },
       onSuccess:()=>{ ab.lines[ab.idx]=r.tokens.join(" ").replace(/\s+([.,!?])/g,"$1");
         ab.idx++; ab.tries=0;
-        if(ab.idx>=CY8_ALIBI.length){ DialogueBox.close();
-          Quest.complete("\u{1F575}\uFE0F Grammatica completata! Gli alibi sono a verbale."); return; }
+        if(ab.idx>=CY8_ALIBI.length){ cy8StormArticle(ab); return; }
         runAlibiWitness(); } },
     buttons:[{label:"Leave", cls:"ghost", act:()=>{}}] });
+}
+/* la fine della storia: l'articolo di Ivy, in prima pagina, con le righe
+   scritte dallo studente sotto la foto del temporale */
+function cy8StormArticle(ab){
+  try{ DialogueBox.close(); }catch(e){}
+  const L=(ab.lines||[]), row=i=>_escHtml(L[i]||CY8_ALIBI[i].tokens.join(" ").replace(/\s+([.,!?])/g,"$1"));
+  const h='<div style="background:#fbf8ef;border:1px solid #d9d2c4;border-radius:10px;padding:10px 12px;color:#1d2a32;">'
+    +'<div style="font:800 13px/1 Georgia,serif;letter-spacing:.12em;text-align:center;border-bottom:2px solid #1d2a32;padding-bottom:5px;">THE CITY LIFE NEWS</div>'
+    +'<div style="font:800 22px/1.15 Georgia,serif;margin:8px 0 6px;text-align:center;">STORM SURPRISES THE PLAZA!</div>'
+    +'<img src="'+cy8PhotoURL()+'" style="width:100%;border-radius:6px;display:block;margin-bottom:6px;">'
+    +'<div style="font:14px/1.45 Georgia,serif;">Yesterday at four o\'clock a big storm started in City Life Plaza. '
+    +'What were people doing? Ivy said: \u201c'+row(0)+'\u201d Sam said: \u201c'+row(1)+'\u201d '
+    +'We asked Nico: \u201c'+row(2)+'\u201d He laughed: \u201c'+row(3)+'\u201d And Ivy? \u201c'+row(4)+'\u201d '
+    +'Everybody was wet, but everybody was happy!</div>'
+    +'<div style="font:italic 12px/1.3 Georgia,serif;text-align:right;margin-top:6px;">by Ivy and you</div></div>';
+  try{ TTS.say("Storm surprises the plaza! Thank you: my article is ready!"); }catch(e){}
+  DialogueBox.open({ npc:CY8_NPC.ivy, icon:"\u{1F4F0}", sub:"Ivy's article is ready!",
+    text:"Thank you! My article is in the newspaper. Look!",
+    italian:"L'articolo di Ivy è uscito sul giornale della città, con le tue frasi.",
+    html:h,
+    buttons:[{ label:"\u2714 Great!", cls:"primary", act:()=>{
+      Quest.complete("\u{1F4F0} Grammatica completata! L'articolo sul temporale è sul giornale."); } }] });
 }
 
 MECH.alibiWitness=function(s){
@@ -59274,9 +59307,9 @@ MECH.alibiWitness=function(s){
      rientro. */
   Quest.questInteract({ id:"cy8alibi", area:"town", radius:3.4,
     pos:()=>cy8NpcPos("ivy"),
-    prompt:'Press <b>E</b>: the witness statements',
+    prompt:'Press <b>E</b>: help Ivy with her article',
     interact:()=>runAlibiWitness() });
-  questHudSet("grammatica", HOBJ("Go to <b>Ivy</b> in the square: she\'s got <b>yesterday\'s four o\'clock photo</b>.","Vai da <b>Ivy</b> in piazza: ha la <b>foto di ieri alle quattro</b>."), Quest.i, Quest.total);
+  questHudSet("grammatica", HOBJ("Go to <b>Ivy</b> in the square: she\'s got <b>yesterday\'s photo of the storm</b>.","Vai da <b>Ivy</b> in piazza: ha la <b>foto del temporale di ieri</b>."), Quest.i, Quest.total);
 };
 
 /* =====================================================================
@@ -59816,7 +59849,7 @@ function cy8SamDo(res){
       buttons:[{label:"Try again", cls:"primary", act:after}] });
   };
   if(res.kind==="ok"){
-    questHudSet("funzioni", HOBJ("\u{1F3C3} Sam is running…","\u{1F3C3} Sam sta correndo…"), Quest.i, Quest.total);
+    questHudSet("funzioni", HOBJ("\u{1F3C3} Sam is running… <b>follow him!</b>","\u{1F3C3} Sam sta correndo… <b>seguilo!</b> Quando si ferma, raggiungilo e premi <b>E</b>."), Quest.i, Quest.total);
     const dest=(typeof leg.to==="function")?leg.to():leg.to;
     const run=()=>cy8SamWalk(dest, ()=>{
       dr.idx++; dr.tries=0; dr.home=null; dr.h=null;
@@ -59824,7 +59857,7 @@ function cy8SamDo(res){
         dr.busy=false;
         try{ TTS.say("The market! Thank you very much."); }catch(e){}
         Quest.complete("\u{1F5FA}️ Funzioni completate! Sam è arrivato al mercato."); return; }
-      cy8SamFace(CY8_DIR_LEGS[dr.idx].head, ()=>{ dr.busy=false; runGiveDirections(); });
+      cy8SamFace(CY8_DIR_LEGS[dr.idx].head, ()=>{ dr.busy=false; cy8SamWaitYou(); });
     }, fail);
     if(res.turned) cy8SamFace(turnDir(res.turned), run); else run();
     return;
@@ -59854,6 +59887,19 @@ function cy8SamDo(res){
   if(res.turned) cy8SamFace(turnDir(res.turned), run); else run();
 }
 
+/* v501 (Giacomo, 21 nov: «quando dai le indicazioni al turista bisogna
+   scrivere di seguirlo, se no diventa difficile completare: i miei alunni
+   non capirebbero»). Arrivato in fondo a una tratta, Sam ASPETTA: se lo
+   studente e' vicino la domanda dopo si apre subito, se e' rimasto
+   indietro lo si dice chiaro (seguilo, raggiungilo, premi E) e la bussola
+   punta su Sam (target dello step). */
+function cy8SamWaitYou(){
+  let far=99; try{ const p=cy8NpcPos("sam"); far=Math.hypot(player.position.x-p.x,player.position.z-p.z); }catch(e){}
+  if(far<9){ runGiveDirections(); return; }
+  questHudSet("funzioni", HOBJ("\u{1F9CD} Sam stopped and he's waiting for you. <b>Go to Sam</b> (follow the compass) and press <b>E</b>.",
+    "\u{1F9CD} Sam si è fermato e ti aspetta. <b>Raggiungi Sam</b> (segui la bussola) e premi <b>E</b> per la prossima indicazione."), Quest.i, Quest.total);
+  toast("\u{1F9CD} Sam is waiting for you — follow him! · Raggiungi Sam e premi E",4200);
+}
 function runGiveDirections(){
   const st=Quest.state; const dr=st.dr=st.dr||{ idx:0, tries:0, busy:false };
   const sam=CY8_NPC.sam; if(!sam) return;
@@ -59877,7 +59923,7 @@ function runGiveDirections(){
         dr.said=w.join(" ");
         const res=cy8DirResolve(dr.idx, dr.said, dr.h);
         dr.res=res;
-        if(res.kind==="ok") return {ok:true, msg:"✓ "+dr.said+"  — Sam parte!"};
+        if(res.kind==="ok") return {ok:true, msg:"✓ "+dr.said+"  — Sam parte: seguilo!"};
         if(res.kind==="huh"){
           dr.tries++;
           try{ speechSynthesis.resume(); TTS.say("Sorry, I don't understand."); }catch(e){}
@@ -63512,7 +63558,7 @@ const AUTO={ on:false, mode:"", tc:null, pov:false, phase:"", obs:null, cam:null
    visto in prova). Restano -45 e -39; -39 e' il piu' vicino al TechLab. */
 const AUTO_STALL={ x:-39, z:-27.25 };
 const AUTO_HIDE={ x:-16, z:-25.6 };            // dove aspetta il corpo nascosto in volo (SKY-1): marciapiede, fuori strada
-const AUTO_KMH={ min:20, max:50 };
+const AUTO_KMH={ min:20, max:50, top:90 };   // max = il limite in citta'; top = «are you sure?» (v501)
 /* le mete: le parole che le riconoscono (le piu' specifiche PRIMA: «fire
    station» prima di «station»), dove stanno davvero (la porta, se la unit
    l'ha), e come chiamarle */
@@ -63806,7 +63852,7 @@ function tlAutoStart(mode){
   try{ standUpAll(); }catch(e){}
   AUTO.on=true; AUTO.mode=mode||"book"; AUTO.phase="ask"; AUTO.pov=false; AUTO.said={}; AUTO.idle=0;
   document.body.classList.add("veh","auto");               // v500: schermo pulito in auto (vedi CSS body.veh)
-  AUTO.look={ y:0, p:0 }; AUTO.kmh=40; AUTO.qT=0; AUTO.q=null; AUTO.place=null; AUTO.route=null;
+  AUTO.look={ y:0, p:0 }; AUTO.kmh=40; AUTO.pend=0; AUTO.wild=0; AUTO.lastSay=""; AUTO.qT=0; AUTO.q=null; AUTO.place=null; AUTO.route=null;
   finFade(1,650,function(){
     /* dal TechLab (giro finale): la quest e' finita, si chiude e si esce in citta' */
     if(area!=="town"){ try{ if(Quest.unit) Quest.stop(); }catch(e){} try{ enterArea("town"); }catch(e){} }
@@ -63927,7 +63973,7 @@ function tlAutoCurve(P0,P1,P2,P3,T,heading,done){
     tc.cv=Math.hypot(p.x-prev.x,p.z-prev.z)/Math.max(0.001,engine.getDeltaTime()/1000); prev=p;
     if(k>=1){ scene.onBeforeRenderObservable.remove(ob); if(done) done(); } });
 }
-function tlAutoSetSpeed(kmh){ AUTO.kmh=Math.max(AUTO_KMH.min,Math.min(AUTO_KMH.max,kmh));
+function tlAutoSetSpeed(kmh,sure){ AUTO.kmh=Math.max(AUTO_KMH.min,Math.min(sure?AUTO_KMH.top:AUTO_KMH.max,kmh));
   if(AUTO.car&&AUTO.car.tc) AUTO.car.tc.v=AUTO.kmh/3.6/TRAFFIC_SPEED; }
 function tlAutoGo(P){
   const at=P.at&&P.at(); const R=at?tlAutoRoute(at,null):null;
@@ -64160,6 +64206,13 @@ function tlAutoTick(){
   }
   /* la finestra della meta chiusa con Esc: si riapre */
   if(AUTO.phase==="ask" && !_dlgOpen()){ AUTO.idle+=dt; if(AUTO.idle>1.6){ AUTO.idle=0; tlAutoAsk(); } } else AUTO.idle=0;
+  /* v501: oltre i 50 in curva (o frenando forte) stridono le gomme */
+  { const tc=AUTO.car.tc;
+    if(AUTO.phase==="drive" && !AUTO.merging && tc && AUTO.kmh>AUTO_KMH.max){
+      const v=(tc.cv||0)*TRAFFIC_SPEED, hn=root.rotation.y, dh=Math.abs(tlAngTo(0,hn-(AUTO.lastH!=null?AUTO.lastH:hn)))/Math.max(dt,0.001);
+      const dv=((AUTO.lastV!=null?AUTO.lastV:v)-v)/Math.max(dt,0.001);
+      if((dh>0.32 && v>8) || (dv>7 && v>6)) try{ SFX.screech(Math.min(1,v/22)); }catch(e){}
+      AUTO.lastH=hn; AUTO.lastV=v; } else { AUTO.lastH=null; AUTO.lastV=null; } }
   /* il cervellone: una domanda ogni ~20 s di strada */
   if(AUTO.phase==="drive" && !AUTO.merging && !AUTO.q){ AUTO.qT-=dt; if(AUTO.qT<=0) tlAutoQuiz(); }
   const now=performance.now(); if(now-AUTO.lastNav>220){ AUTO.lastNav=now; tlAutoNavDraw(); }
@@ -64175,6 +64228,9 @@ function tlAutoPanel(on){
 }
 function tlAutoPanelDraw(msg){
   const d=AUTO.panel; if(!d) return;
+  /* v501: l'ultima frase di AUTO-1 resta finche' non ne arriva un'altra (la
+     domanda del computer ridisegna il pannello: cancellava «are you sure?») */
+  if(msg!=null) AUTO.lastSay=msg; else msg=AUTO.lastSay||"";
   const Q=AUTO.q;
   let h='<div style="display:flex;gap:6px;align-items:center;">'
     +'<span style="font-weight:800;white-space:nowrap">\u{1F697} '+AUTO.kmh+' km/h</span>'
@@ -64182,7 +64238,10 @@ function tlAutoPanelDraw(msg){
     +'style="flex:1;min-width:0;font:inherit;padding:6px 9px;border-radius:9px;border:1px solid #ccd6da;">'
     +(_SpkRec?'<button type="button" id="auto1-mic" class="qm-btn" style="padding:5px 9px">\u{1F3A4}</button>':'')
     +'<button type="button" id="auto1-send" class="qm-btn primary" style="padding:5px 11px">✔</button></div>'
-    +'<div id="auto1-say" style="margin-top:5px;min-height:18px;font-weight:600;color:#2f6f80">'+(msg?_escHtml(msg):"")+'</div>';
+    +'<div id="auto1-say" style="margin-top:5px;min-height:18px;font-weight:600;color:'+(AUTO.pend?'#b42318':'#2f6f80')+'">'+(msg?_escHtml(msg):"")+'</div>'
+    +(AUTO.pend?'<div style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap">'
+      +'<span style="padding:5px 10px;border-radius:9px;background:#fff4d6;border:1px dashed #e0a93b;font-weight:700">\u{1F4AC} The magic words: \u201cYes, I\'m in a hurry!\u201d</span>'
+      +'<button type="button" class="qm-btn auto1-sure" data-a="no" style="padding:5px 14px">\u{1F6E1}\uFE0F No, sorry. Slow down!</button></div>':'');
   if(Q){ h+='<div style="margin-top:6px;padding-top:6px;border-top:1px solid #e2dccd"><b>\u{1F5A5}\uFE0F AUTO-1\'s computer asks:</b> '+_escHtml(Q.q)
       +'<div style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap">'
       +Q.o.map((w,i)=>'<button type="button" class="qm-btn auto1-opt" data-i="'+i+'" style="padding:5px 14px">'+_escHtml(w)+'</button>').join("")
@@ -64194,12 +64253,48 @@ function tlAutoPanelDraw(msg){
   const sb=document.getElementById("auto1-send"); if(sb) sb.onclick=()=>{ const i=document.getElementById("auto1-cmd"); tlAutoCmd(i?i.value:""); };
   const mb=document.getElementById("auto1-mic"); if(mb) mb.onclick=()=>tlAutoMic("auto1-cmd",tlAutoCmd,"auto1-say");
   d.querySelectorAll(".auto1-opt").forEach(b=>{ b.onclick=()=>tlAutoAnswer(+b.getAttribute("data-i")); });
+  d.querySelectorAll(".auto1-sure").forEach(b=>{ b.onclick=()=>tlAutoSure(b.getAttribute("data-a")==="yes"); });
+}
+/* v501 (Giacomo, 21 nov: «fai che possa andare anche piu' veloce, ma il
+   computer di bordo ti dice "it's dangerous, are you sure?": gli alunni si
+   divertirebbero»; «la frase magica e' "I'm in a hurry!"»). Oltre i 50
+   km/h (il limite in citta') non dice piu' di no: chiede conferma, e la
+   conferma e' la FRASE MAGICA, scritta o detta al microfono: «(Yes,) I'm in
+   a hurry!» (un «yes» da solo non basta: il computer chiede il perche').
+   Detta da sola, la frase magica vale come «piu' veloce, sono sicuro». In
+   tutti e due i casi: «Hold on tight!» e subito al massimo (90 km/h).
+   «No» (o il bottone) e si resta dove si e'. Fino a 90 km/h; in curva e in
+   coda frena comunque (vlim e gap del traffico) e, oltre i 50, in curva
+   stridono le gomme (SFX.screech, da tlAutoTick). */
+const AUTO_SURE_ASK=["That's dangerous! The speed limit in town is 50 km/h. Are you sure?",
+  "Even faster?! That's REALLY dangerous! Are you sure?",
+  "Are you crazy?! My circuits are shaking! Are you REALLY, REALLY sure?"];
+/* (Giacomo: «il computer risponde in inglese "Hold on tight!" e va al massimo») */
+const AUTO_SURE_YES=["OK… hold on tight!","Hold on tight! I hope the police aren't watching!","Hold on tight! Here we go again!"];
+function tlAutoSure(yes){
+  const want=AUTO.pend; if(!want) return; AUTO.pend=0;
+  const say=m=>{ tlAutoPanelDraw(m); try{ TTS.say(m,{ gender:"f" }); }catch(e){} };
+  if(yes){ tlAutoSetSpeed(AUTO_KMH.top,true); AUTO.wild=(AUTO.wild||0)+1;       // la frase magica: subito al massimo
+    say(AUTO_SURE_YES[Math.min(AUTO_SURE_YES.length-1,AUTO.wild-1)]+" "+AUTO.kmh+" km/h!"); }
+  else say("Good choice! Safety first. I'll stay at "+AUTO.kmh+" km/h.");
 }
 /* la velocita' si chiede in inglese; i limiti li dice la macchina */
 function tlAutoCmd(raw){
   const t=tlAutoNorm(raw), say=m=>{ tlAutoPanelDraw(m); try{ TTS.say(m,{ gender:"f" }); }catch(e){} };
   if(!t) return;
   if(AUTO.phase!=="drive"){ say("Tell me where to go first!"); return; }
+  /* la frase magica: «I'm in a hurry!» (anche «I am in a hurry», «we're in a hurry») */
+  if(/\bin a hurry\b/.test(t)){
+    if(AUTO.kmh>=AUTO_KMH.top){ AUTO.pend=0; say("We're already at "+AUTO_KMH.top+" km/h, my top speed! Hold on tight!"); return; }
+    if(!AUTO.pend) AUTO.pend=AUTO_KMH.top;
+    tlAutoSure(true); return; }
+  /* la risposta a «are you sure?»: «no» ferma; «yes» da solo non basta */
+  if(AUTO.pend){
+    if(/\b(no|nope|slow|sorry|not sure)\b/.test(t)){ tlAutoSure(false); return; }
+    if(/\b(yes|yeah|sure|ok|okay|of course|please)\b/.test(t)){
+      try{ SFX.wrong(); }catch(e){}
+      say("Hmm… why? Tell me the magic words: “Yes, I'm in a hurry!”"); return; }
+  }
   const n=t.match(/\b(\d{1,3})\b/);
   let want=null;
   if(n) want=+n[1];
@@ -64208,7 +64303,12 @@ function tlAutoCmd(raw){
   else if(/\bstop\b/.test(t)){ say("I can't stop in the middle of the road! I'll stop when we arrive."); return; }
   else { say("Sorry? Try: “Go faster, please”, “Slow down, please” or “Drive at 30 km/h, please”."); return; }
   if(t.split(" ").length<2){ say("Please ask me in a sentence: “Go faster, please.”"); return; }
-  if(want>AUTO_KMH.max){ tlAutoSetSpeed(AUTO_KMH.max); say("Sorry, I can't go faster than "+AUTO_KMH.max+" km/h: it's the speed limit in town. I'll drive at "+AUTO_KMH.max+"."); }
+  if(want>AUTO_KMH.max){
+    if(AUTO.kmh>=AUTO_KMH.top){ say("No way! "+AUTO_KMH.top+" km/h is my top speed. I can't go any faster!"); return; }
+    AUTO.pend=Math.min(AUTO_KMH.top,want);
+    try{ SFX.wrong(); }catch(e){}
+    const lv=AUTO.kmh>AUTO_KMH.max?Math.min(2,(AUTO.wild||1)):0;
+    say("\u26A0\uFE0F "+AUTO_SURE_ASK[lv]+" ("+AUTO.pend+" km/h)"); }
   else if(want<AUTO_KMH.min){ tlAutoSetSpeed(AUTO_KMH.min); say("I won't go slower than "+AUTO_KMH.min+" km/h: the cars behind me might get angry! I'll drive at "+AUTO_KMH.min+"."); }
   else { tlAutoSetSpeed(want); say("OK! I'll drive at "+AUTO.kmh+" km/h."); }
 }
@@ -64287,7 +64387,7 @@ function tlAutoNavDraw(){
     const qw=String(AUTO.q.q).split(" "); let ql="", qy=418;
     qw.forEach(w=>{ const t=ql?ql+" "+w:w; if(c.measureText(t).width>400){ c.fillText(ql,44,qy); qy+=22; ql=w; } else ql=t; }); if(ql && qy<=444) c.fillText(ql,44,qy); }
   /* tachimetro */
-  const cx=618, cy=176, rad=92, a0=Math.PI*0.8, a1=Math.PI*2.2, fr=Math.min(1,kmh/60);
+  const cx=618, cy=176, rad=92, a0=Math.PI*0.8, a1=Math.PI*2.2, fr=Math.min(1,kmh/100);
   c.lineWidth=16; c.lineCap="round"; c.strokeStyle="rgba(34,50,61,.7)"; c.beginPath(); c.arc(cx,cy,rad,a0,a1); c.stroke();
   c.strokeStyle=kmh>AUTO_KMH.max?"#ff6a5c":"#6fd0e8"; c.beginPath(); c.arc(cx,cy,rad,a0,a0+(a1-a0)*fr); c.stroke();
   c.fillStyle="#ffffff"; c.textAlign="center"; c.font="bold 70px sans-serif"; c.fillText(String(kmh),cx,cy+4);
