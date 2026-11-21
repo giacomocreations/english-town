@@ -9953,6 +9953,14 @@ function _inCarBox(c,x,z){
   return Math.abs(fw)<2.5+PLAYER_R && Math.abs(lt)<1.15+PLAYER_R; }
 function trafficBlocked(x,z){
   if(area!=="town") return false;
+  /* v501 (Giacomo: «quando parcheggia al parco, prima che vada via diventa
+     attraversabile»). AUTO-1 ferma fuori dal traffico (nello stallo dove ti
+     ha lasciato, accostata, o a casa) non e' in _trafficCars e non ha un
+     solido: la si urta come un'auto vera, senza clacson (e' spenta). */
+  try{ const A=(typeof AUTO!=="undefined")?AUTO:null, C=A&&A.car, tc=C&&C.tc;
+    if(C && tc && !A.on && C.root.isEnabled() && _trafficCars.indexOf(tc)<0
+       && Math.abs(x-C.root.position.x)<5 && Math.abs(z-C.root.position.z)<5
+       && _inCarBox(tc,x,z) && !_inCarBox(tc,player.position.x,player.position.z)) return true; }catch(e){}
   /* \u26a0\ufe0f DOPO LE 22 LE AUTO NON CI SONO PIU'. Erano solo NASCOSTE
      (setEnabled(false)) e il loro giro di aggiornamento usciva subito, ma
      `_trafficCars` restava pieno e le posizioni restavano CONGELATE dov'erano
@@ -63557,6 +63565,12 @@ const AUTO={ on:false, mode:"", tc:null, pov:false, phase:"", obs:null, cam:null
 /* ⚠️ x -39, non -42: lo stallo di mezzo e' VUOTO (car() lo salta, insideSolid:
    visto in prova). Restano -45 e -39; -39 e' il piu' vicino al TechLab. */
 const AUTO_STALL={ x:-39, z:-27.25 };
+/* v501 (Giacomo: «se parcheggia vicino al parco, in quel parcheggio puo'
+   rimanere: non c'e' bisogno che torni indietro»). AUTO.spot = lo stallo
+   dove AUTO-1 e' ferma adesso (null = casa, AUTO_STALL). Si prenota li'
+   (E vicino all'auto) e da li' riparte. Torna a casa da sola solo dopo
+   averti lasciato accostata in strada (in strada non puo' restare). */
+function tlAutoSpot(){ return AUTO.spot||AUTO_STALL; }
 const AUTO_HIDE={ x:-16, z:-25.6 };            // dove aspetta il corpo nascosto in volo (SKY-1): marciapiede, fuori strada
 const AUTO_KMH={ min:20, max:50, top:90 };   // max = il limite in citta'; top = «are you sure?» (v501)
 /* le mete: le parole che le riconoscono (le piu' specifiche PRIMA: «fire
@@ -63732,7 +63746,10 @@ function tlAutoCabin(C,E){
   [-1,1].forEach(sd=>{ const x=sd*Math.abs(S.x), z=S.z;
     box(0.50,0.14,0.52,cream,x,0.49,z+0.02);
     [-1,1].forEach(k=>capZ(0.045,0.50,cognac,x+k*0.25,0.565,z+0.02));
-    box(0.48,0.30,0.20,dark,x,0.30+0.11,z+0.02);                                   // base
+    /* la base sotto la seduta: la sua faccia di sopra stava a 0,56 m
+       ESATTAMENTE come quella della seduta, e le due «litigavano» (lo
+       sfarfallio nero sul sedile di destra, Giacomo). Ora finisce 6 cm sotto. */
+    box(0.48,0.20,0.20,dark,x,0.30+0.10,z+0.02);                                   // base
     const bk=box(0.50,0.74,0.12,cream,x,0.93,z-0.30); bk.rotation.x=-0.16;
     [-1,1].forEach(k=>{ const c=capZ(0.045,0.70,cognac,x+k*0.255,0.93,z-0.28,-0.16); c.rotation.x=-0.16; });
     const hr=capX(0.10,0.34,creamP,x,E+0.02,z-0.44); hr.scaling.set(1,1,0.6);
@@ -63807,12 +63824,19 @@ function tlAutoCabin(C,E){
   hm.diffuseTexture=dt; hm.useAlphaFromDiffuseTexture=true; hm.emissiveTexture=dt; hm.disableLighting=true;
   hm.specularColor=new BABYLON.Color3(0,0,0); hm.backFaceCulling=false;
   hm.transparencyMode=BABYLON.Material.MATERIAL_ALPHABLEND;
-  /* appoggiato alla base del parabrezza: il bordo basso 1,5 cm sopra la
-     plancia, girato verso gli occhi del passeggero */
-  const hudH=0.25, hudY=D+0.015+hudH/2, eZ=S.z+0.06;
-  const hud=BABYLON.MeshBuilder.CreatePlane("a1hudp",{ width:hudH*1.6, height:hudH },scene);
-  hud.material=hm; hud.parent=ck; hud.isPickable=false; hud.position.set(hx,hudY,hz);
-  hud.rotation.y=Math.atan2(hx-S.x,hz-eZ); hud.rotation.x=Math.atan2(E-hudY,Math.hypot(hx-S.x,hz-eZ));
+  /* ⚠️ DRITTO COME IL VETRO (Giacomo: «l'HUD e' ancora storto, deve essere
+     dritto come il vetro»). Prima era girato verso gli occhi del passeggero
+     (21 gradi di traverso rispetto all'auto). Ora sta DENTRO il piano del
+     parabrezza, in basso: niente rotazione di lato, la stessa inclinazione
+     del vetro, 1 cm all'interno. Visto di sbieco il vetro accorcia in
+     altezza (~0,6): il piano e' piu' alto in proporzione, cosi' la
+     schermata si legge con le sue proporzioni giuste. */
+  const gL=Math.hypot(R-D,zW-zH), gy=(R-D)/gL, gz=-(zW-zH)/gL;        // su per il vetro
+  const hudW=0.32, hudS=hudW/(1.6*0.6), u=0.03+hudS/2;                 // u = distanza dal bordo basso, lungo il vetro
+  const hud=BABYLON.MeshBuilder.CreatePlane("a1hudp",{ width:hudW, height:hudS },scene);
+  hud.material=hm; hud.parent=ck; hud.isPickable=false;
+  hud.position.set(hx, D+gy*u+gz*0.01, zW+gz*u-gy*0.01);
+  hud.rotation.x=Math.asin(gz);
   try{ if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(hud); }catch(e){}
   C.tab=hud; ck.__mats=mats;
   ck.setEnabled(!!AUTO.pov);
@@ -63830,7 +63854,7 @@ let AUTO_BOOK=null;
 function tlAutoBookInit(){
   if(AUTO_BOOK) return;
   AUTO_BOOK=addInteract({ id:"auto1_book", area:"town", radius:3.4,
-    pos:()=>new BABYLON.Vector3(AUTO_STALL.x,0,AUTO_STALL.z),
+    pos:()=>{ const s=tlAutoSpot(); return new BABYLON.Vector3(s.x,0,s.z); },
     prompt:()=>tlAutoUnlocked()?'\u{1F697} Press <b>E</b>: book <b>AUTO-1</b>, the self-driving car'
                                :'\u{1F697} <b>AUTO-1</b> · TechLab prototype — finish the TechLab quest to use it',
     interact:()=>tlAutoBook() });
@@ -63946,7 +63970,7 @@ function tlAutoRoute(at,from){
   TRAFFIC_LOOPS.forEach(L=>{ _loopMeta(L);
     let ei=-1;
     if(from && from.loop===L) ei=from.i;
-    else if(!from) ei=L.__find(-34,-33.25,1,0,2.5);
+    else if(!from){ const sp=tlAutoSpot(); ei=L.__find(sp.x+5,AUTO_LANE_Z,1,0,2.5); }   // davanti allo stallo dov'e' (a casa: -34)
     if(ei<0) return;
     let di=-1, dd=1e9; for(let i=0;i<L.length;i++){ const d=Math.hypot(L[i][0]-at.x,L[i][1]-at.z); if(d<dd){ dd=d; di=i; } }
     if(di<0) return;
@@ -64033,7 +64057,8 @@ function tlAutoJoinSeen(tc){ tc.manual=true; if(_trafficCars.indexOf(tc)<0) _tra
 const AUTO_STALLS=[-45,-42,-39,39,42,45].map(x=>({ x, z:-27.25 }));
 const AUTO_LANE_Z=-33.25;
 function tlAutoFreeStall(at){ let best=null, bd=36;
-  AUTO_STALLS.forEach(S=>{ if(Math.hypot(S.x-AUTO_STALL.x,S.z-AUTO_STALL.z)<1) return;
+  const sp=tlAutoSpot();                              // lo stallo da cui parte: no. Casa si', se e' vuota
+  AUTO_STALLS.forEach(S=>{ if(Math.hypot(S.x-sp.x,S.z-sp.z)<1) return;
     const busy=(typeof PARKED_CARS!=="undefined"?PARKED_CARS:[]).some(p=>p.root && p.root.isEnabled() && Math.hypot(p.x-S.x,p.z-S.z)<1.2);
     if(busy) return; const d=Math.hypot(S.x-at.x,S.z-at.z); if(d<bd){ bd=d; best=S; } });
   return best; }
@@ -64050,6 +64075,15 @@ function tlAutoStallIn(tc,S){
     tc.cv=0; root.position.x=S.x; root.position.z=S.z; tlAutoGroundAt();
     /* dritta nello stallo, muso verso il marciapiede (la curva arriva un po' storta) */
     tlAutoSpin(TRAFFIC_YAW,()=>{ AUTO.inStall=true; AUTO.dropFront=true; tc.side=-1; tlAutoDrop(); }); });
+}
+/* lasciato il passeggero in uno stallo: resta li', girata verso il viale,
+   pronta a ripartire (si prenota li') */
+function tlAutoStay(){
+  const C=AUTO.car; if(!C) return; AUTO.inStall=false;
+  const x=C.root.position.x, z=C.root.position.z;
+  AUTO.spot=(Math.hypot(x-AUTO_STALL.x,z-AUTO_STALL.z)<1)?null:{ x, z };
+  AUTO.busy="park";
+  tlAutoSpin(Math.PI+TRAFFIC_YAW,()=>{ tlAutoGroundAt(); AUTO.busy=""; });
 }
 /* girarsi sul posto (e' del 2050) */
 function tlAutoSpin(r1,cb){ const root=AUTO.car.root, tc=AUTO.car.tc, r0=root.rotation.y, t0=performance.now(); let d=r1-r0;
@@ -64103,7 +64137,7 @@ function tlAutoDrop(){
       msg+=" It's about "+Math.round(far/5)*5+" metres from here: follow the compass."; }
     toast(msg);
     try{ if(!Sync.get("et_auto1",null)) Sync.set("et_auto1",{ at:Date.now() }); }catch(e){}
-    setTimeout(()=>tlAutoReturn(), 2500);
+    setTimeout(()=>{ if(AUTO.inStall) tlAutoStay(); else tlAutoReturn(); }, 2500);
   }, false, false, true);
 }
 /* ---- da sola torna allo stallo: stesso giro, poi dentro e si gira ---- */
@@ -64140,12 +64174,12 @@ function tlAutoParkIn(tc){
     while(d>Math.PI) d-=2*Math.PI; while(d<-Math.PI) d+=2*Math.PI;
     const ob=scene.onBeforeRenderObservable.add(()=>{ const q=Math.min(1,(performance.now()-t0)/1600);
       root.rotation.y=r0+d*q*q*(3-2*q); tc.cv=0;
-      if(q>=1){ scene.onBeforeRenderObservable.remove(ob); tlAutoGroundAt(); AUTO.busy=""; } }); });
+      if(q>=1){ scene.onBeforeRenderObservable.remove(ob); tlAutoGroundAt(); AUTO.busy=""; AUTO.spot=null; } }); });
 }
 function tlAutoParkNow(){ const C=AUTO.car; if(!C) return; const tc=C.tc;
   const k=_trafficCars.indexOf(tc); if(k>=0) _trafficCars.splice(k,1);
   TRAFFIC_ZONES.forEach(Z=>{ if(Z.h===tc) Z.h=null; });
-  tc.manual=true; tc.cv=0; C.root.position.x=AUTO_STALL.x; C.root.position.z=AUTO_STALL.z; C.root.rotation.y=Math.PI+TRAFFIC_YAW; tlAutoGroundAt(); AUTO.busy=""; AUTO.inStall=false; AUTO.fromStall=false; }
+  tc.manual=true; tc.cv=0; C.root.position.x=AUTO_STALL.x; C.root.position.z=AUTO_STALL.z; C.root.rotation.y=Math.PI+TRAFFIC_YAW; tlAutoGroundAt(); AUTO.busy=""; AUTO.inStall=false; AUTO.fromStall=false; AUTO.spot=null; }
 /* l'auto poggiata sul suolo vero di dove si trova (stallo, marciapiede accostato) */
 function tlAutoGroundAt(){ const C=AUTO.car; if(!C) return;
   let gy=0; try{ gy=_pedGroundY(C.root.position.x,C.root.position.z)||0; }catch(e){}
