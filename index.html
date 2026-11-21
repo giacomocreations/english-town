@@ -64632,7 +64632,7 @@ function tlAutoStart(mode,id){
   try{ DialogueBox.close(); }catch(e){}
   try{ if(RIDE.on) rideOff(true); }catch(e){}
   try{ standUpAll(); }catch(e){}
-  AUTO.on=true; AUTO.mode=mode||"book"; AUTO.phase="ask"; AUTO.pov=false; AUTO.said={}; AUTO.idle=0;
+  AUTO.on=true; AUTO.mode=mode||"book"; AUTO.phase="ask"; AUTO.pov=false; AUTO.said={}; AUTO.idle=0; AUTO.wantDest=null;
   document.body.classList.add("veh","auto");               // v500: schermo pulito in auto (vedi CSS body.veh)
   AUTO.look={ y:0, p:0 }; AUTO.orbit=null; AUTO.kmh=40; AUTO.pend=0; AUTO.wild=0; AUTO.lastSay=""; AUTO.tour=null; AUTO.offer=null; AUTO.qT=0; AUTO.q=null; AUTO.place=null; AUTO.route=null;
   finFade(1,650,function(){
@@ -64953,6 +64953,8 @@ function tlAutoGo(P,Rpre){
     if(tc.lift==null){ try{ carGroundRig(tc); }catch(e){} }
     if(_trafficCars.indexOf(tc)<0) _trafficCars.push(tc);
     AUTO.merging=false; AUTO.qT=4;
+    if(AUTO.wantDest){ const W=AUTO.wantDest; AUTO.wantDest=null;                   // v511: meta chiesta mentre si usciva dal parcheggio
+      try{ if(!tlAutoRedirect(W)) tlAutoPanelDraw("Sorry, I can't find a road to "+W.name+" from here."); }catch(e){} }
     setTimeout(()=>{ try{ if(!tc.wh) tc.wh=carWheelsRig(tc); }catch(e){} },60); }); });
 }
 /* il varco: nessuna auto a meno di 9 m dai punti della manovra, e nessuna
@@ -65307,7 +65309,9 @@ function tlAutoCmd(raw){
       if(t.split(" ").length<3){ say("Please ask me in a full sentence: “Take me to "+P.name+", please.”"); return; }
       if(AUTO.place && AUTO.place.name===P.name && !AUTO.tour){ say("We're already going to "+P.name+"!"); return; }
       const wasTour=!!AUTO.tour;
-      if(tlAutoRedirect(P)) say("✓ OK! "+(wasTour?"No more tour: ":"")+"we're going to "+P.name+".");
+      /* ancora in uscita dal parcheggio: la nuova meta si ricorda e vale appena si e' in strada */
+      if(AUTO.merging){ AUTO.wantDest=P; say("✓ OK! "+(wasTour?"No more tour: as":"As")+" soon as we're on the road, we're going to "+P.name+"."); return; }
+      if(tlAutoRedirect(P)) say("✓ OK! "+(wasTour?"No more tour: we're":"We're")+" going to "+P.name+".");
       else say("Sorry, I can't find a road to "+P.name+" from here.");
       return; } }
   /* la risposta a «are you sure?»: «no» ferma; «yes» da solo non basta */
