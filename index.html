@@ -389,6 +389,10 @@
   #toast.big{font-size:clamp(20px,5.4vw,30px);font-weight:800;padding:14px 26px;border-radius:14px;
     background:#1f7a46;color:#fff;border:3px solid #9ff0c4;top:22px;}
   #toast.big.blink{animation:etTblink .5s ease-in-out 6;}
+  /* v501 (Giacomo: «la frase giusta in verde, dopo l'anello giusto, e'
+     coperta da quella col buco»): in volo / in auto il pannello in alto
+     (.veh-ui, z 30) stava SOPRA al toast (z 10). Ora il toast vince. */
+  body.veh #toast{z-index:40;}
   @keyframes etTblink{0%,100%{background:#1f7a46;color:#fff;}50%{background:#f2c93e;color:#1d2a32;}}
   /* v320: quello che ti dice un compagno — non blocca, sparisce da solo */
   #pres-msg{position:fixed;z-index:40;right:14px;top:112px;width:min(320px,calc(100vw - 28px));box-sizing:border-box;
@@ -63109,8 +63113,8 @@ function tlSkyCamAlpha(face){ return Math.atan2(-Math.cos(face),-Math.sin(face))
    e' sicura / Dr. Ito dice NO / fai una domanda), quindi c'e' davvero
    una risposta giusta: will, might, won't, Will...?
    Comandi: W/↑ piu' veloce, S/↓ piu' piano, A/D o ←/→ gira, Spazio su,
-   Shift giu'; oppure tieni premuto il mouse (o il dito) e trascina; la
-   levetta su tablet. Vicino agli anelli la quota si aggiusta da sola:
+   Shift giu'; oppure tieni premuto il mouse (o il dito) e trascina (v501:
+   giu' = sali, come una cloche); la levetta su tablet. Vicino agli anelli la quota si aggiusta da sola:
    basta sterzare. Il traffico sotto non vede il giocatore (il corpo resta
    nascosto fuori strada, AUTO_HIDE; e pedOnCarriageway tace in volo).
    ===================================================================== */
@@ -63141,7 +63145,7 @@ function tlSkyUi(on){
       d.style.cssText="position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:30;background:rgba(14,22,30,.88);"
         +"color:#e6f6fb;border:1px solid #2f6f80;border-radius:14px;padding:8px 16px;font:15px/1.4 system-ui,sans-serif;"
         +"pointer-events:none;text-align:center;max-width:min(620px,90vw);";
-      d.className="veh-ui"; document.body.appendChild(d); SKY.ui=d; } SKY.ui.style.display=""; }
+      d.className="veh-ui"; document.body.appendChild(d); SKY.ui=d; } SKY.ui.style.display=""; SKY.ui.style.visibility=""; }
   else if(SKY.ui) SKY.ui.style.display="none";
 }
 function tlSkyUiDraw(){
@@ -63150,7 +63154,7 @@ function tlSkyUiDraw(){
   const touch=(typeof matchMedia==="function" && matchMedia("(pointer:coarse)").matches);
   SKY.ui.innerHTML='<div class="sky-l1">\u{1F6F8} '+(SKY.qi+1)+'/'+SKY_QS.length+' · fly through the right word!</div>'
     +'<div class="sky-l2">'+_escHtml(q.cue)+' “'+(q.before?_escHtml(q.before)+" ":"")+gap+" "+_escHtml(q.after)+'”</div>'
-    +'<div class="sky-l3">'+(touch?"Drag to steer · the joystick works too":"W/S speed · A/D turn · Space/Shift up/down · or drag with the mouse")+'</div>';
+    +'<div class="sky-l3">'+(touch?"Drag to steer: left/right to turn · down to climb, up to dive":"W/S speed · A/D turn · Space up · Shift down · or drag: down = climb, up = dive")+'</div>';
 }
 /* v500 — L'ALTEZZA DEI TETTI (Giacomo: «volando bassi si passa in mezzo ai
    grattacieli o sul tetto dell'aeroporto»). Una griglia da 6 m con la cima
@@ -63190,7 +63194,7 @@ function tlSkySpawnSet(){
   let cx=ship.position.x+fx*72+rx*side, cz=ship.position.z+fz*72+rz*side;
   /* dentro la citta': se il punto esce, lo si riporta verso il centro */
   const ox=cx-10, oz=cz+30, far=Math.hypot(ox,oz); if(far>200){ cx=10+ox/far*200; cz=-30+oz/far*200; }
-  let y=Math.max(SKY.ay, 22);
+  let y=Math.max(SKY.ay, SKY_MIN_ALT+2);
   for(let k=-1;k<=1;k++){ const t=tlSkyTop(cx+rx*k*10, cz+rz*k*10); if(y<t+9) y=t+9; }
   y=Math.min(y,80);
   const hh=Math.atan2(cx-ship.position.x, cz-ship.position.z), set={ gates:[], c:new BABYLON.Vector3(cx,y,cz) };
@@ -63225,7 +63229,9 @@ function tlSkyHit(g,set){
     try{ TTS.say(full+" … "+q.say,{ gender:"m" }); }catch(e){}
     try{ SFX.correct(); }catch(e){}
     tlSkyUiDraw();
-    setTimeout(()=>{ if(!SKY.on) return; tlSkyGatesOff(); SKY.qi++; SKY.solved=false;
+    try{ SKY.ui.style.visibility="hidden"; }catch(e){}      // v501: si legge la frase verde, intera
+    setTimeout(()=>{ try{ SKY.ui.style.visibility=""; }catch(e){}
+      if(!SKY.on) return; tlSkyGatesOff(); SKY.qi++; SKY.solved=false;
       if(!tlSkyQ()){ SKY.free=false; tlSkyUiDraw(); tlGramDone(); } else tlSkyUiDraw(); }, 2200);
   } else {
     g.cool=2.5; tlSkyGateColor(g,0.95,0.25,0.2);
@@ -63236,40 +63242,70 @@ function tlSkyHit(g,set){
 /* il volo libero */
 function tlSkyFree(){
   SKY.free=true; SKY.flying=false; SKY.qi=0; SKY.solved=false; SKY.sets=[]; SKY.v=9; SKY.turn=0;
-  SKY.ay=Math.max(SKY.ship.position.y+6, 26);
+  SKY.ay=Math.max(SKY.ship.position.y+6, SKY_MIN_ALT);
   tlSkyGrid(); tlSkyShadow(); tlSkyUi(true); tlSkyUiDraw();
   try{ document.getElementById("quest-nudge").classList.remove("show"); }catch(e){}
   questHudSet("grammatica", HOBJ("\u{1F6F8} Fly <b>SKY-1</b> and fly through the right word: <i>will · may · might · won't</i>",
     "\u{1F6F8} Pilota <b>SKY-1</b> e vola dentro la parola giusta"), Quest.i, Quest.total);
 }
+/* =====================================================================
+   v501 — I COMANDI DI PRIMA + UN LIMITE DI QUOTA (Giacomo, 21 nov: «ora
+   pilotare la macchina volante e' difficile, e' peggiorato rispetto alla
+   prima versione: mettiamo un limite di quota per non farla andare contro
+   gli edifici, lasciando i controlli originali»; «col mouse su e giu' sono
+   al contrario»).
+   Cosa rendeva difficile la v500: la quota non era piu' tua. Ogni
+   fotogramma l'auto guardava i tetti sotto e 10-24 m davanti, SALIVA da
+   sola di colpo e FRENAVA a un terzo: sopra la citta' (tetti da 5 a 50 m)
+   andava su e giu' senza che lo studente avesse toccato niente.
+   Ora, come nella prima versione, la quota cambia solo con Spazio/Shift o
+   col mouse (e vicino agli anelli si porta piano alla loro altezza):
+   · QUOTA MINIMA 28 m: sopra tutti i palazzi del centro (misurati: 5-22 m);
+   · le poche TORRI piu' alte (39-56 m: Job Centre, il blocco a nord-est)
+     sono un muro: non si sale da soli, ci si ferma e si scivola di lato;
+     per passarci sopra si sale (Spazio, o il mouse).
+   Mouse/dito: trascina a destra/sinistra per girare, IN BASSO per salire e
+   IN ALTO per scendere (come la cloche di un aereo: Giacomo li voleva al
+   contrario di prima).
+   ===================================================================== */
+const SKY_MIN_ALT=28, SKY_MAX_ALT=95;
+function tlSkyWall(x,z,y){ return tlSkyTop(x,z)>y-2.5; }      // la torre arriva alla mia quota?
 function tlSkyFly(dt){
   const ship=SKY.ship, K=keys;
+  /* l'input: tastiera + mouse/dito trascinato + levetta */
   let turn=(K["a"]||K["arrowleft"]?-1:0)+(K["d"]||K["arrowright"]?1:0);
   let climb=(K[" "]?1:0)-(K["shift"]||K["shiftleft"]||K["shiftright"]?1:0);
   let acc=(K["w"]||K["arrowup"]?1:0)-(K["s"]||K["arrowdown"]?1:0);
-  if(SKY_PTR.on){ turn+=Math.max(-1,Math.min(1,(SKY_PTR.x-SKY_PTR.x0)/140)); climb+=Math.max(-1,Math.min(1,-(SKY_PTR.y-SKY_PTR.y0)/140)); }
+  if(SKY_PTR.on){ turn+=Math.max(-1,Math.min(1,(SKY_PTR.x-SKY_PTR.x0)/140)); climb+=Math.max(-1,Math.min(1,(SKY_PTR.y-SKY_PTR.y0)/140)); }
   try{ if(stickVec.x||stickVec.y){ turn+=stickVec.x; acc+=-stickVec.y; } }catch(e){}
   turn=Math.max(-1,Math.min(1,turn)); climb=Math.max(-1,Math.min(1,climb));
   SKY.v=Math.max(4,Math.min(18,SKY.v+acc*7*dt+(acc===0?(9-SKY.v)*0.3*dt:0)));
+  /* fuori dalla citta' si torna indietro da soli, piano */
   const cx=10, cz=-30, ox=ship.position.x-cx, oz=ship.position.z-cz, far=Math.hypot(ox,oz);
   if(far>230){ const back=Math.atan2(-ox,-oz); turn+=Math.max(-1,Math.min(1,(tlAngTo(SKY.face,back)-SKY.face)*1.5)); turn=Math.max(-1,Math.min(1,turn)); }
   SKY.turn+=(turn-SKY.turn)*Math.min(1,dt*5);
   SKY.face+=SKY.turn*1.35*dt;
   const fx=Math.sin(SKY.face), fz=Math.cos(SKY.face);
-  /* la serie di anelli piu' vicina davanti (per la quota assistita) */
+  /* quota: comandata, ma vicino agli anelli si porta da sola alla loro altezza */
   let near=null, nd=1e9;
   (SKY.sets||[]).forEach(st=>{ const dx=st.c.x-ship.position.x, dz=st.c.z-ship.position.z, d=Math.hypot(dx,dz);
     if(dx*fx+dz*fz>-8 && d<nd){ nd=d; near=st; } });
   if(climb!==0) SKY.ay+=climb*9*dt;
   else if(near && nd<90) SKY.ay+=(near.c.y-SKY.ay)*Math.min(1,dt*1.6);
-  /* mai dentro un edificio: sotto e davanti (10 e 24 m) si resta 6 m sopra il tetto */
-  const minA=Math.max(tlSkyTop(ship.position.x,ship.position.z), tlSkyTop(ship.position.x+fx*10,ship.position.z+fz*10),
-                      tlSkyTop(ship.position.x+fx*24,ship.position.z+fz*24))+6;
-  SKY.ay=Math.max(minA, Math.max(9,Math.min(95,SKY.ay)));
-  /* troppo basso davanti a un edificio: si frena mentre si sale (mai contro il muro) */
-  const slow=ship.position.y<minA-2 ? 0.35 : 1;
-  ship.position.x+=fx*SKY.v*slow*dt; ship.position.z+=fz*SKY.v*slow*dt;
-  const vy=(SKY.ay-ship.position.y)*Math.min(1,dt*(ship.position.y<minA?5:2.2));
+  SKY.ay=Math.max(SKY_MIN_ALT,Math.min(SKY_MAX_ALT,SKY.ay));
+  /* avanti — ma dentro una torre no: si scivola lungo il muro (x o z), se no si resta li' */
+  const step=SKY.v*dt, y=ship.position.y, px=ship.position.x, pz=ship.position.z;
+  const nx=px+fx*step, nz=pz+fz*step;
+  if(!tlSkyWall(nx+fx*4,nz+fz*4,y)){ ship.position.x=nx; ship.position.z=nz; SKY.bump=0; }
+  else {
+    if(!tlSkyWall(nx+fx*4,pz,y)) ship.position.x=nx;
+    else if(!tlSkyWall(px,nz+fz*4,y)) ship.position.z=nz;
+    SKY.v=Math.max(4,SKY.v-12*dt);
+    if(!SKY.bump){ SKY.bump=1; try{ toast("\u{1F3E2} Too tall! Go up (Space / drag down) or turn."); }catch(e){} }
+  }
+  /* se si scende accanto a una torre, mai dentro: la quota si ferma sopra il suo tetto */
+  if(tlSkyWall(ship.position.x,ship.position.z,SKY.ay)) SKY.ay=Math.max(SKY.ay,tlSkyTop(ship.position.x,ship.position.z)+3);
+  const vy=(SKY.ay-ship.position.y)*Math.min(1,dt*2.2);
   ship.position.y+=vy;
   ship.rotation.y=SKY.face;
   ship.rotation.z+=((-SKY.turn*0.38)-ship.rotation.z)*Math.min(1,dt*4);
@@ -63320,7 +63356,7 @@ function tlSkyStart(){
       SKY.phase="intro";
       DialogueBox.open({ npc:TL_NPC.marcus, icon:"\u{1F9D1}‍\u{1F4BB}", sub:"SKY-1 · flying car prototype", autoSpeak:true,
         text:"Welcome to SKY-1! Today YOU fly it. Read the sentence and fly through the right word!",
-        italian:"Piloti tu: W/S più veloce o più piano, A/D (o ← →) per girare, Spazio/Shift su e giù — oppure tieni premuto il mouse e trascina. Davanti a te compaiono tre anelli con le parole: vola dentro quella giusta.",
+        italian:"Piloti tu: W/S più veloce o più piano, A/D (o ← →) per girare, Spazio su, Shift giù — oppure tieni premuto il mouse e trascina: destra/sinistra per girare, in basso per salire, in alto per scendere (come la cloche di un aereo). Sotto i 28 metri non si scende: sopra i tetti si vola tranquilli. Davanti a te compaiono tre anelli con le parole: vola dentro quella giusta.",
         buttons:[{ label:"\u{1F680} Let's fly!", cls:"primary", act:()=>{ SKY.phase="fly"; tlSkyFree(); } }] });
     });
   });
@@ -63463,9 +63499,9 @@ function tlSkyEnd(cb,abort){
      (e' del 2050), pronta a ripartire.
    · DENTRO: l'avatar e' SEDUTO (playerSit, posto davanti a sinistra, il
      passeggero all'inglese); con O si guarda dai suoi occhi e trascinando
-     il mouse (o con ← →) ci si guarda intorno: sedili chiari, pannelli
-     scuri, strisce LED, il tablet al centro della plancia girato verso
-     il passeggero.
+     il mouse (o con ← →) ci si guarda intorno: sedili in pelle trapuntata, LED
+     sulla cintura e sulla plancia, l'HUD semitrasparente sul parabrezza (v501:
+     vedi tlAutoCabin).
    ⚠️ In auto il traffico non vede un pedone (pedOnCarriageway, spinte e
    clic sulla scena tacciono: vedi SKY.on/AUTO.on).
    ===================================================================== */
@@ -63545,44 +63581,203 @@ function tlAutoBuildCar(key){
   lr.material=led; lr.parent=kit; lr.position.set(0,H+0.07,-0.15);
   /* (v500: via le strisce azzurre sui fianchi: fuori dalla carrozzeria
      sembravano linee staccate dall'auto, segnalato da Giacomo) */
-  /* ABITACOLO — elegante: pelle chiara, pannelli scuri, LED azzurri e lilla */
-  const ck=new BABYLON.TransformNode("auto1c",scene); ck.parent=kit;
-  const skin=M("a1skin","#e8dcc8"), skin2=M("a1skin2","#d9cbb3"), pan=M("a1pan","#262c33"), pan2=M("a1pan2","#353d46"), wood=M("a1wood","#6b4f3a");
-  const W=HW*0.92;
-  box(W*2,0.04,HL*1.15,pan,0,0.32,-0.1,ck);                                   // pavimento
-  [-1,1].forEach(sd=>{ const x=sd*W*0.48;                                     // sedili davanti
-    box(0.50,0.12,0.50,skin,x,0.50,0.12,ck);
-    const bk=box(0.50,0.62,0.10,skin2,x,0.86,-0.16,ck); bk.rotation.x=-0.16;
-    box(0.30,0.16,0.08,skin,x,1.22,-0.22,ck); });                              // poggiatesta
-  box(W*1.7,0.12,0.50,skin,0,0.50,-0.95,ck);                                  // divanetto dietro
-  { const bk=box(W*1.7,0.58,0.10,skin2,0,0.84,-1.22,ck); bk.rotation.x=-0.14; }
-  box(0.20,0.24,0.80,pan2,0,0.46,0.15,ck); box(0.16,0.012,0.74,led2,0,0.585,0.15,ck);   // tunnel centrale + LED
-  const dash=box(W*1.9,0.22,0.48,pan,0,0.86,0.98,ck);                          // plancia (niente volante)
-  box(W*1.9,0.03,0.12,wood,0,0.98,0.78,ck); box(W*1.8,0.012,0.012,led,0,0.955,0.738,ck);
-  [-1,1].forEach(sd=>{ const x=sd*(W-0.03);                                   // pannelli porta + LED
-    box(0.06,0.52,HL*1.25,pan2,x,0.64,-0.12,ck);
-    box(0.012,0.016,HL*1.2,led,x-sd*0.035,0.90,-0.12,ck);
-    box(0.10,0.04,0.6,skin2,x-sd*0.06,0.78,0.05,ck);
-    const p=box(0.035,0.62,0.035,pan,sd*(W-0.02),1.22,1.02,ck); p.rotation.x=-0.6; });     // montanti sottili, sul parabrezza
-  const roof=new BABYLON.TransformNode("auto1roof",scene); roof.parent=ck; roof.position.y=H-0.10;   // l'altezza vera la decide tlAutoPov (occhi)
-  box(W*1.9,0.03,HL*1.15,pan2,0,0,-0.12,roof);                                // cielo dell'abitacolo
-  box(0.03,0.012,HL*1.0,warm,0,-0.02,-0.15,roof);                              // luce ambiente
-  /* IL TABLET: al centro della plancia, dritto, girato verso il passeggero
-     (posto davanti a sinistra) e appena inclinato all'indietro */
-  const seat={ x:-W*0.48, z:0.10 };
-  /* posizione provvisoria: tlAutoPov la rimette davanti agli occhi veri */
-  const tab=new BABYLON.TransformNode("auto1t",scene); tab.parent=ck; tab.position.set(seat.x+0.30,1.0,seat.z+0.62);
-  tab.rotation.y=Math.atan2(0.30,0.62); tab.rotation.x=0.25;
-  box(0.48,0.31,0.02,M("a1tf","#0b1014"),0,0,0.012,tab);
-  const dt=new BABYLON.DynamicTexture("auto1nav"+(_lpN++),{ width:768, height:480 },scene,true);
-  AUTO.dt=dt; tlPlane(tab,0.45,0.28,0,dt,"#16323d");
-  const stand=box(0.06,0.10,0.05,M("a1st","#20262c"),0,1.01,0.84,ck);   // il supporto sul cruscotto (lo sposta tlAutoPov)
-  tab.__stand=stand;
+  /* v501 — L'OMBRA (Giacomo, 21 nov: «la macchina senza volante deve avere
+     ombra»). AUTO-1 nasce con occluder:false (non e' un palazzo: niente
+     dissolvenza fra camera e avatar), e cosi' era rimasta fuori anche dai
+     caster del sole. Ora: ombra VERA (__cast, come zucche e lavagnette) e,
+     a ogni qualita', l'ombra di contatto sfumata sotto la scocca. */
+  try{ (car?car.getChildMeshes(false):[]).forEach(m=>{ if(m.getTotalVertices && m.getTotalVertices()>0) m.__cast=true; });
+    [lid,lr].forEach(m=>{ m.__cast=true; }); refreshShadowCasters(); }catch(e){}
+  try{ const sh=hm7Shadow(kit,HW*2+0.5,HL*2+0.35,0,0,0.03,0.62); sh.__npcCast=false; sh.receiveShadows=false; }catch(e){}
+  /* l'ABITACOLO si costruisce la prima volta che si guarda dentro (O), sulla
+     misura vera degli occhi dell'avatar seduto: vedi tlAutoCabin */
+  const seat={ x:-HW*0.92*0.48, z:0.10 };
   root.getChildMeshes().forEach(m=>{ m.isPickable=false; });
-  /* ⚠️ l'abitacolo si vede SOLO da dentro (O): da fuori i pannelli uscivano
-     dalla carrozzeria dell'auto sportiva, che e' bassa (visto a schermo) */
-  ck.setEnabled(false);
-  return { root, H, HW, HL, seat, kit, ck, roof, tab };
+  return { root, H, HW, HL, seat, kit, body:car, lid:[lid,lr], ck:null, cabE:null, tab:null };
+}
+/* =====================================================================
+   v501 — L'ABITACOLO VERO (Giacomo, 21 nov, con due foto: «come mi muovo
+   con la visuale si vede la struttura della macchina sopra: sembra che la
+   testa sbuchi dal tetto»; «il tablet e' sul vetro del parabrezza: deve
+   stare molto piu' in basso, a meno di un HUD semitrasparente che lascia
+   libero il cruscotto»; «interni piu' belli, in pelle; le strisce LED non
+   si vedono»).
+   · PERCHE' LA TESTA USCIVA: Sports_Car e' bassa (tetto a 1,35 m) e gli
+     occhi dell'avatar seduto stanno a ~1,28 m: la camera sfiorava il tetto
+     e da li' si vedevano i pannelli della scocca di taglio, il lidar e il
+     cielo. Abbassare gli occhi non basta (gambe e busto escono dal sedile).
+     Quindi DA DENTRO la scocca esterna si spegne (C.body) e si accende un
+     abitacolo intero costruito attorno agli occhi: tetto 27 cm sopra la
+     testa con il vetro panoramico, montanti, lunotto, cofano bianco che si
+     vede oltre la plancia. Da fuori resta l'auto di sempre (ck spento).
+   · LA PELLE: texture disegnata (grana + trapuntatura a rombi con le
+     cuciture), panna per i sedili, cuoio per bordi e braccioli, scura per
+     la plancia; tetto in alcantara chiara.
+   · I LED: prima erano fili da 1,2 cm sotto il bordo della plancia, FUORI
+     dall'inquadratura (35 gradi sotto lo sguardo). Ora strisce da 2,5 cm
+     dove l'occhio arriva: base del parabrezza, linea di cintura delle
+     porte, console, attorno al vetro del tetto, piedi.
+   · IL NAVIGATORE: niente piu' tablet in piedi. E' un HUD semitrasparente
+     proiettato in basso sul parabrezza, appena sopra la plancia (dal
+     proiettore incassato nel cruscotto): il cruscotto resta libero e la
+     strada si vede attraverso.
+   Coordinate del kit: +z avanti, y dal suolo dell'auto; E = occhi.
+   ===================================================================== */
+let _tlLeather={};
+function tlLeatherTex(base,seam,quilt){
+  const k=base+"|"+seam+"|"+(quilt?1:0); if(_tlLeather[k]) return _tlLeather[k];
+  const dt=new BABYLON.DynamicTexture("a1lea"+(_lpN++),{ width:256, height:256 },scene,true), c=dt.getContext();
+  c.fillStyle=base; c.fillRect(0,0,256,256);
+  let sd=7; const rnd=()=>{ sd=(sd*16807)%2147483647; return sd/2147483647; };
+  for(let i=0;i<3200;i++){ const a=0.025+rnd()*0.07; c.fillStyle=(rnd()<0.5?"rgba(0,0,0,":"rgba(255,255,255,")+a+")";
+    c.fillRect(rnd()*256,rnd()*256,1+rnd()*1.6,1+rnd()*1.6); }
+  if(quilt){
+    /* rombi: piega scura + luce accanto, poi la cucitura tratteggiata */
+    for(let s=-256;s<=512;s+=64){ [[s,0,s+256,256],[s,256,s+256,0]].forEach(L=>{
+      c.strokeStyle="rgba(0,0,0,.26)"; c.lineWidth=4; c.setLineDash([]); c.beginPath(); c.moveTo(L[0],L[1]); c.lineTo(L[2],L[3]); c.stroke();
+      c.strokeStyle="rgba(255,255,255,.10)"; c.lineWidth=3; c.beginPath(); c.moveTo(L[0]+4,L[1]); c.lineTo(L[2]+4,L[3]); c.stroke();
+      c.strokeStyle=seam; c.lineWidth=1.6; c.setLineDash([5,4]); c.beginPath(); c.moveTo(L[0]-5,L[1]); c.lineTo(L[2]-5,L[3]); c.stroke(); }); }
+    c.setLineDash([]);
+  } else {
+    c.strokeStyle=seam; c.lineWidth=2; c.setLineDash([6,5]); c.strokeRect(12,12,232,232); c.setLineDash([]);
+  }
+  dt.wrapU=dt.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE; dt.update();
+  return (_tlLeather[k]=dt);
+}
+function tlAutoCabin(C,E){
+  if(C.ck){ if(Math.abs(C.cabE-E)<0.03) return; try{ C.ck.dispose(false,false); }catch(e){} C.ck=null; }
+  const ck=new BABYLON.TransformNode("auto1c",scene); ck.parent=C.kit; C.ck=ck; C.cabE=E;
+  const mats=[];
+  const M=(hex,o)=>{ o=o||{}; const m=new BABYLON.StandardMaterial("a1cm"+(_lpN++),scene); mats.push(m);
+    m.diffuseColor=BABYLON.Color3.FromHexString(hex);
+    m.specularColor=new BABYLON.Color3(o.sp||0.06,o.sp||0.06,o.sp||0.06); m.specularPower=o.pw||32;
+    if(o.em) m.emissiveColor=BABYLON.Color3.FromHexString(o.em);
+    if(o.tex){ m.diffuseTexture=o.tex; m.diffuseColor=new BABYLON.Color3(1,1,1); }
+    if(o.a!=null){ m.alpha=o.a; m.backFaceCulling=false; }
+    return m; };
+  const LEA=(base,seam,quilt,sp)=>M(base,{ tex:tlLeatherTex(base,seam,quilt), sp:sp||0.16, pw:24 });
+  const cream=LEA("#ece2d0","#b98a5e",true), creamP=LEA("#e4d8c3","#b98a5e",false);
+  const cognac=LEA("#8e5431","#e9c9a2",false,0.2), dark=LEA("#2a2522","#8e5431",false,0.12);
+  const carpet=M("#1c1f23"), alc=M("#d9d4cb",{ sp:0.02 }), trim=M("#b9c1c8",{ sp:0.5, pw:64 }), wood=M("#5b3c27",{ sp:0.25, pw:40 });
+  const body=M("#e3e8ec",{ sp:0.55, pw:80 }), black=M("#121518",{ sp:0.3, pw:48 });
+  const led=M("#7fe3f5",{ em:"#6fd0e8" }), led2=M("#d6bcff",{ em:"#b48ff5" }), warm=M("#fff0d0",{ em:"#f4cf8a" });
+  const glass=M("#24404d",{ a:0.32, sp:0.6, pw:96 });
+  const box=(w,h,d,m,x,y,z)=>{ const b=BABYLON.MeshBuilder.CreateBox("a1c",{ width:w, height:h, depth:d },scene);
+    b.material=m; b.parent=ck; b.position.set(x,y,z); b.isPickable=false; return b; };
+  /* una trave fra due punti (montanti) */
+  const beam=(a,b,t,m)=>{ const dx=b[0]-a[0], dy=b[1]-a[1], dz=b[2]-a[2], L=Math.hypot(dx,dy,dz);
+    const o=box(t,t,L,m,(a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2);
+    o.rotation.y=Math.atan2(dx,dz); o.rotation.x=-Math.atan2(dy,Math.hypot(dx,dz)); return o; };
+  const capX=(r,len,m,x,y,z)=>{ const c=BABYLON.MeshBuilder.CreateCapsule("a1cc",{ radius:r, height:len, tessellation:14, subdivisions:2 },scene);
+    c.material=m; c.parent=ck; c.position.set(x,y,z); c.rotation.z=Math.PI/2; c.isPickable=false; return c; };
+  const capZ=(r,len,m,x,y,z,rx)=>{ const c=BABYLON.MeshBuilder.CreateCapsule("a1cc",{ radius:r, height:len, tessellation:14, subdivisions:2 },scene);
+    c.material=m; c.parent=ck; c.position.set(x,y,z); c.rotation.x=Math.PI/2+(rx||0); c.isPickable=false; return c; };
+  const W=C.HW*0.92, S=C.seat;
+  const D=E-0.36;                       // il piano della plancia
+  /* ⚠️ la linea di cintura ALTA, all'altezza delle spalle (Giacomo: «di
+     lato non puo' essere tutto vetro»): sotto e' porta, sopra finestrino */
+  const B=E-0.17;
+  const R=E+0.27;                       // il cielo dell'abitacolo
+  const F=0.30;                         // il pavimento
+  const zW=1.25, zH=0.70, zT=-1.05, zRW=-1.45;   // base parabrezza, testata, fine tetto, base lunotto
+  /* pavimento */
+  box(W*2,0.04,zW-zRW+0.2,carpet,0,F-0.02,(zW+zRW)/2);
+  /* i sedili davanti: seduta, fianchetti, schienale trapuntato, poggiatesta */
+  [-1,1].forEach(sd=>{ const x=sd*Math.abs(S.x), z=S.z;
+    box(0.50,0.14,0.52,cream,x,0.49,z+0.02);
+    [-1,1].forEach(k=>capZ(0.045,0.50,cognac,x+k*0.25,0.565,z+0.02));
+    box(0.48,0.30,0.20,dark,x,0.30+0.11,z+0.02);                                   // base
+    const bk=box(0.50,0.74,0.12,cream,x,0.93,z-0.30); bk.rotation.x=-0.16;
+    [-1,1].forEach(k=>{ const c=capZ(0.045,0.70,cognac,x+k*0.255,0.93,z-0.28,-0.16); c.rotation.x=-0.16; });
+    const hr=capX(0.10,0.34,creamP,x,E+0.02,z-0.44); hr.scaling.set(1,1,0.6);
+  });
+  /* il divanetto dietro */
+  box(W*1.72,0.14,0.50,cream,0,0.49,-0.95);
+  { const bk=box(W*1.72,0.68,0.12,cream,0,0.90,-1.27); bk.rotation.x=-0.18; }
+  capX(0.06,W*1.72,cognac,0,0.58,-0.70);
+  box(W*2,B-F,0.06,dark,0,(B+F)/2,zRW+0.02);                                       // parete dietro al divanetto
+  box(W*1.9,0.03,0.30,dark,0,B,zRW+0.12);                                          // cappelliera
+  /* la console fra i sedili, con i LED lilla sui due fianchi */
+  box(0.26,0.30,1.25,dark,0,F+0.15,0.18);
+  box(0.28,0.04,1.25,cognac,0,F+0.32,0.18);
+  [-1,1].forEach(k=>box(0.025,0.025,1.2,led2,k*0.145,F+0.29,0.18));
+  box(0.20,0.006,0.26,wood,0,F+0.343,0.48);
+  /* la plancia: bassa e larga, pelle scura, rullo in cuoio, filo di metallo, LED */
+  box(W*2,0.22,zW-0.74,dark,0,D-0.11,(zW+0.74)/2);
+  box(W*2,0.36,0.12,black,0,D-0.40,0.80);                                           // sotto, verso le ginocchia
+  capX(0.06,W*2-0.1,cognac,0,D-0.05,0.76);
+  box(W*2-0.12,0.02,0.02,trim,0,D-0.005,0.80);
+  box(W*2-0.12,0.008,0.05,wood,0,D+0.004,0.86);
+  box(W*2-0.16,0.025,0.025,led,0,D+0.012,zW-0.05);                                  // LED alla base del parabrezza (si vede)
+  box(W*2-0.10,0.025,0.025,led,0,D-0.13,0.70);                                      // LED sotto il rullo (piedi)
+  /* il proiettore dell'HUD incassato nella plancia, al centro dell'auto
+     (v501, Giacomo: «in basso, non al centro del vetro»): lo sguardo dritto
+     resta sulla strada, l'HUD sta in basso a destra, sopra la plancia */
+  const hx=-0.02, hz=zW+0.03;
+  box(0.46,0.006,0.14,black,hx,D+0.004,zW-0.12);
+  [zW-0.19,zW-0.05].forEach(z=>box(0.46,0.008,0.012,led,hx,D+0.008,z));
+  /* le porte: pelle scura, inserto panna trapuntato, bracciolo, LED sulla cintura e in basso */
+  [-1,1].forEach(sd=>{ const x=sd*W;
+    box(0.06,B-F,zW-zRW-0.2,dark,x,(B+F)/2,(zW+zRW)/2-0.1);
+    box(0.02,0.24,0.95,cream,x-sd*0.035,B-0.20,0.05);
+    box(0.02,0.22,0.70,cream,x-sd*0.035,B-0.20,-0.85);
+    box(0.10,0.05,0.62,cognac,x-sd*0.07,B-0.36,0.0);
+    box(0.08,0.04,0.95,trim,x-sd*0.04,B+0.01,(zW+zRW)/2-0.1);
+    box(0.025,0.025,zW-zRW-0.35,led,x-sd*0.075,B-0.02,(zW+zRW)/2-0.1);               // la linea di cintura che si illumina
+    box(0.02,0.02,zW-zRW-0.5,led2,x-sd*0.04,F+0.10,(zW+zRW)/2-0.1);
+    const sp=BABYLON.MeshBuilder.CreateCylinder("a1sp",{ diameter:0.16, height:0.02, tessellation:24 },scene);
+    sp.material=trim; sp.parent=ck; sp.rotation.z=Math.PI/2; sp.position.set(x-sd*0.035,F+0.22,0.55); sp.isPickable=false;
+    /* montanti: A (parabrezza), B (fra le porte), C (lunotto) */
+    beam([x-sd*0.02,D,zW-0.02],[x-sd*0.09,R,zH],0.08,alc);
+    beam([x-sd*0.03,B,-0.42],[x-sd*0.09,R,-0.48],0.09,alc);
+    beam([x-sd*0.03,B,zRW+0.02],[x-sd*0.10,R,zT],0.12,alc);
+  });
+  /* il tetto: alcantara attorno a un vetro panoramico, con la luce calda ai bordi */
+  const gx=0.55, gz0=-0.82, gz1=0.48, rw=W-0.06;
+  box(rw*2,0.03,zH-gz1+0.04,alc,0,R,(zH+gz1)/2);                                  // testata
+  box(rw*2,0.03,gz0-zT+0.04,alc,0,R,(gz0+zT)/2);
+  [-1,1].forEach(sd=>box(rw-gx,0.03,gz1-gz0,alc,sd*(gx+rw)/2,R,(gz1+gz0)/2));
+  const gl=box(gx*2,0.01,gz1-gz0,glass,0,R+0.012,(gz1+gz0)/2);
+  [[gx*2,0.02,gz1],[gx*2,0.02,gz0]].forEach(q=>box(q[0],0.02,0.02,warm,0,R-0.02,q[2]));
+  [-1,1].forEach(sd=>box(0.02,0.02,gz1-gz0,warm,sd*gx,R-0.02,(gz1+gz0)/2));
+  box(rw*2,0.05,0.06,alc,0,R-0.01,zH);                                              // bordo sopra il parabrezza
+  /* fuori: il cofano bianco oltre la plancia e la coda oltre il lunotto */
+  /* il cofano scende subito: se ne vede solo una striscia bianca oltre la plancia */
+  { const len=C.HL-zW+0.05, y0=D-0.12, y1=0.72, h=box(W*2+0.06,0.05,len,body,0,0,zW+len/2);
+    h.position.y=(y0+y1)/2; h.rotation.x=Math.atan2(y0-y1,len);
+    /* la nervatura al centro e la fessura scura fra cofano e parabrezza: senza, era una mensola bianca */
+    [-0.32,0.32].forEach(x=>{ const r=box(0.03,0.012,len,trim,x,0,zW+len/2); r.position.y=h.position.y+0.03; r.rotation.x=h.rotation.x; });
+    box(W*2+0.06,0.03,0.08,black,0,D-0.075,zW+0.04); }
+  box(W*2+0.06,0.05,0.06,led,0,0.72,C.HL-0.02);                                     // la luce davanti del 2050
+  { const len=C.HL+zRW+0.05; box(W*2+0.06,0.05,len,body,0,B-0.06,zRW-len/2); }
+  box(W*2+0.06,0.30,0.05,body,0,B-0.20,-C.HL+0.02);
+  /* luci: tutto fuori dalle ombre del sole; il vetro del tetto non va nel glow */
+  ck.getChildMeshes().forEach(m=>{ m.isPickable=false; m.receiveShadows=false; });
+  try{ if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(gl); }catch(e){}
+  /* L'HUD: piano semitrasparente basso sul parabrezza, sopra al proiettore */
+  const dt=new BABYLON.DynamicTexture("auto1nav"+(_lpN++),{ width:768, height:480 },scene,true);
+  dt.hasAlpha=true; AUTO.dt=dt;
+  const hm=new BABYLON.StandardMaterial("a1hud"+(_lpN++),scene);
+  hm.diffuseTexture=dt; hm.useAlphaFromDiffuseTexture=true; hm.emissiveTexture=dt; hm.disableLighting=true;
+  hm.specularColor=new BABYLON.Color3(0,0,0); hm.backFaceCulling=false;
+  hm.transparencyMode=BABYLON.Material.MATERIAL_ALPHABLEND;
+  /* appoggiato alla base del parabrezza: il bordo basso 1,5 cm sopra la
+     plancia, girato verso gli occhi del passeggero */
+  const hudH=0.25, hudY=D+0.015+hudH/2, eZ=S.z+0.06;
+  const hud=BABYLON.MeshBuilder.CreatePlane("a1hudp",{ width:hudH*1.6, height:hudH },scene);
+  hud.material=hm; hud.parent=ck; hud.isPickable=false; hud.position.set(hx,hudY,hz);
+  hud.rotation.y=Math.atan2(hx-S.x,hz-eZ); hud.rotation.x=Math.atan2(E-hudY,Math.hypot(hx-S.x,hz-eZ));
+  try{ if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(hud); }catch(e){}
+  C.tab=hud; ck.__mats=mats;
+  ck.setEnabled(!!AUTO.pov);
+}
+/* dentro (O) l'abitacolo, fuori la scocca: mai tutte e due */
+function tlAutoInside(on){
+  const C=AUTO.car; if(!C) return;
+  if(on){ tlAutoCabin(C,tlAutoEyeRel()); }
+  if(C.ck) C.ck.setEnabled(!!on);
+  try{ if(C.body) C.body.setEnabled(!on); }catch(e){}
+  try{ C.lid.forEach(m=>m.setEnabled(!on)); }catch(e){}
 }
 /* ---- la prenotazione al parcheggio (dopo il TechLab) ---- */
 let AUTO_BOOK=null;
@@ -63737,6 +63932,13 @@ function tlAutoSetSpeed(kmh){ AUTO.kmh=Math.max(AUTO_KMH.min,Math.min(AUTO_KMH.m
 function tlAutoGo(P){
   const at=P.at&&P.at(); const R=at?tlAutoRoute(at,null):null;
   if(!R){ toast("⚠️ AUTO-1: no route."); tlAutoEnd(null,false,true); return; }
+  /* v501 (Giacomo: «se si deve fermare vicino al parco, parcheggia
+     direttamente nello stallo vicino alla piazza; sfruttiamo tutti i
+     parcheggi disponibili»): se c'e' uno stallo LIBERO vicino alla meta,
+     la corsa finisce li' dentro invece che accostata in strada */
+  { const st=tlAutoFreeStall(at), L=R.L, hi=st?L.__find(st.x-7,AUTO_LANE_Z,1,0,2.5):-1;
+    if(st && hi>=0){ R.stall=st; R.di=hi; R.dEnd=Math.hypot(st.x-at.x,st.z-at.z);
+      let len=(L.L[hi]-L.L[R.ei]+L.tot)%L.tot; if(len<25) len+=L.tot; R.len=len; } }
   AUTO.phase="drive"; AUTO.place=P; AUTO.route=R; AUTO.said={}; R.pts=tlAutoPts(R);
   tlAutoPanel(true);
   tlAutoSetSpeed(AUTO.kmh);
@@ -63745,18 +63947,70 @@ function tlAutoGo(P){
   const ux=E2[0]-E[0], uz=E2[1]-E[1], ul=Math.hypot(ux,uz)||1, root=tc.root;
   const A=new BABYLON.Vector3(root.position.x,0,root.position.z), P3=new BABYLON.Vector3(E[0],0,E[1]);
   AUTO.merging=true;
+  /* v501 (Giacomo: «quando si mette nel traffico non guarda se arrivano
+     altre macchine, e la intersecano»): prima aspetta il varco, poi entra
+     restando in _trafficCars (manual): chi arriva la vede e frena. */
+  tlAutoWaitGap([A, A.add(P3).scale(0.5), P3], ()=>{ if(!AUTO.car || AUTO.phase!=="drive") return;
+  tlAutoJoinSeen(tc);
   tlAutoCurve(A, A.add(new BABYLON.Vector3(0,0,-3.2)), P3.add(new BABYLON.Vector3(-ux/ul*4.5,0,-uz/ul*4.5)), P3, 3600, true, ()=>{
     if(!AUTO.car) return;
     _tcBind(tc,L); tc.s=L.L[R.ei]; tc.cv=3; tc.stopS=L.L[R.di]; tc.arrived=false; tc.manual=false;
-    tc.onArrive=()=>tlAutoPullOver(tc,"drop");
+    tc.onArrive=R.stall?()=>tlAutoStallIn(tc,R.stall):()=>tlAutoPullOver(tc,"drop");
     /* ⚠️ la quota UNA volta sola (Giacomo: «la prima volta era a posto, ora
        la vedo volare»): al secondo giro le ruote sono gia' staccate e le loro
        misure non valgono, carGroundRig dava un lift di 2-3 m */
     if(tc.lift==null){ try{ carGroundRig(tc); }catch(e){} }
     if(_trafficCars.indexOf(tc)<0) _trafficCars.push(tc);
     AUTO.merging=false; AUTO.qT=4;
-    setTimeout(()=>{ try{ if(!tc.wh) tc.wh=carWheelsRig(tc); }catch(e){} },60); });
+    setTimeout(()=>{ try{ if(!tc.wh) tc.wh=carWheelsRig(tc); }catch(e){} },60); }); });
 }
+/* il varco: nessuna auto a meno di 9 m dai punti della manovra, e nessuna
+   che ci stia arrivando incontro entro 34 m (il muso puntato verso il punto) */
+function tlAutoGapFree(pts){ const tc=AUTO.car&&AUTO.car.tc;
+  for(let i=0;i<_trafficCars.length;i++){ const o=_trafficCars[i]; if(o===tc || !o.root) continue;
+    const op=o.root.position, h=o.root.rotation.y-TRAFFIC_YAW, fx=Math.sin(h), fz=Math.cos(h);
+    for(const P of pts){ const dx=P.x-op.x, dz=P.z-op.z, d=Math.hypot(dx,dz);
+      if(d<9) return false;
+      if(d<34 && (dx*fx+dz*fz)>d*0.55 && Math.abs(dx*fz-dz*fx)<4 && (o.cv||0)>0.3) return false; } }
+  return true; }
+function tlAutoWaitGap(pts,go){ let tries=0, said=false;
+  const chk=()=>{ if(!AUTO.car) return;
+    if(tlAutoGapFree(pts) || tries++>40){ go(); return; }
+    if(!said && AUTO.on){ said=true; try{ toast("\u{1F697} AUTO-1: waiting for a gap in the traffic…"); }catch(e){} }
+    setTimeout(chk,400); };
+  chk(); }
+/* dentro il traffico gia' durante la manovra (il ciclo non la muove: la muove la curva) */
+function tlAutoJoinSeen(tc){ tc.manual=true; if(_trafficCars.indexOf(tc)<0) _trafficCars.push(tc); }
+/* ---- v501: gli stalli dei due parcheggi del retro (ovest e est, z -27,25).
+   Liberi = senza un'auto parcheggiata accesa; lo stallo di casa no (ci torna
+   da sola). Il viale davanti (Modern Boulevard, verso est) e' a z -33,25. ---- */
+const AUTO_STALLS=[-45,-42,-39,39,42,45].map(x=>({ x, z:-27.25 }));
+const AUTO_LANE_Z=-33.25;
+function tlAutoFreeStall(at){ let best=null, bd=36;
+  AUTO_STALLS.forEach(S=>{ if(Math.hypot(S.x-AUTO_STALL.x,S.z-AUTO_STALL.z)<1) return;
+    const busy=(typeof PARKED_CARS!=="undefined"?PARKED_CARS:[]).some(p=>p.root && p.root.isEnabled() && Math.hypot(p.x-S.x,p.z-S.z)<1.2);
+    if(busy) return; const d=Math.hypot(S.x-at.x,S.z-at.z); if(d<bd){ bd=d; best=S; } });
+  return best; }
+/* arrivati allo stallo: dal viale dentro col muso, poi si scende davanti (sul marciapiede) */
+function tlAutoStallIn(tc,S){
+  if(AUTO.phase!=="drive") return;
+  AUTO.phase="arrive"; try{ TTS.say("We're here! I'm parking.",{ gender:"f" }); }catch(e){}
+  tlAutoJoinSeen(tc);                                // fuori dal ciclo, ma chi arriva dietro la vede
+  const root=tc.root, A=new BABYLON.Vector3(root.position.x,0,root.position.z), h=tlAutoH();
+  const f=new BABYLON.Vector3(Math.sin(h),0,Math.cos(h)), T=new BABYLON.Vector3(S.x,0,S.z);
+  tlAutoCurve(A, A.add(f.scale(4)), T.add(new BABYLON.Vector3(0,0,-3.5)), T, 3200, true, ()=>{
+    const k=_trafficCars.indexOf(tc); if(k>=0) _trafficCars.splice(k,1);
+    TRAFFIC_ZONES.forEach(Z=>{ if(Z.h===tc) Z.h=null; });
+    tc.cv=0; root.position.x=S.x; root.position.z=S.z; tlAutoGroundAt();
+    /* dritta nello stallo, muso verso il marciapiede (la curva arriva un po' storta) */
+    tlAutoSpin(TRAFFIC_YAW,()=>{ AUTO.inStall=true; AUTO.dropFront=true; tc.side=-1; tlAutoDrop(); }); });
+}
+/* girarsi sul posto (e' del 2050) */
+function tlAutoSpin(r1,cb){ const root=AUTO.car.root, tc=AUTO.car.tc, r0=root.rotation.y, t0=performance.now(); let d=r1-r0;
+  while(d>Math.PI) d-=2*Math.PI; while(d<-Math.PI) d+=2*Math.PI;
+  const ob=scene.onBeforeRenderObservable.add(()=>{ const q=Math.min(1,(performance.now()-t0)/1600);
+    root.rotation.y=r0+d*q*q*(3-2*q); tc.cv=0;
+    if(q>=1){ scene.onBeforeRenderObservable.remove(ob); if(cb) cb(); } }); }
 /* ---- arrivati: si accosta (le auto dietro aspettano), poi si scende ---- */
 function tlAutoPullOver(tc,why){
   if(why==="drop" && AUTO.phase!=="drive") return;
@@ -63784,13 +64038,19 @@ function tlAutoDrop(){
   try{ playerStand(); }catch(e){}
   const h=tlAutoH(), nx=Math.cos(h)*tc.side, nz=-Math.sin(h)*tc.side;
   let spot=null;
-  for(const d of [C.HW+1.0, C.HW+1.6, C.HW+0.6]){ for(const f of [0,-1.2,1.2]){
+  /* v501: nello stallo (fra due auto) si scende DAVANTI, sul marciapiede di High Street */
+  if(AUTO.dropFront){ AUTO.dropFront=false; const fx=Math.sin(h), fz=Math.cos(h);
+    for(const d of [C.HL+0.9, C.HL+1.5]){ for(const sd of [0,-0.8,0.8]){
+      const x=C.root.position.x+fx*d+fz*sd, z=C.root.position.z+fz*d-fx*sd;
+      try{ if(!blocked(x,z)){ spot={x,z}; break; } }catch(e){ spot={x,z}; break; } } if(spot) break; }
+    if(!spot) spot={ x:C.root.position.x+fx*(C.HL+0.9), z:C.root.position.z+fz*(C.HL+0.9) }; }
+  if(!spot) for(const d of [C.HW+1.0, C.HW+1.6, C.HW+0.6]){ for(const f of [0,-1.2,1.2]){
     const x=C.root.position.x+nx*d+Math.sin(h)*f, z=C.root.position.z+nz*d+Math.cos(h)*f;
     try{ if(!blocked(x,z)){ spot={x,z}; break; } }catch(e){ spot={x,z}; break; } } if(spot) break; }
   if(!spot) spot={ x:C.root.position.x+nx*(C.HW+1.0), z:C.root.position.z+nz*(C.HW+1.0) };
   const far=(R&&R.dEnd)||0, dst=R&&R.at;
   tlAutoEnd(()=>{
-    player.position.set(spot.x,0,spot.z); player.rotation.y=Math.atan2(nx,nz);
+    player.position.set(spot.x,0,spot.z); player.rotation.y=AUTO.inStall?h:Math.atan2(nx,nz);
     try{ camera.setTarget(player.position.add(new BABYLON.Vector3(0,1.4,0)),false,false,true); }catch(e){}
     let msg="\u{1F697} AUTO-1: Here you are — "+(P?P.name:"")+"! Have a nice day!";
     if(dst && far>14){ try{ NAV.target=new BABYLON.Vector3(dst.x,0,dst.z); NAV.label=P.name; }catch(e){}
@@ -63805,29 +64065,30 @@ function tlAutoReturn(){
   const C=AUTO.car; if(!C) return; const tc=C.tc, L=tc.loop;
   if(!L || !townOpen()){ tlAutoParkNow(); return; }
   AUTO.busy="return";
+  /* v501: parcheggiata in uno stallo, col muso verso il marciapiede: prima
+     si gira sul posto verso il viale, poi rientra (qualche metro piu' avanti) */
+  if(AUTO.inStall){ AUTO.inStall=false; tlAutoSpin(Math.PI+TRAFFIC_YAW,()=>{ AUTO.fromStall=true; tlAutoReturn(); }); return; }
+  const fromStall=!!AUTO.fromStall; AUTO.fromStall=false;
   const hi=L.__find(-46,-33.25,1,0,2.5);
   if(hi<0){ tlAutoParkNow(); return; }
   /* di nuovo in corsia, un po' piu' avanti di dove si era fermata */
-  const s1=(tc.s+7)%tc.tot, P=carLoopPos(tc,s1), Q=carLoopPos(tc,s1+3), root=tc.root;
+  const s1=(tc.s+(fromStall?12:7))%tc.tot, P=carLoopPos(tc,s1), Q=carLoopPos(tc,s1+3), root=tc.root;
   const A=new BABYLON.Vector3(root.position.x,0,root.position.z), B=new BABYLON.Vector3(P[0],0,P[1]);
   const u=new BABYLON.Vector3(Q[0]-P[0],0,Q[1]-P[1]).normalize();
   const h=tlAutoH(), f=new BABYLON.Vector3(Math.sin(h),0,Math.cos(h));
-  const go=()=>tlAutoCurve(A, A.add(f.scale(2.5)), B.subtract(u.scale(3)), B, 2200, true, ()=>{
+  const go=()=>{ tlAutoJoinSeen(tc); tlAutoCurve(A, A.add(f.scale(2.5)), B.subtract(u.scale(3)), B, 2200, true, ()=>{
     tc.s=s1; tc.stopS=L.L[hi]; tc.arrived=false; tc.manual=false; tc.v=11;
     tc.onArrive=()=>tlAutoParkIn(tc);
-    if(_trafficCars.indexOf(tc)<0) _trafficCars.push(tc); });
-  /* aspetta che la corsia dietro sia libera, poi rientra */
-  let tries=0; const wait=()=>{ if(!AUTO.car) return;
-    const busy=_trafficCars.some(o=>o!==tc && Math.hypot(o.root.position.x-B.x,o.root.position.z-B.z)<12);
-    if(busy && tries++<20){ setTimeout(wait,700); return; } go(); };
-  wait();
+    if(_trafficCars.indexOf(tc)<0) _trafficCars.push(tc); }); };
+  /* aspetta il varco (chi arriva da dietro, chi passa davanti), poi rientra */
+  tlAutoWaitGap([A, A.add(B).scale(0.5), B], go);
 }
 function tlAutoParkIn(tc){
-  const k=_trafficCars.indexOf(tc); if(k>=0) _trafficCars.splice(k,1);
-  TRAFFIC_ZONES.forEach(Z=>{ if(Z.h===tc) Z.h=null; });
-  tc.manual=true;
+  tlAutoJoinSeen(tc);                                // v501: chi arriva dietro la vede finche' non e' nello stallo
   const root=tc.root, A=new BABYLON.Vector3(root.position.x,0,root.position.z), S=new BABYLON.Vector3(AUTO_STALL.x,0,AUTO_STALL.z);
   tlAutoCurve(A, A.add(new BABYLON.Vector3(4,0,0)), S.add(new BABYLON.Vector3(0,0,-3.5)), S, 3000, true, ()=>{
+    const k=_trafficCars.indexOf(tc); if(k>=0) _trafficCars.splice(k,1);
+    TRAFFIC_ZONES.forEach(Z=>{ if(Z.h===tc) Z.h=null; });
     /* nello stallo si gira sul posto (e' del 2050): muso verso la strada */
     const r0=root.rotation.y, r1=Math.PI+TRAFFIC_YAW, t0=performance.now(); let d=r1-r0;
     while(d>Math.PI) d-=2*Math.PI; while(d<-Math.PI) d+=2*Math.PI;
@@ -63838,7 +64099,7 @@ function tlAutoParkIn(tc){
 function tlAutoParkNow(){ const C=AUTO.car; if(!C) return; const tc=C.tc;
   const k=_trafficCars.indexOf(tc); if(k>=0) _trafficCars.splice(k,1);
   TRAFFIC_ZONES.forEach(Z=>{ if(Z.h===tc) Z.h=null; });
-  tc.manual=true; tc.cv=0; C.root.position.x=AUTO_STALL.x; C.root.position.z=AUTO_STALL.z; C.root.rotation.y=Math.PI+TRAFFIC_YAW; tlAutoGroundAt(); AUTO.busy=""; }
+  tc.manual=true; tc.cv=0; C.root.position.x=AUTO_STALL.x; C.root.position.z=AUTO_STALL.z; C.root.rotation.y=Math.PI+TRAFFIC_YAW; tlAutoGroundAt(); AUTO.busy=""; AUTO.inStall=false; AUTO.fromStall=false; }
 /* l'auto poggiata sul suolo vero di dove si trova (stallo, marciapiede accostato) */
 function tlAutoGroundAt(){ const C=AUTO.car; if(!C) return;
   let gy=0; try{ gy=_pedGroundY(C.root.position.x,C.root.position.z)||0; }catch(e){}
@@ -63852,20 +64113,13 @@ function tlAutoEyeRel(){ let e=1.05;
 function tlAutoPov(on){
   AUTO.pov=!!on; AUTO.look={ y:0, p:0 };
   const C=AUTO.car;
-  if(C){ C.ck.setEnabled(AUTO.pov);
+  if(C){
     /* da fuori l'avatar non si vede (la testa usciva dal tetto); da dentro si'
        (gambe e braccia), senza la testa davanti alla camera */
     try{ avatarMeshes.forEach(m=>{ m.visibility=AUTO.pov?1:0; }); }catch(e){}
-    if(AUTO.pov){ const ey=tlAutoEyeRel(), S=C.seat;
-      C.roof.position.y=ey+0.24;
-      /* ⚠️ IN PIEDI SOPRA il cruscotto, al centro fra i due sedili, come lo
-         schermo di un'auto vera, girato verso il passeggero. Prima stava
-         dentro la plancia (e sembrava nel parabrezza), poi troppo vicino agli
-         occhi e coperto dal pannello in basso (Giacomo). */
-      const tz=0.92, ty=1.09, tx=S.x*0.25;            // un po' verso il passeggero: al centro esatto usciva dal bordo destro
-      C.tab.scaling.setAll(0.74);                     // da 0,7 m di distanza a grandezza piena copriva meta' strada
-      C.tab.position.set(tx, ty, tz); if(C.tab.__stand){ C.tab.__stand.position.x=tx; C.tab.__stand.position.z=tz+0.02; C.tab.__stand.position.y=ty-0.12; }
-      C.tab.rotation.y=Math.atan2(tx-S.x, tz-S.z); C.tab.rotation.x=0.16;
+    /* v501: dentro l'abitacolo costruito sugli occhi, fuori la scocca (vedi tlAutoCabin) */
+    tlAutoInside(AUTO.pov);
+    if(AUTO.pov){ const ey=tlAutoEyeRel();
       /* ⚠️ non solo la testa: capelli, cappello, cappuccio stavano attaccati
          alla camera (forme marroni semitrasparenti, visto a schermo). Via
          tutto cio' che vive all'altezza degli occhi; corpo, braccia e gambe
@@ -64002,14 +64256,18 @@ function tlAutoNavDraw(){
   if(AUTO.ui){ AUTO.ui.innerHTML='<b>\u{1F697} AUTO-1</b> · '+kmh+' km/h'+(AUTO.place?' · \u{1F3C1} '+_escHtml(AUTO.place.name):'')
       +(eta?' · '+Math.floor(eta/60)+':'+String(eta%60).padStart(2,"0"):'')+(msg?'<div style="font-weight:700;margin-top:2px;">'+_escHtml(msg)+'</div>':''); }
   if(!AUTO.dt || !AUTO.pov) return;
-  /* il tablet: intestazione, mappa, tachimetro ad arco, manovra, arrivo */
+  /* l'HUD (era il tablet): intestazione, mappa, tachimetro ad arco, manovra, arrivo */
   const c=AUTO.dt.getContext(), W=768, H=480;
-  const g=c.createLinearGradient(0,0,0,H); g.addColorStop(0,"#0f1b26"); g.addColorStop(1,"#08111a"); c.fillStyle=g; c.fillRect(0,0,W,H);
-  const hg=c.createLinearGradient(0,0,W,0); hg.addColorStop(0,"#2f6f80"); hg.addColorStop(1,"#6fd0e8"); c.fillStyle=hg; c.fillRect(0,0,W,54);
+  /* v501: e' un HUD sul parabrezza: fondo semitrasparente (la strada si vede
+     attraverso), contenuti pieni e luminosi, un'ombra leggera sotto le scritte */
+  c.clearRect(0,0,W,H); c.shadowBlur=0;
+  _rr(c,4,4,W-8,H-8,28); c.fillStyle="rgba(6,16,24,.42)"; c.fill(); c.strokeStyle="rgba(111,208,232,.6)"; c.lineWidth=3; c.stroke();
+  const hg=c.createLinearGradient(0,0,W,0); hg.addColorStop(0,"rgba(47,111,128,.82)"); hg.addColorStop(1,"rgba(111,208,232,.82)");
+  _rr(c,4,4,W-8,52,24); c.fillStyle=hg; c.fill();
   c.fillStyle="#06121a"; c.font="bold 26px sans-serif"; c.textAlign="left"; c.textBaseline="middle"; c.fillText("AUTO-1",22,28);
   c.font="20px sans-serif"; c.fillText("self-driving · 2050",120,29);
   c.textAlign="right"; c.font="bold 22px sans-serif"; c.fillText(AUTO.place?AUTO.place.name:"",W-22,28);
-  _rr(c,18,70,452,392,22); c.fillStyle="#13242f"; c.fill();
+  _rr(c,18,70,452,392,22); c.fillStyle="rgba(19,36,47,.55)"; c.fill();
   if(R && R.pts && R.pts.length>1){
     let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9; R.pts.forEach(p=>{ x0=Math.min(x0,p[0]); x1=Math.max(x1,p[0]); z0=Math.min(z0,p[1]); z1=Math.max(z1,p[1]); });
     const mx=40, sc=Math.min((452-2*mx)/Math.max(10,x1-x0),(392-2*mx)/Math.max(10,z1-z0));
@@ -64023,19 +64281,19 @@ function tlAutoNavDraw(){
     c.strokeStyle="#ff6a5c"; c.lineWidth=4; c.stroke();
   } else { c.fillStyle="#9fbac6"; c.font="26px sans-serif"; c.textAlign="center"; c.fillText("Where would you like to go?",244,266); }
   /* v500: la domanda del computer di bordo anche sul tablet, in fondo alla mappa */
-  if(AUTO.q){ _rr(c,30,370,428,82,14); c.fillStyle="rgba(8,17,26,.92)"; c.fill(); c.strokeStyle="#c9a7ff"; c.lineWidth=3; c.stroke();
+  if(AUTO.q){ _rr(c,30,370,428,82,14); c.fillStyle="rgba(8,17,26,.78)"; c.fill(); c.strokeStyle="#c9a7ff"; c.lineWidth=3; c.stroke();
     c.textAlign="left"; c.fillStyle="#c9a7ff"; c.font="bold 18px sans-serif"; c.fillText("\u{1F5A5}\uFE0F AUTO-1's computer asks:",44,392);
     c.fillStyle="#ffffff"; c.font="bold 19px sans-serif";
     const qw=String(AUTO.q.q).split(" "); let ql="", qy=418;
     qw.forEach(w=>{ const t=ql?ql+" "+w:w; if(c.measureText(t).width>400){ c.fillText(ql,44,qy); qy+=22; ql=w; } else ql=t; }); if(ql && qy<=444) c.fillText(ql,44,qy); }
   /* tachimetro */
   const cx=618, cy=176, rad=92, a0=Math.PI*0.8, a1=Math.PI*2.2, fr=Math.min(1,kmh/60);
-  c.lineWidth=16; c.lineCap="round"; c.strokeStyle="#22323d"; c.beginPath(); c.arc(cx,cy,rad,a0,a1); c.stroke();
+  c.lineWidth=16; c.lineCap="round"; c.strokeStyle="rgba(34,50,61,.7)"; c.beginPath(); c.arc(cx,cy,rad,a0,a1); c.stroke();
   c.strokeStyle=kmh>AUTO_KMH.max?"#ff6a5c":"#6fd0e8"; c.beginPath(); c.arc(cx,cy,rad,a0,a0+(a1-a0)*fr); c.stroke();
   c.fillStyle="#ffffff"; c.textAlign="center"; c.font="bold 70px sans-serif"; c.fillText(String(kmh),cx,cy+4);
   c.font="20px sans-serif"; c.fillStyle="#9fbac6"; c.fillText("km/h · max "+AUTO_KMH.max,cx,cy+50);
   /* la manovra: freccia + testo */
-  _rr(c,488,300,262,162,18); c.fillStyle="#13242f"; c.fill();
+  _rr(c,488,300,262,162,18); c.fillStyle="rgba(19,36,47,.55)"; c.fill();
   if(nx){ c.save(); c.translate(540,370); c.rotate((nx.dir||0)*Math.PI/2.4); c.fillStyle="#9ff0c4";
     c.beginPath(); c.moveTo(0,-30); c.lineTo(22,0); c.lineTo(8,0); c.lineTo(8,28); c.lineTo(-8,28); c.lineTo(-8,0); c.lineTo(-22,0); c.closePath(); c.fill(); c.restore(); }
   c.textAlign="left"; c.fillStyle="#e6f6fb"; c.font="bold 21px sans-serif";
@@ -64061,7 +64319,7 @@ function tlAutoEnd(cb,abort,keepCar){
     try{ playerStand(); }catch(e){}
     try{ _povHead(0); }catch(e){}
     try{ avatarMeshes.forEach(m=>{ m.visibility=1; }); }catch(e){}
-    try{ if(AUTO.car) AUTO.car.ck.setEnabled(false); }catch(e){}
+    try{ if(AUTO.car) tlAutoInside(false); }catch(e){}
     tlAutoUi(false); tlAutoPanel(false); AUTO.q=null;
     const c=AUTO.cam;
     if(c){ camera.lowerRadiusLimit=c.lr; camera.upperRadiusLimit=c.ur; camera.lowerBetaLimit=c.lb; camera.upperBetaLimit=c.ub; camera.minZ=c.minZ; }
@@ -64072,7 +64330,7 @@ function tlAutoEnd(cb,abort,keepCar){
     document.body.classList.remove("veh","auto");
     /* scesi prima di partire («Get out») o giro interrotto: a terra accanto all'auto */
     if(!cb && AUTO.car){ const r=AUTO.car.root; player.position.set(r.position.x,0,r.position.z+3.6);   // marciapiede di High Street, non il boulevard
-      if(AUTO.car.tc && AUTO.car.tc.loop && _trafficCars.indexOf(AUTO.car.tc)>=0) tlAutoParkNow(); }
+      if(AUTO.car.tc && _trafficCars.indexOf(AUTO.car.tc)>=0) tlAutoParkNow(); }
     if(c){ camera.beta=c.b; camera.radius=c.r; camera.alpha=c.a; if(typeof camWish!=="undefined") camWish=c.r; }
     try{ camera.setTarget(player.position.add(new BABYLON.Vector3(0,1.4,0)),false,false,true); }catch(e){}
     if(cb) cb();
