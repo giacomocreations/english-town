@@ -1422,6 +1422,17 @@ function _wNoise(x,y){ const ix=Math.floor(x), iy=Math.floor(y); let fx=x-ix, fy
   fx=fx*fx*(3-2*fx); fy=fy*fy*(3-2*fy);
   const a=_wHash(ix,iy), b=_wHash(ix+1,iy), c=_wHash(ix,iy+1), d=_wHash(ix+1,iy+1);
   return (a+(b-a)*fx)+((c+(d-c)*fx)-(a+(b-a)*fx))*fy; }
+/* v504: lo stesso conto in un punto qualunque della strada (le ruote di AUTO-1) */
+function puddleAt(x,z){
+  try{
+    if(typeof area!=="undefined" && area!=="town") return false;
+    if(typeof qLevel!=="undefined" && qLevel==="basso") return false;
+    const k=(typeof WETFX!=="undefined")?WETFX.wet:0; if(k<0.30) return false;
+    if(rainCovered(x,z)) return false;
+    const tn=_wNoise(x*0.17,z*0.17)*0.62+_wNoise(x*0.53+7.3,z*0.53+7.3)*0.28+_wNoise(x*2.1+1.7,z*2.1+1.7)*0.10;
+    const u=Math.max(0,Math.min(1,(k-0.30)/0.70)), th=0.95+(0.64-0.95)*u*u*(3-2*u);
+    return tn>th+0.012;
+  }catch(e){ return false; } }
 function puddleUnderPlayer(){
   try{
     if(typeof area!=="undefined" && area!=="town") return false;
@@ -41709,6 +41720,7 @@ const PHONES=(function(){
     if(AUDIO.playing()) return false;                                   // il concerto: suona il club
     if(typeof SKATE!=="undefined" && SKATE.near) return false;          // v308: allo skatepark suonano le casse
     if(typeof SHOW!=="undefined" && SHOW.seated) return false;          // al cinema si guarda il film
+    if(typeof AUTO!=="undefined" && AUTO.radio && AUTO.radio.on) return false;   // v504: suona la radio dell'auto
     return true; }
   function vol(){ if(a) a.volume=Math.max(0,Math.min(1,VOL*AUDIO.gain())); }
   function play(){ if(!a) return; const p=a.play(); if(p&&p.catch) p.catch(()=>{ blocked=true; }); }
@@ -42787,6 +42799,48 @@ const SFX=(function(){
     const th=c.createOscillator(), tg=c.createGain(); th.type="sine"; th.frequency.setValueAtTime(70,now); th.frequency.exponentialRampToValueAtTime(38,now+0.18);
     tg.gain.setValueAtTime(0.06*g0,now); tg.gain.exponentialRampToValueAtTime(0.0001,now+0.22); th.connect(tg); tg.connect(master); th.start(now); th.stop(now+0.25);
   }
+  /* v504 — IL MOTORE ELETTRICO (Giacomo: «un suono di macchina elettrica,
+     non deve essere completamente silenziosa»). Il fischio dell'inverter
+     (due toni puri che salgono con la velocita'), un ronzio basso, e il
+     rotolare delle gomme (fruscio passa-basso che si apre con la
+     velocita'). TURBO-1 un'ottava piu' su e piu' presente. ev(0) spegne. */
+  let evN=null;
+  function ev(k,turbo){
+    const c=ready(); if(!c) return; const g0=lvl();
+    if(!evN){ if(k==null || k<0) return;
+      const o1=c.createOscillator(), o2=c.createOscillator(), hum=c.createOscillator();
+      o1.type="sine"; o2.type="sine"; hum.type="triangle";
+      const g1=c.createGain(), g2=c.createGain(), gh=c.createGain(); g1.gain.value=0; g2.gain.value=0; gh.gain.value=0;
+      const src=c.createBufferSource(); src.buffer=noise; src.loop=true;
+      const lp=c.createBiquadFilter(); lp.type="lowpass"; lp.frequency.value=300; const gr=c.createGain(); gr.gain.value=0;
+      o1.connect(g1); o2.connect(g2); hum.connect(gh); src.connect(lp); lp.connect(gr);
+      [g1,g2,gh,gr].forEach(g=>g.connect(master));
+      o1.start(); o2.start(); hum.start(); src.start(0,Math.random()*0.5);
+      evN={ o1,o2,hum,g1,g2,gh,lp,gr,src }; }
+    const N=evN, t=c.currentTime, kk=Math.max(0,Math.min(1,k||0)), T=turbo?1.5:1;
+    try{
+      const off=(k==null||k<0);
+      N.o1.frequency.linearRampToValueAtTime((210+760*kk)*T,t+0.25);
+      N.o2.frequency.linearRampToValueAtTime((420+1520*kk)*T*1.01,t+0.25);
+      N.hum.frequency.linearRampToValueAtTime((48+40*kk)*(turbo?1.3:1),t+0.25);
+      N.g1.gain.linearRampToValueAtTime(off?0:(0.010+0.022*kk)*(turbo?1.4:1)*g0,t+0.3);
+      N.g2.gain.linearRampToValueAtTime(off?0:(0.003+0.010*kk)*g0,t+0.3);
+      N.gh.gain.linearRampToValueAtTime(off?0:(0.012+0.010*kk)*(turbo?1.5:1)*g0,t+0.3);
+      N.lp.frequency.linearRampToValueAtTime(250+1400*kk,t+0.3);
+      N.gr.gain.linearRampToValueAtTime(off?0:(0.015+0.11*kk)*g0,t+0.3);
+    }catch(e){}
+  }
+  /* v504 — la pozzanghera presa in auto: lo SCROSCIO (fruscio largo che si
+     apre e richiude, piu' lungo dello splash di un passo) */
+  let cspLast=0;
+  function carSplash(k){
+    const c=ready(); if(!c) return; const t=c.currentTime; if(t-cspLast<0.45) return; cspLast=t;
+    const g0=lvl()*Math.max(0.4,Math.min(1,k||1)), T=0.45+0.25*Math.random();
+    const src=c.createBufferSource(); src.buffer=noise; src.playbackRate.value=0.8+Math.random()*0.3;
+    const bp=c.createBiquadFilter(); bp.type="bandpass"; bp.frequency.setValueAtTime(900,t); bp.frequency.linearRampToValueAtTime(2600,t+0.08); bp.frequency.exponentialRampToValueAtTime(1200,t+T); bp.Q.value=0.6;
+    const g=c.createGain(); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.22*g0,t+0.03); g.gain.exponentialRampToValueAtTime(0.06*g0,t+T*0.5); g.gain.exponentialRampToValueAtTime(0.0001,t+T);
+    src.connect(bp); bp.connect(g); g.connect(master); src.start(t,Math.random()*0.6); src.stop(t+T+0.05);
+  }
   /* v503 — il «buco» delle frasi del computer di bordo: due note brevi */
   function gap(){ const c=ready(); if(!c) return; const now=c.currentTime, g0=lvl();
     [[660,0],[880,0.16]].forEach(q=>{ const o=c.createOscillator(), g=c.createGain(); o.type="sine"; o.frequency.value=q[0];
@@ -43016,7 +43070,7 @@ const SFX=(function(){
     rdOscG.gain.setTargetAtTime((sk||gr)?0:0.22*k, t, 0.1);
     rdOsc.frequency.setTargetAtTime(150+330*k, t, 0.1);
   }
-  return { wake, step, walked, roll, splash, carHorn, carPass, setCarPass, correct, wrong, panOf, fly, screech, gap,
+  return { wake, step, walked, roll, splash, carHorn, carPass, setCarPass, correct, wrong, panOf, fly, screech, gap, ev, carSplash,
            shout, voiceState, sip, chew, snap,
            gemChime, gemFit, thunder,
            bell, bellHear, shutter, tick, waterLevel, fountLevel, clubLevel, cricketLevel, windLevel,
@@ -64042,7 +64096,7 @@ function tlAutoCabin(C,E){
   paint.albedoTexture=paintTex; paint.metallic=0.15; paint.roughness=0.28; paint.backFaceCulling=false;
   try{ paint.clearCoat.isEnabled=true; paint.clearCoat.intensity=0.8; paint.clearCoat.roughness=0.08; }catch(e){}
   const shell=(z0,z1,yA,yB,crown,fend,narrow)=>{
-    const Wh=W+0.05, rows=14, cols=22, paths=[];
+    const Wh=W+0.18, rows=14, cols=22, paths=[];                 // v504: piu' largo della cabina (si vedeva tagliato a sinistra)
     for(let i=0;i<=rows;i++){ const t=i/rows, z=z0+(z1-z0)*t;
       let yc=yA-(yA-yB)*Math.pow(t,1.35); if(t>0.86) yc-=0.10*Math.pow((t-0.86)/0.14,2);     // il muso gira giu'
       const sc=1-narrow*t*t, row=[];
@@ -64053,7 +64107,7 @@ function tlAutoCabin(C,E){
       paths.push(row); }
     const m=BABYLON.MeshBuilder.CreateRibbon("a1hood",{ pathArray:paths, sideOrientation:BABYLON.Mesh.DOUBLESIDE },scene);
     m.material=paint; m.parent=ck; m.isPickable=false; return m; };
-  shell(zW+0.02, C.HL, D-0.06, 0.68, 0.06, SP?0.08:0.06, 0.14);                     // il cofano: i passaruota spuntano oltre la plancia
+  shell(zW+0.02, C.HL, D-0.06, 0.68, 0.06, SP?0.08:0.06, 0.07);                     // il cofano: i passaruota spuntano oltre la plancia
   shell(zRW-0.02, -C.HL, B-0.05, B-0.22, 0.04, 0.03, 0.10);                            // la coda, oltre il lunotto
   /* la fessura scura fra cofano e parabrezza: un tubo, non una stecca */
   { const c=BABYLON.MeshBuilder.CreateCylinder("a1cowl",{ diameter:0.07, height:W*2+0.04, tessellation:14 },scene);
@@ -64156,7 +64210,7 @@ function tlAutoStart(mode,id){
   try{ standUpAll(); }catch(e){}
   AUTO.on=true; AUTO.mode=mode||"book"; AUTO.phase="ask"; AUTO.pov=false; AUTO.said={}; AUTO.idle=0;
   document.body.classList.add("veh","auto");               // v500: schermo pulito in auto (vedi CSS body.veh)
-  AUTO.look={ y:0, p:0 }; AUTO.kmh=40; AUTO.pend=0; AUTO.wild=0; AUTO.lastSay=""; AUTO.tour=null; AUTO.qT=0; AUTO.q=null; AUTO.place=null; AUTO.route=null;
+  AUTO.look={ y:0, p:0 }; AUTO.kmh=40; AUTO.pend=0; AUTO.wild=0; AUTO.lastSay=""; AUTO.tour=null; AUTO.offer=null; AUTO.qT=0; AUTO.q=null; AUTO.place=null; AUTO.route=null;
   finFade(1,650,function(){
     /* dal TechLab (giro finale): la quest e' finita, si chiude e si esce in citta' */
     if(area!=="town"){ try{ if(Quest.unit) Quest.stop(); }catch(e){} try{ enterArea("town"); }catch(e){} }
@@ -64211,7 +64265,7 @@ function tlAutoAsk(){
   DialogueBox.open({ name:(turbo?"\u{1F3CE}\uFE0F ":"\u{1F697} ")+F.name, sub:F.sub, autoSpeak:true, ttsOpts:{ gender:"f" },
     text:turbo?"Hello, champion! I'm TURBO-1, the fastest car in town. No steering wheel: just tell me where to go. Where would you like to go?"
               :"Hello! I'm AUTO-1. I have no steering wheel: you just tell me where to go. Where would you like to go?",
-    italian:"Scrivi (o di' col microfono) una frase: «Take me to the school, please». "+F.name+" ti porta nel punto più vicino e ti lascia sul marciapiede. Per fare il giro della città: «Take me on a tour of the town, please». Premi O per guardare dentro.",
+    italian:"Scrivi (o di' col microfono) una frase: «Take me to the school, please». "+F.name+" ti porta nel punto più vicino e ti lascia sul marciapiede. Per fare il giro della città: «Take me on a tour of the town, please». Puoi anche chiedere «Play some music, please» o «What's my next quest?». Premi O per guardare dentro.",
     html:'<div style="display:flex;align-items:center;"><input id="tlAutoIn" type="text" autocomplete="off" '
       +'placeholder="Take me to …, please." style="flex:1;font:inherit;padding:8px 10px;border-radius:10px;border:1px solid #ccd6da;">'+mic+'</div>'
       +'<div id="tlAutoFb" style="margin-top:8px;min-height:20px;font-weight:600;"></div>',
@@ -64238,6 +64292,10 @@ function tlAutoTry(raw){
   const say=(t,ok)=>{ if(fb){ fb.textContent=t; fb.style.color=ok?"#166534":"#991b1b"; } };
   const t=tlAutoNorm(raw);
   if(!t){ say("Write your sentence first."); return; }
+  /* v504: radio, quest, «take me there» anche qui */
+  if(AUTO.offer && AUTO_THERE_RE.test(t)){ const P=AUTO.offer; AUTO.offer=null; say("✓ "+P.name.charAt(0).toUpperCase()+P.name.slice(1)+"! Let's go.", true);
+    setTimeout(()=>{ try{ DialogueBox.close(); }catch(e){} tlAutoGo(P); }, 700); return; }
+  { const r=tlAutoChat(t); if(r){ if(fb){ fb.textContent=r; fb.style.color="#1d4f5c"; } return; } }
   if(AUTO_TOUR_RE.test(t)){
     if(t.split(" ").length<3){ say("Please ask me in a full sentence: “Take me on a tour of the town, please.”"); return; }
     say("✓ A tour of the town! Great idea.", true);
@@ -64309,6 +64367,76 @@ function tlAutoTour(n){
   tlAutoGo({ name:"a tour of the town", at:()=>st }, R);
 }
 /* ogni fotogramma del giro: i metri fatti, i giri, la guida, la fermata finale */
+/* =====================================================================
+   v504 — LA RADIO E «WHAT'S NEXT?» (Giacomo, 21 nov: «si possa chiedere al
+   computer di bordo di mettere musica: le canzoni che gia' abbiamo, quelle
+   del parco»; «chiedergli qual e' la prossima quest e se ho indizi da
+   prendere»).
+   · RADIO: «Play some music, please» / «Next song» / «Stop the music».
+     Le canzoni del Beat Club e dello skatepark (GIG_SONGS, audio/beatclub),
+     una dopo l'altra; le cuffie (PHONES) tacciono mentre suona l'auto.
+   · «What's my next quest?» / «Have I got any clues?»: la quest in corso
+     (o la prossima, come la sceglie il Ranger: rangerNextGoal) e la lettera
+     dell'Architetto da prendere (Frag.available). Se c'e' un posto, si
+     puo' rispondere «Take me there, please» e l'auto ci va.
+   Le risposte sono scritte, non lette (Giacomo: il computer non ripete).
+   ===================================================================== */
+const AUTO_MUSIC_RE=/\b(music|song|songs|radio|tune|tunes)\b/;
+const AUTO_QUEST_RE=/\b(quest|quests|mission|next task|what s next|whats next|what's next|what should i do|what do i do|what can i do|clue|clues|letter|architect)\b/;
+const AUTO_THERE_RE=/\b(take me there|go there|drive there|let s go there|lets go there)\b/;
+function tlAutoRadio(cmd,silent){
+  const R=AUTO.radio=AUTO.radio||{ a:null, idx:-1, on:false };
+  const N=(typeof GIG_SONGS!=="undefined")?GIG_SONGS.length:0;
+  const vol=()=>{ if(R.a) try{ R.a.volume=Math.max(0,Math.min(1,0.32*AUDIO.gain())); }catch(e){} };
+  const start=k=>{ if(!N) return false; R.idx=k;
+    if(R.a){ try{ R.a.pause(); R.a.removeAttribute("src"); R.a.load(); }catch(e){} }
+    const el=new Audio(GIG_DIR+GIG_SONGS[k].f); R.a=el; R.on=true; el.preload="auto"; vol();
+    el.addEventListener("ended",()=>{ if(R.a===el && R.on) start((R.idx+1)%N); });
+    el.addEventListener("error",()=>{ if(R.a===el){ R.on=false; R.a=null; if(!silent) tlAutoPanelDraw("\u{1F4FB} Sorry, I can't find the songs."); } });
+    const p=el.play(); if(p&&p.catch) p.catch(()=>{});
+    return true; };
+  if(cmd==="stop"){ if(R.a){ try{ R.a.pause(); }catch(e){} } R.on=false; return "OK, no more music."; }
+  if(cmd==="next"){ if(!start(((R.idx<0?Math.floor(Math.random()*N):R.idx)+1)%Math.max(1,N))) return "Sorry, I haven't got any songs."; return "\u{1F3B5} Next song: «"+GIG_SONGS[R.idx].t+"»"; }
+  if(R.on) return "\u{1F3B5} The music is already on: «"+GIG_SONGS[R.idx].t+"». Say “Next song” or “Stop the music”.";
+  if(!start(Math.floor(Math.random()*Math.max(1,N)))) return "Sorry, I haven't got any songs.";
+  return "\u{1F3B5} Here's some music: «"+GIG_SONGS[R.idx].t+"»! Say “Next song” or “Stop the music”.";
+}
+function tlAutoRadioTick(){ const R=AUTO.radio; if(R && R.a && R.on){ try{ R.a.volume=Math.max(0,Math.min(1,0.32*AUDIO.gain())); }catch(e){} } }
+function tlAutoQuestInfo(){
+  let goal=null; try{ goal=rangerNextGoal(); }catch(e){}
+  let msg="";
+  const active=Quest.unit && Quest.step && goal && Quest.unit.id===goal.id;
+  if(active) msg="Your quest: "+(Quest.step.introObjEn||"go on with it")+" — at "+goal.en+".";
+  else if(goal) msg="Your next quest is at "+goal.en+".";
+  else msg="You've finished all the quests! Well done!";
+  let av=[]; try{ av=Frag.available()||[]; }catch(e){}
+  let place=goal?{ name:goal.en, at:()=>({ x:goal.x, z:goal.z }) }:null;
+  if(av.length){ const f=av[0];
+    msg+=" And you have a clue to collect: a letter from The Architect"+(f.ch==="gazette"?" in the newspaper (the Letters column).":". Where? "+f.where+".");
+    if(f.ch==="pickup"){ let sp=null; try{ sp=fragSpot(f); }catch(e){} if(sp && !active) place={ name:"the Architect's letter", at:()=>sp }; } }
+  else msg+=" No clues to collect right now.";
+  AUTO.offer=place;
+  if(place) msg+=" Shall I take you there? Say “Take me there, please”.";
+  return msg;
+}
+/* le frasi «di servizio» (radio, quest, portami li'): valgono sia prima di
+   partire sia durante il viaggio. Ritorna il testo della risposta, o null. */
+function tlAutoChat(t){
+  if(AUTO_MUSIC_RE.test(t)){
+    if(/\b(stop|off|no more|quiet|silence|turn it off)\b/.test(t)) return tlAutoRadio("stop");
+    if(/\b(next|another|change|skip|different)\b/.test(t)) return tlAutoRadio("next");
+    return tlAutoRadio("play"); }
+  if(AUTO_QUEST_RE.test(t)) return tlAutoQuestInfo();
+  return null;
+}
+/* «Take me there» durante il viaggio: si cambia meta sul giro in cui si e' */
+function tlAutoRedirect(P){
+  const tc=AUTO.car&&AUTO.car.tc; if(!tc||!tc.loop) return false;
+  const at=P.at(), i=_tcSeg(tc,tc.s), R=tlAutoRoute(at,{ loop:tc.loop, i });
+  if(!R) return false;
+  AUTO.tour=null; AUTO.place=P; AUTO.route=R; AUTO.said={}; R.pts=tlAutoPts(R);
+  tc.stopS=R.L.L[R.di]; tc.arrived=false; tc.onArrive=()=>tlAutoPullOver(tc,"drop");
+  return true; }
 /* il sorpasso, scritto sul pannello (niente voce) */
 function tlAutoOvertakeNote(c){ if(!(AUTO.on && AUTO.car && AUTO.car.tc===c)) return;
   try{ tlAutoPanelDraw("\u{1F4A8} Overtaking! The other lane is clear."); }catch(e){} }
@@ -64622,6 +64750,14 @@ function tlAutoTick(){
       if((dh>0.32 && v>8) || (dv>7 && v>6)) try{ SFX.screech(Math.min(1,v/22)); }catch(e){}
       AUTO.lastH=hn; AUTO.lastV=v; } else { AUTO.lastH=null; AUTO.lastV=null; } }
   try{ tlAutoTourTick(dt); }catch(e){}
+  /* v504: il motore elettrico e le pozzanghere sotto le ruote davanti */
+  { const tc=AUTO.car.tc, v=Math.max(0,(tc&&tc.cv||0)*TRAFFIC_SPEED);
+    try{ SFX.ev(Math.min(1,v/((tlAutoK().top)/3.6)), tlAutoF().id==="turbo"); }catch(e){}
+    AUTO.pudT=(AUTO.pudT||0)-dt;
+    if(v>3 && AUTO.pudT<=0){ AUTO.pudT=0.12; const C=AUTO.car;
+      const L=tlAutoL2W(-C.HW*0.75,0,C.HL*0.62), Rw=tlAutoL2W(C.HW*0.75,0,C.HL*0.62);
+      if(puddleAt(L.x,L.z)||puddleAt(Rw.x,Rw.z)){ try{ SFX.carSplash(Math.min(1,v/14)); }catch(e){} } } }
+  try{ tlAutoRadioTick(); }catch(e){}
   { const tc=AUTO.car.tc; if(tc) tc.canOvt=(AUTO.fid==="turbo" && AUTO.phase==="drive" && !AUTO.merging && AUTO.kmh>tlAutoK().max); }                       // v503: il giro della citta'
   /* il cervellone: una domanda ogni ~20 s di strada */
   if(AUTO.phase==="drive" && !AUTO.merging && !AUTO.q){ AUTO.qT-=dt; if(AUTO.qT<=0) tlAutoQuiz(); }
@@ -64630,7 +64766,8 @@ function tlAutoTick(){
 /* ---- il pannello in basso: velocita' in inglese + le domande ---- */
 function tlAutoPanel(on){
   if(on){ if(!AUTO.panel){ const d=document.createElement("div"); d.id="auto1-panel";
-      d.style.cssText="position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:31;background:rgba(251,247,236,.96);"
+      /* v504 (Giacomo: «le domande che appaiono devono essere trasparenti, sono troppo invasive») */
+      d.style.cssText="position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:31;background:rgba(251,247,236,.58);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);"
         +"color:#1d2a32;border-radius:14px;padding:8px 12px;font:14px/1.35 system-ui,sans-serif;box-shadow:0 6px 22px rgba(0,0,0,.25);"
         +"width:min(560px,92vw);";
       document.body.appendChild(d); AUTO.panel=d; } AUTO.panel.style.display=""; tlAutoPanelDraw(); }
@@ -64692,6 +64829,11 @@ function tlAutoSure(yes){
 function tlAutoCmd(raw){
   const t=tlAutoNorm(raw), say=m=>{ tlAutoPanelDraw(m); try{ TTS.say(m,{ gender:"f" }); }catch(e){} };
   if(!t) return;
+  /* v504: radio, quest, «take me there» (scritte, non lette) */
+  { const w=m=>tlAutoPanelDraw(m);
+    if(AUTO.offer && AUTO_THERE_RE.test(t) && AUTO.phase==="drive"){ const P=AUTO.offer; AUTO.offer=null;
+      w(tlAutoRedirect(P)?"✓ OK! We're going to "+P.name+".":"Sorry, I can't find a road there from here."); return; }
+    const r=tlAutoChat(t); if(r){ w(r); return; } }
   if(AUTO.phase!=="drive"){ say("Tell me where to go first!"); return; }
   /* la frase magica: «I'm in a hurry!» (anche «I am in a hurry», «we're in a hurry») */
   if(/\bin a hurry\b/.test(t)){
@@ -64786,14 +64928,14 @@ function tlAutoNavDraw(){
   /* v501: e' un HUD sul parabrezza: fondo semitrasparente (la strada si vede
      attraverso), contenuti pieni e luminosi, un'ombra leggera sotto le scritte */
   c.clearRect(0,0,W,H); c.shadowBlur=0;
-  _rr(c,4,4,W-8,H-8,28); c.fillStyle="rgba(6,16,24,.42)"; c.fill(); c.strokeStyle="rgba(111,208,232,.6)"; c.lineWidth=3; c.stroke();
+  _rr(c,4,4,W-8,H-8,28); c.fillStyle="rgba(6,16,24,.20)"; c.fill(); c.strokeStyle="rgba(111,208,232,.45)"; c.lineWidth=3; c.stroke();   // v504: piu' trasparente
   const SP=tlAutoF().id==="turbo";
-  const hg=c.createLinearGradient(0,0,W,0); hg.addColorStop(0,SP?"rgba(160,40,20,.85)":"rgba(47,111,128,.82)"); hg.addColorStop(1,SP?"rgba(255,138,28,.85)":"rgba(111,208,232,.82)");
+  const hg=c.createLinearGradient(0,0,W,0); hg.addColorStop(0,SP?"rgba(160,40,20,.6)":"rgba(47,111,128,.58)"); hg.addColorStop(1,SP?"rgba(255,138,28,.6)":"rgba(111,208,232,.58)");
   _rr(c,4,4,W-8,52,24); c.fillStyle=hg; c.fill();
   c.fillStyle="#06121a"; c.font="bold 26px sans-serif"; c.textAlign="left"; c.textBaseline="middle"; c.fillText(tlAutoName(),22,28);
   c.font="20px sans-serif"; c.fillText(tlAutoF().id==="turbo"?"supercar · 2050":"self-driving · 2050",tlAutoF().id==="turbo"?140:120,29);
   c.textAlign="right"; c.font="bold 22px sans-serif"; c.fillText(AUTO.place?AUTO.place.name:"",W-22,28);
-  _rr(c,18,70,452,392,22); c.fillStyle="rgba(19,36,47,.55)"; c.fill();
+  _rr(c,18,70,452,392,22); c.fillStyle="rgba(19,36,47,.30)"; c.fill();
   if(R && R.pts && R.pts.length>1){
     let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9; R.pts.forEach(p=>{ x0=Math.min(x0,p[0]); x1=Math.max(x1,p[0]); z0=Math.min(z0,p[1]); z1=Math.max(z1,p[1]); });
     const mx=40, sc=Math.min((452-2*mx)/Math.max(10,x1-x0),(392-2*mx)/Math.max(10,z1-z0));
@@ -64807,19 +64949,19 @@ function tlAutoNavDraw(){
     c.strokeStyle="#ff6a5c"; c.lineWidth=4; c.stroke();
   } else { c.fillStyle="#9fbac6"; c.font="26px sans-serif"; c.textAlign="center"; c.fillText("Where would you like to go?",244,266); }
   /* v500: la domanda del computer di bordo anche sul tablet, in fondo alla mappa */
-  if(AUTO.q){ _rr(c,30,370,428,82,14); c.fillStyle="rgba(8,17,26,.78)"; c.fill(); c.strokeStyle="#c9a7ff"; c.lineWidth=3; c.stroke();
+  if(AUTO.q){ _rr(c,30,370,428,82,14); c.fillStyle="rgba(8,17,26,.5)"; c.fill(); c.strokeStyle="#c9a7ff"; c.lineWidth=3; c.stroke();
     c.textAlign="left"; c.fillStyle="#c9a7ff"; c.font="bold 18px sans-serif"; c.fillText("\u{1F5A5}\uFE0F "+tlAutoName()+"'s computer asks:",44,392);
     c.fillStyle="#ffffff"; c.font="bold 19px sans-serif";
     const qw=String(AUTO.q.q).split(" "); let ql="", qy=418;
     qw.forEach(w=>{ const t=ql?ql+" "+w:w; if(c.measureText(t).width>400){ c.fillText(ql,44,qy); qy+=22; ql=w; } else ql=t; }); if(ql && qy<=444) c.fillText(ql,44,qy); }
   /* tachimetro */
   const cx=618, cy=176, rad=92, a0=Math.PI*0.8, a1=Math.PI*2.2, fr=Math.min(1,kmh/(tlAutoK().top+10));
-  c.lineWidth=16; c.lineCap="round"; c.strokeStyle="rgba(34,50,61,.7)"; c.beginPath(); c.arc(cx,cy,rad,a0,a1); c.stroke();
+  c.lineWidth=16; c.lineCap="round"; c.strokeStyle="rgba(34,50,61,.45)"; c.beginPath(); c.arc(cx,cy,rad,a0,a1); c.stroke();
   c.strokeStyle=kmh>tlAutoK().max?"#ff6a5c":"#6fd0e8"; c.beginPath(); c.arc(cx,cy,rad,a0,a0+(a1-a0)*fr); c.stroke();
   c.fillStyle="#ffffff"; c.textAlign="center"; c.font="bold 70px sans-serif"; c.fillText(String(kmh),cx,cy+4);
   c.font="20px sans-serif"; c.fillStyle="#9fbac6"; c.fillText("km/h · max "+tlAutoK().max,cx,cy+50);
   /* la manovra: freccia + testo */
-  _rr(c,488,300,262,162,18); c.fillStyle="rgba(19,36,47,.55)"; c.fill();
+  _rr(c,488,300,262,162,18); c.fillStyle="rgba(19,36,47,.30)"; c.fill();
   if(nx){ c.save(); c.translate(540,370); c.rotate((nx.dir||0)*Math.PI/2.4); c.fillStyle="#9ff0c4";
     c.beginPath(); c.moveTo(0,-30); c.lineTo(22,0); c.lineTo(8,0); c.lineTo(8,28); c.lineTo(-8,28); c.lineTo(-8,0); c.lineTo(-22,0); c.closePath(); c.fill(); c.restore(); }
   c.textAlign="left"; c.fillStyle="#e6f6fb"; c.font="bold 21px sans-serif";
@@ -64846,6 +64988,7 @@ function tlAutoEnd(cb,abort,keepCar){
     try{ _povHead(0); }catch(e){}
     try{ avatarMeshes.forEach(m=>{ m.visibility=1; }); }catch(e){}
     try{ if(AUTO.car) tlAutoInside(false); }catch(e){}
+    try{ SFX.ev(-1); }catch(e){} try{ tlAutoRadio("stop",true); }catch(e){}       // v504: motore e radio spenti
     tlAutoUi(false); tlAutoPanel(false); AUTO.q=null;
     const c=AUTO.cam;
     if(c){ camera.lowerRadiusLimit=c.lr; camera.upperRadiusLimit=c.ur; camera.lowerBetaLimit=c.lb; camera.upperBetaLimit=c.ub; camera.minZ=c.minZ; }
