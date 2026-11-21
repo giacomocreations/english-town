@@ -9779,7 +9779,7 @@ function buildTraffic(){
       // 2.6 m tra paraurti. <14 rallenta, <8.5 target 0, <7 stop netto.
       /* v553: «davanti» = sui prossimi 14 m del MIO percorso, qualunque
          giro stia facendo l'altra (le corsie sono condivise) */
-      let gap=1e9, held=false;                          // held: ferma per il semaforo o per la precedenza (v554)
+      let gap=1e9, held=false, gapO=null;               // held: ferma per il semaforo o per la precedenza (v554); gapO: chi c'e' davanti (v503)
       /* v502: AUTO-1/TURBO-1 a 90-130 km/h fanno 25-36 m al secondo: a 14 m
          di sguardo non farebbero in tempo a frenare dietro a una coda */
       const look=c.auto?Math.max(14,c.cv*TRAFFIC_SPEED*1.1):14, slowAt=c.auto?Math.max(13,7.5+c.cv*TRAFFIC_SPEED*0.6):13;
@@ -9790,7 +9790,8 @@ function buildTraffic(){
           for(let q=1;q<90;q++){ const ix=(i+q)%n, g=(c.L[ix]-c.s+c.tot)%c.tot;
             if(g>look) break; if(g<1.2) continue;
             const P=c.loop[ix], dx=o.x-P[0], dz=o.z-P[1];
-            if(dx*dx+dz*dz<1.96){ if(g<gap) gap=g; break; } } } }
+            if(dx*dx+dz*dz<1.96){ if(g<gap){ gap=g; gapO=_trafficCars[j]; } break; } } } }
+      if(c.auto){ const r=_tcOvertake(c,dt,gap,gapO,slowAt); if(r!=null) gap=r; }      // v503: TURBO-1 di fretta sorpassa
       /* v553 — SEMAFORI: col rosso (e col rosso+giallo) ci si ferma alla
          linea; col giallo solo se si fa in tempo a frenare */
       { const sg=c.loop.sg;
@@ -9896,6 +9897,8 @@ function buildTraffic(){
       let d=tgt-c.root.rotation.y;
       while(d>Math.PI)d-=2*Math.PI; while(d<-Math.PI)d+=2*Math.PI;
       c.root.rotation.y+=d*Math.min(1,25*dt);
+      if(c.ovo>0.01 && c.ovR){ c.root.position.x+=c.ovR[0]*c.ovo; c.root.position.z+=c.ovR[1]*c.ovo;      // v503: nella corsia di sorpasso
+        c.root.rotation.y+=Math.atan2(c.ovLat||0, Math.max(4,c.cv*TRAFFIC_SPEED)); }
       _trafficNudge(c);          // l'auto scosta il pedone, non lo attraversa
       _trafficPassCheck(c);
     } });
@@ -9954,6 +9957,52 @@ function _inCarBox(c,x,z){
   const dx=x-c.root.position.x, dz=z-c.root.position.z;
   const fw=dx*fx+dz*fz, lt=dx*fz-dz*fx;
   return Math.abs(fw)<2.5+PLAYER_R && Math.abs(lt)<1.15+PLAYER_R; }
+/* =====================================================================
+   v503 — IL SORPASSO (Giacomo, 21 nov: «la Lamborghini, se ci sono le
+   condizioni, puo' superare, specialmente quando le dici che sei di
+   fretta; quando non ce ne sono davanti, molto veloce, in sicurezza»).
+   Solo per l'auto del giocatore (c.auto) con c.canOvt: TURBO-1 sopra il
+   limite (cioe' dopo «I'm in a hurry!»). Si guida a SINISTRA: la corsia
+   di sorpasso e' quella opposta, 5,5 m a DESTRA (misurata sui viali).
+   SI PARTE solo se: c'e' un'auto lenta davanti e vicina; i prossimi 55 m
+   sono dritti; niente rotonde ne' semafori entro 60 m; niente fermata
+   vicina; e la corsia opposta e' VUOTA per 110 m (a 36 m/s contro chi
+   arriva a 11 serve tanto spazio). DURANTE: si guarda la corsia opposta;
+   se arriva qualcuno, una curva o un incrocio, si rientra subito. Si
+   rientra anche a sorpasso fatto (l'altra e' 8 m dietro) o dopo 10 s.
+   Spostamento morbido (c.ovo) applicato DOPO la posizione sul giro.
+   ===================================================================== */
+const OVT_OFF=5.5;
+function _tcOvertake(c,dt,gap,gapO,slowAt){
+  c.ovo=c.ovo||0; if(!c.ovt) c.ovt=0;
+  if(!c.canOvt && !c.ovt && c.ovo<0.01) return null;
+  const P0=carLoopPos(c,c.s), P1=carLoopPos(c,c.s+2);
+  let fx=P1[0]-P0[0], fz=P1[1]-P0[1]; const fl=Math.hypot(fx,fz)||1; fx/=fl; fz/=fl;
+  const rx=fz, rz=-fx;                                              // la destra
+  const corridor=(a0,a1)=>{ for(let k=0;k<_trafficCars.length;k++){ const o=_trafficCars[k]; if(o===c||!o.root) continue;
+      const dx=o.root.position.x-P0[0], dz=o.root.position.z-P0[1], a=dx*fx+dz*fz, l=dx*rx+dz*rz;
+      if(a>a0 && a<a1 && l>2.2 && l<8.5) return a; } return null; };
+  const straight=Lm=>{ const h0=Math.atan2(fx,fz); for(let d=8; d<=Lm; d+=8){ const A=carLoopPos(c,c.s+d), B=carLoopPos(c,c.s+d+2);
+      if(Math.abs(tlAngTo(0,Math.atan2(B[0]-A[0],B[1]-A[1])-h0))>0.2) return false; } return true; };
+  const nodeNear=Lm=>{ const zp=c.loop.zp||[]; for(const q of zp){ const dIn=(q.sIn-c.s+c.tot)%c.tot; if(dIn<Lm || dIn>c.tot-q.len) return true; }
+      const sg=c.loop.sg||[]; for(const q of sg){ if(((q.s-c.s+c.tot)%c.tot)<Lm) return true; } return false; };
+  const stopNear=c.stopS!=null && ((c.stopS-c.s+c.tot)%c.tot)<80;
+  if(!c.ovt){
+    if(c.canOvt && gapO && gap<slowAt+8 && (gapO.cv||0)<c.v*0.85 && !stopNear && straight(55) && !nodeNear(60) && corridor(-12,110)==null){
+      c.ovt=1; c.ovCar=gapO; c.ovT=0; try{ tlAutoOvertakeNote(c); }catch(e){} }
+  } else {
+    c.ovT=(c.ovT||0)+dt;
+    const oc=c.ovCar; let passed=true;
+    if(oc && oc.root){ const dx=oc.root.position.x-c.root.position.x, dz=oc.root.position.z-c.root.position.z; passed=(dx*fx+dz*fz)<-8; }
+    if(c.ovt===1 && (passed || corridor(-3,50)!=null || nodeNear(18) || !straight(16) || c.ovT>10 || stopNear)) c.ovt=2;
+    if(c.ovt===2 && c.ovo<0.08){ c.ovt=0; c.ovCar=null; }
+  }
+  const want=(c.ovt===1)?OVT_OFF:0, prev=c.ovo;
+  c.ovo+=(want-c.ovo)*Math.min(1,dt*1.8);
+  c.ovLat=(c.ovo-prev)/Math.max(dt,1e-3); c.ovR=[rx,rz];
+  if(c.ovt===1 && c.ovo>2.5){ const a=corridor(0,30); return a==null?1e9:Math.max(0,a-4.4); }   // in sorpasso conta chi e' nella corsia opposta
+  return null;
+}
 function trafficBlocked(x,z){
   if(area!=="town") return false;
   /* v501 (Giacomo: «quando parcheggia al parco, prima che vada via diventa
@@ -42738,6 +42787,11 @@ const SFX=(function(){
     const th=c.createOscillator(), tg=c.createGain(); th.type="sine"; th.frequency.setValueAtTime(70,now); th.frequency.exponentialRampToValueAtTime(38,now+0.18);
     tg.gain.setValueAtTime(0.06*g0,now); tg.gain.exponentialRampToValueAtTime(0.0001,now+0.22); th.connect(tg); tg.connect(master); th.start(now); th.stop(now+0.25);
   }
+  /* v503 — il «buco» delle frasi del computer di bordo: due note brevi */
+  function gap(){ const c=ready(); if(!c) return; const now=c.currentTime, g0=lvl();
+    [[660,0],[880,0.16]].forEach(q=>{ const o=c.createOscillator(), g=c.createGain(); o.type="sine"; o.frequency.value=q[0];
+      g.gain.setValueAtTime(0.0001,now+q[1]); g.gain.exponentialRampToValueAtTime(0.09*g0,now+q[1]+0.02); g.gain.exponentialRampToValueAtTime(0.0001,now+q[1]+0.14);
+      o.connect(g); g.connect(master); o.start(now+q[1]); o.stop(now+q[1]+0.16); }); }
   const WIND_SOGLIA=0.62, WIND_MAX=0.055;
   let gSrc=null, gVol=null, gLp=null, gLast=-1;
   function windBuild(c){
@@ -42962,7 +43016,7 @@ const SFX=(function(){
     rdOscG.gain.setTargetAtTime((sk||gr)?0:0.22*k, t, 0.1);
     rdOsc.frequency.setTargetAtTime(150+330*k, t, 0.1);
   }
-  return { wake, step, walked, roll, splash, carHorn, carPass, setCarPass, correct, wrong, panOf, fly, screech,
+  return { wake, step, walked, roll, splash, carHorn, carPass, setCarPass, correct, wrong, panOf, fly, screech, gap,
            shout, voiceState, sip, chew, snap,
            gemChime, gemFit, thunder,
            bell, bellHear, shutter, tick, waterLevel, fountLevel, clubLevel, cricketLevel, windLevel,
@@ -64255,12 +64309,16 @@ function tlAutoTour(n){
   tlAutoGo({ name:"a tour of the town", at:()=>st }, R);
 }
 /* ogni fotogramma del giro: i metri fatti, i giri, la guida, la fermata finale */
+/* il sorpasso, scritto sul pannello (niente voce) */
+function tlAutoOvertakeNote(c){ if(!(AUTO.on && AUTO.car && AUTO.car.tc===c)) return;
+  try{ tlAutoPanelDraw("\u{1F4A8} Overtaking! The other lane is clear."); }catch(e){} }
 function tlAutoTourTick(dt){
   const T=AUTO.tour, tc=AUTO.car&&AUTO.car.tc, R=AUTO.route;
   if(!T || !tc || !tc.loop || AUTO.phase!=="drive" || AUTO.merging) return;
   if(T.lastS!=null){ const ds=(tc.s-T.lastS+tc.tot)%tc.tot; if(ds<60) T.dist+=ds; } T.lastS=tc.s;
   const lap=Math.min(T.n,Math.floor(T.dist/tc.tot)+1);
-  const say=m=>{ try{ tlAutoPanelDraw(m); }catch(e){} try{ TTS.say(m,{ gender:"f" }); }catch(e){} T.sayT=4; };
+  /* v503 (Giacomo: «non c'e' bisogno che dica le cose del tour, diventa ossessivo»): solo scritte */
+  const say=m=>{ try{ tlAutoPanelDraw(m); }catch(e){} T.sayT=4; };
   if(lap>T.lap){ T.lap=lap; say(lap===T.n?"Last lap! Lap "+lap+" of "+T.n+".":"Lap "+lap+" of "+T.n+"!"); }
   if(tc.stopS==null && T.dist>=T.T-90){ tc.stopS=R.L.L[R.di]; }
   /* la guida: un luogo vicino (entro 24 m), a destra o a sinistra; al primo giro tutti, poi ogni tanto */
@@ -64322,7 +64380,7 @@ function tlAutoGo(P,Rpre){
   AUTO.phase="drive"; AUTO.place=P; AUTO.route=R; AUTO.said={}; R.pts=tlAutoPts(R);
   tlAutoPanel(true);
   tlAutoSetSpeed(AUTO.kmh);
-  try{ TTS.say(R.tour?"OK! A tour of the town: "+(R.tour===1?"one lap":R.tour+" laps")+". Sit back, relax and look out of the window!"
+  try{ TTS.say(R.tour?"OK! Let's go! Sit back and relax."
                        :"OK! We're going to "+P.name+". Sit back and relax.",{ gender:"f" }); }catch(e){}
   const tc=AUTO.car.tc, L=R.L, E=L[R.ei], E2=L[(R.ei+2)%L.length];
   const ux=E2[0]-E[0], uz=E2[1]-E[1], ul=Math.hypot(ux,uz)||1, root=tc.root;
@@ -64563,7 +64621,8 @@ function tlAutoTick(){
       const dv=((AUTO.lastV!=null?AUTO.lastV:v)-v)/Math.max(dt,0.001);
       if((dh>0.32 && v>8) || (dv>7 && v>6)) try{ SFX.screech(Math.min(1,v/22)); }catch(e){}
       AUTO.lastH=hn; AUTO.lastV=v; } else { AUTO.lastH=null; AUTO.lastV=null; } }
-  try{ tlAutoTourTick(dt); }catch(e){}                       // v503: il giro della citta'
+  try{ tlAutoTourTick(dt); }catch(e){}
+  { const tc=AUTO.car.tc; if(tc) tc.canOvt=(AUTO.fid==="turbo" && AUTO.phase==="drive" && !AUTO.merging && AUTO.kmh>tlAutoK().max); }                       // v503: il giro della citta'
   /* il cervellone: una domanda ogni ~20 s di strada */
   if(AUTO.phase==="drive" && !AUTO.merging && !AUTO.q){ AUTO.qT-=dt; if(AUTO.qT<=0) tlAutoQuiz(); }
   const now=performance.now(); if(now-AUTO.lastNav>220){ AUTO.lastNav=now; tlAutoNavDraw(); }
@@ -64663,13 +64722,28 @@ function tlAutoCmd(raw){
   else if(want<tlAutoK().min){ tlAutoSetSpeed(tlAutoK().min); say("I won't go slower than "+tlAutoK().min+" km/h: the cars behind me might get angry! I'll drive at "+tlAutoK().min+"."); }
   else { tlAutoSetSpeed(want); say("OK! I'll drive at "+AUTO.kmh+" km/h."); }
 }
+/* v503 (Giacomo: «quando c'e' la frase col blank non deve pronunciarlo:
+   trova un modo per far capire che c'e' lo spazio»). Si legge la prima
+   parte, al posto del buco suonano due note brevi «da-dum» (SFX.gap) con
+   una pausa, poi il resto. La domanda si chiude con «Which word?» */
+function tlAutoSayGap(q){
+  const parts=String(q).split("___"), a=(parts[0]||"").trim(), b=(parts.slice(1).join(" ")||"").trim(), me=AUTO.q;
+  const go=async()=>{ try{
+    if(a) await TTS.say(a,{ gender:"f" });
+    if(AUTO.q!==me) return;
+    try{ SFX.gap(); }catch(e){}
+    await new Promise(r=>setTimeout(r,650));
+    if(AUTO.q!==me) return;
+    if(b) await TTS.say(b,{ gender:"f" });
+  }catch(e){} };
+  go(); }
 function tlAutoQuiz(){ AUTO.q=AUTO_QS[AUTO.qi%AUTO_QS.length]; AUTO.qi++; AUTO.q.tries=0; tlAutoPanelDraw();
-  try{ TTS.say(AUTO.q.q.replace("___","blank"),{ gender:"f" }); }catch(e){} }
+  tlAutoSayGap(AUTO.q.q); }
 function tlAutoAnswer(i){
   const Q=AUTO.q; if(!Q) return; const w=Q.o[i], fb=document.getElementById("auto1-qfb");
   if(w===Q.ok){ const full=Q.q.replace("___",Q.ok);
     if(fb){ fb.textContent="✓ Right! “"+full+"”"; fb.style.color="#166534"; }
-    try{ TTS.say(full,{ gender:"f" }); SFX.correct(); }catch(e){}
+    try{ SFX.correct(); }catch(e){}                       // v503: la frase giusta resta scritta, non si legge
     setTimeout(()=>{ if(AUTO.q===Q){ AUTO.q=null; AUTO.qT=20; tlAutoPanelDraw(); } }, 2600);
   } else { Q.tries++;
     try{ SFX.wrong(); }catch(e){}
