@@ -3342,7 +3342,7 @@ const UNIT_JOBS={ id:"u3_1", area:"jobcentre", areaName:"the Job Centre Tower",
    since/How long (Unit 4), Whose e pronomi possessivi (Unit 4),
    should e second conditional/would (Unit 5).
    ===================================================================== */
-const UNIT_TECH={ id:"u3_2", area:"techlab", areaName:"the TechLab",
+const UNIT_TECH={ id:"u3_2", area:"techlab", areaName:"the TechLab", resumeByScores:true,   // v500: tolto uno step (vedi Quest.start)
   title:"Anno 3 \u00b7 Unit 2 \u2014 Technology", size:8.0, sizeX:6.0, wallH:3.0, tint:"#a9b3bb",
   contactShadows:true, wallHex:"#dfe4e8", ceilHex:"#e8ecef",   // v269: ombre sotto gli arredi, pareti e soffitto da laboratorio
   enterToast:"\u{1F4BB} Sei entrato al TechLab",
@@ -3365,11 +3365,11 @@ const UNIT_TECH={ id:"u3_2", area:"techlab", areaName:"the TechLab",
          +"Prima per\u00f2 Dr. Ito ti mostra la lavagna dei lavori. Poi tocca a te: detta le istruzioni "
          +"<b>nell'ordine giusto</b>, o succede un disastro.",
     introObjEn:"Give Bit the instructions, in the right order.", introObj:"Da' le istruzioni a Bit, nell'ordine giusto." },
-  { id:"listen",strand:"listening",  type:"missionCall",
-    intro:"Sul grande schermo arriva una videochiamata dalla stazione spaziale: <b>Yuki Sato</b> "
-         +"prepara la missione. Dice che cosa porter\u00e0 di <b>sicuro</b> e che cosa <b>forse</b> "
-         +"porter\u00e0. Tu carichi la <b>piattaforma</b> con i device giusti.",
-    introObjEn:"Listen to Yuki and load the mission kit.", introObj:"Ascolta Yuki e carica il kit di missione." },
+  /* v500 (Giacomo, 21 nov): via la videochiamata di Yuki dalla stazione
+     spaziale (missionCall): era un secondo listening quasi uguale a quello
+     del lessico (Dr. Ito legge il problema, tu porti il device). Il codice
+     resta (MECH.missionCall) ma nessuno step lo usa. Per chi era gia' oltre
+     questo passo vedi `resumeByScores` qui sotto e in Quest.start. */
   { id:"write", strand:"writing",    type:"cityWrite",
     pad:{ x:3.60, z:6.20, title:"\u{1F3D9}\u{FE0F} QuestTown in 2050", sub:"Writing \u2014 la citt\u00e0 fra 25 anni",
       /* \u26a0\ufe0f finisce in DialogueBox.italian, che usa textContent: niente tag HTML. */
@@ -25878,7 +25878,14 @@ const Quest={
        una per una. finish() è già sicura da chiamare più volte (stelle
        keyed, frammenti guardati da flag). */
     if(prog.done){ this.i=unit.steps.length; this.step=null; questHudShow(true); this.finish(); return; }
-    const resumeAt=Math.min(prog.step||0, unit.steps.length);
+    let resumeAt=Math.min(prog.step||0, unit.steps.length);
+    /* v500: una unit a cui si e' TOLTO uno step (TechLab, la stazione spaziale)
+       riparte dal primo step che non ha ancora un punteggio salvato (i
+       punteggi sono per nome): col solo numero, chi era oltre lo step tolto
+       avrebbe saltato quello dopo (il writing). */
+    if(unit.resumeByScores && prog.scores){ let k=0;
+      while(k<unit.steps.length && prog.scores[unit.steps[k].id]!=null) k++;
+      resumeAt=k; }
     this.i=resumeAt-1; questHudShow(true);
     if(resumeAt>0 && resumeAt<unit.steps.length) toast("👋 Welcome back! You can carry on where you stopped.");
     this.advance(); },
@@ -62733,7 +62740,7 @@ function buildTechNPCs(){
   guiLabel(anchorMesh(I.root, C.x-5.55, 2.32, C.z+1.80), "\u{1F527} REPAIR SHELF", null, true, UNIT_TECH.area);
   guiLabel(anchorMesh(I.root, C.x+5.55, 2.32, C.z+1.80), "\u{1F527} REPAIR SHELF", null, true, UNIT_TECH.area);
   guiLabel(anchorMesh(I.root, C.x+0.00, 2.62, C.z-6.30), "\u{1F52E} FUTURE SCANNER", null, true, UNIT_TECH.area);
-  guiLabel(anchorMesh(I.root, C.x+3.30, 1.90, C.z-4.20), "\u{1F680} MISSION PAD", null, true, UNIT_TECH.area);
+  /* (v500: niente piu' etichetta MISSION PAD: la videochiamata di Yuki non c'e' piu', la piattaforma e' arredo) */
   guiLabel(anchorMesh(I.root, C.x-3.90, 1.62, C.z-6.80), "\u{1F6E0}\uFE0F MAKER BENCH", null, true, UNIT_TECH.area);
   /* BIT: interazione PERMANENTE dell'interno, non della quest — cosi'
      risponde anche a unit finita (e a chi entra solo per curiosare). */
@@ -63370,7 +63377,12 @@ function tlSkyEnd(cb,abort){
     SKY.free=false; SKY_PTR.on=false;                     // v500
     document.body.classList.remove("veh","sky");
     try{ tlSkyGatesOff(); tlSkyUi(false); SFX.fly(0); if(SKY.shadow){ SKY.shadow.dispose(); SKY.shadow=null; } }catch(e){}
-    try{ if(SKY.ship) SKY.ship.dispose(false,true); }catch(e){} SKY.ship=null;
+    /* ⚠️ dispose(false,FALSE): l'auto e' un'istanza di Sports_Car e i suoi
+       materiali e texture sono CONDIVISI con tutte le auto dello stesso
+       modello (traffico, parcheggiate, AUTO-1). Con dispose(false,true) le
+       si spogliava tutte: dopo il volo giravano auto bianche «metallizzate»
+       (segnalato da Giacomo con foto, 21 nov). */
+    try{ if(SKY.ship) SKY.ship.dispose(false,false); }catch(e){} SKY.ship=null;
     const c=SKY.cam;
     if(SKY.fog){ scene.fogStart=SKY.fog.s; scene.fogEnd=SKY.fog.e; }
     if(c){ camera.lowerRadiusLimit=c.lr; camera.upperRadiusLimit=c.ur; camera.lowerBetaLimit=c.lb; camera.upperBetaLimit=c.ub; }
@@ -63502,7 +63514,8 @@ function tlAutoBuildCar(key){
   lid.material=M("a1lidm","#1b2430"); lid.parent=kit; lid.position.set(0,H+0.06,-0.15);
   const lr=BABYLON.MeshBuilder.CreateCylinder("a1lr",{ diameter:0.31, height:0.04, tessellation:20 },scene);
   lr.material=led; lr.parent=kit; lr.position.set(0,H+0.07,-0.15);
-  [-1,1].forEach(sd=>box(0.02,0.05,HL*1.5,led,sd*(HW+0.005),0.55,0));
+  /* (v500: via le strisce azzurre sui fianchi: fuori dalla carrozzeria
+     sembravano linee staccate dall'auto, segnalato da Giacomo) */
   /* ABITACOLO — elegante: pelle chiara, pannelli scuri, LED azzurri e lilla */
   const ck=new BABYLON.TransformNode("auto1c",scene); ck.parent=kit;
   const skin=M("a1skin","#e8dcc8"), skin2=M("a1skin2","#d9cbb3"), pan=M("a1pan","#262c33"), pan2=M("a1pan2","#353d46"), wood=M("a1wood","#6b4f3a");
@@ -63534,6 +63547,8 @@ function tlAutoBuildCar(key){
   box(0.48,0.31,0.02,M("a1tf","#0b1014"),0,0,0.012,tab);
   const dt=new BABYLON.DynamicTexture("auto1nav"+(_lpN++),{ width:768, height:480 },scene,true);
   AUTO.dt=dt; tlPlane(tab,0.45,0.28,0,dt,"#16323d");
+  const stand=box(0.06,0.10,0.05,M("a1st","#20262c"),0,1.01,0.84,ck);   // il supporto sul cruscotto (lo sposta tlAutoPov)
+  tab.__stand=stand;
   root.getChildMeshes().forEach(m=>{ m.isPickable=false; });
   /* ⚠️ l'abitacolo si vede SOLO da dentro (O): da fuori i pannelli uscivano
      dalla carrozzeria dell'auto sportiva, che e' bassa (visto a schermo) */
@@ -63705,7 +63720,10 @@ function tlAutoGo(P){
     if(!AUTO.car) return;
     _tcBind(tc,L); tc.s=L.L[R.ei]; tc.cv=3; tc.stopS=L.L[R.di]; tc.arrived=false; tc.manual=false;
     tc.onArrive=()=>tlAutoPullOver(tc,"drop");
-    try{ carGroundRig(tc); }catch(e){}
+    /* ⚠️ la quota UNA volta sola (Giacomo: «la prima volta era a posto, ora
+       la vedo volare»): al secondo giro le ruote sono gia' staccate e le loro
+       misure non valgono, carGroundRig dava un lift di 2-3 m */
+    if(tc.lift==null){ try{ carGroundRig(tc); }catch(e){} }
     if(_trafficCars.indexOf(tc)<0) _trafficCars.push(tc);
     AUTO.merging=false; AUTO.qT=4;
     setTimeout(()=>{ try{ if(!tc.wh) tc.wh=carWheelsRig(tc); }catch(e){} },60); });
@@ -63786,12 +63804,16 @@ function tlAutoParkIn(tc){
     while(d>Math.PI) d-=2*Math.PI; while(d<-Math.PI) d+=2*Math.PI;
     const ob=scene.onBeforeRenderObservable.add(()=>{ const q=Math.min(1,(performance.now()-t0)/1600);
       root.rotation.y=r0+d*q*q*(3-2*q); tc.cv=0;
-      if(q>=1){ scene.onBeforeRenderObservable.remove(ob); AUTO.busy=""; } }); });
+      if(q>=1){ scene.onBeforeRenderObservable.remove(ob); tlAutoGroundAt(); AUTO.busy=""; } }); });
 }
 function tlAutoParkNow(){ const C=AUTO.car; if(!C) return; const tc=C.tc;
   const k=_trafficCars.indexOf(tc); if(k>=0) _trafficCars.splice(k,1);
   TRAFFIC_ZONES.forEach(Z=>{ if(Z.h===tc) Z.h=null; });
-  tc.manual=true; tc.cv=0; C.root.position.x=AUTO_STALL.x; C.root.position.z=AUTO_STALL.z; C.root.rotation.y=Math.PI+TRAFFIC_YAW; AUTO.busy=""; }
+  tc.manual=true; tc.cv=0; C.root.position.x=AUTO_STALL.x; C.root.position.z=AUTO_STALL.z; C.root.rotation.y=Math.PI+TRAFFIC_YAW; tlAutoGroundAt(); AUTO.busy=""; }
+/* l'auto poggiata sul suolo vero di dove si trova (stallo, marciapiede accostato) */
+function tlAutoGroundAt(){ const C=AUTO.car; if(!C) return;
+  let gy=0; try{ gy=_pedGroundY(C.root.position.x,C.root.position.z)||0; }catch(e){}
+  C.root.position.y=gy+((C.tc&&C.tc.lift!=null)?C.tc.lift:0); }
 /* ---- dentro: O ---- */
 /* gli occhi dell'avatar seduto, in coordinate dell'auto (y dal suolo dell'auto) */
 function tlAutoEyeRel(){ let e=1.05;
@@ -63807,8 +63829,14 @@ function tlAutoPov(on){
     try{ avatarMeshes.forEach(m=>{ m.visibility=AUTO.pov?1:0; }); }catch(e){}
     if(AUTO.pov){ const ey=tlAutoEyeRel(), S=C.seat;
       C.roof.position.y=ey+0.24;
-      C.tab.position.set(S.x+0.36, ey-0.22, S.z+0.64);
-      C.tab.rotation.y=Math.atan2(0.36,0.64); C.tab.rotation.x=0.22;
+      /* ⚠️ IN PIEDI SOPRA il cruscotto, al centro fra i due sedili, come lo
+         schermo di un'auto vera, girato verso il passeggero. Prima stava
+         dentro la plancia (e sembrava nel parabrezza), poi troppo vicino agli
+         occhi e coperto dal pannello in basso (Giacomo). */
+      const tz=0.92, ty=1.09, tx=S.x*0.25;            // un po' verso il passeggero: al centro esatto usciva dal bordo destro
+      C.tab.scaling.setAll(0.74);                     // da 0,7 m di distanza a grandezza piena copriva meta' strada
+      C.tab.position.set(tx, ty, tz); if(C.tab.__stand){ C.tab.__stand.position.x=tx; C.tab.__stand.position.z=tz+0.02; C.tab.__stand.position.y=ty-0.12; }
+      C.tab.rotation.y=Math.atan2(tx-S.x, tz-S.z); C.tab.rotation.x=0.16;
       /* ⚠️ non solo la testa: capelli, cappello, cappuccio stavano attaccati
          alla camera (forme marroni semitrasparenti, visto a schermo). Via
          tutto cio' che vive all'altezza degli occhi; corpo, braccia e gambe
@@ -64029,11 +64057,13 @@ function tlAutoOffer(){
   if(AUTO.offered || AUTO.on) return; AUTO.offered=true;
   try{ Sync.set("et_auto1",{ at:Date.now() }); }catch(e){}
   const npc=(typeof TL_NPC!=="undefined"&&TL_NPC.ito)||null;
+  /* v500 (Giacomo): a fine quest si dice chiaro che cosa si puo' provare
+     adesso, e il «si'» ti porta DRITTO nello stallo, a bordo */
   DialogueBox.open({ npc, icon:"\u{1F697}", sub:"A present from the TechLab", autoSpeak:true,
-    text:"Congratulations! AUTO-1 is yours now. It's in the car park outside: book it when you want. Would you like a ride now? You choose where!",
-    italian:"AUTO-1 è sbloccata: da ora la prenoti con E nel parcheggio davanti al TechLab. Vuoi fare subito un giro? Scegli tu dove andare.",
+    text:"Well done! Now you can try AUTO-1, our self-driving car. It has no steering wheel: it drives by itself, you just tell it where to go. Shall I take you to its parking space now?",
+    italian:"Adesso puoi provare AUTO-1, l'auto che si guida da sola: niente volante, le dici tu dove andare e ci va. Con \u00abYes\u00bb ti porto subito al suo posto nel parcheggio, gi\u00e0 a bordo. Da ora la prenoti anche da solo, con E, nel parcheggio davanti al TechLab.",
     buttons:[{ label:"Not now", cls:"ghost" },
-             { label:"\u{1F697} Yes, take me!", cls:"primary", act:()=>tlAutoStart("finale") }] });
+             { label:"\u{1F697} Yes, take me to the car!", cls:"primary", act:()=>tlAutoStart("finale") }] });
 }
 MECH.futureScanner=function(s){
   buildTechNPCs();
