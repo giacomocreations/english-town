@@ -51172,7 +51172,7 @@ function teacherTechMenu(){
   try{ QModal.close(); }catch(e){}
   DialogueBox.open({ icon:"\u{1F469}\u200D\u{1F3EB}", name:"Docente", sub:"TechLab \u00b7 scorciatoie", autoSpeak:false,
     text:"Try the TechLab vehicles now.",
-    italian:"Provi subito i veicoli, senza fare prima le attivit\u00e0 (anche dal tablet: dal badge DOCENTE). SKY-1 \u00e8 la Grammar del TechLab (le domande con gli anelli); Nelson 1 \u00e8 il giro finale; The Beast \u00e8 la supercar arancione (per gli alunni da \u2B50 3000).",
+    italian:"Provi subito i veicoli, senza fare prima le attivit\u00e0 (anche dal tablet: dal badge DOCENTE). SKY-1 \u00e8 la Grammar del TechLab (le domande con gli anelli); Nelson 1 \u00e8 il giro finale; The Beast \u00e8 la supercar arancione (per gli alunni: quest del TechLab finita e \u2B50 3000).",
     buttons:[{ label:"Chiudi", cls:"ghost" },
              { label:"\u{1F6F8} SKY-1 \u00b7 flying car", cls:"primary", act:()=>teacherTryVehicle("sky") },
              { label:"\u{1F697} Nelson 1 \u00b7 self-driving car", cls:"primary", act:()=>teacherTryVehicle("auto") },
@@ -64015,8 +64015,17 @@ function tlAutoName(){ return tlAutoF().name; }
 function tlAutoK(){ return tlAutoF().kmh; }
 function tlAutoHome(id){ return tlAutoF(id).home; }
 function tlAutoSpot(id){ const F=tlAutoF(id); return F.spot||F.home; }
+/* v510 (Giacomo, 21 nov: «The Beast 3000 punti ma sempre con la quest del
+   TechLab svolta»): servono TUTTE E DUE le cose, le ⭐ 3000 e la quest del
+   TechLab finita (quella che sblocca Nelson 1). Il docente resta libero. */
 function tlTurboUnlocked(){ try{ if(Student.teacher) return true; }catch(e){}
-  let st=0; try{ st=Stars.total(); }catch(e){} return st>=AUTO_FLEET.turbo.stars; }
+  let st=0; try{ st=Stars.total(); }catch(e){} return st>=AUTO_FLEET.turbo.stars && tlAutoUnlocked(); }
+/* cosa manca ancora per The Beast, in breve (inglese) e per esteso (italiano) */
+function tlTurboNeed(){ let st=0; try{ st=Stars.total(); }catch(e){}
+  const F=AUTO_FLEET.turbo, noLab=!tlAutoUnlocked(), noSt=st<F.stars;
+  const en=(noLab?"finish the TechLab quest":"")+(noLab&&noSt?" + ":"")+(noSt?"\u2B50 "+F.stars:"");
+  const it=(noLab?"finire la quest del TechLab":"")+(noLab&&noSt?" e ":"")+(noSt?F.stars+" stelle (ne hai "+st+")":"");
+  return { en, it, st }; }
 function tlAutoUse(id){ AUTO.fid=id; AUTO.car=AUTO_FLEET[id].car; }
 const AUTO_HIDE={ x:-16, z:-25.6 };            // dove aspetta il corpo nascosto in volo (SKY-1): marciapiede, fuori strada
 const AUTO_KMH={ min:20, max:50, top:90 };   // (v502: i limiti veri stanno nella flotta, tlAutoK)
@@ -64499,7 +64508,7 @@ function tlAutoBookInit(){
       pos:()=>{ const s=tlAutoSpot(id); return new BABYLON.Vector3(s.x,0,s.z); },
       prompt:()=>{
         if(id==="turbo") return tlTurboUnlocked()?'\u{1F3CE}️ Press <b>E</b>: book <b>The Beast</b>, the self-driving supercar'
-                                                 :'\u{1F3CE}️ <b>The Beast</b> · self-driving supercar — \u{1F512} ⭐ '+F.stars+' to ride';
+                                                 :'\u{1F3CE}️ <b>The Beast</b> · self-driving supercar — \u{1F512} '+tlTurboNeed().en+' to ride';
         return tlAutoUnlocked()?'\u{1F697} Press <b>E</b>: book <b>Nelson 1</b>, the self-driving car'
                                :'\u{1F697} <b>Nelson 1</b> · TechLab prototype — finish the TechLab quest to use it'; },
       interact:()=>tlAutoBook(id) });
@@ -64523,8 +64532,8 @@ function tlTurboPark(tries){
 setTimeout(()=>tlTurboPark(0),1500);
 function tlAutoBook(id){
   id=id||"auto1"; const F=tlAutoF(id);
-  if(id==="turbo"){ if(!tlTurboUnlocked()){ let st=0; try{ st=Stars.total(); }catch(e){}
-      toast("\u{1F512} The Beast is for champions: you need ⭐ "+F.stars+" (you've got "+st+") · Servono "+F.stars+" stelle",4800); return; } }
+  if(id==="turbo"){ if(!tlTurboUnlocked()){ const N=tlTurboNeed();
+      toast("\u{1F512} The Beast is for champions: "+N.en+" to ride it · Per guidarla devi "+N.it,5200); return; } }
   else if(!tlAutoUnlocked()){ toast("\u{1F512} Nelson 1 is a TechLab prototype: finish the TechLab quest and it's yours!"); return; }
   if(AUTO.on){ return; }
   if(AUTO.busy){ toast("\u{1F697} "+tlAutoName()+" is still driving back to the car park — wait a moment!"); return; }
@@ -77545,7 +77554,7 @@ function _tecaParts(ids){
         const inIt=!!(AUTO.on && AUTO.fid===q[0]);
         h+=_tcCard('data-car="'+q[0]+'"',inIt,!own,_tcSw(q[2].acc,q[2].body,q[1]),F.name,
           inIt?"you're in it":(own?"yours \u00b7 tap: where is it?"
-            :(turbo?"\u{1F512} \u2B50 "+F.stars+" to ride":"\u{1F512} finish the TechLab quest")),
+            :(turbo?"\u{1F512} "+tlTurboNeed().en+" to ride":"\u{1F512} finish the TechLab quest")),
           turbo?"the fastest car in town \u00b7 up to "+F.kmh.top+" km/h":"self-driving \u00b7 TechLab prototype"); });
       h+='</div><div class="dy-note">Go to the <b>car park</b> and press <b>E</b> next to the car to book it. '
         +'Then tell it where to go, in English: \u201cTake me to the school, please\u201d.</div>'; } }catch(e){}
