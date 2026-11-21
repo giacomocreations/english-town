@@ -446,7 +446,12 @@
      pannelli del veicolo diventano compatti, in alto, a tutta larghezza. */
   body.veh #kbhelp, body.veh #quest-compass, body.veh #prompt, body.veh #star-btn,
   body.veh #rideBtn, body.veh #trickBtn, body.veh #runBtn, body.veh #actBtn, body.veh #quest-nudge{display:none !important;}
-  body.sky #povBtn, body.auto #stick{display:none !important;}
+  body.auto #stick{display:none !important;}   /* v508: in SKY-1 il 👁️ ora c'e' (posto di guida, tlSkyPov) */
+  /* v508: il riquadro del veicolo in alto (velocita', meta) come il cruscotto: vetro nero lucido */
+  .veh-ui{background:linear-gradient(180deg,rgba(58,74,88,.93) 0%,rgba(18,27,36,.93) 46%,rgba(5,9,13,.95) 100%) !important;
+    border:1px solid rgba(143,227,255,.5) !important; border-radius:14px !important;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.32), inset 0 -3px 10px rgba(0,0,0,.45), 0 0 0 1px rgba(0,0,0,.35), 0 8px 22px rgba(0,0,0,.35) !important;
+    text-shadow:0 1px 2px rgba(0,0,0,.55); -webkit-backdrop-filter:blur(4px); backdrop-filter:blur(4px);}
   .veh-ui .sky-l1{font-size:13px;opacity:.85;} .veh-ui .sky-l2{font-weight:700;margin-top:2px;} .veh-ui .sky-l3{font-size:12px;opacity:.7;margin-top:2px;}
   @media (max-width:820px), (max-height:520px){
     body.veh #quest-hud, body.veh #badge, body.veh #area-name, body.veh #guest-badge, body.veh #au-btn,
@@ -5888,6 +5893,10 @@ function octDynRoots(){ const r=[];
      questo contano i figli. */
   try{ if(typeof _trafficCars!=="undefined")
          _trafficCars.forEach(c=>{ if(c&&c.root) r.push(c.root); }); }catch(e){}
+  /* v508: SKY-1 in volo, con l'abitacolo che nasce a meta' volo (O): fra le
+     mobili da subito, se no l'abitacolo restava nella cella dov'era nato e
+     non si disegnava finche' il guardiano non se ne accorgeva */
+  try{ if(typeof SKY!=="undefined" && SKY.ship) r.push(SKY.ship); }catch(e){}
   return r; }
 /* =====================================================================
    v556 — OCTREE CHE TAGLIA DAVVERO (Giacomo, 13 nov: «dopo le ultime
@@ -51356,6 +51365,8 @@ function povSet(on,silent){
 function povToggle(){
   /* v499: dentro AUTO-1 la O mette e toglie la vista dal sedile (abitacolo e tablet) */
   if(typeof AUTO!=="undefined" && AUTO.on){ tlAutoPov(!AUTO.pov); return AUTO.pov; }
+  /* v508: dentro SKY-1 la O fa lo stesso: posto di guida / vista da fuori */
+  if(typeof SKY!=="undefined" && SKY.on){ if(SKY.ship) tlSkyPov(!SKY.pov); return !!SKY.pov; }
   return povSet(!POV.on); }
 /* v320 — LE FRECCE GUARDANO. ← → girano la visuale attorno a te (in prima
    persona: giri la testa, e il corpo con lei), ↑ alza lo sguardo, ↓ lo
@@ -51434,9 +51445,7 @@ window.addEventListener("keydown",e=>{ if(__typingNow(e)) return;   // non rubar
        proprio per questo non si puo' collaudare stando fermi. Docente come
        N/G/C: in mano a un alunno sarebbe un interruttore del meteo. */
     if(k==="p"){ e.preventDefault(); rainForceCycle(); return; }
-    if(k==="n") DAY.override=-0.8;
-    else if(k==="g") DAY.override=0.9;
-    else if(k==="c") DAY.override=null;
+    if(k==="n"||k==="g"||k==="c"){ DAY.override=(k==="n")?-0.8:(k==="g")?0.9:null; try{ teacherBadge(); }catch(e){} }
     else if(k==="b"){ e.preventDefault(); gigForceCycle(); }
     else if(k==="f"){ e.preventDefault(); showForceCycle(); }
     return;
@@ -52626,6 +52635,16 @@ function _skwTake(t){
 function skwTick(){
   let on=false;
   try{ on=!!(started && area==="town" && RIDE.on && RIDE.on.ramps && Math.abs(player.position.x-SKATE.C.x)<24 && Math.abs(player.position.z-SKATE.C.z)<17 && SKATE.ramps); }catch(e){ on=false; }
+  /* v508 (Giacomo, 21 nov: «dopo le 22 puoi comunque giocare con lo skate e
+     scegliere le parole: lo skate rimane ma niente parole»). Dopo le 22
+     (townOpen, come negozi e popolazione) si va in skate quanto si vuole, ma
+     le parole non compaiono e non danno ne' tolgono stelle. Una volta a
+     sera lo si dice, la prima volta che si entra nello skatepark in skate.
+     Il docente che forza il giorno (G, o dal pannello DOCENTE) le rivede. */
+  if(on && !townOpen()){ on=false;
+    const d=new Date().toDateString();
+    if(SKW.nightSaid!==d){ SKW.nightSaid=d;
+      try{ toast("\u{1F319} After 10 pm: skate as much as you like, but no words tonight! \u00b7 Dopo le 22 niente parole: solo skate",4200); }catch(e){} } }
   if(!on){ SKW.lastT=0; if(SKW.vis && SKW.toks){ SKW.toks.forEach(t=>t.m.setEnabled(false)); SKW.vis=false; } return; }
   if(!SKW.toks){ try{ _skwBuild(); }catch(e){ console.warn("[skw]",e); SKW.toks=[]; } }
   /* la prima volta del giorno che le parole compaiono si dice come funziona:
@@ -52869,6 +52888,7 @@ function dcTick(){
   const now=performance.now();
   let on=false;
   try{ on=!!(started && SKDANCE.on && SKDANCE.area==="town" && area==="town" && !(SKATE.crewOn && SKATE.gap)); }catch(e){}
+  try{ if(on && !townOpen()) on=false; }catch(e){}       // v508: dopo le 22 allo skatepark si balla, ma senza domande (come le parole in skate)
   const mine=QQ.cur && QQ.cur.o.kind==="dc";
   if(!on){ if(mine && !QQ.cur.done) qqHide(); DC.next=Math.max(DC.next, now+6000); if(!SKDANCE.on){ DC.act=null; DC.queue=[]; } return; }
   if(qqOpen() || now<DC.next || _qqModal() || DC.act || DC.queue.length) return;
@@ -57404,7 +57424,8 @@ function teacherBadge(){
   }
   const sim=Sync.get("et_sim",null);
   const sc=sim?simClasse(sim):"";
-  b.textContent="\u{1F469}\u200D\u{1F3EB} DOCENTE \u00b7 "+(sim?("simulo "+sim+"\u00aa"+(sc?" ("+sc+")":"")+" \u2014 "+Gate.label()):"tutto aperto");
+  b.textContent="\u{1F469}\u200D\u{1F3EB} DOCENTE \u00b7 "+(sim?("simulo "+sim+"\u00aa"+(sc?" ("+sc+")":"")+" \u2014 "+Gate.label()):"tutto aperto")
+    +((typeof DAY!=="undefined" && DAY.override!==null)?(DAY.override>=0?" \u00b7 \u2600\uFE0F giorno":" \u00b7 \u{1F319} notte"):"");   // v508: il giorno/notte forzato si vede
 }
 function openTeacherPanel(){
   const sim=Sync.get("et_sim",null);
@@ -57419,14 +57440,48 @@ function openTeacherPanel(){
     sub:"Il tuo progresso resta il tuo: qui cambi solo <b>cosa vedi aperto</b>, per collaudare il gate."
        +"<br><span style='opacity:.8'>Tasti di collaudo: <b>1</b> ricomincia da capo la quest dell'edificio · "
        +"<b>2</b> passa all'attività successiva (senza completarla) · "
-       +"<b>3</b> nel Market: prova la spesa libera.</span>",
+       +"<b>3</b> nel Market: prova la spesa libera. Su tablet: <b>\u{1F31E} Collaudo</b> qui sotto.</span>",
     buttons:[ btn("Tutto aperto",null), btn("Come una 1\u00aa","1"),
               btn("Come una 2\u00aa","2"), btn("Come una 3\u00aa","3"),
               { label:"\u{1F440} Presenza"+(Presenza.acceso?" \u2713":"")+"\u2026", act:openPresenzaDocente },     // v404
               { label:"\u{1F3EB} Cursore di classe\u2026", act:openCursorePanel },
               { label:"\u{1F4E3} Notifiche / evento\u2026", act:openAvvisiPanel },     // v539
               { label:"\u{1F3C6} Graduatoria\u2026", act:openGraduatoriaPanel },
-              { label:"\u{1F697} Prova i veicoli del TechLab\u2026", act:()=>setTimeout(teacherTechMenu,120) } ] });   // v500
+              { label:"\u{1F697} Prova i veicoli del TechLab\u2026", act:()=>setTimeout(teacherTechMenu,120) },   // v500
+              { label:"\u{1F31E} Collaudo: giorno / notte\u2026", act:()=>setTimeout(openCollaudoPanel,120) } ] });   // v508
+}
+/* =====================================================================
+   v508 — I TASTI DI COLLAUDO ANCHE SU TABLET (Giacomo, 21 nov: «fai in modo
+   che anche su tablet la modalita' docente possa forzare il giorno per
+   provare il gioco»). Su tablet la tastiera non c'e': N/G/C (ora), P
+   (pioggia), B/F (concerto, proiezione) e 1/2/3 (quest) diventano bottoni,
+   dal badge DOCENTE. Fanno ESATTAMENTE quello che fanno i tasti (stesse
+   funzioni), e come i tasti valgono solo per il docente e solo finche' non
+   si ricarica la pagina (DAY.override non si salva).
+   ===================================================================== */
+function collaudoOra(){ try{ return DAY.override===null?"orologio reale":(DAY.override>=0?"giorno forzato":"notte forzata"); }catch(e){ return ""; } }
+function openCollaudoPanel(){
+  if(!Student.teacher) return;
+  const ov=DAY.override;
+  const mk=(lab,on,act,keep)=>({ label:lab+(on?" \u2713":""), cls:on?"primary":"", act, keepOpen:!!keep });
+  const setDay=(v,msg)=>{ DAY.override=v; try{ teacherBadge(); }catch(e){}
+    toast(msg,3200); setTimeout(openCollaudoPanel,60); };
+  QModal.open({
+    title:"\u{1F31E} Collaudo (docente)",
+    sub:"Gli stessi tasti di collaudo del computer, qui come bottoni (per il tablet). Ora: <b>"+collaudoOra()+"</b>."
+       +"<br><span style='opacity:.8'>Con il giorno forzato la citt\u00e0 \u00e8 aperta anche dopo le 22 (negozi, persone, auto, "
+       +"parole dello skatepark): per provare il gioco di sera. Ricaricando la pagina torna l'orologio reale.</span>",
+    buttons:[
+      mk("\u2600\uFE0F Giorno (G)", ov!==null && ov>=0, ()=>setDay(0.9,"\u2600\uFE0F Giorno forzato: citt\u00e0 aperta \u00b7 \u{1F552} per tornare all'ora vera: Orologio reale")),
+      mk("\u{1F319} Notte (N)", ov!==null && ov<0, ()=>setDay(-0.8,"\u{1F319} Notte forzata: citt\u00e0 chiusa, come dopo le 22")),
+      mk("\u{1F552} Orologio reale (C)", ov===null, ()=>setDay(null,"\u{1F552} Orologio reale")),
+      { label:"\u{1F327}\uFE0F Pioggia (P)", act:()=>{ try{ rainForceCycle(); }catch(e){} } },
+      { label:"\u{1F3B8} Concerto (B)", act:()=>{ try{ gigForceCycle(); }catch(e){} } },
+      { label:"\u{1F3AC} Proiezione (F)", act:()=>{ try{ showForceCycle(); }catch(e){} } },
+      { label:"\u21BA Ricomincia la quest (1)", act:()=>{ try{ teacherRestartQuest(); }catch(e){} } },
+      { label:"\u23ED\uFE0F Attivit\u00e0 successiva (2)", act:()=>{ try{ teacherSkipStep(); }catch(e){} } },
+      { label:"\u{1F6D2} Spesa libera (3)", act:()=>{ try{ teacherFreeShop(); }catch(e){} } },
+      { label:"Chiudi", cls:"ghost" } ] });
 }
 /* =====================================================================
    PANNELLO CURSORE DI CLASSE (docente) — FASE 5 passo 3
@@ -63392,7 +63447,79 @@ function tlSkyBuild(){
     pyl.material=wm; pyl.parent=ship; pyl.isPickable=false; pyl.position.set(tX,tY+0.15,tz);
   });
   try{ ship.getChildMeshes().forEach(m=>{ m.isPickable=false; }); }catch(e){}
+  /* v508 — L'ABITACOLO DI SKY-1 (Giacomo, 21 nov: «rendi usabile la
+     prospettiva occhio con O anche nella macchina volante, copia gli interni
+     della macchina senza volante»). E' lo stesso abitacolo di AUTO-1
+     (tlAutoCabin: pelle, LED, tetto panoramico, cruscotto lucido, HUD sul
+     parabrezza), costruito su un kit figlio della nave (+z avanti, y dal
+     fondo dell'auto) con le misure vere della Sports_Car; da dentro la
+     scocca (hold) si spegne, le ali e le turbine restano fuori dai
+     finestrini. Si costruisce la prima volta che si preme O. */
+  try{ ship.computeWorldMatrix(true); hold.computeWorldMatrix(true);
+    const bb=hold.getHierarchyBoundingVectors(true), HW=(bb.max.x-bb.min.x)/2, HL=(bb.max.z-bb.min.z)/2;
+    const kit=new BABYLON.TransformNode("sky1k",scene); kit.parent=ship;
+    SKY.car={ root:ship, kit, H:bb.max.y-ship.position.y, HW, HL, seat:{ x:-HW*0.92*0.48, z:0.10 }, body:hold, lid:[], ck:null, cabE:null, tab:null, fid:"sky", theme:"lux" };
+  }catch(e){ SKY.car=null; console.warn("[sky1 cabin]",e); }
   SKY.ship=ship; return ship;
+}
+/* gli occhi del pilota (y dal fondo dell'auto): quelli dell'avatar seduto in
+   AUTO-1 se l'abitacolo e' gia' stato fatto, se no la misura tipica */
+function tlSkyEye(){ try{ const A=AUTO_FLEET.auto1.car; if(A && A.cabE) return A.cabE; }catch(e){} return 1.24; }
+/* O dentro SKY-1: vista dal posto del pilota, abitacolo acceso, scocca spenta */
+function tlSkyPov(on){
+  const C=SKY.car; if(!SKY.on || !SKY.ship || !C) return false;
+  SKY.pov=!!on;
+  if(SKY.pov){ const keep=AUTO.dt; try{ tlAutoCabin(C,tlSkyEye()); }catch(e){ console.warn("[sky1 cabin]",e); SKY.pov=false; } AUTO.dt=keep;
+    try{ C.ck.getChildMeshes().forEach(m=>{ m.__dyn=true; }); }catch(e){} }      // si muove con la nave: fuori dall'octree statico
+  try{ if(C.ck) C.ck.setEnabled(SKY.pov); }catch(e){}
+  try{ C.body.setEnabled(!SKY.pov); }catch(e){}
+  if(SKY.pov){ if(SKY.minZ0==null) SKY.minZ0=camera.minZ; camera.minZ=0.03; camera.lowerRadiusLimit=0.01; SKY.hudT=0; }
+  else { if(SKY.minZ0!=null) camera.minZ=SKY.minZ0; SKY.minZ0=null; camera.lowerRadiusLimit=2; camera.radius=Math.max(camera.radius,8); }
+  const bt=document.getElementById("povBtn");
+  if(bt){ bt.classList.toggle("on",SKY.pov); bt.setAttribute("aria-pressed",SKY.pov?"true":"false"); }
+  try{ tlSkyUiDraw(); }catch(e){}
+  toast(SKY.pov?"\u{1F441}\uFE0F Cockpit view \u2014 "+(IS_TOUCH?"tap \u{1F441}\uFE0F to go out":"O to go out")+" \u00b7 Vista dal posto di guida"
+               :"\u{1F6F8} Outside view \u2014 "+(IS_TOUCH?"tap \u{1F441}\uFE0F":"O")+" for the cockpit");
+  return SKY.pov;
+}
+/* l'HUD sul parabrezza e lo schermo della plancia in volo: la frase col buco,
+   l'indizio, quota e velocita', la freccia verso gli anelli */
+function tlSkyHudDraw(){
+  const C=SKY.car; if(!C || !C.dt || !SKY.pov) return;
+  const ship=SKY.ship, q=tlSkyQ(), kmh=Math.round((SKY.v||0)*3.6), alt=ship?ship.position.y:0;
+  let next=""; if(q) next=SKY.solved?"Well done! \u2714":"Rings: "+q.opts.join(" \u00b7 ");
+  try{ tlDashDraw(C,{ sky:true, kmh, alt, next }); }catch(e){}
+  const c=C.dt.getContext(), W=768, H=480;
+  c.clearRect(0,0,W,H);
+  _rr(c,4,4,W-8,H-8,28); c.fillStyle="rgba(6,16,24,.20)"; c.fill(); c.strokeStyle="rgba(143,227,255,.5)"; c.lineWidth=3; c.stroke();
+  const hg=c.createLinearGradient(0,0,W,0); hg.addColorStop(0,"rgba(47,111,128,.6)"); hg.addColorStop(1,"rgba(201,167,255,.6)");
+  _rr(c,4,4,W-8,52,24); c.fillStyle=hg; c.fill();
+  c.fillStyle="#06121a"; c.font="bold 26px sans-serif"; c.textAlign="left"; c.textBaseline="middle"; c.fillText("SKY-1",22,28);
+  c.font="20px sans-serif"; c.fillText("flying car \u00b7 2050",110,29);
+  c.textAlign="right"; c.font="bold 22px sans-serif"; c.fillText(q?(SKY.qi+1)+"/"+SKY_QS.length:"",W-22,28);
+  /* la frase col buco */
+  _rr(c,18,70,W-36,190,22); c.fillStyle="rgba(19,36,47,.32)"; c.fill();
+  if(q){ c.textAlign="left"; c.fillStyle="#f2c93e"; c.font="bold 24px sans-serif"; c.fillText(q.cue,40,104);
+    const gap=SKY.solved?q.ok:"___", txt=(q.before?q.before+" ":"")+gap+" "+q.after;
+    c.fillStyle="#ffffff"; c.font="bold 34px sans-serif";
+    const ws=txt.split(" "); let line="", y=152; ws.forEach(w=>{ const t=line?line+" "+w:w; if(c.measureText(t).width>W-90){ c.fillText(line,40,y); y+=42; line=w; } else line=t; }); if(line) c.fillText(line,40,y); }
+  else { c.textAlign="center"; c.fillStyle="#cfe3ea"; c.font="bold 30px sans-serif"; c.fillText("\u{1F6EC} Landing\u2026",W/2,165); }
+  /* quota e velocita' */
+  const box=(x,lab,val,col)=>{ _rr(c,x,280,228,180,20); c.fillStyle="rgba(19,36,47,.30)"; c.fill();
+    c.textAlign="center"; c.fillStyle="#9fbac6"; c.font="bold 20px sans-serif"; c.fillText(lab,x+114,312);
+    c.fillStyle=col; c.font="bold 64px sans-serif"; c.fillText(val,x+114,380); };
+  box(18,"ALTITUDE (m)",String(Math.round(alt)),"#ffffff");
+  box(270,"SPEED (km/h)",String(kmh),"#8fe3ff");
+  /* la freccia verso la serie di anelli piu' vicina (rispetto al muso) */
+  _rr(c,522,280,228,180,20); c.fillStyle="rgba(19,36,47,.30)"; c.fill();
+  c.textAlign="center"; c.fillStyle="#9fbac6"; c.font="bold 20px sans-serif"; c.fillText("RINGS",636,312);
+  let best=null, bd=1e9; (SKY.sets||[]).forEach(st=>{ const d=Math.hypot(st.c.x-ship.position.x,st.c.z-ship.position.z); if(d<bd){ bd=d; best=st; } });
+  if(best && !SKY.solved){ const ang=tlAngTo(0,Math.atan2(best.c.x-ship.position.x,best.c.z-ship.position.z)-SKY.face);
+    c.save(); c.translate(636,380); c.rotate(ang); c.fillStyle="#9ff0c4";
+    c.beginPath(); c.moveTo(0,-38); c.lineTo(28,0); c.lineTo(10,0); c.lineTo(10,34); c.lineTo(-10,34); c.lineTo(-10,0); c.lineTo(-28,0); c.closePath(); c.fill(); c.restore();
+    c.fillStyle="#cfe3ea"; c.font="bold 18px sans-serif"; c.fillText(Math.round(bd)+" m",636,446); }
+  else { c.fillStyle="#9ff0c4"; c.font="bold 40px sans-serif"; c.fillText(SKY.solved?"\u2714":"\u2026",636,384); }
+  C.dt.update();
 }
 /* camera dietro la nave: alpha dalla direzione in cui guarda */
 function tlSkyCamAlpha(face){ return Math.atan2(-Math.cos(face),-Math.sin(face)); }
@@ -63449,7 +63576,7 @@ function tlSkyUiDraw(){
   const touch=(typeof matchMedia==="function" && matchMedia("(pointer:coarse)").matches);
   SKY.ui.innerHTML='<div class="sky-l1">\u{1F6F8} '+(SKY.qi+1)+'/'+SKY_QS.length+' · fly through the right word!</div>'
     +'<div class="sky-l2">'+_escHtml(q.cue)+' “'+(q.before?_escHtml(q.before)+" ":"")+gap+" "+_escHtml(q.after)+'”</div>'
-    +'<div class="sky-l3">'+(touch?"Drag to steer: left/right to turn · down to climb, up to dive":"W/S speed · A/D turn · Space up · Shift down · or drag: down = climb, up = dive")+'</div>';
+    +'<div class="sky-l3">'+(touch?"Drag to steer: left/right to turn · down to climb, up to dive · 👁️ cockpit":"W/S speed · A/D turn · Space up · Shift down · or drag: down = climb, up = dive · O cockpit")+'</div>';
 }
 /* v500 — L'ALTEZZA DEI TETTI (Giacomo: «volando bassi si passa in mezzo ai
    grattacieli o sul tetto dell'aeroporto»). Una griglia da 6 m con la cima
@@ -63634,7 +63761,7 @@ function tlSkyFly(dt){
   const vy=(SKY.ay-ship.position.y)*Math.min(1,dt*2.2);
   ship.position.y+=vy;
   ship.rotation.y=SKY.face;
-  ship.rotation.z+=((-SKY.turn*0.38)-ship.rotation.z)*Math.min(1,dt*4);
+  ship.rotation.z+=((-SKY.turn*(SKY.pov?0.10:0.38))-ship.rotation.z)*Math.min(1,dt*4);   // v508: da dentro poco rollio (la camera non si inclina)
   ship.rotation.x+=((-vy/Math.max(dt,0.001)*0.03)-ship.rotation.x)*Math.min(1,dt*4);
   ship.rotation.x=Math.max(-0.3,Math.min(0.3,ship.rotation.x));
   /* l'ombra sotto */
@@ -63709,6 +63836,15 @@ function tlSkyTick(){
   }
   const k=0.75+0.25*Math.sin(SKY.t*9);
   if(SKY.thrMat) SKY.thrMat.emissiveColor.set(0.44*k,0.82*k,0.91*k);
+  /* v508: dal posto di guida (O) la camera sta negli occhi del pilota e segue
+     il muso, anche quando la nave sale o scende */
+  if(SKY.pov && SKY.car){ const C=SKY.car; ship.computeWorldMatrix(true); const wm=ship.getWorldMatrix();
+    const eye=BABYLON.Vector3.TransformCoordinates(new BABYLON.Vector3(C.seat.x,tlSkyEye(),C.seat.z+0.06),wm);
+    const fw=BABYLON.Vector3.TransformNormal(new BABYLON.Vector3(0,0,1),wm); fw.normalize();
+    camera.setTarget(eye,false,false,true); camera.radius=0.05;
+    camera.alpha=tlSkyCamAlpha(SKY.face); camera.beta=Math.PI/2-0.08+Math.asin(Math.max(-1,Math.min(1,fw.y)));
+    SKY.hudT=(SKY.hudT||0)-dt; if(SKY.hudT<=0){ SKY.hudT=0.22; try{ tlSkyHudDraw(); }catch(e){} }
+    return; }
   /* camera: dietro, un po' sopra; alla fermata SPACE da sotto, verso il cielo */
   const st=SKY.at&&SKY_STOPS[SKY.at];
   const moving=SKY.flying||SKY.free;
@@ -63770,6 +63906,12 @@ function tlSkyEnd(cb,abort){
   const fin=function(){
     if(SKY.obs){ scene.onBeforeRenderObservable.remove(SKY.obs); SKY.obs=null; }
     SKY.free=false; SKY_PTR.on=false;                     // v500
+    /* v508: fuori dall'abitacolo; i suoi materiali e le sue texture (non quelle
+       condivise della pelle e del carbonio) si buttano con la nave */
+    try{ if(SKY.minZ0!=null) camera.minZ=SKY.minZ0; }catch(e){} SKY.minZ0=null; SKY.pov=false;
+    try{ const bt=document.getElementById("povBtn"); if(bt){ bt.classList.remove("on"); bt.setAttribute("aria-pressed","false"); } }catch(e){}
+    try{ const ck=SKY.car&&SKY.car.ck; if(ck){ (ck.__mats||[]).forEach(m=>{ try{ m.dispose(false,false); }catch(e){} }); (ck.__dts||[]).forEach(t=>{ try{ if(t) t.dispose(); }catch(e){} }); } }catch(e){}
+    SKY.car=null;
     document.body.classList.remove("veh","sky");
     try{ tlSkyGatesOff(); tlSkyUi(false); SFX.fly(0); if(SKY.shadow){ SKY.shadow.dispose(); SKY.shadow=null; } }catch(e){}
     /* ⚠️ dispose(false,FALSE): l'auto e' un'istanza di Sports_Car e i suoi
@@ -64100,13 +64242,54 @@ function tlAutoCabin(C,E){
   [-1,1].forEach(k=>box(0.025,0.025,1.2,led2,k*0.145,F+0.29,0.18));
   box(0.20,0.006,0.26,wood,0,F+0.343,0.48);
   /* la plancia: bassa e larga, pelle scura, rullo in cuoio, filo di metallo, LED */
-  box(W*2,0.22,zW-0.74,dark,0,D-0.11,(zW+0.74)/2);
-  box(W*2,0.36,0.12,black,0,D-0.40,0.80);                                           // sotto, verso le ginocchia
+  /* v508 — IL CRUSCOTTO LUCIDO (Giacomo, 21 nov: «migliora la grafica del
+     cruscotto delle macchine, fallo piu' stiloso, lucido»). Quello che da
+     seduti si vede davvero (la plancia da 0,85 m in avanti: piu' vicino e'
+     fuori inquadratura) diventa:
+     · pelle della plancia LUCIDA (specular alto, non opaca);
+     · sotto il parabrezza un piano NERO LACCATO (PBR con clear coat): riflette
+       il cielo e le luci, come il «piano black» delle auto vere;
+     · filetti CROMATI (PBR metallico: specchiano l'ambiente), arancio
+       anodizzato su TURBO-1;
+     · lo SCHERMO PANORAMICO da montante a montante (iperschermo): vetro nero
+       lucido con cornice laccata, dentro velocita', marce, batteria, ora,
+       radio e il nome dell'auto (tlDashDraw, aggiornato col navigatore). */
+  const PBR=(hex,met,rough,cc)=>{ const m=new BABYLON.PBRMaterial("a1pb"+(_lpN++),scene); mats.push(m);
+    m.albedoColor=BABYLON.Color3.FromHexString(hex); m.metallic=met; m.roughness=rough;
+    if(cc){ try{ m.clearCoat.isEnabled=true; m.clearCoat.intensity=1; m.clearCoat.roughness=0.03; }catch(e){} }
+    return m; };
+  const lacq=PBR("#050608",0,0.10,true);
+  const chrome=SP?PBR("#ff8f2e",0.95,0.22,true):PBR("#eef2f5",1,0.08,false);
+  const dashL=LEA(SP?"#141416":"#2a2522",SP?"#e0402a":"#8e5431",false,0.42); dashL.specularPower=72;
+  box(W*2,0.22,zW-0.74,dashL,0,D-0.11,(zW+0.74)/2);
+  box(W*2-0.04,0.006,zW-1.02,lacq,0,D+0.003,(zW+1.02)/2);                           // il piano laccato sotto il parabrezza
+  box(W*2,0.36,0.12,lacq,0,D-0.40,0.80);                                            // sotto, verso le ginocchia (laccato)
   capX(0.06,W*2-0.1,cognac,0,D-0.05,0.76);
-  box(W*2-0.12,0.02,0.02,trim,0,D-0.005,0.80);
-  box(W*2-0.12,0.008,0.05,wood,0,D+0.004,0.86);
+  box(W*2-0.12,0.02,0.02,chrome,0,D-0.005,0.80);
+  box(W*2-0.10,0.006,0.012,chrome,0,D+0.009,0.835);                                 // filetto cromato sul bordo della plancia
+  box(W*2-0.12,0.008,0.04,wood,0,D+0.004,0.99);                                     // l'intarsio, fra lo schermo e il piano laccato
   box(W*2-0.16,0.025,0.025,led,0,D+0.012,zW-0.05);                                  // LED alla base del parabrezza (si vede)
   box(W*2-0.10,0.025,0.025,led,0,D-0.13,0.70);                                      // LED sotto il rullo (piedi)
+  /* l'iperschermo: in piedi sulla plancia, inclinato verso gli occhi (24
+     gradi: la normale guarda chi e' seduto). Basso (6,5 cm) e vicino (0,87):
+     da seduti si vede, dal basso in su, schermo -> intarsio e piano laccato
+     -> LED alla base del vetro -> HUD; niente si copre. */
+  { const sW=W*2-0.30, sH=0.065, th=0.42, sz=0.87, bh=sH+0.022;
+    const up=[0,Math.cos(th),Math.sin(th)], nr=[0,Math.sin(th),-Math.cos(th)];
+    const cy=D+0.004+up[1]*bh/2, cz=sz+up[2]*bh/2;
+    const bz=box(sW+0.03,bh,0.014,lacq,0,cy,cz); bz.rotation.x=th;                      // la cornice laccata
+    const tp=box(sW+0.03,0.004,0.016,chrome,0,cy+up[1]*bh/2,cz+up[2]*bh/2); tp.rotation.x=th;   // il bordo alto cromato
+    box(sW+0.06,0.006,0.034,chrome,0,D+0.004,sz);                                     // il piedino cromato
+    const sdt=new BABYLON.DynamicTexture("a1scr"+(_lpN++),{ width:2048, height:128 },scene,true);
+    const sm=new BABYLON.PBRMaterial("a1scrm"+(_lpN++),scene); mats.push(sm);
+    sm.albedoColor=new BABYLON.Color3(0.01,0.01,0.012); sm.metallic=0; sm.roughness=0.05;
+    sm.emissiveTexture=sdt; sm.emissiveColor=new BABYLON.Color3(1,1,1);
+    try{ sm.clearCoat.isEnabled=true; sm.clearCoat.intensity=1; sm.clearCoat.roughness=0.02; }catch(e){}
+    const sc=BABYLON.MeshBuilder.CreatePlane("a1scr",{ width:sW, height:sH },scene);
+    sc.material=sm; sc.parent=ck; sc.isPickable=false; sc.rotation.x=th;
+    sc.position.set(0,cy+nr[1]*0.0085,cz+nr[2]*0.0085);
+    try{ if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(sc); }catch(e){}
+    C.scr={ dt:sdt, mesh:sc }; }
   /* il proiettore dell'HUD incassato nella plancia, al centro dell'auto
      (v501, Giacomo: «in basso, non al centro del vetro»): lo sguardo dritto
      resta sulla strada, l'HUD sta in basso a destra, sopra la plancia */
@@ -64227,8 +64410,71 @@ function tlAutoCabin(C,E){
   hud.position.set(hx, D+gy*u+gz*0.01, zW+gz*u-gy*0.01);
   hud.rotation.x=Math.asin(gz);
   try{ if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(hud); }catch(e){}
-  C.tab=hud; ck.__mats=mats;
+  C.tab=hud; ck.__mats=mats; ck.__dts=[dt,paintTex,C.scr&&C.scr.dt];
   ck.setEnabled(!!AUTO.pov);
+  try{ tlDashDraw(C); }catch(e){}
+}
+/* v508 — lo schermo panoramico della plancia (vedi tlAutoCabin). o: per
+   SKY-1 { sky:true, kmh, alt }; per le auto si legge AUTO. */
+function tlDashDraw(C,o){
+  if(!C || !C.scr || !C.scr.dt) return; o=o||{};
+  const c=C.scr.dt.getContext(), W=2048, H=128;
+  const SP=C.theme==="sport", SKYM=!!o.sky;
+  const acc=SP?"#ff8a1c":(SKYM?"#8fe3ff":"#6fd0e8"), acc2=SP?"#ff3d5a":"#c9a7ff";
+  const F=SKYM?null:tlAutoF(C.fid);
+  const kmh=o.kmh!=null?o.kmh:Math.round(((C.tc&&C.tc.cv)||0)*TRAFFIC_SPEED*3.6);
+  const top=SKYM?70:((F&&F.kmh&&F.kmh.top)||90), lim=SKYM?60:((F&&F.kmh&&F.kmh.max)||50);
+  c.clearRect(0,0,W,H);
+  /* il vetro: nero profondo con la riga di luce in alto (il «lucido») */
+  const bg=c.createLinearGradient(0,0,0,H); bg.addColorStop(0,"#121a22"); bg.addColorStop(0.5,"#070b0f"); bg.addColorStop(1,"#020304");
+  c.fillStyle=bg; c.fillRect(0,0,W,H);
+  const vg=c.createLinearGradient(0,0,W,0); vg.addColorStop(0,"rgba(0,0,0,.55)"); vg.addColorStop(0.18,"rgba(0,0,0,0)"); vg.addColorStop(0.82,"rgba(0,0,0,0)"); vg.addColorStop(1,"rgba(0,0,0,.55)");
+  c.fillStyle=vg; c.fillRect(0,0,W,H);
+  c.textBaseline="middle";
+  /* 1) la velocita': numero grande, la barra a segmenti, le marce */
+  c.textAlign="right"; c.fillStyle="#ffffff"; c.font="bold 86px sans-serif"; c.fillText(String(kmh),300,62);
+  c.textAlign="left"; c.fillStyle="#9fb6c2"; c.font="bold 26px sans-serif"; c.fillText("km/h",310,48);
+  c.fillStyle=acc; c.font="20px sans-serif"; c.fillText(SKYM?"AIR SPEED":"max "+lim,310,80);
+  const segs=26, fr=Math.max(0,Math.min(1,kmh/top));
+  for(let i=0;i<segs;i++){ const on=i/segs<fr, over=(i/segs)*top>lim;
+    c.fillStyle=on?(over?acc2:acc):"rgba(255,255,255,.08)"; c.fillRect(70+i*17,100,12,10); }
+  c.font="bold 28px sans-serif"; c.textAlign="center";
+  (SKYM?["T","H","F"]:["P","R","N","D"]).forEach((g,i)=>{ const on=SKYM?(g==="F"):(g===(kmh>0?"D":"P"));
+    c.fillStyle=on?acc:"rgba(255,255,255,.28)"; c.fillText(g,520+i*36,62); });
+  c.fillStyle="rgba(255,255,255,.12)"; c.fillRect(680,22,2,84);
+  /* 2) batteria (o quota, in volo) */
+  c.textAlign="left";
+  if(SKYM){ c.fillStyle="#9fb6c2"; c.font="bold 22px sans-serif"; c.fillText("ALTITUDE",720,40);
+    c.fillStyle="#ffffff"; c.font="bold 52px sans-serif"; c.fillText(Math.round(o.alt||0)+" m",720,86); }
+  else { const pc=Math.max(42,92-Math.floor(((performance.now()-(C.t0||(C.t0=performance.now())))/60000)));
+    c.strokeStyle="#cfe3ea"; c.lineWidth=3; c.strokeRect(720,40,92,44); c.fillStyle="#cfe3ea"; c.fillRect(812,52,8,20);
+    c.fillStyle=pc>30?"#5ee39a":"#ff6a5c"; c.fillRect(725,45,82*pc/100,34);
+    c.fillStyle="#ffffff"; c.font="bold 40px sans-serif"; c.fillText(pc+"%",838,64);
+    c.fillStyle="#9fb6c2"; c.font="20px sans-serif"; c.fillText("\u26A1 "+Math.round(pc*4.6)+" km",840,100); }
+  c.fillStyle="rgba(255,255,255,.12)"; c.fillRect(980,22,2,84);
+  /* 3) l'ora, al centro */
+  const d=new Date(), hh=String(d.getHours()).padStart(2,"0"), mm=String(d.getMinutes()).padStart(2,"0");
+  c.textAlign="center"; c.fillStyle="#ffffff"; c.font="300 70px sans-serif"; c.fillText(hh+":"+mm,1120,58);
+  c.fillStyle="#9fb6c2"; c.font="20px sans-serif"; c.fillText(d.toLocaleDateString("en-GB",{ weekday:"short", day:"numeric", month:"short" }),1120,104);
+  c.fillStyle="rgba(255,255,255,.12)"; c.fillRect(1260,22,2,84);
+  /* 4) la radio (o il prossimo anello, in volo) */
+  c.textAlign="left";
+  if(SKYM){ c.fillStyle=acc2; c.font="bold 22px sans-serif"; c.fillText("NEXT",1300,40);
+    c.fillStyle="#ffffff"; c.font="bold 32px sans-serif"; c.fillText(String(o.next||"Fly through the right word!").slice(0,30),1300,84); }
+  else { const R=AUTO.radio, on=!!(R && R.on && R.idx>=0 && typeof GIG_SONGS!=="undefined" && GIG_SONGS[R.idx]);
+    c.fillStyle=on?acc2:"rgba(255,255,255,.35)"; c.font="bold 22px sans-serif"; c.fillText(on?"\u266A NOW PLAYING":"\u266A RADIO OFF",1300,40);
+    c.fillStyle="#ffffff"; c.font="bold 30px sans-serif"; c.fillText(on?String(GIG_SONGS[R.idx].t).slice(0,26):"Say \u201cPlay some music\u201d",1300,84);
+    if(on){ const t=performance.now()/180; for(let i=0;i<9;i++){ const h=8+Math.abs(Math.sin(t+i*0.9))*26; c.fillStyle=acc2; c.fillRect(1640+i*9,108-h/2-8,5,h); } } }
+  c.fillStyle="rgba(255,255,255,.12)"; c.fillRect(1740,22,2,84);
+  /* 5) il nome dell'auto, con la sfumatura del tema */
+  const lg=c.createLinearGradient(1770,0,2010,0); lg.addColorStop(0,acc); lg.addColorStop(1,acc2);
+  c.textAlign="right"; c.fillStyle=lg; c.font="italic bold 48px sans-serif"; c.fillText(SKYM?"SKY-1":(F?F.name:"AUTO-1"),2010,56);
+  c.fillStyle="#9fb6c2"; c.font="18px sans-serif"; c.fillText(SKYM?"flying car \u00b7 2050":(SP?"supercar \u00b7 2050":"self-driving \u00b7 2050"),2010,98);
+  /* il riflesso del vetro: una banda chiara obliqua in alto */
+  const gl=c.createLinearGradient(0,0,0,H*0.45); gl.addColorStop(0,"rgba(255,255,255,.16)"); gl.addColorStop(1,"rgba(255,255,255,0)");
+  c.fillStyle=gl; c.fillRect(0,0,W,H*0.45);
+  c.fillStyle=acc; c.globalAlpha=0.85; c.fillRect(0,H-4,W,4); c.globalAlpha=1;               // il filo di luce sotto
+  C.scr.dt.update();
 }
 /* dentro (O) l'abitacolo, fuori la scocca: mai tutte e due */
 function tlAutoInside(on){
@@ -65037,6 +65283,7 @@ function tlAutoNavDraw(){
   if(AUTO.ui){ AUTO.ui.innerHTML='<b>\u{1F697} '+tlAutoName()+'</b> · '+kmh+' km/h'+(AUTO.place?' · \u{1F3C1} '+_escHtml(AUTO.place.name):'')
       +(eta?' · '+Math.floor(eta/60)+':'+String(eta%60).padStart(2,"0"):'')+(msg?'<div style="font-weight:700;margin-top:2px;">'+_escHtml(msg)+'</div>':''); }
   if(!AUTO.dt || !AUTO.pov) return;
+  try{ tlDashDraw(C); }catch(e){}                       // v508: lo schermo della plancia
   /* l'HUD (era il tablet): intestazione, mappa, tachimetro ad arco, manovra, arrivo */
   const c=AUTO.dt.getContext(), W=768, H=480;
   /* v501: e' un HUD sul parabrezza: fondo semitrasparente (la strada si vede
