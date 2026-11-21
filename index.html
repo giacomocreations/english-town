@@ -9877,7 +9877,7 @@ function buildTraffic(){
         else vw=Math.min(vw, Math.max(1.0, Math.sqrt(2*(c.fast?8:2.2)*dd))); }
       if(gap<7.5) vw=0;
       else if(gap<slowAt) vw=Math.min(vw, c.v*(gap-7.5)/(slowAt-7.5));
-      c.cv+=(vw-c.cv)*Math.min(1,6*dt);
+      c.cv+=(vw-c.cv)*Math.min(1,((c.auto&&c.fast&&vw>c.cv)?10:6)*dt);   // v505: TURBO-1 di fretta riprende piu' svelta (tocca i 200)
       if(gap<6.5) c.cv=0;
       /* ⚠️ IL CLACSON DELL'AUTO FERMA (segnalato da Giacomo l'1 set: «se la
          macchina è bloccata deve continuare a suonare»). Prima la tromba
