@@ -53786,6 +53786,16 @@ scene.onPointerObservable.add(pi=>{
     return; }
   const pick=scene.pick(scene.pointerX,scene.pointerY); if(!pick.hit||!pick.pickedPoint) return;
   let cur=pick.pickedMesh, inter=null; while(cur){ if(cur.__inter){ inter=cur.__inter; break; } cur=cur.parent; }
+  /* v499 (Giacomo: «col mouse non si riesce a selezionare quegli item»): un
+     device piccolo su uno scaffale si manca facilmente e il clic finisce sul
+     ripiano. Se il punto toccato sta SOPRA il pavimento (un mobile, non la
+     strada) e a meno di 60 cm c'e' un oggetto interattivo, vale come clic su
+     di lui. Un clic per terra resta «cammina li'». */
+  if(!inter && pick.pickedPoint.y>0.3){ let bd=0.6;
+    for(const o of interactables){ if(!o || !o.enabled || o.area!==area) continue;
+      const w=typeof o.pos==="function"?o.pos():o.pos; if(!w) continue;
+      const d=Math.hypot(w.x-pick.pickedPoint.x, w.z-pick.pickedPoint.z);
+      if(d<bd){ bd=d; inter=o; } } }
   if(inter&&inter.enabled&&inter.area===area){ const w=typeof inter.pos==="function"?inter.pos():inter.pos;
     interSelId=interKeyOf(inter); _promptHtml="";       // il tap sceglie ANCHE il bersaglio
     tapMark.setEnabled(false);
@@ -62599,7 +62609,12 @@ function buildTechNPCs(){
      dell'NPC (0.70) ci sta con margine da entrambi i lati. Misurato. */
   TL_NPC.ito=spawnNPC({ id:"ito", name:"Dr. Hana Ito", sub:"Lab engineer", area:UNIT_TECH.area,
     x:C.x-2.80, z:C.z+6.60, face:Math.PI, model:"avatarW", height:1.68,
-    interact:tlTalkIto, radius:3.2,
+    /* v499: 2.2, non 3.2. Il cerchio di 3.2 arrivava ai device dell'ultimo
+       ripiano ovest, e siccome la selezione resta sull'ultimo bersaglio finche'
+       e' a portata, la E (e il clic finito sullo scaffale) apriva sempre lei
+       (Giacomo: «ti fa parlare sempre con Dr. Ito»). Dal bancone, davanti a
+       lei, si sta a 1.8 m. */
+    interact:tlTalkIto, radius:2.2,
     tint:{ Purple:"#2f6f80", LightBlue:"#1b2430" } });
   /* Marcus sta in piedi nella Future Room, di fianco alla consolle: la
      consolle arriva a x 1.30 e lui parte da 1.95. */
@@ -63126,8 +63141,10 @@ function tlAutoRevHtml(){
 function tlAutoBrief(){
   const ms=Quest.state.ms;
   if(!ms.dest){ const K=Object.keys(TL_AUTO_MSG); ms.dest=K[(Math.random()*K.length)|0]; }
-  questHudSet("listening", HOBJ("\u{1F3A7} Listen to Yuki: <b>where</b> will she be? Then take the kit there with <b>AUTO-1</b>",
+  const rb=' <button type="button" class="qm-btn ghost listen-replay-btn" style="padding:3px 10px;margin-left:6px;">\ud83d\udd0a</button>';
+  questHudSet("listening", HOBJ("\u{1F3A7} Listen to Yuki: <b>where</b> will she be? Then take the kit there with <b>AUTO-1</b>"+rb,
     "\u{1F3A7} Ascolta Yuki: <b>dove</b> sarà? Poi portale il kit con <b>AUTO-1</b>"), Quest.i, Quest.total);
+  { const b=qhud.obj.querySelector(".listen-replay-btn"); if(b) b.onclick=(e)=>{ try{ e.stopPropagation(); }catch(err){} tlAutoSayYuki(); }; }   // v499: riascolto sempre a portata
   DialogueBox.open({ ttsOpts:{gender:"f"}, name:"\u{1F469}‍\u{1F680} Yuki Sato", sub:"A voice message", autoSpeak:false,
     text:"One more thing! I need the kit today. Listen to my message: where will I be?",
     italian:"Ascolta il messaggio: Yuki nomina più posti, ma ce n'è UNO solo dove sarà davvero. Poi portale il kit con AUTO-1, l'auto senza volante del TechLab.",
@@ -63207,8 +63224,10 @@ function tlAutoStart(){
     camera.alpha=tlSkyCamAlpha(AUTO.h)+0.7; camera.beta=1.15; camera.radius=8.5;
     tlAutoUi(true); tlAutoNavDraw();
     AUTO.obs=scene.onBeforeRenderObservable.add(tlAutoTick);
-    questHudSet("listening", HOBJ("\u{1F697} Tell <b>AUTO-1</b> where to go. Press <b>O</b> to sit inside.",
+    questHudSet("listening", HOBJ("\u{1F697} Tell <b>AUTO-1</b> where to go. Press <b>O</b> to sit inside."
+        +' <button type="button" class="qm-btn ghost listen-replay-btn" style="padding:3px 10px;margin-left:6px;">\ud83d\udd0a</button>',
       "\u{1F697} Di' ad <b>AUTO-1</b> dove andare. Premi <b>O</b> per stare dentro."), Quest.i, Quest.total);
+    { const b=qhud.obj.querySelector(".listen-replay-btn"); if(b) b.onclick=(e)=>{ try{ e.stopPropagation(); }catch(err){} tlAutoSayYuki(); }; }
     finFade(0,800,()=>tlAutoAsk());
   });
 }
@@ -63638,8 +63657,17 @@ MECH.robotInstructions=function(s){
    ===================================================================== */
 function tlCallHud(){
   const ms=Quest.state&&Quest.state.ms; if(!ms) return;
-  questHudSet("listening", HOBJ("\ud83c\udfa7 Mission kit ("+Math.min(ms.idx+1,TL_MISSION.length)+"/" +TL_MISSION.length+") \u2014 take the device and load it onto the <b>platform</b>","\ud83c\udfa7 Mission kit ("+Math.min(ms.idx+1,TL_MISSION.length)+"/"
-    +TL_MISSION.length+") \u2014 prendi il device e caricalo sulla <b>piattaforma</b>"), Quest.i, Quest.total);
+  /* v499 (Giacomo: «fai in modo che si possa riascoltare»): il 🔊 stava solo
+     nella finestra di Yuki, e quella si chiude per andare alla rastrelliera.
+     Ora c'e' anche qui, sempre a portata (stesso pattern del lessico:
+     listen-replay-btn, agganciato dopo questHudSet). Dal secondo ascolto
+     la frase compare anche scritta, sotto. */
+  const M=TL_MISSION[ms.idx];
+  const btn=' <button type="button" class="qm-btn ghost listen-replay-btn" style="padding:3px 10px;margin-left:6px;">\ud83d\udd0a</button>';
+  const rev=(ms.revealed&&M)?'<div class="qh-it">\u201c'+_escHtml(M.line)+'\u201d</div>':"";
+  questHudSet("listening", HOBJ("\ud83c\udfa7 Mission kit ("+Math.min(ms.idx+1,TL_MISSION.length)+"/" +TL_MISSION.length+") \u2014 take the device and load it onto the <b>platform</b>"+btn+rev,"\ud83c\udfa7 Mission kit ("+Math.min(ms.idx+1,TL_MISSION.length)+"/"
+    +TL_MISSION.length+") \u2014 prendi il device e caricalo sulla <b>piattaforma</b>"+btn), Quest.i, Quest.total);
+  const b=qhud.obj.querySelector(".listen-replay-btn"); if(b) b.onclick=(e)=>{ try{ e.stopPropagation(); }catch(err){} tlSayYuki(); tlCallHud(); };
 }
 function tlSayYuki(){
   const ms=Quest.state&&Quest.state.ms; if(!ms) return;
@@ -63712,7 +63740,10 @@ MECH.missionCall=function(s){
   tlPadDraw();
   pool.forEach(entry=>{
     Quest.questInteract({ id:"tlmis_"+entry.en.replace(/[^a-z0-9]/gi,"_"), area:UNIT_TECH.area,
-      radius:0.85, pos:()=>entry.pos, meshes:[entry.mesh], label:(entry.it||"?"),
+      /* v499: 1.10 come nel lessico (v270). Con 0.85 dalla corsia — rastrelliera
+         solida + raggio del giocatore — non ci si arrivava quasi mai
+         (Giacomo: «devi essere super vicino»). */
+      radius:1.10, furn:entry, pos:()=>entry.pos, meshes:[entry.mesh], label:(entry.it||"?"),
       prompt:'Press <b>E</b>: is this what Yuki needs?',
       interact:()=>{
         const ms=Quest.state.ms, M=TL_MISSION[ms.idx]; if(!M) return;
