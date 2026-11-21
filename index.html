@@ -23439,15 +23439,47 @@ const DialogueBox=(function(){
      vederlo. Quindi niente e.repeat (tasto gia' giu') e almeno 400 ms dall'apertura.
      Il click passa dal bottone vero: se la voce sta ancora parlando
      (SpeakLock) non succede niente, esattamente come col mouse sull'OK. */
+  /* v499 (Giacomo, 21 nov: «non solo gli OK, ma anche gli altri messaggi,
+     quando sono stati letti» — scelto: si preme il bottone PRINCIPALE).
+     Regole, nell'ordine:
+       · mai con qualcosa da scrivere, tessere o scelte nel corpo (domande);
+       · bottoni di SERVIZIO non contano: 🔊, ❓, il riascolto, e Close /
+         Leave / Back / Bye (sono il «no grazie» di chi se ne va);
+       · un solo bottone vero -> quello (la regola di prima, 400 ms);
+       · piu' bottoni -> solo se UNO e' il principale (.primary), gli altri
+         sono di servizio, e nessuno dice di no (No / Not now / Later...:
+         allora e' una domanda e muoversi non risponde per te). In piu' il
+         messaggio dev'essere LETTO: voce finita e un tempo minimo che cresce
+         con la lunghezza del testo (0,8 s + 80 ms a parola, max 4 s). */
+  const _SVC_RE=/^\W*(?:\u{1F50A}|\u2753|(?:close|leave|back|goodbye|bye|chiudi|esci|indietro)\b)/iu;
+  const _NO_RE=/\b(no|not now|not yet|later|maybe later|non ora|dopo|anyway)\b/i;
+  function _svc(b){ return b.classList.contains("dlg-speak") || b.classList.contains("dlg-tr-btn")
+    || b.classList.contains("listen-replay-btn") || _SVC_RE.test(String(b.textContent||"").trim()); }
   function okSolo(){
     if(!el.classList.contains("show")) return null;
-    if(performance.now()-(el.__t0||0)<400) return null;
-    if(card.querySelector("input:not([type=hidden]),textarea,select,[contenteditable=true],[role=button],[onclick]")) return null;
-    const bs=[...card.querySelectorAll("button")].filter(b=>b.offsetParent && !b.disabled
-      && !b.classList.contains("dlg-speak") && !b.classList.contains("dlg-tr-btn")
+    const age=performance.now()-(el.__t0||0);
+    if(age<400) return null;
+    if(card.querySelector("input:not([type=hidden]),textarea,select,[contenteditable=true],[role=button],[onclick],.wt-tile")) return null;
+    const all=[...card.querySelectorAll("button")].filter(b=>b.offsetParent && !b.disabled);
+    /* bottoni nel corpo (le scelte di una domanda): se ce n'e' piu' d'uno, niente */
+    const real=all.filter(b=>!b.classList.contains("dlg-speak") && !b.classList.contains("dlg-tr-btn")
       && !b.classList.contains("listen-replay-btn"));
-    if(bs.length!==1 || !bs[0].closest(".qm-btns")) return null;
-    return bs[0];
+    if(real.length===1){ return real[0].closest(".qm-btns") ? real[0] : null; }   // la regola di prima
+    /* ⚠️ anche le SCELTE stanno in una riga .qm-btns, ma dentro .qm-body: si
+       distingue per posizione (corpo = domanda, piede = bottoni della finestra) */
+    const inBody=b=>!!b.closest(".qm-body");
+    if(real.some(b=>inBody(b) && !_svc(b))) return null;
+    const foot=real.filter(b=>!inBody(b) && b.closest(".qm-btns"));
+    const prim=foot.filter(b=>b.classList.contains("primary") && !_svc(b));
+    if(prim.length!==1) return null;
+    const others=foot.filter(b=>b!==prim[0]);
+    if(others.some(b=>!_svc(b))) return null;                     // un'altra azione vera: e' un menu
+    if(foot.some(b=>_NO_RE.test(String(b.textContent||"")))) return null;   // c'e' un «no»: e' una domanda
+    /* letto? voce finita e tempo minimo di lettura */
+    try{ if(SpeakLock.locked()) return null; }catch(e){}
+    const words=String(card.innerText||"").split(/\s+/).filter(Boolean).length;
+    if(age<Math.min(4000, 800+words*80)) return null;
+    return prim[0];
   }
   window._dlgOkAdvance=function(){ const b=okSolo(); if(!b) return false; b.click(); return true; };
   const _OK_KEYS={ w:1, a:1, s:1, d:1, arrowup:1, arrowdown:1 };
@@ -58068,6 +58100,13 @@ function bentornato(){
 function switchStudent(){
   if(typeof closeMap==="function" && typeof mapOpen!=="undefined" && mapOpen) closeMap();
   try{ Quest.stop(); }catch(e){}
+  /* v499 (Giacomo, 21 nov: «la bussola a volte rimane anche quando chiudo la
+     sessione?»). Ricaricando la pagina non resta niente (nessuna bussola e'
+     salvata). Ma cambiando studente SENZA ricaricare la meta del Ranger
+     (NAV) restava in memoria e passava al ragazzo dopo, e con lei l'aiuto
+     pagato (QC_HELP). Si spengono qui, insieme alla quest. */
+  try{ NAV.target=null; NAV.label=""; }catch(e){}
+  try{ QC_HELP.key=""; QC_HELP.sig=""; }catch(e){}
   /* ⚠️ PRIMA si salva quel che c'e', POI si cambia studente: se no gli
      ultimi secondi di chi esce finirebbero spinti sotto il codice di chi
      entra, o non finirebbero da nessuna parte. */
