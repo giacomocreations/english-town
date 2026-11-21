@@ -63160,8 +63160,15 @@ function tlSkyBuild(){
      la punta, un filo di diedro), winglet in punta con la luce di
      navigazione (rossa a sinistra, verde a destra, come gli aerei), una
      turbina sotto ogni ala con l'anello che pulsa, LED sul bordo d'uscita. */
-  const wm=new BABYLON.StandardMaterial("sky1wm"+(_lpN++),scene);
+  let wm=new BABYLON.StandardMaterial("sky1wm"+(_lpN++),scene);
   wm.diffuseColor=BABYLON.Color3.FromHexString("#eef2f5"); wm.specularColor=new BABYLON.Color3(0.6,0.6,0.6); wm.specularPower=90; wm.backFaceCulling=false;
+  /* v502 (Giacomo: «il colore delle ali uguale a quello della carrozzeria»):
+     lo STESSO materiale della scocca (Sports_Car: PBR «White», senza texture,
+     quindi gli UV delle ali non contano). ⚠️ Condiviso con tutte le auto di
+     quel modello: qui non si cambia niente, e il volo finisce con
+     dispose(false,false) (vedi tlSkyEnd), che i materiali non li tocca. */
+  try{ const bm=hold.getChildMeshes(false).map(m=>m.material).find(m=>m && /^white$|body|paint/i.test(m.name||"") && !m.albedoTexture && !m.diffuseTexture);
+    if(bm) wm=bm; }catch(e){}
   const dk=lpMat("#2a3038");
   const navR=new BABYLON.StandardMaterial("sky1nr"+(_lpN++),scene); navR.emissiveColor=new BABYLON.Color3(1,0.15,0.12); navR.diffuseColor=navR.emissiveColor;
   const navG=new BABYLON.StandardMaterial("sky1ng"+(_lpN++),scene); navG.emissiveColor=new BABYLON.Color3(0.15,1,0.4); navG.diffuseColor=navG.emissiveColor;
