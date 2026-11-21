@@ -63754,7 +63754,7 @@ function tlAutoPanelDraw(msg){
     +(_SpkRec?'<button type="button" id="auto1-mic" class="qm-btn" style="padding:5px 9px">\u{1F3A4}</button>':'')
     +'<button type="button" id="auto1-send" class="qm-btn primary" style="padding:5px 11px">✔</button></div>'
     +'<div id="auto1-say" style="margin-top:5px;min-height:18px;font-weight:600;color:#2f6f80">'+(msg?_escHtml(msg):"")+'</div>';
-  if(Q){ h+='<div style="margin-top:6px;padding-top:6px;border-top:1px solid #e2dccd"><b>\u{1F9E0} AUTO-1 asks:</b> '+_escHtml(Q.q)
+  if(Q){ h+='<div style="margin-top:6px;padding-top:6px;border-top:1px solid #e2dccd"><b>\u{1F5A5}\uFE0F AUTO-1\'s computer asks:</b> '+_escHtml(Q.q)
       +'<div style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap">'
       +Q.o.map((w,i)=>'<button type="button" class="qm-btn auto1-opt" data-i="'+i+'" style="padding:5px 14px">'+_escHtml(w)+'</button>').join("")
       +'</div><div id="auto1-qfb" style="margin-top:4px;min-height:16px;font-weight:600"></div></div>'; }
@@ -63847,6 +63847,12 @@ function tlAutoNavDraw(){
     const rp=C.root.position; c.fillStyle="#ffffff"; c.beginPath(); c.arc(X(rp.x),Y(rp.z),11,0,Math.PI*2); c.fill();
     c.strokeStyle="#ff6a5c"; c.lineWidth=4; c.stroke();
   } else { c.fillStyle="#9fbac6"; c.font="26px sans-serif"; c.textAlign="center"; c.fillText("Where would you like to go?",244,266); }
+  /* v500: la domanda del computer di bordo anche sul tablet, in fondo alla mappa */
+  if(AUTO.q){ _rr(c,30,370,428,82,14); c.fillStyle="rgba(8,17,26,.92)"; c.fill(); c.strokeStyle="#c9a7ff"; c.lineWidth=3; c.stroke();
+    c.textAlign="left"; c.fillStyle="#c9a7ff"; c.font="bold 18px sans-serif"; c.fillText("\u{1F5A5}\uFE0F AUTO-1's computer asks:",44,392);
+    c.fillStyle="#ffffff"; c.font="bold 19px sans-serif";
+    const qw=String(AUTO.q.q).split(" "); let ql="", qy=418;
+    qw.forEach(w=>{ const t=ql?ql+" "+w:w; if(c.measureText(t).width>400){ c.fillText(ql,44,qy); qy+=22; ql=w; } else ql=t; }); if(ql && qy<=444) c.fillText(ql,44,qy); }
   /* tachimetro */
   const cx=618, cy=176, rad=92, a0=Math.PI*0.8, a1=Math.PI*2.2, fr=Math.min(1,kmh/60);
   c.lineWidth=16; c.lineCap="round"; c.strokeStyle="#22323d"; c.beginPath(); c.arc(cx,cy,rad,a0,a1); c.stroke();
