@@ -397,7 +397,8 @@
   #auto1-panel .qm-btn{background:rgba(255,255,255,.45);border-color:rgba(29,42,50,.25);}
   #auto1-panel .qm-btn.primary{background:rgba(232,176,75,.75);}
   #auto1-panel input{background:rgba(255,255,255,.6);}
-  #auto1-panel{text-shadow:0 0 3px rgba(255,255,255,.85);}
+  #auto1-panel{text-shadow:0 0 3px rgba(255,255,255,.9);color:#000 !important;}
+  #auto1-panel *{color:#000;}  #auto1-panel .qm-btn{font-weight:700;}
   @keyframes etTblink{0%,100%{background:#1f7a46;color:#fff;}50%{background:#f2c93e;color:#1d2a32;}}
   /* v320: quello che ti dice un compagno — non blocca, sparisce da solo */
   #pres-msg{position:fixed;z-index:40;right:14px;top:112px;width:min(320px,calc(100vw - 28px));box-sizing:border-box;
@@ -9376,6 +9377,26 @@ function _loopSpeedLimit(loop,seg){
     V[i]=Math.min(V[i],Math.sqrt(V[j]*V[j]+2*DEC*seg[i])); }
   return (loop.vlim=V);
 }
+/* v505 (Giacomo: «la Lamborghini non arriva mai a 200 all'ora, come mai?
+   Non c'e' abbastanza rettilineo?»). Proprio cosi': il rettilineo piu'
+   lungo della citta' e' di ~100 m e il traffico frena prima delle curve a
+   3,5 m/s2 come un'auto qualunque, quindi il massimo era 100 km/h
+   (misurato sui giri). TURBO-1 di fretta ha i FRENI DA SUPERCAR: 16 m/s2
+   (e un filo di piu' in curva, 7 m/s2): al centro del rettilineo tocca i
+   200-210 km/h e frena in tempo per la rotonda. Vede anche piu' lontano
+   semafori e arrivo (vedi c.fast nel giro del traffico). */
+function _loopSpeedLimitFast(loop){
+  if(loop.vlimF) return loop.vlimF;
+  const N=loop.length, seg=loop.seg, V=new Float32Array(N), AL=7.0, DEC=16;
+  for(let i=0;i<N;i++){
+    const a=loop[(i-3+N)%N], b=loop[i], c=loop[(i+3)%N];
+    const ab=Math.hypot(b[0]-a[0],b[1]-a[1]), bc=Math.hypot(c[0]-b[0],c[1]-b[1]), ac=Math.hypot(c[0]-a[0],c[1]-a[1]);
+    const cr=Math.abs((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]));
+    const R=cr>1e-6 ? (ab*bc*ac)/(2*cr) : 1e9;
+    V[i]=Math.max(3.5,Math.sqrt(AL*R)); }
+  for(let r=0;r<2;r++) for(let i=N-1;i>=0;i--){ const j=(i+1)%N; V[i]=Math.min(V[i],Math.sqrt(V[j]*V[j]+2*DEC*seg[i])); }
+  return (loop.vlimF=V);
+}
 /* il tratto del giro che contiene s: si riparte dall'ultimo trovato (le auto
    vanno sempre avanti), cosi' sui giri fitti non si scorre tutto l'elenco */
 function _tcSeg(c,s){
@@ -9789,7 +9810,7 @@ function buildTraffic(){
          sta alle spalle, e suonarlo sarebbe ingiusto. */
       const pedStop=onRoad && ((Math.hypot(rx,rz)<3.4 && ahead>-1.5) || inCorsia);
       let vw=pedStop?0:c.v;
-      if(c.vlim) vw=Math.min(vw,c.vlim[i]);           // v549: piano in curva, frenando prima
+      { const VL=(c.auto&&c.fast)?_loopSpeedLimitFast(c.loop):c.vlim; if(VL) vw=Math.min(vw,VL[i]); }   // v549: piano in curva, frenando prima (v505: TURBO-1 di fretta coi freni da supercar)
       // CODA: distanza (lungo il percorso) dall'auto piu' vicina DAVANTI
       // sullo stesso loop; auto lunghe ~4.4 m, quindi gap centri 7 m ~=
       // 2.6 m tra paraurti. <14 rallenta, <8.5 target 0, <7 stop netto.
@@ -9812,9 +9833,10 @@ function buildTraffic(){
       /* v553 — SEMAFORI: col rosso (e col rosso+giallo) ci si ferma alla
          linea; col giallo solo se si fa in tempo a frenare */
       { const sg=c.loop.sg;
-        for(let q=0;q<sg.length;q++){ const d=(sg[q].s-c.s+c.tot)%c.tot; if(d>18) continue;
+        const fast=c.auto&&c.fast, look2=fast?Math.max(18,c.cv*c.cv/28+8):18;
+        for(let q=0;q<sg.length;q++){ const d=(sg[q].s-c.s+c.tot)%c.tot; if(d>look2) continue;
           const st=sg[q].S.st|0;
-          if(st>=2 || (st===1 && d>c.cv*c.cv/9+1.5)){ held=true; vw=Math.min(vw, d<0.4?0:c.v*Math.min(1,d/8)); } } }
+          if(st>=2 || (st===1 && d>c.cv*c.cv/(fast?28:9)+1.5)){ held=true; vw=Math.min(vw, d<0.4?0:(fast?Math.min(c.v,Math.sqrt(2*14*(d-0.4))):c.v*Math.min(1,d/8))); } } }
       /* v553 — ROTONDE D'INCROCIO: una alla volta */
       { const zp=c.loop.zp;
         for(let q=0;q<zp.length;q++){ const p=zp[q], Z=p.Z, dIn=(p.sIn-c.s+c.tot)%c.tot;
@@ -9852,7 +9874,7 @@ function buildTraffic(){
       /* v499 — AUTO-1 (c.auto): rallenta fino a fermarsi a c.stopS, poi onArrive */
       if(c.auto && c.stopS!=null){ const dd=(c.stopS-c.s+c.tot)%c.tot;
         if(dd<0.6 || dd>c.tot-3){ vw=0; if(c.cv<0.3 && !c.arrived){ c.arrived=true; try{ c.onArrive&&c.onArrive(); }catch(e){} } }
-        else vw=Math.min(vw, Math.max(1.0, Math.sqrt(2*2.2*dd))); }
+        else vw=Math.min(vw, Math.max(1.0, Math.sqrt(2*(c.fast?8:2.2)*dd))); }
       if(gap<7.5) vw=0;
       else if(gap<slowAt) vw=Math.min(vw, c.v*(gap-7.5)/(slowAt-7.5));
       c.cv+=(vw-c.cv)*Math.min(1,6*dt);
@@ -64780,7 +64802,7 @@ function tlAutoTick(){
       const L=tlAutoL2W(-C.HW*0.75,0,C.HL*0.62), Rw=tlAutoL2W(C.HW*0.75,0,C.HL*0.62);
       if(puddleAt(L.x,L.z)||puddleAt(Rw.x,Rw.z)){ try{ SFX.carSplash(Math.min(1,v/14)); }catch(e){} } } }
   try{ tlAutoRadioTick(); }catch(e){}
-  { const tc=AUTO.car.tc; if(tc) tc.canOvt=(AUTO.fid==="turbo" && AUTO.phase==="drive" && !AUTO.merging && AUTO.kmh>tlAutoK().max); }                       // v503: il giro della citta'
+  { const tc=AUTO.car.tc; if(tc){ tc.canOvt=(AUTO.fid==="turbo" && AUTO.phase==="drive" && !AUTO.merging && AUTO.kmh>tlAutoK().max); tc.fast=tc.canOvt; } }                       // v503: il giro della citta'
   /* il cervellone: una domanda ogni ~20 s di strada */
   if(AUTO.phase==="drive" && !AUTO.merging && !AUTO.q){ AUTO.qT-=dt; if(AUTO.qT<=0) tlAutoQuiz(); }
   const now=performance.now(); if(now-AUTO.lastNav>220){ AUTO.lastNav=now; tlAutoNavDraw(); }
@@ -64789,7 +64811,7 @@ function tlAutoTick(){
 function tlAutoPanel(on){
   if(on){ if(!AUTO.panel){ const d=document.createElement("div"); d.id="auto1-panel";
       /* v504 (Giacomo: «le domande che appaiono devono essere trasparenti, sono troppo invasive») */
-      d.style.cssText="position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:31;background:rgba(251,247,236,.34);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);"
+      d.style.cssText="position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:31;background:rgba(251,247,236,.5);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);"
         +"color:#1d2a32;border-radius:14px;padding:8px 12px;font:14px/1.35 system-ui,sans-serif;box-shadow:0 6px 22px rgba(0,0,0,.25);"
         +"width:min(560px,92vw);";
       document.body.appendChild(d); AUTO.panel=d; } AUTO.panel.style.display=""; tlAutoPanelDraw(); }
@@ -64807,7 +64829,7 @@ function tlAutoPanelDraw(msg){
     +'style="flex:1;min-width:0;font:inherit;padding:6px 9px;border-radius:9px;border:1px solid #ccd6da;">'
     +(_SpkRec?'<button type="button" id="auto1-mic" class="qm-btn" style="padding:5px 9px">\u{1F3A4}</button>':'')
     +'<button type="button" id="auto1-send" class="qm-btn primary" style="padding:5px 11px">✔</button></div>'
-    +'<div id="auto1-say" style="margin-top:5px;min-height:18px;font-weight:600;color:'+(AUTO.pend?'#b42318':'#2f6f80')+'">'+(msg?_escHtml(msg):"")+'</div>'
+    +'<div id="auto1-say" style="margin-top:5px;min-height:18px;font-weight:600;color:'+(AUTO.pend?'#b42318':'#0b3a45')+'">'+(msg?_escHtml(msg):"")+'</div>'
     +(AUTO.pend?'<div style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap">'
       +'<span style="padding:5px 10px;border-radius:9px;background:#fff4d6;border:1px dashed #e0a93b;font-weight:700">\u{1F4AC} The magic words: \u201cYes, I\'m in a hurry!\u201d</span>'
       +'<button type="button" class="qm-btn auto1-sure" data-a="no" style="padding:5px 14px">\u{1F6E1}\uFE0F No, sorry. Slow down!</button></div>':'');
