@@ -63642,9 +63642,13 @@ const AUTO_STALL={ x:-39, z:-27.25 };
 /* =====================================================================
    v502 — LA FLOTTA (Giacomo, 21 nov: «dopo i 3000 punti si possa prendere
    anche la Lamborghini, con interni piu' sportivi, e va ancora piu'
-   veloce»; «c'e' gia'»: e' l'auto sportiva ARANCIONE parcheggiata nel
-   parcheggio est, Sports_Car2). Nel gioco si chiama TURBO-1 (niente marchi
-   veri). Tutto il giro e' quello di AUTO-1: AUTO.fid dice QUALE auto si
+   veloce»; «c'e' gia'»). ⚠️ E' CAR_Model.glb (dentro: «Lamborghini_
+   Aventador», arancione), che gira SOLO nel traffico: non la Sports_Car2
+   arancione parcheggiata (prima versione sbagliata, Giacomo: «non hai
+   usato la Lamborghini ma un'altra macchina arancione»). La si mette
+   parcheggiata nello stallo est 39 AL POSTO della Sports_Car2 (vedi
+   tlTurboPark), cosi' si vede e si prenota li'; lo stallo 42 (vicino al
+   parco) resta libero. Nel gioco si chiama TURBO-1 (niente marchi veri). Tutto il giro e' quello di AUTO-1: AUTO.fid dice QUALE auto si
    sta usando, AUTO.car e' la sua (costruita la prima volta dall'auto
    parcheggiata nel suo stallo di casa). Ognuna ha casa, stallo attuale
    (spot), limiti di velocita' e interni (theme).
@@ -63721,7 +63725,7 @@ function tlAutoBuildCar(key,id){
   const root=new BABYLON.TransformNode("auto1",scene); root.parent=townRoot;
   root.position.set(H0.x,0,H0.z); root.rotation.y=TRAFFIC_YAW;   // muso verso +z per misurare
   let car=null;
-  try{ car=spawnProp(key||(F.id==="turbo"?"car_sport2":CAR_KEYS[1]),H0.x,H0.z,4.4,{ byHeight:false, ry:0, yaw:PROP_YAW.car, occluder:false }); }catch(e){}
+  try{ car=spawnProp(F.id==="turbo"?"car_model":(key||CAR_KEYS[1]),H0.x,H0.z,4.4,{ byHeight:false, ry:0, yaw:PROP_YAW.car, occluder:false }); }catch(e){}
   if(car){ car.parent=root; car.position.set(0,car.position.y,0); }
   root.computeWorldMatrix(true);
   const bb=root.getHierarchyBoundingVectors(true), H=bb.max.y, HW=(bb.max.x-bb.min.x)/2, HL=(bb.max.z-bb.min.z)/2;
@@ -63823,7 +63827,7 @@ function tlAutoCabin(C,E){
   const LEA=(base,seam,quilt,sp)=>M(base,{ tex:tlLeatherTex(base,seam,quilt), sp:sp||0.16, pw:24 });
   /* v502: TURBO-1 (theme "sport") — pelle nera trapuntata con cuciture
      rosse, fianchi in pelle rossa, fibra di carbonio al posto del legno,
-     alcantara scura, metallo arancione, LED rosso-arancio, cofano arancione
+     alcantara scura, metallo arancione, LED rosso-arancio, cofano giallo-arancio (quello della Lamborghini)
      con due strisce nere; sedili a guscio col poggiatesta nello schienale */
   const SP=C.theme==="sport";
   const cream=SP?LEA("#1e1e21","#e0402a",true):LEA("#ece2d0","#b98a5e",true);
@@ -63833,7 +63837,7 @@ function tlAutoCabin(C,E){
   const carpet=M(SP?"#0f0f11":"#1c1f23"), alc=M(SP?"#2b2b30":"#d9d4cb",{ sp:0.02 });
   const trim=M(SP?"#ff8a1c":"#b9c1c8",{ sp:0.6, pw:64 });
   const wood=SP?M("#ffffff",{ tex:tlCarbonTex(), sp:0.5, pw:72 }):M("#5b3c27",{ sp:0.25, pw:40 });
-  const body=M(SP?"#e8711a":"#e3e8ec",{ sp:0.6, pw:80 }), black=M("#121518",{ sp:0.3, pw:48 });
+  const body=M(SP?"#e99a1c":"#e3e8ec",{ sp:0.6, pw:80 }), black=M("#121518",{ sp:0.3, pw:48 });
   const led=SP?M("#ff8a4a",{ em:"#ff5a1f" }):M("#7fe3f5",{ em:"#6fd0e8" });
   const led2=SP?M("#ff6d86",{ em:"#ff2d4f" }):M("#d6bcff",{ em:"#b48ff5" });
   const warm=SP?M("#ffd2a6",{ em:"#ffa25a" }):M("#fff0d0",{ em:"#f4cf8a" });
@@ -64004,6 +64008,16 @@ function tlAutoBookInit(){
   });
 }
 setTimeout(()=>{ try{ tlAutoBookInit(); }catch(e){} },0);
+/* TURBO-1 (la Lamborghini, CAR_Model) parcheggiata a casa dall'inizio: la
+   Sports_Car2 di quello stallo si spegne (il suo solido resta: stesso posto) */
+function tlTurboPark(tries){
+  const F=AUTO_FLEET.turbo; if(F.car) return;
+  const P=tlAutoParked("turbo");
+  if(!P || !P.root){ if((tries||0)<30) setTimeout(()=>tlTurboPark((tries||0)+1),2000); return; }
+  try{ P.root.setEnabled(false); F.car=tlAutoBuildCar(null,"turbo"); F.car.root.rotation.y=Math.PI+TRAFFIC_YAW; tlAutoGroundAt.call(null,F.car); }
+  catch(e){ console.warn("[turbo]",e); }
+}
+setTimeout(()=>tlTurboPark(0),1500);
 function tlAutoBook(id){
   id=id||"auto1"; const F=tlAutoF(id);
   if(id==="turbo"){ if(!tlTurboUnlocked()){ let st=0; try{ st=Stars.total(); }catch(e){}
@@ -64336,7 +64350,7 @@ function tlAutoParkNow(){ const C=AUTO.car; if(!C) return; const tc=C.tc;
   TRAFFIC_ZONES.forEach(Z=>{ if(Z.h===tc) Z.h=null; });
   const H0=tlAutoHome(); tc.manual=true; tc.cv=0; C.root.position.x=H0.x; C.root.position.z=H0.z; C.root.rotation.y=Math.PI+TRAFFIC_YAW; tlAutoGroundAt(); AUTO.busy=""; AUTO.inStall=false; AUTO.fromStall=false; tlAutoF().spot=null; }
 /* l'auto poggiata sul suolo vero di dove si trova (stallo, marciapiede accostato) */
-function tlAutoGroundAt(){ const C=AUTO.car; if(!C) return;
+function tlAutoGroundAt(Cx){ const C=Cx||AUTO.car; if(!C) return;
   let gy=0; try{ gy=_pedGroundY(C.root.position.x,C.root.position.z)||0; }catch(e){}
   C.root.position.y=gy+((C.tc&&C.tc.lift!=null)?C.tc.lift:0); }
 /* ---- dentro: O ---- */
