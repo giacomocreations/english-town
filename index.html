@@ -9841,9 +9841,13 @@ function buildTraffic(){
       { const zp=c.loop.zp;
         for(let q=0;q<zp.length;q++){ const p=zp[q], Z=p.Z, dIn=(p.sIn-c.s+c.tot)%c.tot;
           if(dIn>c.tot-p.len){ if(Z.h==null) Z.h=c; c.zk=Z; continue; }          // ci sono dentro
-          if(dIn>16) continue;
+          if(dIn>((c.auto&&c.fast)?30:16)) continue;
           c.zk=Z;
           if(Z.h===c) continue;
+          /* v506 (Giacomo: «nelle rotonde, in modalita' hurry, passa per primo:
+             non da' precedenza»). TURBO-1 di fretta si prende la rotonda: gli
+             altri, vedendola prenotata, aspettano alla loro linea. */
+          if(c.auto && c.fast){ Z.h=c; continue; }
           /* v554 (Giacomo: «non ho capito perche' a questa altezza le macchine
              si fermano»): si prenotava a 16 m e ci si fermava col muso a 9 m
              dal centro, senza niente per terra che lo spiegasse. Ora la
@@ -9869,7 +9873,7 @@ function buildTraffic(){
         for(let q=0;q<TRAFFIC_ZONES.length;q++){ const Z=TRAFFIC_ZONES[q]; if(Z.h!==c) continue;
           let keep=false;
           for(let w=0;w<zp.length;w++){ if(zp[w].Z!==Z) continue; const dIn=(zp[w].sIn-c.s+c.tot)%c.tot;
-            if(dIn>c.tot-zp[w].len || dIn<=16){ keep=true; break; } }
+            if(dIn>c.tot-zp[w].len || dIn<=((c.auto&&c.fast)?30:16)){ keep=true; break; } }
           if(!keep) Z.h=null; } }
       /* v499 — AUTO-1 (c.auto): rallenta fino a fermarsi a c.stopS, poi onArrive */
       if(c.auto && c.stopS!=null){ const dd=(c.stopS-c.s+c.tot)%c.tot;
@@ -10011,7 +10015,7 @@ function _inCarBox(c,x,z){
    rientra anche a sorpasso fatto (l'altra e' 8 m dietro) o dopo 10 s.
    Spostamento morbido (c.ovo) applicato DOPO la posizione sul giro.
    ===================================================================== */
-const OVT_OFF=5.5;
+const OVT_OFF=6.0;           // v506 (Giacomo: «deve spostarsi di piu' verso l'altra corsia»): tutto dentro la corsia opposta
 function _tcOvertake(c,dt,gap,gapO,slowAt){
   c.ovo=c.ovo||0; if(!c.ovt) c.ovt=0;
   if(!c.canOvt && !c.ovt && c.ovo<0.01) return null;
@@ -10044,13 +10048,15 @@ function _tcOvertake(c,dt,gap,gapO,slowAt){
   } else {
     c.ovT=(c.ovT||0)+dt;
     const oc=c.ovCar; let passed=true;
-    if(oc && oc.root){ const dx=oc.root.position.x-c.root.position.x, dz=oc.root.position.z-c.root.position.z; passed=(dx*fx+dz*fz)<-8; }
-    if(c.ovt===1 && (passed || corridor(-3,50)!=null || nodeNear(18) || !straight(16) || c.ovT>10 || stopNear)) c.ovt=2;
+    if(oc && oc.root){ const dx=oc.root.position.x-c.root.position.x, dz=oc.root.position.z-c.root.position.z; passed=(dx*fx+dz*fz)<-10; }
+    /* v506: a sorpasso fatto si rientra solo quando si e' DAVVERO nell'altra corsia (prima rientrava a meta' strada) */
+    if(c.ovt===1 && ((passed && c.ovo>OVT_OFF*0.9) || corridor(-3,50)!=null || nodeNear(18) || !straight(16) || c.ovT>10 || stopNear)) c.ovt=2;
     if(c.ovt===2 && c.ovo<0.08){ c.ovt=0; c.ovCar=null; c.ovWait=2.5; }
   }
   const want=(c.ovt===1)?OVT_OFF:0, prev=c.ovo;
   /* spostamento a velocita' laterale limitata (2,6 m/s), con partenza e arrivo dolci */
-  const dv=want-c.ovo, maxStep=2.6*dt*Math.min(1,0.35+Math.abs(dv)/1.5);
+  /* v506: si sposta piu' deciso: 4,2 m/s, e piu' va forte piu' cambia corsia in fretta (a 150 km/h i 6 m in ~40 m di strada) */
+  const dv=want-c.ovo, maxStep=Math.max(4.2,0.17*(c.cv||0)*TRAFFIC_SPEED)*dt*Math.min(1,0.35+Math.abs(dv)/1.5);
   c.ovo+=Math.max(-maxStep,Math.min(maxStep,dv*Math.min(1,dt*2.2)*2));
   const lat=(c.ovo-prev)/Math.max(dt,1e-3);
   c.ovLat=(c.ovLat||0)+(lat-(c.ovLat||0))*Math.min(1,dt*6);
@@ -63502,23 +63508,43 @@ function tlSkyHit(g,set){
     SKY.solved=true; tlSkyGateColor(g,0.35,0.95,0.55);
     SKY.sets.forEach(st=>st.gates.forEach(o=>{ if(o!==g) o.root.setEnabled(false); }));
     const full=(q.before?q.before+" ":"")+q.ok+" "+q.after;
-    toast("✓ “"+full.charAt(0).toUpperCase()+full.slice(1)+"”");
+    const st=vehStars((SKY.qTries|0)?2:4,"SKY-1");              // v506
+    toast("✓ “"+full.charAt(0).toUpperCase()+full.slice(1)+"”"+(st?"  +"+st+" ⭐":""));
     try{ TTS.say(full+" … "+q.say,{ gender:"m" }); }catch(e){}
     try{ SFX.correct(); }catch(e){}
     tlSkyUiDraw();
     try{ SKY.ui.style.visibility="hidden"; }catch(e){}      // v501: si legge la frase verde, intera
     setTimeout(()=>{ try{ SKY.ui.style.visibility=""; }catch(e){}
-      if(!SKY.on) return; tlSkyGatesOff(); SKY.qi++; SKY.solved=false;
+      if(!SKY.on) return; tlSkyGatesOff(); SKY.qi++; SKY.solved=false; SKY.qTries=0;
       if(!tlSkyQ()){ SKY.free=false; tlSkyUiDraw(); tlGramDone(); } else tlSkyUiDraw(); }, 2200);
   } else {
-    g.cool=2.5; tlSkyGateColor(g,0.95,0.25,0.2);
+    g.cool=2.5; tlSkyGateColor(g,0.95,0.25,0.2); SKY.qTries=(SKY.qTries|0)+1;
     try{ SFX.wrong(); }catch(e){}
     toast("❌ Not “"+g.word+"” — "+q.it);
   }
 }
+/* =====================================================================
+   v506 — LE STELLE DEI VEICOLI (Giacomo, 21 nov: «rispondere alle domande
+   sia nella macchina volante che nella macchina automatica deve dare delle
+   stelle»). Prima no: SKY-1 dava solo le stelle dello step a fine volo,
+   AUTO-1 niente. Ora ogni risposta giusta: SKY-1 ⭐4 al primo colpo, ⭐2
+   dopo un errore; AUTO-1/TURBO-1 ⭐3 al primo colpo, ⭐1 al secondo. Le
+   domande in auto tornano ogni 20 s all'infinito: tetto di ⭐60 al giorno
+   per i veicoli insieme (come i cristalli), cosi' girare in tondo non
+   diventa la miniera di stelle della classe.
+   ===================================================================== */
+const VEH_STARS_K="et_vehstars", VEH_STARS_CAP=60;
+function vehStars(n,why){
+  if(!(n>0)) return 0;
+  const d=new Date().toDateString(); let s=null; try{ s=Sync.get(VEH_STARS_K,null); }catch(e){}
+  s=(s && typeof s==="object" && s.d===d)?s:{ d, n:0 };
+  const give=Math.max(0,Math.min(n,VEH_STARS_CAP-(s.n||0))); if(!give) return 0;
+  s.n=(s.n||0)+give; try{ Sync.set(VEH_STARS_K,s); }catch(e){}
+  try{ return Stars.award(null,give,why)||give; }catch(e){ return 0; }
+}
 /* il volo libero */
 function tlSkyFree(){
-  SKY.free=true; SKY.flying=false; SKY.qi=0; SKY.solved=false; SKY.sets=[]; SKY.v=9; SKY.turn=0;
+  SKY.free=true; SKY.flying=false; SKY.qi=0; SKY.solved=false; SKY.qTries=0; SKY.sets=[]; SKY.v=9; SKY.turn=0;
   SKY.ay=Math.max(SKY.ship.position.y, SKY_MIN_ALT);          // v502: la quota in cui e' gia' (niente salto)
   tlSkyGrid(); tlSkyShadow(); tlSkyUi(true); tlSkyUiDraw();
   try{ document.getElementById("quest-nudge").classList.remove("show"); }catch(e){}
@@ -64934,7 +64960,8 @@ function tlAutoQuiz(){ AUTO.q=AUTO_QS[AUTO.qi%AUTO_QS.length]; AUTO.qi++; AUTO.q
 function tlAutoAnswer(i){
   const Q=AUTO.q; if(!Q) return; const w=Q.o[i], fb=document.getElementById("auto1-qfb");
   if(w===Q.ok){ const full=Q.q.replace("___",Q.ok);
-    if(fb){ fb.textContent="✓ Right! “"+full+"”"; fb.style.color="#166534"; }
+    const st=(Q.tries===0)?vehStars(3,tlAutoName()):(Q.tries===1?vehStars(1,tlAutoName()):0);   // v506
+    if(fb){ fb.textContent="✓ Right! “"+full+"”"+(st?"  +"+st+" ⭐":""); fb.style.color="#166534"; }
     try{ SFX.correct(); }catch(e){}                       // v503: la frase giusta resta scritta, non si legge
     setTimeout(()=>{ if(AUTO.q===Q){ AUTO.q=null; AUTO.qT=20; tlAutoPanelDraw(); } }, 2600);
   } else { Q.tries++;
