@@ -9836,7 +9836,7 @@ function buildTraffic(){
           for(let q=1;q<90;q++){ const ix=(i+q)%n, g=(c.L[ix]-c.s+c.tot)%c.tot;
             if(g>look) break; if(g<1.2) continue;
             const P=c.loop[ix], dx=o.x-P[0], dz=o.z-P[1];
-            if(dx*dx+dz*dz<1.96){ if(c.ovt===1 && _trafficCars[j]===c.ovCar) break;      // v505: chi sto superando non mi frena
+            if(dx*dx+dz*dz<1.96){ if(c.ovt===1 && _trafficCars[j]===c.ovCar && c.ovo>2.0) break;      // v505: chi sto superando non mi frena (v511: solo quando sono gia' fuori dalla sua corsia)
               if(g<gap){ gap=g; gapO=_trafficCars[j]; } break; } } } }
       if(c.auto){ const r=_tcOvertake(c,dt,gap,gapO,slowAt); if(r!=null) gap=r; }      // v503: TURBO-1 di fretta sorpassa
       /* v553 — SEMAFORI: col rosso (e col rosso+giallo) ci si ferma alla
@@ -9962,7 +9962,9 @@ function buildTraffic(){
         c.root.rotation.y+=Math.max(-0.22,Math.min(0.22,Math.atan2(c.ovLat||0, Math.max(6,c.cv*TRAFFIC_SPEED)))); }
       _trafficNudge(c);          // l'auto scosta il pedone, non lo attraversa
       _trafficPassCheck(c);
-    } });
+    }
+    try{ _trafficCrash(); }catch(e){}           // v511: due auto che si toccano si urtano, non si attraversano
+  });
   setTimeout(buildPedestrians,0);   // stesso pattern anti-blocco-thread di buildAirportNPCs
 }
 /* Il giocatore NON attraversa le auto del traffico: box orientato per
@@ -10068,17 +10070,29 @@ function _tcOvertake(c,dt,gap,gapO,slowAt){
   const stopNear=c.stopS!=null && ((c.stopS-c.s+c.tot)%c.tot)<80;
   c.ovWait=Math.max(0,(c.ovWait||0)-dt);
   if(!c.ovt){
-    if(c.canOvt && !c.ovWait && gapO && gap<slowAt+8 && (gapO.cv||0)<c.v*0.85 && !stopNear && straight(55) && !nodeNear(60) && corridor(-12,110)==null){
+    /* v511: la corsia opposta libera per ~4 s di strada alla mia velocita' (a 200 km/h 110 m bastavano per meno di 2 s) */
+    const clearL=Math.max(110,(c.cv||0)*TRAFFIC_SPEED*4);
+    if(c.canOvt && !c.ovWait && gapO && gap<slowAt+8 && (gapO.cv||0)<c.v*0.85 && !stopNear && straight(55) && !nodeNear(60) && corridor(-12,clearL)==null){
       c.ovt=1; c.ovCar=gapO; c.ovT=0; try{ tlAutoOvertakeNote(c); }catch(e){} }
   } else {
     c.ovT=(c.ovT||0)+dt;
     const oc=c.ovCar; let passed=true;
     if(oc && oc.root){ const dx=oc.root.position.x-c.root.position.x, dz=oc.root.position.z-c.root.position.z; passed=(dx*fx+dz*fz)<-10; }
     /* v506: a sorpasso fatto si rientra solo quando si e' DAVVERO nell'altra corsia (prima rientrava a meta' strada) */
-    if(c.ovt===1 && ((passed && c.ovo>OVT_OFF*0.9) || corridor(-3,50)!=null || nodeNear(18) || !straight(16) || c.ovT>10 || stopNear)) c.ovt=2;
-    if(c.ovt===2 && c.ovo<0.08){ c.ovt=0; c.ovCar=null; c.ovWait=2.5; }
+    if(c.ovt===1 && ((passed && c.ovo>OVT_OFF*0.9) || corridor(-3,Math.max(50,(c.cv||0)*TRAFFIC_SPEED*1.6))!=null || nodeNear(18) || !straight(16) || c.ovT>10 || stopNear)) c.ovt=2;
+    if(c.ovt===2 && c.ovo<0.08){ c.ovt=0; c.ovCar=null; c.ovWait=2.5; c.ovHold=0; }
   }
-  const want=(c.ovt===1)?OVT_OFF:0, prev=c.ovo;
+  /* v511 (Giacomo: «in alcuni sorpassi le macchine si intersecano»). Un
+     sorpasso interrotto (arriva qualcuno, una curva, un incrocio) faceva
+     rientrare l'auto anche con quella superata ancora ACCANTO: ci si
+     rientrava dentro. Ora, se quella e' ancora di fianco (fra 5,5 m dietro
+     e 5,5 m davanti), si resta fuori e si frena per rientrarle DIETRO; dopo
+     2,5 s cosi' (ferme tutte e due) si rientra lo stesso: se si toccano, si
+     urtano (_trafficCrash). */
+  let beside=false;
+  if(c.ovt===2 && c.ovCar && c.ovCar.root){ const oc=c.ovCar, a=(oc.root.position.x-c.root.position.x)*fx+(oc.root.position.z-c.root.position.z)*fz;
+    if(a>-5.5 && a<5.5){ c.ovHold=(c.ovHold||0)+dt; beside=c.ovHold<2.5; } else c.ovHold=0; }
+  const want=(c.ovt===1)?OVT_OFF:(beside?Math.max(c.ovo,2.4):0), prev=c.ovo;
   /* spostamento a velocita' laterale limitata (2,6 m/s), con partenza e arrivo dolci */
   /* v506: si sposta piu' deciso: 4,2 m/s, e piu' va forte piu' cambia corsia in fretta (a 150 km/h i 6 m in ~40 m di strada) */
   const dv=want-c.ovo, maxStep=Math.max(4.2,0.17*(c.cv||0)*TRAFFIC_SPEED)*dt*Math.min(1,0.35+Math.abs(dv)/1.5);
@@ -10087,7 +10101,60 @@ function _tcOvertake(c,dt,gap,gapO,slowAt){
   c.ovLat=(c.ovLat||0)+(lat-(c.ovLat||0))*Math.min(1,dt*6);
   c.ovR=[rx,rz];
   if(c.ovt===1){ const a=corridor(0,30); return a==null?(c.ovo>2.5?1e9:gap):Math.max(0,a-4.4); }   // in sorpasso: chi e' nella corsia opposta (e, finche' si e' ancora in corsia, chi c'e' davanti)
+  if(beside) return 7.6;                                          // di fianco a quella superata: si frena, per rientrarle dietro
   return null;
+}
+/* =====================================================================
+   v511 — L'URTO (Giacomo, 21 nov: «con The Beast al massimo, in alcuni
+   sorpassi le macchine si intersecano; se proprio si toccano non devono
+   compenetrarsi ma scontrarsi»). Ultima rete, dopo che tutte le auto si
+   sono mosse: l'auto del giocatore (c.auto) e ogni auto vicina sono due
+   rettangoli orientati (4,4 x 1,9 m); se si sovrappongono e' un URTO:
+   · si separano: arretra sul suo percorso chi ha l'altra DAVANTI (nel
+     tamponamento solo chi tampona, nel frontale tutte e due), a passi di
+     30 cm finche' non si toccano piu';
+   · si fermano tutte e due (cv=0), suono di lamiera (SFX.crash);
+   · a bordo: il computer lo dice e finisce la fretta (torna a 50 km/h,
+     niente piu' sorpassi finche' non si richiede la frase magica).
+   Fra auto del traffico normale non si guarda: tengono gia' la distanza.
+   ===================================================================== */
+const CRASH_HL=2.2, CRASH_HW=0.95;
+function _tcBoxHit(a,b){
+  const ha=a.root.rotation.y-TRAFFIC_YAW, hb=b.root.rotation.y-TRAFFIC_YAW;
+  const A=[[Math.sin(ha),Math.cos(ha)],[Math.cos(ha),-Math.sin(ha)]], Bx=[[Math.sin(hb),Math.cos(hb)],[Math.cos(hb),-Math.sin(hb)]];
+  const dx=b.root.position.x-a.root.position.x, dz=b.root.position.z-a.root.position.z;
+  const ext=(ax,u)=>CRASH_HL*Math.abs(ax[0][0]*u[0]+ax[0][1]*u[1])+CRASH_HW*Math.abs(ax[1][0]*u[0]+ax[1][1]*u[1]);
+  for(const u of A.concat(Bx)){ if(Math.abs(dx*u[0]+dz*u[1]) > ext(A,u)+ext(Bx,u)) return false; }
+  return true; }
+/* rimette l'auto dove dice il suo percorso (c.s, quota, corsia di sorpasso) */
+function _tcPlace(c){
+  const i=_tcSeg(c,c.s), a=c.loop[i], b=c.loop[(i+1)%c.loop.length], t=(c.s-c.L[i])/c.seg[i];
+  c.root.position.x=a[0]+(b[0]-a[0])*t; c.root.position.z=a[1]+(b[1]-a[1])*t;
+  if(c.gy && c.lift!=null){ const u=c.s/c.tot*c.gyN, k0=Math.floor(u), f=u-k0; c.root.position.y=c.lift+c.gy[k0]*(1-f)+c.gy[Math.min(c.gyN,k0+1)]*f; }
+  if(c.ovo>0.01 && c.ovR){ c.root.position.x+=c.ovR[0]*c.ovo; c.root.position.z+=c.ovR[1]*c.ovo; } }
+function _tcAhead(a,b){ const h=a.root.rotation.y-TRAFFIC_YAW;
+  return (b.root.position.x-a.root.position.x)*Math.sin(h)+(b.root.position.z-a.root.position.z)*Math.cos(h)>0; }
+function _trafficCrash(){
+  for(let k=0;k<_trafficCars.length;k++){ const c=_trafficCars[k]; if(!c.auto || c.manual || !c.root) continue;
+    for(let j=0;j<_trafficCars.length;j++){ const o=_trafficCars[j]; if(o===c || !o.root) continue;
+      if(Math.abs(o.root.position.x-c.root.position.x)>6 || Math.abs(o.root.position.z-c.root.position.z)>6) continue;
+      if(!_tcBoxHit(c,o)) continue;
+      const v=Math.max(c.cv||0,o.cv||0)*TRAFFIC_SPEED;
+      const backC=_tcAhead(c,o), backO=_tcAhead(o,c) && !o.manual;
+      for(let n=0;n<20 && _tcBoxHit(c,o);n++){
+        if(backC || !backO){ c.s=(c.s-0.3+c.tot)%c.tot; _tcPlace(c); }
+        if(backO){ o.s=(o.s-0.3+o.tot)%o.tot; _tcPlace(o); } }
+      c.cv=0; o.cv=0;
+      try{ SFX.crash(Math.min(1,0.3+v/30)); }catch(e){}
+      try{ if(typeof AUTO!=="undefined" && AUTO.on && AUTO.car && AUTO.car.tc===c){
+        const now=performance.now();
+        if(c.fast || c.canOvt || AUTO.kmh>tlAutoK().max){ c.fast=false; c.canOvt=false; AUTO.wild=0; AUTO.pend=0;
+          if(c.ovt===1) c.ovt=2;
+          try{ tlAutoSetSpeed(tlAutoK().max); }catch(e){} }
+        if(!AUTO.crashT || now-AUTO.crashT>3000){ AUTO.crashT=now;
+          const m="\u{1F4A5} Ouch! We bumped into a car! I'll slow down: "+AUTO.kmh+" km/h. Safety first!";
+          try{ tlAutoPanelDraw(m); TTS.say("Ouch! We bumped into a car! Safety first!",{ gender:"f" }); }catch(e){} } } }catch(e){}
+    } }
 }
 function trafficBlocked(x,z){
   if(area!=="town") return false;
@@ -43145,7 +43212,23 @@ const SFX=(function(){
     rdOscG.gain.setTargetAtTime((sk||gr)?0:0.22*k, t, 0.1);
     rdOsc.frequency.setTargetAtTime(150+330*k, t, 0.1);
   }
-  return { wake, step, walked, roll, splash, carHorn, carPass, setCarPass, correct, wrong, panOf, fly, screech, gap, ev, carSplash,
+  /* v511 — L'URTO fra due auto (Giacomo: «se proprio si toccano non devono
+     compenetrarsi ma scontrarsi»): un colpo sordo di lamiera (rumore passa
+     basso + un tonfo che scende) e un tintinnio corto. Mai due in 1,2 s. */
+  let crLast=0;
+  function crash(k){
+    const c=ready(); if(!c) return; const now=c.currentTime; if(now-crLast<1.2) return; crLast=now;
+    const g0=lvl()*Math.max(0.4,Math.min(1,k||1));
+    const src=c.createBufferSource(); src.buffer=noise; const lp=c.createBiquadFilter(); lp.type="lowpass"; lp.frequency.setValueAtTime(1800,now); lp.frequency.exponentialRampToValueAtTime(220,now+0.35);
+    const ng=c.createGain(); ng.gain.setValueAtTime(0.22*g0,now); ng.gain.exponentialRampToValueAtTime(0.0001,now+0.42);
+    src.connect(lp); lp.connect(ng); ng.connect(master); src.start(now,Math.random()*0.5); src.stop(now+0.45);
+    const th=c.createOscillator(), tg=c.createGain(); th.type="sine"; th.frequency.setValueAtTime(95,now); th.frequency.exponentialRampToValueAtTime(40,now+0.25);
+    tg.gain.setValueAtTime(0.16*g0,now); tg.gain.exponentialRampToValueAtTime(0.0001,now+0.3); th.connect(tg); tg.connect(master); th.start(now); th.stop(now+0.32);
+    const ti=c.createOscillator(), tig=c.createGain(); ti.type="triangle"; ti.frequency.setValueAtTime(2300,now+0.05);
+    tig.gain.setValueAtTime(0.0001,now); tig.gain.exponentialRampToValueAtTime(0.03*g0,now+0.06); tig.gain.exponentialRampToValueAtTime(0.0001,now+0.25);
+    ti.connect(tig); tig.connect(master); ti.start(now); ti.stop(now+0.27);
+  }
+  return { wake, step, walked, roll, splash, carHorn, carPass, setCarPass, correct, wrong, panOf, fly, screech, crash, gap, ev, carSplash,
            shout, voiceState, sip, chew, snap,
            gemChime, gemFit, thunder,
            bell, bellHear, shutter, tick, waterLevel, fountLevel, clubLevel, cricketLevel, windLevel,
@@ -65149,7 +65232,7 @@ function tlAutoPanelDraw(msg){
     +'<button type="button" id="auto1-send" class="qm-btn primary" style="padding:5px 11px">✔</button></div>'
     +'<div id="auto1-say" style="margin-top:5px;min-height:18px;font-weight:600;color:'+(AUTO.pend?'#b42318':'#0b3a45')+'">'+(msg?_escHtml(msg):"")+'</div>'
     +(AUTO.pend?'<div style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap">'
-      +'<span style="padding:5px 10px;border-radius:9px;background:#fff4d6;border:1px dashed #e0a93b;font-weight:700">\u{1F4AC} The magic words: \u201cYes, I\'m in a hurry!\u201d</span>'
+      +'<span style="padding:5px 10px;border-radius:9px;background:#fff4d6;border:1px dashed #e0a93b;font-weight:700">\u{1F4AC} The magic words: '+AUTO_MAGIC_TXT+'</span>'
       +'<button type="button" class="qm-btn auto1-sure" data-a="no" style="padding:5px 14px">\u{1F6E1}\uFE0F No, sorry. Slow down!</button></div>':'');
   if(Q){ h+='<div style="margin-top:6px;padding-top:6px;border-top:1px solid #e2dccd"><b>\u{1F5A5}\uFE0F '+tlAutoName()+'\'s computer asks:</b> '+_escHtml(Q.q)
       +'<div style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap">'
@@ -65194,26 +65277,45 @@ function tlAutoSure(yes){
    correggerlo. */
 function tlAutoCmdClear(){ const i=document.getElementById("auto1-cmd"); if(i) i.value=""; }
 const AUTO_NOT_UNDERSTOOD=/^(Sorry\?|Please ask me|Tell me where|Hmm)/;
+/* v511 (Giacomo, 21 nov: «oltre a "in a hurry" accetta "go beast mode", "go
+   full mode", "take me to the max"»): tutte frasi magiche, valgono uguale.
+   ⚠️ «Take me to the max» comincia come una meta («take me to…»): la si
+   guarda PRIMA delle mete e della chiacchierata (vedi tlAutoCmd). */
+const AUTO_HURRY_RE=/\b(in a hurry|beast mode|full mode|to the max|full speed)\b/;
+const AUTO_MAGIC_TXT="“Yes, I'm in a hurry!” · “Go beast mode!” · “Take me to the max!”";
 function tlAutoCmd(raw){
   const t=tlAutoNorm(raw), say=m=>{ if(!AUTO_NOT_UNDERSTOOD.test(m)) tlAutoCmdClear(); tlAutoPanelDraw(m); try{ TTS.say(m,{ gender:"f" }); }catch(e){} };
   if(!t) return;
+  /* la frase magica, prima di tutto (v511: «Take me to the max» non e' una meta) */
+  if(AUTO_HURRY_RE.test(t) && AUTO.phase==="drive"){
+    if(AUTO.kmh>=tlAutoK().top){ AUTO.pend=0; say("We're already at "+tlAutoK().top+" km/h, my top speed! Hold on tight!"); return; }
+    if(!AUTO.pend) AUTO.pend=tlAutoK().top;
+    tlAutoSure(true); return; }
   /* v504: radio, quest, «take me there» (scritte, non lette) */
   { const w=m=>{ tlAutoCmdClear(); tlAutoPanelDraw(m); };
     if(AUTO.offer && AUTO_THERE_RE.test(t) && AUTO.phase==="drive"){ const P=AUTO.offer; AUTO.offer=null;
       w(tlAutoRedirect(P)?"✓ OK! We're going to "+P.name+".":"Sorry, I can't find a road there from here."); return; }
     const r=tlAutoChat(t); if(r){ w(r); return; } }
   if(AUTO.phase!=="drive"){ say("Tell me where to go first!"); return; }
-  /* la frase magica: «I'm in a hurry!» (anche «I am in a hurry», «we're in a hurry») */
-  if(/\bin a hurry\b/.test(t)){
-    if(AUTO.kmh>=tlAutoK().top){ AUTO.pend=0; say("We're already at "+tlAutoK().top+" km/h, my top speed! Hold on tight!"); return; }
-    if(!AUTO.pend) AUTO.pend=tlAutoK().top;
-    tlAutoSure(true); return; }
+  /* v511 (Giacomo: «avevi detto che potevo chiedere di portarmi in un posto
+     durante il tour, ma non ha riconosciuto il comando»). Durante il viaggio
+     o il giro della citta' si puo' cambiare meta in qualsiasi momento, con
+     una frase intera: «Take me to the cinema, please», «Can you drive me to
+     the station?», «I want to go home». Il giro finisce e si va li'. */
+  { let P=null; for(const q of AUTO_DEST) if(q.re.test(t)){ P=q; break; }
+    if(P && /\b(take|drive|bring|go|going|like|want|can|could|please)\b/.test(t)){
+      if(t.split(" ").length<3){ say("Please ask me in a full sentence: “Take me to "+P.name+", please.”"); return; }
+      if(AUTO.place && AUTO.place.name===P.name && !AUTO.tour){ say("We're already going to "+P.name+"!"); return; }
+      const wasTour=!!AUTO.tour;
+      if(tlAutoRedirect(P)) say("✓ OK! "+(wasTour?"No more tour: ":"")+"we're going to "+P.name+".");
+      else say("Sorry, I can't find a road to "+P.name+" from here.");
+      return; } }
   /* la risposta a «are you sure?»: «no» ferma; «yes» da solo non basta */
   if(AUTO.pend){
     if(/\b(no|nope|slow|sorry|not sure)\b/.test(t)){ tlAutoSure(false); return; }
     if(/\b(yes|yeah|sure|ok|okay|of course|please)\b/.test(t)){
       try{ SFX.wrong(); }catch(e){}
-      say("Hmm… why? Tell me the magic words: “Yes, I'm in a hurry!”"); return; }
+      say("Hmm… why? Tell me the magic words: "+AUTO_MAGIC_TXT); return; }
   }
   const n=t.match(/\b(\d{1,3})\b/);
   let want=null;
@@ -65221,7 +65323,7 @@ function tlAutoCmd(raw){
   else if(/\b(faster|speed up|quicker|hurry)\b/.test(t)) want=AUTO.kmh+10;
   else if(/\b(slower|slow down|not so fast|too fast)\b/.test(t)) want=AUTO.kmh-10;
   else if(/\bstop\b/.test(t)){ say("I can't stop in the middle of the road! I'll stop when we arrive."); return; }
-  else { say("Sorry? Try: “Go faster, please”, “Slow down, please” or “Drive at 30 km/h, please”."); return; }
+  else { say("Sorry? Try: “Go faster, please”, “Slow down, please”, “Drive at 30 km/h, please” or “Take me to the cinema, please”."); return; }
   if(t.split(" ").length<2){ say("Please ask me in a sentence: “Go faster, please.”"); return; }
   if(want>tlAutoK().max){
     if(AUTO.kmh>=tlAutoK().top){ say("No way! "+tlAutoK().top+" km/h is my top speed. I can't go any faster!"); return; }
