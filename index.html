@@ -64057,7 +64057,7 @@ function tlAutoStart(mode,id){
   try{ standUpAll(); }catch(e){}
   AUTO.on=true; AUTO.mode=mode||"book"; AUTO.phase="ask"; AUTO.pov=false; AUTO.said={}; AUTO.idle=0;
   document.body.classList.add("veh","auto");               // v500: schermo pulito in auto (vedi CSS body.veh)
-  AUTO.look={ y:0, p:0 }; AUTO.kmh=40; AUTO.pend=0; AUTO.wild=0; AUTO.lastSay=""; AUTO.qT=0; AUTO.q=null; AUTO.place=null; AUTO.route=null;
+  AUTO.look={ y:0, p:0 }; AUTO.kmh=40; AUTO.pend=0; AUTO.wild=0; AUTO.lastSay=""; AUTO.tour=null; AUTO.qT=0; AUTO.q=null; AUTO.place=null; AUTO.route=null;
   finFade(1,650,function(){
     /* dal TechLab (giro finale): la quest e' finita, si chiude e si esce in citta' */
     if(area!=="town"){ try{ if(Quest.unit) Quest.stop(); }catch(e){} try{ enterArea("town"); }catch(e){} }
@@ -64112,7 +64112,7 @@ function tlAutoAsk(){
   DialogueBox.open({ name:(turbo?"\u{1F3CE}\uFE0F ":"\u{1F697} ")+F.name, sub:F.sub, autoSpeak:true, ttsOpts:{ gender:"f" },
     text:turbo?"Hello, champion! I'm TURBO-1, the fastest car in town. No steering wheel: just tell me where to go. Where would you like to go?"
               :"Hello! I'm AUTO-1. I have no steering wheel: you just tell me where to go. Where would you like to go?",
-    italian:"Scrivi (o di' col microfono) una frase: «Take me to the school, please». "+F.name+" ti porta nel punto più vicino e ti lascia sul marciapiede. Premi O per guardare dentro.",
+    italian:"Scrivi (o di' col microfono) una frase: «Take me to the school, please». "+F.name+" ti porta nel punto più vicino e ti lascia sul marciapiede. Per fare il giro della città: «Take me on a tour of the town, please». Premi O per guardare dentro.",
     html:'<div style="display:flex;align-items:center;"><input id="tlAutoIn" type="text" autocomplete="off" '
       +'placeholder="Take me to …, please." style="flex:1;font:inherit;padding:8px 10px;border-radius:10px;border:1px solid #ccd6da;">'+mic+'</div>'
       +'<div id="tlAutoFb" style="margin-top:8px;min-height:20px;font-weight:600;"></div>',
@@ -64139,12 +64139,94 @@ function tlAutoTry(raw){
   const say=(t,ok)=>{ if(fb){ fb.textContent=t; fb.style.color=ok?"#166534":"#991b1b"; } };
   const t=tlAutoNorm(raw);
   if(!t){ say("Write your sentence first."); return; }
+  if(AUTO_TOUR_RE.test(t)){
+    if(t.split(" ").length<3){ say("Please ask me in a full sentence: “Take me on a tour of the town, please.”"); return; }
+    say("✓ A tour of the town! Great idea.", true);
+    setTimeout(()=>{ try{ DialogueBox.close(); }catch(e){} tlAutoTourAsk(); }, 600); return; }
   let P=null; for(const q of AUTO_DEST) if(q.re.test(t)){ P=q; break; }
-  if(!P){ say("Sorry, where? I know the school, the cinema, the station, the airport, the market, the hospital…"); return; }
+  if(!P){ say("Sorry, where? I know the school, the cinema, the station, the airport, the market, the hospital… or ask me for a tour of the town!"); return; }
   const polite=/\b(take|drive|bring|go|going|like|want|can|could|please)\b/.test(t);
   if(t.split(" ").length<3 || !polite){ say("Please ask me in a full sentence: “Take me to "+P.name+", please.”"); return; }
   say("✓ "+P.name.charAt(0).toUpperCase()+P.name.slice(1)+"! Let's go.", true);
   setTimeout(()=>{ try{ DialogueBox.close(); }catch(e){} tlAutoGo(P); }, 700);
+}
+/* =====================================================================
+   v503 — IL GIRO DELLA CITTA' (Giacomo, 21 nov: «se uno vuole fare il
+   giro della citta', cosa gli facciamo dire, cosi' non scende subito?
+   Tre giri, o ti chiede quanti giri vuoi fare»).
+   · LA FRASE: «Take me on a tour of the town, please» (anche «Can you show
+     me around the town?», «Let's drive around the town!», «a city tour»,
+     «sightseeing»). Non «road trip» (e' un viaggio fuori citta') ne'
+     «cruise» (la nave).
+   · I GIRI: il computer chiede «How many laps? One, two or three?» e si
+     risponde in inglese («Two laps, please») o coi bottoni: i numeri.
+   · DURANTE: la guida turistica. Passando vicino ai luoghi della citta'
+     (le stesse mete di AUTO_DEST) dice «On your left: the Town Hall!» —
+     il lessico della Unit 8 e left/right; a ogni giro «Lap 2 of 3!». Le
+     domande del computer di bordo continuano come sempre.
+   · LA FINE: il giro piu' lungo fra quelli che passano davanti al
+     parcheggio; si torna nello stallo da cui si e' partiti e si scende li'.
+     La fermata (tc.stopS) si mette solo nell'ultimo tratto: prima il
+     traffico la farebbe fermare al primo passaggio.
+   ===================================================================== */
+const AUTO_TOUR_RE=/\b(tour|sightseeing|show me (around|the (town|city))|drive (me |us )?around|around (the )?(town|city)|ride around|city trip)\b/;
+const AUTO_LAP_WORDS={ one:1, once:1, "1":1, two:2, twice:2, "2":2, three:3, "3":3, four:4, five:5, ten:10 };
+function tlAutoTourAsk(){
+  if(!AUTO.on) return;
+  AUTO.phase="ask";
+  const mic=_SpkRec?'<button type="button" id="tlAutoMic" class="qm-btn" style="margin-left:6px;">\u{1F3A4}</button>':"";
+  const pick=n=>{ const fb=document.getElementById("tlAutoFb"); if(fb){ fb.textContent="✓ "+(n===1?"One lap":(n===2?"Two":"Three")+" laps")+", please!"; fb.style.color="#166534"; }
+    setTimeout(()=>{ try{ DialogueBox.close(); }catch(e){} tlAutoTour(n); },500); };
+  const tryLaps=raw=>{ const t=tlAutoNorm(raw), fb=document.getElementById("tlAutoFb");
+    let n=null; t.split(" ").forEach(w=>{ if(n==null && AUTO_LAP_WORDS[w]!=null) n=AUTO_LAP_WORDS[w]; });
+    if(n==null){ if(fb){ fb.textContent="How many? Say: “Two laps, please.”"; fb.style.color="#991b1b"; } return; }
+    if(n>3){ if(fb){ fb.textContent="Wow! "+n+" laps is too much: three is the maximum. Three laps!"; fb.style.color="#b45309"; } try{ TTS.say("Three is the maximum!",{ gender:"f" }); }catch(e){} n=3; }
+    pick(n); };
+  DialogueBox.open({ name:(tlAutoF().id==="turbo"?"\u{1F3CE}️ ":"\u{1F697} ")+tlAutoName(), sub:"A tour of the town", autoSpeak:true, ttsOpts:{ gender:"f" },
+    text:"Great idea! How many laps of the town? One, two or three?",
+    italian:"Quanti giri della città? Rispondi in inglese: «Two laps, please» (oppure scegli qui sotto). Durante il giro ti dico che cosa c'è a destra e a sinistra.",
+    html:'<div style="display:flex;align-items:center;"><input id="tlAutoIn" type="text" autocomplete="off" '
+      +'placeholder="Two laps, please." style="flex:1;font:inherit;padding:8px 10px;border-radius:10px;border:1px solid #ccd6da;">'+mic+'</div>'
+      +'<div id="tlAutoFb" style="margin-top:8px;min-height:20px;font-weight:600;"></div>',
+    buttons:[{ label:"One lap, please", keepOpen:true, act:()=>pick(1) },
+             { label:"Two laps, please", keepOpen:true, act:()=>pick(2) },
+             { label:"Three laps, please", keepOpen:true, act:()=>pick(3) },
+             { label:"✔", cls:"primary", keepOpen:true, act:()=>{ const i=document.getElementById("tlAutoIn"); tryLaps(i?i.value:""); } }] });
+  const m=document.getElementById("tlAutoMic"); if(m) m.onclick=()=>tlAutoMic("tlAutoIn",tryLaps,"tlAutoFb");
+  const i=document.getElementById("tlAutoIn"); if(i){ i.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); tryLaps(i.value); } }; setTimeout(()=>{ try{ i.focus(); }catch(e){} },400); }
+}
+function tlAutoTour(n){
+  if(!AUTO.on) return;
+  const sp=tlAutoSpot(), st={ x:sp.x, z:sp.z };
+  let best=null;
+  TRAFFIC_LOOPS.forEach(L=>{ _loopMeta(L);
+    const ei=L.__find(sp.x+5,AUTO_LANE_Z,1,0,2.5), di=L.__find(sp.x-7,AUTO_LANE_Z,1,0,2.5);
+    if(ei<0 || di<0) return;
+    if(!best || L.tot>best.L.tot) best={ L, ei, di }; });
+  if(!best){ toast("⚠️ "+tlAutoName()+": no route for a tour."); tlAutoAsk(); return; }
+  const L=best.L, first=(L.L[best.di]-L.L[best.ei]+L.tot)%L.tot;
+  const R={ L, ei:best.ei, di:best.di, len:L.tot, at:st, dEnd:0, stall:st, tour:n, score:0 };
+  AUTO.tour={ n, dist:0, lastS:null, T:first+(n-1)*L.tot, lap:1, said:{}, sayT:0 };
+  tlAutoGo({ name:"a tour of the town", at:()=>st }, R);
+}
+/* ogni fotogramma del giro: i metri fatti, i giri, la guida, la fermata finale */
+function tlAutoTourTick(dt){
+  const T=AUTO.tour, tc=AUTO.car&&AUTO.car.tc, R=AUTO.route;
+  if(!T || !tc || !tc.loop || AUTO.phase!=="drive" || AUTO.merging) return;
+  if(T.lastS!=null){ const ds=(tc.s-T.lastS+tc.tot)%tc.tot; if(ds<60) T.dist+=ds; } T.lastS=tc.s;
+  const lap=Math.min(T.n,Math.floor(T.dist/tc.tot)+1);
+  const say=m=>{ try{ tlAutoPanelDraw(m); }catch(e){} try{ TTS.say(m,{ gender:"f" }); }catch(e){} T.sayT=4; };
+  if(lap>T.lap){ T.lap=lap; say(lap===T.n?"Last lap! Lap "+lap+" of "+T.n+".":"Lap "+lap+" of "+T.n+"!"); }
+  if(tc.stopS==null && T.dist>=T.T-90){ tc.stopS=R.L.L[R.di]; }
+  /* la guida: un luogo vicino (entro 24 m), a destra o a sinistra; al primo giro tutti, poi ogni tanto */
+  T.sayT-=dt; if(T.sayT>0 || AUTO.q) return;
+  const h=tlAutoH(), rx=Math.cos(h), rz=-Math.sin(h), p=tc.root.position, seen={};
+  for(const D of AUTO_DEST){ if(seen[D.name]) continue; seen[D.name]=1;
+    const key=D.name+"#"+(T.lap===1?1:T.lap); if(T.said[key] || (T.lap>1 && T.said[D.name+"#1"] && Math.random()<0.6)) continue;
+    let a=null; try{ a=D.at(); }catch(e){} if(!a) continue;
+    const dx=a.x-p.x, dz=a.z-p.z, d=Math.hypot(dx,dz); if(d>24) continue;
+    T.said[key]=1; const nm=D.name;                          // «the Town Hall», «Central Station»: come sono scritte
+    say("On your "+((dx*rx+dz*rz)>0?"right":"left")+": "+nm+"!"); return; }
 }
 /* ---- il percorso: il giro col punto piu' vicino alla meta, poi il piu' corto ---- */
 function _aNearNode(p,pad){ for(const k in TRAFFIC_NODES){ const n=TRAFFIC_NODES[k]; if(Math.hypot(p[0]-n.x,p[1]-n.z)<n.R+pad) return true; } return false; }
@@ -64182,20 +64264,21 @@ function tlAutoCurve(P0,P1,P2,P3,T,heading,done){
 }
 function tlAutoSetSpeed(kmh,sure){ const K=tlAutoK(); AUTO.kmh=Math.max(K.min,Math.min(sure?K.top:K.max,kmh));
   if(AUTO.car&&AUTO.car.tc) AUTO.car.tc.v=AUTO.kmh/3.6/TRAFFIC_SPEED; }
-function tlAutoGo(P){
-  const at=P.at&&P.at(); const R=at?tlAutoRoute(at,null):null;
+function tlAutoGo(P,Rpre){
+  const at=P.at&&P.at(); const R=Rpre||(at?tlAutoRoute(at,null):null);
   if(!R){ toast("⚠️ "+tlAutoName()+": no route."); tlAutoEnd(null,false,true); return; }
   /* v501 (Giacomo: «se si deve fermare vicino al parco, parcheggia
      direttamente nello stallo vicino alla piazza; sfruttiamo tutti i
      parcheggi disponibili»): se c'e' uno stallo LIBERO vicino alla meta,
      la corsa finisce li' dentro invece che accostata in strada */
-  { const st=tlAutoFreeStall(at), L=R.L, hi=st?L.__find(st.x-7,AUTO_LANE_Z,1,0,2.5):-1;
+  if(!R.tour){ const st=tlAutoFreeStall(at), L=R.L, hi=st?L.__find(st.x-7,AUTO_LANE_Z,1,0,2.5):-1;
     if(st && hi>=0){ R.stall=st; R.di=hi; R.dEnd=Math.hypot(st.x-at.x,st.z-at.z);
       let len=(L.L[hi]-L.L[R.ei]+L.tot)%L.tot; if(len<25) len+=L.tot; R.len=len; } }
   AUTO.phase="drive"; AUTO.place=P; AUTO.route=R; AUTO.said={}; R.pts=tlAutoPts(R);
   tlAutoPanel(true);
   tlAutoSetSpeed(AUTO.kmh);
-  try{ TTS.say("OK! We're going to "+P.name+". Sit back and relax.",{ gender:"f" }); }catch(e){}
+  try{ TTS.say(R.tour?"OK! A tour of the town: "+(R.tour===1?"one lap":R.tour+" laps")+". Sit back, relax and look out of the window!"
+                       :"OK! We're going to "+P.name+". Sit back and relax.",{ gender:"f" }); }catch(e){}
   const tc=AUTO.car.tc, L=R.L, E=L[R.ei], E2=L[(R.ei+2)%L.length];
   const ux=E2[0]-E[0], uz=E2[1]-E[1], ul=Math.hypot(ux,uz)||1, root=tc.root;
   const A=new BABYLON.Vector3(root.position.x,0,root.position.z), P3=new BABYLON.Vector3(E[0],0,E[1]);
@@ -64207,7 +64290,7 @@ function tlAutoGo(P){
   tlAutoJoinSeen(tc);
   tlAutoCurve(A, A.add(new BABYLON.Vector3(0,0,-3.2)), P3.add(new BABYLON.Vector3(-ux/ul*4.5,0,-uz/ul*4.5)), P3, 3600, true, ()=>{
     if(!AUTO.car) return;
-    _tcBind(tc,L); tc.s=L.L[R.ei]; tc.cv=3; tc.stopS=L.L[R.di]; tc.arrived=false; tc.manual=false;
+    _tcBind(tc,L); tc.s=L.L[R.ei]; tc.cv=3; tc.stopS=R.tour?null:L.L[R.di]; tc.arrived=false; tc.manual=false;   // v503: nel giro turistico la fermata si mette all'ultimo giro (tlAutoTourTick)
     tc.onArrive=R.stall?()=>tlAutoStallIn(tc,R.stall):()=>tlAutoPullOver(tc,"drop");
     /* ⚠️ la quota UNA volta sola (Giacomo: «la prima volta era a posto, ora
        la vedo volare»): al secondo giro le ruote sono gia' staccate e le loro
@@ -64252,7 +64335,7 @@ function tlAutoFreeStall(at){ let best=null, bd=36;
 /* arrivati allo stallo: dal viale dentro col muso, poi si scende davanti (sul marciapiede) */
 function tlAutoStallIn(tc,S){
   if(AUTO.phase!=="drive") return;
-  AUTO.phase="arrive"; try{ TTS.say("We're here! I'm parking.",{ gender:"f" }); }catch(e){}
+  AUTO.phase="arrive"; try{ TTS.say(AUTO.tour?"We're back! I'm parking.":"We're here! I'm parking.",{ gender:"f" }); }catch(e){}
   tlAutoJoinSeen(tc);                                // fuori dal ciclo, ma chi arriva dietro la vede
   const root=tc.root, A=new BABYLON.Vector3(root.position.x,0,root.position.z), h=tlAutoH();
   const f=new BABYLON.Vector3(Math.sin(h),0,Math.cos(h)), T=new BABYLON.Vector3(S.x,0,S.z);
@@ -64319,7 +64402,8 @@ function tlAutoDrop(){
   tlAutoEnd(()=>{
     player.position.set(spot.x,0,spot.z); player.rotation.y=AUTO.inStall?h:Math.atan2(nx,nz);
     try{ camera.setTarget(player.position.add(new BABYLON.Vector3(0,1.4,0)),false,false,true); }catch(e){}
-    let msg="\u{1F697} "+tlAutoName()+": Here you are — "+(P?P.name:"")+"! Have a nice day!";
+    let msg=AUTO.tour?"\u{1F697} "+tlAutoName()+": We're back! I hope you enjoyed the tour of the town. Have a nice day!"
+                     :"\u{1F697} "+tlAutoName()+": Here you are — "+(P?P.name:"")+"! Have a nice day!";
     if(dst && far>14){ try{ NAV.target=new BABYLON.Vector3(dst.x,0,dst.z); NAV.label=P.name; }catch(e){}
       msg+=" It's about "+Math.round(far/5)*5+" metres from here: follow the compass."; }
     toast(msg);
@@ -64434,6 +64518,7 @@ function tlAutoTick(){
       const dv=((AUTO.lastV!=null?AUTO.lastV:v)-v)/Math.max(dt,0.001);
       if((dh>0.32 && v>8) || (dv>7 && v>6)) try{ SFX.screech(Math.min(1,v/22)); }catch(e){}
       AUTO.lastH=hn; AUTO.lastV=v; } else { AUTO.lastH=null; AUTO.lastV=null; } }
+  try{ tlAutoTourTick(dt); }catch(e){}                       // v503: il giro della citta'
   /* il cervellone: una domanda ogni ~20 s di strada */
   if(AUTO.phase==="drive" && !AUTO.merging && !AUTO.q){ AUTO.qT-=dt; if(AUTO.qT<=0) tlAutoQuiz(); }
   const now=performance.now(); if(now-AUTO.lastNav>220){ AUTO.lastNav=now; tlAutoNavDraw(); }
@@ -64549,7 +64634,7 @@ function tlAutoAnswer(i){
 /* ---- il navigatore: prossima manovra entro 150 m ---- */
 function tlAutoNext(){
   const tc=AUTO.car&&AUTO.car.tc; if(!tc||!tc.loop||AUTO.phase!=="drive"||AUTO.merging) return null;
-  const rem=(tc.stopS-tc.s+tc.tot)%tc.tot;
+  const rem=tc.stopS==null?(AUTO.tour?Math.max(150,AUTO.tour.T-AUTO.tour.dist):150):(tc.stopS-tc.s+tc.tot)%tc.tot;
   const pos=s=>carLoopPos(tc,s), hd=s=>{ const a=pos(s), b=pos(s+3); return Math.atan2(b[0]-a[0],b[1]-a[1]); };
   const nodeAt=p=>{ for(const k in TRAFFIC_NODES){ const n=TRAFFIC_NODES[k]; if(Math.hypot(p[0]-n.x,p[1]-n.z)<n.R+2.5) return n; } return null; };
   for(let d=4; d<Math.min(150,rem); d+=4){
@@ -64567,7 +64652,7 @@ function _rr(c,x,y,w,h,r){ c.beginPath(); c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h
 function tlAutoNavDraw(){
   const C=AUTO.car, tc=C&&C.tc, R=AUTO.route, nx=tlAutoNext();
   const kmh=Math.round((tc?tc.cv:0)*TRAFFIC_SPEED*3.6);
-  const rem=(tc&&R&&tc.loop&&AUTO.phase==="drive")?(tc.stopS-tc.s+tc.tot)%tc.tot:0;
+  const rem=(tc&&R&&tc.loop&&AUTO.phase==="drive")?(tc.stopS==null?(AUTO.tour?Math.max(0,AUTO.tour.T-AUTO.tour.dist):0):(tc.stopS-tc.s+tc.tot)%tc.tot):0;
   const eta=rem>0?Math.round(rem/Math.max(6,(tc.cv||0)*TRAFFIC_SPEED)):0;
   const low=t=>t.charAt(0).toLowerCase()+t.slice(1);
   const msg=AUTO.phase==="ask"?"Where would you like to go?":AUTO.phase==="drive"?(nx?(nx.d>8?"In "+Math.max(10,Math.round(nx.d/10)*10)+" metres, "+low(nx.txt):nx.txt):"")
