@@ -9718,6 +9718,7 @@ function buildTraffic(){
     _sigUpdate(dt,carsOpen);                            // v553: i semafori girano anche a citta' chiusa (giallo lampeggiante)
     if(!carsOpen) return;
     for(let k=0;k<_trafficCars.length;k++){ const c=_trafficCars[k];
+      if(c.manual) continue;                         // v500: AUTO-1 che accosta: la muove lei, ma chi viene dietro la vede
       // FRENATA "civile": se il giocatore e' davanti all'auto (entro 6 m,
       // scarto laterale < 2.1 m) la velocita' scivola a 0; riparte da sola
       let i=_tcSeg(c,c.s);
@@ -25899,8 +25900,11 @@ const Quest={
     questHudSet("final",HOBJ("🎉 <b>"+uTitle+" complete!</b>",
       "🎉 <b>"+uTitle+" completata!</b>"), this.total-1, this.total);
     /* v251 — la festa di fine unit e' contenuto di gioco: in inglese. */
+    const _u=this.unit;
     QModal.open({ title:"🎉 Well done!", sub:"You have completed the <b>"+uTitle+"</b> questline!",
-      buttons:[{label:"Close", cls:"primary"}] });
+      buttons:[{label:"Close", cls:"primary", act:()=>{
+        /* v500: finito il TechLab, AUTO-1 e' tua (il giro finale) */
+        if(typeof UNIT_TECH!=="undefined" && _u===UNIT_TECH) setTimeout(()=>{ try{ tlAutoOffer(); }catch(e){} },450); } }] });
     if(this.unit){ Progress.setUnitDone(this.unit.id);
       Sync.set("et_"+this.unit.id+"_done",1);
       const s=Gate.info(this.unit.id); if(s) Stars.checkYearBonus(s.yr);   // bonus di fine anno
@@ -63278,87 +63282,93 @@ function tlSkyEnd(cb,abort){
   finFade(1,650,fin);
 }
 /* =====================================================================
-   v499 — AUTO-1, L'AUTO SENZA VOLANTE (Giacomo, 20 nov: «usiamo una di
-   quelle gia' parcheggiate: la si fa inserire in strada, segue lo stesso
-   percorso delle altre e si ferma davanti al posto scelto. Con O si vede
-   dagli occhi, dentro: niente volante, un tablet col navigatore e la
-   velocita'»).
-   Chiude il LISTENING: caricato il kit, Yuki lascia un messaggio vocale
-   che dice DOVE sara' (con will / may e due posti-trappola). Lo studente
-   esce al parcheggio del TechLab, sale su AUTO-1 (l'auto parcheggiata a
-   x -39) e le chiede la destinazione — scritta o a voce, in una frase
-   («Take me to the airport, please»). Se il posto non e' quello del
-   messaggio l'auto non parte: «Is Yuki there? Listen again».
-   L'auto e' un'auto del TRAFFICO VERO (sta in _trafficCars: semafori,
-   code, rotonde una alla volta) con tre eccezioni, marcate c.auto nel
-   ciclo del traffico: non cambia giro ai varchi, rallenta fino a fermarsi
-   alla destinazione (c.stopS), e arrivata accosta ed esce dal traffico.
-   Il giro si sceglie fra quelli che passano davanti al parcheggio e alla
-   destinazione: il piu' corto.
-   ⚠️ Il corpo del giocatore resta a terra, nascosto, nella tasca verde
-   accanto al parcheggio (AUTO_HIDE): dentro l'auto, in carreggiata, il
-   traffico lo avrebbe preso per un pedone (frenate, clacson, Ranger).
+   v500 — AUTO-1, L'AUTO SENZA VOLANTE (Giacomo, 20-21 nov).
+   «Il giro in macchina puo' essere la FINE: porta l'avatar dove vuole, lo
+   dice e viene portato nel posto piu' vicino possibile. La macchina
+   parcheggia e lascia l'avatar sul marciapiede; le macchine dietro stanno
+   attente a non prendere quella che accosta; poi da sola torna allo
+   stallo. Si sblocca dopo questa missione e si usa anche dopo, andando
+   nel parcheggio e prenotando. La velocita' si decide in inglese, con dei
+   limiti, e durante il tragitto il cervellone fa domande con will / may /
+   might.»
+   · QUANDO: a fine TechLab (Quest.finish -> UNIT_TECH.onFinish) Dr. Ito
+     offre il primo giro; da li' in poi AUTO-1 e' sbloccata (et_auto1) e
+     si prenota con la E al suo stallo nel parcheggio ovest (x -39).
+   · LA CORSA: e' un'auto del TRAFFICO VERO (sta in _trafficCars: semafori,
+     code, rotonde) con c.auto: non cambia giro ai varchi, rallenta fino a
+     c.stopS e chiama onArrive. Si sceglie il giro col punto piu' vicino
+     alla meta (poi il piu' corto); mai fermarsi dentro una rotonda.
+   · L'ACCOSTATA: c.manual = il ciclo del traffico NON la muove piu', ma
+     resta in _trafficCars, quindi chi viene dietro la vede e aspetta
+     finche' non e' fuori dalla corsia. Poi si scende sul marciapiede.
+   · IL RITORNO: da sola, sullo stesso giro (passa sempre dal parcheggio),
+     fino al boulevard davanti allo stallo; entra e si gira sul posto
+     (e' del 2050), pronta a ripartire.
+   · DENTRO: l'avatar e' SEDUTO (playerSit, posto davanti a sinistra, il
+     passeggero all'inglese); con O si guarda dai suoi occhi e trascinando
+     il mouse (o con ← →) ci si guarda intorno: sedili chiari, pannelli
+     scuri, strisce LED, il tablet al centro della plancia girato verso
+     il passeggero.
+   ⚠️ In auto il traffico non vede un pedone (pedOnCarriageway, spinte e
+   clic sulla scena tacciono: vedi SKY.on/AUTO.on).
    ===================================================================== */
-const AUTO={ on:false, tc:null, pov:false, phase:"", obs:null, cam:null, parked:null, cock:null, dt:null,
-  route:null, said:{}, lastNav:0, ui:null, idle:0 };
+const AUTO={ on:false, mode:"", tc:null, pov:false, phase:"", obs:null, cam:null, parked:null, cock:null, dt:null,
+  route:null, said:{}, lastNav:0, ui:null, panel:null, idle:0, kmh:40, q:null, qT:0, qi:0, look:{ y:0, p:0 },
+  car:null, seat:null, hip:null, busy:"", offered:false };
 /* ⚠️ x -39, non -42: lo stallo di mezzo e' VUOTO (car() lo salta, insideSolid:
    visto in prova). Restano -45 e -39; -39 e' il piu' vicino al TechLab. */
-const AUTO_STALL={ x:-39, z:-27.25 };          // lo stallo del prototipo (vedi buildTown: parcheggio ovest)
-const AUTO_HIDE={ x:-16, z:-25.6 };            // dove aspetta il corpo nascosto (marciapiede, fuori strada)
-const AUTO_PLACES=[
-  { key:"airport",  re:/\bairport|terminal\b/, name:"the airport",       at:()=>({ x:2, z:-67 }) },
-  { key:"hospital", re:/\bhospital\b/,          name:"the City Hospital", at:()=>(UNIT_ER&&UNIT_ER.doorPos)||{ x:30, z:-56 } },
-  { key:"school",   re:/\bschool\b/,            name:"the Town School",   at:()=>(UNIT0&&UNIT0.doorPos)||{ x:26, z:11 } },
-  { key:"station",  re:/\bstation\b/,           name:"the station" },
-  { key:"cinema",   re:/\bcinema|odeon\b/,      name:"the ODEON cinema",  at:()=>(typeof cinemaDoorPos!=="undefined"&&cinemaDoorPos)||{ x:0, z:-8 } },
-  { key:"market",   re:/\bmarket\b/,            name:"the market" },
-  { key:"townhall", re:/\btown ?hall\b/,        name:"the Town Hall" },
-  { key:"park",     re:/\bpark\b/,              name:"the park" },
-  { key:"home",     re:/\bhome|house\b/,        name:"home" } ];
-/* il messaggio di Yuki: un posto vero, due trappole (will / won't / may) */
-const TL_AUTO_MSG={
-  airport:{ line:"Good news! My flight to the space centre will leave tonight. I won't go back to the station. I'll be at the airport, at the terminal, from four o'clock. Please bring the kit there!",
-    it:"Il volo parte stasera. Non torna alla stazione: sarà all'aeroporto, al terminal, dalle quattro." },
-  /* ⚠️ niente ospedale come meta: e' oltre la rotonda di testa della strada
-     dell'aeroporto (x 30 contro x 14), nessun giro del traffico ci passa
-     davanti. Resta come posto-trappola nei messaggi. */
-  cinema:{ line:"Before the mission I'll see my family. I won't be at the hospital today: we'll be at the ODEON cinema all afternoon. We'll watch a film about Mars! I may go to the airport tomorrow. Bring the kit to the cinema, please!",
-    it:"Prima della missione vede la famiglia: oggi non sar\u00e0 all'ospedale, saranno al cinema ODEON tutto il pomeriggio." },
-  school:{ line:"Today I'll talk to the students about space! I won't be at the TechLab. I'll be at the Town School all morning. After that I may go to the hospital for a check. Bring the kit to the school, please!",
-    it:"Oggi parla di spazio agli studenti: sarà alla Town School tutta la mattina. Dopo forse va all'ospedale." } };
-function tlAutoPlace(key){ for(const P of AUTO_PLACES) if(P.key===key) return P; return null; }
-function tlAutoSayYuki(){
-  const ms=Quest.state&&Quest.state.ms; if(!ms||!ms.dest) return;
-  ms.aPlays=(ms.aPlays||0)+1;
-  if(ms.aPlays>=2) ms.aRev=true;
-  try{ speechSynthesis.resume(); TTS.say(TL_AUTO_MSG[ms.dest].line,{ gender:"f" }); }catch(e){}
-  const r=document.getElementById("tlAutoRev");
-  if(r && ms.aRev) r.innerHTML=tlAutoRevHtml();
-}
-function tlAutoRevHtml(){
-  const ms=Quest.state.ms, M=TL_AUTO_MSG[ms.dest];
-  return '<div style="margin-top:6px;padding:8px 10px;background:#eef3f6;border-radius:8px;font-style:italic;">&quot;'+_escHtml(M.line)+'&quot;</div>';
-}
-/* 1) il messaggio (in laboratorio, a kit caricato) */
-function tlAutoBrief(){
-  const ms=Quest.state.ms;
-  if(!ms.dest){ const K=Object.keys(TL_AUTO_MSG); ms.dest=K[(Math.random()*K.length)|0]; }
-  const rb=' <button type="button" class="qm-btn ghost listen-replay-btn" style="padding:3px 10px;margin-left:6px;">\ud83d\udd0a</button>';
-  questHudSet("listening", HOBJ("\u{1F3A7} Listen to Yuki: <b>where</b> will she be? Then take the kit there with <b>AUTO-1</b>"+rb,
-    "\u{1F3A7} Ascolta Yuki: <b>dove</b> sarà? Poi portale il kit con <b>AUTO-1</b>"), Quest.i, Quest.total);
-  { const b=qhud.obj.querySelector(".listen-replay-btn"); if(b) b.onclick=(e)=>{ try{ e.stopPropagation(); }catch(err){} tlAutoSayYuki(); }; }   // v499: riascolto sempre a portata
-  DialogueBox.open({ ttsOpts:{gender:"f"}, name:"\u{1F469}‍\u{1F680} Yuki Sato", sub:"A voice message", autoSpeak:false,
-    text:"One more thing! I need the kit today. Listen to my message: where will I be?",
-    italian:"Ascolta il messaggio: Yuki nomina più posti, ma ce n'è UNO solo dove sarà davvero. Poi portale il kit con AUTO-1, l'auto senza volante del TechLab.",
-    html:'<div id="tlAutoRev">'+(ms.aRev?tlAutoRevHtml():"")+'</div>',
-    buttons:[{ label:"\u{1F50A} Listen", cls:"", keepOpen:true, act:()=>tlAutoSayYuki() },
-             { label:"\u{1F697} Go to the car", cls:"primary", act:()=>tlAutoStart() }] });
-  setTimeout(tlAutoSayYuki, 350);
-}
-/* il prototipo: l'auto parcheggiata nello stallo AUTO_STALL */
+const AUTO_STALL={ x:-39, z:-27.25 };
+const AUTO_HIDE={ x:-16, z:-25.6 };            // dove aspetta il corpo nascosto in volo (SKY-1): marciapiede, fuori strada
+const AUTO_KMH={ min:20, max:50 };
+/* le mete: le parole che le riconoscono (le piu' specifiche PRIMA: «fire
+   station» prima di «station»), dove stanno davvero (la porta, se la unit
+   l'ha), e come chiamarle */
+function _adoor(u,x,z){ return ()=>{ try{ const d=u&&u.doorPos; if(d) return { x:d.x, z:d.z }; }catch(e){} return { x, z }; }; }
+const AUTO_DEST=[
+  { re:/\bfire|climate\b/,              name:"the Climate & Fire Station", at:()=>_adoor(typeof UNIT_CLIMATE!=="undefined"?UNIT_CLIMATE:null,-60,-42)() },
+  { re:/\bairport|terminal|plane\b/,    name:"the airport",       at:()=>({ x:6, z:-75 }) },
+  { re:/\bstation|train\b/,             name:"Central Station",   at:()=>({ x:-92, z:0 }) },
+  { re:/\bhospital|doctor\b/,           name:"the City Hospital", at:()=>_adoor(typeof UNIT_ER!=="undefined"?UNIT_ER:null,30,-56)() },
+  { re:/\bschool\b/,                    name:"the Town School",   at:()=>_adoor(UNIT0,26,11)() },
+  { re:/\bcinema|odeon|film|movie\b/,   name:"the ODEON cinema",  at:()=>((typeof cinemaDoorPos!=="undefined"&&cinemaDoorPos)?{ x:cinemaDoorPos.x, z:cinemaDoorPos.z }:{ x:0, z:-8 }) },
+  { re:/\bcorner shop\b/,               name:"the Corner Shop",   at:()=>_adoor(UNIT4,-26,11)() },
+  { re:/\bclothes\b/,                   name:"the Clothes Shop",  at:()=>_adoor(UNIT8,54,11)() },
+  { re:/\bmarket\b/,                    name:"the Market",        at:()=>_adoor(UNIT6,-54,11)() },
+  { re:/\bbeat club|club|concert\b/,    name:"the Beat Club",     at:()=>_adoor(UNIT_MUSIC,-26,-12)() },
+  { re:/\bsalon|hairdresser\b/,         name:"the Style Salon",   at:()=>_adoor(UNIT_STYLE,26,-12)() },
+  { re:/\beco ?point|recycl/,           name:"the Eco Point",     at:()=>_adoor(UNIT_ECO,-54,-12)() },
+  { re:/\btown hall\b/,                 name:"the Town Hall",     at:()=>_adoor(UNIT2,54,-12)() },
+  { re:/\bplaza\b/,                     name:"City Life Plaza",   at:()=>({ x:74, z:-10 }) },
+  { re:/\bjob cent|tower\b/,            name:"the Job Centre Tower", at:()=>_adoor(UNIT_JOBS,0,-42)() },
+  { re:/\btech ?lab\b/,                 name:"the TechLab",       at:()=>_adoor(UNIT_TECH,-30,-42)() },
+  { re:/\bpark|clock\b/,                name:"the park",          at:()=>({ x:74, z:-30 }) },
+  { re:/\bsport|football|pitch|field\b/, name:"the sports field", at:()=>({ x:113, z:20 }) },
+  { re:/\bhome|my house|house\b/,       name:"your house",        at:()=>((typeof homeDoorPos!=="undefined"&&homeDoorPos)?{ x:homeDoorPos.x, z:homeDoorPos.z }:{ x:0, z:11 }) },
+  { re:/\bshop\b/,                      name:"the Corner Shop",   at:()=>_adoor(UNIT4,-26,11)() } ];
+/* il cervellone: una frase col buco e l'indizio della certezza (c'e' una
+   risposta giusta, come gli anelli di SKY-1) */
+const AUTO_QS=[
+  { q:"I'm SURE: it ___ be sunny today. Look at the sky!", o:["will","might","won't"], ok:"will", it:"è sicuro: will" },
+  { q:"I'm NOT SURE: we ___ find traffic at the roundabout.", o:["might","will","won't"], ok:"might", it:"non è sicuro: may o might" },
+  { q:"NO way: I ___ drive faster than 50 km/h in town.", o:["won't","will","might"], ok:"won't", it:"è un no: won't" },
+  { q:"Question: ___ you visit Mars one day?", o:["Will","Do","Are"], ok:"Will", it:"la domanda con will comincia da Will" },
+  { q:"I'm SURE: in 2050 all cars ___ be electric.", o:["will","may","won't"], ok:"will", it:"è sicuro: will" },
+  { q:"Maybe… people ___ live under the sea one day.", o:["may","will","won't"], ok:"may", it:"forse: may o might" },
+  { q:"NO: robots ___ take my job. I AM a robot!", o:["won't","will","might"], ok:"won't", it:"è un no: won't" },
+  { q:"Question: ___ we arrive on time?", o:["Will","Do","Is"], ok:"Will", it:"la domanda con will comincia da Will" },
+  { q:"I'm NOT SURE: it ___ rain later.", o:["might","will","won't"], ok:"might", it:"non è sicuro: may o might" },
+  { q:"I'm SURE: you ___ love this ride!", o:["will","might","won't"], ok:"will", it:"è sicuro: will" } ];
+function tlAutoUnlocked(){ try{ if(Sync.get("et_auto1",null)) return true; }catch(e){}
+  try{ if((Progress.get(UNIT_TECH.id)||{}).done) return true; }catch(e){}
+  try{ if(Student.teacher) return true; }catch(e){} return false; }
+/* l'auto parcheggiata nello stallo (la prima volta diventa AUTO-1) */
 function tlAutoParked(){ let best=null, bd=1.2;
-  (typeof PARKED_CARS!=="undefined"?PARKED_CARS:[]).forEach(p=>{ const d=Math.hypot(p.x-AUTO_STALL.x,p.z-AUTO_STALL.z); if(d<bd){ bd=d; best=p; } });   // il prototipo e' l'auto parcheggiata a x -39
+  (typeof PARKED_CARS!=="undefined"?PARKED_CARS:[]).forEach(p=>{ const d=Math.hypot(p.x-AUTO_STALL.x,p.z-AUTO_STALL.z); if(d<bd){ bd=d; best=p; } });
   return best; }
+function tlAutoH(){ return AUTO.car ? AUTO.car.root.rotation.y-TRAFFIC_YAW : Math.PI; }
+function tlAutoL2W(lx,ly,lz){ const r=AUTO.car.root, h=tlAutoH(), c=Math.cos(h), s=Math.sin(h);
+  return new BABYLON.Vector3(r.position.x+lx*c+lz*s, r.position.y+ly, r.position.z-lx*s+lz*c); }
+/* ---- il modello: l'auto vera + il kit del 2050 + l'abitacolo ---- */
 function tlAutoBuildCar(key){
   const root=new BABYLON.TransformNode("auto1",scene); root.parent=townRoot;
   root.position.set(AUTO_STALL.x,0,AUTO_STALL.z); root.rotation.y=TRAFFIC_YAW;   // muso verso +z per misurare
@@ -63367,275 +63377,489 @@ function tlAutoBuildCar(key){
   if(car){ car.parent=root; car.position.set(0,car.position.y,0); }
   root.computeWorldMatrix(true);
   const bb=root.getHierarchyBoundingVectors(true), H=bb.max.y, HW=(bb.max.x-bb.min.x)/2, HL=(bb.max.z-bb.min.z)/2;
-  /* il «2050»: sensore sul tetto e due strisce azzurre. Nodo col +z in avanti */
-  const kit=new BABYLON.TransformNode("auto1k",scene); kit.parent=root; kit.rotation.y=-TRAFFIC_YAW;
-  const em=new BABYLON.StandardMaterial("auto1m"+(_lpN++),scene);
-  em.diffuseColor=BABYLON.Color3.FromHexString("#6fd0e8"); em.emissiveColor=BABYLON.Color3.FromHexString("#6fd0e8");
-  const lid=BABYLON.MeshBuilder.CreateCylinder("auto1l",{ diameter:0.30, height:0.16, tessellation:20 },scene);
-  lid.material=lpMat("#1b2430"); lid.parent=kit; lid.position.set(0,H+0.06,-0.15);
-  const lid2=BABYLON.MeshBuilder.CreateCylinder("auto1l2",{ diameter:0.31, height:0.04, tessellation:20 },scene);
-  lid2.material=em; lid2.parent=kit; lid2.position.set(0,H+0.07,-0.15);
-  [-1,1].forEach(sd=>{ const s=BABYLON.MeshBuilder.CreateBox("auto1s",{ width:0.02, height:0.05, depth:HL*1.5 },scene);
-    s.material=em; s.parent=kit; s.position.set(sd*(HW+0.005),0.55,0); });
-  /* L'ABITACOLO (solo in prima persona): plancia, montanti, il tablet col
-     navigatore. Niente volante. ⚠️ Il guscio del modello non si vede da
-     dentro (facce singole): l'abitacolo e' tutto qui. */
+  const kit=new BABYLON.TransformNode("auto1k",scene); kit.parent=root; kit.rotation.y=-TRAFFIC_YAW;   // +z = avanti
+  const M=(n,hex,em)=>{ const m=new BABYLON.StandardMaterial(n+(_lpN++),scene); m.diffuseColor=BABYLON.Color3.FromHexString(hex);
+    m.specularColor=new BABYLON.Color3(0.08,0.08,0.08); if(em) m.emissiveColor=BABYLON.Color3.FromHexString(em); return m; };
+  const box=(w,h,d,m,x,y,z,p)=>{ const b=BABYLON.MeshBuilder.CreateBox("a1b",{ width:w, height:h, depth:d },scene); b.material=m; b.parent=p||kit; b.position.set(x,y,z); b.isPickable=false; return b; };
+  const led=M("a1led","#6fd0e8","#6fd0e8"), led2=M("a1led2","#c9a7ff","#a985f0"), warm=M("a1warm","#ffe6b0","#f2c27a");
+  const lid=BABYLON.MeshBuilder.CreateCylinder("a1lid",{ diameter:0.30, height:0.16, tessellation:20 },scene);
+  lid.material=M("a1lidm","#1b2430"); lid.parent=kit; lid.position.set(0,H+0.06,-0.15);
+  const lr=BABYLON.MeshBuilder.CreateCylinder("a1lr",{ diameter:0.31, height:0.04, tessellation:20 },scene);
+  lr.material=led; lr.parent=kit; lr.position.set(0,H+0.07,-0.15);
+  [-1,1].forEach(sd=>box(0.02,0.05,HL*1.5,led,sd*(HW+0.005),0.55,0));
+  /* ABITACOLO — elegante: pelle chiara, pannelli scuri, LED azzurri e lilla */
   const ck=new BABYLON.TransformNode("auto1c",scene); ck.parent=kit;
-  const dm=lpMat("#20262c"), dm2=lpMat("#39424b");
-  const dash=BABYLON.MeshBuilder.CreateBox("auto1d",{ width:HW*1.75, height:0.18, depth:0.55 },scene);
-  dash.material=dm; dash.parent=ck; dash.position.set(0,0.86,0.80);
-  const led=BABYLON.MeshBuilder.CreateBox("auto1dl",{ width:HW*1.6, height:0.015, depth:0.01 },scene);
-  led.material=em; led.parent=ck; led.position.set(0,0.94,0.525);
-  [-1,1].forEach(sd=>{ const p=BABYLON.MeshBuilder.CreateBox("auto1p",{ width:0.07, height:0.70, depth:0.07 },scene);
-    p.material=dm2; p.parent=ck; p.position.set(sd*HW*0.86,1.30,0.62); p.rotation.x=-0.55; });
-  const roof=BABYLON.MeshBuilder.CreateBox("auto1r",{ width:HW*1.75, height:0.05, depth:0.25 },scene);
-  roof.material=dm2; roof.parent=ck; roof.position.set(0,1.62,0.38);
-  /* il tablet sta in BASSO e di lato, come uno schermo da plancia: al centro
-     e all'altezza degli occhi copriva la strada (visto a schermo) */
-  const tab=new BABYLON.TransformNode("auto1t",scene); tab.parent=ck; tab.position.set(HW*0.30,1.05,0.52); tab.rotation.x=0.55; tab.rotation.y=-0.25;
-  const fr=BABYLON.MeshBuilder.CreateBox("auto1tf",{ width:0.42, height:0.27, depth:0.02 },scene);
-  fr.material=lpMat("#0d1216"); fr.parent=tab; fr.position.z=0.012;
-  const dt=new BABYLON.DynamicTexture("auto1nav"+(_lpN++),{ width:640, height:400 },scene,true);
-  AUTO.dt=dt; tlPlane(tab,0.39,0.245,0,dt,"#16323d");
-  ck.setEnabled(false); AUTO.cock=ck;
+  const skin=M("a1skin","#e8dcc8"), skin2=M("a1skin2","#d9cbb3"), pan=M("a1pan","#262c33"), pan2=M("a1pan2","#353d46"), wood=M("a1wood","#6b4f3a");
+  const W=HW*0.92;
+  box(W*2,0.04,HL*1.15,pan,0,0.32,-0.1,ck);                                   // pavimento
+  [-1,1].forEach(sd=>{ const x=sd*W*0.48;                                     // sedili davanti
+    box(0.50,0.12,0.50,skin,x,0.50,0.12,ck);
+    const bk=box(0.50,0.62,0.10,skin2,x,0.86,-0.16,ck); bk.rotation.x=-0.16;
+    box(0.30,0.16,0.08,skin,x,1.22,-0.22,ck); });                              // poggiatesta
+  box(W*1.7,0.12,0.50,skin,0,0.50,-0.95,ck);                                  // divanetto dietro
+  { const bk=box(W*1.7,0.58,0.10,skin2,0,0.84,-1.22,ck); bk.rotation.x=-0.14; }
+  box(0.20,0.24,0.80,pan2,0,0.46,0.15,ck); box(0.16,0.012,0.74,led2,0,0.585,0.15,ck);   // tunnel centrale + LED
+  const dash=box(W*1.9,0.22,0.48,pan,0,0.86,0.98,ck);                          // plancia (niente volante)
+  box(W*1.9,0.03,0.12,wood,0,0.98,0.78,ck); box(W*1.8,0.012,0.012,led,0,0.955,0.738,ck);
+  [-1,1].forEach(sd=>{ const x=sd*(W-0.03);                                   // pannelli porta + LED
+    box(0.06,0.52,HL*1.25,pan2,x,0.64,-0.12,ck);
+    box(0.012,0.016,HL*1.2,led,x-sd*0.035,0.90,-0.12,ck);
+    box(0.10,0.04,0.6,skin2,x-sd*0.06,0.78,0.05,ck);
+    const p=box(0.035,0.62,0.035,pan,sd*(W-0.02),1.22,1.02,ck); p.rotation.x=-0.6; });     // montanti sottili, sul parabrezza
+  const roof=new BABYLON.TransformNode("auto1roof",scene); roof.parent=ck; roof.position.y=H-0.10;   // l'altezza vera la decide tlAutoPov (occhi)
+  box(W*1.9,0.03,HL*1.15,pan2,0,0,-0.12,roof);                                // cielo dell'abitacolo
+  box(0.03,0.012,HL*1.0,warm,0,-0.02,-0.15,roof);                              // luce ambiente
+  /* IL TABLET: al centro della plancia, dritto, girato verso il passeggero
+     (posto davanti a sinistra) e appena inclinato all'indietro */
+  const seat={ x:-W*0.48, z:0.10 };
+  /* posizione provvisoria: tlAutoPov la rimette davanti agli occhi veri */
+  const tab=new BABYLON.TransformNode("auto1t",scene); tab.parent=ck; tab.position.set(seat.x+0.30,1.0,seat.z+0.62);
+  tab.rotation.y=Math.atan2(0.30,0.62); tab.rotation.x=0.25;
+  box(0.48,0.31,0.02,M("a1tf","#0b1014"),0,0,0.012,tab);
+  const dt=new BABYLON.DynamicTexture("auto1nav"+(_lpN++),{ width:768, height:480 },scene,true);
+  AUTO.dt=dt; tlPlane(tab,0.45,0.28,0,dt,"#16323d");
   root.getChildMeshes().forEach(m=>{ m.isPickable=false; });
-  return root;
+  /* ⚠️ l'abitacolo si vede SOLO da dentro (O): da fuori i pannelli uscivano
+     dalla carrozzeria dell'auto sportiva, che e' bassa (visto a schermo) */
+  ck.setEnabled(false);
+  return { root, H, HW, HL, seat, kit, ck, roof, tab };
 }
-function tlAutoStart(){
+/* ---- la prenotazione al parcheggio (dopo il TechLab) ---- */
+let AUTO_BOOK=null;
+function tlAutoBookInit(){
+  if(AUTO_BOOK) return;
+  AUTO_BOOK=addInteract({ id:"auto1_book", area:"town", radius:3.4,
+    pos:()=>new BABYLON.Vector3(AUTO_STALL.x,0,AUTO_STALL.z),
+    prompt:()=>tlAutoUnlocked()?'\u{1F697} Press <b>E</b>: book <b>AUTO-1</b>, the self-driving car'
+                               :'\u{1F697} <b>AUTO-1</b> · TechLab prototype — finish the TechLab quest to use it',
+    interact:()=>tlAutoBook() });
+}
+setTimeout(()=>{ try{ tlAutoBookInit(); }catch(e){} },0);
+function tlAutoBook(){
+  if(!tlAutoUnlocked()){ toast("\u{1F512} AUTO-1 is a TechLab prototype: finish the TechLab quest and it's yours!"); return; }
+  if(AUTO.on){ return; }
+  if(AUTO.busy){ toast("\u{1F697} AUTO-1 is coming back to the car park — wait a moment!"); return; }
+  if(!townOpen()){ toast("\u{1F319} AUTO-1 sleeps at night. Come back in the morning!"); return; }
+  tlAutoStart("book");
+}
+/* ---- il giro: salire ---- */
+function tlAutoStart(mode){
   if(AUTO.on) return;
   try{ povSet(false,true); }catch(e){}
   try{ DialogueBox.close(); }catch(e){}
-  AUTO.on=true; AUTO.phase="ask"; AUTO.pov=false; AUTO.said={}; AUTO.idle=0;
+  try{ if(RIDE.on) rideOff(true); }catch(e){}
+  try{ standUpAll(); }catch(e){}
+  AUTO.on=true; AUTO.mode=mode||"book"; AUTO.phase="ask"; AUTO.pov=false; AUTO.said={}; AUTO.idle=0;
+  AUTO.look={ y:0, p:0 }; AUTO.kmh=40; AUTO.qT=0; AUTO.q=null; AUTO.place=null; AUTO.route=null;
   finFade(1,650,function(){
-    try{ enterArea("town"); }catch(e){}
-    try{ player.position.set(AUTO_HIDE.x,0,AUTO_HIDE.z); }catch(e){}
-    try{ avatarMeshes.forEach(m=>{ m.visibility=0; }); }catch(e){}
+    /* dal TechLab (giro finale): la quest e' finita, si chiude e si esce in citta' */
+    if(area!=="town"){ try{ if(Quest.unit) Quest.stop(); }catch(e){} try{ enterArea("town"); }catch(e){} }
     try{ setLabelsVisible("__auto__"); }catch(e){}
     try{ promptEl.style.display="none"; }catch(e){}
+    try{ document.getElementById("quest-nudge").classList.remove("show"); }catch(e){}
     moveTarget=null; pendingInteract=null;
     AUTO.cam={ a:camera.alpha, b:camera.beta, r:camera.radius, lr:camera.lowerRadiusLimit, ur:camera.upperRadiusLimit,
                lb:camera.lowerBetaLimit, ub:camera.upperBetaLimit, minZ:camera.minZ };
     try{ camera.detachControl(); }catch(e){}
     camera.lowerRadiusLimit=0.01; camera.upperRadiusLimit=60; camera.lowerBetaLimit=0.05; camera.upperBetaLimit=3.0;
-    const P=tlAutoParked(); AUTO.parked=P;
-    if(P && P.root) P.root.setEnabled(false);
-    const root=tlAutoBuildCar(P&&P.key);
-    AUTO.h=Math.PI; root.rotation.y=AUTO.h+TRAFFIC_YAW;      // muso verso il boulevard (nord)
-    AUTO.tc={ root, s:0, v:11, cv:0, near:false, halt:0, auto:true };
-    camera.setTarget(root.position.add(new BABYLON.Vector3(0,1.2,0)),false,false,true);
-    camera.alpha=tlSkyCamAlpha(AUTO.h)+0.7; camera.beta=1.15; camera.radius=8.5;
-    tlAutoUi(true); tlAutoNavDraw();
+    /* AUTO-1: la prima volta nasce dall'auto parcheggiata; poi resta lei */
+    if(!AUTO.car){ const P=tlAutoParked(); AUTO.parked=P; if(P && P.root) P.root.setEnabled(false);
+      AUTO.car=tlAutoBuildCar(P&&P.key); AUTO.car.root.rotation.y=Math.PI+TRAFFIC_YAW; }
+    const C=AUTO.car;
+    C.tc=C.tc||{ root:C.root, s:0, v:11, cv:0, near:false, halt:0, auto:true };
+    AUTO.tc=C.tc; AUTO.tc.cv=0;
+    tlAutoSeat();
+    try{ avatarMeshes.forEach(m=>{ m.visibility=0; }); }catch(e){}           // da fuori non si vede (vedi tlAutoPov)
+    camera.setTarget(C.root.position.add(new BABYLON.Vector3(0,1.2,0)),false,false,true);
+    camera.alpha=tlSkyCamAlpha(tlAutoH())+0.7; camera.beta=1.15; camera.radius=8.5;
+    tlAutoUi(true); tlAutoPanel(true); tlAutoNavDraw();
     AUTO.obs=scene.onBeforeRenderObservable.add(tlAutoTick);
-    questHudSet("listening", HOBJ("\u{1F697} Tell <b>AUTO-1</b> where to go. Press <b>O</b> to sit inside."
-        +' <button type="button" class="qm-btn ghost listen-replay-btn" style="padding:3px 10px;margin-left:6px;">\ud83d\udd0a</button>',
-      "\u{1F697} Di' ad <b>AUTO-1</b> dove andare. Premi <b>O</b> per stare dentro."), Quest.i, Quest.total);
-    { const b=qhud.obj.querySelector(".listen-replay-btn"); if(b) b.onclick=(e)=>{ try{ e.stopPropagation(); }catch(err){} tlAutoSayYuki(); }; }
     finFade(0,800,()=>tlAutoAsk());
   });
 }
-/* 2) la destinazione: scritta o a voce, in una frase */
+/* l'avatar seduto davanti a sinistra; l'anca si tiene nel sistema dell'auto */
+function tlAutoSeat(){
+  const C=AUTO.car, h=tlAutoH(), f=new BABYLON.Vector3(Math.sin(h),0,Math.cos(h));
+  const gy=C.root.position.y+0.34, sy=C.root.position.y+0.56, sw=tlAutoL2W(C.seat.x,0,C.seat.z);
+  player.position.set(sw.x,gy,sw.z); player.rotation.y=h; player.computeWorldMatrix(true);
+  try{ playAvatarAnim(IDLE_ANIM); }catch(e){}
+  let off=null; try{ off=playerSit(f,sy,gy); }catch(e){}
+  off=off||new BABYLON.Vector3(0,0,0);
+  const c=Math.cos(h), s=Math.sin(h);                     // anca -> coordinate dell'auto
+  AUTO.hip={ x:off.x*c-off.z*s, z:off.x*s+off.z*c };
+  tlAutoSeatFollow();
+}
+function tlAutoSeatFollow(){
+  if(!AUTO.car || !AUTO.hip) return;
+  const C=AUTO.car, h=tlAutoH(), c=Math.cos(h), s=Math.sin(h);
+  const sw=tlAutoL2W(C.seat.x,0,C.seat.z-0.04);
+  const ox=AUTO.hip.x*c+AUTO.hip.z*s, oz=-AUTO.hip.x*s+AUTO.hip.z*c;
+  player.position.set(sw.x-ox, C.root.position.y+0.34, sw.z-oz); player.rotation.y=h;
+}
+/* ---- la meta: scritta o a voce, in una frase ---- */
 function tlAutoAsk(){
   if(!AUTO.on) return;
   AUTO.phase="ask";
   const mic=_SpkRec?'<button type="button" id="tlAutoMic" class="qm-btn" style="margin-left:6px;">\u{1F3A4}</button>':"";
   DialogueBox.open({ name:"\u{1F697} AUTO-1", sub:"Self-driving car · TechLab prototype", autoSpeak:true, ttsOpts:{ gender:"f" },
     text:"Hello! I'm AUTO-1. I have no steering wheel: you just tell me where to go. Where would you like to go?",
-    italian:"Scrivi (o di' col microfono) una frase per chiedere la destinazione: «Take me to …, please». Il posto è quello del messaggio di Yuki.",
+    italian:"Scrivi (o di' col microfono) una frase: «Take me to the school, please». AUTO-1 ti porta nel punto più vicino e ti lascia sul marciapiede. Premi O per guardare dentro.",
     html:'<div style="display:flex;align-items:center;"><input id="tlAutoIn" type="text" autocomplete="off" '
       +'placeholder="Take me to …, please." style="flex:1;font:inherit;padding:8px 10px;border-radius:10px;border:1px solid #ccd6da;">'+mic+'</div>'
       +'<div id="tlAutoFb" style="margin-top:8px;min-height:20px;font-weight:600;"></div>',
-    buttons:[{ label:"\u{1F50A} Yuki's message", cls:"ghost", keepOpen:true, act:()=>tlAutoSayYuki() },
+    buttons:[{ label:"\u{1F6AA} Get out", cls:"ghost", act:()=>tlAutoEnd(null,false,true) },
              { label:"✔ Go", cls:"primary", keepOpen:true, act:()=>{ const i=document.getElementById("tlAutoIn"); tlAutoTry(i?i.value:""); } }] });
-  const m=document.getElementById("tlAutoMic"); if(m) m.onclick=tlAutoMic;
+  const m=document.getElementById("tlAutoMic"); if(m) m.onclick=()=>tlAutoMic("tlAutoIn",tlAutoTry,"tlAutoFb");
   setTimeout(()=>{ const i=document.getElementById("tlAutoIn"); if(i) try{ i.focus(); }catch(e){} },400);
 }
-function tlAutoMic(){
+function tlAutoMic(inputId,cb,fbId){
   if(!_SpkRec) return;
-  const fb=document.getElementById("tlAutoFb");
+  const fb=document.getElementById(fbId);
   try{ speechSynthesis.cancel(); }catch(e){}
   try{ const r=new _SpkRec(); r.lang="en-GB"; r.interimResults=false; r.maxAlternatives=1;
     r.onresult=e=>{ const t=(e.results[0]&&e.results[0][0]&&e.results[0][0].transcript)||"";
-      const i=document.getElementById("tlAutoIn"); if(i) i.value=t; if(t) tlAutoTry(t); };
+      const i=document.getElementById(inputId); if(i) i.value=t; if(t) cb(t); };
     r.onerror=e=>{ if(fb) fb.textContent=(e.error==="not-allowed"||e.error==="service-not-allowed")
       ? "⚠️ Allow the microphone in the browser — or type." : "⚠️ I didn't hear you well — try again, or type."; };
     r.start(); if(fb) fb.textContent="\u{1F534} I'm listening…";
   }catch(e){ if(fb) fb.textContent="⚠️ Microphone not available — please type."; }
 }
+function tlAutoNorm(raw){ return String(raw||"").toLowerCase().replace(/[^a-z0-9&' ]+/g," ").replace(/\s+/g," ").trim(); }
 function tlAutoTry(raw){
-  const fb=document.getElementById("tlAutoFb"), ms=Quest.state.ms;
+  const fb=document.getElementById("tlAutoFb");
   const say=(t,ok)=>{ if(fb){ fb.textContent=t; fb.style.color=ok?"#166534":"#991b1b"; } };
-  const t=String(raw||"").toLowerCase().replace(/[^a-z' ]+/g," ").replace(/\s+/g," ").trim();
+  const t=tlAutoNorm(raw);
   if(!t){ say("Write your sentence first."); return; }
-  let P=null; for(const q of AUTO_PLACES) if(q.re.test(t)){ P=q; break; }
-  if(!P){ say("Sorry, where? I know the airport, the hospital, the school, the station…"); return; }
+  let P=null; for(const q of AUTO_DEST) if(q.re.test(t)){ P=q; break; }
+  if(!P){ say("Sorry, where? I know the school, the cinema, the station, the airport, the market, the hospital…"); return; }
   const polite=/\b(take|drive|bring|go|going|like|want|can|could|please)\b/.test(t);
   if(t.split(" ").length<3 || !polite){ say("Please ask me in a full sentence: “Take me to "+P.name+", please.”"); return; }
-  if(P.key!==ms.dest){
-    ms.aWrong=(ms.aWrong||0)+1;
-    if(ms.aWrong>=2){ ms.aRev=true; }
-    say("“"+P.name.charAt(0).toUpperCase()+P.name.slice(1)+"”? Hmm… will Yuki be there? Listen to her message again. \u{1F50A}"); return; }
   say("✓ "+P.name.charAt(0).toUpperCase()+P.name.slice(1)+"! Let's go.", true);
   setTimeout(()=>{ try{ DialogueBox.close(); }catch(e){} tlAutoGo(P); }, 700);
 }
-/* 3) la corsa: si sceglie il giro, si esce dallo stallo, si entra nel traffico */
-function tlAutoRoute(P){
-  const at=P.at&&P.at(); if(!at) return null;
+/* ---- il percorso: il giro col punto piu' vicino alla meta, poi il piu' corto ---- */
+function _aNearNode(p,pad){ for(const k in TRAFFIC_NODES){ const n=TRAFFIC_NODES[k]; if(Math.hypot(p[0]-n.x,p[1]-n.z)<n.R+pad) return true; } return false; }
+function tlAutoRoute(at,from){
   let best=null;
   TRAFFIC_LOOPS.forEach(L=>{ _loopMeta(L);
-    const ei=L.__find(-37,-33.25,1,0,2.5); if(ei<0) return;
-    let di=-1, dd=14; for(let i=0;i<L.length;i++){ const d=Math.hypot(L[i][0]-at.x,L[i][1]-at.z); if(d<dd){ dd=d; di=i; } }
+    let ei=-1;
+    if(from && from.loop===L) ei=from.i;
+    else if(!from) ei=L.__find(-34,-33.25,1,0,2.5);
+    if(ei<0) return;
+    let di=-1, dd=1e9; for(let i=0;i<L.length;i++){ const d=Math.hypot(L[i][0]-at.x,L[i][1]-at.z); if(d<dd){ dd=d; di=i; } }
     if(di<0) return;
-    /* mai fermarsi dentro una rotonda: si torna indietro finche' se ne e' fuori */
-    let guard=0; while(guard++<60 && Object.keys(TRAFFIC_NODES).some(k=>{ const n=TRAFFIC_NODES[k]; return Math.hypot(L[di][0]-n.x,L[di][1]-n.z)<n.R+3.5; })) di=(di-1+L.length)%L.length;
-    const len=(L.L[di]-L.L[ei]+L.tot)%L.tot;
-    if(!best || len<best.len) best={ L, ei, di, len, at }; });
+    let g=0; while(g++<80 && _aNearNode(L[di],3.5)) di=(di-1+L.length)%L.length;
+    const dEnd=Math.hypot(L[di][0]-at.x,L[di][1]-at.z);
+    let len=(L.L[di]-L.L[ei]+L.tot)%L.tot; if(len<25) len+=L.tot;     // troppo vicino: un giro intero, non un salto
+    const score=dEnd*200+len;                                      // prima la vicinanza alla meta (Giacomo: «il posto piu' vicino possibile»), poi la strada
+    if(!best || score<best.score) best={ L, ei, di, len, at, dEnd, score }; });
   return best;
 }
-function tlAutoGo(P){
-  const R=tlAutoRoute(P);
-  if(!R){ toast("⚠️ AUTO-1: no route."); tlAutoArrive(P); return; }
-  AUTO.phase="drive"; AUTO.place=P; AUTO.route=R; AUTO.said={};
-  questHudSet("listening", HOBJ("\u{1F697} AUTO-1 is taking you to <b>"+P.name+"</b>. Press <b>O</b> to sit inside.",
-    "\u{1F697} AUTO-1 ti porta a <b>"+P.name+"</b>. Premi <b>O</b> per stare dentro."), Quest.i, Quest.total);
-  try{ TTS.say("OK! We're going to "+P.name+". Sit back and relax.",{ gender:"f" }); }catch(e){}
-  /* il tracciato per la mappa del tablet */
-  const L=R.L, tmp={ loop:L, seg:L.seg, L:L.L, tot:L.tot, si:0 }, pts=[];
-  for(let d=0; d<=R.len; d+=4) pts.push(carLoopPos(tmp,(L.L[R.ei]+d)%L.tot));
-  R.pts=pts;
-  /* uscita dallo stallo: Bezier fino al punto d'ingresso, poi si e' traffico */
-  const tc=AUTO.tc, root=tc.root, E=L[R.ei], E2=L[(R.ei+2)%L.length];
-  const ux=E2[0]-E[0], uz=E2[1]-E[1], ul=Math.hypot(ux,uz)||1;
-  const A=new BABYLON.Vector3(root.position.x,0,root.position.z), P1=A.add(new BABYLON.Vector3(0,0,-3.2)),
-        P3=new BABYLON.Vector3(E[0],0,E[1]), P2=P3.add(new BABYLON.Vector3(-ux/ul*4.5,0,-uz/ul*4.5));
-  const bez=u=>{ const v=1-u; return A.scale(v*v*v).add(P1.scale(3*v*v*u)).add(P2.scale(3*v*u*u)).add(P3.scale(u*u*u)); };
-  const T=3600, t0=performance.now(); let prev=A.clone();
-  AUTO.merging=true;
+function tlAutoPts(R){ const L=R.L, tmp={ loop:L, seg:L.seg, L:L.L, tot:L.tot, si:0 }, pts=[];
+  for(let d=0; d<=R.len; d+=4) pts.push(carLoopPos(tmp,(L.L[R.ei]+d)%L.tot)); return pts; }
+/* curva Bezier fatta a mano (uscite/entrate fuori dalla corsia) */
+function tlAutoCurve(P0,P1,P2,P3,T,heading,done){
+  const tc=AUTO.car.tc, root=tc.root, t0=performance.now(); let prev=P0.clone();
+  const bez=u=>{ const v=1-u; return P0.scale(v*v*v).add(P1.scale(3*v*v*u)).add(P2.scale(3*v*u*u)).add(P3.scale(u*u*u)); };
   const ob=scene.onBeforeRenderObservable.add(()=>{
-    if(!AUTO.on){ scene.onBeforeRenderObservable.remove(ob); return; }
+    if(!AUTO.car){ scene.onBeforeRenderObservable.remove(ob); return; }
     const k=Math.min(1,(performance.now()-t0)/T), u=k*k*(3-2*k), p=bez(u);
     root.position.x=p.x; root.position.z=p.z;
-    if(Math.hypot(p.x-prev.x,p.z-prev.z)>0.003){ AUTO.h=Math.atan2(p.x-prev.x,p.z-prev.z); root.rotation.y=AUTO.h+TRAFFIC_YAW; }
+    if(heading!==false && Math.hypot(p.x-prev.x,p.z-prev.z)>0.003){
+      const want=Math.atan2(p.x-prev.x,p.z-prev.z)+TRAFFIC_YAW; let d=want-root.rotation.y;
+      while(d>Math.PI) d-=2*Math.PI; while(d<-Math.PI) d+=2*Math.PI; root.rotation.y+=d*0.35; }
     tc.cv=Math.hypot(p.x-prev.x,p.z-prev.z)/Math.max(0.001,engine.getDeltaTime()/1000); prev=p;
-    if(k>=1){ scene.onBeforeRenderObservable.remove(ob);
-      _tcBind(tc,L); tc.s=L.L[R.ei]; tc.cv=3; tc.stopS=L.L[R.di]; tc.arrived=false;
-      tc.onArrive=()=>tlAutoPullOver(P);
-      try{ carGroundRig(tc); }catch(e){}
-      _trafficCars.push(tc); AUTO.merging=false;
-      setTimeout(()=>{ try{ if(AUTO.tc===tc && !tc.wh) tc.wh=carWheelsRig(tc); }catch(e){} },60); } });
+    if(k>=1){ scene.onBeforeRenderObservable.remove(ob); if(done) done(); } });
 }
-/* arrivati: si accosta verso la porta, si esce dal traffico */
-function tlAutoPullOver(P){
-  const tc=AUTO.tc; if(!tc || AUTO.phase!=="drive") return;
-  AUTO.phase="arrive";
-  const k=_trafficCars.indexOf(tc); if(k>=0) _trafficCars.splice(k,1);
-  TRAFFIC_ZONES.forEach(Z=>{ if(Z.h===tc) Z.h=null; });
-  try{ TTS.say("You have arrived at "+P.name+".",{ gender:"f" }); }catch(e){}
-  const root=tc.root, at=AUTO.route&&AUTO.route.at, h=AUTO.h;
-  const nx=Math.cos(h), nz=-Math.sin(h);                 // la destra dell'auto
-  let side=1; if(at){ side=((at.x-root.position.x)*nx+(at.z-root.position.z)*nz)>=0?1:-1; }
+function tlAutoSetSpeed(kmh){ AUTO.kmh=Math.max(AUTO_KMH.min,Math.min(AUTO_KMH.max,kmh));
+  if(AUTO.car&&AUTO.car.tc) AUTO.car.tc.v=AUTO.kmh/3.6/TRAFFIC_SPEED; }
+function tlAutoGo(P){
+  const at=P.at&&P.at(); const R=at?tlAutoRoute(at,null):null;
+  if(!R){ toast("⚠️ AUTO-1: no route."); tlAutoEnd(null,false,true); return; }
+  AUTO.phase="drive"; AUTO.place=P; AUTO.route=R; AUTO.said={}; R.pts=tlAutoPts(R);
+  tlAutoSetSpeed(AUTO.kmh);
+  try{ TTS.say("OK! We're going to "+P.name+". Sit back and relax.",{ gender:"f" }); }catch(e){}
+  const tc=AUTO.car.tc, L=R.L, E=L[R.ei], E2=L[(R.ei+2)%L.length];
+  const ux=E2[0]-E[0], uz=E2[1]-E[1], ul=Math.hypot(ux,uz)||1, root=tc.root;
+  const A=new BABYLON.Vector3(root.position.x,0,root.position.z), P3=new BABYLON.Vector3(E[0],0,E[1]);
+  AUTO.merging=true;
+  tlAutoCurve(A, A.add(new BABYLON.Vector3(0,0,-3.2)), P3.add(new BABYLON.Vector3(-ux/ul*4.5,0,-uz/ul*4.5)), P3, 3600, true, ()=>{
+    if(!AUTO.car) return;
+    _tcBind(tc,L); tc.s=L.L[R.ei]; tc.cv=3; tc.stopS=L.L[R.di]; tc.arrived=false; tc.manual=false;
+    tc.onArrive=()=>tlAutoPullOver(tc,"drop");
+    try{ carGroundRig(tc); }catch(e){}
+    if(_trafficCars.indexOf(tc)<0) _trafficCars.push(tc);
+    AUTO.merging=false; AUTO.qT=4;
+    setTimeout(()=>{ try{ if(!tc.wh) tc.wh=carWheelsRig(tc); }catch(e){} },60); });
+}
+/* ---- arrivati: si accosta (le auto dietro aspettano), poi si scende ---- */
+function tlAutoPullOver(tc,why){
+  if(why==="drop" && AUTO.phase!=="drive") return;
+  tc.manual=true;                                  // il traffico non la muove, ma la vede ancora
+  const root=tc.root, at=(why==="drop"&&AUTO.route)?AUTO.route.at:null, h=root.rotation.y-TRAFFIC_YAW;
+  const nx=Math.cos(h), nz=-Math.sin(h);           // la destra dell'auto
+  let side=-1; if(at) side=((at.x-root.position.x)*nx+(at.z-root.position.z)*nz)>=0?1:-1;
+  tc.side=side;
+  if(why==="drop"){ AUTO.phase="arrive"; try{ TTS.say("We're here! I'm pulling over.",{ gender:"f" }); }catch(e){} }
   const x0=root.position.x, z0=root.position.z, fx=Math.sin(h), fz=Math.cos(h), t0=performance.now();
   const ob=scene.onBeforeRenderObservable.add(()=>{
-    if(!AUTO.on){ scene.onBeforeRenderObservable.remove(ob); return; }
-    const q=Math.min(1,(performance.now()-t0)/1500), u=q*q*(3-2*q);
-    root.position.x=x0+fx*3.5*u+nx*side*2.3*u; root.position.z=z0+fz*3.5*u+nz*side*2.3*u;
-    root.rotation.y=h+TRAFFIC_YAW+side*0.35*Math.sin(q*Math.PI);
-    tc.cv=(1-q)*2;
-    if(q>=1){ scene.onBeforeRenderObservable.remove(ob); tc.cv=0; tlAutoArrive(P); } });
+    const q=Math.min(1,(performance.now()-t0)/1800), u=q*q*(3-2*q);
+    root.position.x=x0+fx*4*u+nx*side*2.4*u; root.position.z=z0+fz*4*u+nz*side*2.4*u;
+    root.rotation.y=h+TRAFFIC_YAW+side*0.3*Math.sin(q*Math.PI);
+    tc.cv=(1-q)*2.5;
+    if(q>=1){ scene.onBeforeRenderObservable.remove(ob); tc.cv=0;
+      /* fuori dalla corsia: ora puo' uscire dal traffico */
+      const k=_trafficCars.indexOf(tc); if(k>=0) _trafficCars.splice(k,1);
+      TRAFFIC_ZONES.forEach(Z=>{ if(Z.h===tc) Z.h=null; });
+      if(why==="drop") tlAutoDrop(); else if(why==="home") tlAutoParkIn(tc); } });
 }
-function tlAutoArrive(P){
-  AUTO.phase="arrived"; AUTO.idle=0;
-  DialogueBox.open({ ttsOpts:{gender:"f"}, name:"\u{1F469}‍\u{1F680} Yuki Sato", sub:"At "+P.name, autoSpeak:true,
-    text:"You're here! My kit — thank you, TechLab! And you came in a car with no driver. In 2050 everybody will travel like this… or maybe not!",
-    italian:"",
-    buttons:[{ label:"✔ Back to the TechLab", cls:"primary", act:()=>tlAutoEnd(()=>Quest.complete("🎧 Listening completato! Will e may/might ✓")) }] });
+/* si scende sul marciapiede, dal lato del marciapiede */
+function tlAutoDrop(){
+  const C=AUTO.car, tc=C.tc, P=AUTO.place, R=AUTO.route;
+  try{ playerStand(); }catch(e){}
+  const h=tlAutoH(), nx=Math.cos(h)*tc.side, nz=-Math.sin(h)*tc.side;
+  let spot=null;
+  for(const d of [C.HW+1.0, C.HW+1.6, C.HW+0.6]){ for(const f of [0,-1.2,1.2]){
+    const x=C.root.position.x+nx*d+Math.sin(h)*f, z=C.root.position.z+nz*d+Math.cos(h)*f;
+    try{ if(!blocked(x,z)){ spot={x,z}; break; } }catch(e){ spot={x,z}; break; } } if(spot) break; }
+  if(!spot) spot={ x:C.root.position.x+nx*(C.HW+1.0), z:C.root.position.z+nz*(C.HW+1.0) };
+  const far=(R&&R.dEnd)||0, dst=R&&R.at;
+  tlAutoEnd(()=>{
+    player.position.set(spot.x,0,spot.z); player.rotation.y=Math.atan2(nx,nz);
+    try{ camera.setTarget(player.position.add(new BABYLON.Vector3(0,1.4,0)),false,false,true); }catch(e){}
+    let msg="\u{1F697} AUTO-1: Here you are — "+(P?P.name:"")+"! Have a nice day!";
+    if(dst && far>14){ try{ NAV.target=new BABYLON.Vector3(dst.x,0,dst.z); NAV.label=P.name; }catch(e){}
+      msg+=" It's about "+Math.round(far/5)*5+" metres from here: follow the compass."; }
+    toast(msg);
+    try{ if(!Sync.get("et_auto1",null)) Sync.set("et_auto1",{ at:Date.now() }); }catch(e){}
+    setTimeout(()=>tlAutoReturn(), 2500);
+  }, false, false, true);
 }
-/* la prima persona: O dentro AUTO-1 */
+/* ---- da sola torna allo stallo: stesso giro, poi dentro e si gira ---- */
+function tlAutoReturn(){
+  const C=AUTO.car; if(!C) return; const tc=C.tc, L=tc.loop;
+  if(!L || !townOpen()){ tlAutoParkNow(); return; }
+  AUTO.busy="return";
+  const hi=L.__find(-46,-33.25,1,0,2.5);
+  if(hi<0){ tlAutoParkNow(); return; }
+  /* di nuovo in corsia, un po' piu' avanti di dove si era fermata */
+  const s1=(tc.s+7)%tc.tot, P=carLoopPos(tc,s1), Q=carLoopPos(tc,s1+3), root=tc.root;
+  const A=new BABYLON.Vector3(root.position.x,0,root.position.z), B=new BABYLON.Vector3(P[0],0,P[1]);
+  const u=new BABYLON.Vector3(Q[0]-P[0],0,Q[1]-P[1]).normalize();
+  const h=tlAutoH(), f=new BABYLON.Vector3(Math.sin(h),0,Math.cos(h));
+  const go=()=>tlAutoCurve(A, A.add(f.scale(2.5)), B.subtract(u.scale(3)), B, 2200, true, ()=>{
+    tc.s=s1; tc.stopS=L.L[hi]; tc.arrived=false; tc.manual=false; tc.v=11;
+    tc.onArrive=()=>tlAutoParkIn(tc);
+    if(_trafficCars.indexOf(tc)<0) _trafficCars.push(tc); });
+  /* aspetta che la corsia dietro sia libera, poi rientra */
+  let tries=0; const wait=()=>{ if(!AUTO.car) return;
+    const busy=_trafficCars.some(o=>o!==tc && Math.hypot(o.root.position.x-B.x,o.root.position.z-B.z)<12);
+    if(busy && tries++<20){ setTimeout(wait,700); return; } go(); };
+  wait();
+}
+function tlAutoParkIn(tc){
+  const k=_trafficCars.indexOf(tc); if(k>=0) _trafficCars.splice(k,1);
+  TRAFFIC_ZONES.forEach(Z=>{ if(Z.h===tc) Z.h=null; });
+  tc.manual=true;
+  const root=tc.root, A=new BABYLON.Vector3(root.position.x,0,root.position.z), S=new BABYLON.Vector3(AUTO_STALL.x,0,AUTO_STALL.z);
+  tlAutoCurve(A, A.add(new BABYLON.Vector3(4,0,0)), S.add(new BABYLON.Vector3(0,0,-3.5)), S, 3000, true, ()=>{
+    /* nello stallo si gira sul posto (e' del 2050): muso verso la strada */
+    const r0=root.rotation.y, r1=Math.PI+TRAFFIC_YAW, t0=performance.now(); let d=r1-r0;
+    while(d>Math.PI) d-=2*Math.PI; while(d<-Math.PI) d+=2*Math.PI;
+    const ob=scene.onBeforeRenderObservable.add(()=>{ const q=Math.min(1,(performance.now()-t0)/1600);
+      root.rotation.y=r0+d*q*q*(3-2*q); tc.cv=0;
+      if(q>=1){ scene.onBeforeRenderObservable.remove(ob); AUTO.busy=""; } }); });
+}
+function tlAutoParkNow(){ const C=AUTO.car; if(!C) return; const tc=C.tc;
+  const k=_trafficCars.indexOf(tc); if(k>=0) _trafficCars.splice(k,1);
+  TRAFFIC_ZONES.forEach(Z=>{ if(Z.h===tc) Z.h=null; });
+  tc.manual=true; tc.cv=0; C.root.position.x=AUTO_STALL.x; C.root.position.z=AUTO_STALL.z; C.root.rotation.y=Math.PI+TRAFFIC_YAW; AUTO.busy=""; }
+/* ---- dentro: O ---- */
+/* gli occhi dell'avatar seduto, in coordinate dell'auto (y dal suolo dell'auto) */
+function tlAutoEyeRel(){ let e=1.05;
+  try{ const C=AUTO.car, standing=(typeof POV!=="undefined"&&POV.eye)||1.55, drop=(SIT.on&&SIT.drop)||0;
+    e=(player.position.y-C.root.position.y)+standing-drop; }catch(e2){}
+  return Math.max(0.85,Math.min(1.35,e)); }
 function tlAutoPov(on){
-  AUTO.pov=!!on;
-  if(AUTO.cock) AUTO.cock.setEnabled(AUTO.pov);
+  AUTO.pov=!!on; AUTO.look={ y:0, p:0 };
+  const C=AUTO.car;
+  if(C){ C.ck.setEnabled(AUTO.pov);
+    /* da fuori l'avatar non si vede (la testa usciva dal tetto); da dentro si'
+       (gambe e braccia), senza la testa davanti alla camera */
+    try{ avatarMeshes.forEach(m=>{ m.visibility=AUTO.pov?1:0; }); }catch(e){}
+    if(AUTO.pov){ const ey=tlAutoEyeRel(), S=C.seat;
+      C.roof.position.y=ey+0.24;
+      C.tab.position.set(S.x+0.36, ey-0.22, S.z+0.64);
+      C.tab.rotation.y=Math.atan2(0.36,0.64); C.tab.rotation.x=0.22;
+      /* ⚠️ non solo la testa: capelli, cappello, cappuccio stavano attaccati
+         alla camera (forme marroni semitrasparenti, visto a schermo). Via
+         tutto cio' che vive all'altezza degli occhi; corpo, braccia e gambe
+         restano (cominciano molto piu' in basso). */
+      try{ const eyW=C.root.position.y+ey;
+        avatarRoot.getChildMeshes(false).forEach(m=>{ try{ m.refreshBoundingInfo(!!m.skeleton); }catch(e){}
+          const b=m.getBoundingInfo().boundingBox;
+          if(b.maximumWorld.y>eyW-0.08 && b.minimumWorld.y>eyW-0.65) m.visibility=0; }); }catch(e){} } }
+  try{ _povHead(AUTO.pov?1:0); }catch(e){}
   camera.minZ=AUTO.pov?0.03:(AUTO.cam?AUTO.cam.minZ:camera.minZ);
-  toast(AUTO.pov?"\u{1F441}️ Inside AUTO-1 — press O to look from outside":"\u{1F697} Outside view — press O to sit inside");
+  toast(AUTO.pov?"\u{1F441}️ Inside AUTO-1 — drag the mouse (or ← →) to look around, O to go out":"\u{1F697} Outside view — press O to look inside");
 }
+const AUTO_PTR={ on:false, x:0, y:0 };
+(function(){ const cv=document.getElementById("rc")||document.querySelector("canvas"); if(!cv) return;
+  cv.addEventListener("pointerdown",e=>{ if(!(AUTO.on&&AUTO.pov)) return; AUTO_PTR.on=true; AUTO_PTR.x=e.clientX; AUTO_PTR.y=e.clientY; });
+  window.addEventListener("pointermove",e=>{ if(!AUTO_PTR.on) return;
+    AUTO.look.y+=(e.clientX-AUTO_PTR.x)*0.006; AUTO.look.p-=(e.clientY-AUTO_PTR.y)*0.004;   // trascina giu' = guarda giu'
+    AUTO.look.y=Math.max(-2.6,Math.min(2.6,AUTO.look.y)); AUTO.look.p=Math.max(-0.7,Math.min(0.6,AUTO.look.p));
+    AUTO_PTR.x=e.clientX; AUTO_PTR.y=e.clientY; });
+  window.addEventListener("pointerup",()=>{ AUTO_PTR.on=false; }); })();
 function tlAutoTick(){
-  if(!AUTO.on || !AUTO.tc) return;
-  const dt=Math.min(0.05,engine.getDeltaTime()/1000), root=AUTO.tc.root;
-  if(!(Quest.unit===UNIT_TECH && Quest.step && Quest.step.id==="listen") || !townOpen()){ tlAutoEnd(null,true); return; }
-  if(!AUTO.merging && AUTO.phase!=="ask") AUTO.h=root.rotation.y-TRAFFIC_YAW;
-  const h=AUTO.h;
+  if(!AUTO.on || !AUTO.car) return;
+  const dt=Math.min(0.05,engine.getDeltaTime()/1000), root=AUTO.car.root;
+  if(!townOpen() && AUTO.phase!=="ask"){ tlAutoEnd(null,true,true); return; }
+  tlAutoSeatFollow();
+  const h=tlAutoH();
   if(AUTO.pov){
-    const ex=root.position.x-Math.sin(h)*0.30, ez=root.position.z-Math.cos(h)*0.30;
-    camera.setTarget(new BABYLON.Vector3(ex,root.position.y+1.24,ez),false,false,true);
-    camera.radius=0.05; camera.alpha=tlSkyCamAlpha(h); camera.beta=Math.PI/2-0.10;
+    if(keys["arrowleft"]) AUTO.look.y=Math.max(-2.6,AUTO.look.y-1.6*dt);
+    if(keys["arrowright"]) AUTO.look.y=Math.min(2.6,AUTO.look.y+1.6*dt);
+    const C=AUTO.car, e=tlAutoL2W(C.seat.x,tlAutoEyeRel(),C.seat.z+0.06);
+    camera.setTarget(e,false,false,true);
+    camera.radius=0.05; camera.alpha=tlSkyCamAlpha(h+AUTO.look.y); camera.beta=Math.PI/2-0.08+AUTO.look.p;
   } else {
     const wa=tlSkyCamAlpha(h)+(AUTO.phase==="drive"?0:0.7), f=1-Math.exp(-dt*2.4);
     const wa2=tlAngTo(camera.alpha,wa); camera.alpha+=(wa2-camera.alpha)*f;
     camera.beta+=(1.2-camera.beta)*f; camera.radius+=(8.5-camera.radius)*f;
     camera.setTarget(BABYLON.Vector3.Lerp(camera.target,root.position.add(new BABYLON.Vector3(0,1.2,0)),Math.min(1,f*3)),false,false,true);
   }
-  /* finestra chiusa con Esc quando serve una risposta: si riapre */
-  if((AUTO.phase==="ask"||AUTO.phase==="arrived") && !_dlgOpen()){ AUTO.idle+=dt;
-    if(AUTO.idle>1.6){ AUTO.idle=0; if(AUTO.phase==="ask") tlAutoAsk(); else tlAutoArrive(AUTO.place); } }
-  else AUTO.idle=0;
+  /* la finestra della meta chiusa con Esc: si riapre */
+  if(AUTO.phase==="ask" && !_dlgOpen()){ AUTO.idle+=dt; if(AUTO.idle>1.6){ AUTO.idle=0; tlAutoAsk(); } } else AUTO.idle=0;
+  /* il cervellone: una domanda ogni ~20 s di strada */
+  if(AUTO.phase==="drive" && !AUTO.merging && !AUTO.q){ AUTO.qT-=dt; if(AUTO.qT<=0) tlAutoQuiz(); }
   const now=performance.now(); if(now-AUTO.lastNav>220){ AUTO.lastNav=now; tlAutoNavDraw(); }
 }
-/* il navigatore: prossima manovra (svolta o rotonda) entro 150 m */
+/* ---- il pannello in basso: velocita' in inglese + le domande ---- */
+function tlAutoPanel(on){
+  if(on){ if(!AUTO.panel){ const d=document.createElement("div"); d.id="auto1-panel";
+      d.style.cssText="position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:31;background:rgba(251,247,236,.96);"
+        +"color:#1d2a32;border-radius:14px;padding:8px 12px;font:14px/1.35 system-ui,sans-serif;box-shadow:0 6px 22px rgba(0,0,0,.25);"
+        +"width:min(560px,92vw);";
+      document.body.appendChild(d); AUTO.panel=d; } AUTO.panel.style.display=""; tlAutoPanelDraw(); }
+  else if(AUTO.panel) AUTO.panel.style.display="none";
+}
+function tlAutoPanelDraw(msg){
+  const d=AUTO.panel; if(!d) return;
+  const Q=AUTO.q;
+  let h='<div style="display:flex;gap:6px;align-items:center;">'
+    +'<span style="font-weight:800;white-space:nowrap">\u{1F697} '+AUTO.kmh+' km/h</span>'
+    +'<input id="auto1-cmd" type="text" autocomplete="off" placeholder="Tell AUTO-1: “Go faster, please” · “Drive at 30 km/h”" '
+    +'style="flex:1;min-width:0;font:inherit;padding:6px 9px;border-radius:9px;border:1px solid #ccd6da;">'
+    +(_SpkRec?'<button type="button" id="auto1-mic" class="qm-btn" style="padding:5px 9px">\u{1F3A4}</button>':'')
+    +'<button type="button" id="auto1-send" class="qm-btn primary" style="padding:5px 11px">✔</button></div>'
+    +'<div id="auto1-say" style="margin-top:5px;min-height:18px;font-weight:600;color:#2f6f80">'+(msg?_escHtml(msg):"")+'</div>';
+  if(Q){ h+='<div style="margin-top:6px;padding-top:6px;border-top:1px solid #e2dccd"><b>\u{1F9E0} AUTO-1 asks:</b> '+_escHtml(Q.q)
+      +'<div style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap">'
+      +Q.o.map((w,i)=>'<button type="button" class="qm-btn auto1-opt" data-i="'+i+'" style="padding:5px 14px">'+_escHtml(w)+'</button>').join("")
+      +'</div><div id="auto1-qfb" style="margin-top:4px;min-height:16px;font-weight:600"></div></div>'; }
+  const keep=document.getElementById("auto1-cmd"), val=keep?keep.value:"", foc=document.activeElement===keep;
+  d.innerHTML=h;
+  const inp=document.getElementById("auto1-cmd"); if(inp){ inp.value=val; if(foc) try{ inp.focus(); }catch(e){}
+    inp.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); tlAutoCmd(inp.value); } }; }
+  const sb=document.getElementById("auto1-send"); if(sb) sb.onclick=()=>{ const i=document.getElementById("auto1-cmd"); tlAutoCmd(i?i.value:""); };
+  const mb=document.getElementById("auto1-mic"); if(mb) mb.onclick=()=>tlAutoMic("auto1-cmd",tlAutoCmd,"auto1-say");
+  d.querySelectorAll(".auto1-opt").forEach(b=>{ b.onclick=()=>tlAutoAnswer(+b.getAttribute("data-i")); });
+}
+/* la velocita' si chiede in inglese; i limiti li dice la macchina */
+function tlAutoCmd(raw){
+  const t=tlAutoNorm(raw), say=m=>{ tlAutoPanelDraw(m); try{ TTS.say(m,{ gender:"f" }); }catch(e){} };
+  if(!t) return;
+  if(AUTO.phase!=="drive"){ say("Tell me where to go first!"); return; }
+  const n=t.match(/\b(\d{1,3})\b/);
+  let want=null;
+  if(n) want=+n[1];
+  else if(/\b(faster|speed up|quicker|hurry)\b/.test(t)) want=AUTO.kmh+10;
+  else if(/\b(slower|slow down|not so fast|too fast)\b/.test(t)) want=AUTO.kmh-10;
+  else if(/\bstop\b/.test(t)){ say("I can't stop in the middle of the road! I'll stop when we arrive."); return; }
+  else { say("Sorry? Try: “Go faster, please”, “Slow down, please” or “Drive at 30 km/h, please”."); return; }
+  if(t.split(" ").length<2){ say("Please ask me in a sentence: “Go faster, please.”"); return; }
+  if(want>AUTO_KMH.max){ tlAutoSetSpeed(AUTO_KMH.max); say("Sorry, I can't go faster than "+AUTO_KMH.max+" km/h: it's the speed limit in town. I'll drive at "+AUTO_KMH.max+"."); }
+  else if(want<AUTO_KMH.min){ tlAutoSetSpeed(AUTO_KMH.min); say("I won't go slower than "+AUTO_KMH.min+" km/h: the cars behind me might get angry! I'll drive at "+AUTO_KMH.min+"."); }
+  else { tlAutoSetSpeed(want); say("OK! I'll drive at "+AUTO.kmh+" km/h."); }
+}
+function tlAutoQuiz(){ AUTO.q=AUTO_QS[AUTO.qi%AUTO_QS.length]; AUTO.qi++; AUTO.q.tries=0; tlAutoPanelDraw();
+  try{ TTS.say(AUTO.q.q.replace("___","blank"),{ gender:"f" }); }catch(e){} }
+function tlAutoAnswer(i){
+  const Q=AUTO.q; if(!Q) return; const w=Q.o[i], fb=document.getElementById("auto1-qfb");
+  if(w===Q.ok){ const full=Q.q.replace("___",Q.ok);
+    if(fb){ fb.textContent="✓ Right! “"+full+"”"; fb.style.color="#166534"; }
+    try{ TTS.say(full,{ gender:"f" }); SFX.correct(); }catch(e){}
+    setTimeout(()=>{ if(AUTO.q===Q){ AUTO.q=null; AUTO.qT=20; tlAutoPanelDraw(); } }, 2600);
+  } else { Q.tries++;
+    try{ SFX.wrong(); }catch(e){}
+    if(fb){ fb.textContent=Q.tries>=2?"❌ It's “"+Q.ok+"” — "+Q.it+".":"❌ Not “"+w+"” — try again!"; fb.style.color="#991b1b"; }
+    if(Q.tries>=2) setTimeout(()=>{ if(AUTO.q===Q){ AUTO.q=null; AUTO.qT=20; tlAutoPanelDraw(); } }, 3200); }
+}
+/* ---- il navigatore: prossima manovra entro 150 m ---- */
 function tlAutoNext(){
-  const tc=AUTO.tc, R=AUTO.route; if(!tc||!R||!tc.loop||AUTO.phase!=="drive") return null;
+  const tc=AUTO.car&&AUTO.car.tc; if(!tc||!tc.loop||AUTO.phase!=="drive"||AUTO.merging) return null;
   const rem=(tc.stopS-tc.s+tc.tot)%tc.tot;
-  const pos=s=>carLoopPos(tc,s), hd=(s)=>{ const a=pos(s), b=pos(s+3); return Math.atan2(b[0]-a[0],b[1]-a[1]); };
+  const pos=s=>carLoopPos(tc,s), hd=s=>{ const a=pos(s), b=pos(s+3); return Math.atan2(b[0]-a[0],b[1]-a[1]); };
   const nodeAt=p=>{ for(const k in TRAFFIC_NODES){ const n=TRAFFIC_NODES[k]; if(Math.hypot(p[0]-n.x,p[1]-n.z)<n.R+2.5) return n; } return null; };
-  const h0=hd(tc.s);
   for(let d=4; d<Math.min(150,rem); d+=4){
     const p=pos(tc.s+d), n=nodeAt(p);
     if(n){ let e=d; while(e<d+60 && nodeAt(pos(tc.s+e))) e+=2;
       const turn=tlAngTo(0,hd(tc.s+e+4)-hd(tc.s+Math.max(0,d-6)));
-      const what=Math.abs(turn)<0.6?"go straight on":(turn>0?"turn right":"turn left");
-      return { d, key:"rb"+Math.round(n.x)+"_"+Math.round(n.z)+"_"+Math.round(tc.s/50), txt:"At the roundabout, "+what+"." }; }
+      const dir=Math.abs(turn)<0.6?0:(turn>0?1:-1);
+      return { d, dir, key:"rb"+Math.round(n.x)+"_"+Math.round(n.z)+"_"+Math.round(tc.s/50), txt:"At the roundabout, "+(dir===0?"go straight on.":dir>0?"turn right.":"turn left.") }; }
     const turn=tlAngTo(0,hd(tc.s+d+12)-hd(tc.s+d-4));
-    if(Math.abs(turn)>0.55) return { d, key:"t"+Math.round((tc.s+d)/20), txt:(turn>0?"Turn right.":"Turn left.") };
+    if(Math.abs(turn)>0.55) return { d, dir:turn>0?1:-1, key:"t"+Math.round((tc.s+d)/20), txt:(turn>0?"Turn right.":"Turn left.") };
   }
-  return { d:rem, key:"arr", txt:"Go straight on." };
+  return { d:rem, dir:0, key:"arr", txt:"Go straight on." };
 }
+function _rr(c,x,y,w,h,r){ c.beginPath(); c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r); c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath(); }
 function tlAutoNavDraw(){
-  const tc=AUTO.tc, R=AUTO.route, nx=tlAutoNext();
+  const C=AUTO.car, tc=C&&C.tc, R=AUTO.route, nx=tlAutoNext();
   const kmh=Math.round((tc?tc.cv:0)*TRAFFIC_SPEED*3.6);
   const rem=(tc&&R&&tc.loop&&AUTO.phase==="drive")?(tc.stopS-tc.s+tc.tot)%tc.tot:0;
   const eta=rem>0?Math.round(rem/Math.max(6,(tc.cv||0)*TRAFFIC_SPEED)):0;
   const low=t=>t.charAt(0).toLowerCase()+t.slice(1);
-  let msg=AUTO.phase==="ask"?"Where would you like to go?":AUTO.phase==="drive"?(nx?(nx.d>8?"In "+Math.max(10,Math.round(nx.d/10)*10)+" metres, "+low(nx.txt):nx.txt):""):AUTO.phase==="arrive"||AUTO.phase==="arrived"?"You have arrived!":"";
-  /* le indicazioni a voce: una volta per manovra, a 60 m e a 15 m */
-  if(nx && AUTO.phase==="drive" && nx.key!=="arr"){
-    if(nx.d<=60 && nx.d>20 && !AUTO.said[nx.key+"a"]){ AUTO.said[nx.key+"a"]=1; try{ TTS.say("In "+Math.round(nx.d/10)*10+" metres, "+nx.txt.charAt(0).toLowerCase()+nx.txt.slice(1),{ gender:"f" }); }catch(e){} }
-  }
+  const msg=AUTO.phase==="ask"?"Where would you like to go?":AUTO.phase==="drive"?(nx?(nx.d>8?"In "+Math.max(10,Math.round(nx.d/10)*10)+" metres, "+low(nx.txt):nx.txt):"")
+           :(AUTO.phase==="arrive"?"You have arrived!":"");
+  if(nx && AUTO.phase==="drive" && nx.key!=="arr" && nx.d<=60 && nx.d>20 && !AUTO.said[nx.key]){ AUTO.said[nx.key]=1;
+    try{ if(!AUTO.q) TTS.say("In "+Math.round(nx.d/10)*10+" metres, "+low(nx.txt),{ gender:"f" }); }catch(e){} }
   if(AUTO.ui){ AUTO.ui.innerHTML='<b>\u{1F697} AUTO-1</b> · '+kmh+' km/h'+(AUTO.place?' · \u{1F3C1} '+_escHtml(AUTO.place.name):'')
       +(eta?' · '+Math.floor(eta/60)+':'+String(eta%60).padStart(2,"0"):'')+(msg?'<div style="font-weight:700;margin-top:2px;">'+_escHtml(msg)+'</div>':''); }
   if(!AUTO.dt || !AUTO.pov) return;
-  const c=AUTO.dt.getContext(), W=640, H=400;
-  c.fillStyle="#0e161e"; c.fillRect(0,0,W,H);
-  c.fillStyle="#6fd0e8"; c.fillRect(0,0,W,46); c.fillStyle="#0d1b22"; c.font="bold 24px monospace"; c.textAlign="left";
-  c.fillText("AUTO-1 · NAVIGATOR",16,32); c.textAlign="right"; c.fillText(AUTO.place?AUTO.place.name.toUpperCase():"",W-16,32);
-  /* la mappa del tracciato */
-  const mx0=16, my0=60, mw=380, mh=320;
-  c.fillStyle="#16232e"; c.fillRect(mx0,my0,mw,mh);
+  /* il tablet: intestazione, mappa, tachimetro ad arco, manovra, arrivo */
+  const c=AUTO.dt.getContext(), W=768, H=480;
+  const g=c.createLinearGradient(0,0,0,H); g.addColorStop(0,"#0f1b26"); g.addColorStop(1,"#08111a"); c.fillStyle=g; c.fillRect(0,0,W,H);
+  const hg=c.createLinearGradient(0,0,W,0); hg.addColorStop(0,"#2f6f80"); hg.addColorStop(1,"#6fd0e8"); c.fillStyle=hg; c.fillRect(0,0,W,54);
+  c.fillStyle="#06121a"; c.font="bold 26px sans-serif"; c.textAlign="left"; c.textBaseline="middle"; c.fillText("AUTO-1",22,28);
+  c.font="20px sans-serif"; c.fillText("self-driving · 2050",120,29);
+  c.textAlign="right"; c.font="bold 22px sans-serif"; c.fillText(AUTO.place?AUTO.place.name:"",W-22,28);
+  _rr(c,18,70,452,392,22); c.fillStyle="#13242f"; c.fill();
   if(R && R.pts && R.pts.length>1){
     let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9; R.pts.forEach(p=>{ x0=Math.min(x0,p[0]); x1=Math.max(x1,p[0]); z0=Math.min(z0,p[1]); z1=Math.max(z1,p[1]); });
-    const sc=Math.min((mw-40)/Math.max(10,x1-x0),(mh-40)/Math.max(10,z1-z0));
-    const X=x=>mx0+20+(x-x0)*sc+((mw-40)-(x1-x0)*sc)/2, Y=z=>my0+20+(z-z0)*sc+((mh-40)-(z1-z0)*sc)/2;
-    c.lineWidth=7; c.lineCap="round"; c.lineJoin="round";
-    c.strokeStyle="#6fd0e8"; c.beginPath(); R.pts.forEach((p,i)=>{ if(i) c.lineTo(X(p[0]),Y(p[1])); else c.moveTo(X(p[0]),Y(p[1])); }); c.stroke();
-    const e=R.pts[R.pts.length-1]; c.fillStyle="#f2c93e"; c.beginPath(); c.arc(X(e[0]),Y(e[1]),11,0,Math.PI*2); c.fill();
-    const rp=tc.root.position; c.fillStyle="#ffffff"; c.beginPath(); c.arc(X(rp.x),Y(rp.z),9,0,Math.PI*2); c.fill();
-    c.strokeStyle="#c0392b"; c.lineWidth=3; c.stroke();
-  } else { c.fillStyle="#cfe6ee"; c.font="24px sans-serif"; c.textAlign="center"; c.fillText("Tell me where to go",mx0+mw/2,my0+mh/2); }
-  /* velocita', arrivo, manovra */
-  c.textAlign="center"; c.fillStyle="#ffffff"; c.font="bold 76px sans-serif"; c.fillText(String(kmh),520,150);
-  c.font="22px sans-serif"; c.fillStyle="#cfe6ee"; c.fillText("km/h",520,180);
-  if(eta){ c.font="bold 30px sans-serif"; c.fillStyle="#f6f1e2"; c.fillText(Math.floor(eta/60)+":"+String(eta%60).padStart(2,"0"),520,236);
-    c.font="20px sans-serif"; c.fillStyle="#cfe6ee"; c.fillText("to arrive",520,262); }
-  c.font="bold 22px sans-serif"; c.fillStyle="#9ff0c4";
-  const words=msg.split(" "); let line="", y=310;
-  words.forEach(w=>{ const t=line?line+" "+w:w; if(c.measureText(t).width>210){ c.fillText(line,520,y); y+=28; line=w; } else line=t; });
-  if(line) c.fillText(line,520,y);
+    const mx=40, sc=Math.min((452-2*mx)/Math.max(10,x1-x0),(392-2*mx)/Math.max(10,z1-z0));
+    const X=x=>18+mx+(x-x0)*sc+((452-2*mx)-(x1-x0)*sc)/2, Y=z=>70+mx+(z-z0)*sc+((392-2*mx)-(z1-z0)*sc)/2;
+    c.lineCap="round"; c.lineJoin="round";
+    c.strokeStyle="rgba(111,208,232,.25)"; c.lineWidth=18; c.beginPath(); R.pts.forEach((p,i)=>{ i?c.lineTo(X(p[0]),Y(p[1])):c.moveTo(X(p[0]),Y(p[1])); }); c.stroke();
+    c.strokeStyle="#6fd0e8"; c.lineWidth=7; c.stroke();
+    const e=R.pts[R.pts.length-1]; c.fillStyle="#f2c93e"; c.beginPath(); c.arc(X(e[0]),Y(e[1]),13,0,Math.PI*2); c.fill();
+    c.fillStyle="#13242f"; c.font="bold 16px sans-serif"; c.textAlign="center"; c.fillText("⚑",X(e[0]),Y(e[1])+1);
+    const rp=C.root.position; c.fillStyle="#ffffff"; c.beginPath(); c.arc(X(rp.x),Y(rp.z),11,0,Math.PI*2); c.fill();
+    c.strokeStyle="#ff6a5c"; c.lineWidth=4; c.stroke();
+  } else { c.fillStyle="#9fbac6"; c.font="26px sans-serif"; c.textAlign="center"; c.fillText("Where would you like to go?",244,266); }
+  /* tachimetro */
+  const cx=618, cy=176, rad=92, a0=Math.PI*0.8, a1=Math.PI*2.2, fr=Math.min(1,kmh/60);
+  c.lineWidth=16; c.lineCap="round"; c.strokeStyle="#22323d"; c.beginPath(); c.arc(cx,cy,rad,a0,a1); c.stroke();
+  c.strokeStyle=kmh>AUTO_KMH.max?"#ff6a5c":"#6fd0e8"; c.beginPath(); c.arc(cx,cy,rad,a0,a0+(a1-a0)*fr); c.stroke();
+  c.fillStyle="#ffffff"; c.textAlign="center"; c.font="bold 70px sans-serif"; c.fillText(String(kmh),cx,cy+4);
+  c.font="20px sans-serif"; c.fillStyle="#9fbac6"; c.fillText("km/h · max "+AUTO_KMH.max,cx,cy+50);
+  /* la manovra: freccia + testo */
+  _rr(c,488,300,262,162,18); c.fillStyle="#13242f"; c.fill();
+  if(nx){ c.save(); c.translate(540,370); c.rotate((nx.dir||0)*Math.PI/2.4); c.fillStyle="#9ff0c4";
+    c.beginPath(); c.moveTo(0,-30); c.lineTo(22,0); c.lineTo(8,0); c.lineTo(8,28); c.lineTo(-8,28); c.lineTo(-8,0); c.lineTo(-22,0); c.closePath(); c.fill(); c.restore(); }
+  c.textAlign="left"; c.fillStyle="#e6f6fb"; c.font="bold 21px sans-serif";
+  const words=String(msg||"").split(" "); let line="", y=338; words.forEach(w=>{ const t=line?line+" "+w:w; if(c.measureText(t).width>170){ c.fillText(line,578,y); y+=26; line=w; } else line=t; }); if(line) c.fillText(line,578,y);
+  if(eta){ c.fillStyle="#f2c93e"; c.font="bold 22px sans-serif"; c.fillText("⏱ "+Math.floor(eta/60)+":"+String(eta%60).padStart(2,"0"),578,440); }
   AUTO.dt.update();
 }
 /* il riquadro del navigatore anche fuori dall'abitacolo (DOM, in alto al centro) */
@@ -63647,37 +63871,44 @@ function tlAutoUi(on){
       document.body.appendChild(d); AUTO.ui=d; } AUTO.ui.style.display=""; }
   else if(AUTO.ui) AUTO.ui.style.display="none";
 }
-function tlAutoEnd(cb,abort){
+/* fine del giro: keepCar = l'auto resta in citta' (accostata o allo stallo) */
+function tlAutoEnd(cb,abort,keepCar){
   if(!AUTO.on){ if(cb) cb(); return; }
   AUTO.phase="end";
   const fin=function(){
     if(AUTO.obs){ scene.onBeforeRenderObservable.remove(AUTO.obs); AUTO.obs=null; }
-    const tc=AUTO.tc;
-    if(tc){ const k=_trafficCars.indexOf(tc); if(k>=0) _trafficCars.splice(k,1);
-      TRAFFIC_ZONES.forEach(Z=>{ if(Z.h===tc) Z.h=null; });
-      try{ tc.root.dispose(false,true); }catch(e){} }
-    AUTO.tc=null; AUTO.cock=null; AUTO.dt=null; AUTO.route=null; AUTO.merging=false;
-    /* AUTO-1 «torna da sola» al suo stallo */
-    if(AUTO.parked && AUTO.parked.root) AUTO.parked.root.setEnabled(true);
-    tlAutoUi(false);
+    try{ playerStand(); }catch(e){}
+    try{ _povHead(0); }catch(e){}
+    try{ avatarMeshes.forEach(m=>{ m.visibility=1; }); }catch(e){}
+    try{ if(AUTO.car) AUTO.car.ck.setEnabled(false); }catch(e){}
+    tlAutoUi(false); tlAutoPanel(false); AUTO.q=null;
     const c=AUTO.cam;
     if(c){ camera.lowerRadiusLimit=c.lr; camera.upperRadiusLimit=c.ur; camera.lowerBetaLimit=c.lb; camera.upperBetaLimit=c.ub; camera.minZ=c.minZ; }
     try{ camera.attachControl(document.getElementById("rc"),true); }catch(e){ try{ camera.attachControl(true); }catch(e2){} }
-    try{ avatarMeshes.forEach(m=>{ m.visibility=1; }); }catch(e){}
     try{ promptEl.style.display=""; }catch(e){}
+    try{ setLabelsVisible(area); }catch(e){}
     AUTO.on=false; AUTO.pov=false; AUTO.phase="";
-    try{
-      const I=INTERIORS[UNIT_TECH.area];
-      if(Quest.unit===UNIT_TECH && I && I.center){ enterArea(UNIT_TECH.area); player.position.set(I.center.x+3.3,0,I.center.z-2.6); player.rotation.y=Math.PI; }
-      else { const d=UNIT_TECH.doorPos; if(d) player.position.set(d.x,0,d.z); setLabelsVisible(area); }
-    }catch(e){}
-    if(c){ camera.beta=c.b; camera.radius=c.r; if(typeof camWish!=="undefined") camWish=c.r; }
-    camera.alpha=(area===UNIT_TECH.area)?Math.PI/2:(c?c.a:camera.alpha);
+    /* scesi prima di partire («Get out») o giro interrotto: a terra accanto all'auto */
+    if(!cb && AUTO.car){ const r=AUTO.car.root; player.position.set(r.position.x,0,r.position.z+3.6);   // marciapiede di High Street, non il boulevard
+      if(AUTO.car.tc && AUTO.car.tc.loop && _trafficCars.indexOf(AUTO.car.tc)>=0) tlAutoParkNow(); }
+    if(c){ camera.beta=c.b; camera.radius=c.r; camera.alpha=c.a; if(typeof camWish!=="undefined") camWish=c.r; }
     try{ camera.setTarget(player.position.add(new BABYLON.Vector3(0,1.4,0)),false,false,true); }catch(e){}
-    finFade(0,700,function(){ if(cb) cb(); });
+    if(cb) cb();
+    finFade(0,700);
   };
   if(abort){ fin(); return; }
   finFade(1,650,fin);
+}
+/* fine TechLab: Dr. Ito offre il primo giro (una volta per sessione) */
+function tlAutoOffer(){
+  if(AUTO.offered || AUTO.on) return; AUTO.offered=true;
+  try{ Sync.set("et_auto1",{ at:Date.now() }); }catch(e){}
+  const npc=(typeof TL_NPC!=="undefined"&&TL_NPC.ito)||null;
+  DialogueBox.open({ npc, icon:"\u{1F697}", sub:"A present from the TechLab", autoSpeak:true,
+    text:"Congratulations! AUTO-1 is yours now. It's in the car park outside: book it when you want. Would you like a ride now? You choose where!",
+    italian:"AUTO-1 è sbloccata: da ora la prenoti con E nel parcheggio davanti al TechLab. Vuoi fare subito un giro? Scegli tu dove andare.",
+    buttons:[{ label:"Not now", cls:"ghost" },
+             { label:"\u{1F697} Yes, take me!", cls:"primary", act:()=>tlAutoStart("finale") }] });
 }
 MECH.futureScanner=function(s){
   buildTechNPCs();
@@ -63928,7 +64159,7 @@ function tlLoad(entry,M,sure){
       text:"That's my kit! Five things: three for sure, two maybe. Thank you, TechLab!",
       italian:"",
       buttons:[{label:"\u2714 Done", cls:"primary",
-        act:()=>tlAutoBrief()}] });                    // v499: ora il kit va consegnato con AUTO-1
+        act:()=>Quest.complete("\ud83c\udfa7 Listening completato! Will e may/might \u2713")}] });
     return;
   }
   setTimeout(()=>tlRunCall(true), 460);
