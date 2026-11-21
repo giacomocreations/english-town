@@ -63919,6 +63919,24 @@ function tlAutoCabin(C,E){
     sp.material=trim; sp.parent=ck; sp.rotation.z=Math.PI/2; sp.position.set(x-sd*0.035,F+0.22,0.55); sp.isPickable=false;
     /* montanti: A (parabrezza), B (fra le porte), C (lunotto) */
     beam([x-sd*0.02,D,zW-0.02],[x-sd*0.09,R,zH],0.08,alc);
+    /* v502 (Giacomo: «nello sportello, dove si congiunge al vetro, e' rimasto
+       un pezzettino scoperto: la portiera e' un parallelepipedo, ci vuole un
+       pezzo che chiuda la parte obliqua»). Il triangolo davanti alla portiera
+       fra la plancia, la linea di cintura e il montante inclinato: un pannello
+       sagomato (come il triangolo dello specchietto delle auto vere), dello
+       stesso materiale della portiera, con il filo di metallo sopra. */
+    { const pz=y=>(zW-0.02)-(y-D)/(R-D)*((zW-0.02)-zH);       // il montante, a quota y
+      const y0=D-0.03, y1=B+0.012, zb=0.95, xs=x-sd*0.03, th=0.05;
+      const pts=[[y0,zb],[y0,zW+0.03],[y1,pz(y1)+0.02],[y1,zb]];
+      const pos=[], idx=[];
+      pts.forEach(q=>pos.push(xs-sd*th/2,q[0],q[1])); pts.forEach(q=>pos.push(xs+sd*th/2,q[0],q[1]));
+      [[0,1,2],[0,2,3],[4,6,5],[4,7,6],[0,4,5],[0,5,1],[1,5,6],[1,6,2],[2,6,7],[2,7,3],[3,7,4],[3,4,0]].forEach(t=>idx.push(t[0],t[1],t[2]));
+      const tri=new BABYLON.Mesh("a1tri",scene), vd=new BABYLON.VertexData(), nr=[];
+      BABYLON.VertexData.ComputeNormals(pos,idx,nr); vd.positions=pos; vd.indices=idx; vd.normals=nr; vd.applyToMesh(tri);
+      tri.convertToFlatShadedMesh(); tri.material=dark; tri.parent=ck; tri.isPickable=false;
+      /* il filo di metallo lungo il bordo obliquo, come sulla linea di cintura */
+      const ya=y1, za=pz(y1)+0.02, yb=y0+0.02, zb2=zW+0.03, L=Math.hypot(ya-yb,za-zb2);
+      const tr=box(0.03,0.025,L,trim,xs-sd*0.01,(ya+yb)/2,(za+zb2)/2); tr.rotation.x=-Math.atan2(yb-ya,zb2-za); }
     beam([x-sd*0.03,B,-0.42],[x-sd*0.09,R,-0.48],0.09,alc);
     beam([x-sd*0.03,B,zRW+0.02],[x-sd*0.10,R,zT],0.12,alc);
   });
