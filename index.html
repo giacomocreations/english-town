@@ -9843,11 +9843,20 @@ function buildTraffic(){
           if(dIn>c.tot-p.len){ if(Z.h==null) Z.h=c; c.zk=Z; continue; }          // ci sono dentro
           if(dIn>((c.auto&&c.fast)?30:16)) continue;
           c.zk=Z;
+          /* v507: TURBO-1 lascia la prenotazione se ora qualcuno le sta davanti */
+          if(c.auto && c.fast && Z.h===c && !_tcPathClear(c,dIn+3)) Z.h=null;
           if(Z.h===c) continue;
           /* v506 (Giacomo: «nelle rotonde, in modalita' hurry, passa per primo:
              non da' precedenza»). TURBO-1 di fretta si prende la rotonda: gli
              altri, vedendola prenotata, aspettano alla loro linea. */
-          if(c.auto && c.fast){ Z.h=c; continue; }
+          /* ⚠️ v507 (Giacomo: «la macchina davanti non va piu' avanti, e' ferma
+             alla rotonda»). BLOCCO RECIPROCO: TURBO-1 prenotava la rotonda
+             anche con un'auto in coda DAVANTI a lei: quella aspettava alla
+             linea (rotonda prenotata), TURBO-1 aspettava dietro di lei, e
+             nessuna ripartiva. Ora la precedenza vale solo con la strada
+             libera fino alla rotonda (gap>dIn): se c'e' qualcuno davanti, si
+             fa la coda come tutti. */
+          if(c.auto && c.fast && _tcPathClear(c,dIn+3)){ Z.h=c; continue; }   // (non gap: da ferma guarda solo 14 m)
           /* v554 (Giacomo: «non ho capito perche' a questa altezza le macchine
              si fermano»): si prenotava a 16 m e ci si fermava col muso a 9 m
              dal centro, senza niente per terra che lo spiegasse. Ora la
@@ -10015,6 +10024,13 @@ function _inCarBox(c,x,z){
    rientra anche a sorpasso fatto (l'altra e' 8 m dietro) o dopo 10 s.
    Spostamento morbido (c.ovo) applicato DOPO la posizione sul giro.
    ===================================================================== */
+/* v507: nessuna auto sul MIO percorso nei prossimi dmax metri (per la precedenza di TURBO-1) */
+function _tcPathClear(c,dmax){ const n=c.loop.length, i=_tcSeg(c,c.s), px=c.root.position.x, pz=c.root.position.z;
+  for(let k=0;k<_trafficCars.length;k++){ const o=_trafficCars[k]; if(o===c||!o.root) continue; const op=o.root.position;
+    if(Math.abs(op.x-px)>dmax+6||Math.abs(op.z-pz)>dmax+6) continue;
+    for(let q=1;q<240;q++){ const ix=(i+q)%n, g=(c.L[ix]-c.s+c.tot)%c.tot; if(g>dmax) break; if(g<1.2) continue;
+      const P=c.loop[ix], dx=op.x-P[0], dz=op.z-P[1]; if(dx*dx+dz*dz<2.6) return false; } }
+  return true; }
 const OVT_OFF=6.0;           // v506 (Giacomo: «deve spostarsi di piu' verso l'altra corsia»): tutto dentro la corsia opposta
 function _tcOvertake(c,dt,gap,gapO,slowAt){
   c.ovo=c.ovo||0; if(!c.ovt) c.ovt=0;
@@ -64280,7 +64296,7 @@ function tlAutoStart(mode,id){
   try{ standUpAll(); }catch(e){}
   AUTO.on=true; AUTO.mode=mode||"book"; AUTO.phase="ask"; AUTO.pov=false; AUTO.said={}; AUTO.idle=0;
   document.body.classList.add("veh","auto");               // v500: schermo pulito in auto (vedi CSS body.veh)
-  AUTO.look={ y:0, p:0 }; AUTO.kmh=40; AUTO.pend=0; AUTO.wild=0; AUTO.lastSay=""; AUTO.tour=null; AUTO.offer=null; AUTO.qT=0; AUTO.q=null; AUTO.place=null; AUTO.route=null;
+  AUTO.look={ y:0, p:0 }; AUTO.orbit=null; AUTO.kmh=40; AUTO.pend=0; AUTO.wild=0; AUTO.lastSay=""; AUTO.tour=null; AUTO.offer=null; AUTO.qT=0; AUTO.q=null; AUTO.place=null; AUTO.route=null;
   finFade(1,650,function(){
     /* dal TechLab (giro finale): la quest e' finita, si chiude e si esce in citta' */
     if(area!=="town"){ try{ if(Quest.unit) Quest.stop(); }catch(e){} try{ enterArea("town"); }catch(e){} }
@@ -64782,16 +64798,34 @@ function tlAutoPov(on){
           if(b.maximumWorld.y>eyW-0.08 && b.minimumWorld.y>eyW-0.65) m.visibility=0; }); }catch(e){} } }
   try{ _povHead(AUTO.pov?1:0); }catch(e){}
   camera.minZ=AUTO.pov?0.03:(AUTO.cam?AUTO.cam.minZ:camera.minZ);
-  toast(AUTO.pov?"\u{1F441}️ Inside "+tlAutoName()+" — drag the mouse (or ← →) to look around, O to go out":"\u{1F697} Outside view — press O to look inside");
+  toast(AUTO.pov?"\u{1F441}️ Inside "+tlAutoName()+" — drag the mouse (or ← →) to look around, O to go out":"\u{1F697} Outside view — drag to turn around the car, wheel to zoom, O to look inside");
 }
-const AUTO_PTR={ on:false, x:0, y:0 };
+/* v507 (Giacomo: «anche quando vedo la macchina da fuori devo poter cambiare
+   la prospettiva come con l'avatar: vederla di lato eccetera»). Da fuori:
+   trascina = gira attorno all'auto e su/giu', rotella (o pizzico) = zoom,
+   ← → = gira. La telecamera resta attaccata all'auto e la segue; il giro
+   scelto (AUTO.orbit) si somma alla direzione di marcia. Da dentro (O),
+   come prima: trascina = guardarsi intorno. */
+const AUTO_PTR={ on:false, x:0, y:0, pts:{}, pinch:0 };
 (function(){ const cv=document.getElementById("rc")||document.querySelector("canvas"); if(!cv) return;
-  cv.addEventListener("pointerdown",e=>{ if(!(AUTO.on&&AUTO.pov)) return; AUTO_PTR.on=true; AUTO_PTR.x=e.clientX; AUTO_PTR.y=e.clientY; });
+  cv.addEventListener("pointerdown",e=>{ if(!AUTO.on) return; AUTO_PTR.on=true; AUTO_PTR.x=e.clientX; AUTO_PTR.y=e.clientY;
+    AUTO_PTR.pts[e.pointerId]={ x:e.clientX, y:e.clientY }; AUTO_PTR.pinch=0; });
   window.addEventListener("pointermove",e=>{ if(!AUTO_PTR.on) return;
-    AUTO.look.y+=(e.clientX-AUTO_PTR.x)*0.006; AUTO.look.p-=(e.clientY-AUTO_PTR.y)*0.004;   // trascina giu' = guarda giu'
-    AUTO.look.y=Math.max(-2.6,Math.min(2.6,AUTO.look.y)); AUTO.look.p=Math.max(-0.7,Math.min(0.6,AUTO.look.p));
+    if(AUTO_PTR.pts[e.pointerId]) AUTO_PTR.pts[e.pointerId]={ x:e.clientX, y:e.clientY };
+    const ids=Object.keys(AUTO_PTR.pts);
+    if(!AUTO.pov && ids.length>=2){ const a=AUTO_PTR.pts[ids[0]], b=AUTO_PTR.pts[ids[1]], d=Math.hypot(a.x-b.x,a.y-b.y);   // pizzico = zoom
+      if(AUTO_PTR.pinch) tlAutoOrbit().r=Math.max(4,Math.min(22,tlAutoOrbit().r*AUTO_PTR.pinch/Math.max(1,d))); AUTO_PTR.pinch=d; return; }
+    const dx=e.clientX-AUTO_PTR.x, dy=e.clientY-AUTO_PTR.y;
+    if(AUTO.pov){
+      AUTO.look.y+=dx*0.006; AUTO.look.p-=dy*0.004;   // trascina giu' = guarda giu'
+      AUTO.look.y=Math.max(-2.6,Math.min(2.6,AUTO.look.y)); AUTO.look.p=Math.max(-0.7,Math.min(0.6,AUTO.look.p));
+    } else { const O=tlAutoOrbit(); O.a-=dx*0.007; O.b=Math.max(0.35,Math.min(1.52,O.b-dy*0.005)); O.t=performance.now(); }
     AUTO_PTR.x=e.clientX; AUTO_PTR.y=e.clientY; });
-  window.addEventListener("pointerup",()=>{ AUTO_PTR.on=false; }); })();
+  const up=e=>{ delete AUTO_PTR.pts[e.pointerId]; if(!Object.keys(AUTO_PTR.pts).length) AUTO_PTR.on=false; AUTO_PTR.pinch=0; };
+  window.addEventListener("pointerup",up); window.addEventListener("pointercancel",up);
+  cv.addEventListener("wheel",e=>{ if(!(AUTO.on && !AUTO.pov)) return; const O=tlAutoOrbit();
+    O.r=Math.max(4,Math.min(22,O.r*(1+Math.sign(e.deltaY)*0.1))); },{ passive:true }); })();
+function tlAutoOrbit(){ return AUTO.orbit=AUTO.orbit||{ a:0, b:1.2, r:8.5, t:0 }; }
 function tlAutoTick(){
   if(!AUTO.on || !AUTO.car) return;
   const dt=Math.min(0.05,engine.getDeltaTime()/1000), root=AUTO.car.root;
@@ -64805,9 +64839,12 @@ function tlAutoTick(){
     camera.setTarget(e,false,false,true);
     camera.radius=0.05; camera.alpha=tlSkyCamAlpha(h+AUTO.look.y); camera.beta=Math.PI/2-0.08+AUTO.look.p;
   } else {
-    const wa=tlSkyCamAlpha(h)+(AUTO.phase==="drive"?0:0.7), f=1-Math.exp(-dt*2.4);
-    const wa2=tlAngTo(camera.alpha,wa); camera.alpha+=(wa2-camera.alpha)*f;
-    camera.beta+=(1.2-camera.beta)*f; camera.radius+=(8.5-camera.radius)*f;
+    const O=tlAutoOrbit();
+    if(keys["arrowleft"]){ O.a+=1.4*dt; O.t=performance.now(); } if(keys["arrowright"]){ O.a-=1.4*dt; O.t=performance.now(); }
+    const wa=tlSkyCamAlpha(h)+(AUTO.phase==="drive"?0:0.7)+O.a, f=1-Math.exp(-dt*2.4);
+    const fa=AUTO_PTR.on?1-Math.exp(-dt*14):f;           // mentre trascini la camera ti segue subito
+    const wa2=tlAngTo(camera.alpha,wa); camera.alpha+=(wa2-camera.alpha)*fa;
+    camera.beta+=(O.b-camera.beta)*fa; camera.radius+=(O.r-camera.radius)*f;
     camera.setTarget(BABYLON.Vector3.Lerp(camera.target,root.position.add(new BABYLON.Vector3(0,1.2,0)),Math.min(1,f*3)),false,false,true);
   }
   /* la finestra della meta chiusa con Esc: si riapre */
@@ -65066,6 +65103,9 @@ function tlAutoEnd(cb,abort,keepCar){
     try{ avatarMeshes.forEach(m=>{ m.visibility=1; }); }catch(e){}
     try{ if(AUTO.car) tlAutoInside(false); }catch(e){}
     try{ SFX.ev(-1); }catch(e){} try{ tlAutoRadio("stop",true); }catch(e){}       // v504: motore e radio spenti
+    /* v507: scesi, la fretta finisce. Prima tc.fast/canOvt restavano accesi e l'auto
+       che tornava da sola al parcheggio prenotava le rotonde da supercar (vedi sopra) */
+    try{ const tc=AUTO.car&&AUTO.car.tc; if(tc){ tc.fast=false; tc.canOvt=false; tc.v=11; TRAFFIC_ZONES.forEach(Z=>{ if(Z.h===tc && _trafficCars.indexOf(tc)<0) Z.h=null; }); } }catch(e){}
     tlAutoUi(false); tlAutoPanel(false); AUTO.q=null;
     const c=AUTO.cam;
     if(c){ camera.lowerRadiusLimit=c.lr; camera.upperRadiusLimit=c.ur; camera.lowerBetaLimit=c.lb; camera.upperBetaLimit=c.ub; camera.minZ=c.minZ; }
