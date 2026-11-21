@@ -3347,6 +3347,7 @@ const UNIT_TECH={ id:"u3_2", area:"techlab", areaName:"the TechLab", resumeBySco
   contactShadows:true, wallHex:"#dfe4e8", ceilHex:"#e8ecef",   // v269: ombre sotto gli arredi, pareti e soffitto da laboratorio
   enterToast:"\u{1F4BB} Sei entrato al TechLab",
   onEnter:()=>{ setTimeout(buildTechNPCs,0);
+    try{ if(Student.teacher) setTimeout(()=>toast("\u{1F469}\u200D\u{1F3EB} Docente: tasto 4 = prova subito SKY-1 o AUTO-1",4200),1800); }catch(e){}   // v500
     setTimeout(()=>{ try{ tlRestoreBoards(); tlScanDraw(null); tlPadDraw(); }catch(e){}
       try{ if(!tlFuncLive() || !(Quest.state&&Quest.state.tr&&Quest.state.tr.done)) tlKitReset(); }catch(e){} },60); },   // v499
   steps:[
@@ -50939,6 +50940,31 @@ function teacherRearm(u){
   }
   try{ if(typeof u.onTeacherRestart==="function") u.onTeacherRestart(); }catch(e){}
 }
+/* v500 (Giacomo, 21 nov: «in modalita' docente devo poter andare dritto al
+   flying car e alla macchina senza volante, senza fare le attivita' prima»).
+   Tasto 4 (o il pannello del badge DOCENTE), da qualunque punto del gioco.
+   SKY-1 ha bisogno dello step Grammar del TechLab: si entra, ci si mette
+   sullo step e si decolla. AUTO-1 parte dallo stallo, gia' a bordo. */
+function teacherTechMenu(){
+  if(!Student.teacher) return;
+  if((typeof SKY!=="undefined" && SKY.on) || (typeof AUTO!=="undefined" && AUTO.on)){ toast("\u{1F469}\u200D\u{1F3EB} Sei gia' in un veicolo."); return; }
+  try{ QModal.close(); }catch(e){}
+  DialogueBox.open({ icon:"\u{1F469}\u200D\u{1F3EB}", name:"Docente", sub:"TechLab \u00b7 scorciatoie", autoSpeak:false,
+    text:"Try the TechLab vehicles now.",
+    italian:"Provi subito i due veicoli, senza fare prima le attivit\u00e0. SKY-1 \u00e8 la Grammar del TechLab (le domande con gli anelli); AUTO-1 \u00e8 il giro finale.",
+    buttons:[{ label:"Chiudi", cls:"ghost" },
+             { label:"\u{1F6F8} SKY-1 \u00b7 flying car", cls:"primary", act:()=>teacherTryVehicle("sky") },
+             { label:"\u{1F697} AUTO-1 \u00b7 self-driving car", cls:"primary", act:()=>teacherTryVehicle("auto") }] });
+}
+function teacherTryVehicle(which){
+  if(!Student.teacher) return;
+  try{ DialogueBox.close(); QModal.close(); }catch(e){}
+  if(which==="auto"){ tlAutoStart(area==="town"?"book":"finale"); return; }
+  const go=()=>{ try{ ET.vaiA(UNIT_TECH.id,"gram"); }catch(e){}
+    setTimeout(()=>{ try{ DialogueBox.close(); QModal.close(); }catch(e){} tlSkyStart(); }, 350); };
+  if(area!==UNIT_TECH.area){ try{ Quest.stop(); }catch(e){} try{ enterUnit(UNIT_TECH,true,true); }catch(e){} setTimeout(go,700); }
+  else go();
+}
 function teacherRestartQuest(){
   if(!Student.teacher) return false;
   const u=teacherQuestUnit();
@@ -51202,10 +51228,12 @@ window.addEventListener("keydown",e=>{ if(__typingNow(e)) return;   // non rubar
   /* v251 — 1 = ricomincia da capo la quest dell'edificio · 2 = salta
      all'attivita' successiva senza completarla. SOLO DOCENTE: in mano a un
      alunno il 2 salterebbe ogni compito. */
-  if(k==="1"||k==="2"||k==="3"){
+  if(k==="1"||k==="2"||k==="3"||k==="4"){
     if(!Student.teacher) return;
     e.preventDefault();
-    if(k==="1") teacherRestartQuest(); else if(k==="2") teacherSkipStep(); else teacherFreeShop();   // v256: 3 = spesa libera
+    if(k==="1") teacherRestartQuest(); else if(k==="2") teacherSkipStep();
+    else if(k==="3") teacherFreeShop();   // v256: 3 = spesa libera
+    else teacherTechMenu();               // v500: 4 = provare subito SKY-1 / AUTO-1
     return;
   }
   if(k==="escape" && typeof SHOW!=="undefined" && SHOW.seated){ showStand(); return; }
@@ -57181,7 +57209,8 @@ function openTeacherPanel(){
               { label:"\u{1F440} Presenza"+(Presenza.acceso?" \u2713":"")+"\u2026", act:openPresenzaDocente },     // v404
               { label:"\u{1F3EB} Cursore di classe\u2026", act:openCursorePanel },
               { label:"\u{1F4E3} Notifiche / evento\u2026", act:openAvvisiPanel },     // v539
-              { label:"\u{1F3C6} Graduatoria\u2026", act:openGraduatoriaPanel } ] });
+              { label:"\u{1F3C6} Graduatoria\u2026", act:openGraduatoriaPanel },
+              { label:"\u{1F697} Prova i veicoli del TechLab\u2026", act:()=>setTimeout(teacherTechMenu,120) } ] });   // v500
 }
 /* =====================================================================
    PANNELLO CURSORE DI CLASSE (docente) — FASE 5 passo 3
@@ -63290,8 +63319,8 @@ function tlSkyStart(){
     finFade(0,800,function(){
       SKY.phase="intro";
       DialogueBox.open({ npc:TL_NPC.marcus, icon:"\u{1F9D1}‍\u{1F4BB}", sub:"SKY-1 · flying car prototype", autoSpeak:true,
-        text:"Welcome to SKY-1! Today YOU fly it. Follow the light, read the sentence, and fly through the right word!",
-        italian:"Piloti tu: W/S più veloce o più piano, A/D (o ← →) per girare, Spazio/Shift su e giù — oppure tieni premuto il mouse e trascina. Segui la colonna di luce: alla fermata compaiono tre anelli con le parole, vola dentro quella giusta.",
+        text:"Welcome to SKY-1! Today YOU fly it. Read the sentence and fly through the right word!",
+        italian:"Piloti tu: W/S più veloce o più piano, A/D (o ← →) per girare, Spazio/Shift su e giù — oppure tieni premuto il mouse e trascina. Davanti a te compaiono tre anelli con le parole: vola dentro quella giusta.",
         buttons:[{ label:"\u{1F680} Let's fly!", cls:"primary", act:()=>{ SKY.phase="fly"; tlSkyFree(); } }] });
     });
   });
