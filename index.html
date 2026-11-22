@@ -11087,6 +11087,10 @@ function clueMini(){ const m=Sync.get(CLUE_MIN_K,null); return !!(m && m.ids===_
 function clueGira(){
   if(clueMini()) Sync.del(CLUE_MIN_K); else Sync.set(CLUE_MIN_K,{ ids:_clueIds() });
   _clueSig=""; clueBadge(); }
+function clueTop(){ let top=198;
+  try{ const q=document.getElementById("quest-hud");
+    if(q && getComputedStyle(q).display!=="none"){ const r=q.getBoundingClientRect(); if(r.height>0) top=Math.max(top, Math.round(r.bottom+8)); } }catch(e){}
+  return top; }
 function clueBadge(){
   let el=document.getElementById("clue-pin");
   let av=[];
@@ -11094,16 +11098,17 @@ function clueBadge(){
   if(!av.length){ if(el) el.remove(); _clueSig=""; return; }
   if(!el){
     el=document.createElement("div"); el.id="clue-pin";
-    el.style.cssText="position:fixed;z-index:15;right:14px;width:270px;max-width:46vw;box-sizing:border-box;"
+    el.style.cssText="position:fixed;z-index:15;left:14px;width:270px;max-width:46vw;box-sizing:border-box;"
       +"background:rgba(255,244,229,.62);color:#6a4100;border:1.5px solid rgba(245,199,126,.75);border-radius:12px;padding:8px 10px;"
       +"backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);"
       +"font:600 13px/1.35 system-ui,sans-serif";
     document.body.appendChild(el);
   }
-  /* sotto il piano di Miss Grace, se c'e', altrimenti al suo posto */
-  let top=198; try{ const pp=document.getElementById("piano-pin");
-    if(pp){ const r=pp.getBoundingClientRect(); if(r.height) top=Math.round(r.bottom+8); } }catch(e){}
-  el.style.top=top+"px";
+  /* v593 (Giacomo: «se c'e' un indizio l'avvertimento copre energia e fame:
+     mettiamolo a sinistra, stessa altezza»). A sinistra, a 198 px come prima;
+     se la scheda della quest (in alto a sinistra) e' piu' lunga, subito sotto
+     di lei. Lo tiene aggiornato anche Needs.hud, 4 volte al secondo. */
+  el.style.top=clueTop()+"px";
   const f=av[0];
   let yr=1; try{ yr=studentYear(); }catch(e){}
   const mini=clueMini();
@@ -54937,10 +54942,17 @@ const Needs={
     /* v592b (Giacomo: «la scheda dei livelli sta sotto DOCENTE · tutto aperto,
        va spostata sotto»). Il cartellino del docente (teacherBadge) sta a
        top:148, alto quanto il testo: le barrette scendono sotto di lui. */
-    let top=150; try{ const tb=document.getElementById("teach-badge");
+    /* v593: anche il cartellino degli alunni (stud-badge, sincronizzazione) e
+       dell'ospite stanno a top:148: le barrette vanno sotto quello che c'e' */
+    let top=150; try{ ["teach-badge","stud-badge","guest-badge"].forEach(id=>{ const tb=document.getElementById(id);
       /* ⚠️ niente offsetParent: per un elemento position:fixed vale sempre null */
-      if(tb){ const r=tb.getBoundingClientRect(); if(r.height>0 && r.bottom>0) top=Math.max(top, Math.round(r.bottom+8)); } }catch(e){}
+      if(tb){ const r=tb.getBoundingClientRect(); if(r.height>0 && r.bottom>0) top=Math.max(top, Math.round(r.bottom+8)); } }); }catch(e){}
     if(el.__top!==top){ el.__top=top; el.style.top=top+"px"; }
+    /* e sotto le barrette il piano personale di Miss Grace (prima a top:198, sotto di loro) */
+    try{ const pp=document.getElementById("piano-pin"); if(pp){ const nb=el.getBoundingClientRect();
+        const t2=Math.max(198, Math.round((nb.height>0?nb.bottom:top)+8)); if(pp.__top!==t2){ pp.__top=t2; pp.style.top=t2+"px"; } } }catch(e){}
+    /* l'indizio da prendere, a sinistra: segue la scheda della quest */
+    try{ const cp=document.getElementById("clue-pin"); if(cp){ const t3=clueTop(); if(cp.__top!==t3){ cp.__top=t3; cp.style.top=t3+"px"; } } }catch(e){}
     el.classList.toggle("hungry", this.starving() && this.hungry());
     el.classList.toggle("thirsty", this.starving() && this.thirsty());
     el.style.display="block";
