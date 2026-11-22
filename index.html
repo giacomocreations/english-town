@@ -10687,7 +10687,7 @@ function talkToRanger(npc,hailed){
   if(!oob && hailed && goal){
     RANGER_A.idleSeen=(RANGER_A.idleSeen||0)+1;
     if(RANGER_A.idleSeen>=2){ RANGER_A.idleSeen=0;
-      let gone=false; const go=()=>{ if(gone) return; gone=true; rangerEscort(goal,false); };
+      let gone=false; const go=()=>{ if(gone) return; gone=true; rangerTakeToQuest(goal); };
       DialogueBox.open({ npc, icon:"\u{1F9E5}", sub:"Town Ranger", autoSpeak:true,
         text:"No more wasting your time, kid! I'll take you to your quest!",
         italian:"Basta perdere tempo! Il Ranger ti accompagna alla tua quest: "+goal.ic+" "+goal.it+".",
@@ -10728,6 +10728,28 @@ function talkToRanger(npc,hailed){
                               : "Il Ranger della citt\u00e0 pu\u00f2 indicarti la strada."))
                   : "Hai completato tutte le unit\u00e0 disponibili: per ora non c'\u00e8 pi\u00f9 nulla da sbloccare.";
   DialogueBox.open({ npc, icon:"\u{1F9E5}", sub:"Town Ranger", text:greetJoin(g.en,en), italian:greetJoin(g.it,it), choices:ch });
+}
+/* v520 (Giacomo, 22 nov: «al secondo richiamo il Ranger ti porti DENTRO
+   l'edificio se la quest e' all'interno, se no nel punto d'inizio se e'
+   esterna»). Quest con un interno (scuola, casa, negozi, municipio...):
+   dissolvenza e si entra davvero, dalla porta normale (tryEnterUnit: stessi
+   controlli di gate e orario, e la quest riparte da dove eri). Quest
+   all'aperto (aeroporto, torre dell'orologio, campo sportivo): il passaggio
+   di sempre al suo punto di partenza (rangerEscort). */
+function rangerTakeToQuest(goal){
+  const U=(typeof QUESTS!=="undefined")?QUESTS[goal.id]:null;
+  if(!(U && U.area && U.area!=="town")){ rangerEscort(goal,false); return; }
+  try{ DialogueBox.close(); }catch(e){}
+  _fade(true);
+  setTimeout(()=>{
+    if(typeof moveTarget!=="undefined") moveTarget=null;
+    if(typeof pendingInteract!=="undefined") pendingInteract=null;
+    NAV.target=null; NAV.label="";
+    try{ tryEnterUnit(U); }catch(e){ console.warn("[ranger]",e); }
+    setTimeout(()=>_fade(false),150);
+    if(area===U.area) toast("\u{1F9E5} The Ranger took you into "+goal.en+".");
+    else rangerEscort(goal,false);                    // non si e' potuto entrare (gate, orario): almeno davanti alla porta
+  },370);
 }
 function rangerRelease(){
   RANGER_A.active=false;
