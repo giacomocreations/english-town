@@ -7769,6 +7769,12 @@ function _dressBuilding(root,o){
     if(parts.length){ const mg=parts.length===1?parts[0]:BABYLON.Mesh.MergeMeshes(parts,true,true,undefined,false,false);
       if(mg){ mg.material=K.vc; mg.parent=F; mg.__occluder=true; mg.isPickable=false; } }
   }
+  /* ---- 7. NATALE (v594): qui solo il PIANO, le decorazioni le costruisce
+     XMAS.accendi quando servono (vedi XMAS) ---- */
+  if(frontF && isFinite(gx0) && o.xmas!==false){
+    const Cx={ F:F, frontF:frontF, doorF:doorF, groups:groups, comps:comps, onFace:onFace,
+               box:box, cyl:cyl, colorize:colorize, parts:[], toW:toW, rnd:rnd, Y1:Y1 };
+    try{ _xmPlan(Cx,o.name); }catch(e){ console.warn("[natale piano]",o.name,e); } }
   F.__dressFor=root; return F;
 }
 
@@ -8267,6 +8273,239 @@ function halloweenCafe(x,z,y0){ if(!HALLOWEEN.on) return;
     _hwTieni(node);
   }catch(e){ console.warn("[halloween cafe]",e); }
   _hwSolidiDa(n0); }
+
+/* =====================================================================
+   v594 — NATALE (Giacomo, 22 nov: «come per Halloween, le decorazioni di
+   Natale nella citta': dal 1 dicembre fino al 7 gennaio alle ore 06:00. In
+   modalita' docente, con un tasto, le devo poter vedere quando voglio»).
+   · STAGIONE: dal 1 dicembre alle 00:00 al 7 gennaio alle 06:00, con
+     l'orologio del dispositivo. Si controlla al caricamento e poi ogni
+     minuto (come HALLOWEEN, v496): un Chromebook lasciato acceso le vede
+     comparire a mezzanotte del 1 dicembre e sparire alle 6 del 7 gennaio.
+   · DIFFERENZA DA HALLOWEEN: Halloween si costruisce SOLO all'avvio, dentro
+     _dressBuilding (la geometria della facciata c'e' solo li'). Qui
+     _dressBuilding calcola per ogni edificio il PIANO delle decorazioni
+     (dove vanno: pochi numeri, _xmPlan) e le decorazioni vere si
+     costruiscono da quel piano quando servono (XMAS.accendi): all'avvio in
+     stagione, il 1 dicembre a gioco aperto, o col tasto del docente. Si
+     tolgono tutte, solidi compresi (XMAS.spegni).
+   · DOCENTE: tasto X (o il pulsante nel pannello del badge DOCENTE) =
+     accende/spegne quando vuole, anche fuori stagione; un secondo X torna
+     alla stagione vera. ?natale=1 / ?natale=0 nell'indirizzo come prova.
+   · COSA C'E': su ogni edificio (come Halloween: non il cinema) un
+     festone di abete con le lucine colorate sopra il piano terra, una
+     corona sulla porta, due alberelli addobbati ai lati, fiocchi di neve
+     sui piani alti e un adesivo in vetrina («Merry Christmas!»…); al
+     diner e al café lo stesso; e un GRANDE ALBERO sull'isola della rotonda
+     in fondo alla High Street (47, 0): si vede da tutta la strada e le
+     auto ci girano intorno (l'albero normale dell'isola si nasconde). Le lucine sono luci notturne vere (nightLights): di giorno
+     lampadine colorate, di notte accese.
+   ===================================================================== */
+function _xmStagione(d){ const m=d.getMonth(), g=d.getDate();
+  return m===11 || (m===0 && (g<7 || (g===7 && d.getHours()<6))); }
+const XMAS=(()=>{ let forz=null;
+  try{ const u=new URLSearchParams(location.search), q=u.get("natale")||u.get("xmas"); if(q==="1"||q==="0") forz=(q==="1"); }catch(e){}
+  const X={ on:false, forz:forz, plans:[], mesh:[], solidi:[], undo:[], pronto:false };
+  X.stagione=function(){ return _xmStagione(new Date()); };
+  X.want=function(){ return X.forz!=null ? X.forz : X.stagione(); };
+  X.accendi=function(){ if(X.on || !X.pronto) return; X.on=true; const n0=solids.length;
+    X.plans.forEach(P=>{ try{ _xmFront(P); }catch(e){ console.warn("[natale]",P.name,e); } });
+    try{ _xmDiner(); }catch(e){ console.warn("[natale diner]",e); }
+    try{ _xmCafe(); }catch(e){ console.warn("[natale cafe]",e); }
+    try{ _xmBigTree(); }catch(e){ console.warn("[natale albero]",e); }
+    for(let i=n0;i<solids.length;i++) X.solidi.push(solids[i]);
+    try{ refreshShadowCasters(); }catch(e){} };
+  X.spegni=function(){ if(!X.on) return; X.on=false;
+    while(X.undo.length){ try{ X.undo.pop()(); }catch(e){} }
+    while(X.mesh.length){ const m=X.mesh.pop(); try{ m.dispose(false,false); }catch(e){} }
+    while(X.solidi.length){ const s=X.solidi.pop(); try{ const i=solids.indexOf(s); if(i>=0) solids.splice(i,1); }catch(e){} }
+    try{ refreshShadowCasters(); }catch(e){} };
+  X.sync=function(){ if(X.want()) X.accendi(); else X.spegni(); };
+  /* tasto del docente: acceso/spento a mano; di nuovo, ancora l'opposto (il
+     ciclo e' acceso -> spento -> acceso...), finche' non si ricarica: la
+     stagione vera torna al prossimo caricamento */
+  X.toggle=function(){ X.forz=!X.on; X.sync();
+    try{ toast(X.on?"\u{1F384} Natale acceso (docente) · X per spegnere":"\u{1F384} Natale spento (docente) · X per riaccendere",3800); }catch(e){} };
+  setInterval(function(){ try{ X.sync(); }catch(e){} }, 60000);
+  return X; })();
+function _xmTieni(m){ if(m) XMAS.mesh.push(m); return m; }
+
+/* ---- materiali (una volta sola; restano anche a decorazioni spente) ---- */
+let _xmM=null;
+function _xmMats(){ if(_xmM) return _xmM;
+  const C3=BABYLON.Color3, std=(n,hex,spec,em)=>{ const m=new BABYLON.StandardMaterial(n,scene); m.diffuseColor=C3.FromHexString(hex);
+    m.specularColor=new C3(spec||0.05,spec||0.05,spec||0.05); if(em) m.emissiveColor=C3.FromHexString(em); return m; };
+  const fir=std("xmFir","#2d6b3c",0.04); fir.emissiveColor=new C3(0.02,0.06,0.03);
+  const fir2=std("xmFir2","#245a32",0.04); fir2.emissiveColor=new C3(0.015,0.05,0.025);
+  /* le lucine: luci notturne vere (updateDayNight le accende col buio) */
+  const bulb=(n,hex,glow)=>{ const m=std(n,hex,0.3); m.emissiveColor=new C3(0,0,0); m.__nightEmissive=C3.FromHexString(glow);
+    try{ nightLights.push(m); }catch(e){} return m; };
+  const bulbs=[bulb("xmBulbR","#d8323a","#ff3b3b"), bulb("xmBulbY","#e8b93c","#ffd24a"), bulb("xmBulbB","#3a6fd8","#4f8bff"), bulb("xmBulbG","#3aa65a","#5dff7a")];
+  const flake=_dnTex("xmFlakeT",128,128,(c,w)=>{ c.clearRect(0,0,w,w); c.strokeStyle="#ffffff"; c.lineWidth=7; c.lineCap="round";
+    c.translate(w/2,w/2);
+    for(let i=0;i<6;i++){ c.rotate(Math.PI/3); c.beginPath(); c.moveTo(0,0); c.lineTo(0,-54);
+      c.moveTo(0,-22); c.lineTo(-14,-36); c.moveTo(0,-22); c.lineTo(14,-36);
+      c.moveTo(0,-38); c.lineTo(-10,-50); c.moveTo(0,-38); c.lineTo(10,-50); c.stroke(); } });
+  flake.hasAlpha=true;
+  const fl=new BABYLON.StandardMaterial("xmFlake",scene); fl.diffuseTexture=flake; fl.useAlphaFromDiffuseTexture=true;
+  fl.transparencyMode=BABYLON.Material.MATERIAL_ALPHATEST; fl.alphaCutOff=0.5; fl.specularColor=new C3(0,0,0);
+  fl.emissiveColor=new C3(0.55,0.62,0.7); fl.backFaceCulling=false;
+  _xmM={ fir, fir2, bulbs, flake:fl,
+    red:std("xmRed","#c4202e",0.25), gold:std("xmGold","#e0b040",0.5,"#5a4410"), pot:std("xmPot","#8a2a1f",0.1),
+    trunk:std("xmTrunk","#5a3a22",0.05), white:std("xmWhite","#f4f4f0",0.2), sticker:{} };
+  _xmM.star=std("xmStar","#ffd84a",0.6,"#c89a1c");
+  return _xmM; }
+function _xmSticker(txt){ const K=_xmMats(); if(K.sticker[txt]) return K.sticker[txt];
+  const dt=_dnTex("xmStkT"+txt.replace(/\W+/g,""),384,128,(c,w,h)=>{ c.clearRect(0,0,w,h);
+    c.fillStyle="#1d4a2c"; c.beginPath(); if(c.roundRect) c.roundRect(4,4,w-8,h-8,24); else c.rect(4,4,w-8,h-8); c.fill();
+    c.strokeStyle="#d8323a"; c.lineWidth=6; c.beginPath(); if(c.roundRect) c.roundRect(14,14,w-28,h-28,16); else c.rect(14,14,w-28,h-28); c.stroke();
+    c.strokeStyle="#e8c25a"; c.lineWidth=2; c.beginPath(); if(c.roundRect) c.roundRect(22,22,w-44,h-44,12); else c.rect(22,22,w-44,h-44); c.stroke();
+    c.textAlign="center"; c.textBaseline="middle"; c.font="62px 'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif";
+    c.fillText(txt.indexOf("Year")>=0?"✨":(txt.indexOf("Season")>=0?"❄️":"\u{1F384}"),62,h/2+4);
+    c.fillStyle="#fff6e0"; _sfFit(c,txt,w-140,44,"bold #px Georgia, serif"); c.fillText(txt,w/2+44,h/2); });
+  return (K.sticker[txt]=_sfMat("xmStkM"+txt.replace(/\W+/g,""),dt,0.85,true)); }
+const XM_TXT=["Merry Christmas!","Happy Holidays!","Season's Greetings!","Happy New Year!"];
+
+/* ---- i pezzi (coordinate di un frame qualunque: il chiamante li fonde) ----
+   L = { fir:[], fir2:[], red:[], gold:[], pot:[], trunk:[], white:[], star:[], flake:[], b0..b3:[] } */
+function _xmL(){ return { fir:[], fir2:[], red:[], gold:[], pot:[], trunk:[], white:[], star:[], flake:[], b0:[], b1:[], b2:[], b3:[] }; }
+function _xmBulb(L,x,y,z,r,k){ const s=BABYLON.MeshBuilder.CreateIcoSphere("xmB",{ radius:r, subdivisions:1 },scene); s.position.set(x,y,z); L["b"+(k%4)].push(s); }
+/* alberello addobbato in vaso, base a quota y: H alto, palline e stella */
+function _xmTree(L,x,y,z,H,rnd,big){
+  const potH=big?0:H*0.16, base=y+potH, D=H*0.62;
+  if(!big){ const p=BABYLON.MeshBuilder.CreateCylinder("xmPot",{ diameterTop:D*0.55, diameterBottom:D*0.42, height:potH, tessellation:10 },scene);
+    p.position.set(x,y+potH/2,z); L.pot.push(p); }
+  else { const t=BABYLON.MeshBuilder.CreateCylinder("xmTr",{ diameter:H*0.07, height:H*0.12, tessellation:8 },scene); t.position.set(x,y+H*0.06,z); L.trunk.push(t); }
+  const t0=big?H*0.1:H*0.04, tiers=big?4:3, hT=(H-t0)/tiers*1.45; let apex=base;
+  for(let i=0;i<tiers;i++){ const f=i/tiers, d=D*(1-f*0.68), yb=base+t0+(H-t0)*f*0.78; apex=Math.max(apex,yb+hT);
+    const c=BABYLON.MeshBuilder.CreateCylinder("xmCone",{ diameterTop:0, diameterBottom:d, height:hT, tessellation:big?14:10 },scene);
+    c.position.set(x,yb+hT/2,z); (i%2?L.fir2:L.fir).push(c);
+    /* palline e lucine sul bordo del cono */
+    const n=big?14:6;
+    for(let k=0;k<n;k++){ const a=(k/n)*Math.PI*2+i*0.7+rnd()*0.3, rr=d*0.47, yy=yb+hT*(0.12+rnd()*0.12);
+      const px=x+Math.cos(a)*rr, pz=z+Math.sin(a)*rr;
+      if(big || k%2){ _xmBulb(L,px,yy,pz,big?0.07:0.035,(k+i)%4); }
+      else { const s=BABYLON.MeshBuilder.CreateSphere("xmBall",{ diameter:H*0.06, segments:6 },scene); s.position.set(px,yy,pz); (k%4===0?L.gold:L.red).push(s); } } }
+  /* la stella: due rombi incrociati + un nucleo, oro acceso */
+  /* la stella sulla punta del cono piu' alto (prima restava sospesa sopra) */
+  const ss=big?0.55:0.2, sy=apex+ss*0.22;
+  [0,Math.PI/2].forEach(r=>{ const b=BABYLON.MeshBuilder.CreateBox("xmSt",{ width:ss*0.7, height:ss*0.7, depth:ss*0.12 },scene);
+    b.position.set(x,sy,z); b.rotation.set(0,r,Math.PI/4); L.star.push(b); });
+  const c=BABYLON.MeshBuilder.CreateIcoSphere("xmStC",{ radius:ss*0.22, subdivisions:1 },scene); c.position.set(x,sy,z); L.star.push(c);
+  return sy; }
+/* festone di abete fra p0 e p1 ([x,z]) a quota y, n campate di freccia sag,
+   con le lucine colorate ogni ~0,32 m */
+function _xmGarland(L,p0,p1,y,sag,n,r){
+  const dx=p1[0]-p0[0], dz=p1[1]-p0[1], Lg=Math.hypot(dx,dz); if(Lg<0.5) return;
+  const ux=dx/Lg, uz=dz/Lg, yAt=t=>{ const u=(t/Lg)*n, f=u-Math.floor(u); return y-sag*4*f*(1-f); };
+  const path=[]; for(let t=0;t<=Lg+1e-6;t+=0.12) path.push(new BABYLON.Vector3(p0[0]+ux*t,yAt(t),p0[1]+uz*t));
+  const tube=BABYLON.MeshBuilder.CreateTube("xmGar",{ path, radius:r||0.065, tessellation:6, cap:BABYLON.Mesh.CAP_ALL },scene); L.fir.push(tube);
+  let k=0; for(let t=0.16;t<Lg-0.1;t+=0.32,k++) _xmBulb(L,p0[0]+ux*t,yAt(t)-(r||0.065)-0.02,p0[1]+uz*t,0.032,k);
+  /* un fiocco rosso a ogni punto d'attacco */
+  for(let i=0;i<=n;i++){ const t=Lg*i/n, b=BABYLON.MeshBuilder.CreateBox("xmBow",{ width:0.16, height:0.1, depth:0.05 },scene);
+    b.position.set(p0[0]+ux*t,y+0.02,p0[1]+uz*t); b.rotation.y=Math.atan2(ux,uz)+Math.PI/2; L.red.push(b); } }
+/* corona da porta: anello di abete, fiocco rosso e bacche; il piano della
+   corona guarda verso ry (come _hwPlane: ry = atan2(nx,nz)+PI) */
+function _xmWreath(L,x,y,z,D,ry){
+  const t=BABYLON.MeshBuilder.CreateTorus("xmWr",{ diameter:D, thickness:D*0.24, tessellation:16 },scene);
+  t.position.set(x,y,z); t.rotation.set(Math.PI/2,ry,0); L.fir.push(t);
+  const fx=Math.sin(ry+Math.PI), fz=Math.cos(ry+Math.PI);       // verso la strada
+  const bow=BABYLON.MeshBuilder.CreateBox("xmWb",{ width:D*0.42, height:D*0.18, depth:0.04 },scene);
+  bow.position.set(x+fx*0.05,y-D*0.42,z+fz*0.05); bow.rotation.y=ry; L.red.push(bow);
+  for(let i=0;i<5;i++){ const a=0.4+i*1.2, s=BABYLON.MeshBuilder.CreateSphere("xmBer",{ diameter:D*0.08, segments:4 },scene);
+    s.position.set(x+Math.cos(ry)*Math.cos(a)*D*0.5*0.85+fx*0.06, y+Math.sin(a)*D*0.5*0.85, z-Math.sin(ry)*Math.cos(a)*D*0.5*0.85+fz*0.06); L.red.push(s); } }
+/* un pacchetto regalo (scatola + nastro) */
+function _xmGift(L,x,y,z,s,rnd,ry){ const col=[L.red,L.gold,L.white][(rnd()*3)|0];
+  const b=BABYLON.MeshBuilder.CreateBox("xmGf",{ size:s },scene); b.position.set(x,y+s/2,z); b.rotation.y=ry||0; col.push(b);
+  const r1=BABYLON.MeshBuilder.CreateBox("xmGr",{ width:s*1.02, height:s*1.02, depth:s*0.18 },scene); r1.position.copyFrom(b.position); r1.rotation.y=ry||0;
+  ((col===L.red)?L.gold:L.red).push(r1); }
+/* fonde le liste per materiale sotto `parent` (coordinate gia' nel suo frame) */
+function _xmFuse(parent,L){ const K=_xmMats();
+  const map={ fir:K.fir, fir2:K.fir2, red:K.red, gold:K.gold, pot:K.pot, trunk:K.trunk, white:K.white, star:K.star, flake:K.flake,
+              b0:K.bulbs[0], b1:K.bulbs[1], b2:K.bulbs[2], b3:K.bulbs[3] };
+  Object.keys(map).forEach(k=>{ const arr=L[k]; if(!arr || !arr.length) return;
+    const m=arr.length===1?arr[0]:BABYLON.Mesh.MergeMeshes(arr,true,true,undefined,false,false);
+    if(!m) return; m.material=map[k]; m.parent=parent; m.isPickable=false; _xmTieni(m);
+    /* abeti, vasi, regali e corone fanno ombra; lucine, fiocchi e stelle no */
+    if(k==="fir"||k==="fir2"||k==="pot"||k==="red"||k==="gold"||k==="white"||k==="trunk") m.__cast=true;
+    /* nel bagliore restano SOLO lucine e stella */
+    if(!/^b[0-3]$/.test(k) && k!=="star") _noGlow(m); }); }
+
+/* ---- IL PIANO di un edificio (chiamato da _dressBuilding, sempre) ---- */
+function _xmPlan(C,name){
+  const g=_frontGeo(C), rnd=_seedRand("xm|"+(name||"x")), P={ name:name||"", F:C.F, ry:g.ry, trees:[], gar:null, wreath:null, sticker:null, flakes:[] };
+  const mid=(g.a0+g.a1)/2, dc=(g.dc!=null)?g.dc:mid, dw=g.door?(g.door.a1-g.door.a0):1.2;
+  /* alberelli ai lati della porta (dove Halloween mette le zucche) */
+  [-1,1].forEach(sd=>{ const a=dc+sd*(dw/2+0.55); if(a<g.a0+0.35||a>g.a1-0.35) return;
+    const dd=g.d0+0.45, q=g.at(a,dd), w=C.toW(q[0],q[1]);
+    const s=[g.at(a-0.45,dd-0.45),g.at(a+0.45,dd+0.45)].map(v=>C.toW(v[0],v[1]));
+    P.trees.push({ x:q[0], z:q[1], y:_hwGroundY(w[0],w[1]), H:1.25+rnd()*0.25, solid:[s[0][0],s[1][0],s[0][1],s[1][1]],
+      gift:g.at(a+sd*0.55,g.d0+0.3), gry:rnd()*0.8 }); });
+  /* festone sopra il piano terra */
+  { const yb=g.gfTop+0.08, dd=g.out(yb-0.5,yb+0.1)+0.1, L0=g.a0+0.3, L1=g.a1-0.3;
+    if(L1-L0>1) P.gar={ p0:g.at(L0,dd), p1:g.at(L1,dd), y:yb, n:Math.max(1,Math.round((L1-L0)/2.6)) }; }
+  /* corona sulla porta */
+  if(g.door && g.dc!=null){ const y=Math.min(g.door.y1-0.42, 2.0), dd=g.out(y-0.35,y+0.35,g.door.a0,g.door.a1)+0.07, q=g.at(g.dc,dd);
+    P.wreath={ x:q[0], y:y, z:q[1] }; }
+  /* fiocchi di neve sui piani alti */
+  { const nF=3+((rnd()*3)|0), yLo=g.upY+0.4, yHi=Math.max(yLo+1,Math.min(C.Y1-1.2,yLo+6));
+    for(let i=0;i<nF;i++){ const a=g.a0+0.8+rnd()*(g.a1-g.a0-1.6), y=yLo+rnd()*(yHi-yLo), sz=0.5+rnd()*0.4, q=g.at(a,g.out(y-0.4,y+0.4,a-0.6,a+0.6)+0.04);
+      P.flakes.push({ x:q[0], y:y, z:q[1], s:sz, roll:rnd()*Math.PI }); } }
+  /* adesivo nella vetrina piu' larga */
+  if(g.wins.length){ const wn=g.wins.reduce((b,w)=>(w.a1-w.a0>b.a1-b.a0)?w:b), ww=wn.a1-wn.a0, q=g.at((wn.a0+wn.a1)/2,wn.d+0.05);
+    P.sticker={ x:q[0], y:wn.y0+(wn.y1-wn.y0)*0.3, z:q[1], w:Math.min(1.5,ww*0.7), txt:XM_TXT[(rnd()*XM_TXT.length)|0] }; }
+  XMAS.plans.push(P); }
+/* ---- dal piano alle decorazioni (frame F dell'edificio) ---- */
+function _xmFront(P){ const L=_xmL(), rnd=_seedRand("xmB|"+P.name), face=P.ry+Math.PI;
+  P.trees.forEach(t=>{ _xmTree(L,t.x,t.y,t.z,t.H,rnd,false); _xmGift(L,t.gift[0],t.y,t.gift[1],0.26,rnd,t.gry);
+    addSolid(t.solid[0],t.solid[1],t.solid[2],t.solid[3],"town"); });
+  if(P.gar) _xmGarland(L,P.gar.p0,P.gar.p1,P.gar.y,0.2,P.gar.n);
+  if(P.wreath) _xmWreath(L,P.wreath.x,P.wreath.y,P.wreath.z,0.55,face);
+  P.flakes.forEach(f=>L.flake.push(_hwPlane(f.s,f.s,f.x,f.y,f.z,face,f.roll)));
+  _xmFuse(P.F,L);
+  if(P.sticker){ const s=_hwPlane(P.sticker.w,P.sticker.w/3,P.sticker.x,P.sticker.y,P.sticker.z,face);
+    s.material=_xmSticker(P.sticker.txt); s.parent=P.F; _noGlow(s); _xmTieni(s); } }
+
+/* ---- Sunny Side Diner (stesse misure di halloweenDiner) ---- */
+function _xmDiner(){ if(typeof DINER==="undefined") return;
+  const X=DINER.x, gy=DINER.gy||0, L=_xmL(), rnd=_seedRand("xmDiner");
+  /* fuori dalla ringhiera, ai lati dell'ingresso: due alberelli e i regali */
+  [[-2.5,23.15],[2.5,23.15]].forEach(p=>{ _xmTree(L,X+p[0],gy,p[1],1.4,rnd,false);
+    addSolid(X+p[0]-0.5,X+p[0]+0.5,p[1]-0.5,p[1]+0.5,"town"); });
+  _xmGift(L,X-3.25,gy,23.2,0.3,rnd,0.4); _xmGift(L,X+3.3,gy,23.25,0.24,rnd,-0.3);
+  /* festone sotto la mantovana del fronte, da palo a palo */
+  _xmGarland(L,[X-7.2,23.62],[X+7.2,23.62],gy+2.8,0.18,4);
+  /* fiocchi sopra la tettoia */
+  [[-4.5,4.3,23.4],[-1.2,4.9,24.6],[3.6,4.5,23.9],[6.1,5.2,25.2]].forEach(b=>L.flake.push(_hwPlane(0.7,0.7,X+b[0],gy+b[1],b[2],0,rnd()*Math.PI)));
+  const node=new BABYLON.TransformNode("xmDiner",scene); node.parent=townRoot; _xmTieni(node); _xmFuse(node,L);
+  const sg=_hwPlane(1.6,0.53,X,gy+2.5,23.6,0); sg.material=_xmSticker("Merry Christmas!"); sg.parent=node; _noGlow(sg); }
+/* ---- Town Café (stesse misure di halloweenCafe) ---- */
+function _xmCafe(){ const x=CAFE_XZ.x, z=CAFE_XZ.z, y0=(typeof _pedGroundY==="function")?_pedGroundY(x,z):0;
+  const L=_xmL(), rnd=_seedRand("xmCafe"), W=Math.PI/2;
+  _xmTree(L,x-5.15,y0+0.02,z-4.35,1.3,rnd,false); addSolid(x-5.6,x-4.7,z-4.8,z-3.9,"town");
+  _xmTree(L,x-5.15,y0+0.02,z+4.35,1.3,rnd,false); addSolid(x-5.6,x-4.7,z+3.9,z+4.8,"town");
+  _xmGarland(L,[x-5.36,z-3.9],[x-5.36,z+3.9],y0+2.58,0.16,3);
+  [[-4.0,4.2,-1.5],[-1.0,4.7,2.2],[2.0,4.4,-2.6]].forEach(b=>L.flake.push(_hwPlane(0.65,0.65,x+b[0],y0+b[1],z+b[2],W,rnd()*Math.PI)));
+  const node=new BABYLON.TransformNode("xmCafe",scene); node.parent=townRoot; _xmTieni(node); _xmFuse(node,L);
+  const sg=_hwPlane(1.4,0.47,x+0.65,y0+0.66,z+1.9,W); sg.material=_xmSticker("Season's Greetings!"); sg.parent=node; _noGlow(sg); }
+/* ---- il grande albero sulla rotonda in fondo alla High Street ----
+   L'isola (buildRoundabout 47,0: erba r 2,6, cordolo r 3,2) si cammina:
+   solido solo il tronco (e qui la base del cono). Prima si era provato in
+   testata alla promenade (82, 1): il café, che sta sull'asse della strada,
+   lo copriva tutto. */
+const XM_TREE={ x:47, z:0, H:7 };
+function _xmBigTree(){ const T=XM_TREE, L=_xmL(), rnd=_seedRand("xmBig");
+  let gy=0.15; try{ const g=_hwGroundY(T.x+1.2,T.z); if(g>0.05) gy=g; }catch(e){}
+  /* l'albero normale dell'isola via, finche' c'e' quello di Natale */
+  try{ const R=ROUNDABOUTS.find(r=>Math.hypot(r.cx-T.x,r.cz-T.z)<0.5); if(R && R.tree){ R.tree.setEnabled(false);
+      XMAS.undo.push(()=>R.tree.setEnabled(true)); } }catch(e){}
+  _xmTree(L,T.x,gy,T.z,T.H,rnd,true);
+  /* i regali sotto l'albero */
+  for(let i=0;i<7;i++){ const a=i*0.9+rnd()*0.4, r=T.H*0.3+rnd()*0.25; _xmGift(L,T.x+Math.cos(a)*r,gy,T.z+Math.sin(a)*r,0.32+rnd()*0.22,rnd,rnd()*1.5); }
+  const node=new BABYLON.TransformNode("xmBig",scene); node.parent=townRoot; _xmTieni(node); _xmFuse(node,L);
+  const R=T.H*0.31; addSolid(T.x-R*0.8,T.x+R*0.8,T.z-R*0.8,T.z+R*0.8,"town");
+  /* il cartello davanti all'albero, verso la High Street (ovest) */
+  const sg=_hwPlane(2.1,0.7,T.x-R-0.15,gy+0.75,T.z,Math.PI/2); sg.material=_xmSticker("Merry Christmas!"); sg.parent=node; _noGlow(sg); }
 
 /* v273: dove ricomincia la Park Ave (verso sud). Fino a qui e' marciapiede:
    Home (pad z 7..23) + un lotto libero da 16 m per il ristorante (23..41). */
@@ -9337,7 +9576,7 @@ function buildRoundabout(cx,cz,rApr,rIsl,withTree){
   { const r=rIsl-0.6, d=BABYLON.MeshBuilder.CreateDisc("rb"+(_sgN++),{radius:r,tessellation:40},scene);   // erba dell'isola
     d.rotation.x=Math.PI/2; d.material=grassMat("rbm"+(_sgN++),2*r,2*r); d.position.set(cx,0.15,cz);   // (era #5b9d4f a tinta unita)
     d.parent=townRoot; d.__ground=true; d.isPickable=false; }
-  if(withTree) spawnProp('tree_broad',cx,cz,4.5,{byHeight:true,occluder:true});
+  if(withTree) ROUNDABOUTS[ROUNDABOUTS.length-1].tree=spawnProp('tree_broad',cx,cz,4.5,{byHeight:true,occluder:true});   // v594: il Natale lo nasconde (XMAS)
   /* v297 (Giacomo, 1 ott: «rendi le rotonde attraversabili»): l'aiuola non
      e' piu' un muro. Prima addSolid copriva tutto il quadrato dell'isola e
      per passare da una parte all'altra della strada si doveva fare il giro.
@@ -10390,6 +10629,8 @@ function buildPedestrians(){
   buildTownCafe(); buildCafeNPCs(); buildKiosk(); buildStoryBench(); buildNightBench();
   try{ buildDiner(); }catch(e){ console.warn("[diner]",e); }   // v288: il diner nel lotto a sud di Home
   halloweenDiner();   // v331: solo nei giorni di HALLOWEEN.on
+  /* v594: la citta' e' pronta (edifici, café, diner): il Natale si accende se e' stagione */
+  try{ XMAS.pronto=true; XMAS.sync(); }catch(e){ console.warn("[natale]",e); }
   /* ⚠️⚠️ IL TERMINAL ERA DISABITATO FUORI DA UNIT 1 (Giacomo, 5 set: «con
      Theo non si puo' ancora parlare», e aveva ragione da prima che io
      toccassi qualsiasi cosa).
@@ -51731,8 +51972,10 @@ window.addEventListener("keydown",e=>{ if(__typingNow(e)) return;   // non rubar
      rete della scuola. E N da solo bastava, senza nemmeno passare da B o F.
      ⚠️ V e SHIFT+V restano a tutti: la visuale non e' un tasto di collaudo,
      e' una preferenza del giocatore. */
-  if(k==="n"||k==="g"||k==="c"||k==="b"||k==="f"||k==="p"){
+  if(k==="n"||k==="g"||k==="c"||k==="b"||k==="f"||k==="p"||k==="x"){
     if(!Student.teacher) return;
+    /* v594: X = decorazioni di Natale accese/spente quando si vuole (XMAS) */
+    if(k==="x"){ e.preventDefault(); if(!e.repeat) XMAS.toggle(); return; }
     /* P = PIOGGIA a comando (temporale \u2192 diluvio \u2192 pioggerella \u2192 asciutto \u2192
        stagione reale). Senza, per collaudare un acquazzone di novembre bisognerebbe
        aspettare novembre: la stagione e' proprio il punto della funzione, e
@@ -58285,6 +58528,7 @@ function openTeacherPanel(){
               { label:"\u{1F4E3} Notifiche / evento\u2026", act:openAvvisiPanel },     // v539
               { label:"\u{1F3C6} Graduatoria\u2026", act:openGraduatoriaPanel },
               { label:"\u{1F697} Prova i veicoli del TechLab\u2026", act:()=>setTimeout(teacherTechMenu,120) },   // v500
+              { label:"\u{1F384} Natale "+(XMAS.on?"acceso \u2713 (tocca per spegnere)":"spento (tocca per accendere)")+" \u00b7 tasto X", act:()=>XMAS.toggle() },   // v594
               { label:"\u{1F31E} Collaudo: giorno / notte\u2026", act:()=>setTimeout(openCollaudoPanel,120) } ] });   // v508
 }
 /* =====================================================================
