@@ -10677,6 +10677,23 @@ function talkToRanger(npc,hailed){
     RANGER_A.oobSeen=0; rangerEscort(dest,true); return;
   }
   if(oob && hailed) RANGER_A.oobSeen=(RANGER_A.oobSeen||0)+1;
+  /* v518 (Giacomo, 22 nov: «la seconda volta che il Ranger si avvicina
+     perche' sei fermo e non stai facendo niente, ti deve portare alla quest
+     che devi fare o finire, dicendo "No more wasting your time, kid, I'll
+     take you to your quest!"»). Il primo arrivo per l'anti-idling chiede
+     come sempre; dal secondo (nella stessa sessione) niente domande: la
+     frase, e dopo 3,5 s (o col bottone) il passaggio alla quest. Dopo il
+     passaggio si ricomincia a contare. */
+  if(!oob && hailed && goal){
+    RANGER_A.idleSeen=(RANGER_A.idleSeen||0)+1;
+    if(RANGER_A.idleSeen>=2){ RANGER_A.idleSeen=0;
+      let gone=false; const go=()=>{ if(gone) return; gone=true; rangerEscort(goal,false); };
+      DialogueBox.open({ npc, icon:"\u{1F9E5}", sub:"Town Ranger", autoSpeak:true,
+        text:"No more wasting your time, kid! I'll take you to your quest!",
+        italian:"Basta perdere tempo! Il Ranger ti accompagna alla tua quest: "+goal.ic+" "+goal.it+".",
+        buttons:[{ label:"\u{1F9ED} Let's go!", cls:"primary", act:go }] });
+      setTimeout(go,3500);
+      return; } }
   const av=npcTopics(npc);
   const ch=[];
   if(oob) ch.push({ label:"\u{1F9ED} Take me back", act:()=>rangerTakeBack(npc) });
@@ -53010,10 +53027,15 @@ function dcTick(){
   _qqHint("et_dc_hint","\u{1F57A} Dance & say! Listen to Jay and tap the moves in the right order: +⭐ · Ascolta il comando e tocca le mosse nell'ordine giusto");
   _dcSay(c.en);
   const K=["L","R","J","S"];
+  /* v518 (Giacomo, 22 nov: «nella gara di ballo allo skatepark non si devono
+     vedere le istruzioni (spin, jump...), solo in prima»). Dalla seconda il
+     comando NON e' scritto e i bottoni hanno solo le frecce: si ascolta Jay
+     (🔊 per riascoltare). La frase scritta compare dopo, con la soluzione. */
+  const scritto=yr<2;
   qqShow({ kind:"dc", head:"\u{1F57A} DANCE & SAY · Jay says…", ms:9000+2500*c.seq.length,
-    html:_escHtml(c.en), say:c.en, sayFn:()=>_dcSay(c.en),
-    need:c.seq.length, opts:K.map(k=>({ html:DC_ACTS[k].ic+"<small>"+DC_ACTS[k].lab+"</small>", val:k, ic:DC_ACTS[k].ic })),
-    check:v=>v.join("")===c.seq.join(""), right:"→ "+c.seq.map(k=>DC_ACTS[k].ic).join(" "),
+    html:scritto?_escHtml(c.en):"\u{1F3A7} <i>Listen to Jay!</i>", say:c.en, sayFn:()=>_dcSay(c.en),
+    need:c.seq.length, opts:K.map(k=>({ html:DC_ACTS[k].ic+(scritto?"<small>"+DC_ACTS[k].lab+"</small>":""), val:k, ic:DC_ACTS[k].ic })),
+    check:v=>v.join("")===c.seq.join(""), right:"→ "+c.seq.map(k=>DC_ACTS[k].ic).join(" ")+(scritto?"":" · \u201c"+_escHtml(c.en)+"\u201d"),
     it:"\u{1F1EE}\u{1F1F9} "+_escHtml(c.it), itAlways:yr<2, capMsg:"no more ⭐ today",
     onEnd:(ok)=>{ DC.next=performance.now()+DC_PAUSE; if(!ok) return 0;
       DC.queue=c.seq.slice();                                   // l'avatar lo fa, a tempo
@@ -54338,7 +54360,16 @@ function move(nx,nz,spd){
      muretto a 60 cm) si esce scorrendo lungo il varco, a pari affondo */
   const blkS=(sp0>0.001) ? ((x,z)=>solidPen(x,z,ramps)>sp0+EPS) : ((x,z)=>blocked(x,z,ramps));
   const blkN=(np0>0.001) ? ((x,z)=>npcPen(x,z)>np0+EPS) : npcBlocked;
-  const blk=(x,z)=>blkS(x,z)||(ramps&&skRampStepBlocked(ox,oz,x,z))||(noRamp&&(skRampTop(x,z)!==null||skRampTop(x+nx*0.45,z+nz*0.45)!==null))||trafficBlocked(x,z)||blkN(x,z)||(SHOP.cart&&cartBlocked(x,z,nx,nz));   // v256
+  /* v518 (Giacomo, 22 nov: «a piedi a volte sale sulle rampe come sullo
+     skate, se prendo la rincorsa o non so cosa»). Messo un piede sul primo
+     tratto della rampa (libero) si diventava «gia' sopra» (ramps=1) e i
+     solidi della rampa non contavano piu': a passi piccoli, o correndo, si
+     saliva tutta la curva. A piedi ora sulle rampe si SCENDE soltanto: mai
+     piu' in alto di 25 cm sul fondo, e mai piu' in alto di dove si e'. */
+  const footClimb=(area==="town" && !(RIDE.on && RIDE.on.ramps) && typeof SKATE!=="undefined" && SKATE.ramps)
+    ? ((x,z)=>{ const hn=skRampTop(x,z); if(hn===null) return false; const ho=skRampTop(ox,oz), base=SKATE.gy+0.035;
+        return hn>base+0.25 && hn>(ho===null?base:ho)+0.005; }) : (()=>false);
+  const blk=(x,z)=>blkS(x,z)||footClimb(x,z)||(ramps&&skRampStepBlocked(ox,oz,x,z))||(noRamp&&(skRampTop(x,z)!==null||skRampTop(x+nx*0.45,z+nz*0.45)!==null))||trafficBlocked(x,z)||blkN(x,z)||(SHOP.cart&&cartBlocked(x,z,nx,nz));   // v256
   if(!blk(px,pz)){ player.position.x=px; player.position.z=pz; }
   else if(!blk(px,oz)){ player.position.x=px; }
   else if(!blk(ox,pz)){ player.position.z=pz; }
