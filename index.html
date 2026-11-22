@@ -64172,7 +64172,7 @@ const AUTO_STALL={ x:-39, z:-27.25 };
 const AUTO_FLEET={
   auto1:{ id:"auto1", name:"Nelson 1",  key:null, home:{ x:-39, z:-27.25 }, kmh:{ min:20, max:50, top:90 },  theme:"lux", sitY:0.36, len:4.8, seatZ:0.18, seatX:0.40, doorZ:[0.40,-0.12],
           sub:"Self-driving car · TechLab prototype", car:null, spot:null },
-  turbo:{ id:"turbo", name:"The Beast", key:null, home:{ x:39,  z:-27.25 }, kmh:{ min:20, max:50, top:200 }, theme:"sport", sitY:0.30, len:5.2, seatZ:-0.02, seatX:0.28, doorZ:[0.31,-0.10],
+  turbo:{ id:"turbo", name:"The Beast", key:null, home:{ x:39,  z:-27.25 }, kmh:{ min:20, max:50, top:200 }, theme:"sport", sitY:0.30, len:5.2, seatZ:-0.02, seatX:0.22, doorZ:[0.31,-0.10],
           sub:"Self-driving supercar · ⭐ 3000", car:null, spot:null, stars:3000 } };
 AUTO.fid="auto1";
 function tlAutoF(id){ return AUTO_FLEET[id||AUTO.fid]||AUTO_FLEET.auto1; }
@@ -64252,6 +64252,16 @@ function tlAutoBuildCar(key,id){
   try{ car=spawnProp(F.id==="turbo"?"car_model":(key||CAR_KEYS[1]),H0.x,H0.z,F.len||4.4,{ byHeight:false, ry:0, yaw:PROP_YAW.car, occluder:false, ownMats:true }); }catch(e){}
   if(car){ car.parent=root; car.position.set(0,car.position.y,0); try{ tlFleetPaint(car,F.id); }catch(e){ console.warn("[fleet paint]",e); } }
   root.computeWorldMatrix(true);
+  /* v525 (Giacomo, 22 nov: «su The Beast la portiera sinistra apre anche
+     parte del parabrezza»). Il modello della Lamborghini NON e' centrato:
+     la scocca sta ~20 cm a sinistra del suo punto d'origine, quindi il
+     riquadro della portiera sinistra (|x| oltre meta' larghezza) prendeva
+     anche tetto e cornice del parabrezza, e la destra no. Si centra il
+     modello nell'auto (x e z): portiere, sedile e abitacolo simmetrici. */
+  if(car){ try{ const bb0=root.getHierarchyBoundingVectors(true);
+    const cw=new BABYLON.Vector3((bb0.min.x+bb0.max.x)/2-root.position.x,0,(bb0.min.z+bb0.max.z)/2-root.position.z);
+    const inv=BABYLON.Matrix.Invert(root.getWorldMatrix().getRotationMatrix()), d=BABYLON.Vector3.TransformNormal(cw,inv);
+    car.position.x-=d.x; car.position.z-=d.z; root.computeWorldMatrix(true); car.computeWorldMatrix(true); }catch(e){} }
   const bb=root.getHierarchyBoundingVectors(true), H=bb.max.y, HW=(bb.max.x-bb.min.x)/2, HL=(bb.max.z-bb.min.z)/2;
   const kit=new BABYLON.TransformNode("auto1k",scene); kit.parent=root; kit.rotation.y=-TRAFFIC_YAW;   // +z = avanti
   const M=(n,hex,em)=>{ const m=new BABYLON.StandardMaterial(n+(_lpN++),scene); m.diffuseColor=BABYLON.Color3.FromHexString(hex);
