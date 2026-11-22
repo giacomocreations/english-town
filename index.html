@@ -64714,6 +64714,7 @@ function tlAutoStart(mode,id){
   try{ standUpAll(); }catch(e){}
   AUTO.on=true; AUTO.mode=mode||"book"; AUTO.phase="ask"; AUTO.pov=false; AUTO.said={}; AUTO.idle=0; AUTO.wantDest=null;
   document.body.classList.add("veh","auto");               // v500: schermo pulito in auto (vedi CSS body.veh)
+  AUTO.micOn=false; AUTO.micEnd=0;
   AUTO.look={ y:0, p:0 }; AUTO.orbit=null; AUTO.kmh=40; AUTO.pend=0; AUTO.wild=0; AUTO.lastSay=""; AUTO.tour=null; AUTO.offer=null; AUTO.qT=0; AUTO.q=null; AUTO.place=null; AUTO.route=null;
   finFade(1,650,function(){
     /* dal TechLab (giro finale): la quest e' finita, si chiude e si esce in citta' */
@@ -64796,11 +64797,17 @@ function tlAutoMic(inputId,cb,fbId){
   try{ const r=new _SpkRec(); r.lang="en-GB"; r.interimResults=false; r.maxAlternatives=1;
     r.onresult=e=>{ const t=(e.results[0]&&e.results[0][0]&&e.results[0][0].transcript)||"";
       const i=document.getElementById(inputId); if(i) i.value=t; if(t) cb(t); };
-    r.onerror=e=>{ if(fb) fb.textContent=(e.error==="not-allowed"||e.error==="service-not-allowed")
+    r.onerror=e=>{ AUTO.micOn=false; AUTO.micEnd=performance.now(); if(fb) fb.textContent=(e.error==="not-allowed"||e.error==="service-not-allowed")
       ? "⚠️ Allow the microphone in the browser — or type." : "⚠️ I didn't hear you well — try again, or type."; };
-    r.start(); if(fb) fb.textContent="\u{1F534} I'm listening…";
+    /* v516 (Giacomo, 22 nov: «se apro il microfono per parlare, la domanda
+       e le indicazioni sono rimandate finche' non finisco»): finche' il
+       microfono ascolta (e 3 s dopo, per leggere la risposta) il computer
+       di bordo non fa domande e il navigatore non parla (tlAutoMicBusy) */
+    r.onend=()=>{ AUTO.micOn=false; AUTO.micEnd=performance.now(); };
+    AUTO.micOn=true; r.start(); if(fb) fb.textContent="\u{1F534} I'm listening…";
   }catch(e){ if(fb) fb.textContent="⚠️ Microphone not available — please type."; }
 }
+function tlAutoMicBusy(){ return !!AUTO.micOn || (AUTO.micEnd && performance.now()-AUTO.micEnd<3000); }
 function tlAutoNorm(raw){ return String(raw||"").toLowerCase().replace(/[^a-z0-9&' ]+/g," ").replace(/\s+/g," ").trim(); }
 function tlAutoTry(raw){
   const fb=document.getElementById("tlAutoFb");
@@ -65055,7 +65062,7 @@ function tlAutoGo(P,Rpre){
        misure non valgono, carGroundRig dava un lift di 2-3 m */
     if(tc.lift==null){ try{ carGroundRig(tc); }catch(e){} }
     if(_trafficCars.indexOf(tc)<0) _trafficCars.push(tc);
-    AUTO.merging=false; AUTO.qT=4;
+    AUTO.merging=false; AUTO.qT=60;                // v516 (Giacomo: «per la prima domanda aspetta 1 minuto dalla partenza»)
     if(AUTO.wantDest){ const W=AUTO.wantDest; AUTO.wantDest=null;                   // v511: meta chiesta mentre si usciva dal parcheggio
       try{ if(!tlAutoRedirect(W)) tlAutoPanelDraw("Sorry, I can't find a road to "+W.name+" from here."); }catch(e){} }
     setTimeout(()=>{ try{ if(!tc.wh) tc.wh=carWheelsRig(tc); }catch(e){} },60); }); });
@@ -65332,7 +65339,7 @@ function tlAutoTick(){
   try{ tlAutoRadioTick(); }catch(e){}
   { const tc=AUTO.car.tc; if(tc){ tc.canOvt=(AUTO.fid==="turbo" && AUTO.phase==="drive" && !AUTO.merging && AUTO.kmh>tlAutoK().max); tc.fast=tc.canOvt; } }                       // v503: il giro della citta'
   /* il cervellone: una domanda ogni ~20 s di strada */
-  if(AUTO.phase==="drive" && !AUTO.merging && !AUTO.q){ AUTO.qT-=dt; if(AUTO.qT<=0) tlAutoQuiz(); }
+  if(AUTO.phase==="drive" && !AUTO.merging && !AUTO.q){ AUTO.qT-=dt; if(AUTO.qT<=0 && !tlAutoMicBusy()) tlAutoQuiz(); }   // v516: mai mentre si parla al microfono
   const now=performance.now(); if(now-AUTO.lastNav>220){ AUTO.lastNav=now; tlAutoNavDraw(); }
 }
 /* ---- il pannello in basso: velocita' in inglese + le domande ---- */
@@ -65492,7 +65499,40 @@ function tlAutoSayGap(q){
     if(b) await TTS.say(b,{ gender:"f" });
   }catch(e){} };
   go(); }
-function tlAutoQuiz(){ AUTO.q=AUTO_QS[AUTO.qi%AUTO_QS.length]; AUTO.qi++; AUTO.q.tries=0; tlAutoPanelDraw();
+/* =====================================================================
+   v516 — LE DOMANDE SULLE UNIT SVOLTE (Giacomo, 22 nov: «quando prendi la
+   macchina fuori dalla quest TechLab, il computer di bordo ti fa domande
+   col gap sulle unit svolte fin'ora»). Fuori dal giro finale del TechLab
+   (mode "finale" o quest TechLab in corso: li' restano will / may / might)
+   3 domande su 4 vengono dal lessico delle unit FINITE (GEM_LEX: la parola
+   e la sua frase col buco, «I write with a ___.»), le altre sono quelle di
+   sempre su will. Tre parole fra cui scegliere: quella giusta e due della
+   stessa unit. Niente ripetizioni a breve (le ultime 15). Il docente pesca
+   da tutte le unit aperte.
+   ===================================================================== */
+function tlAutoLexUnits(){ const out=[]; let prof=false; try{ prof=!!Student.teacher; }catch(e){}
+  for(const id in GEM_LEX){ let ok=false;
+    try{ ok=prof?gemUnitOpen(id):!!(Progress.get(id)||{}).done; }catch(e){}
+    if(ok) out.push(id); }
+  return out; }
+function tlAutoLexQ(){
+  const units=tlAutoLexUnits(); if(!units.length) return null;
+  const seen=AUTO.lexSeen=AUTO.lexSeen||[], C=[];
+  units.forEach(u=>(GEM_LEX[u]||[]).forEach(w=>{ if(w[3] && w[3].indexOf("___")>=0 && seen.indexOf(w[0])<0) C.push({ u, w }); }));
+  if(!C.length){ AUTO.lexSeen=[]; return null; }
+  const pick=C[Math.floor(Math.random()*C.length)], ok=pick.w[0], lo=String(ok).toLowerCase();
+  let D=(GEM_LEX[pick.u]||[]).map(w=>w[0]).filter(x=>String(x).toLowerCase()!==lo);
+  if(D.length<2) units.forEach(u=>(GEM_LEX[u]||[]).forEach(w=>{ if(String(w[0]).toLowerCase()!==lo && D.indexOf(w[0])<0) D.push(w[0]); }));
+  D=_qqShuffle(D).slice(0,2); if(D.length<2) return null;
+  seen.push(ok); if(seen.length>15) seen.shift();
+  return { q:pick.w[3], o:_qqShuffle([ok].concat(D)), ok, it:"\u00ab"+ok+"\u00bb = "+pick.w[1], lex:true };
+}
+function tlAutoQuiz(){
+  let Q=null;
+  const tech=AUTO.mode==="finale" || (typeof Quest!=="undefined" && Quest.unit===UNIT_TECH && !!Quest.step);
+  if(!tech && Math.random()<0.75){ try{ Q=tlAutoLexQ(); }catch(e){ Q=null; } }
+  if(!Q){ Q=AUTO_QS[AUTO.qi%AUTO_QS.length]; AUTO.qi++; }
+  AUTO.q=Q; Q.tries=0; tlAutoPanelDraw();
   tlAutoSayGap(AUTO.q.q); }
 function tlAutoAnswer(i){
   const Q=AUTO.q; if(!Q) return; const w=Q.o[i], fb=document.getElementById("auto1-qfb");
@@ -65532,7 +65572,7 @@ function tlAutoNavDraw(){
   const low=t=>t.charAt(0).toLowerCase()+t.slice(1);
   const msg=AUTO.phase==="ask"?"Where would you like to go?":AUTO.phase==="drive"?(nx?(nx.d>8?"In "+Math.max(10,Math.round(nx.d/10)*10)+" metres, "+low(nx.txt):nx.txt):"")
            :(AUTO.phase==="arrive"?"You have arrived!":"");
-  if(nx && AUTO.phase==="drive" && nx.key!=="arr" && nx.d<=60 && nx.d>20 && !AUTO.said[nx.key]){ AUTO.said[nx.key]=1;
+  if(nx && AUTO.phase==="drive" && nx.key!=="arr" && nx.d<=60 && nx.d>20 && !AUTO.said[nx.key] && !tlAutoMicBusy()){ AUTO.said[nx.key]=1;   // v516: a microfono aperto si aspetta
     try{ if(!AUTO.q) TTS.say("In "+Math.round(nx.d/10)*10+" metres, "+low(nx.txt),{ gender:"f" }); }catch(e){} }
   if(AUTO.ui){ AUTO.ui.innerHTML='<b>\u{1F697} '+tlAutoName()+'</b> · '+kmh+' km/h'+(AUTO.place?' · \u{1F3C1} '+_escHtml(AUTO.place.name):'')
       +(eta?' · '+Math.floor(eta/60)+':'+String(eta%60).padStart(2,"0"):'')+(msg?'<div style="font-weight:700;margin-top:2px;">'+_escHtml(msg)+'</div>':''); }
