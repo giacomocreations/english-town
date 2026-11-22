@@ -64892,9 +64892,19 @@ function tlDoorBuild(C){
       const M=m.getWorldMatrix().multiply(kitInv), P=[];
       for(let i=0;i<pos.length;i+=3) P.push(BABYLON.Vector3.TransformCoordinates(new BABYLON.Vector3(pos[i],pos[i+1],pos[i+2]),M));
       const keep=[], door={ "-1":[], "1":[] };
+      /* v524 (Giacomo, 22 nov: «aprendo gli sportelli si alza anche un pezzo
+         di parabrezza»): vicino al montante i bordi del parabrezza cadono nel
+         riquadro della portiera. Ora conta anche DOVE GUARDA il triangolo:
+         del vetro va con la portiera solo cio' che guarda di lato (il
+         finestrino), mai cio' che guarda avanti o in su (il parabrezza); della
+         scocca resta ferma la parte che guarda avanti (cornice del parabrezza). */
+      const glass=/glass|window/i.test(((m.material&&m.material.name)||"")+" "+m.name);
       for(let t=0;t<idx.length;t+=3){ const a=P[idx[t]], b=P[idx[t+1]], c=P[idx[t+2]];
         const x=(a.x+b.x+c.x)/3, y=(a.y+b.y+c.y)/3, z=(a.z+b.z+c.z)/3;
-        const inD=Math.abs(x)>xIn && z<zF && z>zB && y>yLo && y<yHi;
+        let inD=Math.abs(x)>xIn && z<zF && z>zB && y>yLo && y<yHi;
+        if(inD){ const n=BABYLON.Vector3.Cross(b.subtract(a),c.subtract(a)); const L=n.length()||1; const nx=Math.abs(n.x)/L, nz=Math.abs(n.z)/L, ny=Math.abs(n.y)/L;
+          if(glass && nx<0.45) inD=false;                         // parabrezza (o lunotto): resta
+          else if(!glass && nx<0.25 && (nz>0.55 || (ny>0.5 && y>H*0.7))) inD=false; }   // cornice/tetto: resta
         (inD?door[x<0?"-1":"1"]:keep).push(idx[t],idx[t+1],idx[t+2]); }
       if(door["-1"].length+door["1"].length<9) return;
       [-1,1].forEach(sd=>{ const L=door[String(sd)]; if(L.length<9) return;
