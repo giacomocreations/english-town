@@ -54575,7 +54575,7 @@ const NEEDS_LINES={
 };
 const Needs={
   e:100, f:100, d:100,            // energia, fame, sete (100 = pieno)
-  rot:{}, bag:null, bagEat:null, bagMesh:null,
+  rot:{}, bag:null, bagEat:null, bagMesh:null, bagFing:null, bagFingOf:null, bagFingOn:false,
   loaded:false, savedF:null, saveT:0,
   run:false,                      // ultimo fotogramma: si stava correndo davvero?
   last:null,                      // posizione al fotogramma prima (per i metri)
@@ -54782,28 +54782,63 @@ const Needs={
     if(!best || bd<2.2) return null;
     const v=new BABYLON.Vector3(best.x,0,best.z); v.__kind="table"; return v;
   },
-  /* il sacchetto in mano: un sacchetto di carta col bordo ripiegato */
+  /* il sacchetto in mano. v592b (Giacomo, con screenshot: «il sacchetto e'
+     preso male, ha le mani dentro invece di tenerlo per i manici!»). Prima
+     era una scatola appesa al centro della mano: il palmo ci finiva dentro.
+     Ora e' un sacchetto con DUE MANICI di carta ad arco, che si uniscono in
+     alto proprio nel pugno; il corpo pende sotto, in verticale, scostato di
+     qualche centimetro dalla gamba; e le dita della sinistra si chiudono sui
+     manici (stesso _eatCurl delle dita sul giornale). L'origine del nodo E'
+     il punto di presa: tutto il resto sta sotto. */
+  bagBuild(){
+    const V=BABYLON.Vector3, n=new BABYLON.TransformNode("needsBag",scene);
+    const mk=(name,rgb)=>{ const m=new BABYLON.StandardMaterial(name,scene); m.diffuseColor=new BABYLON.Color3(rgb[0],rgb[1],rgb[2]);
+      m.specularColor=new BABYLON.Color3(0.04,0.04,0.04); return m; };
+    const kraft=mk("needsBagM",[0.74,0.58,0.40]), rim=mk("needsBagR",[0.66,0.51,0.35]), cord=mk("needsBagC",[0.55,0.41,0.27]);
+    const HY=-0.085, BH=0.19, BZ=0.025;              // y del bordo del sacchetto, altezza, scostamento dalla gamba (z locale = fuori)
+    const body=BABYLON.MeshBuilder.CreateBox("needsBagB",{ width:0.17, height:BH, depth:0.10 },scene);
+    body.material=kraft; body.parent=n; body.position.set(0, HY-BH/2, BZ);
+    const top=BABYLON.MeshBuilder.CreateBox("needsBagT",{ width:0.172, height:0.016, depth:0.102 },scene);
+    top.material=rim; top.parent=n; top.position.set(0, HY-0.008, BZ);
+    const ms=[body,top];
+    /* i due manici: archi dal bordo delle due facce larghe fino al pugno */
+    [BZ+0.045, BZ-0.045].forEach((zf,i)=>{
+      const path=[]; for(let k=0;k<=12;k++){ const t=Math.PI*k/12, s=Math.sin(t);
+        path.push(new V(0.042*Math.cos(t), HY-0.004+(0.004-HY)*s, zf*(1-s)+0.004*(i?-1:1)*s)); }
+      const h=BABYLON.MeshBuilder.CreateTube("needsBagH"+i,{ path, radius:0.0055, tessellation:8, cap:BABYLON.Mesh.CAP_ALL },scene);
+      h.material=cord; h.parent=n; ms.push(h); });
+    ms.forEach(m=>{ m.isPickable=false; m.__dyn=true; m.alwaysSelectAsActiveMesh=true;
+      try{ if(typeof shadowGen!=="undefined" && shadowGen) shadowGen.addShadowCaster(m); }catch(e){} });
+    this.bagMesh=n; return n;
+  },
+  /* le dita della sinistra: chiuse sui manici finche' c'e' il sacchetto in mano */
+  bagFingers(on,hand){
+    if(this.bagFingOf!==avatarRoot){ this.bagFingOf=avatarRoot; this.bagFing=null; this.bagFingOn=false; }
+    if(!on){ if(this.bagFingOn && this.bagFing) this.bagFing.forEach(F=>{ try{ F.tn.rotationQuaternion.copyFrom(F.base); }catch(e){} });
+      this.bagFingOn=false; return; }
+    if(!avatarRoot || !hand) return;
+    if(!this.bagFing) this.bagFing=_eatFingList(avatarRoot,"L",{ "2":1.15, "3":1.0 },{ "2":0.45, "3":0.35 });
+    _eatCurl(this.bagFing,hand,1); this.bagFingOn=true;
+  },
   bagTick(){
     const show=!!(this.bag && !this.bagEat && area==="town" && avatarRoot && avatarRoot.isEnabled() && !BSIT.b
       && !(typeof SHOW!=="undefined" && SHOW.seated));
-    if(!show){ if(this.bagMesh) this.bagMesh.setEnabled(false); return; }
-    if(!this.bagMesh){
-      const n=new BABYLON.TransformNode("needsBag",scene), M=new BABYLON.StandardMaterial("needsBagM",scene), M2=new BABYLON.StandardMaterial("needsBagT",scene);
-      M.diffuseColor=new BABYLON.Color3(0.74,0.58,0.40); M.specularColor=new BABYLON.Color3(0.05,0.05,0.05);
-      M2.diffuseColor=new BABYLON.Color3(0.60,0.45,0.30); M2.specularColor=M.specularColor;
-      const body=BABYLON.MeshBuilder.CreateBox("needsBagB",{ width:0.17, height:0.19, depth:0.10 },scene); body.material=M; body.parent=n; body.position.y=-0.10;
-      const top=BABYLON.MeshBuilder.CreateBox("needsBagF",{ width:0.172, height:0.04, depth:0.03 },scene); top.material=M2; top.parent=n; top.position.y=0.005;
-      /* ⚠️ si muove a ogni fotogramma: fuori dall'octree statico da subito (__dyn),
-         senza aspettare che il guardiano se ne accorga */
-      [body,top].forEach(m=>{ m.isPickable=false; m.__dyn=true; m.alwaysSelectAsActiveMesh=true; try{ if(typeof shadowGen!=="undefined" && shadowGen) shadowGen.addShadowCaster(m); }catch(e){} });
-      this.bagMesh=n;
-    }
-    const n=this.bagMesh; n.setEnabled(true);
+    if(!show){ if(this.bagMesh) this.bagMesh.setEnabled(false); this.bagFingers(false); return; }
+    const n=this.bagMesh||this.bagBuild(); n.setEnabled(true);
     const ry=player.rotation.y, rx=Math.cos(ry), rz=-Math.sin(ry);   // il «destra» del giocatore
-    let h=null; try{ const H=_newsHands(); h=_newsHandPos(H.L); }catch(e){}
-    if(!h) h=new BABYLON.Vector3(player.position.x-rx*0.25, player.position.y+0.85, player.position.z-rz*0.25);
-    /* appeso sotto la mano, un po' in fuori dalla gamba */
-    n.position.set(h.x-rx*0.05, h.y-0.03, h.z-rz*0.05); n.rotation.set(0,ry,0);
+    let hand=null, B=null; try{ const H=_newsHands(); hand=H.L[0]||null; }catch(e){}
+    if(hand){ this.bagFingers(true,hand); try{ B=_handBasis(hand); }catch(e){ B=null; } }
+    let g;
+    if(B){
+      /* la presa: davanti al palmo (n), un po' verso la punta delle dita (d),
+         cioe' dentro il pugno chiuso */
+      g=B.c.add(B.n.scale(0.014)).add(B.d.scale(0.018));
+    } else {
+      let h=null; try{ h=_newsHandPos(_newsHands().L); }catch(e){}
+      g=h || new BABYLON.Vector3(player.position.x-rx*0.25, player.position.y+0.8, player.position.z-rz*0.25);
+    }
+    /* sempre in verticale (pende), girato come il corpo: x locale = avanti, z locale = fuori (sinistra) */
+    n.position.copyFrom(g); n.rotation.set(0, ry-Math.PI/2, 0);
   },
   /* seduti a un tavolo da picnic col sacchetto: il cibo sul tavolo e si mangia */
   benchEat(b){
@@ -54889,6 +54924,12 @@ const Needs={
     set(".nd-e",this.e); set(".nd-f",this.f); set(".nd-d",this.d);
     el.classList.toggle("paused", !!pause);
     el.classList.toggle("boost", performance.now()<this.sprintTo);
+    /* v592b (Giacomo: «la scheda dei livelli sta sotto DOCENTE · tutto aperto,
+       va spostata sotto»). Il cartellino del docente (teacherBadge) sta a
+       top:148, alto quanto il testo: le barrette scendono sotto di lui. */
+    let top=150; try{ const tb=document.getElementById("teach-badge");
+      if(tb && tb.offsetParent!==null){ const r=tb.getBoundingClientRect(); if(r.bottom>0) top=Math.max(top, Math.round(r.bottom+8)); } }catch(e){}
+    if(el.__top!==top){ el.__top=top; el.style.top=top+"px"; }
     el.classList.toggle("hungry", this.starving() && this.hungry());
     el.classList.toggle("thirsty", this.starving() && this.thirsty());
     el.style.display="block";
