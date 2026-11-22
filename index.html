@@ -387,7 +387,11 @@
      lo vede: piu' grande e lampeggia per 3 secondi»). Vale per i messaggi
      brevi che cominciano con ✓ (oggetto preso, risposta giusta): vedi toast() */
   #toast.big{font-size:clamp(20px,5.4vw,30px);font-weight:800;padding:14px 26px;border-radius:14px;
-    background:#1f7a46;color:#fff;border:3px solid #9ff0c4;top:22px;}
+    background:#1f7a46;color:#fff;border:3px solid #9ff0c4;top:clamp(140px,24vh,210px);}
+  /* v514 (Giacomo, 22 nov: «le risposte giuste in verde che lampeggiano
+     coprono la parte al centro dove c'e' scritto cosa devi fare dopo:
+     abbassale»). Erano a 22 px dall'alto, sopra il promemoria della
+     consegna (#quest-nudge, a 70 px): ora stanno sotto, a ~1/4 di schermo. */
   #toast.big.blink{animation:etTblink .5s ease-in-out 6;}
   /* v501 (Giacomo: «la frase giusta in verde, dopo l'anello giusto, e'
      coperta da quella col buco»): in volo / in auto il pannello in alto
@@ -28053,8 +28057,23 @@ function freeShopMenu(npc,U,icon,who,start,talk){
      non compariva proprio. Ora c'e' anche al primo saluto, e a quest in
      corso solo per chi puo' gia' comprare (il docente), con la voce per
      continuare la quest. Agli alunni a meta' quest resta la quest e basta. */
-  const open=shopOpenFor(U), inQuest=(Quest.unit===U && !!Quest.step);
+  const open=shopOpenFor(U);
+  /* v514 (Giacomo, 22 nov: «se la quest del clothes shop e' completata,
+     quando vai da Nina non ti propone piu' di andare avanti con la quest:
+     appare solo la tessera "I'd like to buy something"»). Rientrando, la
+     quest riparte da sola (enterUnit): per chi la unit l'ha FINITA non conta
+     come quest in corso. Niente «Let's go on with the quest» (e niente
+     chiacchiere): solo lo shopping, e Bye. Vale anche per Sam. */
+  let done=false; try{ done=!!(Progress.get(U.id)||{}).done; }catch(e){}
+  const inQuest=!done && (Quest.unit===U && !!Quest.step);
   if(inQuest && !open) return false;
+  if(done && open){
+    const first0=!npc.metPlayer; npc.metPlayer=true;
+    DialogueBox.open({ npc, icon, sub:who, text:(first0?"Hi! I'm "+(npc.name||who)+". ":"Hello again! ")+"What can I do for you?",
+      italian:"Vuoi fare shopping?",
+      choices:[ { label:"\u{1F6CD}\uFE0F I'd like to buy something.", act:()=>{ npc.__greeted=true; return start(npc); } },
+                { label:"Bye!", cls:"ghost", act:()=>{} } ] });
+    return true; }
   const first=!npc.metPlayer; npc.metPlayer=true;
   DialogueBox.open({ npc, icon, sub:who, text:(first?"Hi! I'm "+(npc.name||who)+". ":"Hello again! ")+"What can I do for you?",
     italian:open?"Vuoi fare shopping o "+(inQuest?"continuare la quest":"fare due chiacchiere")+"?":"Lo shopping si apre quando finisci la quest di questo negozio.",
