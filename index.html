@@ -64686,10 +64686,21 @@ function tlAutoAsk(){
   AUTO.phase="ask";
   const mic=_SpkRec?'<button type="button" id="tlAutoMic" class="qm-btn" style="margin-left:6px;">\u{1F3A4}</button>':"";
   const F=tlAutoF(), turbo=F.id==="turbo";
-  DialogueBox.open({ name:(turbo?"\u{1F3CE}\uFE0F ":"\u{1F697} ")+F.name, sub:F.sub, autoSpeak:true, ttsOpts:{ gender:"f" },
-    text:turbo?"Hello, champion! I'm The Beast, the fastest car in town. No steering wheel: just tell me where to go. Where would you like to go?"
+  /* v512 (Giacomo, 22 nov: «la prima volta la spiegazione va bene; tutte le
+     volte successive non c'e' bisogno di sentire di nuovo la presentazione,
+     si puo' entrare tranquillamente»). La presentazione completa (parlata)
+     solo la PRIMA volta per ciascuna auto (et_auto_intro, salvato come i
+     progressi); dopo, una riga sola, senza voce, e si scrive subito la meta.
+     Anche la finestra riaperta dopo un Esc e' quella breve. */
+  let intro={}; try{ intro=Sync.get("et_auto_intro",null)||{}; }catch(e){}
+  const first=!intro[F.id];
+  if(first){ intro[F.id]=Date.now(); try{ Sync.set("et_auto_intro",intro); }catch(e){} }
+  DialogueBox.open({ name:(turbo?"\u{1F3CE}\uFE0F ":"\u{1F697} ")+F.name, sub:F.sub, autoSpeak:first, ttsOpts:{ gender:"f" },
+    text:!first?"Welcome back! Where would you like to go?"
+        :turbo?"Hello, champion! I'm The Beast, the fastest car in town. No steering wheel: just tell me where to go. Where would you like to go?"
               :"Hello! I'm Nelson 1. I have no steering wheel: you just tell me where to go. Where would you like to go?",
-    italian:"Scrivi (o di' col microfono) una frase: «Take me to the school, please». "+F.name+" ti porta nel punto più vicino e ti lascia sul marciapiede. Per fare il giro della città: «Take me on a tour of the town, please». Puoi anche chiedere «Play some music, please» o «What's my next quest?». Premi O per guardare dentro.",
+    italian:!first?"«Take me to …, please» · «Take me on a tour of the town, please» · O per guardare dentro."
+        :"Scrivi (o di' col microfono) una frase: «Take me to the school, please». "+F.name+" ti porta nel punto più vicino e ti lascia sul marciapiede. Per fare il giro della città: «Take me on a tour of the town, please». Puoi anche chiedere «Play some music, please» o «What's my next quest?». Premi O per guardare dentro.",
     html:'<div style="display:flex;align-items:center;"><input id="tlAutoIn" type="text" autocomplete="off" '
       +'placeholder="Take me to …, please." style="flex:1;font:inherit;padding:8px 10px;border-radius:10px;border:1px solid #ccd6da;">'+mic+'</div>'
       +'<div id="tlAutoFb" style="margin-top:8px;min-height:20px;font-weight:600;"></div>',
