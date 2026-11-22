@@ -54462,7 +54462,8 @@ const Needs={
   once(key,cond,fn){ if(cond){ if(!this.said[key]){ this.said[key]=true; fn(); } } else this.said[key]=false; },
   tick(){
     const p=player && player.position; if(!p) return;
-    const dt=Math.min(0.2,(engine.getDeltaTime()||16)/1000), now=performance.now();
+    /* 0,5 s al massimo: sui tablet lenti (pochi fps) il riposo seduti non deve durare il doppio */
+    const dt=Math.min(0.5,(engine.getDeltaTime()||16)/1000), now=performance.now();
     const last=this.last; this.last={ x:p.x, z:p.z };
     const pause=this.paused();
     if(!pause){
