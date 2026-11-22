@@ -8323,6 +8323,18 @@ const XMAS=(()=>{ let forz=null;
     while(X.solidi.length){ const s=X.solidi.pop(); try{ const i=solids.indexOf(s); if(i>=0) solids.splice(i,1); }catch(e){} }
     try{ refreshShadowCasters(); }catch(e){} };
   X.sync=function(){ if(X.want()) X.accendi(); else X.spegni(); };
+  /* v596 (Giacomo: «le luci, dal tramonto, a intermittenza»): le lucine
+     colorate si accendono col buio (sono nightLights: updateDayNight le
+     scala con la notte) e LAMPEGGIANO: i quattro colori a coppie alterne,
+     rosso+blu poi giallo+verde, con un breve passaggio sfumato. Si cambia
+     solo la luce piena (__nightEmissive) di 4 materiali condivisi: costa
+     nulla e tutta la citta' lampeggia insieme, come le luci vere. */
+  X.blink=function(){ if(!X.on || !_xmM) return;
+    const t=performance.now()/1000, ph=(t*1.25)%2, k=v=>0.12+0.88*Math.max(0,Math.min(1,v));
+    const a=k(ph<1?(ph<0.15?ph/0.15:1):(ph<1.15?1-(ph-1)/0.15:0));   // coppia A: accesa nella prima meta' del ciclo
+    const b=k(ph>=1?(ph<1.15?(ph-1)/0.15:1):(ph<0.15?1-ph/0.15:0));
+    _xmM.bulbs.forEach((m,i)=>{ const f=(i%2)?b:a, B=m.__xmBase; if(B) m.__nightEmissive.set(B.r*f,B.g*f,B.b*f); }); };
+  try{ scene.onBeforeRenderObservable.add(()=>{ try{ X.blink(); }catch(e){} }); }catch(e){}
   /* tasto del docente: acceso/spento a mano; di nuovo, ancora l'opposto (il
      ciclo e' acceso -> spento -> acceso...), finche' non si ricarica: la
      stagione vera torna al prossimo caricamento */
@@ -8343,6 +8355,7 @@ function _xmMats(){ if(_xmM) return _xmM;
   const bulb=(n,hex,glow)=>{ const m=std(n,hex,0.3); m.emissiveColor=new C3(0,0,0); m.__nightEmissive=C3.FromHexString(glow);
     try{ nightLights.push(m); }catch(e){} return m; };
   const bulbs=[bulb("xmBulbR","#d8323a","#ff3b3b"), bulb("xmBulbY","#e8b93c","#ffd24a"), bulb("xmBulbB","#3a6fd8","#4f8bff"), bulb("xmBulbG","#3aa65a","#5dff7a")];
+  bulbs.forEach(m=>{ m.__xmBase=m.__nightEmissive.clone(); });   // v596: il colore pieno, per l'intermittenza (_xmBlink)
   const flake=_dnTex("xmFlakeT",128,128,(c,w)=>{ c.clearRect(0,0,w,w); c.strokeStyle="#ffffff"; c.lineWidth=7; c.lineCap="round";
     c.translate(w/2,w/2);
     for(let i=0;i<6;i++){ c.rotate(Math.PI/3); c.beginPath(); c.moveTo(0,0); c.lineTo(0,-54);
@@ -8377,8 +8390,14 @@ function _xmTree(L,x,y,z,H,rnd,big){
   const potH=big?0:H*0.16, base=y+potH, D=H*0.62;
   if(!big){ const p=BABYLON.MeshBuilder.CreateCylinder("xmPot",{ diameterTop:D*0.55, diameterBottom:D*0.42, height:potH, tessellation:10 },scene);
     p.position.set(x,y+potH/2,z); L.pot.push(p); }
-  else { const t=BABYLON.MeshBuilder.CreateCylinder("xmTr",{ diameter:H*0.07, height:H*0.12, tessellation:8 },scene); t.position.set(x,y+H*0.06,z); L.trunk.push(t); }
-  const t0=big?H*0.1:H*0.04, tiers=big?4:3, hT=(H-t0)/tiers*1.45; let apex=base;
+  const t0=big?H*0.065:H*0.04, tiers=big?4:3, hT=(H-t0)/tiers*1.45; let apex=base;
+  /* v596 (Giacomo, screenshot: «l'albero del parco e' sospeso in aria, manca
+     il tronco fino alla fine»): prima il primo cono partiva a 0,7 m da terra
+     e il tronco (alto 0,84, largo 0,49) restava nell'ombra dei rami. Ora i
+     rami partono piu' bassi e il tronco, piu' grosso, sale fin dentro il
+     primo cono: da terra ai rami c'e' sempre legno. */
+  if(big){ const th=t0+hT*0.45, t=BABYLON.MeshBuilder.CreateCylinder("xmTr",{ diameterTop:H*0.07, diameterBottom:H*0.1, height:th, tessellation:10 },scene);
+    t.position.set(x,y+th/2,z); L.trunk.push(t); }
   for(let i=0;i<tiers;i++){ const f=i/tiers, d=D*(1-f*0.68), yb=base+t0+(H-t0)*f*0.78; apex=Math.max(apex,yb+hT);
     const c=BABYLON.MeshBuilder.CreateCylinder("xmCone",{ diameterTop:0, diameterBottom:d, height:hT, tessellation:big?14:10 },scene);
     c.position.set(x,yb+hT/2,z); (i%2?L.fir2:L.fir).push(c);
@@ -8556,24 +8575,32 @@ function _xmSanta(S){ const M=_xmSantaMats(), B=BABYLON.MeshBuilder, V=BABYLON.V
   tor("white",0.28,0.065,0,1.545,0);
   const hat=cyl("red",{ diameterTop:0, diameterBottom:0.26, height:0.33 },0.03,1.69,-0.01,0,-0.42);
   sph("white",0.085,0.03+Math.sin(0.42)*0.165,1.69+Math.cos(0.42)*0.165,-0.01);
-  /* braccio sinistro giu', con il guanto */
-  cyl("red",{ diameter:0.13, height:0.48 },-0.31,0.98,0.02,0,0.18); tor("white",0.14,0.045,-0.355,0.75,0.02); sph("black",0.12,-0.36,0.71,0.03);
+  /* v596 (Giacomo, screenshot: «braccia staccate, messe un po' a caso»).
+     Le braccia nascono dalla SPALLA: un perno per lato (SH), con la palla
+     della spalla nel corpo a coprire la giuntura, e il braccio che PENDE dal
+     perno (verso -y). Il sinistro sta giu' lungo il fianco; il destro
+     (node.__arm) si alza e saluta ruotando sul perno: resta attaccato. */
+  [-1,1].forEach(sd=>sph("red",0.19,sd*0.25,1.22,0.02));
   /* il sacco dei regali (solo al parco) */
   if(S.sack){ sph("sack",0.62,-0.6,0.3,-0.2,1,0.95,0.9); cyl("gold",{ diameter:0.16, height:0.06 },-0.6,0.6,-0.2);
     box("red",0.2,0.18,0.2,-0.52,0.66,-0.12); box("white",0.17,0.15,0.17,-0.7,0.64,-0.25); }
   const node=new BABYLON.TransformNode("xmSanta",scene); node.parent=townRoot;
   let gy=0; try{ gy=_hwGroundY(S.x,S.z); }catch(e){}
   node.position.set(S.x,gy,S.z); node.rotation.y=Math.atan2(S.face[0],S.face[1]);
-  /* il braccio destro: perno alla spalla, alzato, saluta */
-  const arm=new BABYLON.TransformNode("xmSantaArm",scene); arm.parent=node; arm.position.set(0.27,1.23,0.02);
-  const A={ red:[], white:[], black:[] };
-  { const c=B.CreateCylinder("xmS",{ diameter:0.13, height:0.48, tessellation:12 },scene); c.position.set(0,0.24,0); A.red.push(c);
-    const t=B.CreateTorus("xmS",{ diameter:0.14, thickness:0.045, tessellation:18 },scene); t.position.set(0,0.47,0); A.white.push(t);
-    const g=B.CreateSphere("xmS",{ diameter:0.12, segments:8 },scene); g.position.set(0,0.53,0); A.black.push(g); }
+  /* le braccia: perno alla spalla, braccio che pende dal perno (verso -y) */
   const fuse=(lists,mats,parent)=>Object.keys(lists).forEach(k=>{ const arr=lists[k]; if(!arr.length) return;
     const m=arr.length===1?arr[0]:BABYLON.Mesh.MergeMeshes(arr,true,true,undefined,false,false); if(!m) return;
     m.material=mats[k]; m.parent=parent; m.isPickable=false; m.__cast=true; _noGlow(m); });
-  fuse(L,M,node); fuse(A,M,arm);
+  const mkArm=sd=>{ const a=new BABYLON.TransformNode("xmSantaArm",scene); a.parent=node; a.position.set(sd*0.25,1.22,0.02);
+    const A={ red:[], white:[], black:[] };
+    const c=B.CreateCylinder("xmS",{ diameterTop:0.15, diameterBottom:0.13, height:0.5, tessellation:12 },scene); c.position.set(0,-0.25,0); A.red.push(c);
+    const t=B.CreateTorus("xmS",{ diameter:0.15, thickness:0.05, tessellation:18 },scene); t.position.set(0,-0.5,0); A.white.push(t);
+    const g=B.CreateSphere("xmS",{ diameter:0.13, segments:8 },scene); g.position.set(0,-0.57,0); A.black.push(g);
+    fuse(A,M,a); return a; };
+  const armL=mkArm(-1), arm=mkArm(1);
+  armL.rotation.z=-0.13;                          // giu' lungo il fianco, appena staccato dalla giacca
+  arm.rotation.z=2.55;                            // alzato, in fuori: lo muove _xmSantaTick
+  fuse(L,M,node);
   node.getChildMeshes(false).forEach(m=>{ m.__dyn=true; });          // il braccio si muove: fuori dall'octree statico
   node.__arm=arm; node.__ph=Math.random()*6;
   addSolid(S.x-0.4,S.x+0.4,S.z-0.4,S.z+0.4,"town");
@@ -8582,8 +8609,9 @@ function _xmSanta(S){ const M=_xmSantaMats(), B=BABYLON.MeshBuilder, V=BABYLON.V
 function _xmSantaTick(){ if(!XMAS.on || area!=="town") return; const t=performance.now()/1000;
   for(let i=0;i<XMAS.santas.length;i++){ const n=XMAS.santas[i]; if(!n.__arm) continue;
     if(Math.hypot(n.position.x-player.position.x,n.position.z-player.position.z)>60) continue;
-    /* su e un po' in fuori (+x = la sua destra) */
-    n.__arm.rotation.z=-0.45+Math.sin(t*3.2+n.__ph)*0.35; n.__arm.rotation.x=-0.12; } }
+    /* v596: il braccio pende dal perno della spalla (verso -y): ruotato di
+       ~146 gradi sta alzato e in fuori (+x = la sua destra), e oscilla li' */
+    n.__arm.rotation.z=2.55+Math.sin(t*3.2+n.__ph)*0.3; n.__arm.rotation.x=0.1; } }
 /* parlare con Babbo Natale (quello del parco) */
 const XM_WISHES=[["a new bike","una bici nuova"],["a video game","un videogioco"],["a puppy","un cagnolino"],["some books","dei libri"],["a football","un pallone"],["a guitar","una chitarra"]];
 function xmSantaTalk(){
