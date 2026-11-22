@@ -60413,7 +60413,8 @@ MECH.giveDirections=function(s){
      attraversa verso +z e la scuola e' a DESTRA (+x). Prima diceva «past the
      cinema», ma venendo dalla piazza la scuola sta PRIMA del cinema;
    · sports centre (x 95..129, z 22..46): verso est nel parco e' a SINISTRA
-     (+z). Prima diceva «on the right»: era sbagliato. */
+     (+z). Prima diceva «on the right»: era sbagliato. Il campo sta DENTRO
+     il parco (PARK_Z1=60), non accanto: «in the park». */
 const CY8_LISTEN=[
   { place:"town hall",
     text:"Start here, with the park behind you. Go straight along the High Street, past the caf\u00e9. "
@@ -60426,7 +60427,7 @@ const CY8_LISTEN=[
         +"Cross the road at the zebra crossing, in front of the cinema. The school is on your right, next to the clothes shop." },
   { place:"sports centre",
     text:"Start here, with the High Street behind you. Walk into the park and go straight on. "
-        +"The sports centre is on your left, next to the park." },
+        +"The sports centre is on your left, in the park." },
 ];
 function cy8ListenPlace(en){ return CY8_PLACES.find(p=>p.en===en); }
 
