@@ -6948,10 +6948,13 @@ function makePlaceholder(key,parent){
     const wm=mat("phwm_"+key,"#3a4a55","#bfe3f0"); w.material=wm; w.position.set(c*0.5,0.5+r*0.6,0.861); w.parent=root; styleWindow(wm); }
   return root;
 }
-function spawn(key,parent){
+function spawn(key,parent,own){
   const c=containers[key];
   if(!c || c.__placeholder){ const root=makePlaceholder(key,parent); return {root,inst:null}; }
-  const inst=c.instantiateModelsToScene(n=>key+"_"+n,false);
+  /* v513: own = mesh e materiali TUTTI SUOI (niente istanze, materiali
+     clonati): serve a chi li ricolora (Nelson 1 rossa, The Beast viola)
+     senza ricolorare tutte le auto dello stesso modello */
+  const inst=own?c.instantiateModelsToScene(n=>key+"_"+n,true,{ doNotInstantiate:true }):c.instantiateModelsToScene(n=>key+"_"+n,false);
   const root=inst.rootNodes[0]; root.parent=parent||null; return {root,inst}; }
 function bbox(root){ return root.getHierarchyBoundingVectors(true); }
 /* v243 — PORTE-QUEST SU MISURA (Giacomo, 26 set: «gli ingressi luminosi
@@ -9009,7 +9012,7 @@ function _solidify(node,inset){ inset=(inset==null)?0.12:inset;
 const CAR_FRONT=0;   // se i FARI puntano all'indietro: metti Math.PI (gira TUTTE le auto)
 const PROP_YAW={ car:-Math.PI/2+CAR_FRONT, bench:0, tree:0 };
 function spawnProp(key,x,z,target,opt){ opt=opt||{};
-  const r=spawn(key,townRoot); const root=r&&r.root; if(!root) return null;
+  const r=spawn(key,townRoot,!!opt.ownMats); const root=r&&r.root; if(!root) return null;
   if(root.rotationQuaternion){                        // __root__ GLTF: quaternione RH->LH
     const e=root.rotationQuaternion.toEulerAngles();  // che AZZITTIVA rotation.y...
     root.rotationQuaternion=null;                     // ...bake in Euler e via
@@ -64166,8 +64169,8 @@ function tlAutoBuildCar(key,id){
   const root=new BABYLON.TransformNode("auto1",scene); root.parent=townRoot;
   root.position.set(H0.x,0,H0.z); root.rotation.y=TRAFFIC_YAW;   // muso verso +z per misurare
   let car=null;
-  try{ car=spawnProp(F.id==="turbo"?"car_model":(key||CAR_KEYS[1]),H0.x,H0.z,4.4,{ byHeight:false, ry:0, yaw:PROP_YAW.car, occluder:false }); }catch(e){}
-  if(car){ car.parent=root; car.position.set(0,car.position.y,0); }
+  try{ car=spawnProp(F.id==="turbo"?"car_model":(key||CAR_KEYS[1]),H0.x,H0.z,4.4,{ byHeight:false, ry:0, yaw:PROP_YAW.car, occluder:false, ownMats:true }); }catch(e){}
+  if(car){ car.parent=root; car.position.set(0,car.position.y,0); try{ tlFleetPaint(car,F.id); }catch(e){ console.warn("[fleet paint]",e); } }
   root.computeWorldMatrix(true);
   const bb=root.getHierarchyBoundingVectors(true), H=bb.max.y, HW=(bb.max.x-bb.min.x)/2, HL=(bb.max.z-bb.min.z)/2;
   const kit=new BABYLON.TransformNode("auto1k",scene); kit.parent=root; kit.rotation.y=-TRAFFIC_YAW;   // +z = avanti
@@ -64278,7 +64281,7 @@ function tlAutoCabin(C,E){
   const carpet=M(SP?"#0f0f11":"#1c1f23"), alc=M(SP?"#2b2b30":"#d9d4cb",{ sp:0.02 });
   const trim=M(SP?"#ff8a1c":"#b9c1c8",{ sp:0.6, pw:64 });
   const wood=SP?M("#ffffff",{ tex:tlCarbonTex(), sp:0.5, pw:72 }):M("#5b3c27",{ sp:0.25, pw:40 });
-  const body=M(SP?"#e99a1c":"#e3e8ec",{ sp:0.6, pw:80 }), black=M("#121518",{ sp:0.3, pw:48 });
+  const body=M(SP?FLEET_PAINT.turbo:FLEET_PAINT.auto1,{ sp:0.6, pw:80 }), black=M("#121518",{ sp:0.3, pw:48 });
   const led=SP?M("#ff8a4a",{ em:"#ff5a1f" }):M("#7fe3f5",{ em:"#6fd0e8" });
   const led2=SP?M("#ff6d86",{ em:"#ff2d4f" }):M("#d6bcff",{ em:"#b48ff5" });
   const warm=SP?M("#ffd2a6",{ em:"#ffa25a" }):M("#fff0d0",{ em:"#f4cf8a" });
@@ -64449,7 +64452,7 @@ function tlAutoCabin(C,E){
      La texture fa le strisce: nere su TURBO-1, due nervature leggere su
      AUTO-1. Stessa costruzione, rovesciata e piu' piatta, per la coda. */
   const paintTex=(()=>{ const t=new BABYLON.DynamicTexture("a1paint"+(_lpN++),{ width:256, height:64 },scene,true), c=t.getContext();
-    c.fillStyle=SP?"#e99a1c":"#e3e8ec"; c.fillRect(0,0,256,64);
+    c.fillStyle=SP?FLEET_PAINT.turbo:FLEET_PAINT.auto1; c.fillRect(0,0,256,64);   // v513: rossa / viola, come fuori
     if(SP){ c.fillStyle="#141416"; c.fillRect(96,0,22,64); c.fillRect(138,0,22,64); }
     else { c.fillStyle="rgba(0,0,0,.10)"; c.fillRect(84,0,3,64); c.fillRect(169,0,3,64); c.fillStyle="rgba(255,255,255,.35)"; c.fillRect(88,0,2,64); c.fillRect(173,0,2,64); }
     t.update(); return t; })();
@@ -64605,14 +64608,65 @@ function tlAutoBookInit(){
 setTimeout(()=>{ try{ tlAutoBookInit(); }catch(e){} },0);
 /* TURBO-1 (la Lamborghini, CAR_Model) parcheggiata a casa dall'inizio: la
    Sports_Car2 di quello stallo si spegne (il suo solido resta: stesso posto) */
-function tlTurboPark(tries){
-  const F=AUTO_FLEET.turbo; if(F.car) return;
-  const P=tlAutoParked("turbo");
-  if(!P || !P.root){ if((tries||0)<30) setTimeout(()=>tlTurboPark((tries||0)+1),2000); return; }
-  try{ P.root.setEnabled(false); F.car=tlAutoBuildCar(null,"turbo"); F.car.root.rotation.y=Math.PI+TRAFFIC_YAW; tlAutoGroundAt.call(null,F.car); }
-  catch(e){ console.warn("[turbo]",e); }
+/* =====================================================================
+   v513 — LA CARROZZERIA (Giacomo, 22 nov: «si puo' fare Nelson 1 con la
+   carrozzeria rossa e The Beast viola?»). Le due auto nascono con mesh e
+   materiali TUTTI LORO (spawn own): le Sports_Car del traffico e del
+   parcheggio, e SKY-1, restano bianche; le Lamborghini del traffico
+   arancioni.
+   · NELSON 1 (Sports_Car): il materiale «White» della scocca diventa rosso
+     vernice lucida (con clear coat).
+   · THE BEAST (CAR_Model): la scocca e' UNA mesh con la vernice dentro la
+     texture (BodySG). Un colore moltiplicato sull'arancione darebbe un
+     marrone, non un viola: si legge la texture e si gira la TINTA dei soli
+     pixel arancioni (tinta 8-60 gradi, saturi) verso il viola, tenendo
+     luminosita' e saturazione; nero, grigi, vetri e luci restano come sono.
+     Se la texture non si lascia leggere, si tiene l'arancione.
+   ===================================================================== */
+const FLEET_PAINT={ auto1:"#c8102e", turbo:"#7b2fd0" };
+function tlFleetPaint(car,id){
+  const done=new Map();
+  car.getChildMeshes(false).forEach(m=>{ const M=m.material; if(!M || m.isAnInstance) return;
+    if(done.has(M)) return; done.set(M,1);
+    if(id==="auto1" && /(^|_)white$/i.test(M.name||"")){                // clonato: «car_sport_White»
+      M.albedoColor=BABYLON.Color3.FromHexString(FLEET_PAINT.auto1).toLinearSpace(); M.roughness=0.32;
+      try{ M.clearCoat.isEnabled=true; M.clearCoat.intensity=0.9; M.clearCoat.roughness=0.06; }catch(e){} }
+    if(id==="turbo" && /body/i.test(M.name||"") && M.albedoTexture) tlBeastTex(M); });
 }
-setTimeout(()=>tlTurboPark(0),1500);
+function tlBeastTex(M){
+  const src=M.albedoTexture;
+  BABYLON.Texture.WhenAllReady([src],()=>{ try{
+    const sz=src.getSize(), W=sz.width, H=sz.height, p=src.readPixels();
+    if(!p || !W || !H) return;
+    Promise.resolve(p).then(px=>{ try{
+      const dt=new BABYLON.DynamicTexture("beastPaint"+(_lpN++),{ width:W, height:H },scene,true);
+      const c=dt.getContext(), im=c.createImageData(W,H), d=im.data;
+      const tgt=275/360;                                         // il viola
+      for(let i=0;i<W*H*4;i+=4){ let r=px[i]/255, g=px[i+1]/255, b=px[i+2]/255; const a=px[i+3];
+        const mx=Math.max(r,g,b), mn=Math.min(r,g,b), v=mx, sat=mx?(mx-mn)/mx:0;
+        let h=0; if(mx!==mn){ const dd=mx-mn; h=(mx===r)?((g-b)/dd+(g<b?6:0)):(mx===g)?((b-r)/dd+2):((r-g)/dd+4); h/=6; }
+        if(h>=8/360 && h<=60/360 && sat>0.35 && v>0.12){                   // arancione -> viola (HSV, stessa luce)
+          const hh=tgt*6, k=Math.floor(hh), f=hh-k, P0=v*(1-sat), Q=v*(1-f*sat), T=v*(1-(1-f)*sat);
+          [r,g,b]=[[v,T,P0],[Q,v,P0],[P0,v,T],[P0,Q,v],[T,P0,v],[v,P0,Q]][k%6]; }
+        d[i]=r*255; d[i+1]=g*255; d[i+2]=b*255; d[i+3]=a; }
+      c.putImageData(im,0,0); dt.update(false);
+      dt.wrapU=src.wrapU; dt.wrapV=src.wrapV; dt.coordinatesIndex=src.coordinatesIndex;
+      dt.uOffset=src.uOffset; dt.vOffset=src.vOffset; dt.uScale=src.uScale; dt.vScale=src.vScale; dt.wAng=src.wAng; dt.hasAlpha=src.hasAlpha;
+      M.albedoTexture=dt;
+    }catch(e){ console.warn("[beast paint]",e); } }).catch(e=>console.warn("[beast paint]",e));
+  }catch(e){ console.warn("[beast paint]",e); } });
+}
+/* v513: anche Nelson 1 gia' nel suo stallo dall'inizio (rossa, non la
+   Sports_Car bianca del parcheggio), come The Beast */
+function tlFleetPark(id,tries){
+  const F=AUTO_FLEET[id]; if(F.car) return;
+  const P=tlAutoParked(id);
+  if(!P || !P.root){ if((tries||0)<30) setTimeout(()=>tlFleetPark(id,(tries||0)+1),2000); return; }
+  try{ P.root.setEnabled(false); F.car=tlAutoBuildCar(P.key,id); F.car.root.rotation.y=Math.PI+TRAFFIC_YAW; tlAutoGroundAt.call(null,F.car); }
+  catch(e){ console.warn("[fleet "+id+"]",e); }
+}
+function tlTurboPark(tries){ tlFleetPark("turbo",tries); }
+setTimeout(()=>{ tlFleetPark("turbo",0); tlFleetPark("auto1",0); },1500);
 function tlAutoBook(id){
   id=id||"auto1"; const F=tlAutoF(id);
   if(id==="turbo"){ if(!tlTurboUnlocked()){ const N=tlTurboNeed();
@@ -77666,7 +77720,7 @@ function _tecaParts(ids){
        sono parcheggiate adesso; il tocco dice dove andare a prenotarle. */
     try{ if(typeof AUTO_FLEET!=="undefined"){
       h+='<div class="dy-sec">\u{1F697} Self-driving cars \u00b7 <span style="font-weight:400">no steering wheel</span></div><div class="gem-fits">';
-      [["auto1","\u{1F697}",{ acc:"#6fd0e8", body:"#e3e8ec" }],["turbo","\u{1F3CE}\uFE0F",{ acc:"#e99a1c", body:"#141416" }]].forEach(function(q){
+      [["auto1","\u{1F697}",{ acc:"#c8102e", body:"#7a0a1b" }],["turbo","\u{1F3CE}\uFE0F",{ acc:"#7b2fd0", body:"#141416" }]].forEach(function(q){
         const F=AUTO_FLEET[q[0]], turbo=q[0]==="turbo", own=turbo?tlTurboUnlocked():tlAutoUnlocked();
         const inIt=!!(AUTO.on && AUTO.fid===q[0]);
         h+=_tcCard('data-car="'+q[0]+'"',inIt,!own,_tcSw(q[2].acc,q[2].body,q[1]),F.name,
