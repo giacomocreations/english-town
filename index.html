@@ -54938,7 +54938,8 @@ const Needs={
        va spostata sotto»). Il cartellino del docente (teacherBadge) sta a
        top:148, alto quanto il testo: le barrette scendono sotto di lui. */
     let top=150; try{ const tb=document.getElementById("teach-badge");
-      if(tb && tb.offsetParent!==null){ const r=tb.getBoundingClientRect(); if(r.bottom>0) top=Math.max(top, Math.round(r.bottom+8)); } }catch(e){}
+      /* ⚠️ niente offsetParent: per un elemento position:fixed vale sempre null */
+      if(tb){ const r=tb.getBoundingClientRect(); if(r.height>0 && r.bottom>0) top=Math.max(top, Math.round(r.bottom+8)); } }catch(e){}
     if(el.__top!==top){ el.__top=top; el.style.top=top+"px"; }
     el.classList.toggle("hungry", this.starving() && this.hungry());
     el.classList.toggle("thirsty", this.starving() && this.thirsty());
