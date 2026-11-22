@@ -64773,10 +64773,31 @@ function tlFleetPark(id,tries){
   const F=AUTO_FLEET[id]; if(F.car) return;
   const P=tlAutoParked(id);
   if(!P || !P.root){ if((tries||0)<30) setTimeout(()=>tlFleetPark(id,(tries||0)+1),2000); return; }
-  try{ P.root.setEnabled(false); F.car=tlAutoBuildCar(P.key,id); F.car.root.rotation.y=Math.PI+TRAFFIC_YAW; tlAutoGroundAt.call(null,F.car); }
+  try{ P.root.setEnabled(false); F.car=tlAutoBuildCar(P.key,id); F.car.root.rotation.y=Math.PI+TRAFFIC_YAW; tlAutoGroundAt.call(null,F.car);
+    setTimeout(()=>{ try{ if(!AUTO.on) tlFleetWarm(id); }catch(e){} },1200); }       // v530
   catch(e){ console.warn("[fleet "+id+"]",e); }
 }
 function tlTurboPark(tries){ tlFleetPark("turbo",tries); }
+/* v530 — TUTTO PRONTO PRIMA (Giacomo: «la prima volta che entro in una
+   sessione c'e' uno sfarfallio»). Alla prima salita si ritagliavano le
+   portiere, si costruiva l'abitacolo visto da fuori e si compilavano i
+   materiali nuovi (vernice col clear coat, pelle, LED): per un fotogramma
+   pezzi mancanti o diversi. Ora si fa tutto qui, poco dopo il caricamento,
+   ad auto ferma nello stallo: portiere ritagliate (chiuse), abitacolo da
+   fuori e da dentro (O) costruiti e spenti, shader compilati. */
+function tlFleetWarm(id){
+  const F=AUTO_FLEET[id], C=F&&F.car; if(!C || C.warm) return; C.warm=true;
+  const keepDt=AUTO.dt;
+  try{ tlDoorBuild(C); }catch(e){ console.warn("[warm door]",e); }
+  try{ tlAutoCabin(C,(F.sitY||0.5)+0.82); if(C.ck) C.ck.setEnabled(false); }catch(e){ console.warn("[warm cabin]",e); }
+  try{ const k=4.4/(F.len||4.4);
+    C.povC=C.povC||{ pov:true, kit:C.kit, root:C.root, HW:C.HW*k, HL:C.HL*k, H:C.H*k, seat:{ x:-C.HW*k*0.92*0.48, z:0.10 }, theme:C.theme, fid:C.fid, ck:null, cabE:null, tab:null };
+    tlAutoCabin(C.povC,1.28); if(C.povC.ck) C.povC.ck.setEnabled(false); }catch(e){ console.warn("[warm pov]",e); }
+  AUTO.dt=keepDt;
+  const ms=[]; [C.ck, C.povC&&C.povC.ck, C.body].forEach(n=>{ if(n) n.getChildMeshes(false).forEach(m=>ms.push(m)); });
+  if(C.door) C.door.parts.forEach(m=>ms.push(m));
+  ms.forEach(m=>{ const mt=m.material; if(mt && mt.forceCompilation){ try{ mt.forceCompilation(m); }catch(e){} } });
+}
 setTimeout(()=>{ tlFleetPark("turbo",0); tlFleetPark("auto1",0); },1500);
 function tlAutoBook(id){
   id=id||"auto1"; const F=tlAutoF(id);
@@ -65066,6 +65087,12 @@ function tlAutoRecline(on){
     pins.push({ k, q0:k.q.clone(), ax }); });
   if(!pins.length) return;
   AUTO.recl={ pins, a:0, st:"wait", n:0, sg:1 };
+  /* v530 (Giacomo: «la prima volta che entro c'e' uno sfarfallio»): la prima
+     volta si cerca il verso (un attimo in avanti, poi indietro) e l'angolo,
+     a scatti. L'esito si ricorda per auto e per sessione: dalla volta dopo ci
+     si siede subito nella posa giusta, senza scatti. */
+  const F=tlAutoF();
+  if(F.reclA!=null && F.reclSg){ AUTO.recl.sg=F.reclSg; _tlReclSet(F.reclA); AUTO.recl.st="done"; }
 }
 function _tlReclSet(a){ const R=AUTO.recl; if(!R) return; R.a=a;
   R.pins.forEach(p=>{ const d=BABYLON.Quaternion.RotationAxis(p.ax,R.sg*a); p.k.q.copyFrom(d.multiply(p.q0)); }); }
@@ -65074,13 +65101,13 @@ function tlAutoReclineTick(){
   if(++R.n<3) return; R.n=0;
   const top=_tlHeadTop(), at=_tlHeadTop.at, rf=at?_tlRoofAt(C,at):null;
   const lim=(rf!=null && rf>C.root.position.y+0.6?Math.min(rf,C.root.position.y+C.H):C.root.position.y+C.H)-0.07;
-  if(R.st==="wait"){ if(top<=lim){ R.st="done"; return; } R.at0=at&&at.clone(); R.st="sign"; _tlReclSet(0.25); return; }
+  if(R.st==="wait"){ if(top<=lim){ R.st="done"; const F=tlAutoF(); F.reclA=0; F.reclSg=1; return; } R.at0=at&&at.clone(); R.st="sign"; _tlReclSet(0.25); return; }
   /* il verso: all'indietro la testa va verso la CODA dell'auto (abbassarsi
      la fa scendere anche piegandosi in avanti, quindi non basta l'altezza) */
   if(R.st==="sign"){ R.st="fit";
     if(R.at0 && at){ const h=tlAutoH(), fwd=(at.x-R.at0.x)*Math.sin(h)+(at.z-R.at0.z)*Math.cos(h);
       if(fwd>0){ R.sg=-R.sg; _tlReclSet(0.25); return; } } }
-  if(R.st==="fit"){ if(top>lim && R.a<0.7){ _tlReclSet(Math.min(0.7,R.a+0.06)); return; } R.st="done"; }
+  if(R.st==="fit"){ if(top>lim && R.a<0.7){ _tlReclSet(Math.min(0.7,R.a+0.06)); return; } R.st="done"; const F=tlAutoF(); F.reclA=R.a; F.reclSg=R.sg; }
 }
 function tlAutoSeatFollow(){
   if(!AUTO.car || !AUTO.hip) return;
