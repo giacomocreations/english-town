@@ -64117,9 +64117,9 @@ const AUTO_STALL={ x:-39, z:-27.25 };
    un'altra (il ritorno usa AUTO.car).
    ===================================================================== */
 const AUTO_FLEET={
-  auto1:{ id:"auto1", name:"Nelson 1",  key:null, home:{ x:-39, z:-27.25 }, kmh:{ min:20, max:50, top:90 },  theme:"lux",
+  auto1:{ id:"auto1", name:"Nelson 1",  key:null, home:{ x:-39, z:-27.25 }, kmh:{ min:20, max:50, top:90 },  theme:"lux", sitY:0.36, len:4.8, seatZ:0.18, seatX:0.40, doorZ:[0.40,-0.12],
           sub:"Self-driving car · TechLab prototype", car:null, spot:null },
-  turbo:{ id:"turbo", name:"The Beast", key:null, home:{ x:39,  z:-27.25 }, kmh:{ min:20, max:50, top:200 }, theme:"sport",
+  turbo:{ id:"turbo", name:"The Beast", key:null, home:{ x:39,  z:-27.25 }, kmh:{ min:20, max:50, top:200 }, theme:"sport", sitY:0.30, len:5.2, seatZ:-0.02, seatX:0.28, doorZ:[0.31,-0.10],
           sub:"Self-driving supercar · ⭐ 3000", car:null, spot:null, stars:3000 } };
 AUTO.fid="auto1";
 function tlAutoF(id){ return AUTO_FLEET[id||AUTO.fid]||AUTO_FLEET.auto1; }
@@ -64195,7 +64195,8 @@ function tlAutoBuildCar(key,id){
   const root=new BABYLON.TransformNode("auto1",scene); root.parent=townRoot;
   root.position.set(H0.x,0,H0.z); root.rotation.y=TRAFFIC_YAW;   // muso verso +z per misurare
   let car=null;
-  try{ car=spawnProp(F.id==="turbo"?"car_model":(key||CAR_KEYS[1]),H0.x,H0.z,4.4,{ byHeight:false, ry:0, yaw:PROP_YAW.car, occluder:false, ownMats:true }); }catch(e){}
+  /* v517: a misura d'avatar: Nelson 1 4,8 m, The Beast 5,2 m (a 4,4 il tetto stava a 1,35 e 1,06 m, e un avatar seduto non ci entrava) */
+  try{ car=spawnProp(F.id==="turbo"?"car_model":(key||CAR_KEYS[1]),H0.x,H0.z,F.len||4.4,{ byHeight:false, ry:0, yaw:PROP_YAW.car, occluder:false, ownMats:true }); }catch(e){}
   if(car){ car.parent=root; car.position.set(0,car.position.y,0); try{ tlFleetPaint(car,F.id); }catch(e){ console.warn("[fleet paint]",e); } }
   root.computeWorldMatrix(true);
   const bb=root.getHierarchyBoundingVectors(true), H=bb.max.y, HW=(bb.max.x-bb.min.x)/2, HL=(bb.max.z-bb.min.z)/2;
@@ -64220,7 +64221,7 @@ function tlAutoBuildCar(key,id){
   try{ const sh=hm7Shadow(kit,HW*2+0.5,HL*2+0.35,0,0,0.03,0.62); sh.__npcCast=false; sh.receiveShadows=false; }catch(e){}
   /* l'ABITACOLO si costruisce la prima volta che si guarda dentro (O), sulla
      misura vera degli occhi dell'avatar seduto: vedi tlAutoCabin */
-  const seat={ x:-HW*0.92*0.48, z:0.10 };
+  const seat={ x:-HW*0.92*(F.seatX||0.48), z:(F.seatZ!=null?F.seatZ:0.10) };      // v517: un po' avanti, dove il tetto e' piu' alto
   root.getChildMeshes().forEach(m=>{ m.isPickable=false; });
   return { root, H, HW, HL, seat, kit, body:car, lid:[lid,lr], ck:null, cabE:null, tab:null, fid:F.id, theme:F.theme };
 }
@@ -64333,22 +64334,23 @@ function tlAutoCabin(C,E){
   /* pavimento */
   box(W*2,0.04,zW-zRW+0.2,carpet,0,F-0.02,(zW+zRW)/2);
   /* i sedili davanti: seduta, fianchetti, schienale trapuntato, poggiatesta */
+  const sy0=(C.fid && AUTO_FLEET[C.fid] && AUTO_FLEET[C.fid].sitY)||0.56, dyS=sy0-0.56;   // v517: la seduta all'altezza dell'anca
   [-1,1].forEach(sd=>{ const x=sd*Math.abs(S.x), z=S.z;
-    box(0.50,0.14,0.52,cream,x,0.49,z+0.02);
-    [-1,1].forEach(k=>capZ(0.045,0.50,cognac,x+k*0.25,0.565,z+0.02));
+    box(0.50,0.14,0.52,cream,x,0.49+dyS,z+0.02);
+    [-1,1].forEach(k=>capZ(0.045,0.50,cognac,x+k*0.25,0.565+dyS,z+0.02));
     /* la base sotto la seduta: la sua faccia di sopra stava a 0,56 m
        ESATTAMENTE come quella della seduta, e le due «litigavano» (lo
        sfarfallio nero sul sedile di destra, Giacomo). Ora finisce 6 cm sotto. */
-    box(0.48,0.20,0.20,dark,x,0.30+0.10,z+0.02);                                   // base
+    if(0.20+dyS>0.02) box(0.48,0.20+dyS,0.20,dark,x,0.30+(0.20+dyS)/2,z+0.02);       // base
     if(SP){
       /* sedile a guscio: schienale alto col poggiatesta dentro, fianchi grossi rossi, striscia rossa al centro */
-      const bk=box(0.50,1.00,0.12,cream,x,1.04,z-0.32); bk.rotation.x=-0.14;
-      [-1,1].forEach(k=>{ const c=capZ(0.07,0.80,cognac,x+k*0.27,0.95,z-0.29,-0.14); c.rotation.x=-0.14; });
-      const st=box(0.08,0.98,0.005,cognac,x,1.04,z-0.257); st.rotation.x=-0.14;
+      const bk=box(0.50,1.00,0.12,cream,x,1.04+dyS,z-0.32); bk.rotation.x=-0.14;
+      [-1,1].forEach(k=>{ const c=capZ(0.07,0.80,cognac,x+k*0.27,0.95+dyS,z-0.29,-0.14); c.rotation.x=-0.14; });
+      const st=box(0.08,0.98,0.005,cognac,x,1.04+dyS,z-0.257); st.rotation.x=-0.14;
       [-1,1].forEach(k=>{ const sl=box(0.07,0.12,0.13,black,x+k*0.12,E-0.02,z-0.36); sl.rotation.x=-0.14; });   // le feritoie delle cinture
     } else {
-      const bk=box(0.50,0.74,0.12,cream,x,0.93,z-0.30); bk.rotation.x=-0.16;
-      [-1,1].forEach(k=>{ const c=capZ(0.045,0.70,cognac,x+k*0.255,0.93,z-0.28,-0.16); c.rotation.x=-0.16; });
+      const bk=box(0.50,0.74,0.12,cream,x,0.93+dyS,z-0.30); bk.rotation.x=-0.16;
+      [-1,1].forEach(k=>{ const c=capZ(0.045,0.70,cognac,x+k*0.255,0.93+dyS,z-0.28,-0.16); c.rotation.x=-0.16; });
       const hr=capX(0.10,0.34,creamP,x,E+0.02,z-0.44); hr.scaling.set(1,1,0.6); }
   });
   /* il divanetto dietro */
@@ -64716,7 +64718,12 @@ function tlAutoStart(mode,id){
   document.body.classList.add("veh","auto");               // v500: schermo pulito in auto (vedi CSS body.veh)
   AUTO.micOn=false; AUTO.micEnd=0;
   AUTO.look={ y:0, p:0 }; AUTO.orbit=null; AUTO.kmh=40; AUTO.pend=0; AUTO.wild=0; AUTO.lastSay=""; AUTO.tour=null; AUTO.offer=null; AUTO.qT=0; AUTO.q=null; AUTO.place=null; AUTO.route=null;
-  finFade(1,650,function(){
+  /* v517: in citta', con l'auto ferma nel suo stallo, si sale DAVVERO: la
+     portiera si alza, l'avatar entra e si siede, la portiera si chiude
+     (tlAutoEnterShow). Dal TechLab (giro finale) resta la dissolvenza. */
+  const F0=tlAutoF(), show=area==="town" && !!F0.car && !(F0.car.tc && _trafficCars.indexOf(F0.car.tc)>=0);
+  if(show) AUTO.phase="enter";
+  (show?(f=>f()):(f=>finFade(1,650,f)))(function(){
     /* dal TechLab (giro finale): la quest e' finita, si chiude e si esce in citta' */
     if(area!=="town"){ try{ if(Quest.unit) Quest.stop(); }catch(e){} try{ enterArea("town"); }catch(e){} }
     try{ setLabelsVisible("__auto__"); }catch(e){}
@@ -64733,19 +64740,134 @@ function tlAutoStart(mode,id){
     const C=AUTO.car;
     C.tc=C.tc||{ root:C.root, s:0, v:11, cv:0, near:false, halt:0, auto:true };
     AUTO.tc=C.tc; AUTO.tc.cv=0;
-    tlAutoSeat();
-    try{ avatarMeshes.forEach(m=>{ m.visibility=0; }); }catch(e){}           // da fuori non si vede (vedi tlAutoPov)
-    camera.setTarget(C.root.position.add(new BABYLON.Vector3(0,1.2,0)),false,false,true);
-    camera.alpha=tlSkyCamAlpha(tlAutoH())+0.7; camera.beta=1.15; camera.radius=8.5;
-    tlAutoUi(true); tlAutoNavDraw();          // il pannello della velocita' compare alla partenza (tlAutoGo)
-    AUTO.obs=scene.onBeforeRenderObservable.add(tlAutoTick);
-    finFade(0,800,()=>tlAutoAsk());
+    const go=()=>{
+      try{ avatarMeshes.forEach(m=>{ m.visibility=1; }); }catch(e){}           // v517: seduto e inclinato, la testa sta sotto il tetto: si vede (vedi tlAutoRecline)
+      if(!show){ camera.setTarget(C.root.position.add(new BABYLON.Vector3(0,1.2,0)),false,false,true);
+        camera.alpha=tlSkyCamAlpha(tlAutoH())+0.7; camera.beta=1.15; camera.radius=8.5; }
+      tlAutoUi(true); tlAutoNavDraw();          // il pannello della velocita' compare alla partenza (tlAutoGo)
+      AUTO.phase="ask";
+      AUTO.obs=scene.onBeforeRenderObservable.add(tlAutoTick);
+      if(show) tlAutoAsk(); else finFade(0,800,()=>tlAutoAsk()); };
+    if(show) tlAutoEnterShow(C,go); else { tlAutoSeat(); go(); }
   });
+}
+/* v517 — SALIRE: davanti alla portiera, la portiera si alza, si entra, ci si
+   siede (e ci si inclina: tlAutoRecline), la portiera si abbassa */
+function tlAutoEnterShow(C,done){
+  const sd=C.seat.x<0?-1:1, h=tlAutoH(), lx=Math.cos(h), lz=-Math.sin(h);
+  const gy=player.position.y;
+  const out=tlAutoL2W(sd*(C.HW+0.75),0,C.seat.z+0.15), inn=tlAutoL2W(C.seat.x,0,C.seat.z);
+  player.position.set(out.x,gy,out.z); player.rotation.y=Math.atan2(-sd*lx,-sd*lz);
+  try{ avatarMeshes.forEach(m=>{ m.visibility=1; }); }catch(e){}
+  try{ playAvatarAnim(IDLE_ANIM); }catch(e){}
+  /* la camera: dal lato della portiera, un po' davanti e in alto */
+  const tg=tlAutoL2W(sd*C.HW*0.35,0.8,C.seat.z+0.3);
+  camera.setTarget(tg,false,false,true);
+  /* davanti, di tre quarti e un po' dall'alto: si vedono salire tutte e due le portiere */
+  const fx=Math.sin(h), fz=Math.cos(h), dx=sd*lx*0.65+fx*0.85, dz=sd*lz*0.65+fz*0.85;
+  camera.alpha=Math.atan2(dz,dx); camera.beta=1.08; camera.radius=7.2;
+  const tw=(ms,f,cb)=>{ const t0=performance.now(); const ob=scene.onBeforeRenderObservable.add(()=>{
+      const q=Math.min(1,(performance.now()-t0)/ms); f(q*q*(3-2*q)); if(q>=1){ scene.onBeforeRenderObservable.remove(ob); if(cb) cb(); } }); };
+  tlDoorAnim(C,1,900,()=>{
+    try{ playAvatarAnim("Walk"); }catch(e){}
+    const r0=player.rotation.y, r1=tlAngTo(r0,h);
+    tw(900,u=>{ player.position.x=out.x+(inn.x-out.x)*u; player.position.z=out.z+(inn.z-out.z)*u; player.rotation.y=r0+(r1-r0)*Math.min(1,u*1.4); },()=>{
+      tlAutoSeat();
+      setTimeout(()=>{ tlDoorAnim(C,0,900,()=>{ try{ done(); }catch(e){ console.warn("[enter]",e); } }); },700); });
+  });
+}
+/* =====================================================================
+   v517 — LE PORTIERE A FORBICE (Giacomo, 22 nov: «per entrare nelle
+   macchine, gli sportelli laterali si aprano verso l'alto stile
+   Lamborghini vero, e l'avatar si sieda», con la foto di un'Aventador).
+   I modelli non hanno la portiera come pezzo a parte (la scocca e' una
+   mesh per materiale), quindi la si RITAGLIA: dei triangoli della scocca,
+   dei vetri e delle finiture, quelli il cui baricentro sta nel riquadro
+   della portiera del guidatore (lato esterno, fra il passaruota davanti e
+   quello dietro, dalla soglia al tetto) passano in una mesh nuova appesa
+   a una CERNIERA davanti, in alto sul parafango; la scocca tiene il resto
+   (geometria resa unica: le auto del traffico non si toccano).
+   · si apre ruotando attorno all'asse trasversale dell'auto: la coda della
+     portiera sale fino a ~70 gradi, come nella foto;
+   · a portiera aperta si vede dentro: si accende l'abitacolo, senza i
+     pezzi che stanno fuori dalla scocca (tetto, montanti, cofano interno,
+     il pannello della portiera da quel lato);
+   · i materiali delle due auto (gia' loro) si vedono da tutti e due i lati:
+     dentro la portiera e dentro il buco c'e' la vernice, non il vuoto.
+   ===================================================================== */
+function tlDoorBuild(C){
+  if(!C || C.door!==undefined) return C&&C.door;
+  C.door=null;
+  try{
+    const HW=C.HW, HL=C.HL, H=C.H, DZ=(AUTO_FLEET[C.fid]&&AUTO_FLEET[C.fid].doorZ)||[0.40,-0.12];
+    const zF=HL*DZ[0], zB=HL*DZ[1], yLo=0.24, yHi=H-0.03, xIn=HW*0.50;
+    C.root.computeWorldMatrix(true); C.kit.computeWorldMatrix(true);
+    const kitInv=BABYLON.Matrix.Invert(C.kit.getWorldMatrix());
+    /* v517 (Giacomo: «si devono aprire tutte e due, per l'effetto figo Lamborghini»): una cerniera per lato */
+    const hinges={};
+    [-1,1].forEach(sd=>{ const hg=new BABYLON.TransformNode("a1hinge",scene); hg.parent=C.kit;
+      hg.position.set(sd*HW*0.80,H*0.55,zF-0.04); hg.computeWorldMatrix(true); hinges[sd]=hg; });
+    const parts=[];
+    C.body.getChildMeshes(false).forEach(m=>{
+      if(!m.getTotalVertices || m.getTotalVertices()<3 || /wheel/i.test(m.name) || m.isAnInstance) return;
+      const pos=m.getVerticesData(BABYLON.VertexBuffer.PositionKind), idx=m.getIndices(); if(!pos || !idx) return;
+      m.computeWorldMatrix(true);
+      const M=m.getWorldMatrix().multiply(kitInv), P=[];
+      for(let i=0;i<pos.length;i+=3) P.push(BABYLON.Vector3.TransformCoordinates(new BABYLON.Vector3(pos[i],pos[i+1],pos[i+2]),M));
+      const keep=[], door={ "-1":[], "1":[] };
+      for(let t=0;t<idx.length;t+=3){ const a=P[idx[t]], b=P[idx[t+1]], c=P[idx[t+2]];
+        const x=(a.x+b.x+c.x)/3, y=(a.y+b.y+c.y)/3, z=(a.z+b.z+c.z)/3;
+        const inD=Math.abs(x)>xIn && z<zF && z>zB && y>yLo && y<yHi;
+        (inD?door[x<0?"-1":"1"]:keep).push(idx[t],idx[t+1],idx[t+2]); }
+      if(door["-1"].length+door["1"].length<9) return;
+      [-1,1].forEach(sd=>{ const L=door[String(sd)]; if(L.length<9) return;
+        const d=m.clone(m.name+"_door"+(sd<0?"L":"R"),null,true); d.makeGeometryUnique(); d.setIndices(L);
+        d.setParent(hinges[sd]); d.isPickable=false; d.__dyn=true; d.__cast=true; parts.push(d); });
+      m.makeGeometryUnique(); m.setIndices(keep);
+      try{ if(m.material) m.material.backFaceCulling=false; }catch(e){} });
+    if(!parts.length){ hinges[-1].dispose(); hinges[1].dispose(); return null; }
+    try{ refreshShadowCasters(); }catch(e){}
+    C.door={ hinges:[hinges[-1],hinges[1]], parts, a:0 };
+  }catch(e){ console.warn("[door]",e); C.door=null; }
+  return C.door;
+}
+/* apre (1) o chiude (0) in ms; a meta' cb */
+function tlDoorAnim(C,to,ms,cb){
+  const D=tlDoorBuild(C); if(!D){ if(cb) cb(); return; }
+  const a0=D.a, t0=performance.now(); if(D.ob){ scene.onBeforeRenderObservable.remove(D.ob); D.ob=null; }
+  if(to>0) tlDoorPeek(C,true);
+  D.ob=scene.onBeforeRenderObservable.add(()=>{
+    const q=Math.min(1,(performance.now()-t0)/(ms||900)), u=q*q*(3-2*q);
+    D.a=a0+(to-a0)*u; D.hinges.forEach(hg=>{ hg.rotation.x=D.a*1.22; });      // ~70 gradi: la coda della portiera sale
+    if(q>=1){ scene.onBeforeRenderObservable.remove(D.ob); D.ob=null; if(to<=0) tlDoorPeek(C,false); if(cb) cb(); } });
+}
+/* l'abitacolo visto da fuori, a portiera aperta: solo cio' che sta dentro la scocca */
+function tlDoorPeek(C,on){
+  if(!C) return;
+  if(!on){ if(C.ck && !AUTO.pov){ C.ck.setEnabled(false); } if(C.ck) C.ck.getChildMeshes(false).forEach(m=>{ if(m.__peekOff){ m.setEnabled(true); m.__peekOff=false; } }); return; }
+  try{ tlAutoCabin(C,C.cabE||((tlAutoF(C.fid).sitY||0.5)+0.82)); }catch(e){ console.warn("[peek]",e); return; }
+  if(!C.ck) return;
+  C.ck.setEnabled(true);
+  const W=C.HW*0.92, sd=C.seat.x<0?-1:1;
+  C.kit.computeWorldMatrix(true); const inv=BABYLON.Matrix.Invert(C.kit.getWorldMatrix());
+  C.ck.getChildMeshes(false).forEach(m=>{
+    let off=/a1hood|a1cowl|a1nose|a1hudp|a1scr/.test(m.name);
+    if(!off){ try{ m.computeWorldMatrix(true); const bb=m.getBoundingInfo().boundingBox;
+      const a=BABYLON.Vector3.TransformCoordinates(bb.minimumWorld,inv), b=BABYLON.Vector3.TransformCoordinates(bb.maximumWorld,inv);
+      const x0=Math.min(a.x,b.x), x1=Math.max(a.x,b.x), y1=Math.max(a.y,b.y), z0=Math.min(a.z,b.z), cx=(x0+x1)/2;
+      const Bl=(C.cabE||1.2)-0.17;                                              // la linea di cintura dell'abitacolo
+      if(y1>Bl+0.02 || y1>C.H-0.06 || x1>C.HW-0.02 || x0<-C.HW+0.02) off=true;   // sopra i finestrini o fuori dalla scocca: tetto, montanti
+      if(Math.abs(cx)>W-0.16) off=true;                                         // i pannelli delle portiere (si aprono tutte e due)
+      if(z0<-C.HL+0.3) off=true;                                                // la coda
+      const DZ=(AUTO_FLEET[C.fid]&&AUTO_FLEET[C.fid].doorZ)||[0.40,-0.12], z1=Math.max(a.z,b.z);
+      if(z1>C.HL*DZ[0]+0.1) off=true;                                           // davanti alle cerniere (plancia: il muso e' piu' stretto)
+    }catch(e){} }
+    if(off && m.isEnabled()){ m.setEnabled(false); m.__peekOff=true; } });
 }
 /* l'avatar seduto davanti a sinistra; l'anca si tiene nel sistema dell'auto */
 function tlAutoSeat(){
   const C=AUTO.car, h=tlAutoH(), f=new BABYLON.Vector3(Math.sin(h),0,Math.cos(h));
-  const gy=C.root.position.y+0.34, sy=C.root.position.y+0.56, sw=tlAutoL2W(C.seat.x,0,C.seat.z);
+  const syR=tlAutoF().sitY||0.56, gy=C.root.position.y+Math.min(0.34,syR-0.08), sy=C.root.position.y+syR, sw=tlAutoL2W(C.seat.x,0,C.seat.z);
   player.position.set(sw.x,gy,sw.z); player.rotation.y=h; player.computeWorldMatrix(true);
   try{ playAvatarAnim(IDLE_ANIM); }catch(e){}
   let off=null; try{ off=playerSit(f,sy,gy); }catch(e){}
@@ -64753,6 +64875,69 @@ function tlAutoSeat(){
   const c=Math.cos(h), s=Math.sin(h);                     // anca -> coordinate dell'auto
   AUTO.hip={ x:off.x*c-off.z*s, z:off.x*s+off.z*c };
   tlAutoSeatFollow();
+  try{ tlAutoRecline(true); }catch(e){ console.warn("[recline]",e); }
+}
+/* =====================================================================
+   v517 — SEDUTI DAVVERO, SENZA LA TESTA FUORI DAL TETTO (Giacomo, 22 nov:
+   «l'avatar si sieda; controlliamo l'altezza delle macchine in modo che
+   non si veda uscire la testa, immagino che dovra' stare inclinato di
+   piu'»). Misurato: tetto di Nelson 1 a 1,35 m, testa a 1,45; The Beast
+   (Lamborghini, bassissima) tetto a 1,06. Quindi:
+   · sedile piu' basso (sitY nella flotta: 0,50 Nelson 1, 0,36 The Beast,
+     che e' anche un po' piu' grande, 4,9 m);
+   · lo SCHIENALE: tutto il corpo si inclina indietro attorno all'anca
+     (come nelle sportive: busto giu', ginocchia un po' su) quanto basta
+     perche' la cima della testa resti 7 cm sotto il tetto, misurata
+     davvero sulla mesh (da 0 a 50 gradi). La visuale da dentro (O) resta
+     quella di prima: l'abitacolo e' costruito sugli occhi da seduti.
+   ===================================================================== */
+function _tlHeadTop(){ let top=-1e9, at=null;
+  avatarRoot.getChildMeshes(false).forEach(m=>{ if(!m.isEnabled() || !m.getTotalVertices || !m.getTotalVertices()) return;
+    try{ m.computeWorldMatrix(true); m.refreshBoundingInfo(!!m.skeleton); }catch(e){}
+    const bb=m.getBoundingInfo().boundingBox; if(bb.maximumWorld.y>top){ top=bb.maximumWorld.y; at=bb.centerWorld.clone(); } });
+  _tlHeadTop.at=at; return top; }
+/* il tetto VERO sopra un punto (scende verso il lunotto): raggio dall'alto sulla scocca */
+function _tlRoofAt(C,p){
+  try{ const ms=C.body.getChildMeshes(false).filter(m=>m.getTotalVertices && m.getTotalVertices()>0);
+    let best=null; const ray=new BABYLON.Ray(new BABYLON.Vector3(p.x,C.root.position.y+4,p.z),new BABYLON.Vector3(0,-1,0),5);
+    ms.forEach(m=>{ const h=ray.intersectsMesh(m,false); if(h && h.hit && (best===null || h.pickedPoint.y>best)) best=h.pickedPoint.y; });
+    return best; }catch(e){ return null; } }
+/* L'INCLINAZIONE: si gira l'ADDOME (in tutte le catene del personaggio:
+   testa, busto e braccia hanno ognuno il suo scheletro) dentro la posa
+   seduta, che si riapplica a ogni fotogramma (SIT.pins): il busto va
+   indietro, le gambe restano dove sono. L'angolo si trova guardando la
+   mesh vera, qualche fotogramma dopo (lo scheletro si aggiorna al
+   disegno): +3,4 gradi alla volta finche' la testa non sta 7 cm sotto il
+   tetto VERO sopra di lei (_tlRoofAt: il tetto scende verso il lunotto),
+   al massimo 60 gradi. Il verso giusto e' quello che la abbassa. */
+function tlAutoRecline(on){
+  const R0=AUTO.recl;
+  if(R0 && R0.pins) R0.pins.forEach(p=>{ p.k.q.copyFrom(p.q0); });
+  AUTO.recl=null;
+  if(!on || !AUTO.car || !SIT.on || !SIT.pins) return;
+  const h=player.rotation.y, lat=new BABYLON.Vector3(Math.cos(h),0,-Math.sin(h));
+  const pins=[];
+  SIT.pins.forEach(k=>{ if(_boneKey(k.tn.name)!=="Abdomen" || !k.tn.parent) return;
+    const inv=BABYLON.Matrix.Invert(k.tn.parent.getWorldMatrix());
+    const ax=BABYLON.Vector3.TransformNormal(lat,inv).normalize();
+    pins.push({ k, q0:k.q.clone(), ax }); });
+  if(!pins.length) return;
+  AUTO.recl={ pins, a:0, st:"wait", n:0, sg:1 };
+}
+function _tlReclSet(a){ const R=AUTO.recl; if(!R) return; R.a=a;
+  R.pins.forEach(p=>{ const d=BABYLON.Quaternion.RotationAxis(p.ax,R.sg*a); p.k.q.copyFrom(d.multiply(p.q0)); }); }
+function tlAutoReclineTick(){
+  const R=AUTO.recl, C=AUTO.car; if(!R || !C || R.st==="done") return;
+  if(++R.n<3) return; R.n=0;
+  const top=_tlHeadTop(), at=_tlHeadTop.at, rf=at?_tlRoofAt(C,at):null;
+  const lim=(rf!=null && rf>C.root.position.y+0.6?Math.min(rf,C.root.position.y+C.H):C.root.position.y+C.H)-0.07;
+  if(R.st==="wait"){ if(top<=lim){ R.st="done"; return; } R.at0=at&&at.clone(); R.st="sign"; _tlReclSet(0.25); return; }
+  /* il verso: all'indietro la testa va verso la CODA dell'auto (abbassarsi
+     la fa scendere anche piegandosi in avanti, quindi non basta l'altezza) */
+  if(R.st==="sign"){ R.st="fit";
+    if(R.at0 && at){ const h=tlAutoH(), fwd=(at.x-R.at0.x)*Math.sin(h)+(at.z-R.at0.z)*Math.cos(h);
+      if(fwd>0){ R.sg=-R.sg; _tlReclSet(0.25); return; } } }
+  if(R.st==="fit"){ if(top>lim && R.a<0.7){ _tlReclSet(Math.min(0.7,R.a+0.06)); return; } R.st="done"; }
 }
 function tlAutoSeatFollow(){
   if(!AUTO.car || !AUTO.hip) return;
@@ -64785,7 +64970,7 @@ function tlAutoAsk(){
     html:'<div style="display:flex;align-items:center;"><input id="tlAutoIn" type="text" autocomplete="off" '
       +'placeholder="Take me to …, please." style="flex:1;font:inherit;padding:8px 10px;border-radius:10px;border:1px solid #ccd6da;">'+mic+'</div>'
       +'<div id="tlAutoFb" style="margin-top:8px;min-height:20px;font-weight:600;"></div>',
-    buttons:[{ label:"\u{1F6AA} Get out", cls:"ghost", act:()=>tlAutoEnd(null,false,true) },
+    buttons:[{ label:"\u{1F6AA} Get out", cls:"ghost", act:()=>tlAutoGetOut() },
              { label:"✔ Go", cls:"primary", keepOpen:true, act:()=>{ const i=document.getElementById("tlAutoIn"); tlAutoTry(i?i.value:""); } }] });
   const m=document.getElementById("tlAutoMic"); if(m) m.onclick=()=>tlAutoMic("tlAutoIn",tlAutoTry,"tlAutoFb");
   setTimeout(()=>{ const i=document.getElementById("tlAutoIn"); if(i) try{ i.focus(); }catch(e){} },400);
@@ -65163,9 +65348,17 @@ function tlAutoPullOver(tc,why){
       TRAFFIC_ZONES.forEach(Z=>{ if(Z.h===tc) Z.h=null; });
       if(why==="drop") tlAutoDrop(); else if(why==="home") tlAutoParkIn(tc); } });
 }
+/* v517: scendere = prima si alza la portiera, poi si esce (la portiera si
+   richiude da sola dopo, vedi tlAutoEnd) */
+function tlAutoGetOut(){ const C=AUTO.car; if(!C || AUTO.phase==="enter") return;
+  try{ tlDoorAnim(C,1,800,()=>tlAutoEnd(null,false,true)); }catch(e){ tlAutoEnd(null,false,true); } }
 /* si scende sul marciapiede, dal lato del marciapiede */
 function tlAutoDrop(){
+  const C0=AUTO.car;
+  if(C0 && !AUTO.doorOut){ AUTO.doorOut=true; try{ tlDoorAnim(C0,1,800,()=>tlAutoDrop()); return; }catch(e){} }
+  AUTO.doorOut=false;
   const C=AUTO.car, tc=C.tc, P=AUTO.place, R=AUTO.route;
+  try{ tlAutoRecline(false); }catch(e){}
   try{ playerStand(); }catch(e){}
   const h=tlAutoH(), nx=Math.cos(h)*tc.side, nz=-Math.sin(h)*tc.side;
   let spot=null;
@@ -65256,7 +65449,7 @@ function tlAutoPov(on){
   if(C){
     /* da fuori l'avatar non si vede (la testa usciva dal tetto); da dentro si'
        (gambe e braccia), senza la testa davanti alla camera */
-    try{ avatarMeshes.forEach(m=>{ m.visibility=AUTO.pov?1:0; }); }catch(e){}
+    try{ avatarMeshes.forEach(m=>{ m.visibility=1; }); }catch(e){}            // v517: anche da fuori (la testa non esce piu' dal tetto)
     /* v501: dentro l'abitacolo costruito sugli occhi, fuori la scocca (vedi tlAutoCabin) */
     tlAutoInside(AUTO.pov);
     if(AUTO.pov){ const ey=tlAutoEyeRel();
@@ -65300,9 +65493,11 @@ const AUTO_PTR={ on:false, x:0, y:0, pts:{}, pinch:0 };
 function tlAutoOrbit(){ return AUTO.orbit=AUTO.orbit||{ a:0, b:1.2, r:8.5, t:0 }; }
 function tlAutoTick(){
   if(!AUTO.on || !AUTO.car) return;
+  if(AUTO.phase==="enter") return;                       // v517: si sta salendo (tlAutoEnterShow)
   const dt=Math.min(0.05,engine.getDeltaTime()/1000), root=AUTO.car.root;
   if(!townOpen() && AUTO.phase!=="ask"){ tlAutoEnd(null,true,true); return; }
   tlAutoSeatFollow();
+  try{ tlAutoReclineTick(); }catch(e){}                  // v517
   const h=tlAutoH();
   if(AUTO.pov){
     if(keys["arrowleft"]) AUTO.look.y=Math.max(-2.6,AUTO.look.y-1.6*dt);
@@ -65666,6 +65861,7 @@ function tlAutoEnd(cb,abort,keepCar){
   AUTO.phase="end";
   const fin=function(){
     if(AUTO.obs){ scene.onBeforeRenderObservable.remove(AUTO.obs); AUTO.obs=null; }
+    try{ tlAutoRecline(false); }catch(e){}         // v517: dritti prima di alzarsi
     try{ playerStand(); }catch(e){}
     try{ _povHead(0); }catch(e){}
     try{ avatarMeshes.forEach(m=>{ m.visibility=1; }); }catch(e){}
@@ -65682,6 +65878,8 @@ function tlAutoEnd(cb,abort,keepCar){
     try{ setLabelsVisible(area); }catch(e){}
     AUTO.on=false; AUTO.pov=false; AUTO.phase="";
     document.body.classList.remove("veh","auto");
+    /* v517: la portiera aperta per scendere si richiude, a scena di nuovo visibile */
+    try{ const Cd=AUTO.car; if(Cd && Cd.door && Cd.door.a>0.01) setTimeout(()=>{ try{ tlDoorAnim(Cd,0,900); }catch(e){} },1100); }catch(e){}
     /* scesi prima di partire («Get out») o giro interrotto: a terra accanto all'auto */
     if(!cb && AUTO.car){ const r=AUTO.car.root; player.position.set(r.position.x,0,r.position.z+3.6);   // marciapiede di High Street, non il boulevard
       if(AUTO.car.tc && _trafficCars.indexOf(AUTO.car.tc)>=0) tlAutoParkNow(); }
