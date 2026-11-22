@@ -54575,7 +54575,7 @@ const NEEDS_LINES={
 };
 const Needs={
   e:100, f:100, d:100,            // energia, fame, sete (100 = pieno)
-  rot:{}, bag:null, bagEat:null, bagMesh:null, bagFing:null, bagFingOf:null, bagFingOn:false,
+  rot:{}, bag:null, bagEat:null, bagMesh:null, bagFing:null, bagFingOf:null, bagFingOn:false, bagBonesOf:null, bagI2:null, bagP2:null,
   loaded:false, savedF:null, saveT:0,
   run:false,                      // ultimo fotogramma: si stava correndo davvero?
   last:null,                      // posizione al fotogramma prima (per i metri)
@@ -54801,10 +54801,13 @@ const Needs={
     const top=BABYLON.MeshBuilder.CreateBox("needsBagT",{ width:0.172, height:0.016, depth:0.102 },scene);
     top.material=rim; top.parent=n; top.position.set(0, HY-0.008, BZ);
     const ms=[body,top];
-    /* i due manici: archi dal bordo delle due facce larghe fino al pugno */
+    /* i due manici: dal bordo delle due facce larghe salgono al pugno e la'
+       in cima corrono DRITTI per 6 cm (la larghezza del palmo, da indice a
+       mignolo): e' quel tratto che le dita chiuse stringono */
     [BZ+0.045, BZ-0.045].forEach((zf,i)=>{
-      const path=[]; for(let k=0;k<=12;k++){ const t=Math.PI*k/12, s=Math.sin(t);
-        path.push(new V(0.042*Math.cos(t), HY-0.004+(0.004-HY)*s, zf*(1-s)+0.004*(i?-1:1)*s)); }
+      const zt=0.004*(i?-1:1), P=(x,y,z)=>new V(x,y,z);
+      const path=[P(-0.045,HY,zf),P(-0.044,HY*0.62,zt+(zf-zt)*0.62),P(-0.040,HY*0.30,zt+(zf-zt)*0.30),P(-0.034,-0.006,zt),
+        P(-0.022,0,zt),P(0,0,zt),P(0.022,0,zt),P(0.034,-0.006,zt),P(0.040,HY*0.30,zt+(zf-zt)*0.30),P(0.044,HY*0.62,zt+(zf-zt)*0.62),P(0.045,HY,zf)];
       const h=BABYLON.MeshBuilder.CreateTube("needsBagH"+i,{ path, radius:0.0055, tessellation:8, cap:BABYLON.Mesh.CAP_ALL },scene);
       h.material=cord; h.parent=n; ms.push(h); });
     ms.forEach(m=>{ m.isPickable=false; m.__dyn=true; m.alwaysSelectAsActiveMesh=true;
@@ -54829,16 +54832,23 @@ const Needs={
     let hand=null, B=null; try{ const H=_newsHands(); hand=H.L[0]||null; }catch(e){}
     if(hand){ this.bagFingers(true,hand); try{ B=_handBasis(hand); }catch(e){ B=null; } }
     let g;
+    let yaw=ry-Math.PI/2;
     if(B){
-      /* la presa: davanti al palmo (n), un po' verso la punta delle dita (d),
-         cioe' dentro il pugno chiuso */
-      g=B.c.add(B.n.scale(0.014)).add(B.d.scale(0.018));
+      /* la presa: davanti al palmo (n) e verso la punta delle dita (d), cioe'
+         DENTRO le dita chiuse (non sulle nocche) */
+      g=B.c.add(B.n.scale(0.021)).add(B.d.scale(0.030));
+      /* il tratto dritto dei manici lungo la mano, da indice a mignolo */
+      try{ if(this.bagBonesOf!==avatarRoot){ this.bagBonesOf=avatarRoot; const ds=hand.getDescendants(false);
+          this.bagI2=ds.find(d=>/(^|_)Index2\.L$/.test(d.name))||null; this.bagP2=ds.find(d=>/(^|_)Pinky2\.L$/.test(d.name))||null; }
+        if(this.bagI2 && this.bagP2){ const a=this.bagI2.getAbsolutePosition().subtract(this.bagP2.getAbsolutePosition()); a.y=0;
+          if(a.length()>1e-4){ if(a.x*Math.sin(ry)+a.z*Math.cos(ry)<0) a.scaleInPlace(-1);   // l'indice verso il davanti: z locale resta «fuori»
+            yaw=Math.atan2(a.x,a.z)-Math.PI/2; } } }catch(e){}
     } else {
       let h=null; try{ h=_newsHandPos(_newsHands().L); }catch(e){}
       g=h || new BABYLON.Vector3(player.position.x-rx*0.25, player.position.y+0.8, player.position.z-rz*0.25);
     }
     /* sempre in verticale (pende), girato come il corpo: x locale = avanti, z locale = fuori (sinistra) */
-    n.position.copyFrom(g); n.rotation.set(0, ry-Math.PI/2, 0);
+    n.position.copyFrom(g); n.rotation.set(0, yaw, 0);
   },
   /* seduti a un tavolo da picnic col sacchetto: il cibo sul tavolo e si mangia */
   benchEat(b){
