@@ -9176,9 +9176,16 @@ function hedgeMat(uS,vS){ const k=uS.toFixed(1)+"_"+vS.toFixed(1); if(_hdgMats[k
   const m=new BABYLON.StandardMaterial("hdgM"+k,scene); m.diffuseTexture=t;
   m.specularColor=new BABYLON.Color3(0.05,0.07,0.04); m.specularPower=12;
   return (_hdgMats[k]=m); }
+/* v513: le siepi non sono solidi (ci si passa accanto a piedi), ma le auto
+   che accostano non devono salirci sopra: si registrano qui (isVegAt) */
+const HEDGES=[];
+function isVegAt(x,z){ for(const H of HEDGES){ const dx=H.x1-H.x0, dz=H.z1-H.z0, L2=dx*dx+dz*dz||1;
+    const t=Math.max(0,Math.min(1,((x-H.x0)*dx+(z-H.z0)*dz)/L2)), px=H.x0+dx*t, pz=H.z0+dz*t;
+    if(Math.hypot(x-px,z-pz)<0.6) return true; } return false; }
 function hedge(x0,z0,x1,z1,h){ h=h||1.1;
   const cx=(x0+x1)/2, cz=(z0+z1)/2, len=Math.hypot(x1-x0,z1-z0);
   if(insideSolid(cx,cz,0.6)) return;
+  HEDGES.push({ x0, z0, x1, z1 });
   const g=new BABYLON.TransformNode("hdg",scene); g.parent=townRoot;
   g.position.set(cx,0,cz); g.rotation.y=Math.atan2(-(z1-z0),(x1-x0)); // X locale lungo la corsa
   let sd=Math.abs(Math.round(cx*13+cz*7))+3; const rnd=()=>{ sd=(sd*16807)%2147483647; return (sd%10000)/10000; };
@@ -64918,13 +64925,27 @@ function tlAutoChat(t){
   if(AUTO_QUEST_RE.test(t)) return tlAutoQuestInfo();
   return null;
 }
+/* lo stallo libero vicino alla meta, se il giro ci passa davanti (v513:
+   anche per le mete cambiate in viaggio, vedi tlAutoRedirect) */
+function tlAutoUseStall(R,at){
+  const st=tlAutoFreeStall(at), L=R.L, hi=st?L.__find(st.x-7,AUTO_LANE_Z,1,0,2.5):-1;
+  if(!(st && hi>=0)) return false;
+  /* lo stallo solo se non lascia piu' lontani dell'accostata (piu' 15 m) */
+  if(R.dEnd!=null && Math.hypot(st.x-at.x,st.z-at.z)>R.dEnd+15) return false;
+  R.stall=st; R.di=hi; R.dEnd=Math.hypot(st.x-at.x,st.z-at.z);
+  let len=(L.L[hi]-L.L[R.ei]+L.tot)%L.tot; if(len<25) len+=L.tot; R.len=len; return true; }
 /* «Take me there» durante il viaggio: si cambia meta sul giro in cui si e' */
+/* ⚠️ v513 (Giacomo: «quando mi ha portato al parco mi ha lasciato meta' sui
+   cespugli, ma c'era un parcheggio vicinissimo»). La meta cambiata in
+   viaggio accostava SEMPRE in strada: lo stallo libero vicino alla meta
+   (quello che la corsa normale usa) non lo guardava. Ora sì. */
 function tlAutoRedirect(P){
   const tc=AUTO.car&&AUTO.car.tc; if(!tc||!tc.loop) return false;
   const at=P.at(), i=_tcSeg(tc,tc.s), R=tlAutoRoute(at,{ loop:tc.loop, i });
   if(!R) return false;
+  tlAutoUseStall(R,at);
   AUTO.tour=null; AUTO.place=P; AUTO.route=R; AUTO.said={}; R.pts=tlAutoPts(R);
-  tc.stopS=R.L.L[R.di]; tc.arrived=false; tc.onArrive=()=>tlAutoPullOver(tc,"drop");
+  tc.stopS=R.L.L[R.di]; tc.arrived=false; tc.onArrive=R.stall?()=>tlAutoStallIn(tc,R.stall):()=>tlAutoPullOver(tc,"drop");
   return true; }
 /* il sorpasso, scritto sul pannello (niente voce) */
 function tlAutoOvertakeNote(c){ if(!(AUTO.on && AUTO.car && AUTO.car.tc===c)) return;
@@ -64991,9 +65012,7 @@ function tlAutoGo(P,Rpre){
      direttamente nello stallo vicino alla piazza; sfruttiamo tutti i
      parcheggi disponibili»): se c'e' uno stallo LIBERO vicino alla meta,
      la corsa finisce li' dentro invece che accostata in strada */
-  if(!R.tour){ const st=tlAutoFreeStall(at), L=R.L, hi=st?L.__find(st.x-7,AUTO_LANE_Z,1,0,2.5):-1;
-    if(st && hi>=0){ R.stall=st; R.di=hi; R.dEnd=Math.hypot(st.x-at.x,st.z-at.z);
-      let len=(L.L[hi]-L.L[R.ei]+L.tot)%L.tot; if(len<25) len+=L.tot; R.len=len; } }
+  if(!R.tour) tlAutoUseStall(R,at);
   AUTO.phase="drive"; AUTO.place=P; AUTO.route=R; AUTO.said={}; R.pts=tlAutoPts(R);
   tlAutoPanel(true);
   tlAutoSetSpeed(AUTO.kmh);
@@ -65093,9 +65112,18 @@ function tlAutoPullOver(tc,why){
   tc.side=side;
   if(why==="drop"){ AUTO.phase="arrive"; try{ TTS.say("We're here! I'm pulling over.",{ gender:"f" }); }catch(e){} }
   const x0=root.position.x, z0=root.position.z, fx=Math.sin(h), fz=Math.cos(h), t0=performance.now();
+  /* v513: di lato quanto basta, ma mai sopra aiuole, cespugli o paletti: si
+     prova 2,4 m e si accorcia finche' l'impronta dell'auto e' libera */
+  let off=2.4;
+  { const C=AUTO.car, hl=(C&&C.HL)||2.2, hw=(C&&C.HW)||0.95;
+    const free=o=>{ const cx=x0+fx*4+nx*side*o, cz=z0+fz*4+nz*side*o;
+      for(const a of [-hl*0.9,0,hl*0.9]) for(const b of [-hw*0.9,hw*0.9]){ const x=cx+fx*a+nx*b, z=cz+fz*a+nz*b;
+        try{ if(insideSolid(x,z,0.2) || (typeof isVegAt==="function" && isVegAt(x,z))) return false; }catch(e){} }
+      return true; };
+    for(const o of [2.4,2.0,1.6,1.2,0.9]){ off=o; if(free(o)) break; } }
   const ob=scene.onBeforeRenderObservable.add(()=>{
     const q=Math.min(1,(performance.now()-t0)/1800), u=q*q*(3-2*q);
-    root.position.x=x0+fx*4*u+nx*side*2.4*u; root.position.z=z0+fz*4*u+nz*side*2.4*u;
+    root.position.x=x0+fx*4*u+nx*side*off*u; root.position.z=z0+fz*4*u+nz*side*off*u;
     root.rotation.y=h+TRAFFIC_YAW+side*0.3*Math.sin(q*Math.PI);
     tc.cv=(1-q)*2.5;
     if(q>=1){ scene.onBeforeRenderObservable.remove(ob); tc.cv=0;
@@ -65348,8 +65376,17 @@ const AUTO_NOT_UNDERSTOOD=/^(Sorry\?|Please ask me|Tell me where|Hmm)/;
    full mode", "take me to the max"»): tutte frasi magiche, valgono uguale.
    ⚠️ «Take me to the max» comincia come una meta («take me to…»): la si
    guarda PRIMA delle mete e della chiacchierata (vedi tlAutoCmd). */
-const AUTO_HURRY_RE=/\b(in a hurry|beast mode|full mode|to the max|full speed)\b/;
-const AUTO_MAGIC_TXT="“Yes, I'm in a hurry!” · “Go beast mode!” · “Take me to the max!”";
+/* v513 (Giacomo: «aggiungiamo altre frasi per mandare The Beast al massimo,
+   fai tu una rosa, insieme ad altre per rallentare»). AL MASSIMO: anche
+   «Floor it!», «Step on it!», «Full throttle!», «Pedal to the metal!»,
+   «As fast as you can!», «Maximum speed!», «Turbo mode!», «Full power!»,
+   «Let's fly!». PER RALLENTARE vedi AUTO_CALM_RE e AUTO_SLOW_RE. */
+const AUTO_HURRY_RE=/\b(in a hurry|beast mode|full mode|to the max|full speed|floor it|step on it|full throttle|pedal to the metal|as fast as (you can|possible)|max(imum)? speed|turbo mode|full power|let'?s fly)\b/;
+const AUTO_MAGIC_TXT="“Yes, I'm in a hurry!” · “Go beast mode!” · “Floor it!” · “Take me to the max!”";
+/* TORNA TRANQUILLA: si torna al limite della citta' (50) e la fretta finisce */
+const AUTO_CALM_RE=/\b(calm down|take it easy|easy|chill( out)?|relax|safety first|be careful|careful|normal speed|speed limit|i'?m scared|i am scared|i feel sick|not so fast|too fast)\b/;
+/* UN PO' PIU' PIANO: -10 km/h (in fretta, oltre i 50: subito al limite) */
+const AUTO_SLOW_RE=/\b(slower|slow down|slow it down|brake|ease off|go slow(ly)?|less fast)\b/;
 function tlAutoCmd(raw){
   const t=tlAutoNorm(raw), say=m=>{ if(!AUTO_NOT_UNDERSTOOD.test(m)) tlAutoCmdClear(); tlAutoPanelDraw(m); try{ TTS.say(m,{ gender:"f" }); }catch(e){} };
   if(!t) return;
@@ -65388,11 +65425,16 @@ function tlAutoCmd(raw){
   }
   const n=t.match(/\b(\d{1,3})\b/);
   let want=null;
+  if(!n && AUTO_CALM_RE.test(t)){ const was=AUTO.kmh; tlAutoSetSpeed(tlAutoK().max); AUTO.wild=0;
+    say(was>tlAutoK().max?"OK, OK! Back to the speed limit: "+AUTO.kmh+" km/h. Safety first!"
+                          :"Don't worry! I'm driving at "+AUTO.kmh+" km/h, the speed limit in town."); return; }
+  if(!n && AUTO_SLOW_RE.test(t) && AUTO.kmh>tlAutoK().max){ tlAutoSetSpeed(tlAutoK().max); AUTO.wild=0;
+    say("OK! Back to the speed limit: "+AUTO.kmh+" km/h."); return; }
   if(n) want=+n[1];
   else if(/\b(faster|speed up|quicker|hurry)\b/.test(t)) want=AUTO.kmh+10;
-  else if(/\b(slower|slow down|not so fast|too fast)\b/.test(t)) want=AUTO.kmh-10;
+  else if(AUTO_SLOW_RE.test(t)) want=AUTO.kmh-10;
   else if(/\bstop\b/.test(t)){ say("I can't stop in the middle of the road! I'll stop when we arrive."); return; }
-  else { say("Sorry? Try: “Go faster, please”, “Slow down, please”, “Drive at 30 km/h, please” or “Take me to the cinema, please”."); return; }
+  else { say("Sorry? Try: “Go faster, please”, “Slow down, please”, “Take it easy!”, “Drive at 30 km/h, please” or “Take me to the cinema, please”."); return; }
   if(t.split(" ").length<2){ say("Please ask me in a sentence: “Go faster, please.”"); return; }
   if(want>tlAutoK().max){
     if(AUTO.kmh>=tlAutoK().top){ say("No way! "+tlAutoK().top+" km/h is my top speed. I can't go any faster!"); return; }
