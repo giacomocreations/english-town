@@ -65138,6 +65138,11 @@ function tlAutoPullOver(tc,why){
     const free=o=>{ const cx=x0+fx*4+nx*side*o, cz=z0+fz*4+nz*side*o;
       for(const a of [-hl*0.9,0,hl*0.9]) for(const b of [-hw*0.9,hw*0.9]){ const x=cx+fx*a+nx*b, z=cz+fz*a+nz*b;
         try{ if(insideSolid(x,z,0.2) || (typeof isVegAt==="function" && isVegAt(x,z))) return false; }catch(e){} }
+      /* v515 (Giacomo: «al cinema l'avatar scende dentro l'edificio»): fra
+         l'auto e il muro deve restare il posto per scendere (davanti al
+         cinema il marciapiede e' stretto: a 2,4 m non restava niente) */
+      if(why==="drop"){ const x=cx+nx*side*(hw+0.95), z=cz+nz*side*(hw+0.95);
+        try{ if(insideSolid(x,z,0.45)) return false; }catch(e){} }
       return true; };
     for(const o of [2.4,2.0,1.6,1.2,0.9]){ off=o; if(free(o)) break; } }
   const ob=scene.onBeforeRenderObservable.add(()=>{
@@ -65165,8 +65170,16 @@ function tlAutoDrop(){
     if(!spot) spot={ x:C.root.position.x+fx*(C.HL+0.9), z:C.root.position.z+fz*(C.HL+0.9) }; }
   if(!spot) for(const d of [C.HW+1.0, C.HW+1.6, C.HW+0.6]){ for(const f of [0,-1.2,1.2]){
     const x=C.root.position.x+nx*d+Math.sin(h)*f, z=C.root.position.z+nz*d+Math.cos(h)*f;
-    try{ if(!blocked(x,z)){ spot={x,z}; break; } }catch(e){ spot={x,z}; break; } } if(spot) break; }
-  if(!spot) spot={ x:C.root.position.x+nx*(C.HW+1.0), z:C.root.position.z+nz*(C.HW+1.0) };
+    try{ if(!blocked(x,z) && !insideSolid(x,z,0.15)){ spot={x,z}; break; } }catch(e){ spot={x,z}; break; } } if(spot) break; }
+  /* v515: di lato niente posto (muro attaccato al marciapiede, come al
+     cinema)? Si scende davanti o dietro all'auto, sullo stesso lato, e solo
+     alla fine dal lato della strada. Mai piu' «il primo punto e basta»,
+     che metteva l'avatar meta' dentro l'edificio. */
+  if(!spot){ const fx=Math.sin(h), fz=Math.cos(h);
+    outer: for(const f of [C.HL+0.9,-(C.HL+0.9),C.HL+1.6,-(C.HL+1.6)]) for(const d of [C.HW*0.6,0,C.HW+0.6,-(C.HW+1.0)]){
+      const x=C.root.position.x+fx*f+nx*d, z=C.root.position.z+fz*f+nz*d;
+      try{ if(!blocked(x,z) && !insideSolid(x,z,0.15)){ spot={x,z}; break outer; } }catch(e){} } }
+  if(!spot) spot={ x:C.root.position.x-nx*(C.HW+1.0), z:C.root.position.z-nz*(C.HW+1.0) };   // l'altro lato: almeno fuori dai muri
   const far=(R&&R.dEnd)||0, dst=R&&R.at;
   tlAutoEnd(()=>{
     player.position.set(spot.x,0,spot.z); player.rotation.y=AUTO.inStall?h:Math.atan2(nx,nz);
