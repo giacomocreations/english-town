@@ -65432,8 +65432,14 @@ function tlAutoPullOver(tc,why){
 }
 /* v517: scendere = prima si alza la portiera, poi si esce (la portiera si
    richiude da sola dopo, vedi tlAutoEnd) */
-function tlAutoGetOut(){ const C=AUTO.car; if(!C || AUTO.phase==="enter") return;
-  try{ tlDoorAnim(C,1,800,()=>tlAutoEnd(null,false,true)); }catch(e){ tlAutoEnd(null,false,true); } }
+function tlAutoGetOut(){ const C=AUTO.car; if(!C || AUTO.phase==="enter" || AUTO.phase==="exit") return;
+  /* v521: anche qui si esce camminando, senza nero: dal lato del posto, accanto alla portiera */
+  const sd=C.seat.x<0?-1:1; let spot=null;
+  for(const d of [C.HW+0.8,C.HW+1.3]) for(const s2 of [sd,-sd]){ if(spot) break;
+    const p=tlAutoL2W(s2*d,0,C.seat.z+0.1); try{ if(!blocked(p.x,p.z) && !insideSolid(p.x,p.z,0.15)) spot={ x:p.x, z:p.z }; }catch(e){ spot={ x:p.x, z:p.z }; } }
+  const end=()=>{ if(spot) tlAutoWalkOut(spot,()=>tlAutoEnd(()=>{ try{ camera.setTarget(player.position.add(new BABYLON.Vector3(0,1.4,0)),false,false,true); }catch(e){} },true,true));
+    else tlAutoEnd(null,false,true); };
+  try{ tlDoorAnim(C,1,800,end); }catch(e){ end(); } }
 /* si scende sul marciapiede, dal lato del marciapiede */
 function tlAutoDrop(){
   const C0=AUTO.car;
@@ -65463,7 +65469,7 @@ function tlAutoDrop(){
       try{ if(!blocked(x,z) && !insideSolid(x,z,0.15)){ spot={x,z}; break outer; } }catch(e){} } }
   if(!spot) spot={ x:C.root.position.x-nx*(C.HW+1.0), z:C.root.position.z-nz*(C.HW+1.0) };   // l'altro lato: almeno fuori dai muri
   const far=(R&&R.dEnd)||0, dst=R&&R.at;
-  tlAutoEnd(()=>{
+  tlAutoWalkOut(spot,()=>tlAutoEnd(()=>{                     // v521: si esce camminando, senza dissolvenza
     player.position.set(spot.x,0,spot.z); player.rotation.y=AUTO.inStall?h:Math.atan2(nx,nz);
     try{ camera.setTarget(player.position.add(new BABYLON.Vector3(0,1.4,0)),false,false,true); }catch(e){}
     let msg=AUTO.tour?"\u{1F697} "+tlAutoName()+": We're back! I hope you enjoyed the tour of the town. Have a nice day!"
@@ -65473,7 +65479,31 @@ function tlAutoDrop(){
     toast(msg);
     try{ if(!Sync.get("et_auto1",null)) Sync.set("et_auto1",{ at:Date.now() }); }catch(e){}
     setTimeout(()=>{ if(AUTO.inStall) tlAutoStay(); else tlAutoReturn(); }, 2500);
-  }, false, false, true);
+  }, true, false, true));
+}
+/* =====================================================================
+   v521 (Giacomo, 22 nov: «quando scendi dopo il giro, o quando ti ha portato
+   al posto scelto, c'e' una dissolvenza nera che non ha bisogno di esserci:
+   fai scendere l'avatar come prima»). Come per salire: portiere su (gia'
+   fatto da chi chiama), l'avatar si alza, si gira e cammina fino al
+   marciapiede, poi la corsa finisce SENZA nero (tlAutoEnd con abort) e le
+   portiere si richiudono da sole.
+   ===================================================================== */
+function tlAutoWalkOut(spot,done){
+  const C=AUTO.car; if(!C || !spot){ done(); return; }
+  if(AUTO.pov){ try{ tlAutoPov(false); }catch(e){} }
+  AUTO.phase="exit";
+  try{ tlAutoRecline(false); }catch(e){} try{ playerStand(); }catch(e){}
+  try{ avatarMeshes.forEach(m=>{ m.visibility=1; }); }catch(e){}
+  try{ _povHead(0); }catch(e){}
+  const x0=player.position.x, z0=player.position.z, y0=player.position.y, y1=C.root.position.y;
+  const r0=player.rotation.y, r1=tlAngTo(r0,Math.atan2(spot.x-x0,spot.z-z0)), t0=performance.now(), T=950;
+  try{ playAvatarAnim("Walk"); }catch(e){}
+  const ob=scene.onBeforeRenderObservable.add(()=>{
+    const q=Math.min(1,(performance.now()-t0)/T), u=q*q*(3-2*q);
+    player.position.x=x0+(spot.x-x0)*u; player.position.z=z0+(spot.z-z0)*u; player.position.y=y0+(y1-y0)*Math.min(1,u*1.6);
+    player.rotation.y=r0+(r1-r0)*Math.min(1,q*2.2);
+    if(q>=1){ scene.onBeforeRenderObservable.remove(ob); try{ playAvatarAnim(IDLE_ANIM); }catch(e){} try{ done(); }catch(e){ console.warn("[walk out]",e); } } });
 }
 /* ---- da sola torna allo stallo: stesso giro, poi dentro e si gira ---- */
 function tlAutoReturn(){
@@ -65578,7 +65608,7 @@ const AUTO_PTR={ on:false, x:0, y:0, pts:{}, pinch:0 };
 function tlAutoOrbit(){ return AUTO.orbit=AUTO.orbit||{ a:0, b:1.2, r:8.5, t:0 }; }
 function tlAutoTick(){
   if(!AUTO.on || !AUTO.car) return;
-  if(AUTO.phase==="enter") return;                       // v517: si sta salendo (tlAutoEnterShow)
+  if(AUTO.phase==="enter" || AUTO.phase==="exit") return;   // v517/v521: si sta salendo o scendendo
   const dt=Math.min(0.05,engine.getDeltaTime()/1000), root=AUTO.car.root;
   if(!townOpen() && AUTO.phase!=="ask"){ tlAutoEnd(null,true,true); return; }
   tlAutoSeatFollow();
