@@ -8305,14 +8305,16 @@ function _xmStagione(d){ const m=d.getMonth(), g=d.getDate();
   return m===11 || (m===0 && (g<7 || (g===7 && d.getHours()<6))); }
 const XMAS=(()=>{ let forz=null;
   try{ const u=new URLSearchParams(location.search), q=u.get("natale")||u.get("xmas"); if(q==="1"||q==="0") forz=(q==="1"); }catch(e){}
-  const X={ on:false, forz:forz, plans:[], mesh:[], solidi:[], undo:[], pronto:false };
+  const X={ on:false, forz:forz, plans:[], mesh:[], solidi:[], undo:[], santas:[], pronto:false };
   X.stagione=function(){ return _xmStagione(new Date()); };
   X.want=function(){ return X.forz!=null ? X.forz : X.stagione(); };
   X.accendi=function(){ if(X.on || !X.pronto) return; X.on=true; const n0=solids.length;
     X.plans.forEach(P=>{ try{ _xmFront(P); }catch(e){ console.warn("[natale]",P.name,e); } });
     try{ _xmDiner(); }catch(e){ console.warn("[natale diner]",e); }
     try{ _xmCafe(); }catch(e){ console.warn("[natale cafe]",e); }
-    try{ _xmBigTree(); }catch(e){ console.warn("[natale albero]",e); }
+    try{ _xmBigTree(XM_TREE,true); }catch(e){ console.warn("[natale albero]",e); }
+    try{ _xmBigTree(XM_PARK_TREE,false); }catch(e){ console.warn("[natale albero parco]",e); }   // v595
+    try{ _xmSantas(); }catch(e){ console.warn("[natale babbi]",e); }                            // v595
     for(let i=n0;i<solids.length;i++) X.solidi.push(solids[i]);
     try{ refreshShadowCasters(); }catch(e){} };
   X.spegni=function(){ if(!X.on) return; X.on=false;
@@ -8494,10 +8496,10 @@ function _xmCafe(){ const x=CAFE_XZ.x, z=CAFE_XZ.z, y0=(typeof _pedGroundY==="fu
    testata alla promenade (82, 1): il café, che sta sull'asse della strada,
    lo copriva tutto. */
 const XM_TREE={ x:47, z:0, H:7 };
-function _xmBigTree(){ const T=XM_TREE, L=_xmL(), rnd=_seedRand("xmBig");
+function _xmBigTree(T,isola){ T=T||XM_TREE; const L=_xmL(), rnd=_seedRand("xmBig|"+T.x+"|"+T.z);
   let gy=0.15; try{ const g=_hwGroundY(T.x+1.2,T.z); if(g>0.05) gy=g; }catch(e){}
   /* l'albero normale dell'isola via, finche' c'e' quello di Natale */
-  try{ const R=ROUNDABOUTS.find(r=>Math.hypot(r.cx-T.x,r.cz-T.z)<0.5); if(R && R.tree){ R.tree.setEnabled(false);
+  if(isola) try{ const R=ROUNDABOUTS.find(r=>Math.hypot(r.cx-T.x,r.cz-T.z)<0.5); if(R && R.tree){ R.tree.setEnabled(false);
       XMAS.undo.push(()=>R.tree.setEnabled(true)); } }catch(e){}
   _xmTree(L,T.x,gy,T.z,T.H,rnd,true);
   /* i regali sotto l'albero */
@@ -8505,7 +8507,113 @@ function _xmBigTree(){ const T=XM_TREE, L=_xmL(), rnd=_seedRand("xmBig");
   const node=new BABYLON.TransformNode("xmBig",scene); node.parent=townRoot; _xmTieni(node); _xmFuse(node,L);
   const R=T.H*0.31; addSolid(T.x-R*0.8,T.x+R*0.8,T.z-R*0.8,T.z+R*0.8,"town");
   /* il cartello davanti all'albero, verso la High Street (ovest) */
-  const sg=_hwPlane(2.1,0.7,T.x-R-0.15,gy+0.75,T.z,Math.PI/2); sg.material=_xmSticker("Merry Christmas!"); sg.parent=node; _noGlow(sg); }
+  const sg=_hwPlane(2.1,0.7,T.x-R-0.15,gy+0.75,T.z,Math.PI/2); sg.material=_xmSticker(T.sign||"Merry Christmas!"); sg.parent=node; _noGlow(sg); }
+/* ---- v595 (Giacomo: «nel parco ci starebbe bene un bell'albero di Natale;
+   e non hai messo Santa Claus da nessuna parte?»). Un secondo albero grande
+   all'ingresso del parco (90,-9: sul prato a sinistra del vialetto, si vede
+   dalla promenade e dal café; misurato libero, fuori dai vialetti) e
+   QUATTRO BABBI NATALE procedurali (0 KB), che salutano col braccio: al
+   parco (col sacco dei regali, e ci si PARLA: «What would you like for
+   Christmas?»), sull'isola della rotonda accanto all'albero grande,
+   davanti al diner e all'ingresso del café. Tutto dentro XMAS: si accende e
+   si spegne con il resto. ---- */
+const XM_PARK_TREE={ x:90, z:-9, H:7, sign:"Happy Holidays!" };
+const XM_SANTAS=[
+  { x:87.9, z:-5.4, face:[-1,0.35], sack:true, talk:true },   // parco: verso la promenade
+  { x:46.1, z:-2.5, face:[-1,-0.2] },                          // rotonda: verso la High Street
+  { x:4.2,  z:23.0, face:[0,-1] },                             // diner: verso la strada
+  { x:66.0, z:2.7,  face:[-1,0] } ];                           // café: ingresso (ovest)
+let _xmSM=null;
+function _xmSantaMats(){ if(_xmSM) return _xmSM; const K=_xmMats(), C3=BABYLON.Color3;
+  const std=(n,hex,spec)=>{ const m=new BABYLON.StandardMaterial(n,scene); m.diffuseColor=C3.FromHexString(hex); m.specularColor=new C3(spec||0.05,spec||0.05,spec||0.05); return m; };
+  _xmSM={ red:K.red, white:K.white, gold:K.gold, black:std("xmBlack","#1c1a1a",0.15), skin:std("xmSkin","#f0c3a0",0.05), sack:std("xmSack","#7a2a22",0.05), pink:std("xmPink","#e89a8a",0.1) };
+  return _xmSM; }
+/* un Babbo Natale alto ~1,8 m, davanti verso +z locale; il braccio destro
+   (node.__arm) saluta: lo muove _xmSantaTick */
+function _xmSanta(S){ const M=_xmSantaMats(), B=BABYLON.MeshBuilder, V=BABYLON.Vector3;
+  const L={ red:[], white:[], black:[], skin:[], gold:[], sack:[], pink:[] };
+  const cyl=(k,o,x,y,z,rx,rz)=>{ const m=B.CreateCylinder("xmS",Object.assign({ tessellation:12 },o),scene); m.position.set(x,y,z); if(rx) m.rotation.x=rx; if(rz) m.rotation.z=rz; L[k].push(m); return m; };
+  const sph=(k,d,x,y,z,sx,sy,sz)=>{ const m=B.CreateSphere("xmS",{ diameter:d, segments:8 },scene); m.position.set(x,y,z); m.scaling.set(sx||1,sy||1,sz||1); L[k].push(m); return m; };
+  const box=(k,w,h,d,x,y,z)=>{ const m=B.CreateBox("xmS",{ width:w, height:h, depth:d },scene); m.position.set(x,y,z); L[k].push(m); return m; };
+  const tor=(k,d,t,x,y,z,sx,sz)=>{ const m=B.CreateTorus("xmS",{ diameter:d, thickness:t, tessellation:18 },scene); m.position.set(x,y,z); m.scaling.set(sx||1,1,sz||1); L[k].push(m); return m; };
+  /* stivali e gambe */
+  [-1,1].forEach(s=>{ cyl("black",{ diameter:0.17, height:0.16 },s*0.11,0.08,0); box("black",0.15,0.08,0.12,s*0.11,0.04,0.09);
+    cyl("red",{ diameter:0.15, height:0.45 },s*0.11,0.38,0); });
+  /* giacca, pancia, bordo di pelliccia, cintura e fibbia */
+  cyl("red",{ diameterTop:0.5, diameterBottom:0.64, height:0.62 },0,0.88,0);
+  sph("red",0.58,0,0.95,0.05,1,0.9,0.85);
+  tor("white",0.64,0.08,0,0.58,0,1,0.95);
+  box("white",0.09,0.58,0.04,0,0.88,0.3);
+  cyl("black",{ diameter:0.62, height:0.08 },0,0.99,0.02).scaling.z=0.92;
+  box("gold",0.13,0.1,0.03,0,0.99,0.315);
+  sph("red",0.5,0,1.2,0,1,0.62,0.82);
+  /* testa: viso, naso, occhi, barba e baffi */
+  sph("skin",0.27,0,1.43,0.01);
+  sph("pink",0.055,0,1.44,0.135);
+  [-1,1].forEach(s=>{ sph("black",0.026,s*0.05,1.48,0.115); sph("white",0.095,s*0.045,1.405,0.125,1.3,0.7,0.8); });
+  sph("white",0.31,0,1.33,0.06,1,1.15,0.72);
+  /* cappello piegato di lato, bordo e pompon */
+  tor("white",0.28,0.065,0,1.545,0);
+  const hat=cyl("red",{ diameterTop:0, diameterBottom:0.26, height:0.33 },0.03,1.69,-0.01,0,-0.42);
+  sph("white",0.085,0.03+Math.sin(0.42)*0.165,1.69+Math.cos(0.42)*0.165,-0.01);
+  /* braccio sinistro giu', con il guanto */
+  cyl("red",{ diameter:0.13, height:0.48 },-0.31,0.98,0.02,0,0.18); tor("white",0.14,0.045,-0.355,0.75,0.02); sph("black",0.12,-0.36,0.71,0.03);
+  /* il sacco dei regali (solo al parco) */
+  if(S.sack){ sph("sack",0.62,-0.6,0.3,-0.2,1,0.95,0.9); cyl("gold",{ diameter:0.16, height:0.06 },-0.6,0.6,-0.2);
+    box("red",0.2,0.18,0.2,-0.52,0.66,-0.12); box("white",0.17,0.15,0.17,-0.7,0.64,-0.25); }
+  const node=new BABYLON.TransformNode("xmSanta",scene); node.parent=townRoot;
+  let gy=0; try{ gy=_hwGroundY(S.x,S.z); }catch(e){}
+  node.position.set(S.x,gy,S.z); node.rotation.y=Math.atan2(S.face[0],S.face[1]);
+  /* il braccio destro: perno alla spalla, alzato, saluta */
+  const arm=new BABYLON.TransformNode("xmSantaArm",scene); arm.parent=node; arm.position.set(0.27,1.23,0.02);
+  const A={ red:[], white:[], black:[] };
+  { const c=B.CreateCylinder("xmS",{ diameter:0.13, height:0.48, tessellation:12 },scene); c.position.set(0,0.24,0); A.red.push(c);
+    const t=B.CreateTorus("xmS",{ diameter:0.14, thickness:0.045, tessellation:18 },scene); t.position.set(0,0.47,0); A.white.push(t);
+    const g=B.CreateSphere("xmS",{ diameter:0.12, segments:8 },scene); g.position.set(0,0.53,0); A.black.push(g); }
+  const fuse=(lists,mats,parent)=>Object.keys(lists).forEach(k=>{ const arr=lists[k]; if(!arr.length) return;
+    const m=arr.length===1?arr[0]:BABYLON.Mesh.MergeMeshes(arr,true,true,undefined,false,false); if(!m) return;
+    m.material=mats[k]; m.parent=parent; m.isPickable=false; m.__cast=true; _noGlow(m); });
+  fuse(L,M,node); fuse(A,M,arm);
+  node.getChildMeshes(false).forEach(m=>{ m.__dyn=true; });          // il braccio si muove: fuori dall'octree statico
+  node.__arm=arm; node.__ph=Math.random()*6;
+  addSolid(S.x-0.4,S.x+0.4,S.z-0.4,S.z+0.4,"town");
+  _xmTieni(node); return node; }
+/* il saluto: braccio alzato che oscilla (solo quelli vicini e a Natale acceso) */
+function _xmSantaTick(){ if(!XMAS.on || area!=="town") return; const t=performance.now()/1000;
+  for(let i=0;i<XMAS.santas.length;i++){ const n=XMAS.santas[i]; if(!n.__arm) continue;
+    if(Math.hypot(n.position.x-player.position.x,n.position.z-player.position.z)>60) continue;
+    /* su e un po' in fuori (+x = la sua destra) */
+    n.__arm.rotation.z=-0.45+Math.sin(t*3.2+n.__ph)*0.35; n.__arm.rotation.x=-0.12; } }
+/* parlare con Babbo Natale (quello del parco) */
+const XM_WISHES=[["a new bike","una bici nuova"],["a video game","un videogioco"],["a puppy","un cagnolino"],["some books","dei libri"],["a football","un pallone"],["a guitar","una chitarra"]];
+function xmSantaTalk(){
+  const four=XM_WISHES.slice().sort(()=>Math.random()-0.5).slice(0,4);
+  DialogueBox.open({ name:"Santa Claus", icon:"\u{1F385}", sub:"Christmas in QuestTown",
+    text:"Ho ho ho! Merry Christmas! What would you like for Christmas?",
+    italian:"Ho ho ho! Buon Natale! Che cosa vorresti per Natale? Scegli la risposta.",
+    choices:four.map(w=>({ label:"I'd like "+w[0]+", please!", act:()=>setTimeout(()=>xmSantaGood(w),260) })),
+    buttons:[{ label:"Merry Christmas, Santa!", cls:"ghost", act:()=>{} }] }); }
+function xmSantaGood(w){
+  DialogueBox.open({ name:"Santa Claus", icon:"\u{1F385}", sub:"Christmas in QuestTown",
+    text:_xmCap(w[0])+"? Ho ho ho! Have you been good this year?",
+    italian:"Vuoi "+w[1]+"? Sei stato buono quest'anno?",
+    choices:[{ label:"Yes, I have!", act:()=>setTimeout(()=>xmSantaBye(true),260) },
+             { label:"Well... most of the time!", act:()=>setTimeout(()=>xmSantaBye(false),260) }] }); }
+function _xmCap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+function xmSantaBye(good){
+  DialogueBox.open({ name:"Santa Claus", icon:"\u{1F385}", sub:"Christmas in QuestTown",
+    text:(good?"Wonderful! ":"Ho ho ho! That's honest! ")+"I'll see what I can do. Merry Christmas and a Happy New Year!",
+    italian:(good?"Benissimo! ":"Ho ho ho! Almeno sei sincero! ")+"Vedrò che cosa posso fare. Buon Natale e felice anno nuovo!",
+    buttons:[{ label:"Thank you, Santa! Merry Christmas!", cls:"primary", act:()=>{} }] }); }
+function _xmSantas(){
+  XMAS.santas=[];
+  XM_SANTAS.forEach(S=>{ try{ const n=_xmSanta(S); XMAS.santas.push(n);
+      if(S.talk){ const o=addInteract({ id:"xm_santa", area:"town", radius:2.4, pos:new BABYLON.Vector3(S.x,0,S.z),
+          prompt:'\u{1F385} Press <b>E</b> to talk to <b>Santa Claus</b>', interact:()=>xmSantaTalk() });
+        XMAS.undo.push(()=>removeInteract(o)); } }catch(e){ console.warn("[natale babbo]",e); } });
+  const ob=scene.onBeforeRenderObservable.add(_xmSantaTick);
+  XMAS.undo.push(()=>{ scene.onBeforeRenderObservable.remove(ob); XMAS.santas=[]; }); }
+
 
 /* v273: dove ricomincia la Park Ave (verso sud). Fino a qui e' marciapiede:
    Home (pad z 7..23) + un lotto libero da 16 m per il ristorante (23..41). */
