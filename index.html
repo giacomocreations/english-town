@@ -64833,12 +64833,16 @@ function tlAutoEnterShow(C,done){
   player.position.set(out.x,gy,out.z); player.rotation.y=Math.atan2(-sd*lx,-sd*lz);
   try{ avatarMeshes.forEach(m=>{ m.visibility=1; }); }catch(e){}
   try{ playAvatarAnim(IDLE_ANIM); }catch(e){}
-  /* la camera: dal lato della portiera, un po' davanti e in alto */
-  const tg=tlAutoL2W(sd*C.HW*0.35,0.8,C.seat.z+0.3);
-  camera.setTarget(tg,false,false,true);
-  /* davanti, di tre quarti e un po' dall'alto: si vedono salire tutte e due le portiere */
-  const fx=Math.sin(h), fz=Math.cos(h), dx=sd*lx*0.65+fx*0.85, dz=sd*lz*0.65+fz*0.85;
-  camera.alpha=Math.atan2(dz,dx); camera.beta=1.08; camera.radius=7.2;
+  /* v523 (Giacomo, 22 nov: «quando premo E per entrare cambia
+     l'inquadratura: puo' restare quella con cui arrivo, e cambiare dopo?»).
+     Niente stacco: la camera resta dov'era (stesso angolo, stessa altezza);
+     in un secondo si centra piano sull'auto e, se si era molto vicini, si
+     allontana quanto basta per vederla intera. Quando si e' dentro e parte
+     la domanda, tlAutoTick la porta morbida dietro all'auto. */
+  { const t0=performance.now(), T0=camera.target.clone(), T1=C.root.position.add(new BABYLON.Vector3(0,0.85,0)), r0=camera.radius, r1=Math.max(r0,6.5);
+    const ob=scene.onBeforeRenderObservable.add(()=>{ const q=Math.min(1,(performance.now()-t0)/1100), u=q*q*(3-2*q);
+      camera.setTarget(BABYLON.Vector3.Lerp(T0,T1,u),false,false,true); camera.radius=r0+(r1-r0)*u;
+      if(q>=1) scene.onBeforeRenderObservable.remove(ob); }); }
   const tw=(ms,f,cb)=>{ const t0=performance.now(); const ob=scene.onBeforeRenderObservable.add(()=>{
       const q=Math.min(1,(performance.now()-t0)/ms); f(q*q*(3-2*q)); if(q>=1){ scene.onBeforeRenderObservable.remove(ob); if(cb) cb(); } }); };
   tlDoorAnim(C,1,900,()=>{
@@ -65440,7 +65444,7 @@ function tlAutoGetOut(){ const C=AUTO.car; if(!C || AUTO.phase==="enter" || AUTO
   const sd=C.seat.x<0?-1:1; let spot=null;
   for(const d of [C.HW+0.8,C.HW+1.3]) for(const s2 of [sd,-sd]){ if(spot) break;
     const p=tlAutoL2W(s2*d,0,C.seat.z+0.1); try{ if(!blocked(p.x,p.z) && !insideSolid(p.x,p.z,0.15)) spot={ x:p.x, z:p.z }; }catch(e){ spot={ x:p.x, z:p.z }; } }
-  const end=()=>{ if(spot) tlAutoWalkOut(spot,()=>tlAutoEnd(()=>{ try{ camera.setTarget(player.position.add(new BABYLON.Vector3(0,1.4,0)),false,false,true); }catch(e){} },true,true));
+  const end=()=>{ if(spot) tlAutoWalkOut(spot,()=>tlAutoEnd(()=>{},true,true));
     else tlAutoEnd(null,false,true); };
   try{ tlDoorAnim(C,1,800,end); }catch(e){ end(); } }
 /* si scende sul marciapiede, dal lato del marciapiede */
@@ -65474,7 +65478,6 @@ function tlAutoDrop(){
   const far=(R&&R.dEnd)||0, dst=R&&R.at;
   tlAutoWalkOut(spot,()=>tlAutoEnd(()=>{                     // v521: si esce camminando, senza dissolvenza
     player.position.set(spot.x,0,spot.z); player.rotation.y=AUTO.inStall?h:Math.atan2(nx,nz);
-    try{ camera.setTarget(player.position.add(new BABYLON.Vector3(0,1.4,0)),false,false,true); }catch(e){}
     let msg=AUTO.tour?"\u{1F697} "+tlAutoName()+": We're back! I hope you enjoyed the tour of the town. Have a nice day!"
                      :"\u{1F697} "+tlAutoName()+": Here you are — "+(P?P.name:"")+"! Have a nice day!";
     if(dst && far>14){ try{ NAV.target=new BABYLON.Vector3(dst.x,0,dst.z); NAV.label=P.name; }catch(e){}
@@ -66008,8 +66011,16 @@ function tlAutoEnd(cb,abort,keepCar){
     /* scesi prima di partire («Get out») o giro interrotto: a terra accanto all'auto */
     if(!cb && AUTO.car){ const r=AUTO.car.root; player.position.set(r.position.x,0,r.position.z+3.6);   // marciapiede di High Street, non il boulevard
       if(AUTO.car.tc && _trafficCars.indexOf(AUTO.car.tc)>=0) tlAutoParkNow(); }
-    if(c){ camera.beta=c.b; camera.radius=c.r; camera.alpha=c.a; if(typeof camWish!=="undefined") camWish=c.r; }
-    try{ camera.setTarget(player.position.add(new BABYLON.Vector3(0,1.4,0)),false,false,true); }catch(e){}
+    /* v523: scesi camminando (abort con cb) la camera NON torna di colpo a
+       com'era prima di salire: resta dov'e' e in un secondo si porta piano
+       sull'avatar; con la dissolvenza (giro finale, Get out da fermi) come prima */
+    if(c && !(abort && cb)){ camera.beta=c.b; camera.radius=c.r; camera.alpha=c.a; if(typeof camWish!=="undefined") camWish=c.r;
+      try{ camera.setTarget(player.position.add(new BABYLON.Vector3(0,1.4,0)),false,false,true); }catch(e){} }
+    else { if(typeof camWish!=="undefined") camWish=camera.radius;
+      const t0=performance.now(), T0=camera.target.clone();
+      const ob=scene.onBeforeRenderObservable.add(()=>{ const q=Math.min(1,(performance.now()-t0)/1000), u=q*q*(3-2*q);
+        try{ camera.setTarget(BABYLON.Vector3.Lerp(T0,player.position.add(new BABYLON.Vector3(0,1.4,0)),u),false,false,true); }catch(e){}
+        if(q>=1) scene.onBeforeRenderObservable.remove(ob); }); }
     if(cb) cb();
     finFade(0,700);
   };
