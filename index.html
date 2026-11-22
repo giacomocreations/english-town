@@ -64172,7 +64172,7 @@ const AUTO_STALL={ x:-39, z:-27.25 };
 const AUTO_FLEET={
   auto1:{ id:"auto1", name:"Nelson 1",  key:null, home:{ x:-39, z:-27.25 }, kmh:{ min:20, max:50, top:90 },  theme:"lux", sitY:0.36, len:4.8, seatZ:0.18, seatX:0.40, doorZ:[0.40,-0.12],
           sub:"Self-driving car · TechLab prototype", car:null, spot:null },
-  turbo:{ id:"turbo", name:"The Beast", key:null, home:{ x:39,  z:-27.25 }, kmh:{ min:20, max:50, top:200 }, theme:"sport", sitY:0.30, len:5.2, seatZ:-0.02, seatX:0.22, doorZ:[0.31,-0.10],
+  turbo:{ id:"turbo", name:"The Beast", key:null, home:{ x:39,  z:-27.25 }, kmh:{ min:20, max:50, top:200 }, theme:"sport", sitY:0.30, len:5.2, seatZ:-0.02, seatX:0.22, doorZ:[0.31,-0.10], doorSlope:true, center:true,
           sub:"Self-driving supercar · ⭐ 3000", car:null, spot:null, stars:3000 } };
 AUTO.fid="auto1";
 function tlAutoF(id){ return AUTO_FLEET[id||AUTO.fid]||AUTO_FLEET.auto1; }
@@ -64258,7 +64258,7 @@ function tlAutoBuildCar(key,id){
      riquadro della portiera sinistra (|x| oltre meta' larghezza) prendeva
      anche tetto e cornice del parabrezza, e la destra no. Si centra il
      modello nell'auto (x e z): portiere, sedile e abitacolo simmetrici. */
-  if(car){ try{ const bb0=root.getHierarchyBoundingVectors(true);
+  if(car && F.center){ try{ const bb0=root.getHierarchyBoundingVectors(true);   // solo The Beast (su Nelson 1, gia' centrata, spezzava le portiere)
     const cw=new BABYLON.Vector3((bb0.min.x+bb0.max.x)/2-root.position.x,0,(bb0.min.z+bb0.max.z)/2-root.position.z);
     const inv=BABYLON.Matrix.Invert(root.getWorldMatrix().getRotationMatrix()), d=BABYLON.Vector3.TransformNormal(cw,inv);
     car.position.x-=d.x; car.position.z-=d.z; root.computeWorldMatrix(true); car.computeWorldMatrix(true); }catch(e){} }
@@ -64895,26 +64895,59 @@ function tlDoorBuild(C){
     [-1,1].forEach(sd=>{ const hg=new BABYLON.TransformNode("a1hinge",scene); hg.parent=C.kit;
       hg.position.set(sd*HW*0.80,H*0.55,zF-0.04); hg.computeWorldMatrix(true); hinges[sd]=hg; });
     const parts=[];
+    /* v526 (Giacomo, con foto: «la parte inferiore del montante non e'
+       coerente, si spezza»). Il taglio davanti era un piano VERTICALE (z<zF),
+       ma il montante del parabrezza e' inclinato all'indietro: in basso
+       restava sulla scocca, in alto saliva con la portiera, e la linea si
+       spezzava. Ora il bordo davanti segue il montante: dal vetro del
+       parabrezza (i triangoli che guardano avanti, verso i lati) si ricava la
+       retta z(y) del suo bordo esterno, e sopra la base del parabrezza la
+       portiera comincia 8 cm dietro quella retta. Il montante resta intero. */
+    const MS=[];
     C.body.getChildMeshes(false).forEach(m=>{
       if(!m.getTotalVertices || m.getTotalVertices()<3 || /wheel/i.test(m.name) || m.isAnInstance) return;
       const pos=m.getVerticesData(BABYLON.VertexBuffer.PositionKind), idx=m.getIndices(); if(!pos || !idx) return;
       m.computeWorldMatrix(true);
       const M=m.getWorldMatrix().multiply(kitInv), P=[];
       for(let i=0;i<pos.length;i+=3) P.push(BABYLON.Vector3.TransformCoordinates(new BABYLON.Vector3(pos[i],pos[i+1],pos[i+2]),M));
+      MS.push({ m, idx, P, glass:/glass|window/i.test(((m.material&&m.material.name)||"")+" "+m.name) }); });
+    /* la retta del montante: punti dei vertici del parabrezza piu' esterni, per fasce d'altezza */
+    let wsA=null, wsB=0, wsY0=1e9;
+    { const band={};
+      MS.forEach(o=>{ if(!o.glass) return; const idx=o.idx, P=o.P;
+        for(let t=0;t<idx.length;t+=3){ const a=P[idx[t]], b=P[idx[t+1]], c=P[idx[t+2]];
+          const n=BABYLON.Vector3.Cross(b.subtract(a),c.subtract(a)), L=n.length()||1;
+          if(Math.abs(n.x)/L>=0.45 || Math.abs(n.z)/L<0.25) continue;                  // solo il parabrezza (guarda avanti)
+          [a,b,c].forEach(v=>{ if(v.z<0 || v.y<H*0.62 || Math.abs(v.x)<HW*0.40) return; const k=Math.round(v.y*20); const B=band[k];   // v529: solo il bordo vero (non i fari, non il centro)
+            if(!B || Math.abs(v.x)>B.ax) band[k]={ ax:Math.abs(v.x), y:v.y, z:v.z }; }); } });
+      const pts=Object.keys(band).map(k=>band[k]);
+      if(pts.length>=3){ let sy=0,sz=0,syy=0,syz=0; pts.forEach(p=>{ sy+=p.y; sz+=p.z; syy+=p.y*p.y; syz+=p.y*p.z; wsY0=Math.min(wsY0,p.y); });
+        const n=pts.length, den=n*syy-sy*sy; if(Math.abs(den)>1e-6){ wsB=(n*syz-sy*sz)/den; wsA=(sz-wsB*sy)/n; } } }
+    /* solo dove il modello e' fitto (The Beast): su Nelson 1, coi triangoli grandi del low-poly, un taglio inclinato li spezzava in schegge */
+    const slope=!!(AUTO_FLEET[C.fid]&&AUTO_FLEET[C.fid].doorSlope);
+    /* v527: la stessa retta anche SOTTO la base del parabrezza, fino al passaruota (HL*0.40): il bordo
+       davanti della portiera e' una linea unica e inclinata, come sull'Aventador vera (prima, sotto, scendeva
+       dritto e alla base del montante restava un gradino scuro) */
+    const zCap=HL*0.40;
+    /* v528 (Giacomo: «la parte inferiore del montante non si alza e si spezza: taglialo piu' in fondo, vicino
+       al parabrezza»): il taglio sta proprio sul bordo del vetro (+2 cm), cosi' tutto il montante sale con la
+       portiera; il vetro del parabrezza resta comunque fermo (filtro sulle normali qui sotto) */
+    /* v529: la retta fino alla BASE del parabrezza (tutto il montante sale, anche la parte bassa che prima
+       restava giu' per il limite del passaruota); sotto la base il bordo scende dritto come prima. La cerniera
+       sta al piede del montante (lo spigolo davanti in basso della portiera), come sulle vere: tutta la
+       portiera le sta dietro e sale */
+    const slopeOk=slope && wsA!==null && wsB<0;
+    const zFront=y=>(slopeOk && y>=wsY0-0.02) ? Math.max(zF,wsA+wsB*y+0.02) : zF;
+    if(slopeOk) [-1,1].forEach(sd=>{ hinges[sd].position.y=wsY0; hinges[sd].position.z=zFront(wsY0)+0.02; hinges[sd].computeWorldMatrix(true); });
+    MS.forEach(o=>{ const m=o.m, idx=o.idx, P=o.P;
       const keep=[], door={ "-1":[], "1":[] };
-      /* v524 (Giacomo, 22 nov: «aprendo gli sportelli si alza anche un pezzo
-         di parabrezza»): vicino al montante i bordi del parabrezza cadono nel
-         riquadro della portiera. Ora conta anche DOVE GUARDA il triangolo:
-         del vetro va con la portiera solo cio' che guarda di lato (il
-         finestrino), mai cio' che guarda avanti o in su (il parabrezza); della
-         scocca resta ferma la parte che guarda avanti (cornice del parabrezza). */
-      const glass=/glass|window/i.test(((m.material&&m.material.name)||"")+" "+m.name);
+      const glass=o.glass;
       for(let t=0;t<idx.length;t+=3){ const a=P[idx[t]], b=P[idx[t+1]], c=P[idx[t+2]];
         const x=(a.x+b.x+c.x)/3, y=(a.y+b.y+c.y)/3, z=(a.z+b.z+c.z)/3;
-        let inD=Math.abs(x)>xIn && z<zF && z>zB && y>yLo && y<yHi;
+        let inD=Math.abs(x)>xIn && z<zFront(y) && z>zB && y>yLo && y<yHi;
         if(inD){ const n=BABYLON.Vector3.Cross(b.subtract(a),c.subtract(a)); const L=n.length()||1; const nx=Math.abs(n.x)/L, nz=Math.abs(n.z)/L, ny=Math.abs(n.y)/L;
           if(glass && nx<0.45) inD=false;                         // parabrezza (o lunotto): resta
-          else if(!glass && nx<0.25 && (nz>0.55 || (ny>0.5 && y>H*0.7))) inD=false; }   // cornice/tetto: resta
+          else if(!glass && nx<0.25 && ((!slope && nz>0.55) || (ny>0.5 && y>H*0.7))) inD=false; }   // cornice/tetto: resta (The Beast: il montante sale tutto)
         (inD?door[x<0?"-1":"1"]:keep).push(idx[t],idx[t+1],idx[t+2]); }
       if(door["-1"].length+door["1"].length<9) return;
       [-1,1].forEach(sd=>{ const L=door[String(sd)]; if(L.length<9) return;
@@ -64924,6 +64957,7 @@ function tlDoorBuild(C){
       /* v519: dietro si vede la vernice, non il nero (normali girate dal retro) */
       try{ if(m.material){ m.material.backFaceCulling=false; m.material.twoSidedLighting=true; } }catch(e){} });
     parts.forEach(d=>{ try{ if(d.material){ d.material.backFaceCulling=false; d.material.twoSidedLighting=true; } }catch(e){} });
+    C.doorFit={ a:wsA, b:wsB, y0:wsY0 };
     if(!parts.length){ hinges[-1].dispose(); hinges[1].dispose(); return null; }
     try{ refreshShadowCasters(); }catch(e){}
     C.door={ hinges:[hinges[-1],hinges[1]], parts, a:0 };
