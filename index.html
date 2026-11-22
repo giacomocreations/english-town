@@ -65062,7 +65062,7 @@ function tlAutoGo(P,Rpre){
        misure non valgono, carGroundRig dava un lift di 2-3 m */
     if(tc.lift==null){ try{ carGroundRig(tc); }catch(e){} }
     if(_trafficCars.indexOf(tc)<0) _trafficCars.push(tc);
-    AUTO.merging=false; AUTO.qT=60;                // v516 (Giacomo: «per la prima domanda aspetta 1 minuto dalla partenza»)
+    AUTO.merging=false; AUTO.qT=20;                // v516b (Giacomo: «meglio la prima domanda dopo 20 secondi»; era 1 minuto)
     if(AUTO.wantDest){ const W=AUTO.wantDest; AUTO.wantDest=null;                   // v511: meta chiesta mentre si usciva dal parcheggio
       try{ if(!tlAutoRedirect(W)) tlAutoPanelDraw("Sorry, I can't find a road to "+W.name+" from here."); }catch(e){} }
     setTimeout(()=>{ try{ if(!tc.wh) tc.wh=carWheelsRig(tc); }catch(e){} },60); }); });
