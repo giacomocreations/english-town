@@ -65513,17 +65513,45 @@ function tlAutoSayGap(q){
    finite»): per tutti, le unit aperte dal cursore di classe (gemUnitOpen,
    le stesse dei cristalli e delle parole dello skatepark) */
 function tlAutoLexUnits(){ try{ return gemLexUnits(); }catch(e){ return []; } }
+/* v516c (Giacomo: «"He doesn't eat ___" con lemon, meat, chicken: giusta
+   meat, ma perche' chicken e' sbagliata? Controlliamo le domande»).
+   Controllate tutte le 850 frasi col buco con le parole sbagliate proposte:
+   · le sbagliate erano della STESSA unit, quindi dello stesso campo
+     (cibi con cibi): spesso nella frase ci stavano anche loro. Ora vengono
+     SEMPRE da altre unit, mai con la stessa cornice di frase (_gemFrame);
+   · le frasi troppo corte e generiche («He doesn't eat ___», «Here is your
+     ___», «This ___ is red») accettano quasi tutto: in auto solo frasi con
+     almeno 5 parole oltre al buco;
+   · coi VERBI («My father has to ___ every morning»: shave, ma anche iron o
+     read a book) un altro verbo ci sta quasi sempre: per le frasi che
+     chiedono un verbo le sbagliate sono nomi o aggettivi, mai verbi. */
+function _tlLexVerb(cz){ const c=String(cz||"");
+  return /(^|[.!?:;]\s*)___\s/.test(c) || /\b(i|we|they|you|to|can|can't|must|will|won't|don't|let's|please|usually|always|never|often)\s+___/i.test(c); }
+function _tlLexWords(c){ return String(c||"").replace(/___/g," ").split(/[^A-Za-z']+/).filter(Boolean).length; }
 function tlAutoLexQ(){
   const units=tlAutoLexUnits(); if(!units.length) return null;
-  const seen=AUTO.lexSeen=AUTO.lexSeen||[], C=[];
-  units.forEach(u=>(GEM_LEX[u]||[]).forEach(w=>{ if(w[3] && w[3].indexOf("___")>=0 && seen.indexOf(w[0])<0) C.push({ u, w }); }));
+  const seen=AUTO.lexSeen=AUTO.lexSeen||[], C=[], ALL=[];
+  units.forEach(u=>(GEM_LEX[u]||[]).forEach(w=>{ if(!w[3] || w[3].indexOf("___")<0) return;
+    ALL.push({ u, w });
+    if(_tlLexWords(w[3])>=5 && seen.indexOf(w[0])<0) C.push({ u, w }); }));
   if(!C.length){ AUTO.lexSeen=[]; return null; }
-  const pick=C[Math.floor(Math.random()*C.length)], ok=pick.w[0], lo=String(ok).toLowerCase();
-  let D=(GEM_LEX[pick.u]||[]).map(w=>w[0]).filter(x=>String(x).toLowerCase()!==lo);
-  if(D.length<2) units.forEach(u=>(GEM_LEX[u]||[]).forEach(w=>{ if(String(w[0]).toLowerCase()!==lo && D.indexOf(w[0])<0) D.push(w[0]); }));
-  D=_qqShuffle(D).slice(0,2); if(D.length<2) return null;
-  seen.push(ok); if(seen.length>15) seen.shift();
-  return { q:pick.w[3], o:_qqShuffle([ok].concat(D)), ok, it:"\u00ab"+ok+"\u00bb = "+pick.w[1], lex:true };
+  for(let tr=0;tr<10;tr++){
+    const pick=C[Math.floor(Math.random()*C.length)], ok=pick.w[0], lo=String(ok).toLowerCase();
+    const mine={}; (GEM_LEX[pick.u]||[]).forEach(w=>{ mine[String(w[0]).toLowerCase()]=1; });
+    const frame=_gemFrame(pick.w[3]), verbQ=_tlLexVerb(pick.w[3]);
+    /* le cornici di ogni parola, in TUTTE le sue frasi (una parola puo' stare in due unit) */
+    const cornici={}; ALL.forEach(o=>{ const k=String(o.w[0]).toLowerCase(); (cornici[k]=cornici[k]||[]).push(_gemFrame(o.w[3])); });
+    const pool=[], vis={};
+    ALL.forEach(o=>{ const k=String(o.w[0]).toLowerCase();
+      if(vis[k] || k===lo || mine[k]) return; vis[k]=1;
+      if(frame && (cornici[k]||[]).indexOf(frame)>=0) return;
+      if(verbQ && (cornici[k]||[]).length && ALL.some(x=>String(x.w[0]).toLowerCase()===k && _tlLexVerb(x.w[3]))) return;
+      pool.push(o.w[0]); });
+    const D=_qqShuffle(pool).slice(0,2); if(D.length<2) continue;
+    seen.push(ok); if(seen.length>15) seen.shift();
+    return { q:pick.w[3], o:_qqShuffle([ok].concat(D)), ok, it:"\u00ab"+ok+"\u00bb = "+pick.w[1], lex:true };
+  }
+  return null;
 }
 function tlAutoQuiz(){
   let Q=null;
