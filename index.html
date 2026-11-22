@@ -64365,7 +64365,7 @@ function tlAutoCabin(C,E){
   /* pavimento */
   box(W*2,0.04,zW-zRW+0.2,carpet,0,F-0.02,(zW+zRW)/2);
   /* i sedili davanti: seduta, fianchetti, schienale trapuntato, poggiatesta */
-  const sy0=(C.fid && AUTO_FLEET[C.fid] && AUTO_FLEET[C.fid].sitY)||0.56, dyS=sy0-0.56;   // v517: la seduta all'altezza dell'anca
+  const sy0=(!C.pov && C.fid && AUTO_FLEET[C.fid] && AUTO_FLEET[C.fid].sitY)||0.56, dyS=sy0-0.56;   // v517: la seduta all'altezza dell'anca (v519: in O quella di prima)
   [-1,1].forEach(sd=>{ const x=sd*Math.abs(S.x), z=S.z;
     box(0.50,0.14,0.52,cream,x,0.49+dyS,z+0.02);
     [-1,1].forEach(k=>capZ(0.045,0.50,cognac,x+k*0.25,0.565+dyS,z+0.02));
@@ -64631,12 +64631,29 @@ function tlDashDraw(C,o){
   C.scr.dt.update();
 }
 /* dentro (O) l'abitacolo, fuori la scocca: mai tutte e due */
+/* v519 (Giacomo, 22 nov: «per la vista O lascia quella che c'era prima, che
+   e' perfetta: ora non si vedono piu' gli interni, e' tutto fuori»). Da
+   dentro (O) l'abitacolo e la camera sono quelli di PRIMA delle portiere a
+   forbice: costruiti sulle misure della v516 (auto da 4,4 m, posto a 0,48
+   della larghezza e 10 cm avanti, seduta a 0,56 m, avatar dritto), su un
+   oggetto a parte (C.povC) con lo stesso kit dell'auto. Da fuori restano le
+   misure nuove (auto piu' grande, sedile basso, schienale inclinato). Entrando
+   in O l'avatar si risiede al posto di prima; uscendo, a quello nuovo. Da
+   dentro si spengono scocca, lidar e anche le portiere ritagliate (che non
+   stanno piu' dentro la scocca: sono appese alle cerniere). */
+function tlAutoPovSeat(){ const C=AUTO.car, F=tlAutoF(), k=4.4/(F.len||4.4); return { x:-C.HW*k*0.92*0.48, z:0.10 }; }
+function tlAutoPovC(){ const C=AUTO.car, F=tlAutoF(), k=4.4/(F.len||4.4);
+  if(!C.povC) C.povC={ pov:true, kit:C.kit, root:C.root, HW:C.HW*k, HL:C.HL*k, H:C.H*k, seat:tlAutoPovSeat(), theme:C.theme, fid:C.fid, ck:null, cabE:null, tab:null };
+  C.povC.tc=C.tc; return C.povC; }
 function tlAutoInside(on){
   const C=AUTO.car; if(!C) return;
-  if(on){ tlAutoCabin(C,tlAutoEyeRel()); AUTO.dt=C.dt; }          // v502: ogni auto ha il suo HUD
-  if(C.ck) C.ck.setEnabled(!!on);
+  const P=tlAutoPovC();
+  if(on){ tlAutoCabin(P,tlAutoEyeRel()); AUTO.dt=P.dt; }          // v502: ogni auto ha il suo HUD
+  if(P.ck) P.ck.setEnabled(!!on);
+  if(on && C.ck) C.ck.setEnabled(false);                          // l'abitacolo «da fuori» (portiere aperte) no
   try{ if(C.body) C.body.setEnabled(!on); }catch(e){}
   try{ C.lid.forEach(m=>m.setEnabled(!on)); }catch(e){}
+  try{ if(C.door) C.door.parts.forEach(m=>m.setEnabled(!on)); }catch(e){}
 }
 /* ---- la prenotazione al parcheggio (dopo il TechLab) ----
    v502: una E per ogni auto, DOVE l'auto e' adesso (lo stallo dove ti ha
@@ -64896,18 +64913,21 @@ function tlDoorPeek(C,on){
     if(off && m.isEnabled()){ m.setEnabled(false); m.__peekOff=true; } });
 }
 /* l'avatar seduto davanti a sinistra; l'anca si tiene nel sistema dell'auto */
-function tlAutoSeat(){
+function tlAutoSeat(pov){
   const C=AUTO.car, h=tlAutoH(), f=new BABYLON.Vector3(Math.sin(h),0,Math.cos(h));
-  const syR=tlAutoF().sitY||0.56, gy=C.root.position.y+Math.min(0.34,syR-0.08), sy=C.root.position.y+syR, sw=tlAutoL2W(C.seat.x,0,C.seat.z);
+  const S=pov?tlAutoPovSeat():C.seat; AUTO.seatNow=S;                 // v519: in O il posto di prima
+  const syR=pov?0.56:(tlAutoF().sitY||0.56), gy=C.root.position.y+Math.min(0.34,syR-0.08), sy=C.root.position.y+syR, sw=tlAutoL2W(S.x,0,S.z);
   player.position.set(sw.x,gy,sw.z); player.rotation.y=h; player.computeWorldMatrix(true);
+  AUTO.gyRel=gy-C.root.position.y;                                    // la stessa quota la tiene tlAutoSeatFollow
   try{ playAvatarAnim(IDLE_ANIM); }catch(e){}
   let off=null; try{ off=playerSit(f,sy,gy); }catch(e){}
   off=off||new BABYLON.Vector3(0,0,0);
   const c=Math.cos(h), s=Math.sin(h);                     // anca -> coordinate dell'auto
   AUTO.hip={ x:off.x*c-off.z*s, z:off.x*s+off.z*c };
   tlAutoSeatFollow();
-  try{ tlAutoRecline(true); }catch(e){ console.warn("[recline]",e); }
+  if(!pov){ try{ tlAutoRecline(true); }catch(e){ console.warn("[recline]",e); } }
 }
+function tlAutoReseat(pov){ try{ tlAutoRecline(false); }catch(e){} try{ playerStand(); }catch(e){} tlAutoSeat(pov); }
 /* =====================================================================
    v517 — SEDUTI DAVVERO, SENZA LA TESTA FUORI DAL TETTO (Giacomo, 22 nov:
    «l'avatar si sieda; controlliamo l'altezza delle macchine in modo che
@@ -64973,9 +64993,9 @@ function tlAutoReclineTick(){
 function tlAutoSeatFollow(){
   if(!AUTO.car || !AUTO.hip) return;
   const C=AUTO.car, h=tlAutoH(), c=Math.cos(h), s=Math.sin(h);
-  const sw=tlAutoL2W(C.seat.x,0,C.seat.z-0.04);
+  const S=AUTO.seatNow||C.seat, sw=tlAutoL2W(S.x,0,S.z-0.04);
   const ox=AUTO.hip.x*c+AUTO.hip.z*s, oz=-AUTO.hip.x*s+AUTO.hip.z*c;
-  player.position.set(sw.x-ox, C.root.position.y+0.34, sw.z-oz); player.rotation.y=h;
+  player.position.set(sw.x-ox, C.root.position.y+(AUTO.gyRel!=null?AUTO.gyRel:0.34), sw.z-oz); player.rotation.y=h;
 }
 /* ---- la meta: scritta o a voce, in una frase ---- */
 function tlAutoAsk(){
@@ -65481,6 +65501,8 @@ function tlAutoPov(on){
     /* da fuori l'avatar non si vede (la testa usciva dal tetto); da dentro si'
        (gambe e braccia), senza la testa davanti alla camera */
     try{ avatarMeshes.forEach(m=>{ m.visibility=1; }); }catch(e){}            // v517: anche da fuori (la testa non esce piu' dal tetto)
+    /* v519: in O seduti al posto di prima (dritti); fuori al posto nuovo (inclinati) */
+    try{ tlAutoReseat(AUTO.pov); }catch(e){ console.warn("[pov seat]",e); }
     /* v501: dentro l'abitacolo costruito sugli occhi, fuori la scocca (vedi tlAutoCabin) */
     tlAutoInside(AUTO.pov);
     if(AUTO.pov){ const ey=tlAutoEyeRel();
@@ -65488,10 +65510,11 @@ function tlAutoPov(on){
          alla camera (forme marroni semitrasparenti, visto a schermo). Via
          tutto cio' che vive all'altezza degli occhi; corpo, braccia e gambe
          restano (cominciano molto piu' in basso). */
-      try{ const eyW=C.root.position.y+ey;
+      const hideEye=()=>{ if(!AUTO.pov) return; try{ const eyW=C.root.position.y+ey;
         avatarRoot.getChildMeshes(false).forEach(m=>{ try{ m.refreshBoundingInfo(!!m.skeleton); }catch(e){}
           const b=m.getBoundingInfo().boundingBox;
-          if(b.maximumWorld.y>eyW-0.08 && b.minimumWorld.y>eyW-0.65) m.visibility=0; }); }catch(e){} } }
+          if(b.maximumWorld.y>eyW-0.08 && b.minimumWorld.y>eyW-0.65) m.visibility=0; }); }catch(e){} };
+      hideEye(); setTimeout(hideEye,250); } }   // v519: di nuovo dopo il risedersi (lo scheletro si aggiorna al disegno)
   try{ _povHead(AUTO.pov?1:0); }catch(e){}
   camera.minZ=AUTO.pov?0.03:(AUTO.cam?AUTO.cam.minZ:camera.minZ);
   toast(AUTO.pov?"\u{1F441}️ Inside "+tlAutoName()+" — drag the mouse (or ← →) to look around, O to go out":"\u{1F697} Outside view — drag to turn around the car, wheel to zoom, O to look inside");
@@ -65533,7 +65556,7 @@ function tlAutoTick(){
   if(AUTO.pov){
     if(keys["arrowleft"]) AUTO.look.y=Math.max(-2.6,AUTO.look.y-1.6*dt);
     if(keys["arrowright"]) AUTO.look.y=Math.min(2.6,AUTO.look.y+1.6*dt);
-    const C=AUTO.car, e=tlAutoL2W(C.seat.x,tlAutoEyeRel(),C.seat.z+0.06);
+    const C=AUTO.car, PS=(C.povC&&C.povC.seat)||C.seat, e=tlAutoL2W(PS.x,tlAutoEyeRel(),PS.z+0.06);   // v519: gli occhi al posto di prima
     camera.setTarget(e,false,false,true);
     camera.radius=0.05; camera.alpha=tlSkyCamAlpha(h+AUTO.look.y); camera.beta=Math.PI/2-0.08+AUTO.look.p;
   } else {
@@ -65829,7 +65852,7 @@ function tlAutoNavDraw(){
   if(AUTO.ui){ AUTO.ui.innerHTML='<b>\u{1F697} '+tlAutoName()+'</b> · '+kmh+' km/h'+(AUTO.place?' · \u{1F3C1} '+_escHtml(AUTO.place.name):'')
       +(eta?' · '+Math.floor(eta/60)+':'+String(eta%60).padStart(2,"0"):'')+(msg?'<div style="font-weight:700;margin-top:2px;">'+_escHtml(msg)+'</div>':''); }
   if(!AUTO.dt || !AUTO.pov) return;
-  try{ tlDashDraw(C); }catch(e){}                       // v508: lo schermo della plancia
+  try{ tlDashDraw(C.povC||C); }catch(e){}               // v508: lo schermo della plancia (v519: quello dell'abitacolo di O)
   /* l'HUD (era il tablet): intestazione, mappa, tachimetro ad arco, manovra, arrivo */
   const c=AUTO.dt.getContext(), W=768, H=480;
   /* v501: e' un HUD sul parabrezza: fondo semitrasparente (la strada si vede
@@ -65893,6 +65916,7 @@ function tlAutoEnd(cb,abort,keepCar){
   const fin=function(){
     if(AUTO.obs){ scene.onBeforeRenderObservable.remove(AUTO.obs); AUTO.obs=null; }
     try{ tlAutoRecline(false); }catch(e){}         // v517: dritti prima di alzarsi
+    AUTO.seatNow=null; AUTO.gyRel=null;
     try{ playerStand(); }catch(e){}
     try{ _povHead(0); }catch(e){}
     try{ avatarMeshes.forEach(m=>{ m.visibility=1; }); }catch(e){}
