@@ -54762,7 +54762,9 @@ const Needs={
       M2.diffuseColor=new BABYLON.Color3(0.60,0.45,0.30); M2.specularColor=M.specularColor;
       const body=BABYLON.MeshBuilder.CreateBox("needsBagB",{ width:0.17, height:0.19, depth:0.10 },scene); body.material=M; body.parent=n; body.position.y=-0.10;
       const top=BABYLON.MeshBuilder.CreateBox("needsBagF",{ width:0.172, height:0.04, depth:0.03 },scene); top.material=M2; top.parent=n; top.position.y=0.005;
-      [body,top].forEach(m=>{ m.isPickable=false; try{ if(typeof shadowGen!=="undefined" && shadowGen) shadowGen.addShadowCaster(m); }catch(e){} });
+      /* ⚠️ si muove a ogni fotogramma: fuori dall'octree statico da subito (__dyn),
+         senza aspettare che il guardiano se ne accorga */
+      [body,top].forEach(m=>{ m.isPickable=false; m.__dyn=true; m.alwaysSelectAsActiveMesh=true; try{ if(typeof shadowGen!=="undefined" && shadowGen) shadowGen.addShadowCaster(m); }catch(e){} });
       this.bagMesh=n;
     }
     const n=this.bagMesh; n.setEnabled(true);
@@ -54812,6 +54814,8 @@ const Needs={
         if(fo && i<nB && i>=fo.done && (R.bite||R.food)) steps.push({ g:R.bite||R.food, what:"bite", apply:()=>{ fo.done++; bit(fo.done); this.eat(fo.en,1/nB,1); } });
       }
     }
+    /* il cibo sale alla bocca: mobile da subito (vedi il sacchetto) */
+    try{ set.getChildMeshes(false).forEach(m=>{ m.__dyn=true; m.alwaysSelectAsActiveMesh=true; }); }catch(e){}
     this.bagEat={ set };
     try{ toast("\u{1F961} You open your bag… Enjoy your meal! · Apri il sacchetto: buon appetito!"); }catch(e){}
     eatRun(steps,f,()=>{ const E=this.bagEat; this.bagEat=null; this.bag=null;
