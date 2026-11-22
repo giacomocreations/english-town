@@ -64872,7 +64872,9 @@ function tlDoorBuild(C){
         const d=m.clone(m.name+"_door"+(sd<0?"L":"R"),null,true); d.makeGeometryUnique(); d.setIndices(L);
         d.setParent(hinges[sd]); d.isPickable=false; d.__dyn=true; d.__cast=true; parts.push(d); });
       m.makeGeometryUnique(); m.setIndices(keep);
-      try{ if(m.material) m.material.backFaceCulling=false; }catch(e){} });
+      /* v519: dietro si vede la vernice, non il nero (normali girate dal retro) */
+      try{ if(m.material){ m.material.backFaceCulling=false; m.material.twoSidedLighting=true; } }catch(e){} });
+    parts.forEach(d=>{ try{ if(d.material){ d.material.backFaceCulling=false; d.material.twoSidedLighting=true; } }catch(e){} });
     if(!parts.length){ hinges[-1].dispose(); hinges[1].dispose(); return null; }
     try{ refreshShadowCasters(); }catch(e){}
     C.door={ hinges:[hinges[-1],hinges[1]], parts, a:0 };
@@ -64900,12 +64902,19 @@ function tlDoorPeek(C,on){
   C.kit.computeWorldMatrix(true); const inv=BABYLON.Matrix.Invert(C.kit.getWorldMatrix());
   C.ck.getChildMeshes(false).forEach(m=>{
     let off=/a1hood|a1cowl|a1nose|a1hudp|a1scr/.test(m.name);
+    /* v519 (Giacomo: «quando scende di ritorno nel parcheggio appare una
+       colonna nera vicino alle portiere»): l'ingombro si portava nel kit
+       dai due soli angoli min/max del mondo, giusto solo con l'auto dritta
+       come a casa. Nello stallo (o accostata) l'auto e' girata: ora gli otto
+       vertici del box, uno per uno. */
     if(!off){ try{ m.computeWorldMatrix(true); const bb=m.getBoundingInfo().boundingBox;
-      const a=BABYLON.Vector3.TransformCoordinates(bb.minimumWorld,inv), b=BABYLON.Vector3.TransformCoordinates(bb.maximumWorld,inv);
-      const x0=Math.min(a.x,b.x), x1=Math.max(a.x,b.x), y1=Math.max(a.y,b.y), z0=Math.min(a.z,b.z), cx=(x0+x1)/2;
+      let x0=1e9,x1=-1e9,y1=-1e9,z0=1e9,z1b=-1e9;
+      (bb.vectorsWorld||[bb.minimumWorld,bb.maximumWorld]).forEach(v=>{ const q=BABYLON.Vector3.TransformCoordinates(v,inv);
+        x0=Math.min(x0,q.x); x1=Math.max(x1,q.x); y1=Math.max(y1,q.y); z0=Math.min(z0,q.z); z1b=Math.max(z1b,q.z); });
+      const a={ z:z0 }, b={ z:z1b }, cx=(x0+x1)/2;
       const Bl=(C.cabE||1.2)-0.17;                                              // la linea di cintura dell'abitacolo
       if(y1>Bl+0.02 || y1>C.H-0.06 || x1>C.HW-0.02 || x0<-C.HW+0.02) off=true;   // sopra i finestrini o fuori dalla scocca: tetto, montanti
-      if(Math.abs(cx)>W-0.16) off=true;                                         // i pannelli delle portiere (si aprono tutte e due)
+      if(Math.max(Math.abs(x0),Math.abs(x1))>W-0.16) off=true;                  // tutto cio' che arriva ai fianchi (pannelli delle portiere, la plancia laccata bassa: la «colonna nera» nel vano)
       if(z0<-C.HL+0.3) off=true;                                                // la coda
       const DZ=(AUTO_FLEET[C.fid]&&AUTO_FLEET[C.fid].doorZ)||[0.40,-0.12], z1=Math.max(a.z,b.z);
       if(z1>C.HL*DZ[0]+0.1) off=true;                                           // davanti alle cerniere (plancia: il muso e' piu' stretto)
