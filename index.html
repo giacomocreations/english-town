@@ -11990,7 +11990,7 @@ function talkToWaiter(n){
      taken» e ti manda alla sedia libera piu' vicina (dinerSeatTaken);
    · finite le sedie, si ordina DA ASPORTO parlando col cameriere: «Eat in or
      take away?» -> «Take away, please.» (tessere), si sceglie dal menu, si
-     paga e si mangia camminando (Needs.eatOnTheGo). Al café lo stesso, da
+     paga e si mangia al tavolo da picnic piu' vicino (Needs.giveBag, v591). Al café lo stesso, da
      solo, quando gli sgabelli sono tutti presi (cafeTakeaway).
    E' anche una frase in piu' del «at the restaurant» del libro.
    ===================================================================== */
@@ -12050,9 +12050,10 @@ function dinerTakeawayPay(n,food,drink){
     try{ TTS.say("Here's your bag. Enjoy your meal!"); }catch(e){}
     DialogueBox.open({ npc:n, icon:"\u{1F961}", sub:DINER.name+(got>0?"  ⭐ +"+got:""),
       text:"Here's your bag. Enjoy your meal! Have a nice day!",
-      italian:"Ecco il sacchetto: mangi camminando (o seduto su una panchina).",
+      italian:"Ecco il sacchetto: cerca un tavolo da picnic (segui la bussola) e siediti per mangiare.",
       buttons:[{ label:"Thank you! Goodbye!", cls:"primary", act:()=>{
-        try{ Needs.eatOnTheGo([food.en].concat(drink?[drink.en]:[])); }catch(e){} } }] });
+        const cat=v=>DINER_MENU.mains.indexOf(v)>=0?"main":DINER_MENU.sides.indexOf(v)>=0?"side":"drink";
+        try{ Needs.giveBag("diner",[food].concat(drink?[drink]:[]).map(v=>({ en:v.en, key:cat(v), v }))); }catch(e){} } }] });
   };
   try{ pricePick({ npc:n, icon:"\u{1F9FE}", sub:DINER.name+" — take away", said:"That's "+priceWords(c)+", please.", price:c, next:done }); }
   catch(e){ done(); }
@@ -12965,8 +12966,10 @@ function benchSit(b){
   BSIT.tab=_benchTable(b,BSIT.S,f,seatY);
   _benchPose();
   BSIT.meInter.enabled=true;
-  if(NEWS.has){ toast("\u{1FA91} You sit down and open the newspaper…"); setTimeout(()=>{ if(BSIT.b===b) benchRead(); },700); }
-  else toast("\u{1FA91} You sit down. (E or walk to stand up)");
+  let _eat=false; try{ if(Needs.bag) _eat=Needs.benchEat(b); }catch(e){ console.warn("[needs] bench",e); }   // v591 🥡
+  if(_eat){ /* si mangia: il giornale aspetta */ }
+  else if(NEWS.has){ toast("\u{1FA91} You sit down and open the newspaper…"); setTimeout(()=>{ if(BSIT.b===b) benchRead(); },700); }
+  else if(!(Needs.bag && b.kind!=="picnic")) toast("\u{1FA91} You sit down. (E or walk to stand up)");
   try{ parkOnSit(b); }catch(e){}       // v307: Park watcher / Story Tree
 }
 /* il corpo sulla seduta; da capo anche per aprire/chiudere il giornale
@@ -12985,6 +12988,7 @@ function _benchPose(){
 function benchResit(){ if(BSIT.b) _benchPose(); }
 function benchStand(silent){
   if(!BSIT.b) return;
+  try{ Needs.benchEatStop(); }catch(e){}            // v591: a meta' pasto il resto torna nel sacchetto
   const S=BSIT.S, f=BSIT.f, L=BSIT.L;
   playerStand();
   /* in piedi dove c'e' posto: davanti alla panchina (dietro, al tavolo da picnic) */
@@ -26571,7 +26575,7 @@ function updateQuestCompass(){
   if(qm && qm.classList.contains("show")){ qcompass.box.classList.remove("show"); return; }
   qcompass.box.classList.add("show");
   const kind=(!nav && QC.get && QC.get.kind)||"";
-  const lab=food?"\u{1F354} Eat":nav?"Ranger":kind==="exit"?"Go out":kind==="help"?"\u{1F4A1} Help"
+  const lab=food?(t.__kind==="table"?"\u{1F961} Table":"\u{1F354} Eat"):nav?"Ranger":kind==="exit"?"Go out":kind==="help"?"\u{1F4A1} Help"
            :helpOk?"\u{1F4A1} Help?":"Next step";
   if(qcompass.lab.textContent!==lab) qcompass.lab.textContent=lab;
   const dx=t.x-player.position.x, dz=t.z-player.position.z;
@@ -37952,15 +37956,16 @@ function _cafeSit(){ const P=CAFE_PICK; if(!P.spot) return false;
   P.seated=true;
   try{ if(typeof POV!=="undefined" && POV.on){ camera.alpha=-P.face-Math.PI/2; camera.inertialAlphaOffset=0; camera.beta=Math.PI/2+0.12; } }catch(e){}
   return true; }
-/* v590: gli sgabelli sono tutti presi dai compagni: l'ordine si porta via e
-   si mangia camminando (Needs.eatOnTheGo). Le stelle dell'ordine sono gia'
+/* v590: gli sgabelli sono tutti presi dai compagni: l'ordine si porta via
+   nel sacchetto e si mangia al tavolo da picnic piu' vicino (Needs.giveBag). Le stelle dell'ordine sono gia'
    state date al bancone. */
 function cafeTakeaway(){ const P=CAFE_PICK, sl=(P.o&&P.o.slip)||{};
-  const items=[]; if(sl.drink && sl.drink.en) items.push({ en:sl.drink.en, mult:(sl.size && /large/i.test(sl.size.en))?1.4:1 });
-  if(sl.food && sl.food.en && sl.food.en!=="—") items.push({ en:sl.food.en });
+  const items=[]; if(sl.drink && sl.drink.en) items.push({ en:sl.drink.en, key:"drink", mult:(sl.size && /large/i.test(sl.size.en))?1.4:1 });
+  if(sl.food && sl.food.en && sl.food.en!=="—") items.push({ en:sl.food.en, key:"food" });
+  const slip=JSON.parse(JSON.stringify(sl));
   toast("\u{1F961} All the stools are taken: you take it away! · Sgabelli tutti occupati: porti via l'ordine",4800);
   try{ cafeClear(); }catch(e){}
-  setTimeout(()=>{ try{ Needs.eatOnTheGo(items); }catch(e){} },1200);
+  setTimeout(()=>{ try{ Needs.giveBag("cafe",items,slip); }catch(e){} },1500);
 }
 function cafeResit(){ const P=CAFE_PICK; if(P.seated){ P.seated=false; _cafeSit(); } }
 /* in piedi accanto allo sgabello, dalla parte dei clienti (fuori dal suo solido) */
@@ -54531,8 +54536,31 @@ const NEEDS_FOOD={
   "onion rings":{e:0,f:20,h:-1}, "french fries":{e:0,f:20,h:-1}, "green salad":{e:0,f:20,h:1}, "coleslaw":{e:0,f:15,h:1},
   "ice cream sundae":{e:0,f:20,h:-1}, "chocolate brownie":{e:0,f:20,h:-1}
 };
+/* v591 (Giacomo: «per dire ho fame, sono stanco usa a rotazione anche frasi
+   diverse: I'm starving, I'm dead tired, I'm knackered...»). Ogni situazione
+   ha la sua lista; si gira in ordine (partendo da un punto a caso), cosi'
+   non esce due volte di fila la stessa. Accanto, l'italiano: alcune sono
+   modi di dire (to eat a horse, running on empty) e vanno spiegati. */
+const NEEDS_LINES={
+  tired:[["I'm tired!","Sono stanco!"],["I'm exhausted!","Sono esausto!"],["I'm dead tired!","Sono stanco morto!"],
+    ["I'm knackered!","Sono distrutto! (inglese britannico, informale)"],["I'm worn out!","Sono sfinito!"],
+    ["My legs are killing me!","Le gambe mi fanno malissimo!"],["I need a rest!","Ho bisogno di riposare!"]],
+  noRunTired:[["I'm too tired to run!","Sono troppo stanco per correre!"],["I can't run any more!","Non ce la faccio più a correre!"],
+    ["I'm out of breath!","Ho il fiatone!"]],
+  peckish:[["I'm a bit peckish.","Ho un languorino. (inglese britannico)"],["I could eat something.","Mangerei qualcosa."],
+    ["I'm getting hungry.","Mi sta venendo fame."]],
+  hungry:[["I'm hungry!","Ho fame!"],["I'm starving!","Sto morendo di fame!"],["I'm famished!","Ho una fame da lupi!"],
+    ["My stomach is rumbling!","Mi brontola lo stomaco!"],["I could eat a horse!","Mangerei un bue! (alla lettera: un cavallo)"],
+    ["I'm ravenous!","Ho una fame tremenda!"]],
+  noRunHungry:[["I'm too hungry to run!","Ho troppa fame per correre!"],["I'm running on empty!","Sono a secco! (alla lettera: corro col serbatoio vuoto)"]],
+  stillHungry:[["I'm still hungry!","Ho ancora fame!"],["I could eat more!","Mangerei ancora!"]],
+  rested:[["I feel great!","Mi sento benissimo!"],["I feel much better!","Mi sento molto meglio!"],["That's better!","Così va meglio!"],
+    ["I'm full of energy!","Sono pieno di energia!"]],
+  full:[["I'm full!","Sono pieno!"],["I'm stuffed!","Sono strapieno!"],["That was delicious!","Era buonissimo!"],["Yummy!","Che buono!"]]
+};
 const Needs={
   e:100, f:100,                   // energia, fame (100 = pieno)
+  rot:{}, bag:null, bagEat:null, bagMesh:null,
   loaded:false, savedF:null, saveT:0,
   run:false,                      // ultimo fotogramma: si stava correndo davvero?
   last:null,                      // posizione al fotogramma prima (per i metri)
@@ -54587,11 +54615,8 @@ const Needs={
     if(this.paused() || (this.e>0 && !this.starving())) return true;
     if(want){ const now=performance.now();
       if(now>this.noRunT){ this.noRunT=now+15000;
-        const tired=this.e<=0;
-        this.say(tired ? "I'm too tired to run!" : "I'm too hungry to run!",
-          tired ? "Sei troppo stanco per correre: siediti su una panchina \u{1FA91}"
-                : "Hai troppa fame per correre: mangia qualcosa al café o al Sunny Side Diner (segui la bussola \u{1F354})",
-          tired ? "\u{1F629}" : "\u{1F62B}", false); } }
+        if(this.e<=0) this.sayL("noRunTired","siediti su una panchina \u{1FA91}","\u{1F629}",false);
+        else this.sayL("noRunHungry","mangia qualcosa al café o al Sunny Side Diner (segui la bussola \u{1F354})","\u{1F62B}",false); } }
     return false;
   },
   /* moltiplicatore della corsa: premio, mai malus */
@@ -54611,6 +54636,7 @@ const Needs={
   },
   /* dove andare a mangiare: il café o il diner piu' vicino (null = non serve) */
   navTarget(){
+    if(this.bag && !this.bagEat && !this.seated() && !this.paused()) return this.bagTable();
     if(!this.starving() || this.seated()) return null;
     const p=player && player.position; if(!p) return null;
     const c=[];
@@ -54619,12 +54645,17 @@ const Needs={
     let best=null, bd=1e9;
     c.forEach(s=>{ const d=Math.hypot(s.x-p.x, s.z-p.z); if(d<bd){ bd=d; best=s; } });
     if(!best || bd<7) return null;              // arrivato: ora si ordina
-    return new BABYLON.Vector3(best.x,0,best.z);
+    const v=new BABYLON.Vector3(best.x,0,best.z); v.__kind="food"; return v;
   },
   say(en,it,ic,voice){
     try{ toast((ic||"")+" "+en+" · "+it, 4200); }catch(e){}
     if(voice!==false) try{ if(!(typeof _dlgOpen==="function" && _dlgOpen())) TTS.say(en); }catch(e){}
   },
+  /* la prossima frase della lista `cat` (NEEDS_LINES), con un consiglio in coda */
+  line(cat){ const L=NEEDS_LINES[cat]; if(!L) return ["",""];
+    let i=this.rot[cat]; i=(i==null)?Math.floor(Math.random()*L.length):(i+1)%L.length;
+    this.rot[cat]=i; return L[i]; },
+  sayL(cat,tip,ic,voice){ const l=this.line(cat); this.say(l[0], l[1]+(tip?" — "+tip:""), ic, voice); },
   /* un fumetto una volta sola per soglia: si riarma quando si risale */
   once(key,cond,fn){ if(cond){ if(!this.said[key]){ this.said[key]=true; fn(); } } else this.said[key]=false; },
   tick(){
@@ -54654,22 +54685,25 @@ const Needs={
     const cap=this.starving()?NEEDS_HUNGRY_CAP:100;
     if(this.seated() && this.e<cap){ this.e=Math.min(cap, this.e+NEEDS_SIT_E*dt);
       if(this.e>=cap){
-        if(cap<100){ this.once("capped", true, ()=>this.say("I'm still hungry!","Riposarti non basta: devi mangiare qualcosa \u{1F354}","\u{1F62B}")); }
-        else if(this.low){ this.low=false; this.say("I feel great!","Ti sei riposato: energia piena!","\u{1F60A}"); } } }
+        if(cap<100){ this.once("capped", true, ()=>this.sayL("stillHungry","riposarti non basta: devi mangiare qualcosa \u{1F354}","\u{1F62B}")); }
+        else if(this.low){ this.low=false; this.sayL("rested","energia piena!","\u{1F60A}"); } } }
     if(!this.starving()) this.said.capped=false;
     if(!pause){
-      this.once("tired", this.e<30, ()=>this.say("I'm tired!","Sei stanco: siediti su una panchina per riposare \u{1FA91}","\u{1F971}"));
+      this.once("tired", this.e<30, ()=>this.sayL("tired","siediti su una panchina per riposare \u{1FA91}","\u{1F971}"));
+      /* prima della fame vera, un avviso leggero («peckish»): una volta */
+      this.once("peckish", this.f<40 && !this.hungry(), ()=>this.sayL("peckish","tra un po' avrai fame: passa dal café o dal diner","\u{1F642}",false));
       /* appena finita la quest (o appena diventati affamati, o ogni 3 minuti): si dice */
       const qEnd=this.wasQuest && !this.questOn();
       if(qEnd) this.afterQuest=true;
       if(this.starving() && (qEnd || !this.said.hungry || now>this.nagT) && !this.seated()
          && !(typeof _dlgOpen==="function" && _dlgOpen())){
         this.said.hungry=true; this.nagT=now+180000;
-        this.say("I'm hungry!","Hai fame: vai a mangiare al café o al Sunny Side Diner (segui la bussola \u{1F354})","\u{1F354}");
+        this.sayL("hungry","vai a mangiare al café o al Sunny Side Diner (segui la bussola \u{1F354})","\u{1F354}");
       }
       if(!this.hungry()) this.said.hungry=false;
     }
     this.wasQuest=this.questOn();
+    try{ this.bagTick(); }catch(e){}
     this.save(false);
     if(now>this.hudT){ this.hudT=now+250; this.hud(pause); }
   },
@@ -54695,6 +54729,103 @@ const Needs={
     this.say("Yummy! I'm eating on the go.","Mangi il tuo "+L.map(x=>x.en.toLowerCase()).join(" e ")+" camminando.","\u{1F961}",false);
     for(let i=0;i<4;i++) setTimeout(()=>{ L.forEach(x=>this.eat(x.en,0.25,x.mult||1)); }, 1200+i*1300);
   },
+  /* ---- v591 L'ASPORTO SI MANGIA AL TAVOLO (Giacomo: «visivamente come si
+     realizza? un messaggio che dice di mangiare al tavolo piu' vicino, e li'
+     scatta l'animazione come al café o al diner»). Il sacchetto di carta
+     resta nella mano SINISTRA (la destra e' del giornale), la bussola porta
+     al tavolo da picnic piu' vicino (BENCHES kind "picnic": la passeggiata
+     del café, il Boulevard, il parco), e sedendosi il cibo esce sul tavolo
+     e si mangia con lo STESSO braccio del diner e del café (eatRun).
+     Alzarsi a meta' non fa perdere niente: il resto torna nel sacchetto. ---- */
+  giveBag(venue,items,slip){
+    this.bag={ venue, slip:slip||null,
+      items:(items||[]).filter(x=>x && x.en && x.en!=="—").map(x=>Object.assign({ done:0 },x)) };
+    if(!this.bag.items.length){ this.bag=null; return; }
+    this.say("Let's find a table!","Cerca un tavolo da picnic (segui la bussola \u{1F961}) e siediti per mangiare.","\u{1F961}");
+  },
+  /* il tavolo da picnic piu' vicino (null = nessuno, o ci sei gia') */
+  bagTable(){
+    const p=player && player.position; if(!p) return null;
+    let best=null, bd=1e9;
+    try{ BENCHES.forEach(b=>{ if(b.kind!=="picnic" || b.npcBusy) return; const d=Math.hypot(b.x-p.x,b.z-p.z); if(d<bd){ bd=d; best=b; } }); }catch(e){}
+    if(!best || bd<2.2) return null;
+    const v=new BABYLON.Vector3(best.x,0,best.z); v.__kind="table"; return v;
+  },
+  /* il sacchetto in mano: un sacchetto di carta col bordo ripiegato */
+  bagTick(){
+    const show=!!(this.bag && !this.bagEat && area==="town" && avatarRoot && avatarRoot.isEnabled() && !BSIT.b
+      && !(typeof SHOW!=="undefined" && SHOW.seated));
+    if(!show){ if(this.bagMesh) this.bagMesh.setEnabled(false); return; }
+    if(!this.bagMesh){
+      const n=new BABYLON.TransformNode("needsBag",scene), M=new BABYLON.StandardMaterial("needsBagM",scene), M2=new BABYLON.StandardMaterial("needsBagT",scene);
+      M.diffuseColor=new BABYLON.Color3(0.74,0.58,0.40); M.specularColor=new BABYLON.Color3(0.05,0.05,0.05);
+      M2.diffuseColor=new BABYLON.Color3(0.60,0.45,0.30); M2.specularColor=M.specularColor;
+      const body=BABYLON.MeshBuilder.CreateBox("needsBagB",{ width:0.17, height:0.19, depth:0.10 },scene); body.material=M; body.parent=n; body.position.y=-0.10;
+      const top=BABYLON.MeshBuilder.CreateBox("needsBagF",{ width:0.172, height:0.04, depth:0.03 },scene); top.material=M2; top.parent=n; top.position.y=0.005;
+      [body,top].forEach(m=>{ m.isPickable=false; try{ if(typeof shadowGen!=="undefined" && shadowGen) shadowGen.addShadowCaster(m); }catch(e){} });
+      this.bagMesh=n;
+    }
+    const n=this.bagMesh; n.setEnabled(true);
+    const ry=player.rotation.y, rx=Math.cos(ry), rz=-Math.sin(ry);   // il «destra» del giocatore
+    let h=null; try{ const H=_newsHands(); h=_newsHandPos(H.L); }catch(e){}
+    if(!h) h=new BABYLON.Vector3(player.position.x-rx*0.25, player.position.y+0.85, player.position.z-rz*0.25);
+    /* appeso sotto la mano, un po' in fuori dalla gamba */
+    n.position.set(h.x-rx*0.05, h.y-0.03, h.z-rz*0.05); n.rotation.set(0,ry,0);
+  },
+  /* seduti a un tavolo da picnic col sacchetto: il cibo sul tavolo e si mangia */
+  benchEat(b){
+    const bag=this.bag; if(!bag || this.bagEat) return false;
+    if(b.kind!=="picnic" || !BSIT.tab){
+      toast("\u{1F961} Sit at a picnic table to eat! · Per mangiare siediti a un tavolo da picnic (segui la bussola)",4600); return false; }
+    const V=BABYLON.Vector3, f=BSIT.f.clone(), S=BSIT.S, T=BSIT.tab, face=Math.atan2(f.x,f.z);
+    eatPrepare(f,BSIT.seatY,BSIT.gy); _benchPose(); eatAfterSit();
+    const at=new V(S.x+f.x*(T.d+0.2), T.y+0.002, S.z+f.z*(T.d+0.2));
+    const steps=[]; let set=null;
+    if(bag.venue==="diner"){
+      const slip={}; bag.items.forEach(it=>{ slip[it.key]=it.v; });
+      const keys=Object.keys(slip), keep=DINER.o;
+      DINER.o={ slip }; try{ set=_dinerFoodSet(keys,townRoot,at.x,at.y,at.z); }finally{ DINER.o=keep; }
+      if(!set) return false;
+      /* nel diner chi siede guarda lungo la x del vassoio: qui lo stesso */
+      set.rotation.y=face-Math.PI/2; set.computeWorldMatrix(true);
+      const dw=V.TransformNormal(new V(0,0,1),set.getWorldMatrix());
+      if(dw.x*Math.cos(face)-dw.z*Math.sin(face)<0){ set.rotation.y+=Math.PI; set.computeWorldMatrix(true); }   // il bicchiere alla destra
+      const G=_dinerGroups(set,keys);
+      bag.items.forEach(it=>{ const g=G[it.key]; if(!g) return; g.done=it.done;
+        if(it.done) _dinerLevel(g,it.key,Math.max(0.05,1-it.done/g.n),it.done>=g.n); });
+      for(let r=0;r<4;r++) bag.items.forEach(it=>{ const g=G[it.key]; if(!g || r<it.done || r>=g.n) return;
+        steps.push({ g:g.g, what:(it.key==="drink"?"sip":"bite"), apply:()=>{ g.done++; it.done++;
+          _dinerLevel(g,it.key,Math.max(0.05,1-g.done/g.n),g.done>=g.n);
+          this.eat(it.en, 1/g.n, it.mult||1); } }); });
+    } else {
+      const n=new BABYLON.TransformNode("needsTray",scene); n.parent=townRoot; n.position.copyFrom(at);
+      n.rotation.y=face-Math.PI/2;                    // al bancone del café si guarda verso +x del vassoio
+      set=n;
+      const R=_cafeBuildOrder({ slip:bag.slip||{} },n);
+      const dr=bag.items.find(x=>x.key==="drink"), fo=bag.items.find(x=>x.key==="food");
+      const nS=fo?4:2, nB=fo?3:0;
+      const lvl=k=>{ if(!R.level) return; const L=R.level, ff=Math.max(0.04,1-k/nS); L.scaling.y=ff; L.position.y=L.__y0+L.__h*ff/2; };
+      const bit=k=>{ if(!R.bite) return; const ff=Math.max(0,1-k/nB); R.bite.scaling.setAll(Math.max(0.001,ff)); if(ff<=0) R.bite.setEnabled(false); };
+      if(dr && dr.done) lvl(dr.done); if(fo && fo.done) bit(fo.done);
+      for(let i=0;i<Math.max(nS,nB);i++){
+        if(dr && i<nS && i>=dr.done && R.drink) steps.push({ g:R.drink, what:"sip", apply:()=>{ dr.done++; lvl(dr.done); this.eat(dr.en,1/nS,dr.mult||1); } });
+        if(fo && i<nB && i>=fo.done && (R.bite||R.food)) steps.push({ g:R.bite||R.food, what:"bite", apply:()=>{ fo.done++; bit(fo.done); this.eat(fo.en,1/nB,1); } });
+      }
+    }
+    this.bagEat={ set };
+    try{ toast("\u{1F961} You open your bag… Enjoy your meal! · Apri il sacchetto: buon appetito!"); }catch(e){}
+    eatRun(steps,f,()=>{ const E=this.bagEat; this.bagEat=null; this.bag=null;
+      setTimeout(()=>{ try{ E && E.set && E.set.dispose(false,false); }catch(e){} },1500); });
+    return true;
+  },
+  /* ci si alza a meta': il cibo sparisce dal tavolo, il resto torna nel sacchetto */
+  benchEatStop(){
+    const E=this.bagEat; if(!E) return;
+    try{ eatStop(); }catch(e){}
+    this.bagEat=null;
+    try{ E.set && E.set.dispose(false,false); }catch(e){}
+    if(this.bag && this.bag.items.every(it=>it.done>=(it.key==="drink"?4:3))) this.bag=null;
+  },
   /* finito di mangiare (3,5 s senza bocconi): gli effetti e il fumetto */
   mealDone(){
     const m=this.meal; this.meal=null; if(!m) return;
@@ -54705,8 +54836,8 @@ const Needs={
       this.say("Healthy food! You'll stay full for longer.","Cibo sano: la fame torna più lentamente.","\u{1F957}",false); }
     else if(m.j>0){ this.fastTo=now+5*60000; this.slowTo=0;
       this.say("Junk food! Quick energy, but you'll be hungry again soon.","Cibo spazzatura: energia subito, ma la fame torna presto.","\u{1F35F}",false); }
-    else if(m.f>=20) this.say("I'm full!","Hai mangiato: niente più fame.","\u{1F60B}",false);
-    if(this.hungry()) setTimeout(()=>this.say("I'm still hungry!","Hai ancora fame: ordina qualcos'altro da mangiare \u{1F354}","\u{1F37D}️",false), 4600);
+    else if(m.f>=20) this.sayL("full","niente più fame","\u{1F60B}",false);
+    if(this.hungry()) setTimeout(()=>this.sayL("stillHungry","ordina qualcos'altro da mangiare \u{1F354}","\u{1F37D}️",false), 4600);
     else if(m.d>0.4) setTimeout(()=>this.say("I feel fresh!","Per un minuto corri più veloce \u{1F3C3}","\u{1F964}",false), 4600);
   },
   /* le due barrette in alto a destra, sotto le stelle */
