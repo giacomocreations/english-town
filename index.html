@@ -3214,9 +3214,13 @@ const UNIT_CITY={ id:"u2_8", area:"town", openWorld:true,
     intro:"La <b>mappa turistica</b> della City Life Plaza \u00e8 bianca: mancano i nomi. "
          +"<b>Ivy</b> ti dice a voce \ud83d\udd0a che cosa si fa in un posto \u2014 tu vai fino "
          +"all'<b>edificio vero</b> della citt\u00e0 e premi <b>E</b>. Sono gli stessi palazzi in cui "
-         +"giochi da tre anni: adesso hanno un nome in inglese.",
-    introObjEn:"Spot the places in town and tag them on the map.", introObj:"Riconosci i luoghi della citt\u00e0 e taggali sulla mappa.",
-    target:()=>cy8LexTarget() },
+         +"giochi da tre anni: adesso hanno un nome in inglese. La bussola <b>non</b> ti dice dove andare: "
+         +"se non lo trovi, tocca la bussola per l'<b>\u{1F4A1} aiuto</b> (costa qualche \u2b50).",
+    introObjEn:"Spot the places in town and tag them on the map.", introObj:"Riconosci i luoghi della citt\u00e0 e taggali sulla mappa." },
+    /* v589 (Giacomo, 22 nov): niente target() qui. La bussola puntava dritta
+       sul luogo dell'indizio e si arrivava seguendo la freccia senza capire
+       l'inglese. Ora e' «Look around» e la freccia sul posto giusto e'
+       l'aiuto a richiesta (QC_ANSWERS.townMap, meno \u2b50 come ogni aiuto). */
   { id:"gram",  strand:"grammatica", type:"alibiWitness",
     /* v501 (Giacomo, 21 nov: «non capisco la targa dove va a finire: togli
        il task finale e cambia l'interrogatorio» \u2192 scelto «il temporale»).
@@ -26332,6 +26336,8 @@ const QC_ANSWERS={
   careerCard:()=>({ free:true, prefix:"jbfin_" }),
   /* v589: in cammino si va a orecchio, bussola spenta; nella fase "start"
      la meta (Ivy) arriva dal target() dello step, prima di qui */
+  townMap:st=>{ const t=st.targets && st.targets[st.idx|0];
+    return t ? { sig:"cy8p:"+t.en, pos:cy8PlaceAim(t) } : null; },
   followDirections:st=>(st.fl && st.fl.phase==="walk") ? { off:true } : null,
   plaqueHunt:st=>{ const h=st.ph; if(!h || h.phase!=="hunt") return null;
     const P=h.route[h.idx]; return P ? qcId("cy8ph_"+qcSafe(P.en)) : null; },
@@ -59155,7 +59161,9 @@ const CY8_PLACES=[
      z=20, campo da z=22) o stando sul campo sarebbero candidati entrambi. */
   { en:"park",           it:"parco",           clue:"There are trees and grass, and children play here.",
     box:[86,152,-60,20],    x:100, z:-20 },
-  { en:"sports centre",  it:"centro sportivo", clue:"People play football and basketball here.",
+  /* v589: «sports field», non «sports centre»: in gioco si chiama Sports
+     Field (Unit 7) ed e' un campo all'aperto nel parco, non un edificio. */
+  { en:"sports field",   it:"campo sportivo",  clue:"People play football and basketball here.",
     box:[95,129,22,46],     x:112, z:34 }
 ];
 let CY8_BUILT=false, CY8_NPC={}, cy8MapBoard=null;
@@ -59164,7 +59172,10 @@ let CY8_BUILT=false, CY8_NPC={}, cy8MapBoard=null;
    ricarica della pagina, anche a Unit 8 gia' completata (il progresso vero
    resta salvato in Progress/et_progress, ma il TABELLONE no) — e' il "resta
    vuoto" segnalato da Giacomo. */
-function cy8FoundGet(){ try{ return Sync.get("et_city_places",{})||{}; }catch(e){ return {}; } }
+function cy8FoundGet(){ try{ const f=Sync.get("et_city_places",{})||{};
+    /* v589: rinominato «sports centre» -> «sports field»: il segno resta */
+    if(f["sports centre"]){ f["sports field"]=true; delete f["sports centre"]; }
+    return f; }catch(e){ return {}; } }
 function cy8FoundSet(found){ try{ Sync.set("et_city_places",found); }catch(e){} }
 
 /* Per un'area restituisce il punto del rettangolo piu' vicino al giocatore
@@ -59178,16 +59189,9 @@ function cy8PlaceVec(p){
   }
   return new BABYLON.Vector3(p.x,0,p.z);
 }
-/* la bussola invece deve puntare al CENTRO dell'area, non al bordo piu'
+/* la bussola invece (solo con l'aiuto chiesto, QC_ANSWERS.townMap) deve puntare al CENTRO dell'area, non al bordo piu'
    vicino, o indicherebbe sempre "sei quasi arrivato" da tre isolati. */
 function cy8PlaceAim(p){ return new BABYLON.Vector3(p.x,0,p.z); }
-/* bersaglio della bussola durante lo step lessico: il luogo che Ivy sta
-   chiedendo adesso (openWorld + target() -> la bussola direzionale del
-   motore funziona senza modifiche, come per Weather). */
-function cy8LexTarget(){
-  const st=Quest.state, t=st&&st.targets&&st.targets[st.idx||0];
-  return t?cy8PlaceAim(t):new BABYLON.Vector3(CY8_SQ.x,0,CY8_SQ.z);
-}
 function cy8NpcPos(id){
   const n=CY8_NPC[id];
   if(n&&n.carrier) return n.carrier.getAbsolutePosition();
@@ -60412,7 +60416,7 @@ MECH.giveDirections=function(s){
    · school (x 16..36, z>0): dopo le strisce davanti al cinema (x ~9) si
      attraversa verso +z e la scuola e' a DESTRA (+x). Prima diceva «past the
      cinema», ma venendo dalla piazza la scuola sta PRIMA del cinema;
-   · sports centre (x 95..129, z 22..46): verso est nel parco e' a SINISTRA
+   · sports field (x 95..129, z 22..46): verso est nel parco e' a SINISTRA
      (+z). Prima diceva «on the right»: era sbagliato. Il campo sta DENTRO
      il parco (PARK_Z1=60), non accanto: «in the park». */
 const CY8_LISTEN=[
@@ -60425,9 +60429,9 @@ const CY8_LISTEN=[
   { place:"school",
     text:"Start here, with the park behind you. Go straight along the High Street, past the town hall. "
         +"Cross the road at the zebra crossing, in front of the cinema. The school is on your right, next to the clothes shop." },
-  { place:"sports centre",
+  { place:"sports field",
     text:"Start here, with the High Street behind you. Walk into the park and go straight on. "
-        +"The sports centre is on your left, in the park." },
+        +"The sports field is on your left, in the park." },
 ];
 function cy8ListenPlace(en){ return CY8_PLACES.find(p=>p.en===en); }
 
@@ -60560,7 +60564,7 @@ const CY8_WHERE={
   "clothes shop":"the shop where people buy T-shirts and jeans",
   "café":"the place where people have a coffee and sit outside",
   "park":"the place with trees and grass, where children play",
-  "sports centre":"the place where people play football and basketball"
+  "sports field":"the place where people play football and basketball"
 };
 function cy8Place(en){ return CY8_PLACES.filter(p=>p.en===en)[0]; }
 function cy8HuntState(){ const st=Quest.state; return st&&st.ph; }
