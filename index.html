@@ -814,6 +814,8 @@
     padding:1px 3px;box-shadow:0 2px 6px rgba(20,30,40,.2);}
   #needs.paused{opacity:.55;} #needs.paused em{display:block;}
   #needs.boost{box-shadow:0 0 0 2px var(--sun),0 4px 14px rgba(20,30,40,.16);}
+  #needs.hungry .nd-f span{animation:ndHungry 1s ease-in-out infinite;}
+  @keyframes ndHungry{0%,100%{transform:scale(1);}50%{transform:scale(1.35);}}
   body.veh #needs{display:none !important;}
   #star-btn{position:fixed;z-index:15;top:100px;right:14px;height:42px;border:none;border-radius:12px;
     background:rgba(251,247,236,.94);color:var(--ink);font:800 15px/1 system-ui,sans-serif;cursor:pointer;
@@ -26472,6 +26474,9 @@ function updateQuestCompass(){
   const ranger=(typeof NAV!=="undefined" && NAV.target && area==="town") ? NAV.target : null;
   if(QC.get && !(ranger && (QC.get.kind==="search" || QC.get.kind==="exit"))){ try{ t=QC.get(); }catch(e){ t=null; } }
   if(!t && ranger){ t=ranger; nav=true; }
+  /* v590 🍔 affamati, fuori dalle quest: la bussola porta al café/diner piu' vicino (Needs) */
+  let food=false;
+  if(!t){ try{ const nt=Needs.navTarget(); if(nt){ t=nt; nav=true; food=true; } }catch(e){} }
   /* v405: si tocca solo quando c'e' un aiuto da chiedere */
   const helpOk=!!(!nav && t && QC.get && QC.get.help);
   qcompass.box.classList.toggle("help-ok", helpOk);
@@ -26482,7 +26487,7 @@ function updateQuestCompass(){
   if(qm && qm.classList.contains("show")){ qcompass.box.classList.remove("show"); return; }
   qcompass.box.classList.add("show");
   const kind=(!nav && QC.get && QC.get.kind)||"";
-  const lab=nav?"Ranger":kind==="exit"?"Go out":kind==="help"?"\u{1F4A1} Help"
+  const lab=food?"\u{1F354} Eat":nav?"Ranger":kind==="exit"?"Go out":kind==="help"?"\u{1F4A1} Help"
            :helpOk?"\u{1F4A1} Help?":"Next step";
   if(qcompass.lab.textContent!==lab) qcompass.lab.textContent=lab;
   const dx=t.x-player.position.x, dz=t.z-player.position.z;
@@ -54374,30 +54379,49 @@ function clampArea(){ const c=area==="home"?HOME_C:(area==="cinema"?CINEMA_C:(ar
    che chiede di sedersi, e il mangiare al caffe' o al diner. Ma quando di
    mattina uso il gioco con gli alunni e gli dico di fare una quest, non
    vorrei che non riuscissero a farla perche' devono prima mangiare»).
-   ⚠️⚠️ LA REGOLA: I BISOGNI DANNO VANTAGGI, MA NON TOLGONO MAI IL GIOCO.
-   · Si parte PIENI a ogni sessione (niente salvataggio, di proposito): la
-     prima quest della lezione funziona sempre. Niente interruttore per il
-     docente: non serve (Giacomo).
-   · CON UNA QUEST IN CORSO I BISOGNI SONO FERMI (NEEDS_PAUSE): non calano,
-     e anche se erano a zero si corre lo stesso. Fermi anche dentro gli
-     edifici e in auto/volo.
-   · Calano col MOVIMENTO (metri fatti, la corsa pesa di piu'), mai col
-     tempo: chi resta fermo mentre il prof spiega non si ritrova affamato.
-   · A zero l'unico effetto e' che NON SI CORRE. Si cammina, si preme E, si
-     parla con tutti come sempre.
-   · Si ricaricano PARLANDO INGLESE: energia seduti (panchine, café, diner,
-     metro, cinema, banco a scuola); fame mangiando cio' che si e' ordinato
-     al café o al Sunny Side Diner — sorso per sorso, boccone per boccone
-     (agganci in _cafeRun e _dinerEatRun).
+   v590 (Giacomo, stesso giorno: «il calo di energia fa venire fame; e se si
+   passa molto tempo senza mangiare si ha fame lo stesso: la fame va
+   registrata oltre la sessione. La mattina si puo' comunque fare la quest,
+   ma se non si e' mangiato da molto bisogna mangiare dopo». Deciso: le
+   quest NON si bloccano mai, un pieno dura 6 ore).
+   ⚠️⚠️ LA REGOLA: LE QUEST NON SI BLOCCANO MAI. La fame pesa sul TEMPO
+   LIBERO, mai sulla lezione.
+   · ENERGIA: riparte piena a ogni sessione (si e' dormito). Cala correndo
+     (molto) e camminando (poco). Si ricarica SEDUTI (panchine, café, diner,
+     metro, cinema, banco) — ma solo fino al 30% se si ha fame: riposare
+     non basta, bisogna mangiare. A zero non si corre.
+   · FAME: SALVATA sull'account (Sync "et_needs": valore + ora). Cala col
+     tempo VERO, anche a gioco chiuso (100 -> 0 in NEEDS_FULL_H ore), piu'
+     un po' col movimento; con l'energia sotto il 25% cala il doppio. Si
+     ricarica mangiando cio' che si e' ordinato al café o al Sunny Side Diner,
+     sorso per sorso e boccone per boccone (agganci in _cafeRun e
+     _dinerEatRun).
+   · AFFAMATI (fame < NEEDS_HUNGRY), FUORI DALLE QUEST: non si corre,
+     l'energia non risale oltre il 30%, la bussola (se non c'e' una quest)
+     porta al café o al diner piu' vicino, e le attivita' libere non danno
+     stelle (Stars.*, avvolte in fondo al file). L'ordine al café/diner le
+     stelle le da' sempre: e' il rimedio.
+   · CON UNA QUEST IN CORSO E' TUTTO FERMO (paused): niente cala, si corre
+     anche affamati o stanchi, le stelle arrivano come sempre. Fermi anche
+     dentro gli edifici e in auto/volo. Finita la quest, se si ha fame lo si
+     dice subito («I'm hungry!») e la bussola porta a mangiare.
+   · TREGUA D'INIZIO SESSIONE (NEEDS_GRACE): nei primi 5 minuti la fame si
+     vede nella barretta ma non si fa sentire. E' il tempo per raggiungere la
+     quest che il prof ha assegnato (la quest parte entrando nell'edificio o
+     al cartello: prima si cammina in citta', e la bussola non deve mandare
+     al café). Finita una quest, la tregua non vale piu'.
    · Premi, non punizioni: entrambi sopra 70 -> si corre un po' piu' svelti;
      una bevanda -> un minuto di scatto; cibo sano -> la fame torna piu'
-     lentamente, cibo spazzatura -> energia subito ma la fame torna presto
-     (l'idea di «healthy eating» della unit sul cibo).
+     lentamente, cibo spazzatura -> energia subito ma la fame torna presto.
    · I fumetti sono in inglese («I'm tired!», «I'm hungry!») con la
      traduzione: sono le frasi delle unit su emozioni e «How are you?».
    ===================================================================== */
 const NEEDS_E_RUN=100/3500, NEEDS_E_WALK=100/15000;   // energia per metro: ~3,5 km di corsa / 15 km a piedi
 const NEEDS_F_M=100/12000, NEEDS_F_RUNX=1.5;           // fame per metro (la corsa pesa x1,5)
+const NEEDS_FULL_H=6;                                   // ore VERE perche' un pieno si svuoti (anche a gioco chiuso)
+const NEEDS_F_S=100/(NEEDS_FULL_H*3600);                // fame al secondo, per il tempo
+const NEEDS_HUNGRY=25, NEEDS_TIRED=25, NEEDS_HUNGRY_CAP=30;
+const NEEDS_GRACE=5*60000;                              // tregua d'inizio sessione (ms)
 const NEEDS_SIT_E=6;                                    // energia al secondo, seduti (da 0 a 100 in ~17 s)
 /* quanto vale ogni voce dei menu (café: CAFE_CARD, diner: DINER_MENU), per
    porzione INTERA: e=energia, f=fame. h=1 sano, h=-1 spazzatura. Le bevande
@@ -54414,17 +54438,44 @@ const NEEDS_FOOD={
 };
 const Needs={
   e:100, f:100,                   // energia, fame (100 = pieno)
+  loaded:false, savedF:null, saveT:0,
   run:false,                      // ultimo fotogramma: si stava correndo davvero?
   last:null,                      // posizione al fotogramma prima (per i metri)
   sprintTo:0, slowTo:0, fastTo:0, // scatto (bevanda), fame lenta (sano), fame veloce (spazzatura)
-  said:{}, low:false, noRunT:0, meal:null, mealT:null, hudT:0, el:null,
+  said:{}, low:false, noRunT:0, noStarT:0, nagT:0, t0:0, wasQuest:false, afterQuest:false, meal:null, mealT:null, hudT:0, el:null,
+  /* ---- la fame resta fra una sessione e l'altra (sull'account: Sync) ----
+     Si legge al primo fotogramma DOPO l'accesso (tick non gira prima), cosi'
+     il namespace dello studente e' gia' quello giusto. Il tempo passato a
+     gioco chiuso si scala qui. L'ospite (Sync in RAM) parte sempre pieno. */
+  load(){
+    this.loaded=true; this.t0=performance.now();
+    let d=null; try{ d=Sync.get("et_needs",null); }catch(e){}
+    if(d && typeof d.f==="number" && d.t){
+      const h=Math.max(0,(Date.now()-d.t)/1000);
+      this.f=Math.max(0, Math.min(100, d.f - h*NEEDS_F_S));
+    }
+    this.save(true);
+  },
+  save(force){
+    if(!this.loaded) return;
+    const now=performance.now();
+    if(!force && (now<this.saveT || (this.savedF!==null && Math.abs(this.f-this.savedF)<1))) return;
+    this.saveT=now+60000; this.savedF=this.f;
+    try{ Sync.set("et_needs",{ f:Math.round(this.f*10)/10, t:Date.now() }); }catch(e){}
+  },
+  hungry(){ return this.f<NEEDS_HUNGRY; },
   /* fermi: quest in corso, dentro un edificio, in auto o in volo */
+  questOn(){ try{ return !!(Quest.unit && Quest.step && Quest.i>=0 && Quest.i<Quest.unit.steps.length); }catch(e){ return false; } },
   paused(){
-    try{ if(Quest.unit && Quest.step && Quest.i>=0 && Quest.i<Quest.unit.steps.length) return true; }catch(e){}
+    if(this.questOn()) return true;
     if(typeof area!=="undefined" && area!=="town") return true;
     if((typeof SKY!=="undefined" && SKY.on) || (typeof AUTO!=="undefined" && AUTO.on)) return true;
     return false;
   },
+  /* la fame «si fa sentire» (niente corsa, niente stelle libere, bussola al
+     cibo) solo fuori dalle quest */
+  starving(){ return this.loaded && this.hungry() && !this.paused()
+    && (this.afterQuest || performance.now()-this.t0>NEEDS_GRACE); },
   seated(){
     try{ if(SIT.on) return true; }catch(e){}
     try{ if(BSIT.b) return true; }catch(e){}
@@ -54438,13 +54489,14 @@ const Needs={
   /* si puo' correre? Con la quest in corso SEMPRE. `want` = sta chiedendo di
      correre (Shift / tasto corsa): se non puo', glielo si dice, ogni tanto. */
   canRun(want){
-    if(this.paused() || (this.e>0 && this.f>0)) return true;
+    if(this.paused() || (this.e>0 && !this.starving())) return true;
     if(want){ const now=performance.now();
       if(now>this.noRunT){ this.noRunT=now+15000;
-        this.say(this.e<=0 ? "I'm too tired to run!" : "I'm too hungry to run!",
-          this.e<=0 ? "Sei troppo stanco per correre: siediti su una panchina \u{1FA91}"
-                    : "Hai troppa fame per correre: mangia qualcosa al café o al Sunny Side Diner \u{1F354}",
-          this.e<=0 ? "\u{1F629}" : "\u{1F62B}", false); } }
+        const tired=this.e<=0;
+        this.say(tired ? "I'm too tired to run!" : "I'm too hungry to run!",
+          tired ? "Sei troppo stanco per correre: siediti su una panchina \u{1FA91}"
+                : "Hai troppa fame per correre: mangia qualcosa al café o al Sunny Side Diner (segui la bussola \u{1F354})",
+          tired ? "\u{1F629}" : "\u{1F62B}", false); } }
     return false;
   },
   /* moltiplicatore della corsa: premio, mai malus */
@@ -54454,6 +54506,26 @@ const Needs={
     if(now<this.sprintTo) m=Math.max(m,1.2);
     return m;
   },
+  /* le stelle delle attivita' libere (vedi in fondo al file): affamati, no */
+  starGate(){
+    if(!this.starving()) return true;
+    const now=performance.now();
+    if(now>this.noStarT){ this.noStarT=now+30000;
+      this.say("I'm hungry! No stars until I eat.","Hai fame: niente stelle finché non mangi qualcosa al café o al diner \u{1F354}","\u{1F354}",false); }
+    return false;
+  },
+  /* dove andare a mangiare: il café o il diner piu' vicino (null = non serve) */
+  navTarget(){
+    if(!this.starving() || this.seated()) return null;
+    const p=player && player.position; if(!p) return null;
+    const c=[];
+    try{ CAFE_SPOTS.forEach(s=>c.push(s)); }catch(e){}
+    try{ c.push({ x:DINER.x, z:DINER.z }); }catch(e){}
+    let best=null, bd=1e9;
+    c.forEach(s=>{ const d=Math.hypot(s.x-p.x, s.z-p.z); if(d<bd){ bd=d; best=s; } });
+    if(!best || bd<7) return null;              // arrivato: ora si ordina
+    return new BABYLON.Vector3(best.x,0,best.z);
+  },
   say(en,it,ic,voice){
     try{ toast((ic||"")+" "+en+" · "+it, 4200); }catch(e){}
     if(voice!==false) try{ if(!(typeof _dlgOpen==="function" && _dlgOpen())) TTS.say(en); }catch(e){}
@@ -54462,30 +54534,48 @@ const Needs={
   once(key,cond,fn){ if(cond){ if(!this.said[key]){ this.said[key]=true; fn(); } } else this.said[key]=false; },
   tick(){
     const p=player && player.position; if(!p) return;
+    if(!this.loaded) this.load();
     /* 0,5 s al massimo: sui tablet lenti (pochi fps) il riposo seduti non deve durare il doppio */
     const dt=Math.min(0.5,(engine.getDeltaTime()||16)/1000), now=performance.now();
     const last=this.last; this.last={ x:p.x, z:p.z };
     const pause=this.paused();
     if(!pause){
+      let fx=1;
+      if(now<this.slowTo) fx*=0.6; else if(now<this.fastTo) fx*=1.5;
+      if(this.e<NEEDS_TIRED) fx*=2;                  // stanchi: viene fame
+      this.f=Math.max(0, this.f - dt*NEEDS_F_S*fx);  // il tempo
       let d=last ? Math.hypot(p.x-last.x, p.z-last.z) : 0;
       if(d>4) d=0;                                   // taxi, metro, porte: un salto, non una camminata
       if(d>0.0005){
         const ride=(typeof RIDE!=="undefined" && RIDE.on);
         const run=this.run && !ride;
         this.e=Math.max(0, this.e - d*(run?NEEDS_E_RUN:NEEDS_E_WALK)*(ride?0.5:1));
-        let fx=run?NEEDS_F_RUNX:1;
-        if(now<this.slowTo) fx*=0.6; else if(now<this.fastTo) fx*=1.5;
-        this.f=Math.max(0, this.f - d*NEEDS_F_M*fx);
+        this.f=Math.max(0, this.f - d*NEEDS_F_M*(run?NEEDS_F_RUNX:1)*fx);
       }
     }
-    /* seduti si riposa sempre, anche con la quest in corso */
+    /* seduti si riposa sempre, anche con la quest in corso; ma con la fame
+       l'energia non va oltre NEEDS_HUNGRY_CAP: riposare non basta */
     if(this.e<30) this.low=true;
-    if(this.seated() && this.e<100){ this.e=Math.min(100, this.e+NEEDS_SIT_E*dt);
-      if(this.e>=100 && this.low){ this.low=false; this.say("I feel great!","Ti sei riposato: energia piena!","\u{1F60A}"); } }
+    const cap=this.starving()?NEEDS_HUNGRY_CAP:100;
+    if(this.seated() && this.e<cap){ this.e=Math.min(cap, this.e+NEEDS_SIT_E*dt);
+      if(this.e>=cap){
+        if(cap<100){ this.once("capped", true, ()=>this.say("I'm still hungry!","Riposarti non basta: devi mangiare qualcosa \u{1F354}","\u{1F62B}")); }
+        else if(this.low){ this.low=false; this.say("I feel great!","Ti sei riposato: energia piena!","\u{1F60A}"); } } }
+    if(!this.starving()) this.said.capped=false;
     if(!pause){
       this.once("tired", this.e<30, ()=>this.say("I'm tired!","Sei stanco: siediti su una panchina per riposare \u{1FA91}","\u{1F971}"));
-      this.once("hungry", this.f<30, ()=>this.say("I'm hungry!","Hai fame: mangia qualcosa al café o al Sunny Side Diner \u{1F354}","\u{1F354}"));
+      /* appena finita la quest (o appena diventati affamati, o ogni 3 minuti): si dice */
+      const qEnd=this.wasQuest && !this.questOn();
+      if(qEnd) this.afterQuest=true;
+      if(this.starving() && (qEnd || !this.said.hungry || now>this.nagT) && !this.seated()
+         && !(typeof _dlgOpen==="function" && _dlgOpen())){
+        this.said.hungry=true; this.nagT=now+180000;
+        this.say("I'm hungry!","Hai fame: vai a mangiare al café o al Sunny Side Diner (segui la bussola \u{1F354})","\u{1F354}");
+      }
+      if(!this.hungry()) this.said.hungry=false;
     }
+    this.wasQuest=this.questOn();
+    this.save(false);
     if(now>this.hudT){ this.hudT=now+250; this.hud(pause); }
   },
   /* un sorso o un boccone di `item` (nome inglese del menu): `part` = che
@@ -54506,13 +54596,15 @@ const Needs={
   mealDone(){
     const m=this.meal; this.meal=null; if(!m) return;
     const now=performance.now();
+    this.save(true);
     if(m.d>0.4) this.sprintTo=now+60000;
     if(m.h>m.j && m.h>0){ this.slowTo=now+8*60000; this.fastTo=0;
       this.say("Healthy food! You'll stay full for longer.","Cibo sano: la fame torna più lentamente.","\u{1F957}",false); }
     else if(m.j>0){ this.fastTo=now+5*60000; this.slowTo=0;
       this.say("Junk food! Quick energy, but you'll be hungry again soon.","Cibo spazzatura: energia subito, ma la fame torna presto.","\u{1F35F}",false); }
     else if(m.f>=20) this.say("I'm full!","Hai mangiato: niente più fame.","\u{1F60B}",false);
-    if(m.d>0.4) setTimeout(()=>this.say("I feel fresh!","Per un minuto corri più veloce \u{1F3C3}","\u{1F964}",false), 4600);
+    if(this.hungry()) setTimeout(()=>this.say("I'm still hungry!","Hai ancora fame: ordina qualcos'altro da mangiare \u{1F354}","\u{1F37D}️",false), 4600);
+    else if(m.d>0.4) setTimeout(()=>this.say("I feel fresh!","Per un minuto corri più veloce \u{1F3C3}","\u{1F964}",false), 4600);
   },
   /* le due barrette in alto a destra, sotto le stelle */
   hud(pause){
@@ -54525,6 +54617,7 @@ const Needs={
     set(".nd-e",this.e); set(".nd-f",this.f);
     el.classList.toggle("paused", !!pause);
     el.classList.toggle("boost", performance.now()<this.sprintTo);
+    el.classList.toggle("hungry", this.starving());
     el.style.display="block";
   },
   help(){
@@ -54533,16 +54626,28 @@ const Needs={
       sub:"<b>"+Math.round(this.e)+"%</b> energy · <b>"+Math.round(this.f)+"%</b> food",
       html:"<div style='line-height:1.55;text-align:left'>"
         +"⚡ <b>Energy</b> goes down when you <b>run</b>. <b>Sit down</b> on a bench (or at the café, at the diner…) to rest.<br>"
-        +"<i>L'energia cala correndo: siediti su una panchina per riposare.</i><br><br>"
-        +"\u{1F354} <b>Food</b> goes down when you walk around. <b>Order something</b> at the café or at the Sunny Side Diner.<br>"
-        +"<i>La fame cresce camminando: ordina qualcosa al café o al diner (in inglese!).</i><br><br>"
-        +"\u{1F3C3} Both above 70%: you run faster. A drink: one minute of extra speed. Healthy food keeps you full for longer!<br>"
-        +"<i>Se sono a zero non puoi correre, ma puoi fare tutto il resto.</i><br><br>"
-        +"⏸ <b>During a quest</b> they don't go down. <i>Durante una quest non calano mai.</i>"
+        +"<i>L'energia cala correndo: siediti su una panchina per riposare. Ma se hai fame, riposare non basta.</i><br><br>"
+        +"\u{1F354} <b>Food</b> goes down with time, even when the game is closed: a full meal lasts about "+NEEDS_FULL_H+" hours. "
+        +"<b>Order something</b> at the café or at the Sunny Side Diner.<br>"
+        +"<i>La fame cresce col passare del tempo, anche a gioco chiuso, e di più se sei stanco. Ordina qualcosa (in inglese!) al café o al diner.</i><br><br>"
+        +"\u{1F62B} <b>Hungry?</b> You can't run, you can't rest well, and free activities give no stars. The compass shows you where to eat.<br>"
+        +"<i>Con la fame non corri, non ti riposi bene e le attività libere non danno stelle: la bussola ti porta a mangiare.</i><br><br>"
+        +"\u{1F3C3} Both above 70%: you run faster. A drink: one minute of extra speed. Healthy food keeps you full for longer!<br><br>"
+        +"⏸ <b>Quests are never blocked.</b> During a quest nothing goes down. <i>Le quest si possono sempre fare: durante una quest non cala niente.</i>"
         +(p?"<br><br><b>⏸ Now: paused.</b>":"")+"</div>",
       buttons:[{ label:"OK!", cls:"primary" }] });
   }
 };
+try{ addEventListener("pagehide", ()=>{ try{ Needs.save(true); }catch(e){} }); }catch(e){}
+try{ document.addEventListener("visibilitychange", ()=>{ if(document.hidden) try{ Needs.save(true); }catch(e){} }); }catch(e){}
+/* le stelle delle attivita' libere passano da Needs.starGate (affamati fuori
+   dalle quest: niente). NON l'ordine al café/diner (e' il rimedio), non gli
+   step delle quest, i frammenti, le foto, i bonus d'anno. */
+["awardAmbient","awardAmbientNPC","awardAskNPC","awardShopping","awardGem","awardFkNote",
+ "awardSpeak","awardSkWord","awardSing","awardDanceCmd"].forEach(n=>{
+  const f=Stars[n]; if(typeof f!=="function") return;
+  Stars[n]=function(){ try{ if(!Needs.starGate()) return 0; }catch(e){} return f.apply(this,arguments); };
+});
 
 function move(nx,nz,spd){
   if(typeof DINER!=="undefined" && DINER.seat) return false;   // v288: seduti al diner non si cammina (E per alzarsi)
