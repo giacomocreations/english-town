@@ -802,6 +802,19 @@
   }
   #map-hint{padding:0 18px 16px;text-align:center;color:#7a8790;font-size:13px;}
   /* ---- ⭐ STAR POINTS + DIARIO DELL'ESPLORATORE ---- */
+  /* v589 ⚡🍔 bisogni dell'avatar (vedi Needs): sotto le stelle, si tocca per l'aiuto.
+     In pausa (quest in corso, dentro un edificio) si sbiadisce e compare ⏸. */
+  #needs{position:fixed;z-index:15;top:150px;right:14px;width:96px;display:none;cursor:pointer;
+    background:rgba(251,247,236,.88);border-radius:12px;padding:5px 8px 6px;box-shadow:0 4px 14px rgba(20,30,40,.16);}
+  #needs .nd-row{display:flex;align-items:center;gap:5px;height:17px;}
+  #needs .nd-row span{font-size:13px;width:16px;text-align:center;}
+  #needs .nd-row i{flex:1;height:7px;border-radius:999px;background:rgba(29,42,50,.14);overflow:hidden;display:block;}
+  #needs .nd-row b{display:block;height:100%;width:100%;border-radius:999px;transition:width .4s,background .4s;}
+  #needs em{display:none;position:absolute;left:-9px;top:-7px;font-style:normal;font-size:12px;background:#fff;border-radius:999px;
+    padding:1px 3px;box-shadow:0 2px 6px rgba(20,30,40,.2);}
+  #needs.paused{opacity:.55;} #needs.paused em{display:block;}
+  #needs.boost{box-shadow:0 0 0 2px var(--sun),0 4px 14px rgba(20,30,40,.16);}
+  body.veh #needs{display:none !important;}
   #star-btn{position:fixed;z-index:15;top:100px;right:14px;height:42px;border:none;border-radius:12px;
     background:rgba(251,247,236,.94);color:var(--ink);font:800 15px/1 system-ui,sans-serif;cursor:pointer;
     padding:0 12px;display:none;align-items:center;gap:5px;box-shadow:0 4px 14px rgba(20,30,40,.18);
@@ -1092,6 +1105,7 @@
   <span id="kb-trick" style="display:none"><b>SPACE</b> airwalk</span>
   <span><b>H</b> hide</span>
 </div>
+<div id="needs" title="Energy · Food"><div class="nd-row nd-e"><span>⚡</span><i><b></b></i></div><div class="nd-row nd-f"><span>🍔</span><i><b></b></i></div><em>⏸</em></div>
 <button id="star-btn" title="Explorer's Diary"><span>⭐</span><span id="star-n">0</span></button>
 <div id="fade"></div>
 <div id="diary-ov">
@@ -12702,6 +12716,7 @@ function _dinerEatRun(groups,s){
   if(ks.length===1) groups[ks[0]].n=2;
   for(let r=0;r<4;r++) ks.forEach(k=>{ if(r<groups[k].n) order.push(k); });
   const steps=order.map(k=>{ const G=groups[k]; return { g:G.g, key:k, what:(k==="drink"?"sip":"bite"), apply:()=>{ G.done++;
+      try{ const T=DINER.onTable[k]; Needs.eat(T&&T.v&&T.v.en, 1/G.n); }catch(e){}   // v589 ⚡🍔
       _dinerLevel(G,k,Math.max(0.05,1-G.done/G.n),G.done>=G.n); } }; });
   DINER.eating=true;
   const f=new BABYLON.Vector3(Math.sin(s.face),0,Math.cos(s.face));
@@ -37879,6 +37894,8 @@ function _cafeRun(){
   /* alla bocca va il BOCCONE (R.bite), il piatto resta sul vassoio (v297) */
   const steps=Q.steps.slice(Q.k).map(what=>({ g:(what==="sip")?R.drink:(R.bite||R.food), what,
     apply:()=>{ Q.k++; const c=Q.cnt; c[what]++;
+      try{ const sl=(P.o&&P.o.slip)||{}, it=(what==="sip")?sl.drink:sl.food;   // v589 ⚡🍔
+        Needs.eat(it&&it.en, 1/((what==="sip")?Q.nS:Q.nB), (what==="sip" && sl.size && /large/i.test(sl.size.en))?1.4:1); }catch(e){}
       if(what==="sip" && R.level){ const f=Math.max(0.04,1-c.sip/Q.nS), L=R.level;
         L.scaling.y=f; L.position.y=L.__y0+L.__h*f/2; R.bits.forEach(b=>{ if(b.material!==_cafePickMats().cream||c.sip>1) b.setEnabled(false); }); }
       if(what==="bite" && R.bite){ const f=Math.max(0,1-c.bite/Q.nB); R.bite.scaling.setAll(Math.max(0.001,f)); if(f<=0) R.bite.setEnabled(false); } } })).filter(x=>x.g);
@@ -54350,6 +54367,182 @@ function clampArea(){ const c=area==="home"?HOME_C:(area==="cinema"?CINEMA_C:(ar
   const bx=(A.boundX!=null?A.boundX:A.bound), bz=(A.boundZ!=null?A.boundZ:A.bound);
   player.position.x=Math.max(c.x-bx,Math.min(c.x+bx,player.position.x));
   player.position.z=Math.max(c.z-bz,Math.min(c.z+bz,player.position.z)); }
+/* =====================================================================
+   ⚡🍔 BISOGNI DELL'AVATAR — energia (stanchezza) e fame
+   ---------------------------------------------------------------------
+   v589 (Giacomo, 22 nov: «lo stato di salute dell'avatar: la stanchezza,
+   che chiede di sedersi, e il mangiare al caffe' o al diner. Ma quando di
+   mattina uso il gioco con gli alunni e gli dico di fare una quest, non
+   vorrei che non riuscissero a farla perche' devono prima mangiare»).
+   ⚠️⚠️ LA REGOLA: I BISOGNI DANNO VANTAGGI, MA NON TOLGONO MAI IL GIOCO.
+   · Si parte PIENI a ogni sessione (niente salvataggio, di proposito): la
+     prima quest della lezione funziona sempre. Niente interruttore per il
+     docente: non serve (Giacomo).
+   · CON UNA QUEST IN CORSO I BISOGNI SONO FERMI (NEEDS_PAUSE): non calano,
+     e anche se erano a zero si corre lo stesso. Fermi anche dentro gli
+     edifici e in auto/volo.
+   · Calano col MOVIMENTO (metri fatti, la corsa pesa di piu'), mai col
+     tempo: chi resta fermo mentre il prof spiega non si ritrova affamato.
+   · A zero l'unico effetto e' che NON SI CORRE. Si cammina, si preme E, si
+     parla con tutti come sempre.
+   · Si ricaricano PARLANDO INGLESE: energia seduti (panchine, café, diner,
+     metro, cinema, banco a scuola); fame mangiando cio' che si e' ordinato
+     al café o al Sunny Side Diner — sorso per sorso, boccone per boccone
+     (agganci in _cafeRun e _dinerEatRun).
+   · Premi, non punizioni: entrambi sopra 70 -> si corre un po' piu' svelti;
+     una bevanda -> un minuto di scatto; cibo sano -> la fame torna piu'
+     lentamente, cibo spazzatura -> energia subito ma la fame torna presto
+     (l'idea di «healthy eating» della unit sul cibo).
+   · I fumetti sono in inglese («I'm tired!», «I'm hungry!») con la
+     traduzione: sono le frasi delle unit su emozioni e «How are you?».
+   ===================================================================== */
+const NEEDS_E_RUN=100/3500, NEEDS_E_WALK=100/15000;   // energia per metro: ~3,5 km di corsa / 15 km a piedi
+const NEEDS_F_M=100/12000, NEEDS_F_RUNX=1.5;           // fame per metro (la corsa pesa x1,5)
+const NEEDS_SIT_E=6;                                    // energia al secondo, seduti (da 0 a 100 in ~17 s)
+/* quanto vale ogni voce dei menu (café: CAFE_CARD, diner: DINER_MENU), per
+   porzione INTERA: e=energia, f=fame. h=1 sano, h=-1 spazzatura. Le bevande
+   (d=1) danno anche lo scatto. Una voce che manca vale come un piatto medio. */
+const NEEDS_FOOD={
+  "coffee":{e:30,f:0,d:1}, "tea":{e:20,f:0,d:1}, "hot chocolate":{e:15,f:10,d:1,h:-1},
+  "orange juice":{e:20,f:5,d:1,h:1}, "water":{e:15,f:0,d:1,h:1}, "lemonade":{e:15,f:0,d:1},
+  "cola":{e:20,f:0,d:1,h:-1}, "chocolate milkshake":{e:15,f:15,d:1,h:-1}, "strawberry milkshake":{e:15,f:15,d:1,h:-1},
+  "croissant":{e:0,f:30}, "cheese sandwich":{e:0,f:45}, "chocolate muffin":{e:0,f:25,h:-1}, "apple pie":{e:0,f:25,h:-1},
+  "veggie burger":{e:0,f:60,h:1}, "cheeseburger":{e:0,f:70,h:-1}, "hot dog":{e:0,f:55,h:-1},
+  "pancakes with maple syrup":{e:0,f:55,h:-1}, "fried chicken":{e:0,f:65,h:-1}, "mac and cheese":{e:0,f:60},
+  "onion rings":{e:0,f:20,h:-1}, "french fries":{e:0,f:20,h:-1}, "green salad":{e:0,f:20,h:1}, "coleslaw":{e:0,f:15,h:1},
+  "ice cream sundae":{e:0,f:20,h:-1}, "chocolate brownie":{e:0,f:20,h:-1}
+};
+const Needs={
+  e:100, f:100,                   // energia, fame (100 = pieno)
+  run:false,                      // ultimo fotogramma: si stava correndo davvero?
+  last:null,                      // posizione al fotogramma prima (per i metri)
+  sprintTo:0, slowTo:0, fastTo:0, // scatto (bevanda), fame lenta (sano), fame veloce (spazzatura)
+  said:{}, low:false, noRunT:0, meal:null, mealT:null, hudT:0, el:null,
+  /* fermi: quest in corso, dentro un edificio, in auto o in volo */
+  paused(){
+    try{ if(Quest.unit && Quest.step && Quest.i>=0 && Quest.i<Quest.unit.steps.length) return true; }catch(e){}
+    if(typeof area!=="undefined" && area!=="town") return true;
+    if((typeof SKY!=="undefined" && SKY.on) || (typeof AUTO!=="undefined" && AUTO.on)) return true;
+    return false;
+  },
+  seated(){
+    try{ if(SIT.on) return true; }catch(e){}
+    try{ if(BSIT.b) return true; }catch(e){}
+    try{ if(CAFE_PICK.seated) return true; }catch(e){}
+    try{ if(DINER.seat) return true; }catch(e){}
+    try{ if(SUBSIT.on) return true; }catch(e){}
+    try{ if(LESSON.seated) return true; }catch(e){}
+    try{ if(SHOW.seated) return true; }catch(e){}
+    return false;
+  },
+  /* si puo' correre? Con la quest in corso SEMPRE. `want` = sta chiedendo di
+     correre (Shift / tasto corsa): se non puo', glielo si dice, ogni tanto. */
+  canRun(want){
+    if(this.paused() || (this.e>0 && this.f>0)) return true;
+    if(want){ const now=performance.now();
+      if(now>this.noRunT){ this.noRunT=now+15000;
+        this.say(this.e<=0 ? "I'm too tired to run!" : "I'm too hungry to run!",
+          this.e<=0 ? "Sei troppo stanco per correre: siediti su una panchina \u{1FA91}"
+                    : "Hai troppa fame per correre: mangia qualcosa al café o al Sunny Side Diner \u{1F354}",
+          this.e<=0 ? "\u{1F629}" : "\u{1F62B}", false); } }
+    return false;
+  },
+  /* moltiplicatore della corsa: premio, mai malus */
+  runMult(){
+    const now=performance.now(); let m=1;
+    if(this.e>70 && this.f>70) m=1.1;
+    if(now<this.sprintTo) m=Math.max(m,1.2);
+    return m;
+  },
+  say(en,it,ic,voice){
+    try{ toast((ic||"")+" "+en+" · "+it, 4200); }catch(e){}
+    if(voice!==false) try{ if(!(typeof _dlgOpen==="function" && _dlgOpen())) TTS.say(en); }catch(e){}
+  },
+  /* un fumetto una volta sola per soglia: si riarma quando si risale */
+  once(key,cond,fn){ if(cond){ if(!this.said[key]){ this.said[key]=true; fn(); } } else this.said[key]=false; },
+  tick(){
+    const p=player && player.position; if(!p) return;
+    const dt=Math.min(0.2,(engine.getDeltaTime()||16)/1000), now=performance.now();
+    const last=this.last; this.last={ x:p.x, z:p.z };
+    const pause=this.paused();
+    if(!pause){
+      let d=last ? Math.hypot(p.x-last.x, p.z-last.z) : 0;
+      if(d>4) d=0;                                   // taxi, metro, porte: un salto, non una camminata
+      if(d>0.0005){
+        const ride=(typeof RIDE!=="undefined" && RIDE.on);
+        const run=this.run && !ride;
+        this.e=Math.max(0, this.e - d*(run?NEEDS_E_RUN:NEEDS_E_WALK)*(ride?0.5:1));
+        let fx=run?NEEDS_F_RUNX:1;
+        if(now<this.slowTo) fx*=0.6; else if(now<this.fastTo) fx*=1.5;
+        this.f=Math.max(0, this.f - d*NEEDS_F_M*fx);
+      }
+    }
+    /* seduti si riposa sempre, anche con la quest in corso */
+    if(this.e<30) this.low=true;
+    if(this.seated() && this.e<100){ this.e=Math.min(100, this.e+NEEDS_SIT_E*dt);
+      if(this.e>=100 && this.low){ this.low=false; this.say("I feel great!","Ti sei riposato: energia piena!","\u{1F60A}"); } }
+    if(!pause){
+      this.once("tired", this.e<30, ()=>this.say("I'm tired!","Sei stanco: siediti su una panchina per riposare \u{1FA91}","\u{1F971}"));
+      this.once("hungry", this.f<30, ()=>this.say("I'm hungry!","Hai fame: mangia qualcosa al café o al Sunny Side Diner \u{1F354}","\u{1F354}"));
+    }
+    if(now>this.hudT){ this.hudT=now+250; this.hud(pause); }
+  },
+  /* un sorso o un boccone di `item` (nome inglese del menu): `part` = che
+     parte della porzione intera e' (1/numero di sorsi o bocconi) */
+  eat(item,part,mult){
+    const n=String(item||"").toLowerCase(); if(!n || n==="—") return;
+    const v=NEEDS_FOOD[n]||{ e:0, f:40 }, k=(part||0.25)*(mult||1);
+    this.e=Math.min(100, this.e+(v.e||0)*k);
+    this.f=Math.min(100, this.f+(v.f||0)*k);
+    if(v.h<0) this.e=Math.min(100, this.e+10*k);  // spazzatura: un po' di energia subito
+    const m=this.meal=this.meal||{ h:0, j:0, d:0, f:0 };
+    if(v.h>0) m.h+=k; else if(v.h<0) m.j+=k;
+    if(v.d) m.d+=k; m.f+=(v.f||0)*k;
+    this.hud(this.paused());
+    clearTimeout(this.mealT); this.mealT=setTimeout(()=>this.mealDone(), 3500);
+  },
+  /* finito di mangiare (3,5 s senza bocconi): gli effetti e il fumetto */
+  mealDone(){
+    const m=this.meal; this.meal=null; if(!m) return;
+    const now=performance.now();
+    if(m.d>0.4) this.sprintTo=now+60000;
+    if(m.h>m.j && m.h>0){ this.slowTo=now+8*60000; this.fastTo=0;
+      this.say("Healthy food! You'll stay full for longer.","Cibo sano: la fame torna più lentamente.","\u{1F957}",false); }
+    else if(m.j>0){ this.fastTo=now+5*60000; this.slowTo=0;
+      this.say("Junk food! Quick energy, but you'll be hungry again soon.","Cibo spazzatura: energia subito, ma la fame torna presto.","\u{1F35F}",false); }
+    else if(m.f>=20) this.say("I'm full!","Hai mangiato: niente più fame.","\u{1F60B}",false);
+    if(m.d>0.4) setTimeout(()=>this.say("I feel fresh!","Per un minuto corri più veloce \u{1F3C3}","\u{1F964}",false), 4600);
+  },
+  /* le due barrette in alto a destra, sotto le stelle */
+  hud(pause){
+    let el=this.el;
+    if(!el){ el=this.el=document.getElementById("needs"); if(!el) return;
+      el.addEventListener("click", ()=>this.help()); }
+    const col=v=>v>50?"#2e8b57":v>25?"#e0a21a":v>0?"#e8730c":"#d8402e";
+    const set=(cls,v)=>{ const b=el.querySelector(cls+" b"); if(!b) return;
+      b.style.width=Math.max(0,Math.min(100,v))+"%"; b.style.background=col(v); };
+    set(".nd-e",this.e); set(".nd-f",this.f);
+    el.classList.toggle("paused", !!pause);
+    el.classList.toggle("boost", performance.now()<this.sprintTo);
+    el.style.display="block";
+  },
+  help(){
+    const p=this.paused();
+    QModal.open({ title:"⚡ Energy · \u{1F354} Food",
+      sub:"<b>"+Math.round(this.e)+"%</b> energy · <b>"+Math.round(this.f)+"%</b> food",
+      html:"<div style='line-height:1.55;text-align:left'>"
+        +"⚡ <b>Energy</b> goes down when you <b>run</b>. <b>Sit down</b> on a bench (or at the café, at the diner…) to rest.<br>"
+        +"<i>L'energia cala correndo: siediti su una panchina per riposare.</i><br><br>"
+        +"\u{1F354} <b>Food</b> goes down when you walk around. <b>Order something</b> at the café or at the Sunny Side Diner.<br>"
+        +"<i>La fame cresce camminando: ordina qualcosa al café o al diner (in inglese!).</i><br><br>"
+        +"\u{1F3C3} Both above 70%: you run faster. A drink: one minute of extra speed. Healthy food keeps you full for longer!<br>"
+        +"<i>Se sono a zero non puoi correre, ma puoi fare tutto il resto.</i><br><br>"
+        +"⏸ <b>During a quest</b> they don't go down. <i>Durante una quest non calano mai.</i>"
+        +(p?"<br><br><b>⏸ Now: paused.</b>":"")+"</div>",
+      buttons:[{ label:"OK!", cls:"primary" }] });
+  }
+};
+
 function move(nx,nz,spd){
   if(typeof DINER!=="undefined" && DINER.seat) return false;   // v288: seduti al diner non si cammina (E per alzarsi)
   if(typeof BSIT!=="undefined" && BSIT.b) benchStand(true);     // v291: dalla panchina il primo passo ti rimette in piedi
@@ -54448,6 +54641,7 @@ scene.registerBeforeRender(()=>{
   /* v499: in volo su SKY-1 il giocatore e' fermo (la camera la guida tlSkyTick) */
   if((typeof SKY!=="undefined" && SKY.on) || (typeof AUTO!=="undefined" && AUTO.on)){ updateDayNight(engine.getDeltaTime()/1000); try{ SFX.tick(); }catch(e){} return; }   // v499: anche in AUTO-1
   updateDayNight(engine.getDeltaTime()/1000);
+  try{ Needs.tick(); }catch(e){}   // v589 ⚡🍔 bisogni dell'avatar
   sfxTick();   // PASS AUDIO tranche 3: campana sull'ora reale + acqua del lago
   // deriva lenta delle nuvole (con avvolgimento) -> anche le ombre scorrono
   // ⚠️ prima il giro scattava a x=130, DENTRO il riquadro ortografico del sole
@@ -54502,12 +54696,14 @@ scene.registerBeforeRender(()=>{
   }
   if(FK.aim){ mx=0; mz=0; moveTarget=null; pendingInteract=null; }          // ⚽ in mira: si sta fermi sul dischetto
   const len=Math.hypot(mx,mz); let kbMove=false;
-  const running=(keys["shift"]||keys["shiftleft"]||keys["shiftright"])||touchRunHeld||stickRunning();
+  const runWant=!!((keys["shift"]||keys["shiftleft"]||keys["shiftright"])||touchRunHeld||stickRunning());
+  /* v589: a energia (o fame) zero non si corre — mai con una quest in corso (Needs.canRun) */
+  const running=runWant && (len>0.01||!!moveTarget) ? Needs.canRun(true) : runWant;
   // (rimossa la corsa "a fondo joystick": su schermo piccolo il pollice spinge
   // quasi sempre vicino al bordo, quindi risultava "corre sempre" — vedi runBtn)
   let tgtMove=false;
   /* 🛹🛴 in sella la velocita' la decide la tavola (spinta + inerzia), non Shift */
-  const _spd=()=>RIDE.on ? rideStepSpeed() : (running?PLAYER_SPEED*RUN_MULT:PLAYER_SPEED);
+  const _spd=()=>RIDE.on ? rideStepSpeed() : (running?PLAYER_SPEED*RUN_MULT*Needs.runMult():PLAYER_SPEED);
   /* 🛹 sulla curva di una quarter pipe comanda la gravita' (rideQuarterTick) */
   const _rd=!!(RIDE.on && RIDE.on.ramps && rideDropInTick(len<=0.01 && !moveTarget));   // 🛹 fermo sul bordo: giu' da solo
   const _rq=!_rd && !!(RIDE.on && RIDE.on.ramps && rideQuarterTick(len>0.01?{x:mx/len,z:mz/len}:null));
@@ -54541,6 +54737,7 @@ scene.registerBeforeRender(()=>{
     if(RIDE.coast && RIDE.dir && RIDE.v>0.06){ RIDE.v*=RIDE.on.coast;
       if(!move(RIDE.dir.x,RIDE.dir.z,PLAYER_SPEED*RIDE.on.mult*RIDE.v)) RIDE.v=0; }
     else { RIDE.v=0; RIDE.coast=false; } }
+  Needs.run=!!(running && (kbMove||tgtMove));      // v589: per i metri di corsa (Needs.tick)
   /* 💃 chi balla e poi cammina smette di ballare (vedi PDANCE) */
   if(PDANCE.on && (kbMove||moveTarget)) danceStop();
   if(!FK.aim) playAvatarAnim(RIDE.on ? IDLE_ANIM      // in sella le gambe stanno ferme: va la tavola (⚽ in mira decide la punizione)
