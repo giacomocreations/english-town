@@ -64362,9 +64362,12 @@ function tlAutoCabin(C,E){
   const trim=M(SP?"#ff8a1c":"#b9c1c8",{ sp:0.6, pw:64 });
   const wood=SP?M("#ffffff",{ tex:tlCarbonTex(), sp:0.5, pw:72 }):M("#5b3c27",{ sp:0.25, pw:40 });
   const body=M(SP?FLEET_PAINT.turbo:FLEET_PAINT.auto1,{ sp:0.6, pw:80 }), black=M("#121518",{ sp:0.3, pw:48 });
-  const led=SP?M("#ff8a4a",{ em:"#ff5a1f" }):M("#7fe3f5",{ em:"#6fd0e8" });
-  const led2=SP?M("#ff6d86",{ em:"#ff2d4f" }):M("#d6bcff",{ em:"#b48ff5" });
-  const warm=SP?M("#ffd2a6",{ em:"#ffa25a" }):M("#fff0d0",{ em:"#f4cf8a" });
+  /* v522 (Giacomo, 22 nov: «negli interni i LED sono troppo grossi: devono
+     essere bianchi, fini e fluorescenti, glowing, senza esagerare»). Tutti
+     bianchi (un filo freddo), fili da 6-8 mm invece di 2-2,5 cm, e una luce
+     moderata: il bagliore lo fa il glow layer, senza diventare una macchia. */
+  const led=M("#f4f9ff",{ em:"#c9dceb" }), led2=led, warm=led;
+  const turboBtn=M("#ff6d86",{ em:"#ff2d4f" });
   const glass=M(SP?"#1a1a1f":"#24404d",{ a:0.32, sp:0.6, pw:96 });
   const box=(w,h,d,m,x,y,z)=>{ const b=BABYLON.MeshBuilder.CreateBox("a1c",{ width:w, height:h, depth:d },scene);
     b.material=m; b.parent=ck; b.position.set(x,y,z); b.isPickable=false; return b; };
@@ -64415,7 +64418,7 @@ function tlAutoCabin(C,E){
   /* la console fra i sedili, con i LED lilla sui due fianchi */
   box(0.26,0.30,1.25,dark,0,F+0.15,0.18);
   box(0.28,0.04,1.25,cognac,0,F+0.32,0.18);
-  [-1,1].forEach(k=>box(0.025,0.025,1.2,led2,k*0.145,F+0.29,0.18));
+  [-1,1].forEach(k=>box(0.007,0.007,1.2,led2,k*0.142,F+0.29,0.18));
   box(0.20,0.006,0.26,wood,0,F+0.343,0.48);
   /* la plancia: bassa e larga, pelle scura, rullo in cuoio, filo di metallo, LED */
   /* v508 — IL CRUSCOTTO LUCIDO (Giacomo, 21 nov: «migliora la grafica del
@@ -64444,8 +64447,8 @@ function tlAutoCabin(C,E){
   box(W*2-0.12,0.02,0.02,chrome,0,D-0.005,0.80);
   box(W*2-0.10,0.006,0.012,chrome,0,D+0.009,0.835);                                 // filetto cromato sul bordo della plancia
   box(W*2-0.12,0.008,0.04,wood,0,D+0.004,0.99);                                     // l'intarsio, fra lo schermo e il piano laccato
-  box(W*2-0.16,0.025,0.025,led,0,D+0.012,zW-0.05);                                  // LED alla base del parabrezza (si vede)
-  box(W*2-0.10,0.025,0.025,led,0,D-0.13,0.70);                                      // LED sotto il rullo (piedi)
+  box(W*2-0.16,0.007,0.007,led,0,D+0.008,zW-0.05);                                  // LED alla base del parabrezza (si vede)
+  box(W*2-0.10,0.007,0.007,led,0,D-0.13,0.70);                                      // LED sotto il rullo (piedi)
   /* l'iperschermo: in piedi sulla plancia, inclinato verso gli occhi (24
      gradi: la normale guarda chi e' seduto). Basso (6,5 cm) e vicino (0,87):
      da seduti si vede, dal basso in su, schermo -> intarsio e piano laccato
@@ -64471,7 +64474,7 @@ function tlAutoCabin(C,E){
      resta sulla strada, l'HUD sta in basso a destra, sopra la plancia */
   const hx=-0.02, hz=zW+0.03;
   box(0.46,0.006,0.14,black,hx,D+0.004,zW-0.12);
-  [zW-0.19,zW-0.05].forEach(z=>box(0.46,0.008,0.012,led,hx,D+0.008,z));
+  [zW-0.19,zW-0.05].forEach(z=>box(0.46,0.005,0.006,led,hx,D+0.008,z));
   /* le porte: pelle scura, inserto panna trapuntato, bracciolo, LED sulla cintura e in basso */
   /* v503 (Giacomo: «negli sportelli vedo rettangoli lunghi e stretti,
      irreali: rendi piu' smooth»). Via le stecche: il bordo alto della
@@ -64485,12 +64488,12 @@ function tlAutoCabin(C,E){
     box(0.06,B-F-0.04,zl,dark,x,(B+F-0.04)/2,zc);
     capZ(0.05,zl-0.04,dark,x-sd*0.012,B-0.03,zc);                                   // il rullo sopra (era una stecca)
     tubeZ(0.009,zl-0.16,trim,x-sd*0.058,B-0.055,zc);                                 // filo di metallo sotto il rullo
-    tubeZ(0.012,zl-0.30,led,x-sd*0.052,B-0.085,zc);                                  // la linea di cintura che si illumina
+    tubeZ(0.0035,zl-0.30,led,x-sd*0.052,B-0.085,zc);                                  // la linea di cintura che si illumina
     pillow(0.035,0.22,0.92,cream,x-sd*0.032,B-0.22,0.05);                            // inserti trapuntati
     pillow(0.035,0.20,0.66,cream,x-sd*0.032,B-0.22,-0.85);
     capZ(0.042,0.58,cognac,x-sd*0.07,B-0.37,0.0);                                    // bracciolo
     { const h=capZ(0.016,0.12,trim,x-sd*0.045,B-0.30,0.36); }                        // la maniglia
-    tubeZ(0.01,zl-0.5,led2,x-sd*0.04,F+0.10,zc);
+    tubeZ(0.0035,zl-0.5,led2,x-sd*0.04,F+0.10,zc);
     const sp=BABYLON.MeshBuilder.CreateCylinder("a1sp",{ diameter:0.16, height:0.02, tessellation:24 },scene);
     sp.material=trim; sp.parent=ck; sp.rotation.z=Math.PI/2; sp.position.set(x-sd*0.035,F+0.22,0.55); sp.isPickable=false;
     /* montanti: A (parabrezza), B (fra le porte), C (lunotto) */
@@ -64522,8 +64525,8 @@ function tlAutoCabin(C,E){
   box(rw*2,0.03,gz0-zT+0.04,alc,0,R,(gz0+zT)/2);
   [-1,1].forEach(sd=>box(rw-gx,0.03,gz1-gz0,alc,sd*(gx+rw)/2,R,(gz1+gz0)/2));
   const gl=box(gx*2,0.01,gz1-gz0,glass,0,R+0.012,(gz1+gz0)/2);
-  [[gx*2,0.02,gz1],[gx*2,0.02,gz0]].forEach(q=>box(q[0],0.02,0.02,warm,0,R-0.02,q[2]));
-  [-1,1].forEach(sd=>box(0.02,0.02,gz1-gz0,warm,sd*gx,R-0.02,(gz1+gz0)/2));
+  [[gx*2,0.006,gz1],[gx*2,0.006,gz0]].forEach(q=>box(q[0],0.006,0.006,warm,0,R-0.02,q[2]));
+  [-1,1].forEach(sd=>box(0.006,0.006,gz1-gz0,warm,sd*gx,R-0.02,(gz1+gz0)/2));
   box(rw*2,0.05,0.06,alc,0,R-0.01,zH);                                              // bordo sopra il parabrezza
   /* v503 — IL COFANO VERO (Giacomo: «il cofano davanti visto da dentro e'
      troppo finto»). Era una lastra inclinata. Ora e' una superficie curva
@@ -64557,11 +64560,11 @@ function tlAutoCabin(C,E){
   /* la fessura scura fra cofano e parabrezza: un tubo, non una stecca */
   { const c=BABYLON.MeshBuilder.CreateCylinder("a1cowl",{ diameter:0.07, height:W*2+0.04, tessellation:14 },scene);
     c.material=black; c.parent=ck; c.rotation.z=Math.PI/2; c.position.set(0,D-0.06,zW+0.03); c.isPickable=false; }
-  { const c=BABYLON.MeshBuilder.CreateCylinder("a1nose",{ diameter:0.045, height:W*1.6, tessellation:12 },scene);     // la luce davanti del 2050
+  { const c=BABYLON.MeshBuilder.CreateCylinder("a1nose",{ diameter:0.02, height:W*1.6, tessellation:12 },scene);     // la luce davanti del 2050
     c.material=led; c.parent=ck; c.rotation.z=Math.PI/2; c.position.set(0,0.64,C.HL-0.02); c.isPickable=false; }
   if(SP){ /* il bottone rosso «TURBO» sulla console */
     const tb=BABYLON.MeshBuilder.CreateCylinder("a1tb",{ diameter:0.07, height:0.02, tessellation:24 },scene);
-    tb.material=led2; tb.parent=ck; tb.position.set(0,F+0.35,0.32); tb.isPickable=false; }
+    tb.material=turboBtn; tb.parent=ck; tb.position.set(0,F+0.35,0.32); tb.isPickable=false; }
   /* luci: tutto fuori dalle ombre del sole; il vetro del tetto non va nel glow */
   ck.getChildMeshes().forEach(m=>{ m.isPickable=false; m.receiveShadows=false; });
   try{ if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(gl); }catch(e){}
@@ -65571,11 +65574,17 @@ function tlAutoPov(on){
          alla camera (forme marroni semitrasparenti, visto a schermo). Via
          tutto cio' che vive all'altezza degli occhi; corpo, braccia e gambe
          restano (cominciano molto piu' in basso). */
+      /* v522 (Giacomo: «quando premo O in macchina per un attimo si vedono i
+         miei occhi»): appena risieduti lo scheletro e' ancora nella posa
+         vecchia, e il controllo «cosa sta all'altezza degli occhi» sbagliava
+         per qualche fotogramma. Ora si nasconde TUTTO subito, e dopo 300 ms
+         (posa aggiornata) tornano visibili solo corpo, braccia e gambe. */
+      try{ avatarRoot.getChildMeshes(false).forEach(m=>{ m.visibility=0; }); }catch(e){}
       const hideEye=()=>{ if(!AUTO.pov) return; try{ const eyW=C.root.position.y+ey;
         avatarRoot.getChildMeshes(false).forEach(m=>{ try{ m.refreshBoundingInfo(!!m.skeleton); }catch(e){}
           const b=m.getBoundingInfo().boundingBox;
-          if(b.maximumWorld.y>eyW-0.08 && b.minimumWorld.y>eyW-0.65) m.visibility=0; }); }catch(e){} };
-      hideEye(); setTimeout(hideEye,250); } }   // v519: di nuovo dopo il risedersi (lo scheletro si aggiorna al disegno)
+          m.visibility=(b.maximumWorld.y>eyW-0.08 && b.minimumWorld.y>eyW-0.65)?0:1; }); }catch(e){} };
+      setTimeout(hideEye,300); } }
   try{ _povHead(AUTO.pov?1:0); }catch(e){}
   camera.minZ=AUTO.pov?0.03:(AUTO.cam?AUTO.cam.minZ:camera.minZ);
   toast(AUTO.pov?"\u{1F441}️ Inside "+tlAutoName()+" — drag the mouse (or ← →) to look around, O to go out":"\u{1F697} Outside view — drag to turn around the car, wheel to zoom, O to look inside");
