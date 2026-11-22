@@ -8351,11 +8351,18 @@ function _xmMats(){ if(_xmM) return _xmM;
     m.specularColor=new C3(spec||0.05,spec||0.05,spec||0.05); if(em) m.emissiveColor=C3.FromHexString(em); return m; };
   const fir=std("xmFir","#2d6b3c",0.04); fir.emissiveColor=new C3(0.02,0.06,0.03);
   const fir2=std("xmFir2","#245a32",0.04); fir2.emissiveColor=new C3(0.015,0.05,0.025);
+  fir.__glowK=0; fir2.__glowK=0;   // v597: nel bagliore i rami fanno solo da schermo (nero), non brillano
   /* le lucine: luci notturne vere (updateDayNight le accende col buio) */
   const bulb=(n,hex,glow)=>{ const m=std(n,hex,0.3); m.emissiveColor=new C3(0,0,0); m.__nightEmissive=C3.FromHexString(glow);
     try{ nightLights.push(m); }catch(e){} return m; };
   const bulbs=[bulb("xmBulbR","#d8323a","#ff3b3b"), bulb("xmBulbY","#e8b93c","#ffd24a"), bulb("xmBulbB","#3a6fd8","#4f8bff"), bulb("xmBulbG","#3aa65a","#5dff7a")];
-  bulbs.forEach(m=>{ m.__xmBase=m.__nightEmissive.clone(); });   // v596: il colore pieno, per l'intermittenza (_xmBlink)
+  bulbs.forEach(m=>{ m.__xmBase=m.__nightEmissive.clone();   // v596: il colore pieno, per l'intermittenza (_xmBlink)
+    /* v597 (Giacomo: «un po' di glowing nelle luci, se non incide sulla
+       velocita'»): le lucine mandano nel bagliore piu' delle altre luci
+       (__glowK, letto da glowL.customEmissiveColorSelector). Costo zero: il
+       bagliore c'e' gia' (solo su High e Max, vedi applyQuality) e le
+       lucine ci passavano gia'; cambia solo quanto pesano. */
+    m.__glowK=2.4; });
   const flake=_dnTex("xmFlakeT",128,128,(c,w)=>{ c.clearRect(0,0,w,w); c.strokeStyle="#ffffff"; c.lineWidth=7; c.lineCap="round";
     c.translate(w/2,w/2);
     for(let i=0;i<6;i++){ c.rotate(Math.PI/3); c.beginPath(); c.moveTo(0,0); c.lineTo(0,-54);
@@ -8390,7 +8397,11 @@ function _xmTree(L,x,y,z,H,rnd,big){
   const potH=big?0:H*0.16, base=y+potH, D=H*0.62;
   if(!big){ const p=BABYLON.MeshBuilder.CreateCylinder("xmPot",{ diameterTop:D*0.55, diameterBottom:D*0.42, height:potH, tessellation:10 },scene);
     p.position.set(x,y+potH/2,z); L.pot.push(p); }
-  const t0=big?H*0.065:H*0.04, tiers=big?4:3, hT=(H-t0)/tiers*1.45; let apex=base;
+  /* v597 (Giacomo, di nuovo: «e' ancora sospeso»). Anche a 0,45 m un cono
+     largo 4 m, visto ad altezza d'occhi, lascia sotto un vuoto buio e sembra
+     sollevato: i rami bassi di un abete vero toccano quasi il prato. Ora il
+     primo cono parte a 12 cm da terra. */
+  const t0=big?0.12:H*0.04, tiers=big?4:3, hT=(H-t0)/tiers*1.45; let apex=base;
   /* v596 (Giacomo, screenshot: «l'albero del parco e' sospeso in aria, manca
      il tronco fino alla fine»): prima il primo cono partiva a 0,7 m da terra
      e il tronco (alto 0,84, largo 0,49) restava nell'ombra dei rami. Ora i
@@ -8449,8 +8460,12 @@ function _xmFuse(parent,L){ const K=_xmMats();
     if(!m) return; m.material=map[k]; m.parent=parent; m.isPickable=false; _xmTieni(m);
     /* abeti, vasi, regali e corone fanno ombra; lucine, fiocchi e stelle no */
     if(k==="fir"||k==="fir2"||k==="pot"||k==="red"||k==="gold"||k==="white"||k==="trunk") m.__cast=true;
-    /* nel bagliore restano SOLO lucine e stella */
-    if(!/^b[0-3]$/.test(k) && k!=="star") _noGlow(m); }); }
+    /* v597: nel bagliore i rami, i vasi e i regali NON vanno esclusi: sono
+       quelli che COPRONO le lucine dietro di loro (lo strato del bagliore
+       disegna in nero chi non brilla). Esclusi, le lucine sul retro
+       dell'albero trasparivano attraverso i rami come macchie colorate.
+       Restano fuori solo i fiocchi di neve (piani con la trasparenza). */
+    if(k==="flake") _noGlow(m); }); }
 
 /* ---- IL PIANO di un edificio (chiamato da _dressBuilding, sempre) ---- */
 function _xmPlan(C,name){
@@ -8461,7 +8476,9 @@ function _xmPlan(C,name){
     const dd=g.d0+0.45, q=g.at(a,dd), w=C.toW(q[0],q[1]);
     const s=[g.at(a-0.45,dd-0.45),g.at(a+0.45,dd+0.45)].map(v=>C.toW(v[0],v[1]));
     P.trees.push({ x:q[0], z:q[1], y:_hwGroundY(w[0],w[1]), H:1.25+rnd()*0.25, solid:[s[0][0],s[1][0],s[0][1],s[1][1]],
-      gift:g.at(a+sd*0.55,g.d0+0.3), gry:rnd()*0.8 }); });
+      gift:g.at(a+sd*0.55,g.d0+0.3), gry:rnd()*0.8 });
+    /* v597: anche il pacco accanto all'alberello sul suo terreno (gradino o marciapiede) */
+    try{ const T=P.trees[P.trees.length-1], gw=C.toW(T.gift[0],T.gift[1]); T.gy=_hwGroundY(gw[0],gw[1]); }catch(e){} });
   /* festone sopra il piano terra */
   { const yb=g.gfTop+0.08, dd=g.out(yb-0.5,yb+0.1)+0.1, L0=g.a0+0.3, L1=g.a1-0.3;
     if(L1-L0>1) P.gar={ p0:g.at(L0,dd), p1:g.at(L1,dd), y:yb, n:Math.max(1,Math.round((L1-L0)/2.6)) }; }
@@ -8478,7 +8495,7 @@ function _xmPlan(C,name){
   XMAS.plans.push(P); }
 /* ---- dal piano alle decorazioni (frame F dell'edificio) ---- */
 function _xmFront(P){ const L=_xmL(), rnd=_seedRand("xmB|"+P.name), face=P.ry+Math.PI;
-  P.trees.forEach(t=>{ _xmTree(L,t.x,t.y,t.z,t.H,rnd,false); _xmGift(L,t.gift[0],t.y,t.gift[1],0.26,rnd,t.gry);
+  P.trees.forEach(t=>{ _xmTree(L,t.x,t.y,t.z,t.H,rnd,false); _xmGift(L,t.gift[0],(t.gy!=null?t.gy:t.y)-0.01,t.gift[1],0.26,rnd,t.gry);
     addSolid(t.solid[0],t.solid[1],t.solid[2],t.solid[3],"town"); });
   if(P.gar) _xmGarland(L,P.gar.p0,P.gar.p1,P.gar.y,0.2,P.gar.n);
   if(P.wreath) _xmWreath(L,P.wreath.x,P.wreath.y,P.wreath.z,0.55,face);
@@ -8522,7 +8539,14 @@ function _xmBigTree(T,isola){ T=T||XM_TREE; const L=_xmL(), rnd=_seedRand("xmBig
       XMAS.undo.push(()=>R.tree.setEnabled(true)); } }catch(e){}
   _xmTree(L,T.x,gy,T.z,T.H,rnd,true);
   /* i regali sotto l'albero */
-  for(let i=0;i<7;i++){ const a=i*0.9+rnd()*0.4, r=T.H*0.3+rnd()*0.25; _xmGift(L,T.x+Math.cos(a)*r,gy,T.z+Math.sin(a)*r,0.32+rnd()*0.22,rnd,rnd()*1.5); }
+  /* v597: i regali appena fuori dal bordo dei rami (ora i rami arrivano a
+     terra) e mai davanti al cartello (che sta a ovest, angolo PI) */
+  for(let i=0;i<8;i++){ const a=i*0.8+rnd()*0.3; if(Math.abs(((a%(2*Math.PI))+2*Math.PI)%(2*Math.PI)-Math.PI)<0.55) continue;
+    const r=T.H*0.31+0.35+rnd()*0.2, gx=T.x+Math.cos(a)*r, gz=T.z+Math.sin(a)*r;
+    /* v597 (Giacomo: «e anche i pacchi regalo!»): ogni pacco sul terreno
+       che ha SOTTO DI SE' (prima tutti alla quota del centro dell'albero) */
+    let g2=gy; try{ const h=_hwGroundY(gx,gz); if(h>0.01) g2=h; }catch(e){}
+    _xmGift(L,gx,g2-0.01,gz,0.32+rnd()*0.22,rnd,rnd()*1.5); }
   const node=new BABYLON.TransformNode("xmBig",scene); node.parent=townRoot; _xmTieni(node); _xmFuse(node,L);
   const R=T.H*0.31; addSolid(T.x-R*0.8,T.x+R*0.8,T.z-R*0.8,T.z+R*0.8,"town");
   /* il cartello davanti all'albero, verso la High Street (ovest) */
@@ -8532,13 +8556,19 @@ function _xmBigTree(T,isola){ T=T||XM_TREE; const L=_xmL(), rnd=_seedRand("xmBig
    all'ingresso del parco (90,-9: sul prato a sinistra del vialetto, si vede
    dalla promenade e dal café; misurato libero, fuori dai vialetti) e
    QUATTRO BABBI NATALE procedurali (0 KB), che salutano col braccio: al
-   parco (col sacco dei regali, e ci si PARLA: «What would you like for
+   parco accanto all'albero (col sacco dei regali, e ci si PARLA: «What would you like for
    Christmas?»), sull'isola della rotonda accanto all'albero grande,
    davanti al diner e all'ingresso del café. Tutto dentro XMAS: si accende e
    si spegne con il resto. ---- */
-const XM_PARK_TREE={ x:90, z:-9, H:7, sign:"Happy Holidays!" };
+/* v597 (Giacomo, con screenshot: «ma se lo mettessimo qui, alla fine del
+   parco?»). Spostato dall'ingresso (90,-9) in fondo al vialetto principale:
+   il vialetto (z -3..3) parte dall'ingresso, passa dalla fontana e finisce
+   nel prato a x 144; l'albero sta subito oltre (prato fino a x 152, poi il
+   marciapiede del bordo): chi entra nel parco lo vede in fondo, dietro la
+   fontana. Misurato libero (raggio 2,9 m). */
+const XM_PARK_TREE={ x:148, z:0, H:7.5, sign:"Happy Holidays!" };
 const XM_SANTAS=[
-  { x:87.9, z:-5.4, face:[-1,0.35], sack:true, talk:true },   // parco: verso la promenade
+  { x:144.6, z:3.7, face:[-1,-0.35], sack:true, talk:true },  // parco: in fondo al vialetto, verso chi arriva
   { x:46.1, z:-2.5, face:[-1,-0.2] },                          // rotonda: verso la High Street
   { x:4.2,  z:23.0, face:[0,-1] },                             // diner: verso la strada
   { x:66.0, z:2.7,  face:[-1,0] } ];                           // café: ingresso (ovest)
