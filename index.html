@@ -11976,11 +11976,86 @@ function talkToDinerGuest(n){
 function talkToWaiter(n){
   if(DINER.seat){ dinerMeAction(); return; }
   if(DINER.debt){ if(!DINER.debt.chasing) dinerDebtAsk(); return; }     // v291: sei tornato tu a pagare
-  if(DINER.ate){ dinerStillHungry(); return; }
-  DialogueBox.open({ npc:n, icon:"\u{1F354}", sub:"Waiter",
-    text:"Hi! Please take a seat anywhere you like. I'll be right with you!",
-    italian:"Ciao! Siediti dove vuoi: arrivo subito. (Vai a una sedia libera e premi E.)",
-    buttons:[{label:"OK, thanks!", cls:"primary", act:()=>{}}] });
+  if(!dinerOpen()){ DialogueBox.open({ npc:n, icon:"\u{1F319}", sub:"Waiter", text:"Sorry, we're closed now. Come back tomorrow!",
+    italian:"Il diner adesso e' chiuso: torna domani.", buttons:[{label:"OK, bye!", cls:"primary", act:()=>{}}] }); return; }
+  dinerEatInOrOut(n);
+}
+/* =====================================================================
+   v590 — EAT IN OR TAKE AWAY? (Giacomo, 22 nov: «se la presenza e' accesa,
+   20 alunni non ce la fanno a mangiare tutti insieme»). Ogni alunno ha gia'
+   il SUO diner e il SUO Ray (vedi DINER2): mangiare possono tutti. Il limite
+   era solo che i compagni si vedevano seduti uno sopra l'altro sulle 6
+   sedie libere. Ora:
+   · una sedia con un compagno seduto (Presenza.vicini) dice «This seat is
+     taken» e ti manda alla sedia libera piu' vicina (dinerSeatTaken);
+   · finite le sedie, si ordina DA ASPORTO parlando col cameriere: «Eat in or
+     take away?» -> «Take away, please.» (tessere), si sceglie dal menu, si
+     paga e si mangia camminando (Needs.eatOnTheGo). Al café lo stesso, da
+     solo, quando gli sgabelli sono tutti presi (cafeTakeaway).
+   E' anche una frase in piu' del «at the restaurant» del libro.
+   ===================================================================== */
+function classmateSeatedAt(x,z,r){
+  let V=[]; try{ V=(typeof Presenza!=="undefined" && Presenza.acceso)?Presenza.vicini():[]; }catch(e){ V=[]; }
+  return V.some(v=>v && v.seduto && isFinite(v.x) && Math.hypot(v.x-x,v.z-z)<(r||0.55));
+}
+function dinerSeatTaken(s){ return !!s && !s.taken && classmateSeatedAt(s.x,s.z); }
+function dinerFreeSeats(){
+  return DINER.seats.filter(s=>!s.taken && s.inter && !classmateSeatedAt(s.x,s.z))
+    .sort((a,b)=>Math.hypot(a.x-player.position.x,a.z-player.position.z)-Math.hypot(b.x-player.position.x,b.z-player.position.z));
+}
+function dinerEatInOrOut(n){
+  let choice="";
+  const again=DINER.ate, full=!dinerFreeSeats().length;
+  DialogueBox.open({ npc:n, icon:"\u{1F354}", sub:DINER.name,
+    text:(again?"Hello again! Still hungry? ":"Hi there! ")+(full?"Sorry, all our tables are full right now. ":"")+"Eat in or take away?",
+    italian:(full?"I tavoli sono tutti occupati: ordina da asporto (take away). ":"")
+      +"Mangi qui (eat in) o porti via (take away)? Componi la risposta con le tessere.",
+    tiles:{ tokens:full?["Take","away,","please."]:["Eat","in,","please."], distractors:full?["Eat","in,"]:["Take","away,"], checkLabel:"\u{1F5E3} Say it", noHint:true,
+      onCheck:w=>{ const t=w.join(" ").toLowerCase().replace(/[.,!?]/g,"").replace(/\s+/g," ").trim();
+        if(t==="take away please"){ choice="out"; return { ok:true, msg:"✓ Take away, please!" }; }
+        if(t==="eat in please"){
+          if(full) return { ok:false, msg:"\u{1FA91} All the tables are full! Say: «Take away, please.»" };
+          choice="in"; return { ok:true, msg:"✓ Eat in, please!" }; }
+        return { ok:false, msg:"Prova: «Eat in, please.» oppure «Take away, please.»" }; },
+      onSuccess:()=>{
+        if(choice==="out"){ dinerTakeawayMenu(n); return; }
+        const f=dinerFreeSeats()[0];
+        DialogueBox.open({ npc:n, icon:"\u{1F354}", sub:"Waiter",
+          text:"Great! Please take a seat anywhere you like. I'll be right with you!",
+          italian:"Siediti a una sedia libera (premi E): arrivo subito.",
+          buttons:[{label:"OK, thanks!", cls:"primary", act:()=>{
+            if(f && f.inter){ moveTarget=new BABYLON.Vector3(f.x,0,f.z); pendingInteract=f.inter; } }}] }); } },
+    buttons:[{label:"No, thanks", cls:"ghost", act:()=>{}}] });
+}
+/* l'asporto: il piatto e la bevanda dai pulsanti (frasi intere da leggere),
+   il prezzo ascoltato, «Here you are», e si mangia camminando */
+const DINER_TAKEAWAY={ food:["Cheeseburger","Veggie burger","Hot dog","French fries"], drinks:["Lemonade","Water","Cola","Orange juice"] };
+function _dnVoce(en){ let v=null; ["mains","sides","drinks"].forEach(c=>{ DINER_MENU[c].forEach(x=>{ if(x.en===en) v=x; }); }); return v; }
+function _dnSay(v){ const n=v.en.toLowerCase(); return (/fries/.test(n)?"Some ":/^[aeiou]/.test(n)?"An ":"A ")+n+", please."; }
+function dinerTakeawayMenu(n){
+  const B=(arr,next)=>arr.map(en=>{ const v=_dnVoce(en); return v ? { label:_dnSay(v)+(v.p?"  £"+v.p.toFixed(2):""), cls:"primary", act:()=>next(v) } : null; }).filter(Boolean);
+  DialogueBox.open({ npc:n, icon:"\u{1F961}", sub:DINER.name+" — take away",
+    text:"Sure! What would you like to eat?", italian:"Cosa vuoi da mangiare? Scegli la frase giusta.",
+    buttons:B(DINER_TAKEAWAY.food, food=>{
+      DialogueBox.open({ npc:n, icon:"\u{1F961}", sub:DINER.name+" — take away",
+        text:"And something to drink?", italian:"E da bere?",
+        buttons:B(DINER_TAKEAWAY.drinks, d=>dinerTakeawayPay(n,food,d))
+          .concat([{ label:"No drink, thanks.", cls:"ghost", act:()=>dinerTakeawayPay(n,food,null) }]) });
+    }) });
+}
+function dinerTakeawayPay(n,food,drink){
+  const c=Math.round(((food.p||0)+((drink&&drink.p)||0))*100);
+  const done=()=>{
+    let got=0; try{ got=Stars.awardCafeOrder(npcCardId(n),(_dnYear()<=1)?"cafeOrderReady":"cafeOrder"); }catch(e){}
+    try{ TTS.say("Here's your bag. Enjoy your meal!"); }catch(e){}
+    DialogueBox.open({ npc:n, icon:"\u{1F961}", sub:DINER.name+(got>0?"  ⭐ +"+got:""),
+      text:"Here's your bag. Enjoy your meal! Have a nice day!",
+      italian:"Ecco il sacchetto: mangi camminando (o seduto su una panchina).",
+      buttons:[{ label:"Thank you! Goodbye!", cls:"primary", act:()=>{
+        try{ Needs.eatOnTheGo([food.en].concat(drink?[drink.en]:[])); }catch(e){} } }] });
+  };
+  try{ pricePick({ npc:n, icon:"\u{1F9FE}", sub:DINER.name+" — take away", said:"That's "+priceWords(c)+", please.", price:c, next:done }); }
+  catch(e){ done(); }
 }
 
 /* ------------------------------------------------------------------ */
@@ -11990,7 +12065,8 @@ function dinerSeatInteracts(){
   DINER.seats.forEach((s,i)=>{ if(s.taken) return;
     s.inter=addInteract({ id:"diner_seat_"+i, area:"town", radius:1.25,
       pos:()=>new BABYLON.Vector3(s.x,0,s.z),
-      prompt:()=>dinerOpen()?'Press <b>E</b> to <b>sit down</b>':'\u{1F319} The diner is closed now',
+      prompt:()=>!dinerOpen()?'\u{1F319} The diner is closed now'
+        :dinerSeatTaken(s)?'\u{1FA91} This seat is taken':'Press <b>E</b> to <b>sit down</b>',
       interact:()=>dinerSit(s) });
   });
   /* mentre sei seduto: una sola E, sempre la piu' vicina (e' su di te) */
@@ -11999,6 +12075,14 @@ function dinerSeatInteracts(){
 }
 function dinerSit(s){
   if(DINER.seat) return;
+  /* v590: c'e' seduto un compagno -> la sedia libera piu' vicina, o l'asporto */
+  if(dinerOpen() && !DINER.debt && dinerSeatTaken(s)){
+    const f=dinerFreeSeats()[0];
+    if(f){ toast("\u{1FA91} Sorry, this seat is taken! · Posto occupato da un compagno: vai a quello libero");
+      moveTarget=new BABYLON.Vector3(f.x,0,f.z); pendingInteract=f.inter; return; }
+    toast("\u{1FA91} All the seats are taken! Ask the waiter: «Take away, please!» · Posti finiti: ordina da asporto a Ray",5200);
+    return;
+  }
   try{ if(dinerOpen() && !DINER.debt && rideSitPark()===false) return; }catch(e){}   // 🛹 giu' dalla tavola PRIMA di misurare (la tavola resta accanto); 🛴 in monopattino no
   if(!dinerOpen()){ toast("\u{1F319} The diner is closed now. Come back tomorrow!"); return; }
   /* v291: col conto ancora da pagare non ci si risiede: Ray arriva subito */
@@ -37835,7 +37919,7 @@ function _cafeOffer(prompt){ const P=CAFE_PICK;
    piu' vicino libero, e il vassoio ti segue. La precedenza va all'impronta
    piu' piccola: e' la STESSA regola sui due dispositivi, quindi anche se vi
    sedete nello stesso istante uno resta e l'altro si sposta, mai tutti e due. */
-function _cafeStoolLibero(P){
+function _cafeStoolLibero(P,strict){
   let V=[]; try{ V=Presenza.vicini(); }catch(e){}
   if(!V.length) return P.stool;
   const io=(function(){ try{ return Presenza.io||""; }catch(e){ return ""; } })();
@@ -37846,14 +37930,15 @@ function _cafeStoolLibero(P){
       return true; }); };
   const ord=CAFE_STOOLS.map((zs,i)=>i).sort((a,b)=>Math.abs(CAFE_STOOLS[a]-CAFE_STOOLS[P.stool])-Math.abs(CAFE_STOOLS[b]-CAFE_STOOLS[P.stool]));
   for(const i of ord) if(libero(i)) return i;
-  return P.stool; }
+  return strict ? -1 : P.stool; }   // v590 strict: nessuno sgabello libero -> -1 (asporto)
 /* seduti sullo sgabello, girati verso il bancone (+x) */
 function _cafeSit(){ const P=CAFE_PICK; if(!P.spot) return false;
   if((typeof DINER!=="undefined" && DINER.seat) || (typeof BSIT!=="undefined" && BSIT.b)) return false;
   /* 🛹 PRIMA di leggere la quota: sulla tavola player.y e' 11-14 cm piu' su
      del pavimento, e gy (che poi resta) faceva sedere sospesi per aria */
   try{ if(rideSitPark()===false) return false; }catch(e){}
-  { const s=_cafeStoolLibero(P);
+  { const s=_cafeStoolLibero(P,!P.seated);
+    if(s<0){ cafeTakeaway(); return false; }       // v590: tutti presi dai compagni -> lo porti via
     if(s!==P.stool){ P.stool=s; if(P.node) P.node.position.z=P.spot.z+CAFE_TRAY_Z[s]; } }
   const S=_cafeStoolW(P), f=new BABYLON.Vector3(1,0,0), gy=(P.gy!=null)?P.gy:player.position.y;
   P.gy=gy; P.face=Math.PI/2;
@@ -37867,6 +37952,16 @@ function _cafeSit(){ const P=CAFE_PICK; if(!P.spot) return false;
   P.seated=true;
   try{ if(typeof POV!=="undefined" && POV.on){ camera.alpha=-P.face-Math.PI/2; camera.inertialAlphaOffset=0; camera.beta=Math.PI/2+0.12; } }catch(e){}
   return true; }
+/* v590: gli sgabelli sono tutti presi dai compagni: l'ordine si porta via e
+   si mangia camminando (Needs.eatOnTheGo). Le stelle dell'ordine sono gia'
+   state date al bancone. */
+function cafeTakeaway(){ const P=CAFE_PICK, sl=(P.o&&P.o.slip)||{};
+  const items=[]; if(sl.drink && sl.drink.en) items.push({ en:sl.drink.en, mult:(sl.size && /large/i.test(sl.size.en))?1.4:1 });
+  if(sl.food && sl.food.en && sl.food.en!=="—") items.push({ en:sl.food.en });
+  toast("\u{1F961} All the stools are taken: you take it away! · Sgabelli tutti occupati: porti via l'ordine",4800);
+  try{ cafeClear(); }catch(e){}
+  setTimeout(()=>{ try{ Needs.eatOnTheGo(items); }catch(e){} },1200);
+}
 function cafeResit(){ const P=CAFE_PICK; if(P.seated){ P.seated=false; _cafeSit(); } }
 /* in piedi accanto allo sgabello, dalla parte dei clienti (fuori dal suo solido) */
 function _cafeStand(){ const P=CAFE_PICK; if(!P.seated) return;
@@ -54591,6 +54686,14 @@ const Needs={
     if(v.d) m.d+=k; m.f+=(v.f||0)*k;
     this.hud(this.paused());
     clearTimeout(this.mealT); this.mealT=setTimeout(()=>this.mealDone(), 3500);
+  },
+  /* v590: l'asporto (café/diner pieni): si mangia camminando, quattro
+     bocconi per voce. `items`: nomi del menu, o { en, mult }. */
+  eatOnTheGo(items){
+    const L=(items||[]).map(x=>typeof x==="string"?{ en:x }:x).filter(x=>x && x.en);
+    if(!L.length) return;
+    this.say("Yummy! I'm eating on the go.","Mangi il tuo "+L.map(x=>x.en.toLowerCase()).join(" e ")+" camminando.","\u{1F961}",false);
+    for(let i=0;i<4;i++) setTimeout(()=>{ L.forEach(x=>this.eat(x.en,0.25,x.mult||1)); }, 1200+i*1300);
   },
   /* finito di mangiare (3,5 s senza bocconi): gli effetti e il fumetto */
   mealDone(){
