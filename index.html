@@ -65504,17 +65504,15 @@ function tlAutoSayGap(q){
    macchina fuori dalla quest TechLab, il computer di bordo ti fa domande
    col gap sulle unit svolte fin'ora»). Fuori dal giro finale del TechLab
    (mode "finale" o quest TechLab in corso: li' restano will / may / might)
-   3 domande su 4 vengono dal lessico delle unit FINITE (GEM_LEX: la parola
+   3 domande su 4 vengono dal lessico delle unit APERTE (GEM_LEX: la parola
    e la sua frase col buco, «I write with a ___.»), le altre sono quelle di
    sempre su will. Tre parole fra cui scegliere: quella giusta e due della
-   stessa unit. Niente ripetizioni a breve (le ultime 15). Il docente pesca
-   da tutte le unit aperte.
+   stessa unit. Niente ripetizioni a breve (le ultime 15).
    ===================================================================== */
-function tlAutoLexUnits(){ const out=[]; let prof=false; try{ prof=!!Student.teacher; }catch(e){}
-  for(const id in GEM_LEX){ let ok=false;
-    try{ ok=prof?gemUnitOpen(id):!!(Progress.get(id)||{}).done; }catch(e){}
-    if(ok) out.push(id); }
-  return out; }
+/* v516b (Giacomo: «anche per gli alunni intendevo le unit APERTE, non
+   finite»): per tutti, le unit aperte dal cursore di classe (gemUnitOpen,
+   le stesse dei cristalli e delle parole dello skatepark) */
+function tlAutoLexUnits(){ try{ return gemLexUnits(); }catch(e){ return []; } }
 function tlAutoLexQ(){
   const units=tlAutoLexUnits(); if(!units.length) return null;
   const seen=AUTO.lexSeen=AUTO.lexSeen||[], C=[];
