@@ -3234,16 +3234,22 @@ const UNIT_CITY={ id:"u2_8", area:"town", openWorld:true,
     introObjEn:"Give the directions and get him there.", introObj:"Da' le indicazioni e portalo a destinazione.",
     target:()=>cy8NpcPos("sam") },
   { id:"listen",strand:"listening",  type:"followDirections",
-    intro:"Adesso tocca a te perderti. <b>Ascolta</b> \ud83d\udd0a le indicazioni e arriva al posto "
+    intro:"Adesso tocca a te perderti. Torna da <b>Ivy</b> in piazza (segui la bussola) e premi <b>E</b>: "
+         +"le indicazioni <b>partono da l\u00ec</b>. Poi <b>ascolta</b> \ud83d\udd0a e arriva al posto "
          +"giusto: sulla mappa <b>non c'\u00e8 nessun segnalino</b>.",
-    introObjEn:"Follow the directions and get there.", introObj:"Segui le indicazioni e arriva a destinazione." },
-    /* ⚠️ NIENTE `target` qui, di proposito: la bussola (updateQuestCompass)
-       si accende SOLO se lo step espone target(), quindi ometterlo e' come
-       spegnerla — coerente col "non c'e' nessun segnalino" dell'intro.
-       Effetto collaterale accettato: durante questo step il Town Ranger
-       potrebbe interrompere con un suggerimento casuale (rangerExempt usa
-       lo stesso target() per restare in silenzio vicino a un obiettivo);
-       capita raramente e non blocca nulla. */
+    introObjEn:"Follow the directions and get there.", introObj:"Segui le indicazioni e arriva a destinazione.",
+    target:()=>cy8ListenTarget() },
+    /* v589 (Giacomo, 22 nov: «l'ultima attivita' non tiene conto di dove si
+       trova l'avatar per l'indicazione stradale: diventa impossibile»).
+       Le indicazioni di Ivy partono SEMPRE dalla piazza, ma lo step comincia
+       dove finisce giveDirections, cioe' al MARKET, dall'altra parte della
+       citta': «past the cafe', on your left» da li' non voleva dire niente.
+       Ora lo step ha due fasi: (1) "start" — la bussola porta da Ivy e
+       premendo E lei da' le indicazioni da li'; (2) "walk" — bussola SPENTA
+       (QC_ANSWERS.followDirections -> off), niente segnalino come prima.
+       ⚠️ Prima il target non c'era, ma la bussola non era spenta davvero:
+       il ripiego sui nomi nella consegna trovava «Ivy» nella barra e puntava
+       lei per tutto lo step. */
   /* v501 (Giacomo, 21 nov: «non capisco per la targa dove va a finire:
      eliminiamo il task finale di scrivere la targa»). Tolto lo step
      "write" (la targa blu al leggio): la unit si chiude con il listening
@@ -26324,6 +26330,9 @@ const QC_ANSWERS={
   styleShow:()=>({ free:true, prefix:"show_" }),
   newLook:()=>({ free:true, prefix:"salfin_" }),
   careerCard:()=>({ free:true, prefix:"jbfin_" }),
+  /* v589: in cammino si va a orecchio, bussola spenta; nella fase "start"
+     la meta (Ivy) arriva dal target() dello step, prima di qui */
+  followDirections:st=>(st.fl && st.fl.phase==="walk") ? { off:true } : null,
   plaqueHunt:st=>{ const h=st.ph; if(!h || h.phase!=="hunt") return null;
     const P=h.route[h.idx]; return P ? qcId("cy8ph_"+qcSafe(P.en)) : null; },
 };
@@ -26353,6 +26362,7 @@ function qcFindTarget(){
   /* v405: le meccaniche di ricerca conosciute, PRIMA dei nomi nella
      consegna («listen to Dr. Ito» non vuol dire «vai da Dr. Ito») */
   const a=qcAnswer();
+  if(a && a.off) return null;          // v589: la meccanica vuole la bussola spenta
   if(a && a.free){
     const c=qcQuestInter(o=>String(o.id).indexOf(a.prefix)===0 && (!a.ok || a.ok(o)));
     if(c.length){ const f=function(){ let best=null, bd=1e9;
@@ -60393,28 +60403,71 @@ MECH.giveDirections=function(s){
    tradurlo vorrebbe dire dare la risposta) compare dopo il secondo ascolto
    o due tentativi sbagliati, non prima.
    ===================================================================== */
+/* ⚠️ v589: OGNI copione parte da Ivy e dice da che parte guardare («with the
+   park behind you»): senza un punto e un verso di partenza left/right non
+   hanno senso. Destra/sinistra verificate sulla geometria (sistema
+   left-handed, come cy8SamDo: guardando a ovest la destra e' +z, guardando
+   a est la sinistra e' +z):
+   · town hall (x 44..64, z<0) e cinema (x -12..12, z<0): a ovest, a SINISTRA;
+   · school (x 16..36, z>0): dopo le strisce davanti al cinema (x ~9) si
+     attraversa verso +z e la scuola e' a DESTRA (+x). Prima diceva «past the
+     cinema», ma venendo dalla piazza la scuola sta PRIMA del cinema;
+   · sports centre (x 95..129, z 22..46): verso est nel parco e' a SINISTRA
+     (+z). Prima diceva «on the right»: era sbagliato. */
 const CY8_LISTEN=[
   { place:"town hall",
-    text:"Go straight along the High Street. Go past the caf\u00e9. "
+    text:"Start here, with the park behind you. Go straight along the High Street, past the caf\u00e9. "
         +"The town hall is on your left, past the corner." },
   { place:"cinema",
-    text:"Go straight along the High Street, past the town hall. "
+    text:"Start here, with the park behind you. Go straight along the High Street, past the town hall. "
         +"The cinema is on your left, next to the zebra crossing." },
   { place:"school",
-    text:"Cross the road at the zebra crossing. The school is on the other side, "
-        +"past the cinema, next to the clothes shop." },
+    text:"Start here, with the park behind you. Go straight along the High Street, past the town hall. "
+        +"Cross the road at the zebra crossing, in front of the cinema. The school is on your right, next to the clothes shop." },
   { place:"sports centre",
-    text:"Go past the park. The sports centre is behind the park, on the right." },
+    text:"Start here, with the High Street behind you. Walk into the park and go straight on. "
+        +"The sports centre is on your left, next to the park." },
 ];
 function cy8ListenPlace(en){ return CY8_PLACES.find(p=>p.en===en); }
 
+/* fase "start": la bussola porta da Ivy (punto di partenza delle
+   indicazioni); fase "walk": nessuna meta (vedi QC_ANSWERS.followDirections) */
+function cy8ListenTarget(){
+  const fl=Quest.state&&Quest.state.fl;
+  return (fl && fl.phase==="walk") ? null : cy8NpcPos("ivy");
+}
 function cy8ListenHud(fl){
+  if(fl.phase!=="walk"){
+    /* ⚠️ niente "Ivy" nella consegna della fase walk (qui si': e' lei la meta) */
+    questHudSet("listening", HOBJ(
+      "Go to <b>Ivy</b> in the square (follow the compass) and press <b>E</b>: her directions start from there.",
+      "Torna da <b>Ivy</b> in piazza (segui la bussola) e premi <b>E</b>: le indicazioni partono da lì, dal suo angolo."),
+      Quest.i, Quest.total);
+    return;
+  }
   const reveal = fl.revealed
     ? ('<div style="margin-top:4px;font-style:italic;">\u201c'+fl.script.text+'\u201d</div>') : '';
-  questHudSet("listening", HOBJ("Listen \ud83d\udd0a to Ivy\'s directions and walk to the right place." +' <button type="button" class="qm-btn ghost cy8-listen-replay" style="padding:3px 10px;margin-left:6px;">\ud83d\udd0a</button>' +reveal,"Ascolta \ud83d\udd0a le indicazioni di Ivy e cammina fino al posto giusto."
-    +' <button type="button" class="qm-btn ghost cy8-listen-replay" style="padding:3px 10px;margin-left:6px;">\ud83d\udd0a</button>'
-    ), Quest.i, Quest.total);
+  const btns=' <button type="button" class="qm-btn ghost cy8-listen-replay" style="padding:3px 10px;margin-left:6px;">\ud83d\udd0a</button>'
+    +' <button type="button" class="qm-btn ghost cy8-listen-back" style="padding:3px 10px;margin-left:4px;">\u21a9\ufe0f Start again</button>';
+  /* ⚠️ la consegna NON nomina Ivy: il ripiego della bussola sui nomi la
+     punterebbe su di lei (e qui la bussola deve restare spenta) */
+  questHudSet("listening", HOBJ(
+    "Listen \ud83d\udd0a to the directions and walk to the right place. Lost? Press \u21a9\ufe0f and go back to the start."+btns+reveal,
+    "Ascolta \ud83d\udd0a le indicazioni e cammina fino al posto giusto. Ti sei perso? Premi \u21a9\ufe0f: la bussola ti riporta al punto di partenza."+btns),
+    Quest.i, Quest.total);
   const b=qhud.obj.querySelector(".cy8-listen-replay"); if(b) b.onclick=()=>cy8ListenPlay(fl);
+  const k=qhud.obj.querySelector(".cy8-listen-back"); if(k) k.onclick=()=>{
+    fl.phase="start"; QC.t=-1e9; cy8ListenHud(fl);
+    toast("\u{1F9ED} Follow the compass back to Ivy · Torna da Ivy e premi E"); };
+}
+/* E su Ivy: ti mette al punto di partenza e ti dice la strada */
+function cy8ListenIvy(fl){
+  fl.phase="walk"; QC.t=-1e9;
+  cy8ListenHud(fl);
+  DialogueBox.open({ npc:CY8_NPC.ivy, icon:"\u{1F9ED}", sub:"Listen carefully!",
+    text:"OK, listen carefully! Start from here, from my corner.",
+    italian:"Ascolta bene: le indicazioni partono da qui, dove sei adesso. Puoi riascoltarle con \u{1F50A}.",
+    buttons:[{ label:"\u{1F50A} I'm listening!", cls:"primary", act:()=>cy8ListenPlay(fl) }] });
 }
 function cy8ListenPlay(fl){
   fl.plays=(fl.plays||0)+1;
@@ -60430,8 +60483,17 @@ MECH.followDirections=function(s){
   buildCityNPCs();
   if(!CY8_NPC.ivy){ mechStub(s); return; }
   const st=Quest.state;
-  const fl=st.fl=st.fl||{ script: pick(CY8_LISTEN,1)[0], plays:0, wrong:0, revealed:false };
+  const fl=st.fl=st.fl||{ script: pick(CY8_LISTEN,1)[0], plays:0, wrong:0, revealed:false, phase:"start" };
+  /* salvataggi di prima della v589: fl senza fase -> si riparte da Ivy, e il
+     copione si rilegge dalla lista (il testo nuovo dice da dove partire) */
+  if(!fl.phase){ fl.phase="start"; fl.plays=0; }
+  const cur=CY8_LISTEN.find(e=>e.place===(fl.script&&fl.script.place));
+  fl.script=cur||pick(CY8_LISTEN,1)[0];
 
+  Quest.questInteract({ id:"cy8lst_ivy", area:"town", radius:3.4,
+    pos:()=>cy8NpcPos("ivy"),
+    prompt:()=> fl.phase==="walk" ? 'Press <b>E</b>: listen to Ivy\'s directions again' : 'Press <b>E</b>: ask Ivy the way',
+    interact:()=>cy8ListenIvy(fl) });
   CY8_LISTEN.forEach(entry=>{
     const p=cy8ListenPlace(entry.place); if(!p) return;
     Quest.questInteract({ id:"cy8lst_"+entry.place.replace(/[^a-z]+/gi,"_"), area:"town", radius:3.0,
@@ -60440,10 +60502,13 @@ MECH.followDirections=function(s){
       interact:()=>onListenTap(entry,fl) });
   });
   cy8ListenHud(fl);
-  if(!fl.plays) cy8ListenPlay(fl);
 };
 
 function onListenTap(entry,fl){
+  if(fl.phase!=="walk"){
+    toast("\u{1F9ED} First go to Ivy in the square: her directions start from there! \u00b7 Prima vai da Ivy in piazza");
+    return;
+  }
   if(entry.place===fl.script.place){
     toast("\u2713 Right! This is the "+entry.place+".");
     Quest.complete("\ud83c\udfa7 Listening completato! Hai trovato il posto giusto senza segnalino.");
