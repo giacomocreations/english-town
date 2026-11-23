@@ -38480,6 +38480,8 @@ function cafeServe(npc,o){
     const nS=P.parts.food?4:2, nB=P.parts.food?3:0, steps=[];
     for(let i=0;i<Math.max(nS,nB);i++){ if(i<nS) steps.push("sip"); if(i<nB) steps.push("bite"); }
     P.seq={ steps, k:0, nS, nB, cnt:{sip:0,bite:0} };
+    /* v600: sgabelli tutti presi dai compagni? lo si dice SUBITO, al bancone */
+    try{ if(_cafeStoolLibero(P,true)<0){ cafeTakeaway(); return; } }catch(e){}
     try{ toast("☕ "+(npc.name||"The barista")+": “Here you are! Have a seat.”"); }catch(e){}
     _cafeOffer('☕ Press <b>E</b> to <b>sit down</b> and have your order');
     /* se non lo prendi, dopo un paio di minuti il barista lo ritira */
@@ -38538,13 +38540,21 @@ function _cafeSit(){ const P=CAFE_PICK; if(!P.spot) return false;
 /* v590: gli sgabelli sono tutti presi dai compagni: l'ordine si porta via
    nel sacchetto e si mangia al tavolo da picnic piu' vicino (Needs.giveBag). Le stelle dell'ordine sono gia'
    state date al bancone. */
-function cafeTakeaway(){ const P=CAFE_PICK, sl=(P.o&&P.o.slip)||{};
+function cafeTakeaway(){ const P=CAFE_PICK, sl=(P.o&&P.o.slip)||{}, npc=P.npc;
   const items=[]; if(sl.drink && sl.drink.en) items.push({ en:sl.drink.en, key:"drink", mult:(sl.size && /large/i.test(sl.size.en))?1.4:1 });
   if(sl.food && sl.food.en && sl.food.en!=="—") items.push({ en:sl.food.en, key:"food" });
   const slip=JSON.parse(JSON.stringify(sl));
-  toast("\u{1F961} All the stools are taken: you take it away! · Sgabelli tutti occupati: porti via l'ordine",4800);
   try{ cafeClear(); }catch(e){}
-  setTimeout(()=>{ try{ Needs.giveBag("cafe",items,slip); }catch(e){} },1500);
+  /* v600 (Giacomo: «se i posti da Rosa sono tutti occupati, me lo dice anche
+     li' che posso prenderlo da asporto e mangiarlo su un tavolo?»). Prima era
+     solo un toast. Ora lo dice LEI, a voce, col sacchetto in mano; il
+     sacchetto e' gia' in mano mentre parla (e la bussola porta al tavolo). */
+  const give=()=>{ try{ Needs.giveBag("cafe",items,slip); }catch(e){} };
+  try{ DialogueBox.open({ npc, icon:"\u{1F961}", sub:(npc&&npc.name)||"The barista",
+      text:"Sorry, all our stools are taken! Here's your order to take away. There are picnic tables just outside: enjoy!",
+      italian:"Gli sgabelli sono tutti occupati: ti do l'ordine da asporto (take away). Mangialo a un tavolo da picnic qui fuori: la bussola ti ci porta.",
+      buttons:[{ label:"Take away, thank you!", cls:"primary", act:()=>{} }] }); give(); }
+  catch(e){ toast("\u{1F961} All the stools are taken: you take it away!",4800); setTimeout(give,1500); }
 }
 function cafeResit(){ const P=CAFE_PICK; if(P.seated){ P.seated=false; _cafeSit(); } }
 /* in piedi accanto allo sgabello, dalla parte dei clienti (fuori dal suo solido) */
