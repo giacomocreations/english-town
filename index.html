@@ -75246,10 +75246,15 @@ const LOOK_SHOES=[
      wellies (verdi)   da pioggia, lucidi, piu' larghi in cima, bordino e linguetta
    ⚠️ Materiali PROPRI (non _coatMat): lo stivale si butta con
    dispose(false,true), e i materiali della cache sono di tutti. */
+/* v602 (Giacomo: «gli stivali sono un cilindro sopra le scarpe di prima,
+   devono essere un corpo unico, e sono troppo larghi rispetto alla gamba
+   della ragazza»). Piu' aderenti (gap/flare piu' piccoli), e il PIEDE e'
+   rivestito dallo stesso materiale del gambale (bootFoot): non si vede piu'
+   la scarpa da ginnastica sotto. */
 const BOOT_STY={
-  riding: { h:0.86, gap:0.007, flare:0.04, sl:0.16, spec:0.34, pw:46 },
-  buckle: { h:0.70, gap:0.008, flare:0.06, sl:0.14, spec:0.14, pw:22 },
-  wellies:{ h:0.64, gap:0.010, flare:0.18, sl:0.05, spec:0.60, pw:90 },   // gomma: un tubo dritto, non segue le pieghe
+  riding: { h:0.86, gap:0.004, flare:0.015, sl:0.16, spec:0.34, pw:46 },
+  buckle: { h:0.70, gap:0.005, flare:0.03, sl:0.14, spec:0.14, pw:22 },
+  wellies:{ h:0.64, gap:0.006, flare:0.08, sl:0.05, spec:0.60, pw:90 },   // gomma: un tubo dritto, non segue le pieghe
 };
 function dressShoes(meshes,kind,hex,holder){
   if(!meshes) return false;
@@ -75257,9 +75262,23 @@ function dressShoes(meshes,kind,hex,holder){
   old.forEach(m=>{ try{ const i=holder?holder.indexOf(m):-1; if(i>=0) holder.splice(i,1); m.dispose(false,true); }catch(e){} });
   if(old.length) try{ _octDirty(); }catch(e){}
   meshes.__boots=[];
-  if(kind!=="boots" || !hex) return old.length>0;
-  const tube=meshes.find(m=>m.__tube && m.__tube.meshes && m.__tube.meshes.some(x=>x.isEnabled()));
-  if(tube) return old.length>0;
+  /* v602: il pantalone schiacciato dentro lo stivale torna com'era a OGNI
+     giro, PRIMA di tutto: anche quando si torna alle trainers (prima restava
+     stretto e alla caviglia si vedeva la pelle) */
+  let unsq=false; meshes.forEach(m=>{ if(m.__bootSq){ try{ m.setVerticesData(BABYLON.VertexBuffer.PositionKind,m.__bootSq,true); }catch(e){} m.__bootSq=null; unsq=true; } });
+  if(kind!=="boots" || !hex) return old.length>0 || unsq;
+  /* v602 (Giacomo: «con i joggers gli stivali non vengono messi, vedo sempre
+     le trainers»). Prima, coi pantaloni disegnati, lo stivale non si faceva
+     affatto e restava la scarpa da ginnastica tinta. Ora:
+     · joggers e cargo: i pantaloni vanno DENTRO lo stivale (il gambale si
+       misura anche sul pantalone, e lo avvolge);
+     · trousers e smart: il pantalone sta SOPRA lo stivale, come si porta:
+       del gambale si vede solo il piede (bootFoot), il resto e' sotto la stoffa. */
+  const tubeL=meshes.find(m=>m.__tube && m.__tube.meshes && m.__tube.meshes.some(x=>x.isEnabled()));
+  const tubeSty=tubeL?String(tubeL.__tube.key||"").split("|")[0]:"";
+  const tucked=(tubeSty==="joggers"||tubeSty==="cargo"), under=!!tubeL && !tucked;
+  const Ts=tucked?tubeL.__tube.meshes.filter(m=>m.isEnabled() && m.skeleton && m.getTotalVertices()>0):[];
+
   const V3=BABYLON.Vector3, VB=BABYLON.VertexBuffer, up=new V3(0,1,0);
   const Ls=meshes.filter(m=>/Casual_Legs/.test(m.name)&&m.skeleton&&m.getTotalVertices()>0),
         Fs=meshes.filter(m=>/Casual_Feet/.test(m.name)&&m.skeleton&&m.getTotalVertices()>0);
@@ -75270,8 +75289,9 @@ function dressShoes(meshes,kind,hex,holder){
   /* campioni in posa di riposo: posizione nel mondo, pesi tradotti sulle ossa
      di R, lato (osso dominante .L/.R), e se e' scarpa (la pelle della
      caviglia della ragazza sta nella mesh dei piedi, ma e' gamba) */
-  const S=[];
+  const S=[], FT=[];                     // FT: i triangoli della scarpa (indici in S), per il piede dello stivale
   [].concat(Ls,Fs).forEach(m=>{ const skm=m.skeleton; _botRest(skm); m.computeWorldMatrix(true);
+    const s0=S.length, isTube=Ts.indexOf(m)>=0;
     const Wm=m.getWorldMatrix(), lp=m.getPositionData(true,false), mi=m.getVerticesData(VB.MatricesIndicesKind), mw=m.getVerticesData(VB.MatricesWeightsKind);
     if(!lp||!mi||!mw) return;
     const map=skm.bones.map(b=>sk.bones.findIndex(x=>x.name===b.name));
@@ -75279,7 +75299,8 @@ function dressShoes(meshes,kind,hex,holder){
     for(let v=0;v<lp.length/3;v++){ let d=0,w=-1; for(let k=0;k<4;k++) if(mw[4*v+k]>w){ w=mw[4*v+k]; d=mi[4*v+k]; }
       const nm=skm.bones[d]?skm.bones[d].name:"", side=/\.L$/.test(nm)?1:(/\.R$/.test(nm)?-1:0);
       S.push({ p:V3.TransformCoordinates(new V3(lp[3*v],lp[3*v+1],lp[3*v+2]),Wm),
-               mi:[0,1,2,3].map(k=>Math.max(0,map[mi[4*v+k]])), mw:[0,1,2,3].map(k=>mw[4*v+k]), side, shoe }); } });
+               mi:[0,1,2,3].map(k=>Math.max(0,map[mi[4*v+k]])), mw:[0,1,2,3].map(k=>mw[4*v+k]), side, shoe, tube:isTube }); }
+    if(shoe){ const I=m.getIndices(); if(I) for(let t=0;t<I.length;t+=3) FT.push([s0+I[t],s0+I[t+1],s0+I[t+2]]); } });
   _botRest(sk); R.computeWorldMatrix(true);
   const W=R.getWorldMatrix(), TM=sk.getTransformMatrices(R);
   const hz=q=>new V3(q.x,0,q.z), cen=l=>{ const c=new V3(0,0,0); l.forEach(s=>c.addInPlace(s.p)); return c.scale(1/Math.max(1,l.length)); };
@@ -75304,7 +75325,7 @@ function dressShoes(meshes,kind,hex,holder){
     let yl=1e9; leg.forEach(s=>{ if(s.p.y<yl) yl=s.p.y; });
     const cA=cen(leg.filter(s=>s.p.y<yl+0.04));
     let yShoe=yl; shoe.forEach(s=>{ if(hz(s.p.subtract(cA)).length()<0.08 && s.p.y>yShoe) yShoe=s.p.y; });
-    const yB=yShoe-0.03, yT=Math.max(yB+0.12, A.y+(Kn.y-A.y)*ST.h);
+    const yB=yShoe-0.045, yT=Math.max(yB+0.12, A.y+(Kn.y-A.y)*ST.h);   // v602: piu' giu', dentro il collo della scarpa: niente fessura al tallone
     const N=Math.max(8,Math.round((yT-yB)/0.018)), ys=[]; for(let j=0;j<=N;j++) ys.push(yB+(yT-yB)*j/N);
     /* l'asse: la retta che passa meglio per i baricentri della gamba (minimi
        quadrati). ⚠️ Non i baricentri uno per uno: seguivano le pieghe dei
@@ -75318,7 +75339,7 @@ function dressShoes(meshes,kind,hex,holder){
     /* i raggi: per spicchio il punto piu' lontano di gamba e collo della scarpa
        (la punta della scarpa resta fuori: oltre 8,5 cm non conta) */
     let RR=ys.map((y,j)=>{ const c=C[j], rr=new Array(NA).fill(0);
-      mine.forEach(s=>{ if(Math.abs(s.p.y-y)>0.016) return; const d=hz(s.p.subtract(c)), r=d.length(); if(r>0.085) return;
+      mine.forEach(s=>{ if(Math.abs(s.p.y-y)>0.016) return; const d=hz(s.p.subtract(c)), r=d.length(); if(r>(s.tube?0.15:0.085)) return;
         const a=Math.atan2(V3.Dot(d,D),V3.Dot(d,Fw)), i=((Math.round(a/(2*Math.PI)*NA))%NA+NA)%NA; if(r>rr[i]) rr[i]=r; });
       let cl=rr.map((r,i)=>{ let m=0; for(let k=-2;k<=2;k++) m=Math.max(m,rr[(i+k+NA)%NA]); return m; });
       const full=cl.filter(r=>r>0), avg=full.length?full.reduce((a,b)=>a+b,0)/full.length:0.045;
@@ -75337,6 +75358,11 @@ function dressShoes(meshes,kind,hex,holder){
     /* lo stivale non si stringe salendo: dal polpaccio in su scende dritto o si allarga */
     const jC=Math.round(N*0.45); for(let j=jC+1;j<=N;j++) for(let i=0;i<NA;i++) RR[j][i]=Math.max(RR[j][i],RR[j-1][i]*0.995);
     RR=RR.map((r,j)=>{ const t=j/N; return r.map(x=>(x+ST.gap)*(1+ST.flare*Math.pow(t,1.6))); });
+    /* v602: alla caviglia lo stivale si STRINGE sulla forma vera (caviglia e
+       collo della scarpa) e si raccorda al gambale in ~6 cm: prima scendeva
+       largo come il polpaccio e dietro il tallone faceva uno scalino sul piede */
+    RR=RR.map((r,j)=>{ const t=Math.max(0,Math.min(1,(ys[j]-(yShoe-0.01))/0.06)); if(t>=1) return r; const u=t*t*(3-2*t);
+      return r.map((x,i)=>{ const lo=RAW[j][i]+ST.gap+0.004; return lo+(Math.max(lo,x)-lo)*u; }); });
     const rAt=(y,a)=>{ let j=Math.round((y-yB)/(yT-yB)*N); j=Math.max(0,Math.min(N,j)); const i=((Math.round(a/(2*Math.PI)*NA))%NA+NA)%NA; return { c:C[j], r:RR[j][i] }; };
     /* pesi: i quattro campioni piu' vicini, pesati con la distanza (la piega alla caviglia e' morbida) */
     const pool=mine.filter(s=>s.p.y<yT+0.1);
@@ -75376,6 +75402,49 @@ function dressShoes(meshes,kind,hex,holder){
     const aOut=sd*Math.PI/2, aIn=-sd*Math.PI/2;                       // lato esterno / interno della gamba
     /* il gambale + l'orlo che rientra (spessore), poi la parete interna scura.
        In fondo il bordo rientra verso la scarpa: niente scalino visibile. */
+    /* v602 — IL PIEDE DELLO STIVALE. La superficie VERA della scarpa (la
+       tomaia: i triangoli di Casual_Feet sopra la suola), gonfiata di 3,5 mm
+       lungo le normali saldate, nello stesso materiale del gambale: la scarpa
+       da ginnastica sparisce sotto, e piede e gambale sono un pezzo solo. La
+       suola resta quella del modello (gomma scura per gli stivali, vedi
+       applyPlayerFit). Ogni vertice segue il piede (pesi da mk). */
+    { const ft=FT.filter(t=>t.every(i=>S[i] && S[i].side===sd));
+      if(ft.length){ let yMin=1e9; const fc=new V3(0,0,0); let nf=0;
+        ft.forEach(t=>t.forEach(i=>{ const p=S[i].p; if(p.y<yMin) yMin=p.y; fc.addInPlace(p); nf++; })); fc.scaleInPlace(1/Math.max(1,nf));
+        const ySole=yMin+0.021, q=0.0006, key=p=>Math.round(p.x/q)+","+Math.round(p.y/q)+","+Math.round(p.z/q), NS=new Map();
+        ft.forEach(t=>{ const a=S[t[0]].p, b=S[t[1]].p, c=S[t[2]].p, n=V3.Cross(b.subtract(a),c.subtract(a));
+          t.forEach(i=>{ const k=key(S[i].p), o=NS.get(k); if(o) o.addInPlace(n); else NS.set(k,n.clone()); }); });
+        /* il verso delle normali: in fuori (dal centro del piede) */
+        let out=0; NS.forEach((n,k)=>{ const [x,y,z]=k.split(",").map(v=>Number(v)*q); out+=V3.Dot(n,new V3(x,y,z).subtract(fc)); });
+        const sg=out<0?-1:1, P=[], T=[], idx=new Map();
+        const vtx=i=>{ const sp=S[i].p, k=key(sp); let n=idx.get(k); if(n!==undefined) return n;
+          const nn=(NS.get(k)||new V3(0,1,0)).scale(sg); if(nn.length()<1e-9) nn.copyFromFloats(0,1,0); nn.normalize();
+          n=P.length; idx.set(k,n); P.push(sp.add(nn.scale(0.0035))); return n; };
+        ft.forEach(t=>{ if(t.some(i=>S[i].p.y<ySole)) return; T.push([vtx(t[0]),vtx(t[1]),vtx(t[2])]); });
+        if(T.length>8) mk(P,T,matMain,"bootFoot"); } }
+    /* coi pantaloni lunghi sopra (trousers, smart) il gambale non si vede: solo il piede */
+    if(under) return;
+    /* joggers e cargo DENTRO lo stivale: la stoffa sotto l'orlo dello stivale
+       si stringe fin dentro il gambale (posizioni originali in __bootSq,
+       rimesse all'inizio di dressShoes). Sopra l'orlo il pantalone resta com'e': fa lo
+       sbuffo, come un pantalone infilato davvero. */
+    if(tucked) Ts.forEach(m=>{ try{
+      const VBp=VB.PositionKind, P0=m.getVerticesData(VBp), mi=m.getVerticesData(VB.MatricesIndicesKind), mw=m.getVerticesData(VB.MatricesWeightsKind);
+      if(!P0||!mi||!mw) return; const skm=m.skeleton; _botRest(skm); m.computeWorldMatrix(true);
+      const lp=m.getPositionData(true,false), Wm=m.getWorldMatrix(), TMm=skm.getTransformMatrices(m), a16=new Float32Array(16);
+      let P1=null;
+      for(let v=0;v<lp.length/3;v++){ let d=0,w=-1; for(let k=0;k<4;k++) if(mw[4*v+k]>w){ w=mw[4*v+k]; d=mi[4*v+k]; }
+        const bn=skm.bones[d]?skm.bones[d].name:""; if(!(sd>0?/\.L$/.test(bn):/\.R$/.test(bn))) continue;
+        const wp=V3.TransformCoordinates(new V3(lp[3*v],lp[3*v+1],lp[3*v+2]),Wm); if(wp.y>yT-0.004 || wp.y<yB-0.06) continue;
+        const g0=rAt(Math.max(yB,wp.y),0), c=g0.c, dd=hz(wp.subtract(c)), r=dd.length(); if(r<1e-5) continue;
+        const ang=Math.atan2(V3.Dot(dd,D),V3.Dot(dd,Fw)), rb=rAt(Math.max(yB,wp.y),ang).r-0.006; if(r<=rb) continue;
+        const nw=new V3(c.x,wp.y,c.z).add(dd.scale(Math.max(0.01,rb)/r));
+        a16.fill(0); for(let k=0;k<4;k++){ const ww=mw[4*v+k]; if(!ww) continue; for(let q2=0;q2<16;q2++) a16[q2]+=TMm[mi[4*v+k]*16+q2]*ww; }
+        const l=V3.TransformCoordinates(nw,BABYLON.Matrix.FromArray(a16).multiply(Wm).invert());
+        if(!P1){ P1=Float32Array.from(P0); if(!m.__bootSq) m.__bootSq=Float32Array.from(P0); }
+        P1[3*v]=l.x; P1[3*v+1]=l.y; P1[3*v+2]=l.z; }
+      if(P1) m.setVerticesData(VBp,P1,true);
+    }catch(e){ console.warn("[stivali] pantalone dentro",e); } });
     const rows=[[yB-0.004,-ST.gap-0.004]].concat(ys.map(y=>[y,0])); rows.push([yT+0.002,-0.002]); rows.push([yT+0.002,-0.006]);
     loft(rows,matMain);
     loft([[yT+0.002,-0.006],[yT-0.04,-0.007]],matIn,null,null,"bootIn");
