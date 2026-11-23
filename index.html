@@ -782,6 +782,14 @@
     background:rgba(251,247,236,.94);color:var(--ink);font-size:20px;cursor:pointer;line-height:1;
     box-shadow:0 4px 14px rgba(20,30,40,.18);}
   #map-btn:hover{background:#fff;}
+  /* v604: 🚗 chiama l'auto (come un taxi) — accanto agli altri, solo quando serve */
+  #car-btn{position:fixed;z-index:15;top:52px;right:214px;width:42px;height:42px;border-radius:12px;border:none;display:none;
+    background:rgba(251,247,236,.94);color:var(--ink);font-size:20px;cursor:pointer;line-height:1;
+    box-shadow:0 4px 14px rgba(20,30,40,.18);}
+  #car-btn:hover{background:#fff;}
+  #car-btn.coming{background:#f2b23a;animation:carBtnPulse 1.2s ease-in-out infinite;}
+  @keyframes carBtnPulse{50%{transform:scale(1.08);}}
+  body.veh #car-btn{display:none !important;}
   #map-ov{position:fixed;inset:0;z-index:55;display:none;align-items:center;justify-content:center;padding:18px;
     background:rgba(18,27,34,.62);}
   #map-ov.on{display:flex;}
@@ -1155,6 +1163,7 @@
 <button id="trickBtn" title="Airwalk on the quarter pipe (SPACE)" style="display:none">🤸</button>
 <button id="povBtn" aria-pressed="false" title="First person">👁️</button>
 <button id="map-btn" title="Town map (M)">🗺️</button>
+<button id="car-btn" title="Call your car · Chiama la tua auto">🚗</button>
 <div id="kbhelp" title="How to move · Come muoversi">
   <span class="kb-help-q">❓ How to move?</span>
   <span><b>WASD</b> move</span>
@@ -66650,12 +66659,13 @@ function tlAutoInside(on){
    (in inglese, Giacomo) che dice dov'e'. */
 let AUTO_BOOK=null;
 function tlAutoWhere(id){ const sp=tlAutoSpot(id);
+  if(AUTO.pickupFrom && AUTO.pickupFrom.id===id) return "in the street, where you called it";   // v604
   return sp.x>0?"in the east car park, near the park and City Life Plaza":"in the west car park, near the TechLab"; }
 function tlAutoAway(id){ const F=tlAutoF(id); return !!(F.spot && Math.hypot(F.spot.x-F.home.x,F.spot.z-F.home.z)>1); }
 function tlAutoBookInit(){
   if(AUTO_BOOK) return; AUTO_BOOK={};
   Object.keys(AUTO_FLEET).forEach(id=>{ const F=AUTO_FLEET[id];
-    AUTO_BOOK[id]=addInteract({ id:id+"_book", area:"town", radius:3.4,
+    AUTO_BOOK[id]=addInteract({ id:id+"_book", area:"town", radius:3.4, label:F.name,   // v604: nel selettore il nome, non «book»
       pos:()=>{ const s=tlAutoSpot(id); return new BABYLON.Vector3(s.x,0,s.z); },
       prompt:()=>{
         if(id==="turbo") return tlTurboUnlocked()?'\u{1F3CE}️ Press <b>P</b>: book <b>The Beast</b>, the self-driving supercar'
@@ -66664,7 +66674,7 @@ function tlAutoBookInit(){
                                :'\u{1F697} <b>Nelson 1</b> · TechLab prototype — finish the TechLab quest to use it'; },
       interact:()=>tlAutoBook(id) });
     /* il cartello allo stallo di casa: solo quando l'auto e' altrove */
-    AUTO_BOOK[id+"_where"]=addInteract({ id:id+"_where", area:"town", radius:3.0,
+    AUTO_BOOK[id+"_where"]=addInteract({ id:id+"_where", area:"town", radius:3.0, label:F.name+" \u2192 ?",
       pos:()=>tlAutoAway(id)?new BABYLON.Vector3(F.home.x,0,F.home.z):new BABYLON.Vector3(0,-500,0),
       prompt:()=>(id==="turbo"?'\u{1F3CE}️ ':'\u{1F697} ')+'<b>'+F.name+'</b> is not here: it\'s parked '+tlAutoWhere(id)+'. Go there and press <b>P</b>!',
       interact:()=>toast((id==="turbo"?'\u{1F3CE}️ ':'\u{1F697} ')+F.name+" is parked "+tlAutoWhere(id)+". Go there and press P!",4200) });
@@ -66753,14 +66763,109 @@ function tlFleetWarm(id){
   ms.forEach(m=>{ const mt=m.material; if(mt && mt.forceCompilation){ try{ mt.forceCompilation(m); }catch(e){} } });
 }
 setTimeout(()=>{ tlFleetPark("turbo",0); tlFleetPark("auto1",0); },1500);
+/* =====================================================================
+   v604 — 🚗 CHIAMARE L'AUTO COME UN TAXI (Giacomo, 23 nov: «quando si
+   sbloccano le macchine, si possono chiamare anche dal punto della strada
+   in cui si e', o dal punto piu' vicino alla strada: si prenotano come se
+   fosse un Uber. Rimane sempre la possibilita' di andare nei parcheggi»).
+   · Il bottone 🚗 (in alto a destra, accanto alla mappa) c'e' in citta' per
+     chi ha sbloccato almeno un'auto. Con due auto si sceglie quale.
+   · L'auto esce DA SOLA dal suo stallo, entra nel traffico (aspetta il varco
+     come sempre) e fa il giro fino al punto della strada piu' vicino a te
+     (tlAutoRoute: lo stesso calcolo delle mete), poi accosta dal tuo lato.
+     Se la strada piu' vicina e' a piu' di 30 m: «avvicinati a una strada».
+   · Arrivata, la bussola la indica; ci si sale con P, come nello stallo, e
+     da li' si va dove si vuole (anche il giro turistico, che finisce nello
+     stallo di casa). Se non sali entro 2 minuti, o ti allontani, torna a
+     casa da sola.
+   · AUTO.busy="call" mentre arriva (una sola auto per volta, come sempre);
+     AUTO.pickupFrom = il giro e il punto da cui ripartire dopo la salita.
+   ===================================================================== */
+const AUTO_CALL={ id:null, phase:"", t0:0 };
+function tlCallCars(){ const a=[]; try{ if(tlAutoUnlocked()) a.push("auto1"); if(tlTurboUnlocked()) a.push("turbo"); }catch(e){} return a; }
+function tlCallBtnSync(){ const b=document.getElementById("car-btn"); if(!b) return;
+  let ok=false; try{ ok=!loginPending && area==="town" && !AUTO.on && !(typeof SKY!=="undefined" && SKY.on) && tlCallCars().length>0; }catch(e){}
+  b.style.display=ok?"block":"none";
+  b.classList.toggle("coming", AUTO_CALL.phase==="drive" || AUTO_CALL.phase==="wait");
+  /* chi non sale: dopo 2 minuti, o a piu' di 70 m, l'auto torna a casa */
+  if(AUTO_CALL.phase==="wait" && !AUTO.on){ const F=AUTO_FLEET[AUTO_CALL.id], sp=F&&F.spot;
+    const far=sp && (area!=="town" || Math.hypot(player.position.x-sp.x,player.position.z-sp.z)>70);
+    if(far || performance.now()-AUTO_CALL.t0>120000) tlCallSendHome(far?"you walked away":"you didn't get in"); } }
+setInterval(()=>{ try{ tlCallBtnSync(); }catch(e){} },1000);
+(function(){ const b=document.getElementById("car-btn"); if(b) b.onclick=e=>{ e.stopPropagation(); try{ tlCallMenu(); }catch(err){ console.warn("[call]",err); } }; })();
+function tlCallMenu(){
+  const ids=tlCallCars(); if(!ids.length) return;
+  if(AUTO_CALL.phase==="drive"){ toast("\u{1F697} "+AUTO_FLEET[AUTO_CALL.id].name+" is on its way: wait by the road! \u00b7 Sta arrivando: aspettala sul bordo della strada.",4500); return; }
+  if(AUTO_CALL.phase==="wait"){ const F=AUTO_FLEET[AUTO_CALL.id];
+    try{ NAV.target=new BABYLON.Vector3(F.spot.x,0,F.spot.z); NAV.label=F.name; }catch(e){}
+    toast("\u{1F697} "+F.name+" is waiting for you: follow the compass and press P! \u00b7 Ti aspetta: segui la bussola e premi P.",4500); return; }
+  if(ids.length===1){ tlAutoCall(ids[0]); return; }
+  DialogueBox.open({ icon:"\u{1F697}", name:"Call a car", sub:"Like a taxi", autoSpeak:false,
+    text:"Which car do you want to call?",
+    italian:"Quale auto chiami? Arriva da sola sulla strada pi\u00f9 vicina a te. Puoi sempre anche andare a prenderla nel parcheggio.",
+    buttons:[{ label:"\u{1F697} Nelson 1", cls:"primary", act:()=>tlAutoCall("auto1") },
+             { label:"\u{1F3CE}\uFE0F The Beast", cls:"primary", act:()=>tlAutoCall("turbo") },
+             { label:"Not now", cls:"ghost" }] });
+}
+function tlAutoCall(id){
+  const F=AUTO_FLEET[id]; if(!F) return;
+  if(id==="turbo" ? !tlTurboUnlocked() : !tlAutoUnlocked()) return;
+  if(AUTO.on) return;
+  if(area!=="town"){ toast("\u{1F697} Go outside first: "+F.name+" can only come to a street. \u00b7 Prima esci: l'auto arriva solo in strada."); return; }
+  if(!townOpen()){ toast("\u{1F319} "+F.name+" sleeps at night. Come back in the morning!"); return; }
+  if(AUTO.busy){ toast("\u{1F697} "+tlAutoName()+" is still driving \u2014 wait a moment and call again! \u00b7 Aspetta un attimo e richiama."); return; }
+  if(!F.car){ toast("\u{1F697} "+F.name+" isn't ready yet: try again in a moment."); return; }
+  const p=player.position, sp=tlAutoSpot(id);
+  if(Math.hypot(sp.x-p.x,sp.z-p.z)<16){ try{ NAV.target=new BABYLON.Vector3(sp.x,0,sp.z); NAV.label=F.name; }catch(e){}
+    toast("\u{1F697} "+F.name+" is right here: walk to it and press P! \u00b7 \u00c8 qui vicino: vai all'auto e premi P."); return; }
+  tlAutoUse(id);
+  const at={ x:p.x, z:p.z }, R=tlAutoRoute(at,null);
+  if(!R || R.dEnd>30){ toast("\u{1F6A7} No road near here! Walk to a street and call again. \u00b7 Qui non c'\u00e8 una strada: avvicinati a una via e richiama.",5200); return; }
+  AUTO.busy="call"; AUTO_CALL.id=id; AUTO_CALL.phase="drive"; AUTO_CALL.t0=performance.now();
+  toast("\u{1F697} "+F.name+" is coming! Wait by the road. \u00b7 Sta arrivando: aspettala sul bordo della strada.",5200);
+  try{ TTS.say(F.name+" is coming! Please wait by the road.",{ gender:"f" }); }catch(e){}
+  const C=AUTO.car, tc=C.tc=C.tc||{ root:C.root, s:0, v:11, cv:0, near:false, halt:0, auto:true };
+  tc.cv=0; tc.fast=false; tc.canOvt=false;
+  const L=R.L, E=L[R.ei], E2=L[(R.ei+2)%L.length], ux=E2[0]-E[0], uz=E2[1]-E[1], ul=Math.hypot(ux,uz)||1, root=tc.root;
+  const A=new BABYLON.Vector3(root.position.x,0,root.position.z), P3=new BABYLON.Vector3(E[0],0,E[1]);
+  tlAutoWaitGap([A, A.add(P3).scale(0.5), P3], ()=>{ if(AUTO_CALL.phase!=="drive" || AUTO.on) return;
+    tlAutoJoinSeen(tc);
+    tlAutoCurve(A, A.add(new BABYLON.Vector3(0,0,-3.2)), P3.add(new BABYLON.Vector3(-ux/ul*4.5,0,-uz/ul*4.5)), P3, 3600, true, ()=>{
+      if(AUTO_CALL.phase!=="drive") return;
+      _tcBind(tc,L); tc.s=L.L[R.ei]; tc.cv=3; tc.v=13; tc.stopS=L.L[R.di]; tc.arrived=false; tc.manual=false;
+      tc.onArrive=()=>tlAutoPullOver(tc,"pickup");
+      if(tc.lift==null){ try{ carGroundRig(tc); }catch(e){} }
+      if(_trafficCars.indexOf(tc)<0) _trafficCars.push(tc);
+      setTimeout(()=>{ try{ if(!tc.wh) tc.wh=carWheelsRig(tc); }catch(e){} },60); }); });
+}
+/* arrivata e accostata: aspetta. Da qui si sale con P (AUTO_BOOK: la sua posizione e' F.spot) */
+function tlCallArrived(tc){
+  const C=AUTO.car, F=tlAutoF(); if(!C) return;
+  tlAutoGroundAt(); tc.v=11;
+  F.spot={ x:C.root.position.x, z:C.root.position.z };
+  AUTO.pickupFrom={ id:F.id, loop:tc.loop, i:_tcSeg(tc,(tc.s+10)%tc.tot) };
+  AUTO.busy=""; AUTO_CALL.phase="wait"; AUTO_CALL.t0=performance.now();
+  try{ NAV.target=new BABYLON.Vector3(F.spot.x,0,F.spot.z); NAV.label=F.name; }catch(e){}
+  toast("\u{1F697} "+F.name+" is here! Walk to the car and press P. \u00b7 \u00c8 arrivata: vai all'auto e premi P.",6500);
+  try{ TTS.say("Your car is here!",{ gender:"f" }); }catch(e){}
+}
+function tlCallSendHome(why){
+  const id=AUTO_CALL.id; AUTO_CALL.phase=""; AUTO.pickupFrom=null;
+  if(!id || AUTO.on) return; tlAutoUse(id);
+  try{ if(NAV.label===AUTO_FLEET[id].name){ NAV.target=null; NAV.label=""; } }catch(e){}
+  try{ toast("\u{1F697} "+AUTO_FLEET[id].name+" is going back to the car park ("+why+"). Call it again when you need it!",4500); }catch(e){}
+  try{ tlAutoReturn(); }catch(e){ try{ tlAutoParkNow(); }catch(e2){} }
+}
 function tlAutoBook(id){
   id=id||"auto1"; const F=tlAutoF(id);
   if(id==="turbo"){ if(!tlTurboUnlocked()){ const N=tlTurboNeed();
       toast("\u{1F512} The Beast is for champions: "+N.en+" to ride it · Per guidarla devi "+N.it,5200); return; } }
   else if(!tlAutoUnlocked()){ toast("\u{1F512} Nelson 1 is a TechLab prototype: finish the TechLab quest and it's yours!"); return; }
   if(AUTO.on){ return; }
-  if(AUTO.busy){ toast("\u{1F697} "+tlAutoName()+" is still driving back to the car park — wait a moment!"); return; }
+  if(AUTO.busy){ toast(AUTO.busy==="call"?"\u{1F697} "+tlAutoName()+" is on its way to you — wait by the road!"
+                                          :"\u{1F697} "+tlAutoName()+" is still driving back to the car park — wait a moment!"); return; }
   if(!townOpen()){ toast("\u{1F319} "+F.name+" sleeps at night. Come back in the morning!"); return; }
+  if(AUTO_CALL.phase==="wait") AUTO_CALL.phase="ride";            // v604: chiamata e salita
   tlAutoStart("book",id);
 }
 /* ---- il giro: salire ---- */
@@ -67185,6 +67290,14 @@ function tlAutoTourAsk(){
 }
 function tlAutoTour(n){
   if(!AUTO.on) return;
+  /* v604: chiamata in strada -> il giro parte da li' e finisce nello stallo di casa */
+  if(AUTO.pickupFrom){ const Lp=AUTO.pickupFrom.loop, H=tlAutoHome(); _loopMeta(Lp);
+    const di=Lp.__find(H.x-7,AUTO_LANE_Z,1,0,2.5), ei=AUTO.pickupFrom.i;
+    if(di<0){ try{ tlAutoPanelDraw("From here I can't do the tour. Tell me a place!"); }catch(e){} tlAutoAsk(); return; }
+    const st={ x:H.x, z:H.z }, first=(Lp.L[di]-Lp.L[ei]+Lp.tot)%Lp.tot;
+    const R={ L:Lp, ei, di, len:Lp.tot, at:st, dEnd:0, stall:st, tour:n, score:0 };
+    AUTO.tour={ n, dist:0, lastS:null, T:first+(n-1)*Lp.tot, lap:1, said:{}, sayT:0 };
+    tlAutoGo({ name:"a tour of the town", at:()=>st }, R); return; }
   const sp=tlAutoSpot(), st={ x:sp.x, z:sp.z };
   let best=null;
   TRAFFIC_LOOPS.forEach(L=>{ _loopMeta(L);
@@ -67311,6 +67424,7 @@ function tlAutoRoute(at,from){
   TRAFFIC_LOOPS.forEach(L=>{ _loopMeta(L);
     let ei=-1;
     if(from && from.loop===L) ei=from.i;
+    else if(!from && AUTO.pickupFrom) ei=(AUTO.pickupFrom.loop===L)?AUTO.pickupFrom.i:-1;   // v604: chiamata, ferma in strada
     else if(!from){ const sp=tlAutoSpot(); ei=L.__find(sp.x+5,AUTO_LANE_Z,1,0,2.5); }   // davanti allo stallo dov'e' (a casa: -34)
     if(ei<0) return;
     let di=-1, dd=1e9; for(let i=0;i<L.length;i++){ const d=Math.hypot(L[i][0]-at.x,L[i][1]-at.z); if(d<dd){ dd=d; di=i; } }
@@ -67356,13 +67470,17 @@ function tlAutoGo(P,Rpre){
   const tc=AUTO.car.tc, L=R.L, E=L[R.ei], E2=L[(R.ei+2)%L.length];
   const ux=E2[0]-E[0], uz=E2[1]-E[1], ul=Math.hypot(ux,uz)||1, root=tc.root;
   const A=new BABYLON.Vector3(root.position.x,0,root.position.z), P3=new BABYLON.Vector3(E[0],0,E[1]);
+  /* v604: chiamata come un taxi -> riparte dal bordo della strada, in avanti
+     (dallo stallo invece si esce in retromarcia verso il viale) */
+  const fromRoad=!!AUTO.pickupFrom, hh=tlAutoH(), A1=fromRoad?A.add(new BABYLON.Vector3(Math.sin(hh)*3.5,0,Math.cos(hh)*3.5)):A.add(new BABYLON.Vector3(0,0,-3.2));
+  if(fromRoad){ AUTO.pickupFrom=null; AUTO_CALL.phase=""; tlAutoF().spot=null; }
   AUTO.merging=true;
   /* v501 (Giacomo: «quando si mette nel traffico non guarda se arrivano
      altre macchine, e la intersecano»): prima aspetta il varco, poi entra
      restando in _trafficCars (manual): chi arriva la vede e frena. */
   tlAutoWaitGap([A, A.add(P3).scale(0.5), P3], ()=>{ if(!AUTO.car || AUTO.phase!=="drive") return;
   tlAutoJoinSeen(tc);
-  tlAutoCurve(A, A.add(new BABYLON.Vector3(0,0,-3.2)), P3.add(new BABYLON.Vector3(-ux/ul*4.5,0,-uz/ul*4.5)), P3, 3600, true, ()=>{
+  tlAutoCurve(A, A1, P3.add(new BABYLON.Vector3(-ux/ul*4.5,0,-uz/ul*4.5)), P3, 3600, true, ()=>{
     if(!AUTO.car) return;
     _tcBind(tc,L); tc.s=L.L[R.ei]; tc.cv=3; tc.stopS=R.tour?null:L.L[R.di]; tc.arrived=false; tc.manual=false;   // v503: nel giro turistico la fermata si mette all'ultimo giro (tlAutoTourTick)
     tc.onArrive=R.stall?()=>tlAutoStallIn(tc,R.stall):()=>tlAutoPullOver(tc,"drop");
@@ -67441,7 +67559,7 @@ function tlAutoSpin(r1,cb){ const root=AUTO.car.root, tc=AUTO.car.tc, r0=root.ro
 function tlAutoPullOver(tc,why){
   if(why==="drop" && AUTO.phase!=="drive") return;
   tc.manual=true;                                  // il traffico non la muove, ma la vede ancora
-  const root=tc.root, at=(why==="drop"&&AUTO.route)?AUTO.route.at:null, h=root.rotation.y-TRAFFIC_YAW;
+  const root=tc.root, at=(why==="drop"&&AUTO.route)?AUTO.route.at:(why==="pickup"?{ x:player.position.x, z:player.position.z }:null), h=root.rotation.y-TRAFFIC_YAW;
   const nx=Math.cos(h), nz=-Math.sin(h);           // la destra dell'auto
   let side=-1; if(at) side=((at.x-root.position.x)*nx+(at.z-root.position.z)*nz)>=0?1:-1;
   tc.side=side;
@@ -67457,7 +67575,7 @@ function tlAutoPullOver(tc,why){
       /* v515 (Giacomo: «al cinema l'avatar scende dentro l'edificio»): fra
          l'auto e il muro deve restare il posto per scendere (davanti al
          cinema il marciapiede e' stretto: a 2,4 m non restava niente) */
-      if(why==="drop"){ const x=cx+nx*side*(hw+0.95), z=cz+nz*side*(hw+0.95);
+      if(why==="drop"||why==="pickup"){ const x=cx+nx*side*(hw+0.95), z=cz+nz*side*(hw+0.95);
         try{ if(insideSolid(x,z,0.45)) return false; }catch(e){} }
       return true; };
     for(const o of [2.4,2.0,1.6,1.2,0.9]){ off=o; if(free(o)) break; } }
@@ -67470,7 +67588,7 @@ function tlAutoPullOver(tc,why){
       /* fuori dalla corsia: ora puo' uscire dal traffico */
       const k=_trafficCars.indexOf(tc); if(k>=0) _trafficCars.splice(k,1);
       TRAFFIC_ZONES.forEach(Z=>{ if(Z.h===tc) Z.h=null; });
-      if(why==="drop") tlAutoDrop(); else if(why==="home") tlAutoParkIn(tc); } });
+      if(why==="drop") tlAutoDrop(); else if(why==="home") tlAutoParkIn(tc); else if(why==="pickup") tlCallArrived(tc); } });
 }
 /* v517: scendere = prima si alza la portiera, poi si esce (la portiera si
    richiude da sola dopo, vedi tlAutoEnd) */
@@ -67585,7 +67703,8 @@ function tlAutoParkIn(tc){
 function tlAutoParkNow(){ const C=AUTO.car; if(!C) return; const tc=C.tc;
   const k=_trafficCars.indexOf(tc); if(k>=0) _trafficCars.splice(k,1);
   TRAFFIC_ZONES.forEach(Z=>{ if(Z.h===tc) Z.h=null; });
-  const H0=tlAutoHome(); tc.manual=true; tc.cv=0; C.root.position.x=H0.x; C.root.position.z=H0.z; C.root.rotation.y=Math.PI+TRAFFIC_YAW; tlAutoGroundAt(); AUTO.busy=""; AUTO.inStall=false; AUTO.fromStall=false; tlAutoF().spot=null; }
+  const H0=tlAutoHome(); tc.manual=true; tc.cv=0; C.root.position.x=H0.x; C.root.position.z=H0.z; C.root.rotation.y=Math.PI+TRAFFIC_YAW; tlAutoGroundAt(); AUTO.busy=""; AUTO.inStall=false; AUTO.fromStall=false; tlAutoF().spot=null;
+  AUTO.pickupFrom=null; AUTO_CALL.phase=""; }
 /* l'auto poggiata sul suolo vero di dove si trova (stallo, marciapiede accostato) */
 function tlAutoGroundAt(Cx){ const C=Cx||AUTO.car; if(!C) return;
   let gy=0; try{ gy=_pedGroundY(C.root.position.x,C.root.position.z)||0; }catch(e){}
@@ -68040,6 +68159,8 @@ function tlAutoEnd(cb,abort,keepCar){
     try{ promptEl.style.display=""; }catch(e){}
     try{ setLabelsVisible(area); }catch(e){}
     AUTO.on=false; AUTO.pov=false; AUTO.phase="";
+    /* v604: chiamata, saliti e scesi senza partire: l'auto resta li' ad aspettare */
+    if(AUTO.pickupFrom){ AUTO_CALL.phase="wait"; AUTO_CALL.t0=performance.now(); }
     document.body.classList.remove("veh","auto");
     /* v517: la portiera aperta per scendere si richiude, a scena di nuovo visibile */
     try{ const Cd=AUTO.car; if(Cd && Cd.door && Cd.door.a>0.01) setTimeout(()=>{ try{ tlDoorAnim(Cd,0,900); }catch(e){} },1100); }catch(e){}
