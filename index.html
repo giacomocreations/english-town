@@ -476,6 +476,7 @@
   #why-help .wh-big small{display:block;font-weight:600;font-size:13px;opacity:.92;margin-top:2px;}
   #why-help .wh-big.alt{background:#3d5a80;}
   #why-help .wh-big.off{background:#b9b2a4;cursor:default;}
+  #why-help .wh-big.alt2{background:#5a6b48;}
   #why-help .wh-close{border:none;border-radius:999px;padding:9px 18px;font:inherit;font-weight:800;cursor:pointer;
     background:#1d2a32;color:#fff;align-self:center;margin-top:4px;}
   #quest-hud #qh-strand{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--plum);}
@@ -32056,11 +32057,31 @@ const MECH={
     /* v300: un item puo' dire come lo si chiede (find: «Leo's baby sister»
        invece di «Leo's baby») */
     const NM=e=>(e.find||(ART+e.en));
-    function showObj(){ const f=targets[st.idx];
+    /* v604 (Giacomo, 23 nov: «oggi in classe, a due alunni, nel Find del
+       vocabulary mancava l'oggetto da cercare»). Piu' meccaniche tolgono
+       oggetti dalla scena (spesa al Corner Shop e al Market, banchi della
+       Town School rimescolati a ogni ingresso, attrezzi del campo, il
+       carrello…): se uno di quelli era il bersaglio, lo si cercava per
+       niente. Ora il bersaglio si CONTROLLA (subito e ogni secondo e mezzo):
+       se non c'e' piu' — spento, nascosto, distrutto — si cambia con un
+       altro oggetto che c'e' davvero e che non e' gia' stato chiesto. */
+    const present=e=>{ try{ if(!e || e.__off) return false;
+        const ms=(e.__facings||[e.mesh]).filter(Boolean); if(!ms.length) return true;   // niente mesh = punto fisso: c'e'
+        return ms.some(m=>!(m.isDisposed && m.isDisposed()) && m.isEnabled()); }catch(_){ return true; } };
+    function heal(){ const t=targets[st.idx]; if(!t || present(t)) return false;
+      const cand=pool.filter(e=>present(e) && targets.indexOf(e)<0 && !targets.some(x=>x.en===e.en));
+      if(!cand.length) return false;
+      const nt=pick(cand,1)[0]; console.warn("[find] l'oggetto da cercare non c'era:",t.en,"->",nt.en);
+      targets[st.idx]=nt; st.wrong=0; return true; }
+    { let hT=0; const ob=scene.onBeforeRenderObservable.add(()=>{ const now=performance.now(); if(now<hT) return; hT=now+1500;
+        if(Quest.state!==st) return; if(heal()) showObj(); });
+      Quest.reg(()=>{ try{ scene.onBeforeRenderObservable.remove(ob); }catch(e){} }); }
+    function showObj(){ heal(); const f=targets[st.idx];
       questHudSet("lessico", HOBJ("Find: <b>"+NM(f)+"</b> &nbsp;("+(st.idx+1)+"/"+n+")","Trova: <b>"+NM(f)+"</b> &nbsp;("+(st.idx+1)+"/"+n+")"), Quest.i, Quest.total); }
     function onTap(entry){
       const target=targets[st.idx];
-      if(entry===target){ st.wrong=0; toast("✓ Right! "+NM(entry));
+      /* v604: due oggetti con lo STESSO nome (due sedie…) valgono uguale */
+      if(entry===target || (target && entry.en===target.en && !entry.find && !target.find)){ st.wrong=0; toast("✓ Right! "+NM(entry));
         st.idx++;
         if(st.idx>=n){ try{ if(Quest.unit&&Quest.unit.onFound) Quest.unit.onFound(targets); }catch(e){}
           Quest.complete("🔎 Lessico completato!"); return; }
@@ -32075,11 +32096,15 @@ const MECH={
         toast(m);
       }
     }
+    const seenEn={};
     pool.forEach(entry=>{
+      /* v604: id unico anche con due oggetti dallo stesso nome (prima le due
+         sedie avevano la stessa chiave e il selettore le confondeva) */
+      const dup=seenEn[entry.en]=(seenEn[entry.en]|0)+1;
       /* etichetta = TRADUZIONE italiana, non il nome inglese: nello step
          lessico il nome inglese e' proprio la risposta da indovinare, mostrarlo
          nel selettore svuoterebbe l'esercizio. */
-      Quest.questInteract({ id:"furn_"+entry.en, area:Quest.unit.area, radius:3.2, furn:entry,
+      Quest.questInteract({ id:"furn_"+entry.en+(dup>1?"_"+dup:""), area:Quest.unit.area, radius:3.2, furn:entry,
         pos:()=>entry.pos, meshes:[entry.mesh], label:(entry.lbl||entry.it||"?"),
         prompt:'Press <b>P</b> to identify', interact:()=>onTap(entry) });
     });
@@ -34647,6 +34672,22 @@ function lessonHelp(){
    aperto sotto (tessere gia' messe, testo gia' scritto) resta com'e'.
    Non costa stelle: e' comprensione della consegna, non la risposta.
    ===================================================================== */
+/* v604: ricomincia lo step in corso (vedi WhyHelp.confirmRestart) */
+function questRestartStep(){
+  const u=Quest.unit; if(!u || !Quest.step || Quest.i<0 || Quest.i>=u.steps.length) return false;
+  const st=Quest.state||{}, back=[];
+  const grab=o=>{ if(o && typeof o==="object") ["hidden","stashed"].forEach(h=>{ if(Array.isArray(o[h])) o[h].forEach(e=>back.push(e)); }); };
+  grab(st); Object.keys(st).forEach(k=>grab(st[k]));
+  try{ u4Restock(back); }catch(e){}
+  try{ if(typeof U4_TROLLEY!=="undefined" && U4_TROLLEY.hidden) U4_TROLLEY.hidden=U4_TROLLEY.hidden.filter(e=>back.indexOf(e)<0); }catch(e){}
+  try{ if(back.length && u.stashCart) cartClear(u.stashCart()); }catch(e){}
+  try{ DialogueBox.close(); }catch(e){} try{ QModal.close(); }catch(e){}
+  const from=Quest.step.id;
+  Quest.dispose(); Quest.i--; Quest.advance();
+  toast("\u{1F504} Si ricomincia: fase "+(Quest.i+1)+" di "+Quest.total);
+  console.log("[restart step]",u.id,from);
+  return true;
+}
 const WhyHelp=(function(){
   let el=null;
   function box(){ if(el) return el;
@@ -34673,11 +34714,30 @@ const WhyHelp=(function(){
           +'<small>Non ricordi le parole o le regole? Miss Grace ti fa una lezione di ripasso alla Town School.</small></button>'
          :'<button type="button" class="wh-big off" data-k="none" disabled>\u{1F4DA} Problemi di lessico o grammatica'
           +'<small>Per questa attivit\u00e0 non c\u2019\u00e8 una lezione: chiedi al tuo insegnante.</small></button>')
+      +(canRestart()?'<button type="button" class="wh-big alt2" data-k="restart">\u{1F504} Sono bloccato / manca qualcosa'
+          +'<small>Non trovi l\u2019oggetto o la persona, o non succede niente? Ricomincia questa attivit\u00e0 da capo.</small></button>':'')
       +'<button type="button" class="wh-close" data-k="x">Chiudi</button></div>');
     card().querySelectorAll("button[data-k]").forEach(b=>b.onclick=()=>{ const k=b.getAttribute("data-k");
       if(k==="why") explain();
       else if(k==="lesson"){ close(); try{ lessonHelp(); }catch(e){} }
+      else if(k==="restart") confirmRestart();
       else close(); });
+  }
+  /* v604 (Giacomo: «se manca l'oggetto da cercare, magari un tasto che
+     ricarica quello step»). Ricominciare lo step e' esattamente quello che
+     succede ricaricando la pagina a meta' (Quest.start riparte dallo step
+     salvato con lo stato vuoto): ogni step lo regge gia'. In piu' si rimette
+     sugli scaffali cio' che lo step aveva tolto (spesa, carrello). Niente
+     stelle in meno: lo step non era ancora stato dato. */
+  function canRestart(){ const u=Quest.unit; return !!(u && Quest.step && Quest.i>=0 && Quest.i<u.steps.length); }
+  function confirmRestart(){
+    const s=Quest.step, m=(typeof STRAND_META!=="undefined" && STRAND_META[s.strand])||{ic:"\u{1F4CB}"};
+    show('<h3>\u{1F504} Ricominciare questa attivit\u00e0?</h3>'
+      +'<div class="wh-row">'+m.ic+' <b>Fase '+(Quest.i+1)+' di '+Quest.total+'</b> \u2014 '+strip(s.introObj||"")
+      +'<br><span style="font-size:14px">Ricominci da capo solo questa fase: quelle gi\u00e0 finite restano fatte.</span></div>'
+      +'<div class="wh-btns"><button type="button" class="wh-big" data-k="go">\u{1F504} S\u00ec, ricomincia</button>'
+      +'<button type="button" class="wh-close" data-k="x">No, torna al gioco</button></div>');
+    card().querySelectorAll("button[data-k]").forEach(b=>b.onclick=()=>{ if(b.getAttribute("data-k")==="go"){ close(); questRestartStep(); } else close(); });
   }
   /* che cosa c'e' aperto adesso sullo schermo */
   function context(){
@@ -34731,8 +34791,9 @@ const WhyHelp=(function(){
       +listen
       +'<div class="wh-row"><span class="wh-lab">\u{1F9ED} Dove devo andare?</span>Guarda la <b>bussola in basso a destra</b>: la freccia ti indica dove andare e il numero quanti metri mancano. Se c\u2019\u00e8 scritto <b>HELP?</b>, toccala e ti mostra dove guardare.</div>'
       +(s.intro?'<details><summary>\u{1F4D6} Tutta l\u2019attivit\u00e0 spiegata</summary><div style="margin-top:6px">'+strip(s.intro)+'</div></details>':'')
-      +'<div class="wh-btns"><button type="button" class="wh-close" data-k="x">\u2714 Ho capito</button></div>');
-    card().querySelectorAll("button[data-k]").forEach(b=>b.onclick=close);
+      +'<div class="wh-btns"><button type="button" class="wh-close" data-k="x">\u2714 Ho capito</button>'
+      +'<button type="button" class="wh-close" data-k="restart" style="background:transparent;color:#5a6b48;font-size:14px;padding:4px 10px">\u{1F504} Manca qualcosa? Ricomincia questa attivit\u00e0</button></div>');
+    card().querySelectorAll("button[data-k]").forEach(b=>b.onclick=()=>{ if(b.getAttribute("data-k")==="restart") confirmRestart(); else close(); });
   }
   return { chooser, explain, close, context };
 })();
@@ -62188,20 +62249,71 @@ MECH.giveDirections=function(s){
    · sports field (x 95..129, z 22..46): verso est nel parco e' a SINISTRA
      (+z). Prima diceva «on the right»: era sbagliato. Il campo sta DENTRO
      il parco (PARK_Z1=60), non accanto: «in the park». */
+/* v604 (Giacomo, 23 nov: «l'ultima attivita', dove devi seguire le
+   indicazioni, e' sempre uguale: puoi scegliere fra una rosa di indicazioni
+   a caso?»). Si sceglieva gia' a caso, ma fra QUATTRO copioni che
+   cominciavano tutti con la stessa frase: all'orecchio erano lo stesso.
+   Ora sono 13, verso 7 posti diversi, con partenze diverse («Start here…»,
+   «Stand here with your back to…», «Turn around…»), e non esce mai lo
+   stesso della volta prima (et_cy8_dir_last).
+   ⚠️ LA GEOMETRIA (misurata sul gioco, non a occhio). Ivy sta all'angolo
+   (78.5,-6.5); «with the park behind you» = si guarda a OVEST lungo la
+   High Street (z ~ 0). Camminando verso ovest: a SINISTRA (z<0) town hall
+   (x 54), bus stop (36), cinema (0, accanto alle strisce a x ±8.6); a
+   DESTRA (z>0) clothes shop (54, di fronte al town hall), school (26),
+   market (-54); in fondo, oltre la rotonda di x -72, la stazione (-100).
+   Il café (72) e' subito li'. Verso EST il parco, col campo sportivo a
+   sinistra (z +34). Destra/sinistra come in cy8DirResolve.
+   ⚠️ Lessico: solo quello della unit (past, opposite, next to, on your
+   left/right, cross the road, zebra crossing, go straight on). */
 const CY8_LISTEN=[
-  { place:"town hall",
+  { id:"th1", place:"town hall",
     text:"Start here, with the park behind you. Go straight along the High Street, past the caf\u00e9. "
         +"The town hall is on your left, past the corner." },
-  { place:"cinema",
+  { id:"th2", place:"town hall",
+    text:"Stand here with your back to the park. Walk along the High Street and go past the caf\u00e9. "
+        +"Keep going: the town hall is on your left, opposite the clothes shop." },
+  { id:"ci1", place:"cinema",
     text:"Start here, with the park behind you. Go straight along the High Street, past the town hall. "
         +"The cinema is on your left, next to the zebra crossing." },
-  { place:"school",
+  { id:"ci2", place:"cinema",
+    text:"Stand here with your back to the park. Walk along the High Street, past the town hall and the bus stop. "
+        +"Keep going straight on until you see a zebra crossing. The cinema is on your left." },
+  { id:"sc1", place:"school",
     text:"Start here, with the park behind you. Go straight along the High Street, past the town hall. "
         +"Cross the road at the zebra crossing, in front of the cinema. The school is on your right, next to the clothes shop." },
-  { place:"sports field",
+  { id:"sc2", place:"school",
+    text:"Stand here with your back to the park. Walk along the High Street. Go past the clothes shop on your right: "
+        +"the school is the next building on your right." },
+  { id:"sf1", place:"sports field",
     text:"Start here, with the High Street behind you. Walk into the park and go straight on. "
         +"The sports field is on your left, in the park." },
+  { id:"sf2", place:"sports field",
+    text:"Start here and turn around: now the park is in front of you. Walk into the park, past the trees, and go straight on. "
+        +"People play football on your left: that's the sports field." },
+  { id:"cs1", place:"clothes shop",
+    text:"Start here, with the park behind you. Go straight along the High Street, past the caf\u00e9. "
+        +"The clothes shop is on your right, opposite the town hall." },
+  { id:"cs2", place:"clothes shop",
+    text:"Stand here with your back to the park. Walk along the High Street. The town hall is on your left. "
+        +"Look to your right: the shop opposite the town hall is the clothes shop." },
+  { id:"mk1", place:"market",
+    text:"Start here, with the park behind you. Go straight along the High Street for a long way, past the school and the cinema. "
+        +"The market is on your right, near the end of the street, before the train station." },
+  { id:"mk2", place:"market",
+    text:"Stand here with your back to the park. Walk along the High Street. Go past the cinema and keep going straight on. "
+        +"Don't stop at the zebra crossings! The market is on your right, before the train station." },
+  { id:"ts1", place:"train station",
+    text:"Start here, with the park behind you. Go straight along the High Street. Don't turn left or right: "
+        +"walk past the school, the cinema and the market. The train station is at the end of the street." },
 ];
+/* il copione: a caso, mai quello della volta prima */
+function cy8ListenPick(){
+  let last=null; try{ last=Sync.get("et_cy8_dir_last",null); }catch(e){}
+  const pool=CY8_LISTEN.filter(e=>e.id!==last);
+  const sc=pick(pool.length?pool:CY8_LISTEN,1)[0];
+  try{ Sync.set("et_cy8_dir_last",sc.id); }catch(e){}
+  return sc; }
 function cy8ListenPlace(en){ return CY8_PLACES.find(p=>p.en===en); }
 
 /* fase "start": la bussola porta da Ivy (punto di partenza delle
@@ -62257,18 +62369,21 @@ MECH.followDirections=function(s){
   buildCityNPCs();
   if(!CY8_NPC.ivy){ mechStub(s); return; }
   const st=Quest.state;
-  const fl=st.fl=st.fl||{ script: pick(CY8_LISTEN,1)[0], plays:0, wrong:0, revealed:false, phase:"start" };
+  const fl=st.fl=st.fl||{ script: cy8ListenPick(), plays:0, wrong:0, revealed:false, phase:"start" };
   /* salvataggi di prima della v589: fl senza fase -> si riparte da Ivy, e il
      copione si rilegge dalla lista (il testo nuovo dice da dove partire) */
   if(!fl.phase){ fl.phase="start"; fl.plays=0; }
-  const cur=CY8_LISTEN.find(e=>e.place===(fl.script&&fl.script.place));
-  fl.script=cur||pick(CY8_LISTEN,1)[0];
+  /* v604: si ritrova per id (ora ci sono piu' copioni per lo stesso posto);
+     i salvataggi vecchi (senza id) per posto */
+  const cur=CY8_LISTEN.find(e=>fl.script && e.id===fl.script.id) || CY8_LISTEN.find(e=>e.place===(fl.script&&fl.script.place));
+  fl.script=cur||cy8ListenPick();
 
   Quest.questInteract({ id:"cy8lst_ivy", area:"town", radius:3.4,
     pos:()=>cy8NpcPos("ivy"),
     prompt:()=> fl.phase==="walk" ? 'Press <b>P</b>: listen to Ivy\'s directions again' : 'Press <b>P</b>: ask Ivy the way',
     interact:()=>cy8ListenIvy(fl) });
-  CY8_LISTEN.forEach(entry=>{
+  /* v604: un'interazione per POSTO (piu' copioni portano allo stesso) */
+  CY8_LISTEN.filter((e,k,a)=>a.findIndex(x=>x.place===e.place)===k).forEach(entry=>{
     const p=cy8ListenPlace(entry.place); if(!p) return;
     Quest.questInteract({ id:"cy8lst_"+entry.place.replace(/[^a-z]+/gi,"_"), area:"town", radius:3.0,
       pos:()=>cy8PlaceVec(p),
