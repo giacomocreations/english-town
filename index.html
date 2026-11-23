@@ -713,7 +713,13 @@
      telefono sta il joystick, che pero' li' non c'e'). z-index 12 = sotto i
      bottoni (15) e sotto qualunque pannello (25/55), quindi non copre mai
      niente. H la nasconde per chi la trova d'impiccio. */
-  #kbhelp{position:fixed;z-index:12;left:14px;bottom:12px;max-width:44vw;pointer-events:none;
+  /* v601: la legenda si tocca e spiega come muoversi (helpMove) */
+  #kbhelp .kb-help-q{font-weight:800;color:#fff;background:rgba(232,115,12,.85);border-radius:6px;padding:0 6px;}
+  #kb-touch-help{position:fixed;z-index:15;left:20px;bottom:150px;display:none;border:none;border-radius:999px;padding:7px 12px;
+    background:rgba(251,247,236,.92);color:#1d2a32;font:800 13px/1 system-ui,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.25);cursor:pointer;}
+  @media (pointer:coarse){#kb-touch-help{display:block;}}
+  body.veh #kb-touch-help{display:none !important;}
+  #kbhelp{position:fixed;z-index:12;left:14px;bottom:12px;max-width:44vw;pointer-events:auto;cursor:pointer;
     display:flex;flex-wrap:wrap;gap:4px 11px;font:600 11.5px/1.55 system-ui,sans-serif;
     color:rgba(251,247,236,.78);text-shadow:0 1px 3px rgba(10,16,20,.8);}
   #kbhelp b{display:inline-block;padding:0 5px;border-radius:5px;background:rgba(18,27,34,.42);
@@ -1101,17 +1107,19 @@
   </div>
 </div>
 <div id="stick"><div id="knob"></div></div>
-<button id="actBtn">E</button>
+<button id="actBtn" title="Talk / interact (P)">P</button>
+<button id="kb-touch-help" type="button">❓ How to move?</button>
 <button id="runBtn">🏃</button>
 <button id="rideBtn" aria-pressed="false" title="Skateboard / scooter (R)" style="display:none">🛹</button>
 <button id="trickBtn" title="Airwalk on the quarter pipe (SPACE)" style="display:none">🤸</button>
 <button id="povBtn" aria-pressed="false" title="First person">👁️</button>
 <button id="map-btn" title="Town map (M)">🗺️</button>
-<div id="kbhelp">
+<div id="kbhelp" title="How to move · Come muoversi">
+  <span class="kb-help-q">❓ How to move?</span>
   <span><b>WASD</b> move</span>
   <span><b>&#8593;&#8595;&#8592;&#8594;</b> look around</span>
   <span><b>Shift</b> run</span>
-  <span><b>E</b> interact</span>
+  <span><b>P</b> talk / interact</span>
   <span><b>Q</b> next object</span>
   <span><b>M</b> map</span>
   <span><b>V</b> view</span>
@@ -2908,7 +2916,7 @@ const UNIT_SCREENS={ id:"u2_4", area:"cinema", areaName:"the ODEON Cinema", open
     introObjEn:"Rate the three films and give your opinion.", introObj:"Vota i tre film e di' la tua opinione." },
   { id:"listen",strand:"listening",  type:"guessTheFilm",
     intro:"Chris racconta un film che ha visto, <b>senza dire il titolo n\u00e9 il genere</b>. \ud83d\udd0a Ascolta, "
-         +"poi vai alla <b>locandina</b> giusta e premi E.",
+         +"poi vai alla <b>locandina</b> giusta e premi P.",
     introObjEn:"Listen to the story and spot the film.", introObj:"Ascolta il racconto e riconosci il film." },
   { id:"write", strand:"writing",    type:"writeReview",
     pad:{ x:4.35, z:8.40, title:"\ud83d\udcdd ODEON \u2014 review", sub:"Writing \u2014 a film you watched",
@@ -2947,7 +2955,7 @@ const UNIT_STYLE={ id:"u2_1", area:"salon", areaName:"Style Salon",
   steps:[
   { id:"lex",   strand:"lessico",    type:"mirrorWall", count:5,
     intro:"Sei il nuovo aiutante di <b>Yara</b> allo Style Salon. Sul muro ci sono le foto dei clienti: "
-         +"ascolta come Yara <b>descrive</b> ogni persona, poi vai fino alla <b>foto giusta</b> e premi E.",
+         +"ascolta come Yara <b>descrive</b> ogni persona, poi vai fino alla <b>foto giusta</b> e premi P.",
     introObjEn:"Spot the customers from the description.", introObj:"Riconosci i clienti dalla descrizione." },
   { id:"gram",  strand:"grammatica", type:"salonBook",
     intro:"<b>Tess</b>, alla reception, tiene il <b>registro degli appuntamenti</b>. Guarda la colonna "
@@ -3085,7 +3093,7 @@ const UNIT_ECO={ id:"u2_6", area:"ecopoint", areaName:"the Eco Point",
   steps:[
   { id:"lex",   strand:"lessico",    type:"binSort", count:6,
     intro:"Sei il nuovo volontario dell'<b>Eco Point</b>. <b>Hugo</b> ti spiega a voce \ud83d\udd0a che cos'\u00e8 "
-         +"ogni oggetto sul bancone: vai fino a quello <b>giusto</b> e premi E. Poi portalo al <b>bidone giusto</b>.",
+         +"ogni oggetto sul bancone: vai fino a quello <b>giusto</b> e premi P. Poi portalo al <b>bidone giusto</b>.",
     introObjEn:"Spot the object and take it to the right bin.", introObj:"Riconosci l'oggetto e portalo al bidone giusto." },
   { id:"gram",  strand:"grammatica", type:"pantryCheck",
     intro:"<b>Fern</b> controlla la <b>dispensa di comunit\u00e0</b>. Guarda che cosa c'\u00e8 sul pannello: "
@@ -3155,7 +3163,7 @@ const UNIT_HOME7={ id:"u2_7", area:"home", title:"Anno 2 \u00b7 Unit 7 \u2014 At
   steps:[
   { id:"lex",   strand:"lessico",    type:"choreHunt", count:6,
     intro:"<b>Jack</b> ti legge la lista delle faccende \ud83d\udd0a. Per ognuna vai <b>dove si fa</b> "
-         +"e premi E: la casa si rimette in ordine sotto i tuoi occhi.",
+         +"e premi P: la casa si rimette in ordine sotto i tuoi occhi.",
     introObjEn:"Do six chores, each one in the right place.", introObj:"Fai sei faccende, ognuna al posto giusto." },
   { id:"gram",  strand:"grammatica", type:"houseRules",
     intro:"Sul <b>frigo</b> c'\u00e8 il <b>turnario</b> di casa. Con <b>Vera</b> leggi chi deve fare che cosa "
@@ -3242,7 +3250,7 @@ const UNIT_CITY={ id:"u2_8", area:"town", openWorld:true,
   { id:"lex",   strand:"lessico",    type:"townMap", count:6,
     intro:"La <b>mappa turistica</b> della City Life Plaza \u00e8 bianca: mancano i nomi. "
          +"<b>Ivy</b> ti dice a voce \ud83d\udd0a che cosa si fa in un posto \u2014 tu vai fino "
-         +"all'<b>edificio vero</b> della citt\u00e0 e premi <b>E</b>. Sono gli stessi palazzi in cui "
+         +"all'<b>edificio vero</b> della citt\u00e0 e premi <b>P</b>. Sono gli stessi palazzi in cui "
          +"giochi da tre anni: adesso hanno un nome in inglese. La bussola <b>non</b> ti dice dove andare: "
          +"se non lo trovi, tocca la bussola per l'<b>\u{1F4A1} aiuto</b> (costa qualche \u2b50).",
     introObjEn:"Spot the places in town and tag them on the map.", introObj:"Riconosci i luoghi della citt\u00e0 e taggali sulla mappa." },
@@ -3263,11 +3271,11 @@ const UNIT_CITY={ id:"u2_8", area:"town", openWorld:true,
   { id:"func",  strand:"funzioni",   type:"giveDirections",
     intro:"Qualcuno si \u00e8 perso e chiede a <b>te</b> la strada. Componi le indicazioni con le "
          +"tessere: lui <b>fa esattamente quello che dici</b>. Guarda la mappa con le frecce. "
-         +"\u{1F3C3} Quando Sam parte, <b>seguilo</b>! Dove si ferma, raggiungilo e premi <b>E</b> per dargli l'indicazione dopo.",
+         +"\u{1F3C3} Quando Sam parte, <b>seguilo</b>! Dove si ferma, raggiungilo e premi <b>P</b> per dargli l'indicazione dopo.",
     introObjEn:"Give the directions and get him there.", introObj:"Da' le indicazioni e portalo a destinazione.",
     target:()=>cy8NpcPos("sam") },
   { id:"listen",strand:"listening",  type:"followDirections",
-    intro:"Adesso tocca a te perderti. Torna da <b>Ivy</b> in piazza (segui la bussola) e premi <b>E</b>: "
+    intro:"Adesso tocca a te perderti. Torna da <b>Ivy</b> in piazza (segui la bussola) e premi <b>P</b>: "
          +"le indicazioni <b>partono da l\u00ec</b>. Poi <b>ascolta</b> \ud83d\udd0a e arriva al posto "
          +"giusto: sulla mappa <b>non c'\u00e8 nessun segnalino</b>.",
     introObjEn:"Follow the directions and get there.", introObj:"Segui le indicazioni e arriva a destinazione.",
@@ -3341,7 +3349,7 @@ const UNIT_JOBS={ id:"u3_1", area:"jobcentre", areaName:"the Job Centre Tower",
   { id:"lex",   strand:"lessico",    type:"jobBoard", count:6,
     intro:"\u00c8 il giorno della <b>Summer Job Fair</b>. Sulla bacheca ci sono otto annunci: c'\u00e8 il "
          +"disegno e c'\u00e8 quello che si fa, ma <b>il nome del mestiere non \u00e8 scritto da nessuna "
-         +"parte</b>. <b>Ms. Okoro</b> te lo dice a voce \ud83d\udd0a: vai fino all'annuncio giusto e premi <b>E</b>.",
+         +"parte</b>. <b>Ms. Okoro</b> te lo dice a voce \ud83d\udd0a: vai fino all'annuncio giusto e premi <b>P</b>.",
     introObjEn:"Find the job ad you hear.", introObj:"Trova l'annuncio del mestiere che senti." },
   { id:"gram",  strand:"grammatica", type:"interviewDesk",
     intro:"Al tavolo in mezzo alla hall c'\u00e8 <b>Danny</b>, quindici anni, primo colloquio. Oggi "
@@ -3413,7 +3421,7 @@ const UNIT_TECH={ id:"u3_2", area:"techlab", areaName:"the TechLab", resumeBySco
   { id:"lex",   strand:"lessico",    type:"repairBench", count:7,
     intro:"Sei al banco riparazioni del <b>TechLab</b>. La gente porta i suoi problemi, ma "
          +"<b>non dice mai il nome dell'oggetto</b>: dice che cosa gli serve. <b>Dr. Hana Ito</b> "
-         +"te lo legge \ud83d\udd0a: vai alla rastrelliera, trova il device giusto e premi <b>E</b>.",
+         +"te lo legge \ud83d\udd0a: vai alla rastrelliera, trova il device giusto e premi <b>P</b>.",
     introObjEn:"Listen to the problem and bring the right device.", introObj:"Ascolta il problema e porta il device giusto." },
   { id:"gram",  strand:"grammatica", type:"futureScanner",
     intro:"In fondo al laboratorio c'\u00e8 la <b>Future Room</b>: il <b>Future Scanner</b> mostra il 2050. "
@@ -8400,7 +8408,9 @@ function _xmMats(){ if(_xmM) return _xmM;
     red:std("xmRed","#c4202e",0.25), gold:std("xmGold","#e0b040",0.5,"#5a4410"), pot:std("xmPot","#8a2a1f",0.1),
     trunk:std("xmTrunk","#5a3a22",0.05), white:std("xmWhite","#f4f4f0",0.2), sticker:{} };
   _xmM.star=std("xmStar","#ffd84a",0.6,"#c89a1c");
-  _xmM.gold.__glowK=0.35;   // v598: palline e nastri dorati luccicano, non sono luci
+  _xmM.gold.__glowK=0.35;
+  /* v601: la stella cometa, bianca e accesa (luce propria), forte nel bagliore */
+  { const c=std("xmComet","#ffffff",0.4,"#f4f6ff"); c.__glowK=1.6; c.backFaceCulling=false; _xmM.comet=c; }   // v598: palline e nastri dorati luccicano, non sono luci
   return _xmM; }
 function _xmSticker(txt){ const K=_xmMats(); if(K.sticker[txt]) return K.sticker[txt];
   const dt=_dnTex("xmStkT"+txt.replace(/\W+/g,""),384,128,(c,w,h)=>{ c.clearRect(0,0,w,h);
@@ -8415,7 +8425,7 @@ const XM_TXT=["Merry Christmas!","Happy Holidays!","Season's Greetings!","Happy 
 
 /* ---- i pezzi (coordinate di un frame qualunque: il chiamante li fonde) ----
    L = { fir:[], fir2:[], red:[], gold:[], pot:[], trunk:[], white:[], star:[], flake:[], b0..b3:[] } */
-function _xmL(){ return { fir:[], fir2:[], red:[], gold:[], pot:[], trunk:[], white:[], star:[], flake:[], tinsel:[], silver:[], b0:[], b1:[], b2:[], b3:[] }; }
+function _xmL(){ return { fir:[], fir2:[], red:[], gold:[], pot:[], trunk:[], white:[], star:[], comet:[], flake:[], tinsel:[], silver:[], b0:[], b1:[], b2:[], b3:[] }; }
 function _xmBulb(L,x,y,z,r,k){ const s=BABYLON.MeshBuilder.CreateIcoSphere("xmB",{ radius:r, subdivisions:1 },scene); s.position.set(x,y,z); L["b"+(k%4)].push(s); }
 /* alberello addobbato in vaso (o albero grande, big), base a quota y.
    v598 (Giacomo: «alberi meno squadrati, meno poligoni, piu' realistici e
@@ -8447,8 +8457,13 @@ function _xmStarMesh(R,th){ const r=R*0.45, pos=[], ind=[], pts=[];
     for(let i=0;i<10;i++){ const a=c+1+i, b=c+1+(i+1)%10; if(f) ind.push(c,a,b); else ind.push(c,b,a); } });
   for(let i=0;i<10;i++){ const j=(i+1)%10, v=pos.length/3, A=pts[i], B=pts[j];
     pos.push(A[0],A[1],th/2, B[0],B[1],th/2, B[0],B[1],-th/2, A[0],A[1],-th/2); ind.push(v,v+1,v+2, v,v+2,v+3); }
+  /* ⚠️ v601: anche le UV (a zero). Senza, MergeMeshes della stella con le
+     sfere e i tubi (che le hanno) lanciava un errore e _xmFuse si fermava:
+     lucine, ghirlande e cartello dell'albero grande non arrivavano mai, e i
+     pezzi non fusi restavano grigi, senza materiale. */
+  const uvs=new Array(pos.length/3*2).fill(0);
   const m=new BABYLON.Mesh("xmStar",scene), vd=new BABYLON.VertexData(), nor=[];
-  BABYLON.VertexData.ComputeNormals(pos,ind,nor); vd.positions=pos; vd.indices=ind; vd.normals=nor; vd.applyToMesh(m); return m; }
+  BABYLON.VertexData.ComputeNormals(pos,ind,nor); vd.positions=pos; vd.indices=ind; vd.normals=nor; vd.uvs=uvs; vd.applyToMesh(m); return m; }
 function _xmTree(L,x,y,z,H,rnd,big){
   const potH=big?0:H*0.16, base=y+potH, D=H*0.62;
   if(!big){ const p=BABYLON.MeshBuilder.CreateCylinder("xmPot",{ diameterTop:D*0.55, diameterBottom:D*0.42, height:potH, tessellation:20 },scene);
@@ -8480,10 +8495,36 @@ function _xmTree(L,x,y,z,H,rnd,big){
         path.push(new BABYLON.Vector3(x+Math.cos(a)*(rg+0.03*f2),yg-sag*f2,z+Math.sin(a)*(rg+0.03*f2))); }
       const tb=BABYLON.MeshBuilder.CreateTube("xmGarT",{ path, radius:big?0.05:0.018, tessellation:6, cap:BABYLON.Mesh.NO_CAP },scene);
       (i%2?L.red:L.tinsel).push(tb); } }
+  if(big) return _xmComet(L,x,apex,z,rnd);
   /* la stella vera, sulla punta del palco piu' alto */
-  const ss=big?0.6:0.22, sy=apex+ss*0.45;
+  const ss=0.22, sy=apex+ss*0.45;
   const st=_xmStarMesh(ss*0.5,ss*0.16); st.position.set(x,sy,z); st.rotation.y=rnd()*Math.PI; L.star.push(st);
   return sy; }
+/* v601 (Giacomo: «sugli alberi grandi una STELLA COMETA bianca e luminosa,
+   non sospesa: attaccata alla cima»). Un puntale bianco infilato sulla punta
+   dell'ultimo palco, e sopra di lui la stella a cinque punte, la punta in
+   basso che tocca il puntale; dalla stella partono tre code che scendono di
+   lato lungo la chioma, assottigliandosi. Tutto bianco acceso (luce propria,
+   di giorno e di notte) e nel bagliore su High/Max. Due facce: si vede da
+   ogni lato; la stella guarda verso chi arriva (sud-ovest) e si gira piano. */
+function _xmComet(L,x,apex,z,rnd){
+  const V=BABYLON.Vector3, R=0.55, th=0.13;
+  /* il puntale: un cono stretto infilato nella punta (parte 0,25 m sotto) */
+  const sp=BABYLON.MeshBuilder.CreateCylinder("xmSpike",{ diameterTop:0.05, diameterBottom:0.16, height:0.55, tessellation:12 },scene);
+  sp.position.set(x,apex+0.02,z); L.comet.push(sp);
+  /* la stella: centro alto in modo che la punta bassa (dove R*sin(54)...) tocchi il puntale */
+  const cy=apex+0.29+R*0.45*0.95;
+  const st=_xmStarMesh(R,th); st.position.set(x,cy,z); st.rotation.y=-Math.PI/4; L.comet.push(st);
+  const core=BABYLON.MeshBuilder.CreateSphere("xmComC",{ diameter:R*0.42, segments:12 },scene); core.position.set(x,cy,z); L.comet.push(core);
+  /* le code: partono dalla stella e scendono lungo la chioma (verso nord-est,
+     dietro la stella per chi la guarda da sud-ovest) */
+  const dir=new V(0.7,0,0.7).normalize();
+  [[0,1.0],[0.38,0.75],[-0.38,0.75]].forEach(([dy,len])=>{
+    const side=new V(-dir.z,0,dir.x).scale(dy*0.6), path=[];
+    for(let i=0;i<=10;i++){ const t=i/10;
+      path.push(new V(x,cy,z).add(dir.scale(0.15+t*2.4*len)).add(side.scale(t)).add(new V(0,-t*t*1.6*len,0))); }
+    L.comet.push(BABYLON.MeshBuilder.CreateTube("xmComT",{ path, radiusFunction:i=>Math.max(0.012,0.12*(1-i/10)*(dy?0.7:1)), tessellation:10, cap:BABYLON.Mesh.CAP_ALL },scene)); });
+  return cy; }
 /* festone di abete fra p0 e p1 ([x,z]) a quota y, n campate di freccia sag,
    con le lucine colorate ogni ~0,32 m */
 function _xmGarland(L,p0,p1,y,sag,n,r){
@@ -8530,11 +8571,14 @@ function _xmGift(L,x,y,z,s,rnd,ry){ const col=[L.red,L.gold,L.white][(rnd()*3)|0
     t.position.set(x+Math.cos(ry||0)*sd*s*0.13,y+s+s*0.1,z-Math.sin(ry||0)*sd*s*0.13); t.rotation.set(Math.PI/2,(ry||0)+Math.PI/2,sd*0.5); t.scaling.set(1,1,0.75); rib.push(t); }); }
 /* fonde le liste per materiale sotto `parent` (coordinate gia' nel suo frame) */
 function _xmFuse(parent,L){ const K=_xmMats();
-  const map={ fir:K.fir, fir2:K.fir2, red:K.red, gold:K.gold, pot:K.pot, trunk:K.trunk, white:K.white, star:K.star, flake:K.flake, tinsel:K.tinsel, silver:K.silver,
+  const map={ fir:K.fir, fir2:K.fir2, red:K.red, gold:K.gold, pot:K.pot, trunk:K.trunk, white:K.white, star:K.star, comet:K.comet, flake:K.flake, tinsel:K.tinsel, silver:K.silver,
               b0:K.bulbs[0], b1:K.bulbs[1], b2:K.bulbs[2], b3:K.bulbs[3] };
   Object.keys(map).forEach(k=>{ const arr=L[k]; if(!arr || !arr.length) return;
-    const m=arr.length===1?arr[0]:BABYLON.Mesh.MergeMeshes(arr,true,true,undefined,false,false);
-    if(!m) return; m.material=map[k]; m.parent=parent; m.isPickable=false; _xmTieni(m);
+    /* v601: se un gruppo non si fonde, i pezzi restano separati (col loro
+       materiale) e gli altri gruppi vanno avanti lo stesso */
+    let m=null; try{ m=arr.length===1?arr[0]:BABYLON.Mesh.MergeMeshes(arr,true,true,undefined,false,false); }catch(e){ console.warn("[natale fuse]",k,e); }
+    if(!m){ arr.forEach(q=>{ try{ if(q.isDisposed()) return; q.material=map[k]; q.parent=parent; q.isPickable=false; _xmTieni(q); }catch(e){} }); return; }
+    m.material=map[k]; m.parent=parent; m.isPickable=false; _xmTieni(m);
     /* abeti, vasi, regali e corone fanno ombra; lucine, fiocchi e stelle no */
     if(k==="fir"||k==="fir2"||k==="pot"||k==="red"||k==="gold"||k==="white"||k==="trunk"||k==="silver") m.__cast=true;
     /* v597: nel bagliore i rami, i vasi e i regali NON vanno esclusi: sono
@@ -8783,7 +8827,7 @@ function _xmSantas(){
   XMAS.santas=[];
   XM_SANTAS.forEach(S=>{ try{ const n=_xmSanta(S); XMAS.santas.push(n);
       if(S.talk){ const o=addInteract({ id:"xm_santa", area:"town", radius:2.4, pos:new BABYLON.Vector3(S.x,0,S.z),
-          prompt:'\u{1F385} Press <b>E</b> to talk to <b>Santa Claus</b>', interact:()=>xmSantaTalk() });
+          prompt:'\u{1F385} Press <b>P</b> to talk to <b>Santa Claus</b>', interact:()=>xmSantaTalk() });
         XMAS.undo.push(()=>removeInteract(o)); } }catch(e){ console.warn("[natale babbo]",e); } });
   const ob=scene.onBeforeRenderObservable.add(_xmSantaTick);
   XMAS.undo.push(()=>{ scene.onBeforeRenderObservable.remove(ob); XMAS.santas=[]; }); }
@@ -9057,7 +9101,7 @@ function buildTown(){
       const hMeshes=questDoorAssembly("h",p,faceZ,dir,_dm,hpm,"#7a5230");
       homeDoorPos=new BABYLON.Vector3(_dm?_dm.c.x:p.x,0,faceZ+dir*2.4);   // davanti all'anta vera
       addInteract({id:"home",area:"town",radius:3.6,pos:()=>homeDoorPos,meshes:hMeshes,
-        prompt:()=>Gate.unlocked("u3")?'Press <b>E</b> to go <b>home</b>'
+        prompt:()=>Gate.unlocked("u3")?'Press <b>P</b> to go <b>home</b>'
                                       :'\u{1F512} <b>Home</b> \u00b7 not open yet',
         interact:enterHome});
     } else if(p.role==="cinema"){
@@ -9116,7 +9160,7 @@ function buildTown(){
       q.doorPos=new BABYLON.Vector3(_dm?_dm.c.x:p.x,0,faceZ+dir*2.4);   // davanti all'anta vera
       addInteract({id:"unit_"+p.qid,area:"town",radius:3.6,pos:()=>q.doorPos,meshes:qMeshes,
         prompt:()=>p.openDoor?(beatDoorPrompt(p))
-                 :Gate.unlocked(q.id)?'Press <b>E</b> to enter: <b>'+p.t+'</b>'
+                 :Gate.unlocked(q.id)?'Press <b>P</b> to enter: <b>'+p.t+'</b>'
                                       :'\u{1F512} <b>'+p.t+'</b> \u00b7 not open yet',
         interact:()=>p.openDoor?enterOpenUnit(q):tryEnterUnit(q)});
     } else if(p.openQuest && QUESTS[p.openQuest]){
@@ -9131,9 +9175,9 @@ function buildTown(){
       addInteract({id:"openq_"+p.openQuest,area:"town",radius:5.5,
         pos:()=>new BABYLON.Vector3(p.x,0,p.z+dir*9),meshes:root.getChildMeshes(),
         prompt:()=>Progress.get(qo.id).done
-            ? (p.ic||"")+" <b>"+p.t+"</b> · press <b>E</b>"
+            ? (p.ic||"")+" <b>"+p.t+"</b> · press <b>P</b>"
             : (Gate.unlocked(qo.id)
-                ? (p.ic||"")+" <b>"+p.t+"</b> · press <b>E</b> to start"
+                ? (p.ic||"")+" <b>"+p.t+"</b> · press <b>P</b> to start"
                 : "\u{1F512} <b>"+p.t+"</b> \u00b7 not open yet"),
         interact:()=>{ if(Progress.get(qo.id).done){
             toast((p.ic||"")+" "+p.t+" — Unit completata!");
@@ -9144,7 +9188,7 @@ function buildTown(){
       // ---- edificio "vetrina": bloccato ma mostra la sua Unit ----
       addInteract({id:(p.t||"poi"),area:"town",radius:5.5,
         pos:()=>new BABYLON.Vector3(p.x,0,p.z+dir*9),meshes:root.getChildMeshes(),
-        prompt:()=>(p.ic||"")+" <b>"+p.t+"</b> · press <b>E</b>",
+        prompt:()=>(p.ic||"")+" <b>"+p.t+"</b> · press <b>P</b>",
         interact:()=>toast((p.ic||"")+" "+p.t+" — Anno "+p.yr+" "+p.u+": "+p.lex)});
     }
   });
@@ -10893,7 +10937,7 @@ function buildPedestrians(){
     const npc=spawnNPC({ id:"ped_"+c.id, name:c.name, sub:c.sub, area:"town",
       model:c.model, tint:c.tint, height:c.height,
       x:pts[0][0], z:pts[0][1], face:0, watch:false, snap:false, radius:3.0,
-      prompt:'Press <b>E</b> to talk to <b>'+c.name+'</b>',
+      prompt:'Press <b>P</b> to talk to <b>'+c.name+'</b>',
       interact:()=>{ if(w) talkToPed(w); } });
     if(!npc) return;
     npc.__ped=true;
@@ -11553,7 +11597,7 @@ function spawnFragment(f){
   m.__pulse=BABYLON.Color3.FromHexString("#ffce6a"); gatePanels.push(m);
   const inter=addInteract({ id:"frag_"+f.id, area:"town", radius:2.6,
     pos:()=>bx.position, meshes:[bx],
-    prompt:'\u{1F4DC} Press <b>E</b>: there\'s <b>something</b> here',
+    prompt:'\u{1F4DC} Press <b>P</b>: there\'s <b>something</b> here',
     interact:()=>openFragment(f) });
   const obs=scene.onBeforeRenderObservable.add(()=>{ if(bx.isDisposed()) return;
     bx.rotation.y+=0.012; bx.position.y=y+Math.sin(performance.now()/700)*0.09; });
@@ -12016,7 +12060,7 @@ function buildPhotoSpots(){
     _PHOTO_INT[m.id]=addInteract({ id:"photo_"+m.id, area:"town", radius:m.radius||2.4,
       enabled:false, meshes:T.meshes,
       pos:()=>new BABYLON.Vector3(m.spot.x,0,m.spot.z),
-      prompt:()=>"\u{1F4F7} <b>"+m.en+"</b> \u00b7 press <b>E</b>",
+      prompt:()=>"\u{1F4F7} <b>"+m.en+"</b> \u00b7 press <b>P</b>",
       interact:()=>photoTake(m) });
   });
   photoCheckUnlocks(false);
@@ -12601,7 +12645,7 @@ function dinerEatInOrOut(n){
         const f=dinerFreeSeats()[0];
         DialogueBox.open({ npc:n, icon:"\u{1F354}", sub:"Waiter",
           text:"Great! Please take a seat anywhere you like. I'll be right with you!",
-          italian:"Siediti a una sedia libera (premi E): arrivo subito.",
+          italian:"Siediti a una sedia libera (premi P): arrivo subito.",
           buttons:[{label:"OK, thanks!", cls:"primary", act:()=>{
             if(f && f.inter){ moveTarget=new BABYLON.Vector3(f.x,0,f.z); pendingInteract=f.inter; } }}] }); } },
     buttons:[{label:"No, thanks", cls:"ghost", act:()=>{}}] });
@@ -12646,7 +12690,7 @@ function dinerSeatInteracts(){
     s.inter=addInteract({ id:"diner_seat_"+i, area:"town", radius:1.25,
       pos:()=>new BABYLON.Vector3(s.x,0,s.z),
       prompt:()=>!dinerOpen()?'\u{1F319} The diner is closed now'
-        :dinerSeatTaken(s)?'\u{1FA91} This seat is taken':'Press <b>E</b> to <b>sit down</b>',
+        :dinerSeatTaken(s)?'\u{1FA91} This seat is taken':'Press <b>P</b> to <b>sit down</b>',
       interact:()=>dinerSit(s) });
   });
   /* mentre sei seduto: una sola E, sempre la piu' vicina (e' su di te) */
@@ -13019,7 +13063,7 @@ function _dinerDessert(v){
   } else {
     DINER.st="eating2";
     DialogueBox.open({ npc:w, icon:"\u{1F354}", sub:DINER.name, text:"No problem! Just call me when you want the bill.",
-      italian:"Nessun problema! Chiamami quando vuoi il conto (premi E).", buttons:[{ label:"OK!", cls:"primary", act:()=>{} }] });
+      italian:"Nessun problema! Chiamami quando vuoi il conto (premi P).", buttons:[{ label:"OK!", cls:"primary", act:()=>{} }] });
     dinerWaiterHome();
   }
 }
@@ -13031,7 +13075,7 @@ function _dinerServeDessert(){
   delete DINER.onTable.main; delete DINER.onTable.side;                  // v309: per i compagni
   _dinerServe(["dessert"]); DINER.st="eating2";
   DialogueBox.open({ npc:DINER.waiter, icon:"\u{1F354}", sub:DINER.name, text:"There you go. Just call me when you want the bill!",
-    italian:"Ecco qua. Chiamami quando vuoi il conto (premi E).", buttons:[{ label:"OK!", cls:"primary", act:()=>{} }] });
+    italian:"Ecco qua. Chiamami quando vuoi il conto (premi P).", buttons:[{ label:"OK!", cls:"primary", act:()=>{} }] });
   dinerWaiterHome();
 }
 /* v306: qualcosa in piu' chiesto al momento del conto. Ray lo va a prendere,
@@ -13052,7 +13096,7 @@ function dinerExtra(v){
       o.__srv={}; o.__srv[key]=v; _dinerServe([key]); o.__srv=null;
       DINER.st="eating2";
       DialogueBox.open({ npc:w, icon:"\u{1F354}", sub:DINER.name, text:"Here you are! Just call me when you want the bill.",
-        italian:"Ecco qua! Chiamami quando vuoi il conto (premi E).", buttons:[{ label:"Thanks!", cls:"primary", act:()=>{} }] });
+        italian:"Ecco qua! Chiamami quando vuoi il conto (premi P).", buttons:[{ label:"Thanks!", cls:"primary", act:()=>{} }] });
       dinerWaiterHome(); }); }));
 }
 /* ---- il conto e il pagamento ---- */
@@ -13104,9 +13148,9 @@ function dinerPaid(v,late){
 /* la E su di te mentre sei seduto */
 function dinerMePrompt(){
   const st=DINER.st;
-  if(st==="eating"||st==="eating2") return 'Press <b>E</b>: <b>ask for the bill</b> or stand up';
-  if(st==="paid") return 'Press <b>E</b> to <b>stand up</b>';
-  return 'Press <b>E</b>: talk to the waiter or stand up';
+  if(st==="eating"||st==="eating2") return 'Press <b>P</b>: <b>ask for the bill</b> or stand up';
+  if(st==="paid") return 'Press <b>P</b> to <b>stand up</b>';
+  return 'Press <b>P</b>: talk to the waiter or stand up';
 }
 function dinerMeAction(){
   const st=DINER.st;
@@ -13485,7 +13529,7 @@ function regBench(kind,x,z,lines,o){ o=o||{};
   BENCHES.push(b);
   if(!o.noInter) b.inter=addInteract({ id:"citybench_"+BENCHES.length, area:"town", radius:o.radius||2.2, prio:2,
     pos:()=>new BABYLON.Vector3(b.x,0.5,b.z),
-    prompt:()=>(BSIT.b||b.npcBusy||(typeof SKDANCE!=="undefined" && SKDANCE.on))?"":'\u{1FA91} Press <b>E</b> to <b>sit down</b>'+(NEWS.has?' and <b>read the newspaper</b>':''),
+    prompt:()=>(BSIT.b||b.npcBusy||(typeof SKDANCE!=="undefined" && SKDANCE.on))?"":'\u{1FA91} Press <b>P</b> to <b>sit down</b>'+(NEWS.has?' and <b>read the newspaper</b>':''),
     interact:()=>benchSit(b) });
   return b;
 }
@@ -13548,7 +13592,7 @@ function benchSit(b){
   let _eat=false; try{ if(Needs.bag) _eat=Needs.benchEat(b); }catch(e){ console.warn("[needs] bench",e); }   // v591 🥡
   if(_eat){ /* si mangia: il giornale aspetta */ }
   else if(NEWS.has){ toast("\u{1FA91} You sit down and open the newspaper…"); setTimeout(()=>{ if(BSIT.b===b) benchRead(); },700); }
-  else if(!(Needs.bag && b.kind!=="picnic")) toast("\u{1FA91} You sit down. (E or walk to stand up)");
+  else if(!(Needs.bag && b.kind!=="picnic")) toast("\u{1FA91} You sit down. (P or walk to stand up)");
   try{ parkOnSit(b); }catch(e){}       // v307: Park watcher / Story Tree
 }
 /* il corpo sulla seduta; da capo anche per aprire/chiudere il giornale
@@ -13581,8 +13625,8 @@ function benchStand(silent){
 }
 /* la E su di te mentre sei seduto */
 function benchMePrompt(){
-  if(!NEWS.has) return 'Press <b>E</b> to <b>stand up</b>';
-  return BSIT.reading?'Press <b>E</b>: <b>read</b>, <b>fold the newspaper</b> or stand up':'Press <b>E</b>: <b>read the newspaper</b> or stand up';
+  if(!NEWS.has) return 'Press <b>P</b> to <b>stand up</b>';
+  return BSIT.reading?'Press <b>P</b>: <b>read</b>, <b>fold the newspaper</b> or stand up':'Press <b>P</b>: <b>read the newspaper</b> or stand up';
 }
 function benchMeAction(){
   if(!BSIT.b) return;
@@ -14169,7 +14213,7 @@ function buildCafeNPCs(){
     const npc=spawnNPC({ id:c.id, name:c.name, sub:c.sub, area:"town",
       model:c.model, height:c.height, snap:false, radius:c.radius||3.0, tint:c.tint,
       x:x, z:z, face:c.face,
-      prompt:c.icon+" Press <b>E</b> to talk to <b>"+c.name+"</b>"+(c.role?", "+c.role:""),
+      prompt:c.icon+" Press <b>P</b> to talk to <b>"+c.name+"</b>"+(c.role?", "+c.role:""),
       interact:function(n){ talkToCafeNPC(n,c); } });
     if(!npc) return;
     if(npc.inter){ if(c.prio!=null) npc.inter.prio=c.prio;
@@ -14286,7 +14330,7 @@ function buildKiosk(){
     model:"avatar", height:1.72, snap:false, radius:3.0,
     tint:{ Purple:"#7a3b5e", LightBlue:"#efe7d2", Hair:"#9a8a6a" },
     x:sp.x, z:sp.z, face:sp.face,
-    prompt:'\u{1F4F0} Press <b>E</b>: <b>QuestTown Gazette</b>',
+    prompt:'\u{1F4F0} Press <b>P</b>: <b>QuestTown Gazette</b>',
     interact:()=>talkToNewsagent(NEWSAGENT) }); regTownPop(NEWSAGENT);
   if(NEWSAGENT) NEWSAGENT.carrier.position.y=(typeof _pedGroundY==="function"?_pedGroundY(sp.x,sp.z):0);
 }
@@ -14578,7 +14622,7 @@ function buildStoryBench(){
   BENCH_MARK={ mesh:disc, mat:dm, on:false };
   addInteract({ id:"bench_story", area:"town", radius:2.8,
     pos:()=>new BABYLON.Vector3(x,0.6,z),
-    prompt:()=>BSIT.b?"":'\u{1FA91} Press <b>E</b> to <b>sit down</b>',
+    prompt:()=>BSIT.b?"":'\u{1FA91} Press <b>P</b> to <b>sit down</b>',
     interact:()=>pauseAtBench() });
   refreshBenchMark();
 }
@@ -14652,7 +14696,7 @@ function buildNightBench(){
   NIGHT_BENCH_MARK={ mesh:disc, mat:dm, on:false };
   addInteract({ id:"bench_night", area:"town", radius:2.8,
     pos:()=>new BABYLON.Vector3(x,0.6,z),
-    prompt:()=>BSIT.b?"":'\u{1F319} Press <b>E</b> to <b>sit down</b>',
+    prompt:()=>BSIT.b?"":'\u{1F319} Press <b>P</b> to <b>sit down</b>',
     interact:()=>pauseAtNightBench() });
   refreshNightBenchMark();
 }
@@ -14712,8 +14756,8 @@ function buildMayor(){
        Bianchi); la pelle non entra nelle variazioni anti-gemello (_NO_VESTITO) */
     tint:{ Shirt:"#23324f", Pants:"#262a33", Hair:"#7a7a7a", Skin:"#f1d2bd" },
     x:sp.x, z:sp.z, face:sp.face,
-    prompt:()=>Card.has()?'Press <b>E</b> to talk to the <b>Mayor</b>'
-                         :'Press <b>E</b>: the <b>Mayor</b> has something for you',
+    prompt:()=>Card.has()?'Press <b>P</b> to talk to the <b>Mayor</b>'
+                         :'Press <b>P</b>: the <b>Mayor</b> has something for you',
     interact:()=>talkToMayor(MAYOR) }); regTownPop(MAYOR);
   if(!MAYOR) return;
   MAYOR.carrier.position.y=_pedGroundY(sp.x,sp.z);
@@ -14863,7 +14907,7 @@ function buildRanger(){
     model:"avatar", height:1.84, snap:false, radius:3.0,
     tint:{ Purple:"#e8c73a", LightBlue:"#2f3a46", Hair:"#4a3a26" },   // giacca alta visibilita'
     x:post.x, z:post.z, face:Math.PI,
-    prompt:'Press <b>E</b> to talk to the <b>Town Ranger</b>',
+    prompt:'Press <b>P</b> to talk to the <b>Town Ranger</b>',
     interact:()=>talkToRanger(RANGER,false) });
   if(!RANGER) return;
   RANGER.carrier.position.y=_pedGroundY(post.x,post.z);
@@ -15569,7 +15613,7 @@ function buildStation(){
   const stDX=sdm?sdm.c.x:root.position.x;
   QUESTS.u2_5.doorPos=new BABYLON.Vector3(stDX,0,doorZ+dir*2.4);
   addInteract({id:"station",area:"town",radius:3.8,pos:()=>new BABYLON.Vector3(stDX,0,doorZ),meshes:stMeshes,
-    prompt:()=>Gate.unlocked("u2_5")?S.ic+" <b>"+S.t+"</b> \u00b7 press <b>E</b> to go in"
+    prompt:()=>Gate.unlocked("u2_5")?S.ic+" <b>"+S.t+"</b> \u00b7 press <b>P</b> to go in"
                                      :"\u{1F512} <b>"+S.t+"</b> \u00b7 not open yet",
     interact:()=>tryEnterUnit(QUESTS.u2_5)});
   /* v4 ott: come i palazzi TOWN — tetto, zoccolo, tende, finestre accese di
@@ -15919,7 +15963,7 @@ function buildAirport(){
   // solo un promemoria leggero.
   landmarkSign(RX,13,zBack,"\u2708\uFE0F","City Airport","Year 1 · Unit 1 · One world");
   addInteract({id:"airport",area:"town",radius:4,pos:()=>new BABYLON.Vector3(RX,0,zBoard+5),meshes:[floor],
-    prompt:()=>Progress.get(UNIT1.id).done?"\u2708\uFE0F <b>City Airport</b> · press <b>E</b>":"\u2708\uFE0F <b>City Airport</b> · press <b>E</b> to start",
+    prompt:()=>Progress.get(UNIT1.id).done?"\u2708\uFE0F <b>City Airport</b> · press <b>P</b>":"\u2708\uFE0F <b>City Airport</b> · press <b>P</b> to start",
     interact:()=>{ if(Progress.get(UNIT1.id).done){
         toast("\u2708\uFE0F City Airport — Unit 1 completata! Torna quando vuoi, e' sempre aperto.");
       } else if(Quest.unit===UNIT1){
@@ -18658,7 +18702,7 @@ function buildSkatepark(){
     pos:()=>{ const P=player.position;
       if(SKDANCE.on || skInZone(P.x,P.z,true)) return new BABYLON.Vector3(P.x,g,P.z);
       return new BABYLON.Vector3(C.x,-99,C.z-500); },
-    prompt:()=>SKDANCE.on?'\u{1F57A} Press <b>E</b>: <b>next move</b> \u00b7 walk to stop':'\u{1F57A} Press <b>E</b> to <b>dance</b> with the crew!',
+    prompt:()=>SKDANCE.on?'\u{1F57A} Press <b>P</b>: <b>next move</b> \u00b7 walk to stop':'\u{1F57A} Press <b>P</b> to <b>dance</b> with the crew!',
     interact:()=>skDanceE() });
   landmarkSign(C.x,4.2,C.z+D/2+0.6,"\u{1F6F9}","Skatepark","Hip hop · music · dance");
   /* i ballerini */
@@ -18667,7 +18711,7 @@ function buildSkatepark(){
     /* v309d: quando sono fermi ci si parla (vedi talkToDancer) */
     const n=spawnNPC({ id:cr.id, name:cr.name, sub:"Dancer", area:"town", model:cr.model, keepModel:true, height:cr.h,
       x:cr.x, z:cr.z, face:Math.PI, watch:false, look:cr.look, radius:2.2,
-      prompt:'Press <b>E</b> to talk to <b>'+cr.name+'</b>', interact:()=>{ if(D) talkToDancer(D); } });
+      prompt:'Press <b>P</b> to talk to <b>'+cr.name+'</b>', interact:()=>{ if(D) talkToDancer(D); } });
     if(!n) return;
     n.__skDancer=true; if(n.inter) n.inter.enabled=false;
     /* v309g: ogni ballerino sono ~29 pezzi (corpo e vestiti), x2 con
@@ -20150,7 +20194,7 @@ function skDanceE(){
   const L=skDanceList(); if(!L.length) return;
   const name=id=>{ if(id==="free") return "\u{1F3B2} Freestyle"; const m=SK_MOVES.find(x=>x.id===id); return m?(m.ic+" "+m.en):id; };
   if(!SKDANCE.on){ SKDANCE.idx=0; skDanceStart([L[0]]);
-    if(SKDANCE.on) toast(name(L[0])+" \u2014 E: next move \u00b7 walk to stop",3500); return; }
+    if(SKDANCE.on) toast(name(L[0])+" \u2014 P: next move \u00b7 walk to stop",3500); return; }
   SKDANCE.idx=((SKDANCE.idx||0)+1)%L.length;
   const nx=L[SKDANCE.idx]; SKDANCE.list=(nx==="free")?L.filter(x=>x!=="free"):[nx];
   if(SKDANCE.mv!=="hop") SKDANCE.m0=_skDanceClock().beat-SKDANCE.dur;       // si chiude il passo: saltello, poi il nuovo
@@ -21813,7 +21857,7 @@ function spkBuild(){
   SPK.sign=board; SPK.signTex=dt; spkSignDraw();
   SPK.inter=addInteract({ id:"speakers_corner", area:"town", radius:3.2, meshes:[crate,board],
     pos:()=>new BABYLON.Vector3(x,0.8,z),
-    prompt:()=>"\u{1F3A4} <b>Speakers' Corner</b> · press <b>E</b> to speak",
+    prompt:()=>"\u{1F3A4} <b>Speakers' Corner</b> · press <b>P</b> to speak",
     interact:()=>spkOpen() });
   try{ refreshShadowCasters(); }catch(e){}
 }
@@ -21937,7 +21981,7 @@ function buildParkFun(){
     addSolid(X-0.45,X+0.45,Z-0.45,Z+0.45,"town");
     addInteract({ id:"park_riddle", area:"town", radius:2.6, prio:3,
       pos:()=>new BABYLON.Vector3(X,0.3,Z), meshes:[PARKFUN.riddleBoard.plane],
-      prompt:()=>"\u{1F9E9} <b>Riddle of the day</b> · press <b>E</b>",
+      prompt:()=>"\u{1F9E9} <b>Riddle of the day</b> · press <b>P</b>",
       interact:()=>parkRiddle() }); }
   /* 📖 STORY TREE sotto i pini (il boschetto «tree_pine» a (96,-14) sono
      DIECI pini, tronchi fra x 91..100 e z -10..-18, misurati sui vertici):
@@ -21956,7 +22000,7 @@ function buildParkFun(){
       return r; };
     const oak=_pkSitNpc({ id:"oakley", name:"Mr. Oakley", sub:"\u{1F4D6} Storyteller", model:"npcMan2", height:1.72, keepLabel:true,
       tint:{ Purple:"#6b5a3e", LightBlue:"#3c4652" }, interact:talkToOakley, radius:5,
-      prompt:'\u{1F4D6} Press <b>E</b>: <b>Story Tree</b> — listen to a story' }, ob, -0.35, null);
+      prompt:'\u{1F4D6} Press <b>P</b>: <b>Story Tree</b> — listen to a story' }, ob, -0.35, null);
     PARKFUN.oakley=oak;
     /* la pila di libri accanto a lui, sulla panchina */
     try{ const S=_pkSeat(ob,0.42), r=books(); r.parent=townRoot; r.position.set(S.x,S.y,S.z); r.rotation.y=ob.ry; }catch(e){}
@@ -22203,7 +22247,7 @@ function _pkSpot(c){ return { x:c.spot[0], z:(c.spot[1]===null?_pkSg(c)*PK_LANE:
 function _pkMake(c,BEN,PROP,ARMS){
   const base={ id:c.id, name:c.name, sub:c.sub, model:c.model, height:c.height, tint:c.tint, look:c.look,
     keepModel:true, keepLabel:true, noPop:true, radius:2.6,
-    prompt:'Press <b>E</b> to talk to <b>'+c.name+'</b>', interact:n=>talkToParkie(n.__pk) };
+    prompt:'Press <b>P</b> to talk to <b>'+c.name+'</b>', interact:n=>talkToParkie(n.__pk) };
   let n=null, bench=null;
   if(c.seat){ bench=BEN[c.seat.bench];
     n=_pkSitNpc(Object.assign(base,{ arms:c.seat.arms?ARMS[c.seat.arms]:null }), bench, c.seat.t, c.seat.prop?PROP[c.seat.prop]:null); }
@@ -23113,7 +23157,7 @@ function buildHome(){
   ex.position.set(C.x+DOORX,0.045,C.z+H-1.0); ex.parent=homeRoot;
   guiLabel(anchorMesh(homeRoot,C.x+DOORX,1.2,C.z+H-1.2),"EXIT","",true,"home");
   addInteract({id:"exit",area:"home",radius:2.6,pos:()=>exitPos,meshes:[ex],
-    prompt:'Press <b>E</b> to <b>go out</b>',interact:exitHome});
+    prompt:'Press <b>P</b> to <b>go out</b>',interact:exitHome});
   homeRetint();   // v254: per ULTIMO, dopo che anche la porta GLB e' in scena
 }
 
@@ -23369,7 +23413,7 @@ function buildCinema(){
   thr.position.set(cinemaExitPos.x,0.03,cinemaExitPos.z); thr.parent=cinemaRoot;
   // interazione: fermati sulla soglia e premi E (oppure tocca la porta)
   addInteract({id:"cinemaExit",area:"cinema",radius:2.8,pos:()=>cinemaExitPos,meshes:[postL,postR,lint,leaf,sign,thr],
-    prompt:'Press <b>E</b> to <b>go out</b>',interact:exitCinema});
+    prompt:'Press <b>P</b> to <b>go out</b>',interact:exitCinema});
   // FASE 6 \u00b7 Unit 4 \u00abScreens\u00bb: foyer (locandine, muro di TV, botteghino) e NPC.
   try{ buildCinemaProps(); buildCinemaNPCs(); }catch(e){ console.warn('[odeon]',e); }
 }
@@ -24036,7 +24080,7 @@ function spawnNPC(cfg){
   if(cfg.interact||cfg.prompt){
     npc.inter=addInteract({ id:"npc_"+id, area:npc.area, radius:cfg.radius||3.0,
       pos:()=>npc.pos(), meshes:meshes,
-      prompt:cfg.prompt||('Press <b>E</b> to talk to <b>'+npc.name+'</b>'),
+      prompt:cfg.prompt||('Press <b>P</b> to talk to <b>'+npc.name+'</b>'),
       interact:()=>{ if(!cfg.interact) return;
         if(fragNewsTell(npc,()=>cfg.interact(npc))) return;      // v301: prima la notizia della lettera
         cfg.interact(npc); } });
@@ -27679,7 +27723,7 @@ function registerTourInteracts(){
   TOUR_STOPS.filter(s=>!s.solved).forEach(stop=>{
     stop.inter=Quest.questInteract({ id:"tourstop_"+stop.room, area:"home", radius:2.2,
       pos:()=>stop.pos, meshes:[stop.mesh],
-      prompt:'Press <b>E</b> to answer', interact:()=>runTourChallenge(stop) });
+      prompt:'Press <b>P</b> to answer', interact:()=>runTourChallenge(stop) });
   });
 }
 function runTourChallenge(stop){
@@ -28592,14 +28636,14 @@ function shopInit(){
   if(SHOP.inters.length) return; const I=INTERIORS[UNIT6.area]; if(!I) return; const C=I.center;
   SHOP.inters.push(addInteract({ id:"shop_bay", area:UNIT6.area, radius:2.0, enabled:false,
     pos:()=>new BABYLON.Vector3(C.x+2.9,1.0,C.z+6.3), meshes:MARKET.bay?[MARKET.bay]:[],
-    prompt:'Press <b>E</b> to take a <b>trolley</b>', interact:shopTakeCart }));
+    prompt:'Press <b>P</b> to take a <b>trolley</b>', interact:shopTakeCart }));
   (UNIT6.items||[]).concat(MARKET.goods).forEach(e=>{ if(mktPrice(e)==null) return;
     SHOP.inters.push(addInteract({ id:"shop_"+mktKey(e), area:UNIT6.area, radius:2.4, enabled:false, __shopItem:true,
       pos:()=>e.pos, meshes:(e.__facings||[e.mesh]).filter(Boolean),
-      prompt:'Press <b>E</b> to put the <b>'+mktName(e)+'</b> in the trolley \u00b7 '+gbp(mktPrice(e)), interact:()=>shopAdd(e) })); });
+      prompt:'Press <b>P</b> to put the <b>'+mktName(e)+'</b> in the trolley \u00b7 '+gbp(mktPrice(e)), interact:()=>shopAdd(e) })); });
   SHOP.inters.push(addInteract({ id:"shop_till", area:UNIT6.area, radius:1.9, enabled:false,
     pos:()=>new BABYLON.Vector3(C.x-1.85,1.0,C.z+4.6), meshes:MARKET.till?[MARKET.till]:[],
-    prompt:'Press <b>E</b> to <b>pay</b> at the checkout', interact:shopCheckout }));
+    prompt:'Press <b>P</b> to <b>pay</b> at the checkout', interact:shopCheckout }));
 }
 let _shopLast="";
 function shopTick(force){
@@ -28928,7 +28972,7 @@ function clothesFitInit(){
   if(CSHOP.inter) return; const I=INTERIORS[UNIT8.area]; if(!I) return; const C=I.center;
   CSHOP.inter=addInteract({ id:"cshop_fit", area:UNIT8.area, radius:1.0, enabled:false,
     pos:()=>new BABYLON.Vector3(C.x+3.40,1.0,C.z+4.85), meshes:[],
-    prompt:'Press <b>E</b> to <b>try it on</b> in the fitting room', interact:clothesFitting });
+    prompt:'Press <b>P</b> to <b>try it on</b> in the fitting room', interact:clothesFitting });
 }
 function clothesReset(){ shopTryOff(); CSHOP.on=false; CSHOP.stage=null; CSHOP.cat=null; CSHOP.it=null; CSHOP.asked=false; CSHOP.tried=[]; CSHOP.priceSaid=false; clothesTick(); }
 /* che cosa cerca chi scrive: il nome della categoria nella frase */
@@ -28984,7 +29028,7 @@ function clothesTry(c,it){
   CSHOP.it=it; CSHOP.priceSaid=false;                // il prezzo sentito era quello del capo di prima
   const toFit=line=>{ CSHOP.stage="fitting"; clothesTick();
     DialogueBox.open({ npc, icon, sub:"Shopping with Nina", text:line,
-      italian:"Entra nel camerino (la cabina con la tenda) e premi E per provar"+(P?"li":"lo")+".",
+      italian:"Entra nel camerino (la cabina con la tenda) e premi P per provar"+(P?"li":"lo")+".",
       buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] }); };
   /* v323g (Giacomo: «Can I try them on e altre domande, anche se ho
      cliccato una volta, vengono riproposte»): dal secondo capo in poi
@@ -29170,7 +29214,7 @@ function cornerInit(){
   CORNER.stack=st;
   try{ guiLabel(anchorMesh(I.root, C.x+2.3, 1.15, C.z+7.9), "\u{1F9FA} Baskets", null, true, UNIT4.area); }catch(e){}
   CORNER.inters.push(addInteract({ id:"corner_baskets", area:UNIT4.area, radius:1.6, enabled:false,
-    pos:()=>new BABYLON.Vector3(C.x+2.3,0.6,C.z+7.9), meshes:st.getChildMeshes(), prompt:'Press <b>E</b> to take a <b>basket</b>',
+    pos:()=>new BABYLON.Vector3(C.x+2.3,0.6,C.z+7.9), meshes:st.getChildMeshes(), prompt:'Press <b>P</b> to take a <b>basket</b>',
     interact:cornerTakeBasket }));
   /* v496: il trolley e' QUELLO CHE C'E' GIA' (Giacomo: «c'e' gia' un trolley
      nel corner shop, usa quello»): il carrello di Mia (U4_TROLLEY.node, con
@@ -29180,7 +29224,7 @@ function cornerInit(){
     CORNER.inters.push(addInteract({ id:"corner_trolley", area:UNIT4.area, radius:1.7, enabled:false,
       pos:()=>tp?tp.getAbsolutePosition().add(new BABYLON.Vector3(0,0.6,0)):new BABYLON.Vector3(C.x+2.7,0.6,C.z-0.5),
       meshes:tp?tp.getChildMeshes():[],
-      prompt:()=>CORNER.mode==="basket"?'Press <b>E</b> to take the <b>trolley</b> (your things go in it)':'Press <b>E</b> to take a <b>trolley</b>',
+      prompt:()=>CORNER.mode==="basket"?'Press <b>P</b> to take the <b>trolley</b> (your things go in it)':'Press <b>P</b> to take a <b>trolley</b>',
       interact:cornerTakeTrolley })); }
   UNIT4.items.forEach(e=>{ if(CORNER_PRICES[e.en]==null) return;
     const big=!!CORNER_GRANDI[e.en];
@@ -29188,7 +29232,7 @@ function cornerInit(){
       pos:()=>e.pos, meshes:[e.mesh].filter(Boolean),
       prompt:()=>(big && CORNER.mode==="basket")
         ? 'The <b>'+e.en+'</b> is too big for the basket: <b>take the trolley</b>!'
-        : 'Press <b>E</b> to put the <b>'+e.en+'</b> in your '+cornerCosa(),
+        : 'Press <b>P</b> to put the <b>'+e.en+'</b> in your '+cornerCosa(),
       interact:()=>{ if(!CORNER.on) return;
         if(big && CORNER.mode==="basket"){ toast("\u{1F6D2} It's too big for the basket! Take the trolley.",3800); return; }
         if(CORNER.items.length>=8){ toast((CORNER.mode==="trolley"?"\u{1F6D2}":"\u{1F9FA}")+" Your "+cornerCosa()+" is full! Go to Sam."); return; }
@@ -29360,14 +29404,14 @@ function startCornerShop(npc,direct){
   cornerInit();
   if(direct){ cornerTakeBasket(); return; }                         // tasto 3 del docente
   DialogueBox.open({ npc, icon:"\u{1F9FA}", sub:"Shopping at the Corner Shop", text:"Sure! The baskets are by the door. Take one, choose what you want, then come back to me. For big things, take the trolley!",
-    italian:"I cestini sono accanto alla porta: prendine uno (E), scegli dagli scaffali e torna da Sam a pagare. Per le cose grandi (chitarra, skateboard) prendi il carrello (trolley).",
+    italian:"I cestini sono accanto alla porta: prendine uno (P), scegli dagli scaffali e torna da Sam a pagare. Per le cose grandi (chitarra, skateboard) prendi il carrello (trolley).",
     buttons:[{ label:"OK, thanks!", cls:"primary", act:()=>{} }] });
 }
 function cornerCheckout(npc){
   const its=CORNER.items.slice(), n=its.length, icon="\u{1F6D2}";
   if(!n){ const tr=CORNER.mode==="trolley";
     DialogueBox.open({ npc, icon:tr?"\u{1F6D2}":"\u{1F9FA}", sub:"Shopping", text:"Your "+cornerCosa()+" is empty! Take something from the shelves.",
-      italian:(tr?"Il carrello":"Il cestino")+" è vuoto: prendi qualcosa dagli scaffali (E).",
+      italian:(tr?"Il carrello":"Il cestino")+" è vuoto: prendi qualcosa dagli scaffali (P).",
       buttons:[{ label:"OK!", cls:"primary", act:()=>{} }, { label:"Put the "+cornerCosa()+" back", cls:"ghost", act:()=>cornerDropBasket() }] }); return; }
   const tot=its.reduce((a,e)=>a+CORNER_PRICES[e.en],0), P=n>1;
   let errors=0; const add=e=>{ errors+=e||0; };
@@ -31848,7 +31892,7 @@ const MECH={
          nel selettore svuoterebbe l'esercizio. */
       Quest.questInteract({ id:"furn_"+entry.en, area:Quest.unit.area, radius:3.2, furn:entry,
         pos:()=>entry.pos, meshes:[entry.mesh], label:(entry.lbl||entry.it||"?"),
-        prompt:'Press <b>E</b> to identify', interact:()=>onTap(entry) });
+        prompt:'Press <b>P</b> to identify', interact:()=>onTap(entry) });
     });
     showObj();
   },
@@ -31860,7 +31904,7 @@ const MECH={
     active.forEach(g=>{
       g.inter=Quest.questInteract({ id:"gate_"+g.room, area:"home", radius:2.6,
         pos:()=>g.pos, meshes:[g.mesh],
-        prompt:'Press <b>E</b> for the <b>'+g.room+'</b>',
+        prompt:'Press <b>P</b> for the <b>'+g.room+'</b>',
         interact:()=>{ g.state.idx=0; g.state.tries=0; runGateChallenge(g); } });
     });
     questHudSet("grammatica", HOBJ("Unlock the doors with <b>there is / isn\'t / is there\u2026?</b> ("+active.length+" left)","Sblocca le porte con <b>there is / isn't / is there…?</b> ("+active.length+" rimaste)"), Quest.i, Quest.total);
@@ -31914,7 +31958,7 @@ const MECH={
     pool.forEach(entry=>{
       Quest.questInteract({ id:"listen_"+entry.en, area:Quest.unit.area, radius:3.2,
         pos:()=>entry.pos, meshes:[entry.mesh],
-        prompt:'Press <b>E</b> to follow the instruction', interact:()=>onTap(entry) });
+        prompt:'Press <b>P</b> to follow the instruction', interact:()=>onTap(entry) });
     });
     replayListenCmd();
   },
@@ -31926,7 +31970,7 @@ const MECH={
       const W=WPADS[Quest.unit.id];
       Quest.questInteract({ id:"wpad_"+Quest.unit.id, area:Quest.unit.area, radius:2.4,
         pos:()=>W.pos, meshes:[W.mesh],
-        prompt:'Press <b>E</b> to write on the notepad',
+        prompt:'Press <b>P</b> to write on the notepad',
         interact:()=>openWritePad(s) });
       return;
     }
@@ -31934,7 +31978,7 @@ const MECH={
     questHudSet("writing", HOBJ("Go to the <b>kitchen</b> and write in the <b>guestbook</b> on the table: describe your house (3+ sentences).","Vai in <b>cucina</b> e scrivi nel <b>guestbook</b> sul tavolo: descrivi la tua casa (3+ frasi)."), Quest.i, Quest.total);
     Quest.questInteract({ id:"guestbook", area:"home", radius:2.4,
       pos:()=>GUESTBOOK.pos, meshes:[GUESTBOOK.mesh],
-      prompt:'Press <b>E</b> to write in the guestbook',
+      prompt:'Press <b>P</b> to write in the guestbook',
       interact:openGuestbook });
   },
   // FINAL → Leo (ospite) chiede il giro della casa: 4 tappe + mini-writing finale
@@ -31972,7 +32016,7 @@ const MECH={
     unitPool().forEach(entry=>{
       Quest.questInteract({ id:"show_"+entry.en, area:Quest.unit.area, radius:3.2,
         pos:()=>entry.pos, meshes:[entry.mesh],
-        prompt:'Press <b>E</b> to choose your favourite',
+        prompt:'Press <b>P</b> to choose your favourite',
         interact:()=>runShowTell(entry) });
     });
   },
@@ -31998,7 +32042,7 @@ const MECH={
     unitPool().forEach(entry=>{
       Quest.questInteract({ id:"show_"+entry.en, area:Quest.unit.area, radius:3.2,
         pos:()=>entry.pos, meshes:[entry.mesh],
-        prompt:'Press <b>E</b> to choose your favourite',
+        prompt:'Press <b>P</b> to choose your favourite',
         interact:()=>runFoodShow(entry) });
     });
   },
@@ -32024,7 +32068,7 @@ const MECH={
     unitPool().forEach(entry=>{
       Quest.questInteract({ id:"show_"+entry.en, area:Quest.unit.area, radius:3.2,
         pos:()=>entry.pos, meshes:[entry.mesh],
-        prompt:'Press <b>E</b> to choose your favourite',
+        prompt:'Press <b>P</b> to choose your favourite',
         interact:()=>runTravelShow(entry) });
     });
   },
@@ -32195,7 +32239,7 @@ const MECH={
     unitPool().forEach(entry=>{
       Quest.questInteract({ id:"show_"+entry.en, area:Quest.unit.area, radius:3.2,
         pos:()=>entry.pos, meshes:[entry.mesh], label:entry.en,
-        prompt:'Press <b>E</b> to choose your favourite',
+        prompt:'Press <b>P</b> to choose your favourite',
         interact:()=>runStyleShow(entry) });
     });
   },
@@ -33325,7 +33369,7 @@ function lessonStand(silent){
     LESSON.paused=true; LESSON.pausedAt=Date.now();
     try{ DialogueBox.close(); }catch(e){}
     lessonSeatInter(true);
-    if(!silent) toast("\u{1F6B6} The lesson goes on: sit down again (E at your chair) or leave the room. After 1 minute Miss Grace will ask you to sit down.",6500);
+    if(!silent) toast("\u{1F6B6} The lesson goes on: sit down again (P at your chair) or leave the room. After 1 minute Miss Grace will ask you to sit down.",6500);
     /* la lezione va avanti: la battuta in corso la dice lei (o, se era una
        domanda per te, risponde un compagno) e poi si prosegue */
     setTimeout(()=>{ if(!LESSON.on || !LESSON.paused) return;
@@ -33358,7 +33402,7 @@ function lessonSeatInter(on){
     const I=INTERIORS[UNIT0.area]; if(!I) return; const C=I.center;
     LESSON.seatInter=addInteract({ id:"lesson_seat", area:UNIT0.area, radius:1.7,
       pos:()=>{ const d=LESSON.desk||LESSON_DESK; return new BABYLON.Vector3(C.x+d.x,0,C.z+d.z+0.42); },
-      prompt:()=>"\u{1FA91} Press <b>E</b> to <b>sit down</b> and go on with the lesson",
+      prompt:()=>"\u{1FA91} Press <b>P</b> to <b>sit down</b> and go on with the lesson",
       interact:()=>lessonResume() });
   }
   if(LESSON.seatInter) LESSON.seatInter.enabled=!!on;
@@ -37824,7 +37868,7 @@ function registerRobinsInteracts(ro){
   ro.order.forEach((entry,pos)=>{
     Quest.questInteract({ id:"robins_"+entry.en, area:Quest.unit.area, radius:3.2,
       pos:()=>entry.pos, meshes:[entry.mesh],
-      prompt:'Press <b>E</b> to answer', interact:()=>onRobinsTap(entry,pos) });
+      prompt:'Press <b>P</b> to answer', interact:()=>onRobinsTap(entry,pos) });
   });
 }
 
@@ -38174,7 +38218,7 @@ function runCafeOrder(){
       DialogueBox.open({ npc, icon:"\u2615", sub:o.luogo.nome+" \u2014 order complete"
           +(got>0?"  \u2b50 +"+got:""),
         text:"Here you are \u2014 enjoy!",
-        italian:"Ordine completo! Te lo prepara e lo posa sul bancone: vai a prenderlo (E).",
+        italian:"Ordine completo! Te lo prepara e lo posa sul bancone: vai a prenderlo (P).",
         html: cafeSlipHtml(o),
         buttons:[{ label:"Thank you!", cls:"primary", act:function(){ _CAFE=null; cafeServe(npc,o); } }] }); } });
     return;
@@ -38483,7 +38527,7 @@ function cafeServe(npc,o){
     /* v600: sgabelli tutti presi dai compagni? lo si dice SUBITO, al bancone */
     try{ if(_cafeStoolLibero(P,true)<0){ cafeTakeaway(); return; } }catch(e){}
     try{ toast("☕ "+(npc.name||"The barista")+": “Here you are! Have a seat.”"); }catch(e){}
-    _cafeOffer('☕ Press <b>E</b> to <b>sit down</b> and have your order');
+    _cafeOffer('☕ Press <b>P</b> to <b>sit down</b> and have your order');
     /* se non lo prendi, dopo un paio di minuti il barista lo ritira */
     P.timer=setTimeout(()=>{ if(P.st==="ready") cafeClear(); },150000);
   },1400); }
@@ -38578,7 +38622,7 @@ function cafePause(){ const P=CAFE_PICK; if(P.st!=="eating") return;
   eatStop();
   _cafeStand();
   P.st="paused";
-  _cafeOffer('☕ Press <b>E</b> to <b>sit down</b> and <b>finish your order</b>');
+  _cafeOffer('☕ Press <b>P</b> to <b>sit down</b> and <b>finish your order</b>');
   /* se non torni, il barista ritira tutto */
   P.timer=setTimeout(()=>{ if(P.st==="paused") cafeClear(); },60000); }
 function _cafeRun(){
@@ -38826,7 +38870,7 @@ function registerGateInteracts(ga){
   for(let i=0;i<4;i++){
     Quest.questInteract({ id:"gatepod_"+i, area:"town", radius:3.2,
       pos:()=>gatePodiumPos(i), meshes:[],
-      prompt:'Press <b>E</b> to board', interact:()=>onGateTap(i) });
+      prompt:'Press <b>P</b> to board', interact:()=>onGateTap(i) });
   }
 }
 
@@ -38945,7 +38989,7 @@ function buildClockSquare(cx,cz){
      ripetono" gia' corretto all'aeroporto). */
   addInteract({ id:"clocktower", area:"town", radius:3.6,
     pos:()=>new BABYLON.Vector3(cx,0,cz+3.0), meshes:[],
-    prompt:()=>Progress.get(UNIT5.id).done?"\u{1F550} <b>Clock Tower</b> \u00b7 press <b>E</b>":"\u{1F550} <b>Clock Tower</b> \u00b7 press <b>E</b> to start",
+    prompt:()=>Progress.get(UNIT5.id).done?"\u{1F550} <b>Clock Tower</b> \u00b7 press <b>P</b>":"\u{1F550} <b>Clock Tower</b> \u00b7 press <b>P</b> to start",
     interact:()=>{ if(Progress.get(UNIT5.id).done){
         toast("\u{1F550} Clock Tower — Unit 5 completata! L'orologio segna di nuovo l'ora giusta.");
       } else if(Quest.unit===UNIT5){
@@ -39239,7 +39283,7 @@ function registerRoutineInteracts(tb){
   (UNIT5.items||[]).forEach(entry=>{
     Quest.questInteract({ id:"u5rt_"+entry.en.replace(/\s+/g,"_"), area:"town", radius:3.2,
       pos:()=>entry.pos, meshes:[entry.mesh],
-      prompt:'Press <b>E</b> to choose this moment',
+      prompt:'Press <b>P</b> to choose this moment',
       interact:()=>onRoutineTap(entry,tb) });
   });
 }
@@ -39788,7 +39832,7 @@ function buildSportsZone(cx,cz){
      quest si puo' avviare anche parlando a Coach Dan, vedi talkToCoach. */
   addInteract({ id:"pitch", area:"town", radius:4.2,
     pos:()=>new BABYLON.Vector3(cx+1,0,cz-13.6), meshes:[boardMesh],
-    prompt:()=>Progress.get(UNIT7.id).done?"\u26bd <b>Sports Field</b> \u00b7 press <b>E</b>":"\u26bd <b>Sports Field</b> \u00b7 press <b>E</b> to start",
+    prompt:()=>Progress.get(UNIT7.id).done?"\u26bd <b>Sports Field</b> \u00b7 press <b>P</b>":"\u26bd <b>Sports Field</b> \u00b7 press <b>P</b> to start",
     interact:()=>{ if(Progress.get(UNIT7.id).done){
         toast("\u26bd Sports Field \u2014 Unit 7 completata! La squadra e' sul tabellone.");
       } else if(Quest.unit===UNIT7){
@@ -39817,7 +39861,7 @@ function buildSportsZone(cx,cz){
       if(x===px && z===pz){             // dentro il campo: il bordo piu' vicino
         if(PF_HW-Math.abs(px) < PF_HD-Math.abs(pz)) x=(px<0?-PF_HW:PF_HW); else z=(pz<0?-PF_HD:PF_HD); }
       return new BABYLON.Vector3(cx+x, 0, cz+z); },
-    prompt:()=>"\u26bd <b>Sports Field</b> \u00b7 press <b>E</b> to start",
+    prompt:()=>"\u26bd <b>Sports Field</b> \u00b7 press <b>P</b> to start",
     interact:()=>{ if(u7EdgeOn()) tryStartQuest(UNIT7); } });
   Object.defineProperty(pfEdge,"enabled",{ configurable:true, get:u7EdgeOn, set:function(){} });
   setTimeout(buildSportNPCs,0);
@@ -40253,7 +40297,7 @@ function talkToNina(npc){
   /* v323c: a meta' shopping Nina sa dove sei arrivato */
   if(CSHOP.stage==="back"){ clothesAtCounter(npc); return; }
   if(CSHOP.stage==="fitting"){ DialogueBox.open({ npc, icon:"\u{1F457}", sub:"Shopping with Nina", text:"The fitting room is over there!",
-      italian:"Il camerino \u00e8 la cabina con la tenda: vai l\u00ec e premi E.", buttons:[{ label:"OK!", cls:"primary", act:()=>{} }] }); return; }
+      italian:"Il camerino \u00e8 la cabina con la tenda: vai l\u00ec e premi P.", buttons:[{ label:"OK!", cls:"primary", act:()=>{} }] }); return; }
   if(freeShopMenu(npc,UNIT8,"\u{1f457}","Shop Assistant",startClothesShop,()=>talkToNina(npc))) return;   // v323
   if(ambientReady(npc,UNIT8)){ openAmbient(npc,UNIT8.id,"\u{1f457}","Shop Assistant"); return; }
   if(Quest.unit===UNIT8 && Quest.step){
@@ -40537,7 +40581,7 @@ function u8StartWindow(s){
   unitPool().forEach(entry=>{
     Quest.questInteract({ id:"win_"+entry.en, area:UNIT8.area, radius:3.2,
       pos:()=>entry.pos, meshes:[entry.mesh], label:entry.en,
-      prompt:'Press <b>E</b> to put it in the window', interact:()=>u8WindowTap(entry) });
+      prompt:'Press <b>P</b> to put it in the window', interact:()=>u8WindowTap(entry) });
   });
   u8Announce();
 }
@@ -41600,7 +41644,7 @@ MECH.concertPhoto=function(s){
   const I=INTERIORS[UNIT_MUSIC.area]; if(I){ const C=I.center;
     Quest.questInteract({ id:"beat_photo", area:UNIT_MUSIC.area, radius:2.8,
       pos:()=>new BABYLON.Vector3(C.x-5.10-BEAT_DX, 0, C.z-3.40),
-      prompt:'\u{1F4F7} Press <b>E</b> to look at the <b>photo</b>',
+      prompt:'\u{1F4F7} Press <b>P</b> to look at the <b>photo</b>',
       interact:()=>runConcertPhoto(RITA) }); }
 };
 MECH.moodBooth=function(s){
@@ -41609,7 +41653,7 @@ MECH.moodBooth=function(s){
   const I=INTERIORS[UNIT_MUSIC.area]; if(I){ const C=I.center;
     Quest.questInteract({ id:"beat_juke", area:UNIT_MUSIC.area, radius:2.6,
       pos:()=>new BABYLON.Vector3(C.x-4.30-BEAT_DX, 0, C.z-1.60),
-      prompt:'\u{1F3B6} Press <b>E</b>: <b>jukebox</b>',
+      prompt:'\u{1F3B6} Press <b>P</b>: <b>jukebox</b>',
       interact:()=>runMoodBooth(DEV) }); }
 };
 MECH.stagePlan=function(s){
@@ -41622,7 +41666,7 @@ MECH.gigPoster=function(s){
   const I=INTERIORS[UNIT_MUSIC.area]; if(I){ const C=I.center;
     Quest.questInteract({ id:"beat_window", area:UNIT_MUSIC.area, radius:2.8,
       pos:()=>new BABYLON.Vector3(C.x+5.05+BEAT_DX, 0, C.z+2.60),
-      prompt:'\u{1FAA7} Press <b>E</b>: club <b>display case</b>',
+      prompt:'\u{1FAA7} Press <b>P</b>: club <b>display case</b>',
       interact:()=>runGigPoster(RITA) }); }
 };
 
@@ -42068,7 +42112,7 @@ MECH.posterWall=function(s){
          sbagliata. Era questo il "quinto indizio introvabile". */
       radius:(entry.clue&&entry.pos.x<CINEMA_C.x-6?1.25:1.05),
       furn:entry, pos:()=>entry.pos, meshes:[entry.mesh], label:(entry.it||"?"),
-      prompt:'Press <b>E</b> to choose',
+      prompt:'Press <b>P</b> to choose',
       interact:()=>{
         const target=pw.list[pw.idx]; if(!target) return;
         if(entry===target){
@@ -42301,7 +42345,7 @@ function runGuessTheFilm(npc,speak){
   DialogueBox.open({ npc, icon:"\ud83c\udfa7", autoSpeak:false,
     sub:"Film club \u2014 guess the film ("+(gt.idx+1)+"/"+CIN_TALES.length+")",
     text:"Listen \u2014 which film was it?",
-    italian:"Chris racconta un film senza dirne n\u00e9 il titolo n\u00e9 il genere. Ascolta con il pulsante, poi vai alla locandina giusta e premi E.",
+    italian:"Chris racconta un film senza dirne n\u00e9 il titolo n\u00e9 il genere. Ascolta con il pulsante, poi vai alla locandina giusta e premi P.",
     html:rev,
     buttons:[{label:"\ud83d\udd0a Listen", cls:"", keepOpen:true, act:()=>cinTaleSay()},
              {label:"\u2714 I'll find it", cls:"primary", act:()=>{}}] });
@@ -42316,7 +42360,7 @@ MECH.guessTheFilm=function(s){
     Quest.questInteract({ id:"cinlis_"+entry.en.replace(/[^a-z0-9]/gi,"_"), area:"cinema",
       radius:(entry.pos.x<CINEMA_C.x-6?1.25:1.05),
       pos:()=>entry.pos, meshes:[entry.mesh], label:(entry.it||"?"),
-      prompt:'Press <b>E</b>: is this the film?',
+      prompt:'Press <b>P</b>: is this the film?',
       interact:()=>{
         const gt=Quest.state.gt, T=CIN_TALES[gt.idx]; if(!T) return;
         if(entry.en===T.en){
@@ -42398,7 +42442,7 @@ MECH.writeReview=function(s){
   questHudSet("writing", HOBJ("\u270d\ufe0f Go to the <b>review pad</b> at the box office and write (3+ sentences)","\u270d\ufe0f Vai al <b>blocco delle recensioni</b> al botteghino e scrivi (3+ frasi)"), Quest.i, Quest.total);
   Quest.questInteract({ id:"cin_pad", area:"cinema", radius:2.6,
     pos:()=>W.pos, meshes:[W.mesh],
-    prompt:'Press <b>E</b> to write your <b>review</b>',
+    prompt:'Press <b>P</b> to write your <b>review</b>',
     interact:()=>runWriteReview() });
 };
 
@@ -42519,7 +42563,7 @@ MECH.premiereNight=function(s){
   questHudSet("final", HOBJ("\ud83c\udfac Go in front of the <b>stage</b>: it\'s your premiere","\ud83c\udfac Vai davanti al <b>palco</b>: \u00e8 la tua premiere"), Quest.i, Quest.total);
   Quest.questInteract({ id:"cin_stage", area:"cinema", radius:3.0,
     pos:()=>new BABYLON.Vector3(C.x, 0, C.z-8.20),
-    prompt:'\ud83c\udfac Press <b>E</b>: go up for your <b>premiere</b>',
+    prompt:'\ud83c\udfac Press <b>P</b>: go up for your <b>premiere</b>',
     interact:()=>runPremiereNight(IRIS) });
 };
 
@@ -42532,7 +42576,7 @@ MECH.pressConference=function(s){
   const C=CINEMA_C;
   Quest.questInteract({ id:"cin_press", area:"cinema", radius:3.0,
     pos:()=>new BABYLON.Vector3(C.x+2.20, 0, C.z-7.40),
-    prompt:'\ud83c\udfa5 Press <b>E</b>: <b>press conference</b>',
+    prompt:'\ud83c\udfa5 Press <b>P</b>: <b>press conference</b>',
     interact:()=>runPressConference(IRIS) });
 };
 
@@ -44253,9 +44297,9 @@ function beatMode(){
 }
 function beatDoorPrompt(p){
   const m=beatMode();
-  if(m==="gig")        return "\u{1F3B8} <b>"+p.t+"</b> \u00b7 <b>LIVE NOW</b> \u2014 press <b>E</b> to go in";
-  if(m==="soundcheck") return "\u{1F39A}\uFE0F <b>"+p.t+"</b> \u00b7 sound check \u2014 press <b>E</b>";
-  return "\u{1F3B5} Press <b>E</b> to enter: <b>"+p.t+"</b>";
+  if(m==="gig")        return "\u{1F3B8} <b>"+p.t+"</b> \u00b7 <b>LIVE NOW</b> \u2014 press <b>P</b> to go in";
+  if(m==="soundcheck") return "\u{1F39A}\uFE0F <b>"+p.t+"</b> \u00b7 sound check \u2014 press <b>P</b>";
+  return "\u{1F3B5} Press <b>P</b> to enter: <b>"+p.t+"</b>";
 }
 function gigForceCycle(){
   GIG.force = GIG.force===null ? "gig" : (GIG.force==="gig" ? "soundcheck" : (GIG.force==="soundcheck" ? "closed" : null));
@@ -44343,7 +44387,7 @@ function gigBuildCrowd(){
       /* girati verso il palco (Math.PI) ma non tutti uguali: chi chiacchiera
          si volta un po' verso chi gli sta accanto. */
       x:C.x+c.lx, z:C.z+c.lz, face:Math.PI+(c.face||0),
-      prompt:"\u{1F3B6} Press <b>E</b> to talk to <b>"+c.name+"</b>",
+      prompt:"\u{1F3B6} Press <b>P</b> to talk to <b>"+c.name+"</b>",
       interact:function(nn){ talkToGigNPC(nn,c); } });
     if(npc) GIG_NPC.push(npc);
   });
@@ -44963,7 +45007,7 @@ function danceInit(){
   if(PDANCE.inter) return;
   PDANCE.inter=addInteract({ id:"beat_dance", area:UNIT_MUSIC.area, radius:2.5, prio:5, enabled:false,
     pos:()=>player.position,
-    prompt:()=>(PDANCE.on||SKDANCE.on)?'\u{1F483} Press <b>E</b>: <b>next move</b> \u00b7 walk to stop':'\u{1F483} Press <b>E</b> to <b>dance</b>!',
+    prompt:()=>(PDANCE.on||SKDANCE.on)?'\u{1F483} Press <b>P</b>: <b>next move</b> \u00b7 walk to stop':'\u{1F483} Press <b>P</b> to <b>dance</b>!',
     /* v308: con almeno un passo sbloccato (il docente li ha tutti) si
        sceglie: ballo libero di prima o i passi di Billie Jean */
     interact:()=>{ if(PDANCE.on){ danceStop(); return; } skDanceE(); } });
@@ -44979,7 +45023,7 @@ function danceStart(){
   PDANCE.face=danceStageFace(); PDANCE.phase=danceCrowdPhase(); PDANCE.anim="Wave";
   player.rotation.y=PDANCE.face;
   moveTarget=null; pendingInteract=null;
-  try{ toast("\u{1F483} Let's dance! (E or walk to stop)"); }catch(e){}
+  try{ toast("\u{1F483} Let's dance! (P or walk to stop)"); }catch(e){}
 }
 function danceStop(){
   if(!PDANCE.on) return;
@@ -45147,9 +45191,9 @@ function showOpen(){ return cinemaMode()!=="closed"; }
 function showTimeLabel(){ return cinemaMode()==="matinee" ? "5 p.m." : "8 p.m."; }
 function cinDoorPrompt(){
   const m=cinemaMode();
-  if(m==="matinee") return "\u{1F3AC} <b>ODEON</b> \u00b7 <b>MATIN\u00c9E</b> \u2014 press <b>E</b> to go in";
-  if(m==="evening") return "\u{1F3AC} <b>ODEON</b> \u00b7 <b>8 P.M. SHOW</b> \u2014 press <b>E</b>";
-  return "\u{1F3AC} Press <b>E</b> to enter the <b>cinema</b>";
+  if(m==="matinee") return "\u{1F3AC} <b>ODEON</b> \u00b7 <b>MATIN\u00c9E</b> \u2014 press <b>P</b> to go in";
+  if(m==="evening") return "\u{1F3AC} <b>ODEON</b> \u00b7 <b>8 P.M. SHOW</b> \u2014 press <b>P</b>";
+  return "\u{1F3AC} Press <b>P</b> to enter the <b>cinema</b>";
 }
 function showForceCycle(){
   SHOW.force = SHOW.force===null ? "matinee" : (SHOW.force==="matinee" ? "evening" : (SHOW.force==="evening" ? "closed" : null));
@@ -45420,7 +45464,7 @@ function showGiveTicket(npc){
 function showRowPrompt(L){
   if(!showOpen()) return "\u{1F3AC} Row <b>"+L+"</b> \u00b7 no screening now";
   if(!SHOW.ticket) return "\u{1F39F} You need a <b>ticket</b>: go to the box office";
-  return "\u{1F4BA} Row <b>"+L+"</b> \u2014 press <b>E</b> to find your seat";
+  return "\u{1F4BA} Row <b>"+L+"</b> \u2014 press <b>P</b> to find your seat";
 }
 function showRowEnter(L){
   if(!showOpen()){
@@ -45850,7 +45894,7 @@ function showBuildSpectator(){
   SHOW.npc=spawnNPC({ id:SHOW_SPECT.id, name:SHOW_SPECT.name, sub:SHOW_SPECT.sub,
     area:"cinema", parent:cinemaRoot, model:"avatarW", height:SHOW_SPECT.h, radius:2.4,
     x:C.x+SHOW_SPECT.lx, z:C.z+SHOW_SPECT.lz, face:Math.PI*0.88,
-    prompt:"\u{1F37F} Press <b>E</b> to talk to <b>Nora</b>",
+    prompt:"\u{1F37F} Press <b>P</b> to talk to <b>Nora</b>",
     interact:function(nn){ talkToShowNPC(nn); } });
   return SHOW.npc;
 }
@@ -47058,7 +47102,7 @@ MECH.mirrorWall=function(s){
        delle locandine dell'ODEON). */
     Quest.questInteract({ id:"sallex_"+entry.en.replace(/[^a-z0-9]/gi,"_"), area:UNIT_STYLE.area,
       radius:1.15, pos:()=>entry.pos, meshes:[entry.mesh], label:entry.it,
-      prompt:'Press <b>E</b> to choose this photo',
+      prompt:'Press <b>P</b> to choose this photo',
       interact:()=>{
         const t=mw.list[mw.idx];
         if(entry===t){
@@ -47491,7 +47535,7 @@ MECH.newLook=function(s){
     entry.__salonKey=p.key;
     Quest.questInteract({ id:"salfin_"+p.key, area:UNIT_STYLE.area, radius:1.15,
       pos:()=>entry.pos, meshes:[entry.mesh], label:entry.it,
-      prompt:'Press <b>E</b> to give a new look',
+      prompt:'Press <b>P</b> to give a new look',
       interact:()=>runNewLookEditor(entry) });
   });
 };
@@ -48015,7 +48059,7 @@ function buildWeatherStation(){
   board.parent=townRoot;
   addInteract({ id:"wxboard", area:"town", radius:2.2,
     pos:()=>new BABYLON.Vector3(105.5,0,-10.5), meshes:[board],
-    prompt:()=>"\u{1F4EE} <b>Summer in Riverside</b> \u00b7 press <b>E</b>",
+    prompt:()=>"\u{1F4EE} <b>Summer in Riverside</b> \u00b7 press <b>P</b>",
     interact:()=>{ wxRestoreBoard();
       const card=wxCardGet();
       toast(card ? ("\u{1F4EE} Summer in Riverside \u2014 \u00ab"+String(card.title||"")+"\u00bb")
@@ -48038,8 +48082,8 @@ function buildWeatherStation(){
   addInteract({ id:"weatherstn", area:"town", radius:3.0,
     pos:()=>new BABYLON.Vector3(105,0,-3.5), meshes:[],
     prompt:()=>Progress.get(UNIT_WEATHER.id).done
-      ? "\u{1F326}\uFE0F <b>Weather Station</b> \u00b7 press <b>E</b>"
-      : "\u{1F326}\uFE0F <b>Weather Station</b> \u00b7 press <b>E</b> to start",
+      ? "\u{1F326}\uFE0F <b>Weather Station</b> \u00b7 press <b>P</b>"
+      : "\u{1F326}\uFE0F <b>Weather Station</b> \u00b7 press <b>P</b> to start",
     interact:()=>{ if(Progress.get(UNIT_WEATHER.id).done){
         toast("\u{1F326}\uFE0F Weather Station \u2014 Unit 3 completata! La tua cartolina \u00e8 sul tabellone.");
       } else if(Quest.unit===UNIT_WEATHER){
@@ -48237,7 +48281,7 @@ MECH.weatherWalk=function(s){
        mai (verificato analiticamente su tutte le coppie). */
     Quest.questInteract({ id:"wxlex_"+entry.key, area:"town", radius:0.98,
       pos:()=>entry.pos, meshes:[entry.mesh], label:entry.it,
-      prompt:'Press <b>E</b> to choose this sign',
+      prompt:'Press <b>P</b> to choose this sign',
       interact:()=>onWxLexTap(entry,ww) });
   });
   wxLexHud(); wxSayClue();
@@ -49540,8 +49584,8 @@ function ecoLexHud(){
     /* v299: che cosa e' DI PRECISO (di che materiale), scritto mentre si cerca il bidone */
     const kd=t.kind?'<div style="margin-top:3px;font-style:italic;">'+_escHtml(t.kind)+'</div>':'';
     const kdIt=t.kindIt?'<div style="margin-top:3px;font-style:italic;">'+_escHtml(t.kindIt)+'</div>':'';
-    questHudSet("lessico", HOBJ("\u267b\uFE0F <b>"+t.en+"</b> \u2014 which bin does it go in? &nbsp;("+(bs.idx+1)+"/"+n+")"+kd +'<div style="margin-top:4px;">Go to the right bin and press <b>E</b>.</div>',"\u267b\uFE0F <b>"+t.en+"</b> \u2014 in quale bidone va? &nbsp;("+(bs.idx+1)+"/"+n+")"+kdIt
-      +'<div style="margin-top:4px;">Vai al contenitore giusto e premi <b>E</b>.</div>'), Quest.i, Quest.total);
+    questHudSet("lessico", HOBJ("\u267b\uFE0F <b>"+t.en+"</b> \u2014 which bin does it go in? &nbsp;("+(bs.idx+1)+"/"+n+")"+kd +'<div style="margin-top:4px;">Go to the right bin and press <b>P</b>.</div>',"\u267b\uFE0F <b>"+t.en+"</b> \u2014 in quale bidone va? &nbsp;("+(bs.idx+1)+"/"+n+")"+kdIt
+      +'<div style="margin-top:4px;">Vai al contenitore giusto e premi <b>P</b>.</div>'), Quest.i, Quest.total);
     return;
   }
   const rev=(bs.revealed&&t.clue)
@@ -49594,7 +49638,7 @@ MECH.binSort=function(s){
     Quest.questInteract({ id:"ecolex_"+entry.key, area:UNIT_ECO.area,
       radius:1.10, pos:()=>entry.pos, meshes:[entry.mesh], label:entry.it,
       prompt:()=>(Quest.state.bs&&Quest.state.bs.phase==="bin")
-        ? 'Take it to the <b>bin</b> first' : 'Press <b>E</b> to pick this up',
+        ? 'Take it to the <b>bin</b> first' : 'Press <b>P</b> to pick this up',
       interact:()=>{
         if(bs.phase!=="item") return;
         const t=bs.list[bs.idx];
@@ -49617,7 +49661,7 @@ MECH.binSort=function(s){
     Quest.questInteract({ id:"ecobin_"+b.key, area:UNIT_ECO.area,
       radius:1.15, pos:()=>p, meshes:node.getChildMeshes(), label:b.it,
       prompt:()=>(Quest.state.bs&&Quest.state.bs.phase==="bin")
-        ? 'Press <b>E</b>: <b>'+b.en+'</b>' : '\u267b\uFE0F '+b.en,
+        ? 'Press <b>P</b>: <b>'+b.en+'</b>' : '\u267b\uFE0F '+b.en,
       interact:()=>{
         if(bs.phase!=="bin") { toast("\u{1F9E4} Prima prendi l\u0027oggetto giusto dal bancone."); return; }
         const t=bs.list[bs.idx];
@@ -50056,7 +50100,7 @@ MECH.wasteMenu=function(s){
     const p=ECO_BOARD_NODE.getAbsolutePosition().clone();
     Quest.questInteract({ id:"ecoboard", area:UNIT_ECO.area, radius:2.20,
       pos:()=>p, meshes:ECO_BOARD_NODE.getChildMeshes(), label:"lavagna del menu",
-      prompt:'Press <b>E</b>: <b>today\u0027s dish</b>',
+      prompt:'Press <b>P</b>: <b>today\u0027s dish</b>',
       interact:()=>runWasteMenu(FERN) });
   }
 };
@@ -50648,7 +50692,7 @@ function hm7LexHud(){
   const t=ch.list[ch.idx]; if(!t) return;
   const rev=ch.revealed
     ? '<div style="margin-top:4px;font-style:italic;">\u{1F4A1} '+_escHtml(t.it)+'</div>' : '';
-  questHudSet("lessico", HOBJ("\u{1F9F9} <b>"+_escHtml(t.en)+"</b> \u2014 go <b>where you do it</b> and press E" +" &nbsp;("+(ch.idx+1)+"/"+ch.list.length+")" +' <button type="button" class="qm-btn ghost u7-replay-btn" style="padding:3px 10px;margin-left:6px;">\uD83D\uDD0A</button>' +rev,"\u{1F9F9} <b>"+_escHtml(t.en)+"</b> \u2014 vai <b>dove si fa</b> e premi E"
+  questHudSet("lessico", HOBJ("\u{1F9F9} <b>"+_escHtml(t.en)+"</b> \u2014 go <b>where you do it</b> and press P" +" &nbsp;("+(ch.idx+1)+"/"+ch.list.length+")" +' <button type="button" class="qm-btn ghost u7-replay-btn" style="padding:3px 10px;margin-left:6px;">\uD83D\uDD0A</button>' +rev,"\u{1F9F9} <b>"+_escHtml(t.en)+"</b> \u2014 vai <b>dove si fa</b> e premi P"
     +" &nbsp;("+(ch.idx+1)+"/"+ch.list.length+")"
     +' <button type="button" class="qm-btn ghost u7-replay-btn" style="padding:3px 10px;margin-left:6px;">\uD83D\uDD0A</button>'
     ), Quest.i, Quest.total);
@@ -50706,7 +50750,7 @@ MECH.choreHunt=function(s){
          avvicinamento e' input gratis. La cornice ("Premi E:") resta
          italiana come ovunque nel gioco: quella e' l'istruzione. */
       label:entry.enPlace||entry.place,
-      prompt:()=>'Press <b>E</b>: <b>'+(entry.enPlace||entry.place)+'</b>',
+      prompt:()=>'Press <b>P</b>: <b>'+(entry.enPlace||entry.place)+'</b>',
       /* cliccabile: il tap su un oggetto cerca `__inter` sulla mesh o sui
          suoi genitori. Senza `meshes` il clic sul tavolo/credenza faceva
          solo camminare, mai l'azione. */
@@ -51200,7 +51244,7 @@ MECH.myHouseRules=function(s){
     const p=HM7_FRIDGE_NODE.getAbsolutePosition().clone();
     Quest.questInteract({ id:"hm7fridge", area:"home", radius:2.20,
       pos:()=>p, meshes:HM7_FRIDGE_NODE.getChildMeshes(), label:"il foglio sul frigo",
-      prompt:'Press <b>E</b>: <b>my house rules</b>',
+      prompt:'Press <b>P</b>: <b>my house rules</b>',
       interact:()=>runMyHouseRules(MAYA) });
   }
 };
@@ -51357,7 +51401,7 @@ function buildInterior(u){
   guiLabel(anchorMesh(I.root,C.x+EX,1.2,C.z+S-1.0),"EXIT","",true,u.area);
   addInteract({ id:"exit_"+u.area, area:u.area, radius:2.2,
     pos:()=>new BABYLON.Vector3(C.x+EX,0,C.z+S-1.0), meshes:[ex],
-    prompt:'Press <b>E</b> to go out', interact:()=>exitUnit(u) });
+    prompt:'Press <b>P</b> to go out', interact:()=>exitUnit(u) });
 }
 /* v224: dove mettere la porta d'uscita sul muro sud di un interno generico.
    Misura, non stima: guarda le mesh GIA' costruite dell'interno (arredi,
@@ -51962,7 +52006,7 @@ function updateProximity(){
   /* v310: sugli oggetti delle quest (e sul bordo del campo) si ricorda che
      basta anche un clic / un tocco sull'oggetto. Solo dove c'e' davvero un
      mesh cliccabile. */
-  if(html && (sel.__quest || sel.id==="pitch_edge") && sel.meshes && sel.meshes.length && /\bE\b/.test(html))
+  if(html && (sel.__quest || sel.id==="pitch_edge") && sel.meshes && sel.meshes.length && /\bP\b/.test(html))
     html+=' <span style="opacity:.75;font-size:.9em">\u00b7 or '+(_tocco()?"tap":"click")+' it</span>';
   if(list.length>1){
     html+='<span class="isel"><button type="button" class="iarr" data-dir="-1">\u25c0</button>'
@@ -52297,9 +52341,13 @@ window.addEventListener("keydown",e=>{ if(__typingNow(e)) return;   // non rubar
   /* ⚽ punizione: PRIMA di tryInteract (Giacomo, 3 nov: «appena premo E il
      primo tiro parte subito senza poter dosare forza e direzione»: lo stesso
      E apriva la mira e poi, qui sotto, calciava). Tasto tenuto giu' = niente. */
-  if(FK.aim){ if(k===" "||k==="k"||k==="e"){ e.preventDefault(); if(!e.repeat) fkKick(); return; } if(k==="escape"){ fkStop(); return; }
+  if(FK.aim){ if(k===" "||k==="k"||k==="p"){ e.preventDefault(); if(!e.repeat) fkKick(); return; } if(k==="escape"){ fkStop(); return; }
     if(k==="q"){ e.preventDefault(); if(!e.repeat) fkSpinCycle(); return; } }   // ⚽ effetto: dritto / interno / esterno
-  if(k==="e") tryInteract();
+  /* v601 (Giacomo: «il tasto E per parlare e' troppo vicino a W A S D: meglio
+     P, di "parla"»). P parla/interagisce, lontano dai tasti per muoversi.
+     La E non fa piu' niente (premuta per sbaglio camminando apriva i dialoghi).
+     La pioggia del docente, che stava su P, passa al tasto 9. */
+  if(k==="p"){ e.preventDefault(); tryInteract(); return; }
   if(k==="q"){ e.preventDefault(); cycleInter(e.shiftKey?-1:1); return; }   // scegli fra oggetti vicini
   if(k==="m"){ e.preventDefault(); toggleMap(); return; }
   if(k==="r"){ e.preventDefault(); rideCycle(); return; }   // 🛹🛴 skate / monopattino / a piedi
@@ -52315,7 +52363,7 @@ window.addEventListener("keydown",e=>{ if(__typingNow(e)) return;   // non rubar
      rete della scuola. E N da solo bastava, senza nemmeno passare da B o F.
      ⚠️ V e SHIFT+V restano a tutti: la visuale non e' un tasto di collaudo,
      e' una preferenza del giocatore. */
-  if(k==="n"||k==="g"||k==="c"||k==="b"||k==="f"||k==="p"||k==="x"){
+  if(k==="n"||k==="g"||k==="c"||k==="b"||k==="f"||k==="9"||k==="x"){
     if(!Student.teacher) return;
     /* v594: X = decorazioni di Natale accese/spente quando si vuole (XMAS) */
     if(k==="x"){ e.preventDefault(); if(!e.repeat) XMAS.toggle(); return; }
@@ -52324,7 +52372,7 @@ window.addEventListener("keydown",e=>{ if(__typingNow(e)) return;   // non rubar
        aspettare novembre: la stagione e' proprio il punto della funzione, e
        proprio per questo non si puo' collaudare stando fermi. Docente come
        N/G/C: in mano a un alunno sarebbe un interruttore del meteo. */
-    if(k==="p"){ e.preventDefault(); rainForceCycle(); return; }
+    if(k==="9"){ e.preventDefault(); rainForceCycle(); return; }   // v601: era P (ora P = parla)
     if(k==="n"||k==="g"||k==="c"){ DAY.override=(k==="n")?-0.8:(k==="g")?0.9:null; try{ teacherBadge(); }catch(e){} }
     else if(k==="b"){ e.preventDefault(); gigForceCycle(); }
     else if(k==="f"){ e.preventDefault(); showForceCycle(); }
@@ -52368,6 +52416,42 @@ function sMove(e){ for(const t of e.changedTouches){ if(t.identifier!==sid) cont
   const mx=40,d=Math.hypot(dx,dy); if(d>mx){dx*=mx/d;dy*=mx/d;} knob.style.left=(35+dx)+"px"; knob.style.top=(35+dy)+"px";
   stickVec.x=dx/mx; stickVec.y=dy/mx; } }
 document.getElementById("actBtn").addEventListener("click",tryInteract);
+/* v601 (Giacomo: «quando clicchi sulle indicazioni trasparenti in basso, ti
+   deve spiegare come muoverti: alcuni alunni non riescono a muoversi»). La
+   legenda dei tasti (e su tablet il bottoncino «How to move?") apre una
+   guida passo passo: tastiera, mouse, tablet. Prima l'italiano chiaro, con
+   le parole inglesi dei tasti. */
+function helpMove(){
+  const touch=(typeof _tocco==="function" && _tocco());
+  const kb=k=>'<b style="display:inline-block;min-width:22px;text-align:center;padding:1px 6px;border-radius:6px;background:#1d2a32;color:#fff;font-weight:800">'+k+'</b>';
+  const row=(a,b)=>'<div style="display:flex;gap:10px;align-items:flex-start;margin:7px 0"><div style="flex:0 0 108px;text-align:right">'+a+'</div><div style="flex:1">'+b+'</div></div>';
+  const keys='<div style="font-weight:800;margin:4px 0 2px">⌨️ Con la tastiera</div>'
+    +row(kb("W"),"vai <b>avanti</b> (tienilo premuto)")
+    +row(kb("S"),"vai <b>indietro</b>")
+    +row(kb("A")+" "+kb("D"),"vai a <b>sinistra</b> / a <b>destra</b>")
+    +row(kb("←")+" "+kb("→"),"<b>giri lo sguardo</b> (la telecamera)")
+    +row(kb("Shift"),"tienilo premuto insieme a "+kb("W")+" per <b>correre</b>")
+    +row(kb("P"),"<b>parli</b> con le persone e <b>usi</b> le cose vicine (quando in basso compare «Press P»)")
+    +row(kb("Q"),"se ci sono più cose vicine, <b>scegli</b> quale")
+    +row(kb("M"),"apri la <b>mappa</b> della città");
+  const mouse='<div style="font-weight:800;margin:12px 0 2px">\u{1F5B1}️ Con il mouse</div>'
+    +row("clic","<b>clicca per terra</b>: il tuo personaggio cammina fin lì")
+    +row("clic","<b>clicca su una persona o un oggetto</b>: ci va e ci parla (come "+kb("P")+")")
+    +row("trascina","tieni premuto e <b>trascina</b> per girare la visuale")
+    +row("rotella","<b>avvicini</b> o <b>allontani</b> la visuale");
+  const tab='<div style="font-weight:800;margin:12px 0 2px">\u{1F4F1} Sul tablet</div>'
+    +row("\u{1F579}️","il <b>cerchio in basso a sinistra</b>: trascina il pallino per camminare")
+    +row("\u{1F3C3}","il bottone con l'omino: <b>corri</b>")
+    +row(kb("P"),"il bottone giallo in basso a destra: <b>parli</b> e <b>usi</b> le cose")
+    +row("☝️","<b>tocca per terra</b> per andarci; <b>trascina</b> con un dito per girare la visuale");
+  const tip='<div style="margin-top:12px;padding:8px 10px;border-radius:10px;background:#fff4df;border:1px solid #f0d59a">'
+    +'\u{1F9ED} <b>Non sai dove andare?</b> Segui la <b>bussola</b> in basso a destra: la freccia ti indica la strada.</div>';
+  QModal.open({ title:"\u{1F6B6} How to move · Come muoversi",
+    html:'<div style="text-align:left;line-height:1.45;font-size:15px">'+(touch?tab+keys:keys+mouse+tab)+tip+'</div>',
+    buttons:[{ label:"OK, let's go!", cls:"primary" }] });
+}
+try{ document.getElementById("kbhelp").addEventListener("click",e=>{ e.stopPropagation(); helpMove(); }); }catch(e){}
+try{ document.getElementById("kb-touch-help").addEventListener("click",e=>{ e.stopPropagation(); helpMove(); }); }catch(e){}
 document.getElementById("povBtn").addEventListener("click",e=>{ e.preventDefault(); povToggle(); });
 // Pulsante CORRI dedicato (mobile): tieni premuto per correre, esattamente come
 // Shift su desktop. Più affidabile della "profondità" del joystick, che su
@@ -53091,15 +53175,15 @@ function rideRacksBuild(){
     const inter=addInteract({ id:"ride_rack_"+K.id, area:"town", radius:2.8, enabled:false,
       pos:()=>new BABYLON.Vector3(K.x,0.8,K.z),
       prompt:()=>{ const P=RIDE.racked;
-        if(P && P.k===i && !(RIDE.on && RIDE.on.kind==="scooter")) return 'Press <b>E</b> to take your <b>'+P.R.en.toLowerCase()+'</b>';
-        return 'Press <b>E</b> to park your <b>scooter</b> here'; },
+        if(P && P.k===i && !(RIDE.on && RIDE.on.kind==="scooter")) return 'Press <b>P</b> to take your <b>'+P.R.en.toLowerCase()+'</b>';
+        return 'Press <b>P</b> to park your <b>scooter</b> here'; },
       interact:()=>rideRackAct(i) });
     RIDE.racks.push({ K, root, y, inter });
   });
   /* 🅿️ il monopattino lasciato fuori (rideLeaveHere): E per riprenderlo */
   RIDE.spotInter=addInteract({ id:"ride_spot", area:"town", radius:2.2, enabled:false,
     pos:()=>{ const P=RIDE.racked; return new BABYLON.Vector3(P&&P.k<0?P.x:0,0.8,P&&P.k<0?P.z:0); },
-    prompt:()=>{ const P=RIDE.racked; return 'Press <b>E</b> to take your <b>'+(P?P.R.en.toLowerCase():'scooter')+'</b>'; },
+    prompt:()=>{ const P=RIDE.racked; return 'Press <b>P</b> to take your <b>'+(P?P.R.en.toLowerCase():'scooter')+'</b>'; },
     interact:()=>rideSpotTake() });
   try{ refreshShadowCasters(); }catch(e){}
 }
@@ -53942,7 +54026,7 @@ function rideStandItem(){
     const o=addInteract({ id:"corner_"+R.id, area:UNIT4.area, radius:1.6, enabled:false,
       pos:()=>e.pos, meshes:it.sc.getChildMeshes(),
       prompt:()=>CORNER.mode==="basket"?'The <b>'+R.shop+'</b> is too big for the basket: <b>take the trolley</b>!'
-                                       :'Press <b>E</b> to put the <b>'+R.shop+'</b> in your trolley · '+gbp(R.price)+' · '+R.sub+' \u00b7 \u2B50 '+R.req.stars+' to ride',
+                                       :'Press <b>P</b> to put the <b>'+R.shop+'</b> in your trolley · '+gbp(R.price)+' · '+R.sub+' \u00b7 \u2B50 '+R.req.stars+' to ride',
       interact:()=>{ if(!CORNER.on) return;
         if(CORNER.mode==="basket"){ toast("\u{1F6D2} It's too big for the basket! Take the trolley.",3800); return; }
         if(CORNER.items.length>=8){ toast("\u{1F6D2} Your trolley is full! Go to Sam."); return; }
@@ -54088,7 +54172,7 @@ function fkBuild(){
   const S=FK.sets.me;
   FK.inter=addInteract({ id:"fk_me", area:"town", radius:1.9, meshes:[S.ball],
     pos:()=>S.ball.position,
-    prompt:()=>FK.aim?'⚽ <b>Space</b> (or E) to <b>kick</b> · Esc to stop':'Press <b>E</b> to take a <b>free kick</b> ⚽',
+    prompt:()=>FK.aim?'⚽ <b>Space</b> (or P) to <b>kick</b> · Esc to stop':'Press <b>P</b> to take a <b>free kick</b> ⚽',
     interact:()=>{ if(FK.aim) fkKick(); else fkStart(); } });
   try{ refreshShadowCasters(); }catch(e){}
   /* per il Ranger del parco (Park watcher): chi tira e chi gioca — li registra
@@ -56418,7 +56502,7 @@ function buildAlbum(){
   });
   h+='</div>';
   h+='<div class="dy-note" style="margin-top:10px">Ogni foto vale <b>\u2b50 '+STAR_RULES.photo
-    +'</b>. Vai sul posto, premi <b>E</b> e scrivi la didascalia in inglese.</div>';
+    +'</b>. Vai sul posto, premi <b>P</b> e scrivi la didascalia in inglese.</div>';
   el.innerHTML=h;
 }
 /* La tessera: chi sei e cosa hai conquistato. Il Diario (altra scheda): cosa
@@ -56683,7 +56767,7 @@ function buildMapKiosk(){
      che un ragazzo di prima legge e capisce al primo colpo, ed e' proprio
      il tipo di inglese che deve stare sui muri invece che su una scheda. */
   c.fillStyle="#fbf7ec"; c.textAlign="center"; c.font="bold 40px Segoe UI"; c.fillText("MAP",128,66);
-  c.font="600 22px Segoe UI"; c.fillStyle="#e8b04b"; c.fillText("press  E",128,116); dt.update();
+  c.font="600 22px Segoe UI"; c.fillStyle="#e8b04b"; c.fillText("press  P",128,116); dt.update();
   /* \u26a0\ufe0f NON PIU' EMISSIVO BIANCO SU MATERIALE ILLUMINATO: era la causa
      del \u00abquasi bianca\u00bb (Giacomo, 11 set). Con diffuseTexture +
      emissiveColor(1,1,1) la texture veniva SOMMATA alla luce della scena:
@@ -56737,7 +56821,7 @@ function buildMapKiosk(){
   mkFaccia(-0.08, 0);                   // retro: verso l'incrocio
   addSolid(x-0.5,x+0.5,z-0.5,z+0.5,"town");
   addInteract({id:"mapkiosk",area:"town",radius:3.4,pos:()=>new BABYLON.Vector3(x,0,z+1.6),meshes:[board,post],
-    prompt:()=>"🗺️ <b>Map</b> · press <b>E</b>", interact:openMap});
+    prompt:()=>"🗺️ <b>Map</b> · press <b>P</b>", interact:openMap});
 }
 
 /* =====================================================================
@@ -56890,7 +56974,7 @@ function buildSubwayEntrance(stId,sx,sz,gy){
   // interazione
   addInteract({id:"metro_"+stId,area:"town",radius:4.4,
     pos:()=>new BABYLON.Vector3(sx,0,sz+0.4),meshes:[arch],
-    prompt:()=>"\uD83D\uDE87 <b>"+st.name+"</b> · press <b>E</b> to go down",
+    prompt:()=>"\uD83D\uDE87 <b>"+st.name+"</b> · press <b>P</b> to go down",
     interact:()=>playMetroDescent(stId)});
 }
 
@@ -57053,7 +57137,7 @@ function subGemMaybe(){
     if(typeof glowL!=="undefined"&&glowL&&glowL.addExcludedMesh) glowL.addExcludedMesh(d);
     const g={ i:-1, mesh:m, disc:d, mat:mt, dmat:dm, key:null, item:null, spot:null, phase:0, baseY:0, __sub:true };
     g.inter=addInteract({ id:"subGem", area:"subway", radius:2.4, meshes:[m], pos:()=>m.position,
-      prompt:()=>{ const kk=g.item?GEM_KINDS[g.item.kind]:null; return (kk?kk.ic:"\u{1F48E}")+" <b>"+(kk?kk.nome.toUpperCase():"CRISTALLO")+"</b> \u00b7 press <b>E</b>"; },
+      prompt:()=>{ const kk=g.item?GEM_KINDS[g.item.kind]:null; return (kk?kk.ic:"\u{1F48E}")+" <b>"+(kk?kk.nome.toUpperCase():"CRISTALLO")+"</b> \u00b7 press <b>P</b>"; },
       interact:()=>{ if(SUBSIT.on) subBenchStand(true); gemOpen(g); } });
     scene.onBeforeRenderObservable.add(()=>{ if(area!=="subway"||!g.mesh.isEnabled()) return;
       const t=performance.now()/1000; g.mesh.rotation.y=t*0.9; g.mesh.position.y=0.55+Math.sin(t*1.7)*0.09; g.dmat.alpha=0.30+Math.sin(t*1.7)*0.12; });
@@ -57412,7 +57496,7 @@ function buildSubwayPlatform(){
     mmCtx.fillStyle="#c8d8e8"; mmCtx.font="bold 21px sans-serif"; mmCtx.textAlign="left";
     mmCtx.fillText(s.name,66,yy); });
   mmCtx.textAlign="center"; mmCtx.fillStyle="#2a4060"; mmCtx.font="600 16px sans-serif";
-  mmCtx.fillText("Press E for the interactive map",192,278); mmDT.update();
+  mmCtx.fillText("Press P for the interactive map",192,278); mmDT.update();
   const mmF=BABYLON.MeshBuilder.CreatePlane("sMMF",{width:4.3,height:4.3*292/384},scene);
   const mmFm=new BABYLON.StandardMaterial("sMMFm",scene);
   mmFm.diffuseTexture=mmDT; mmFm.emissiveColor=new BABYLON.Color3(0.7,0.75,0.9);
@@ -57421,7 +57505,7 @@ function buildSubwayPlatform(){
   if(glowL) glowL.addExcludedMesh(mmF);
   addInteract({id:"metroMap",area:"subway",radius:4.4,
     pos:()=>new BABYLON.Vector3(C.x-PW/2+1.4,0,C.z-PL/2+5),meshes:[mpnl],
-    prompt:"\uD83D\uDDFA\uFE0F <b>Underground map</b> · press <b>E</b>",interact:()=>openMetro()});
+    prompt:"\uD83D\uDDFA\uFE0F <b>Underground map</b> · press <b>P</b>",interact:()=>openMetro()});
   // ===== collisioni muri N e S + bordi piattaforma (no cadute sui binari) =====
   addSolid(C.x-TWT/2-0.6,C.x+TWT/2+0.6,C.z-PL/2-2.2,C.z-PL/2,"subway");
   addSolid(C.x-TWT/2-0.6,C.x+TWT/2+0.6,C.z+PL/2,C.z+PL/2+2.2,"subway");
@@ -57479,7 +57563,7 @@ function buildSubwayPlatform(){
       SUB_BENCHES.push(B);
       B.inter=addInteract({ id:"subBench"+SUB_BENCHES.length, area:"subway", radius:1.9,
         pos:()=>new BABYLON.Vector3(B.x+B.fx*0.7,0,Math.max(B.z-1.0,Math.min(B.z+1.0,player.position.z))),
-        prompt:()=>SUBSIT.on?'Press <b>E</b> to <b>stand up</b>':'\u{1FA91} Press <b>E</b> to <b>sit down</b>',
+        prompt:()=>SUBSIT.on?'Press <b>P</b> to <b>stand up</b>':'\u{1FA91} Press <b>P</b> to <b>sit down</b>',
         interact:()=>{ if(SUBSIT.on) subBenchStand(); else subBenchSit(B); } }); }); });
   // ===== uscita (a sud) =====
   //   Il disco/interazione stanno DAVANTI alla scaletta, su pavimento piatto, cosi' l'avatar
@@ -57511,7 +57595,7 @@ function buildSubwayPlatform(){
   if(glowL) glowL.addExcludedMesh(exPl);
   addInteract({id:"subExit",area:"subway",radius:3.4,
     pos:()=>new BABYLON.Vector3(C.x,0,exitZ),meshes:[exMk],
-    prompt:"Press <b>E</b> to <b>go out</b> \u2191",interact:()=>exitSubway()});
+    prompt:"Press <b>P</b> to <b>go out</b> \u2191",interact:()=>exitSubway()});
   /* v245 (Giacomo: «l'uscita va troppo in la', non esci se non torni
      indietro»): chi sale la scaletta fino in cima esce DA SOLO, come
      attraversare una porta. E resta come scorciatoia dal disco. Soglia =
@@ -57540,7 +57624,7 @@ function buildSubwayPlatform(){
   }
   addInteract({id:"stationRadio",area:"subway",radius:2.6,
     pos:()=>new BABYLON.Vector3(C.x-PW/2+0.9,0,C.z+9.5),meshes:[spkBox,spkPole],
-    prompt:'\u{1F4E2} <b>Station radio</b> \u00b7 press <b>E</b>',
+    prompt:'\u{1F4E2} <b>Station radio</b> \u00b7 press <b>P</b>',
     interact:()=>openStationRadio()});
 }
 
@@ -58914,7 +58998,7 @@ function openCollaudoPanel(){
       mk("\u2600\uFE0F Giorno (G)", ov!==null && ov>=0, ()=>setDay(0.9,"\u2600\uFE0F Giorno forzato: citt\u00e0 aperta \u00b7 \u{1F552} per tornare all'ora vera: Orologio reale")),
       mk("\u{1F319} Notte (N)", ov!==null && ov<0, ()=>setDay(-0.8,"\u{1F319} Notte forzata: citt\u00e0 chiusa, come dopo le 22")),
       mk("\u{1F552} Orologio reale (C)", ov===null, ()=>setDay(null,"\u{1F552} Orologio reale")),
-      { label:"\u{1F327}\uFE0F Pioggia (P)", act:()=>{ try{ rainForceCycle(); }catch(e){} } },
+      { label:"\u{1F327}\uFE0F Pioggia (tasto 9)", act:()=>{ try{ rainForceCycle(); }catch(e){} } },
       { label:"\u{1F3B8} Concerto (B)", act:()=>{ try{ gigForceCycle(); }catch(e){} } },
       { label:"\u{1F3AC} Proiezione (F)", act:()=>{ try{ showForceCycle(); }catch(e){} } },
       { label:"\u21BA Ricomincia la quest (1)", act:()=>{ try{ teacherRestartQuest(); }catch(e){} } },
@@ -58975,7 +59059,7 @@ function openCursorePanel(){
       +"padding:9px 10px;border-radius:9px;background:#0000000d;cursor:pointer\">"
       +"<input type=\"checkbox\" id=\"cc-talk\" style=\"width:17px;height:17px;flex:0 0 auto\">"
       +"<span><b>Possono parlarsi</b><br><small style=\"opacity:.75\">Frasi inglesi "
-      +"pronte, premendo E vicino a un compagno. Spegnendo questa restano "
+      +"pronte, premendo P vicino a un compagno. Spegnendo questa restano "
       +"visibili ma zitti.</small></span></label>"
       +"<label style=\"display:flex;align-items:center;gap:9px;margin:8px 0 0;"
       +"padding:9px 10px;border-radius:9px;background:#0000000d;cursor:pointer\">"
@@ -60521,8 +60605,8 @@ function buildCityPlaza(){
   addInteract({ id:"cy8plaza", area:"town", radius:3.2,
     pos:()=>new BABYLON.Vector3(S.x,0,S.z+4.0), meshes:[],
     prompt:()=>Progress.get(UNIT_CITY.id).done
-      ? "\u{1F3D9}\uFE0F <b>City Life Plaza</b> \u00b7 press <b>E</b>"
-      : "\u{1F3D9}\uFE0F <b>City Life Plaza</b> \u00b7 press <b>E</b> to start",
+      ? "\u{1F3D9}\uFE0F <b>City Life Plaza</b> \u00b7 press <b>P</b>"
+      : "\u{1F3D9}\uFE0F <b>City Life Plaza</b> \u00b7 press <b>P</b> to start",
     interact:()=>{ if(Progress.get(UNIT_CITY.id).done){
         toast("\u{1F3D9}\uFE0F City Life Plaza \u2014 Unit 8 completata! L'articolo di Ivy sul temporale \u00e8 sul giornale della citt\u00e0.");
       } else if(Quest.unit===UNIT_CITY){
@@ -60533,7 +60617,7 @@ function buildCityPlaza(){
      cosi' chi punta dritto al tabellone prende questo e non l'altro. */
   addInteract({ id:"cy8photo", area:"town", radius:1.8,
     pos:()=>new BABYLON.Vector3(S.x,1.2,S.z), meshes:[],
-    prompt:()=>'\u{1F4F7} Press <b>E</b> to <b>take a photo</b> of the square',
+    prompt:()=>'\u{1F4F7} Press <b>P</b> to <b>take a photo</b> of the square',
     interact:()=>cy8TakePhoto() });
   landmarkSign(S.x, CY8_Y+5.4, S.z+4.0, "\u{1F3D9}\uFE0F", "City Life Plaza", "Anno 2 \u00b7 Unit 8 City life");
   setTimeout(buildCityNPCs,0);   // anti-bug TTS Chrome: mai spawnare NPC durante l'instanziazione GLB
@@ -60769,7 +60853,7 @@ MECH.townMap=function(s){
   CY8_PLACES.forEach(p=>{
     Quest.questInteract({ id:"cy8p_"+p.en.replace(/[^a-z]+/gi,"_"), area:"town", radius:(p.r||3.0),
       pos:()=>cy8PlaceVec(p),
-      prompt:'Press <b>E</b>: is this the place?',
+      prompt:'Press <b>P</b>: is this the place?',
       interact:()=>onTap(p) });
   });
 
@@ -61002,7 +61086,7 @@ MECH.alibiWitness=function(s){
      rientro. */
   Quest.questInteract({ id:"cy8alibi", area:"town", radius:3.4,
     pos:()=>cy8NpcPos("ivy"),
-    prompt:'Press <b>E</b>: help Ivy with her article',
+    prompt:'Press <b>P</b>: help Ivy with her article',
     interact:()=>runAlibiWitness() });
   questHudSet("grammatica", HOBJ("Go to <b>Ivy</b> in the square: she\'s got <b>yesterday\'s photo of the storm</b>.","Vai da <b>Ivy</b> in piazza: ha la <b>foto del temporale di ieri</b>."), Quest.i, Quest.total);
 };
@@ -61544,7 +61628,7 @@ function cy8SamDo(res){
       buttons:[{label:"Try again", cls:"primary", act:after}] });
   };
   if(res.kind==="ok"){
-    questHudSet("funzioni", HOBJ("\u{1F3C3} Sam is running… <b>follow him!</b>","\u{1F3C3} Sam sta correndo… <b>seguilo!</b> Quando si ferma, raggiungilo e premi <b>E</b>."), Quest.i, Quest.total);
+    questHudSet("funzioni", HOBJ("\u{1F3C3} Sam is running… <b>follow him!</b>","\u{1F3C3} Sam sta correndo… <b>seguilo!</b> Quando si ferma, raggiungilo e premi <b>P</b>."), Quest.i, Quest.total);
     const dest=(typeof leg.to==="function")?leg.to():leg.to;
     const run=()=>cy8SamWalk(dest, ()=>{
       dr.idx++; dr.tries=0; dr.home=null; dr.h=null;
@@ -61591,9 +61675,9 @@ function cy8SamDo(res){
 function cy8SamWaitYou(){
   let far=99; try{ const p=cy8NpcPos("sam"); far=Math.hypot(player.position.x-p.x,player.position.z-p.z); }catch(e){}
   if(far<9){ runGiveDirections(); return; }
-  questHudSet("funzioni", HOBJ("\u{1F9CD} Sam stopped and he's waiting for you. <b>Go to Sam</b> (follow the compass) and press <b>E</b>.",
-    "\u{1F9CD} Sam si è fermato e ti aspetta. <b>Raggiungi Sam</b> (segui la bussola) e premi <b>E</b> per la prossima indicazione."), Quest.i, Quest.total);
-  toast("\u{1F9CD} Sam is waiting for you — follow him! · Raggiungi Sam e premi E",4200);
+  questHudSet("funzioni", HOBJ("\u{1F9CD} Sam stopped and he's waiting for you. <b>Go to Sam</b> (follow the compass) and press <b>P</b>.",
+    "\u{1F9CD} Sam si è fermato e ti aspetta. <b>Raggiungi Sam</b> (segui la bussola) e premi <b>P</b> per la prossima indicazione."), Quest.i, Quest.total);
+  toast("\u{1F9CD} Sam is waiting for you — follow him! · Raggiungi Sam e premi P",4200);
 }
 function runGiveDirections(){
   const st=Quest.state; const dr=st.dr=st.dr||{ idx:0, tries:0, busy:false };
@@ -61641,7 +61725,7 @@ MECH.giveDirections=function(s){
      giusta — dr.idx vive nello stato della quest. */
   Quest.questInteract({ id:"cy8dirs", area:"town", radius:3.4,
     pos:()=>cy8NpcPos("sam"),
-    prompt:'Press <b>E</b>: give Sam directions',
+    prompt:'Press <b>P</b>: give Sam directions',
     interact:()=>runGiveDirections() });
   questHudSet("funzioni", HOBJ("Go to <b>Sam</b>: he\'s lost and he\'s looking for the <b>market</b>.","Vai da <b>Sam</b>: si è perso e cerca il <b>market</b>."), Quest.i, Quest.total);
 };
@@ -61703,8 +61787,8 @@ function cy8ListenHud(fl){
   if(fl.phase!=="walk"){
     /* ⚠️ niente "Ivy" nella consegna della fase walk (qui si': e' lei la meta) */
     questHudSet("listening", HOBJ(
-      "Go to <b>Ivy</b> in the square (follow the compass) and press <b>E</b>: her directions start from there.",
-      "Torna da <b>Ivy</b> in piazza (segui la bussola) e premi <b>E</b>: le indicazioni partono da lì, dal suo angolo."),
+      "Go to <b>Ivy</b> in the square (follow the compass) and press <b>P</b>: her directions start from there.",
+      "Torna da <b>Ivy</b> in piazza (segui la bussola) e premi <b>P</b>: le indicazioni partono da lì, dal suo angolo."),
       Quest.i, Quest.total);
     return;
   }
@@ -61721,7 +61805,7 @@ function cy8ListenHud(fl){
   const b=qhud.obj.querySelector(".cy8-listen-replay"); if(b) b.onclick=()=>cy8ListenPlay(fl);
   const k=qhud.obj.querySelector(".cy8-listen-back"); if(k) k.onclick=()=>{
     fl.phase="start"; QC.t=-1e9; cy8ListenHud(fl);
-    toast("\u{1F9ED} Follow the compass back to Ivy · Torna da Ivy e premi E"); };
+    toast("\u{1F9ED} Follow the compass back to Ivy · Torna da Ivy e premi P"); };
 }
 /* E su Ivy: ti mette al punto di partenza e ti dice la strada */
 function cy8ListenIvy(fl){
@@ -61755,13 +61839,13 @@ MECH.followDirections=function(s){
 
   Quest.questInteract({ id:"cy8lst_ivy", area:"town", radius:3.4,
     pos:()=>cy8NpcPos("ivy"),
-    prompt:()=> fl.phase==="walk" ? 'Press <b>E</b>: listen to Ivy\'s directions again' : 'Press <b>E</b>: ask Ivy the way',
+    prompt:()=> fl.phase==="walk" ? 'Press <b>P</b>: listen to Ivy\'s directions again' : 'Press <b>P</b>: ask Ivy the way',
     interact:()=>cy8ListenIvy(fl) });
   CY8_LISTEN.forEach(entry=>{
     const p=cy8ListenPlace(entry.place); if(!p) return;
     Quest.questInteract({ id:"cy8lst_"+entry.place.replace(/[^a-z]+/gi,"_"), area:"town", radius:3.0,
       pos:()=>cy8PlaceVec(p),
-      prompt:'Press <b>E</b>: is this the place Ivy described?',
+      prompt:'Press <b>P</b>: is this the place Ivy described?',
       interact:()=>onListenTap(entry,fl) });
   });
   cy8ListenHud(fl);
@@ -61851,9 +61935,9 @@ function cy8HuntHud(){
     it="Hai la targa! Riportala a <b>Ivy</b> in piazza.";
   } else {
     const c=_escHtml(cy8HuntClue(h)), rep=' <button type="button" class="qm-btn ghost cy8-hunt-btn" style="padding:3px 10px;margin-left:6px;">\u{1F50A}</button>';
-    en="Go to the right place and press <b>E</b> ("+(h.idx+1)+"/"+h.route.length+"):"
+    en="Go to the right place and press <b>P</b> ("+(h.idx+1)+"/"+h.route.length+"):"
       +'<div style="margin-top:4px;font-style:italic;">&quot;'+c+'&quot;</div>'+rep;
-    it="Vai nel posto giusto e premi <b>E</b> ("+(h.idx+1)+"/"+h.route.length+"):"
+    it="Vai nel posto giusto e premi <b>P</b> ("+(h.idx+1)+"/"+h.route.length+"):"
       +'<div style="margin-top:4px;font-style:italic;">&quot;'+c+'&quot;</div>'+rep;
   }
   questHudSet("final", HOBJ(en,it), Quest.i, Quest.total);
@@ -61870,10 +61954,10 @@ function cy8HuntWitness(h){
   const w=CY8_WHERE[next.en];
   if(h.idx===0) return { name:"A witness", icon:"\u{1F9CD}", sub:"At the "+P.en,
     text:"A woman with a blue plaque? Yes, I saw her! She wasn't walking, she was running. She was running to "+w+".",
-    italian:"Ascolta bene: dove stava correndo la donna? Vai in quel posto e premi E." };
+    italian:"Ascolta bene: dove stava correndo la donna? Vai in quel posto e premi P." };
   return { name:"A witness", icon:"\u{1F9CD}", sub:"At the "+P.en,
     text:"Yes, she was here at about four. She was talking on the phone. Then she walked to "+w+".",
-    italian:"Dove è andata dopo? Vai in quel posto e premi E." };
+    italian:"Dove è andata dopo? Vai in quel posto e premi P." };
 }
 function cy8HuntTap(p){
   const h=cy8HuntState(); if(!h) return;
@@ -61901,14 +61985,14 @@ function cy8HuntIvy(){
     h.phase="hunt"; cy8HuntHud();
     DialogueBox.open({ npc:ivy, icon:"\u{1F535}", sub:"The missing plaque",
       text:"Good news! Somebody saw a woman with our blue plaque yesterday at four. "+cy8HuntClue(h)+" Can you find out more?",
-      italian:"Dove stava portando la targa? Vai in quel posto e premi E: lì c'è chi l'ha vista.",
+      italian:"Dove stava portando la targa? Vai in quel posto e premi P: lì c'è chi l'ha vista.",
       buttons:[{ label:"I'm on my way!", cls:"primary", act:()=>{} }] });
     return;
   }
   if(h.phase==="hunt"){
     DialogueBox.open({ npc:ivy, icon:"\u{1F535}", sub:"The missing plaque",
       text:"Remember the clue: "+cy8HuntClue(h),
-      italian:"Vai nel posto dell'indizio e premi E.",
+      italian:"Vai nel posto dell'indizio e premi P.",
       buttons:[{ label:"OK!", cls:"primary", act:()=>{} }] });
     return;
   }
@@ -61939,12 +62023,12 @@ MECH.plaqueHunt=function(s){
   Quest.questInteract({ id:"cy8ph_ivy", area:"town", radius:3.4,
     pos:()=>cy8NpcPos("ivy"),
     prompt:()=>{ const h=cy8HuntState(); return (h&&h.phase==="ivy1")
-      ? 'Press <b>E</b>: give the plaque back to Ivy' : 'Press <b>E</b>: talk to Ivy'; },
+      ? 'Press <b>P</b>: give the plaque back to Ivy' : 'Press <b>P</b>: talk to Ivy'; },
     interact:cy8HuntIvy });
   CY8_PLACES.forEach(p=>{
     Quest.questInteract({ id:"cy8ph_"+qcSafe(p.en), area:"town", radius:(p.r||3.0),
       pos:()=>cy8PlaceVec(p),
-      prompt:'Press <b>E</b>: did anybody see her here?',
+      prompt:'Press <b>P</b>: did anybody see her here?',
       interact:()=>cy8HuntTap(p) });
   });
   cy8HuntHud();
@@ -62391,7 +62475,7 @@ function buildJobsNPCs(){
   addInteract({ id:"jb_lift", area:UNIT_JOBS.area, radius:2.4,
     pos:()=>new BABYLON.Vector3(C.x, 0, C.z-7.05),
     meshes:(JB_LIFT_NODE?JB_LIFT_NODE.getChildMeshes():[]),
-    prompt:'Press <b>E</b>: call the <b>elevator</b>',
+    prompt:'Press <b>P</b>: call the <b>elevator</b>',
     interact:jbLiftTalk });
 }
 
@@ -63037,7 +63121,7 @@ MECH.jobBoard=function(s){
   pool.forEach(entry=>{
     Quest.questInteract({ id:"jblex_"+entry.en.replace(/[^a-z0-9]/gi,"_"), area:UNIT_JOBS.area,
       radius:0.86, furn:entry, pos:()=>entry.pos, meshes:[entry.mesh], label:(entry.it||"?"),
-      prompt:'Press <b>E</b> to pick this ad',
+      prompt:'Press <b>P</b> to pick this ad',
       interact:()=>{
         const target=jb.list[jb.idx]; if(!target) return;
         if(entry===target){
@@ -63286,7 +63370,7 @@ function jbRunWhoIsWho(speak){
     text:"Listen \u2014 who is speaking?",
     italian:"Il candidato dice com'\u00e8 e che cosa ha intenzione di fare, ma non dice il suo lavoro. "
       +"Capisci il mestiere dalla descrizione, poi cerca il ritratto col simbolo giusto in alto a destra: "
-      +"quella e' la scrivania. Ascolta col pulsante, poi premi E.",
+      +"quella e' la scrivania. Ascolta col pulsante, poi premi P.",
     html:rev,
     buttons:[{label:"\ud83d\udd0a Listen", cls:"", keepOpen:true, act:()=>jbSayApp()},
              {label:"\u2714 I\'ll find them", cls:"primary", act:()=>{}}] });
@@ -63302,7 +63386,7 @@ MECH.whoIsWho=function(s){
     const p=D.node.getAbsolutePosition().clone(); p.y=0;
     Quest.questInteract({ id:"jblis_"+A.key, area:UNIT_JOBS.area, radius:1.50,
       pos:()=>p, meshes:D.node.getChildMeshes(), label:A.name,
-      prompt:'Press <b>E</b>: is this <b>'+A.name+'</b>\u2019s desk?',
+      prompt:'Press <b>P</b>: is this <b>'+A.name+'</b>\u2019s desk?',
       interact:()=>{
         const cur=wi.list[wi.idx]; if(!cur) return;
         if(A.key===cur.key){
@@ -63360,10 +63444,10 @@ try{ UNIT_JOBS.steps.forEach(function(s){ if(s.id==="write") s.req=JB_WRITE_REQ;
    La scheda resta appesa nella hall della torre: CAREER OF THE WEEK.
    ===================================================================== */
 function jbCareerStart(npc){
-  questHudSet("final","\u2b50 Go to the <b>ad</b> for the job you want and press <b>E</b>", Quest.i, Quest.total);
+  questHudSet("final","\u2b50 Go to the <b>ad</b> for the job you want and press <b>P</b>", Quest.i, Quest.total);
   DialogueBox.open({ npc:npc||JB_NPC.okoro, icon:"\u2b50", sub:"Final task \u2014 your career card",
     text:"Now it's your turn. Which job are you going to choose?",
-    italian:"Vai fino all'annuncio che vuoi tu e premi E: non c'\u00e8 una risposta giusta.",
+    italian:"Vai fino all'annuncio che vuoi tu e premi P: non c'\u00e8 una risposta giusta.",
     buttons:[{label:"\u2714 I\'ll pick it", cls:"primary", act:()=>{}}] });
 }
 function jbCareerSay(entry){
@@ -63416,7 +63500,7 @@ MECH.careerCard=function(s){
   pool.forEach(entry=>{
     Quest.questInteract({ id:"jbfin_"+entry.en.replace(/[^a-z0-9]/gi,"_"), area:UNIT_JOBS.area,
       radius:0.86, pos:()=>entry.pos, meshes:[entry.mesh], label:(entry.it||"?"),
-      prompt:'Press <b>E</b>: is this the job for you?',
+      prompt:'Press <b>P</b>: is this the job for you?',
       interact:()=>{ Quest.state.cc={ job:entry.en }; jbCareerSay(entry); } });
   });
 };
@@ -64579,7 +64663,7 @@ function buildTechNPCs(){
     pos:()=>{ if(TL_BIT_BODY){ const p=TL_BIT_BODY.getAbsolutePosition(); return new BABYLON.Vector3(p.x,0,p.z); }
       return new BABYLON.Vector3(C.x+TL_BIT_HOME.x, 0, C.z+TL_BIT_HOME.z); },
     meshes:(TL_BIT_NODE?TL_BIT_NODE.getChildMeshes():[]),
-    prompt:'Press <b>E</b> to talk to <b>Bit</b>',
+    prompt:'Press <b>P</b> to talk to <b>Bit</b>',
     interact:tlTalkBit });
 }
 
@@ -64707,7 +64791,7 @@ MECH.repairBench=function(s){
          mi fa piu' identificare gli oggetti»). Fra due device vince il piu'
          vicino (updateProximity), quindi i cerchi possono sovrapporsi. */
       radius:1.10, furn:entry, pos:()=>entry.pos, meshes:[entry.mesh], label:(entry.it||"?"),
-      prompt:'Press <b>E</b> to pick up this device',
+      prompt:'Press <b>P</b> to pick up this device',
       interact:()=>{
         const target=rb.list[rb.idx]; if(!target) return;
         if(entry===target){
@@ -66032,16 +66116,16 @@ function tlAutoBookInit(){
     AUTO_BOOK[id]=addInteract({ id:id+"_book", area:"town", radius:3.4,
       pos:()=>{ const s=tlAutoSpot(id); return new BABYLON.Vector3(s.x,0,s.z); },
       prompt:()=>{
-        if(id==="turbo") return tlTurboUnlocked()?'\u{1F3CE}️ Press <b>E</b>: book <b>The Beast</b>, the self-driving supercar'
+        if(id==="turbo") return tlTurboUnlocked()?'\u{1F3CE}️ Press <b>P</b>: book <b>The Beast</b>, the self-driving supercar'
                                                  :'\u{1F3CE}️ <b>The Beast</b> · self-driving supercar — \u{1F512} '+tlTurboNeed().en+' to ride';
-        return tlAutoUnlocked()?'\u{1F697} Press <b>E</b>: book <b>Nelson 1</b>, the self-driving car'
+        return tlAutoUnlocked()?'\u{1F697} Press <b>P</b>: book <b>Nelson 1</b>, the self-driving car'
                                :'\u{1F697} <b>Nelson 1</b> · TechLab prototype — finish the TechLab quest to use it'; },
       interact:()=>tlAutoBook(id) });
     /* il cartello allo stallo di casa: solo quando l'auto e' altrove */
     AUTO_BOOK[id+"_where"]=addInteract({ id:id+"_where", area:"town", radius:3.0,
       pos:()=>tlAutoAway(id)?new BABYLON.Vector3(F.home.x,0,F.home.z):new BABYLON.Vector3(0,-500,0),
-      prompt:()=>(id==="turbo"?'\u{1F3CE}️ ':'\u{1F697} ')+'<b>'+F.name+'</b> is not here: it\'s parked '+tlAutoWhere(id)+'. Go there and press <b>E</b>!',
-      interact:()=>toast((id==="turbo"?'\u{1F3CE}️ ':'\u{1F697} ')+F.name+" is parked "+tlAutoWhere(id)+". Go there and press E!",4200) });
+      prompt:()=>(id==="turbo"?'\u{1F3CE}️ ':'\u{1F697} ')+'<b>'+F.name+'</b> is not here: it\'s parked '+tlAutoWhere(id)+'. Go there and press <b>P</b>!',
+      interact:()=>toast((id==="turbo"?'\u{1F3CE}️ ':'\u{1F697} ')+F.name+" is parked "+tlAutoWhere(id)+". Go there and press P!",4200) });
   });
 }
 setTimeout(()=>{ try{ tlAutoBookInit(); }catch(e){} },0);
@@ -67445,7 +67529,7 @@ function tlAutoOffer(){
      adesso, e il «si'» ti porta DRITTO nello stallo, a bordo */
   DialogueBox.open({ npc, icon:"\u{1F697}", sub:"A present from the TechLab", autoSpeak:true,
     text:"Well done! Now you can try Nelson 1, our self-driving car. It has no steering wheel: it drives by itself, you just tell it where to go. Shall I take you to its parking space now?",
-    italian:"Adesso puoi provare Nelson 1, l'auto che si guida da sola: niente volante, le dici tu dove andare e ci va. Con \u00abYes\u00bb ti porto subito al suo posto nel parcheggio, gi\u00e0 a bordo. Da ora la prenoti anche da solo, con E, nel parcheggio davanti al TechLab.",
+    italian:"Adesso puoi provare Nelson 1, l'auto che si guida da sola: niente volante, le dici tu dove andare e ci va. Con \u00abYes\u00bb ti porto subito al suo posto nel parcheggio, gi\u00e0 a bordo. Da ora la prenoti anche da solo, con P, nel parcheggio davanti al TechLab.",
     buttons:[{ label:"Not now", cls:"ghost" },
              { label:"\u{1F697} Yes, take me to the car!", cls:"primary", act:()=>tlAutoStart("finale","auto1") }] });
 }
@@ -67458,7 +67542,7 @@ MECH.futureScanner=function(s){
   tlScanDraw(null);
   Quest.questInteract({ id:"tl_console", area:UNIT_TECH.area, radius:2.2,
     pos:()=>new BABYLON.Vector3(C.x, 0, C.z-6.55),
-    prompt:'Press <b>E</b>: turn on the <b>Future Scanner</b>',
+    prompt:'Press <b>P</b>: turn on the <b>Future Scanner</b>',
     interact:()=>tlSkyIntro() });
 };
 /* v499: alla consolle Marcus propone il volo; chi rientra dopo averlo
@@ -67665,7 +67749,7 @@ function tlRunCall(speak){
   DialogueBox.open({ name:"\u{1F469}\u200D\u{1F680} Yuki Sato", sub:"Video call from orbit ("+(ms.idx+1)+"/"+TL_MISSION.length+")",
     autoSpeak:false, icon:"", text:"Hello TechLab! Here is the next thing on my list.",
     italian:"Yuki dice a che cosa le serve e se \u00e8 SICURA (will) o se FORSE lo porter\u00e0 (may / might). "
-      +"Ascolta col pulsante, poi vai alla rastrelliera e premi E sul device giusto.",
+      +"Ascolta col pulsante, poi vai alla rastrelliera e premi P sul device giusto.",
     html:rev,
     buttons:[{label:"\ud83d\udd0a Listen", cls:"", keepOpen:true, act:()=>tlSayYuki()},
              {label:"\u2714 I'll go get it", cls:"primary", act:()=>{}}] });
@@ -67719,7 +67803,7 @@ MECH.missionCall=function(s){
          solida + raggio del giocatore — non ci si arrivava quasi mai
          (Giacomo: «devi essere super vicino»). */
       radius:1.10, furn:entry, pos:()=>entry.pos, meshes:[entry.mesh], label:(entry.it||"?"),
-      prompt:'Press <b>E</b>: is this what Yuki needs?',
+      prompt:'Press <b>P</b>: is this what Yuki needs?',
       interact:()=>{
         const ms=Quest.state.ms, M=TL_MISSION[ms.idx]; if(!M) return;
         if(entry.en!==M.en){
@@ -67786,7 +67870,7 @@ MECH.cityWrite=function(s){
   if(!W){ mechStub(s); return; }
   Quest.questInteract({ id:"tlwpad", area:UNIT_TECH.area, radius:2.4,
     pos:()=>W.pos, meshes:[W.mesh],
-    prompt:'Press <b>E</b> to write',
+    prompt:'Press <b>P</b> to write',
     interact:()=>tlOpenCityPad(s) });
 };
 
@@ -67802,7 +67886,7 @@ const TL_FINAL_REQ={ minSent:2,
     { re:/\b(will|won't|'ll|may|might)\b/i, label:"Di' che cosa <i>far\u00e0</i>: will, may o might" } ],
   passBand:"yellow" };
 function tlProtoStart(){
-  questHudSet("final","\u2b50 Go to the <b>maker bench</b> (to the left of the screen) and press <b>E</b>",
+  questHudSet("final","\u2b50 Go to the <b>maker bench</b> (to the left of the screen) and press <b>P</b>",
     Quest.i, Quest.total);
   DialogueBox.open({ npc:TL_NPC.ito, icon:"\u2b50", sub:"Final task \u2014 THE 2050 PROJECT",
     text:"Now build your own machine. What is the world going to need in 2050?",
@@ -67844,7 +67928,7 @@ function tlProtoSay(){
         questHudSet("final","\u{1F534} Go to <b>Bit</b> and get him to <b>press the button</b>", Quest.i, Quest.total);
         setTimeout(()=>{ DialogueBox.open({ name:"\u{1F6E0}\uFE0F Maker bench", sub:"Ready", autoSpeak:false,
             text:"Your prototype is ready. Bit has the button!",
-            italian:"Vai da Bit, in mezzo alla Future Room, e premi E: tocca a lui premere il bottone.",
+            italian:"Vai da Bit, in mezzo alla Future Room, e premi P: tocca a lui premere il bottone.",
             buttons:[{label:"\u2714 I'll go to Bit", cls:"primary", act:()=>{}}] }); }, 420); } },
     buttons:[{label:"\u21a9\ufe0e Change effect", cls:"ghost", act:()=>tlProtoFx()}] });
 }
@@ -67894,7 +67978,7 @@ MECH.patentCard=function(s){
   tlProtoStart();
   Quest.questInteract({ id:"tl_maker", area:UNIT_TECH.area, radius:2.0,
     pos:()=>new BABYLON.Vector3(C.x-3.90, 0, C.z-6.00),
-    prompt:'Press <b>E</b>: build your <b>2050</b> object',
+    prompt:'Press <b>P</b>: build your <b>2050</b> object',
     interact:()=>{ const pr=Quest.state.pr;
       if(pr&&pr.waitDemo){ toast("\ud83d\udd34 Il prototipo \u00e8 pronto: vai da Bit e fagli premere il bottone."); return; }
       tlProtoPick(); } });
@@ -69047,8 +69131,8 @@ function buildSurvivalCamp(){
   addInteract({ id:"survivalcamp", area:"town", radius:1.0,
     pos:()=>new BABYLON.Vector3(97,0,-43.4), meshes:[],
     prompt:()=>Progress.get(UNIT_SURVIVAL.id).done
-      ? "\u26FA <b>Hikers' Camp</b> \u00b7 press <b>E</b>"
-      : "\u26FA <b>Hikers' Camp</b> \u00b7 press <b>E</b> to start",
+      ? "\u26FA <b>Hikers' Camp</b> \u00b7 press <b>P</b>"
+      : "\u26FA <b>Hikers' Camp</b> \u00b7 press <b>P</b> to start",
     interact:()=>{ if(Progress.get(UNIT_SURVIVAL.id).done){
         toast("\u26FA Hikers' Camp \u2014 Unit 3 completata!");
       } else if(Quest.unit===UNIT_SURVIVAL){
@@ -69252,7 +69336,7 @@ MECH.campfireLex=function(s){
   pool.forEach(entry=>{
     Quest.questInteract({ id:"svlex_"+entry.key, area:"town", radius:entry.radius||1.0,
       pos:()=>entry.pos, meshes:[entry.mesh], label:"questa traccia",
-      prompt:'Press <b>E</b> to point at this track',
+      prompt:'Press <b>P</b> to point at this track',
       interact:()=>onSvLexTap(entry,sv) });
   });
   svLexHud(); svTellStory();
@@ -69424,7 +69508,7 @@ function svDiaryStart(){
   items.forEach(entry=>{
     rc.inters.push(Quest.questInteract({ id:"svdia_"+entry.key, area:"town",
       radius:entry.radius||1.0, pos:()=>entry.pos, meshes:[entry.mesh],
-      label:"questa traccia", prompt:'\ud83d\udcd3 Press <b>E</b> to write the caption',
+      label:"questa traccia", prompt:'\ud83d\udcd3 Press <b>P</b> to write the caption',
       interact:()=>svDiaryTap(entry) })); });
   toast("\ud83d\udcd3 Appello finito. Ora il diario del campo!");
   svDiaryHud();
@@ -69445,7 +69529,7 @@ MECH.campfireRollCall=function(s){
   SV_NOTES.forEach(n=>{
     rc.inters.push(Quest.questInteract({ id:"svnote_"+n.who, area:"town", radius:1.6,
       pos:()=>n.pos, meshes:n.meshes, label:"il biglietto",
-      prompt:'\u270e <b>'+n.who+'</b>\u2019s note \u00b7 press <b>E</b>',
+      prompt:'\u270e <b>'+n.who+'</b>\u2019s note \u00b7 press <b>P</b>',
       interact:()=>svRollTap(n.e) })); });
   svRollHud(); svRollSay();
 };
@@ -69626,7 +69710,7 @@ MECH.campBiggestAdventure=function(s){
   items.forEach(entry=>{
     Quest.questInteract({ id:"svlis_"+entry.key, area:"town", radius:entry.radius||1.0,
       pos:()=>entry.pos, meshes:[entry.mesh], label:"questa traccia",
-      prompt:'\ud83c\udfa7 Press <b>E</b> if this is what they mean',
+      prompt:'\ud83c\udfa7 Press <b>P</b> if this is what they mean',
       interact:()=>svLisTap(entry) }); });
   svLisHud(); svLisOpen();
 };
@@ -69687,7 +69771,7 @@ MECH.campDiaryWrite=function(s){
     Quest.i, Quest.total);
   Quest.questInteract({ id:"svlect", area:"town", radius:1.9,
     pos:()=>new BABYLON.Vector3(97.2,0.9,-51.8), meshes:SV_LECT.getChildMeshes(),
-    label:"il leggio", prompt:'\u270d\ufe0f Press <b>E</b> to write in the camp log',
+    label:"il leggio", prompt:'\u270d\ufe0f Press <b>P</b> to write in the camp log',
     interact:svLogOpen });
 };
 
@@ -70436,7 +70520,7 @@ const UNIT_CLIMATE={ id:"u3_4", area:"climate", areaName:"the Climate & Fire Sta
   { id:"lex",   strand:"lessico",    type:"hazardWall", count:8,
     intro:"Nella <b>galleria</b> del Climate Centre ci sono quattordici diorami: a sinistra il "
          +"tempo estremo, a destra i disastri naturali. <b>Nessuno ha il nome scritto sopra.</b> "
-         +"Ti viene descritto che cosa \u00e8 successo \ud83d\udd0a: vai al diorama giusto e premi <b>E</b>.",
+         +"Ti viene descritto che cosa \u00e8 successo \ud83d\udd0a: vai al diorama giusto e premi <b>P</b>.",
     introObjEn:"Listen to the description and find the right diorama.", introObj:"Ascolta la descrizione e trova il diorama giusto." },
   { id:"gram",  strand:"grammatica", type:"handoverBoard",
     intro:"Sulla <b>lavagna dei lavori</b> le spunte compaiono mentre guardi: quello che si spunta "
@@ -70799,7 +70883,7 @@ function cfHbToLog(){
   const I=INTERIORS[UNIT_CLIMATE.area], C=I.center;
   hb.inters=[Quest.questInteract({ id:"cf_log", area:UNIT_CLIMATE.area, radius:1.7,
     pos:()=>new BABYLON.Vector3(C.x-3.60,0,C.z+10.90), meshes:[], label:"il registro",
-    prompt:'\u23F1\uFE0F <b>DUTY LOG</b> \u00b7 press <b>E</b>', interact:cfLogAsk })];
+    prompt:'\u23F1\uFE0F <b>DUTY LOG</b> \u00b7 press <b>P</b>', interact:cfLogAsk })];
   DialogueBox.open({ npc:CF_NPC.hale, icon:"\u{1F692}", sub:"Station chief",
     text:"Good. Now Control wants times. Everything is in the duty log \u2014 the other board.",
     italian:"Sul registro: \u25cf = da quando (since) \u00b7 \u23f1 = quanto dura (for).",
@@ -70858,13 +70942,13 @@ MECH.handoverBoard=function(s){
     list:CF_JOBS.filter(function(j){ return !j.model; }), inters:[] };
   hb.inters.push(Quest.questInteract({ id:"cf_board", area:UNIT_CLIMATE.area, radius:1.7,
     pos:()=>new BABYLON.Vector3(C.x+3.60,0,C.z+10.90), meshes:[], label:"la lavagna",
-    prompt:'\u{1F4CB} <b>SHIFT HANDOVER</b> \u00b7 press <b>E</b>', interact:cfHbAsk }));
+    prompt:'\u{1F4CB} <b>SHIFT HANDOVER</b> \u00b7 press <b>P</b>', interact:cfHbAsk }));
   cfHbHud();
   /* Hale fa il PRIMO rapporto lui: e' il modello, non una spiegazione. */
   DialogueBox.open({ npc:CF_NPC.hale, icon:"\u{1F692}", sub:"Station chief",
     text:"Control wants a status report. Listen: \u00abWe have already put out the fire at the school.\u00bb "
         +"Now you do the rest \u2014 the board tells you what's done.",
-    italian:"Vai alla lavagna SHIFT HANDOVER vicino alla porta e premi E.",
+    italian:"Vai alla lavagna SHIFT HANDOVER vicino alla porta e premi P.",
     buttons:[{label:"To the board", cls:"primary", act:()=>{}}] });
 };
 
@@ -70957,7 +71041,7 @@ function cfKitHud(){
     questHudSet("funzioni", it
       ? "\u{1F9E4} Kit ("+(kr.i+1)+"/"+CF_KIT.length+"): you've got <b>the "+it.noun
         +"</b> \u00b7 the name tape says <b>"+CF_OWNERS[it.own].plate+"</b> \u2014 take it to the right locker"
-      : (kr.i<CF_KIT.length ? "\u{1F9E4} Kit ("+kr.i+"/"+CF_KIT.length+" away): <b>pick up</b> a piece of kit from the floor (E)"
+      : (kr.i<CF_KIT.length ? "\u{1F9E4} Kit ("+kr.i+"/"+CF_KIT.length+" away): <b>pick up</b> a piece of kit from the floor (P)"
                             : "\u{1F9E4} Kit away"), Quest.i, Quest.total);
   } else {
     questHudSet("funzioni","\u{1F6AA} At the door ("+(kr.j+1)+"/"+CF_LATE.length
@@ -71001,7 +71085,7 @@ function cfKitStore(ownKey){
   const it=kr.carry?CF_KIT.filter(q=>q.k===kr.carry)[0]:null;
   if(!it){ DialogueBox.open({ npc:CF_NPC.hale, icon:"\u{1F9E4}", sub:"Mani vuote",
       text:"Your hands are empty. Pick something up from the floor first.",
-      italian:"Prima raccogli un pezzo dal mucchio per terra (E), poi leggi il nastro.",
+      italian:"Prima raccogli un pezzo dal mucchio per terra (P), poi leggi il nastro.",
       buttons:[{label:"Ok", cls:"primary", act:()=>{}}] }); return; }
   if(ownKey!==it.own){
     const o=CF_OWNERS[it.own];
@@ -71145,7 +71229,7 @@ MECH.kitRoom=function(s){
   CF_KIT.forEach(function(it){ const n=CF_PILE[it.k]; if(!n) return;
     const o=Quest.questInteract({ id:"cf_pick_"+it.k, area:UNIT_CLIMATE.area, radius:1.25,
       pos:()=>n.getAbsolutePosition(), meshes:n.getChildMeshes(), label:it.it,
-      prompt:'\u270B Press <b>E</b> to pick up the <b>'+it.noun+'</b>',
+      prompt:'\u270B Press <b>P</b> to pick up the <b>'+it.noun+'</b>',
       interact:function(){ cfPick(it.k); } });
     o.__pick=it.k; kr.inters.push(o); });
   Object.keys(CF_OWNERS).forEach(function(k){
@@ -71155,15 +71239,15 @@ MECH.kitRoom=function(s){
     kr.inters.push(Quest.questInteract({
       id:"cf_lock_"+k, area:UNIT_CLIMATE.area, radius:(k==="stn")?0.90:0.70,
       pos:()=>p, meshes:[], label:(k==="stn")?"l'autopompa":"l'armadietto",
-      prompt:(k==="stn")?'\u{1F692} <b>STATION</b> \u00b7 press <b>E</b>'
-                        :'\u{1F9E5} <b>'+o.plate+'</b> \u00b7 press <b>E</b>',
+      prompt:(k==="stn")?'\u{1F692} <b>STATION</b> \u00b7 press <b>P</b>'
+                        :'\u{1F9E5} <b>'+o.plate+'</b> \u00b7 press <b>P</b>',
       interact:function(){ cfKitStore(k); } }));
   });
   cfKitHud();
   DialogueBox.open({ npc:CF_NPC.hale, icon:"\u{1F692}", sub:"Station chief",
     text:"The crew dropped everything on the floor. Pick up one piece at a time \u2014 "
         +"every piece has a name tape on it: read it, take it to the right locker, and tell me whose it is.",
-    italian:"Raccogli un pezzo alla volta (E), leggi il nastro col nome e portalo all'armadietto giusto (la manichetta va sull'autopompa).",
+    italian:"Raccogli un pezzo alla volta (P), leggi il nastro col nome e portalo all'armadietto giusto (la manichetta va sull'autopompa).",
     buttons:[{label:"Let's go", cls:"primary", act:()=>{}}] });
 };
 
@@ -71249,7 +71333,7 @@ function cfHazSay(replay){
   DialogueBox.open({ npc:CF_NPC.nadia, icon:"\u{1F469}\u200D\u{1F52C}",
     sub:"Climate Centre \u00b7 "+(hw.i+1)+"/"+hw.list.length,
     text:C.clue,
-    italian:"Va' al diorama che racconta questa storia e premi E. Il nome non te lo dico.",
+    italian:"Va' al diorama che racconta questa storia e premi P. Il nome non te lo dico.",
     buttons:[{label:"I'll find it", cls:"primary", act:()=>{}}] });
 }
 function cfHazTap(kind){
@@ -71307,7 +71391,7 @@ MECH.hazardWall=function(s){
     hw.inters.push(Quest.questInteract({
       id:"cf_haz_"+x.h.k, area:UNIT_CLIMATE.area, radius:0.80,
       pos:()=>p, meshes:[], label:"il diorama",
-      prompt:'\u{1F50E} <b>Diorama</b> \u00b7 press <b>E</b>',
+      prompt:'\u{1F50E} <b>Diorama</b> \u00b7 press <b>P</b>',
       interact:function(){ cfHazTap(x.h.k); } }));
   });
   cfHazHud();
@@ -71451,11 +71535,11 @@ MECH.emergencyCall=function(s){
     sel:{what:null,where:null,dur:null,who:null}, opts:cfCallBuildOpts(CF_CALLS[0]), inter:null };
   cl.inter=Quest.questInteract({ id:"cf_radio", area:UNIT_CLIMATE.area, radius:1.15,
     pos:()=>new BABYLON.Vector3(C.x+2.20,0,C.z+2.60), meshes:[], label:"il banco radio",
-    prompt:'\u260E\uFE0F <b>RADIO DESK</b> \u00b7 press <b>E</b>', interact:cfCallStart });
+    prompt:'\u260E\uFE0F <b>RADIO DESK</b> \u00b7 press <b>P</b>', interact:cfCallStart });
   cfCallHud();
   DialogueBox.open({ npc:CF_NPC.hale, icon:"\u{1F692}", sub:"Station chief",
     text:"Headset's at the desk. When it rings, just listen \u2014 there's nothing written down.",
-    italian:"Vai al banco radio e premi E: la chiamata parte da sola.",
+    italian:"Vai al banco radio e premi P: la chiamata parte da sola.",
     buttons:[{label:"To the radio desk", cls:"primary", act:()=>{}}] });
 };
 
@@ -71559,7 +71643,7 @@ MECH.climateLetter=function(s){
      la stessa strettoia che ha incastrato Giacomo fra camion e attrezzi. */
   Quest.questInteract({ id:"cfwpad", area:UNIT_CLIMATE.area, radius:1.6,
     pos:()=>W.pos, meshes:[W.mesh],
-    prompt:'\u{1F30D} <b>Lectern</b> \u00b7 press <b>E</b> to write',
+    prompt:'\u{1F30D} <b>Lectern</b> \u00b7 press <b>P</b> to write',
     interact:()=>cfOpenLetterPad(s) });
   DialogueBox.open({ npc:CF_NPC.nadia, icon:"\u{1F469}\u200D\u{1F52C}", sub:"Climate officer",
     text:"We write to a school abroad every year. They've never seen our weather \u2014 tell them what "
@@ -71749,7 +71833,7 @@ MECH.allClear=function(s){
   const ac=Quest.state.ac={ sel:{done:null,open:null,dur:null,sorry:null}, tries:0, inter:null };
   ac.inter=Quest.questInteract({ id:"cf_mic", area:UNIT_CLIMATE.area, radius:1.15,
     pos:()=>new BABYLON.Vector3(C.x+2.20,0,C.z+2.60), meshes:[], label:"il microfono",
-    prompt:'\u{1F4E2} <b>MICROFONO</b> \u00b7 press <b>E</b>', interact:cfAllDraw });
+    prompt:'\u{1F4E2} <b>MICROFONO</b> \u00b7 press <b>P</b>', interact:cfAllDraw });
   cfAllHud();
   DialogueBox.open({ npc:CF_NPC.hale, icon:"\u{1F692}", sub:"Station chief",
     text:"The emergency's over. The town hasn't heard anything for three hours \u2014 and I'm not "
@@ -72196,7 +72280,7 @@ const UNIT_ER={ id:"u3_5", area:"hospital", areaName:"the City Hospital",
        voce ne dice il nome; il carrello serve solo a riascoltarlo. */
     intro:"\u00c8 il <b>turno di notte</b>, la sera della tempesta. In sala d'attesa ci sono otto "
          +"pazienti. Hai in mano <b>un rimedio alla volta</b>: una voce ti dice quale \ud83d\udd0a "
-         +"(per riascoltarlo premi \ud83d\udd0a in alto, oppure <b>E</b> al carrello SUPPLIES). "
+         +"(per riascoltarlo premi \ud83d\udd0a in alto, oppure <b>P</b> al carrello SUPPLIES). "
          +"<b>Parla con i pazienti</b>: ognuno ti dice in inglese che cosa gli \u00e8 successo. "
          +"Dai il rimedio <b>solo a chi ne ha bisogno</b>: se sbagli persona te lo dice lui. "
          +"Poi ti arriva il rimedio successivo.",
@@ -72780,7 +72864,7 @@ MECH.medicineRound=function(s){
     const npc=ER_PAT_NODE[P.k]; if(!npc) return;
     Quest.questInteract({ id:"erpat_"+P.k, area:UNIT_ER.area, radius:1.7,
       pos:()=>npc.pos(), meshes:npc.meshes, label:"this person",
-      prompt:'Press <b>E</b> to talk to the patient',
+      prompt:'Press <b>P</b> to talk to the patient',
       interact:()=>erAsk(P,npc) });
   });
   /* il carrello resta interattivo: risentire il nome del rimedio senza
@@ -72788,7 +72872,7 @@ MECH.medicineRound=function(s){
      (x -5.90) e non al centro del carrello: quello e' un vero solido. */
   Quest.questInteract({ id:"er_trolley", area:UNIT_ER.area, radius:1.60,
     pos:()=>new BABYLON.Vector3(C.x-5.90,0,C.z+1.60), meshes:[], label:"the trolley",
-    prompt:'\u{1F48A} <b>SUPPLIES</b> \u00b7 press <b>E</b>', interact:erSayRemedy });
+    prompt:'\u{1F48A} <b>SUPPLIES</b> \u00b7 press <b>P</b>', interact:erSayRemedy });
   erLexHud(); setTimeout(erSayRemedy,700);
 };
 
@@ -72990,7 +73074,7 @@ MECH.dischargeDesk=function(s){
     const npc=ER_PAT_NODE[P.k]; if(!npc) return;
     Quest.questInteract({ id:"erddno_"+P.k, area:UNIT_ER.area, radius:1.2,
       pos:()=>npc.pos(), meshes:npc.meshes, label:"this person",
-      prompt:'Press <b>E</b> to talk to the patient',
+      prompt:'Press <b>P</b> to talk to the patient',
       interact:function(){
         DialogueBox.open({ npc:npc, icon:"\u{1F915}", sub:"Patient",
           text:"I'm not going home yet \u2014 I'm still waiting for the doctor.",
@@ -73004,7 +73088,7 @@ MECH.dischargeDesk=function(s){
     const npc=ER_PAT_NODE[A.k];
     Quest.questInteract({ id:"erdd_"+A.k, area:UNIT_ER.area, radius:1.7,
       pos:()=>npc.pos(), meshes:npc.meshes, label:"this person",
-      prompt:'Press <b>E</b> to talk about going home',
+      prompt:'Press <b>P</b> to talk about going home',
       interact:()=>erDdTalk(A) });
   });
   erDdHud();
@@ -73012,7 +73096,7 @@ MECH.dischargeDesk=function(s){
     text:"These three are going home. Go and talk to each of them \u2014 one thing to do, one thing not to do. "
         +"Look at them before you answer: I'm not going to tell you twice.",
     italian:"I tre da dimettere aspettano davanti all'accettazione, col cartello \u{1F3E0} GOING HOME: "
-           +"vai da uno di loro e premi E. Per ognuno: un consiglio con should e un divieto con shouldn't. "
+           +"vai da uno di loro e premi P. Per ognuno: un consiglio con should e un divieto con shouldn't. "
            +"Attento a che cosa consigli: quello che dici, loro lo fanno.",
     buttons:[{label:"Go", cls:"primary", act:()=>{}}] });
 };
@@ -73167,7 +73251,7 @@ MECH.nightLine=function(s){
      davvero, non serve alcuna banda. */
   Quest.questInteract({ id:"er_switchboard", area:UNIT_ER.area, radius:1.6,
     pos:()=>new BABYLON.Vector3(C.x-4.40,0,C.z-2.60), meshes:[], label:"the switchboard",
-    prompt:'\u{1F3A7} <b>NIGHT LINE</b> \u00b7 press <b>E</b>', interact:erNlAsk });
+    prompt:'\u{1F3A7} <b>NIGHT LINE</b> \u00b7 press <b>P</b>', interact:erNlAsk });
   erNlHud();
   DialogueBox.open({ npc:ER_NPC.noor, icon:"\u{1F469}\u200D\u2695\uFE0F", sub:"Night nurse",
     text:"Here \u2014 put these on. Answer with \u2018If I were you, I'd\u2026\u2019. And if someone really needs a doctor, "
@@ -73379,13 +73463,13 @@ MECH.ambulanceRadio=function(s){
     const p=node.getAbsolutePosition().clone();
     Quest.questInteract({ id:"erkit_"+K.kind, area:UNIT_ER.area, radius:1.5,
       pos:()=>p, meshes:node.getChildMeshes(), label:"this kit",
-      prompt:'\u{1F691} press <b>E</b> to get this kit ready',
+      prompt:'\u{1F691} press <b>P</b> to get this kit ready',
       interact:()=>erArPick(K.kind) });
   });
   /* la radio a muro: riascoltare senza dover tornare all'HUD */
   Quest.questInteract({ id:"er_radio", area:UNIT_ER.area, radius:1.5,
     pos:()=>new BABYLON.Vector3(C.x-6.30,0,C.z-0.50), meshes:[], label:"the radio",
-    prompt:'\u{1F4FB} <b>RADIO</b> \u00b7 press <b>E</b>', interact:erArPlay });
+    prompt:'\u{1F4FB} <b>RADIO</b> \u00b7 press <b>P</b>', interact:erArPlay });
   erArHud();
   DialogueBox.open({ npc:ER_NPC.noor, icon:"\u{1F469}\u200D\u2695\uFE0F", sub:"Night nurse",
     text:"Control will call ahead with whoever's coming in. Four kits over there \u2014 listen, then have the right one "
@@ -73490,7 +73574,7 @@ MECH.getWellCard=function(s){
      a filo \u2014 verificato col flood-fill, non a occhio. */
   Quest.questInteract({ id:"erwpad", area:UNIT_ER.area, radius:1.6,
     pos:()=>W.pos, meshes:[W.mesh],
-    prompt:'\u{1F48C} <b>Writing desk</b> \u00b7 press <b>E</b>',
+    prompt:'\u{1F48C} <b>Writing desk</b> \u00b7 press <b>P</b>',
     interact:()=>erOpenCardPad(s) });
   DialogueBox.open({ npc:ER_NPC.jonah, icon:"\u{1F9D1}", sub:"Patient, 15",
     text:"Three days. I've read everything in this room twice. Nobody writes to anyone any more, do they?",
@@ -73699,7 +73783,7 @@ MECH.stormNight=function(s){
     const npc=SN_NPC[A.k]; if(!npc) return;
     Quest.questInteract({ id:"ersn_"+A.k, area:UNIT_ER.area, radius:1.7,
       pos:()=>npc.pos(), meshes:npc.meshes, label:"this person",
-      prompt:'Press <b>E</b> to see this person',
+      prompt:'Press <b>P</b> to see this person',
       interact:()=>erSnTalk(A) });
   });
   AR_KITS.forEach(function(K){
@@ -73707,15 +73791,15 @@ MECH.stormNight=function(s){
     const p=node.getAbsolutePosition().clone();
     Quest.questInteract({ id:"ersnkit_"+K.kind, area:UNIT_ER.area, radius:1.5,
       pos:()=>p, meshes:node.getChildMeshes(), label:"this kit",
-      prompt:'\u{1F691} press <b>E</b> to take this kit',
+      prompt:'\u{1F691} press <b>P</b> to take this kit',
       interact:()=>erSnKit(K.kind) });
   });
   Quest.questInteract({ id:"ersn_line", area:UNIT_ER.area, radius:1.6,
     pos:()=>new BABYLON.Vector3(C.x-4.40,0,C.z-2.60), meshes:[], label:"the switchboard",
-    prompt:'\u{1F3A7} <b>NIGHT LINE</b> \u00b7 press <b>E</b>', interact:snCall });
+    prompt:'\u{1F3A7} <b>NIGHT LINE</b> \u00b7 press <b>P</b>', interact:snCall });
   Quest.questInteract({ id:"ersn_arch", area:UNIT_ER.area, radius:1.6,
     pos:()=>new BABYLON.Vector3(C.x+5.50,0,C.z-10.20), meshes:[], label:"the archive",
-    prompt:'\u{1F5C4}\uFE0F <b>ARCHIVE</b> \u00b7 press <b>E</b>', interact:snArchive });
+    prompt:'\u{1F5C4}\uFE0F <b>ARCHIVE</b> \u00b7 press <b>P</b>', interact:snArchive });
   erSnHud();
   DialogueBox.open({ npc:ER_NPC.ross, icon:"\u{1FA7A}", sub:"Doctor",
     text:"Four at once. I'm not going to tell you who to see first \u2014 go and listen to them, "
@@ -78341,7 +78425,7 @@ function buildGems(){
     g.inter=addInteract({ id:"gem"+i, area:"town", radius:2.6, meshes:[m],
       pos:()=>m.position,
       prompt:()=>{ const k=g.item?GEM_KINDS[g.item.kind]:null;
-        return (k?k.ic:"\u{1F48E}")+" <b>"+(k?k.nome.toUpperCase():"CRISTALLO")+"</b> \u00b7 press <b>E</b> or walk into it"; },
+        return (k?k.ic:"\u{1F48E}")+" <b>"+(k?k.nome.toUpperCase():"CRISTALLO")+"</b> \u00b7 press <b>P</b> or walk into it"; },
       interact:()=>{ g.__bumpInfo=null; gemOpen(g); } });
     GEMS.push(g);
     gemRespawn(g,true);
@@ -79610,7 +79694,7 @@ function _tecaParts(ids){
           inIt?"you're in it":(own?"yours \u00b7 tap: where is it?"
             :(turbo?"\u{1F512} "+tlTurboNeed().en+" to ride":"\u{1F512} finish the TechLab quest")),
           turbo?"the fastest car in town \u00b7 up to "+F.kmh.top+" km/h":"self-driving \u00b7 TechLab prototype"); });
-      h+='</div><div class="dy-note">Go to the <b>car park</b> and press <b>E</b> next to the car to book it. '
+      h+='</div><div class="dy-note">Go to the <b>car park</b> and press <b>P</b> next to the car to book it. '
         +'Then tell it where to go, in English: \u201cTake me to the school, please\u201d.</div>'; } }catch(e){}
   }
   else if(id.indexOf("acc:")===0){ const slot=id.slice(4);
@@ -79645,7 +79729,7 @@ function _tecaWire(el,after){
     "data-coat":v=>setPlayerCoat(v), "data-coatc":v=>setPlayerCoatCol(v),
     "data-face":v=>{ const p=v.split(":"); return setPlayerFace(p[0],p[1]); },
     "data-car":v=>{ try{ const F=AUTO_FLEET[v]; if(AUTO.on && AUTO.fid===v) return false;     // v509: dov'e' la tua auto
-      toast((v==="turbo"?"\u{1F3CE}\uFE0F ":"\u{1F697} ")+F.name+" is parked "+tlAutoWhere(v)+". Go there and press E! \u00b7 Vai al parcheggio e premi E",5200); }catch(e){} return false; } };
+      toast((v==="turbo"?"\u{1F3CE}\uFE0F ":"\u{1F697} ")+F.name+" is parked "+tlAutoWhere(v)+". Go there and press P! \u00b7 Vai al parcheggio e premi P",5200); }catch(e){} return false; } };
   Object.keys(W).forEach(function(attr){ const rs=el.querySelectorAll("["+attr+"]");
     for(let i=0;i<rs.length;i++) rs[i].onclick=(function(v){ return ()=>{ if(W[attr](v)) after(); }; })(rs[i].getAttribute(attr)); });
 }
@@ -80846,7 +80930,7 @@ const Presenza=(function(){
       b.inter=addInteract({ area:area, radius:3.2, prio:1,
         pos:function(){ const q=dove(e); return { x:q.x, y:1.2, z:q.z }; },
         prompt:function(){ const n=_nomeDi(_chiaveDi(e));
-          return "<b>E</b> \u2014 \u{1F4AC} parla" + (n?(" con "+n):"") ; },
+          return "<b>P</b> \u2014 \u{1F4AC} parla" + (n?(" con "+n):"") ; },
         interact:function(){ apriParlato(_chiaveDi(e)); } });
     }
     b.inter.enabled=true;
