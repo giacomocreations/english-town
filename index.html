@@ -75339,7 +75339,9 @@ function dressShoes(meshes,kind,hex,holder){
     /* i raggi: per spicchio il punto piu' lontano di gamba e collo della scarpa
        (la punta della scarpa resta fuori: oltre 8,5 cm non conta) */
     let RR=ys.map((y,j)=>{ const c=C[j], rr=new Array(NA).fill(0);
-      mine.forEach(s=>{ if(Math.abs(s.p.y-y)>0.016) return; const d=hz(s.p.subtract(c)), r=d.length(); if(r>(s.tube?0.15:0.085)) return;
+      mine.forEach(s=>{ if(Math.abs(s.p.y-y)>0.016) return;
+        if(s.shoe && s.p.y>yShoe-0.015) return;            // v602: il collo imbottito della trainer non conta (si stringe dentro, vedi sotto)
+        const d=hz(s.p.subtract(c)), r=d.length(); if(r>(s.tube?0.15:0.085)) return;
         const a=Math.atan2(V3.Dot(d,D),V3.Dot(d,Fw)), i=((Math.round(a/(2*Math.PI)*NA))%NA+NA)%NA; if(r>rr[i]) rr[i]=r; });
       let cl=rr.map((r,i)=>{ let m=0; for(let k=-2;k<=2;k++) m=Math.max(m,rr[(i+k+NA)%NA]); return m; });
       const full=cl.filter(r=>r>0), avg=full.length?full.reduce((a,b)=>a+b,0)/full.length:0.045;
@@ -75352,17 +75354,16 @@ function dressShoes(meshes,kind,hex,holder){
        scarpa, visto a schermo). Poi un filo di lisciatura in giro, sempre
        col pavimento della misura vera. */
     const RAW=RR.map(r=>r.slice());
-    RR=ys.map((y,j)=>{ const o=new Array(NA).fill(0); for(let k=0;k<ys.length;k++){ const dy=(ys[k]>y)?(ys[k]-y)*ST.sl:(y-ys[k])*0.9;
+    /* v602: salendo dal tallone la parete si stringe piano (0,35 m ogni metro,
+       era 0,9): dal tallone alla caviglia una linea morbida, come uno stivale
+       vero, invece di una gobba sul tallone e una strozzatura sopra */
+    RR=ys.map((y,j)=>{ const o=new Array(NA).fill(0); for(let k=0;k<ys.length;k++){ const dy=(ys[k]>y)?(ys[k]-y)*ST.sl:(y-ys[k])*0.35;
       for(let i=0;i<NA;i++){ const v=RAW[k][i]-dy; if(v>o[i]) o[i]=v; } } return o; });
     for(let p=0;p<2;p++) RR=RR.map((cl,j)=>cl.map((r,i)=>Math.max(RAW[j][i],(cl[(i+NA-1)%NA]+2*r+cl[(i+1)%NA])/4)));
     /* lo stivale non si stringe salendo: dal polpaccio in su scende dritto o si allarga */
     const jC=Math.round(N*0.45); for(let j=jC+1;j<=N;j++) for(let i=0;i<NA;i++) RR[j][i]=Math.max(RR[j][i],RR[j-1][i]*0.995);
     RR=RR.map((r,j)=>{ const t=j/N; return r.map(x=>(x+ST.gap)*(1+ST.flare*Math.pow(t,1.6))); });
-    /* v602: alla caviglia lo stivale si STRINGE sulla forma vera (caviglia e
-       collo della scarpa) e si raccorda al gambale in ~6 cm: prima scendeva
-       largo come il polpaccio e dietro il tallone faceva uno scalino sul piede */
-    RR=RR.map((r,j)=>{ const t=Math.max(0,Math.min(1,(ys[j]-(yShoe-0.01))/0.06)); if(t>=1) return r; const u=t*t*(3-2*t);
-      return r.map((x,i)=>{ const lo=RAW[j][i]+ST.gap+0.004; return lo+(Math.max(lo,x)-lo)*u; }); });
+
     const rAt=(y,a)=>{ let j=Math.round((y-yB)/(yT-yB)*N); j=Math.max(0,Math.min(N,j)); const i=((Math.round(a/(2*Math.PI)*NA))%NA+NA)%NA; return { c:C[j], r:RR[j][i] }; };
     /* pesi: i quattro campioni piu' vicini, pesati con la distanza (la piega alla caviglia e' morbida) */
     const pool=mine.filter(s=>s.p.y<yT+0.1);
@@ -75420,7 +75421,12 @@ function dressShoes(meshes,kind,hex,holder){
         const vtx=i=>{ const sp=S[i].p, k=key(sp); let n=idx.get(k); if(n!==undefined) return n;
           const nn=(NS.get(k)||new V3(0,1,0)).scale(sg); if(nn.length()<1e-9) nn.copyFromFloats(0,1,0); nn.normalize();
           n=P.length; idx.set(k,n); P.push(sp.add(nn.scale(0.0035))); return n; };
-        ft.forEach(t=>{ if(t.some(i=>S[i].p.y<ySole)) return; T.push([vtx(t[0]),vtx(t[1]),vtx(t[2])]); });
+        /* sotto la suola no; e nemmeno il collo imbottito: li' c'e' gia' il gambale */
+        /* v602: il piede si ferma 3,5 cm sotto il collo: da li' in su (tallone
+           compreso) c'e' solo il gambale, che parte 4,5 cm sotto e lo avvolge
+           in un pezzo. Se saliva fino al collo, dietro il tallone sporgeva
+           oltre il gambale: era il rigonfiamento. */
+        ft.forEach(t=>{ if(t.some(i=>S[i].p.y<ySole || S[i].p.y>yShoe-0.035)) return; T.push([vtx(t[0]),vtx(t[1]),vtx(t[2])]); });
         if(T.length>8) mk(P,T,matMain,"bootFoot"); } }
     /* coi pantaloni lunghi sopra (trousers, smart) il gambale non si vede: solo il piede */
     if(under) return;
@@ -75428,23 +75434,29 @@ function dressShoes(meshes,kind,hex,holder){
        si stringe fin dentro il gambale (posizioni originali in __bootSq,
        rimesse all'inizio di dressShoes). Sopra l'orlo il pantalone resta com'e': fa lo
        sbuffo, come un pantalone infilato davvero. */
-    if(tucked) Ts.forEach(m=>{ try{
+    const squeeze=(m,yLo,yHi,inset)=>{ try{
       const VBp=VB.PositionKind, P0=m.getVerticesData(VBp), mi=m.getVerticesData(VB.MatricesIndicesKind), mw=m.getVerticesData(VB.MatricesWeightsKind);
       if(!P0||!mi||!mw) return; const skm=m.skeleton; _botRest(skm); m.computeWorldMatrix(true);
       const lp=m.getPositionData(true,false), Wm=m.getWorldMatrix(), TMm=skm.getTransformMatrices(m), a16=new Float32Array(16);
       let P1=null;
       for(let v=0;v<lp.length/3;v++){ let d=0,w=-1; for(let k=0;k<4;k++) if(mw[4*v+k]>w){ w=mw[4*v+k]; d=mi[4*v+k]; }
         const bn=skm.bones[d]?skm.bones[d].name:""; if(!(sd>0?/\.L$/.test(bn):/\.R$/.test(bn))) continue;
-        const wp=V3.TransformCoordinates(new V3(lp[3*v],lp[3*v+1],lp[3*v+2]),Wm); if(wp.y>yT-0.004 || wp.y<yB-0.06) continue;
+        const wp=V3.TransformCoordinates(new V3(lp[3*v],lp[3*v+1],lp[3*v+2]),Wm); if(wp.y>yHi || wp.y<yLo) continue;
         const g0=rAt(Math.max(yB,wp.y),0), c=g0.c, dd=hz(wp.subtract(c)), r=dd.length(); if(r<1e-5) continue;
-        const ang=Math.atan2(V3.Dot(dd,D),V3.Dot(dd,Fw)), rb=rAt(Math.max(yB,wp.y),ang).r-0.006; if(r<=rb) continue;
+        const ang=Math.atan2(V3.Dot(dd,D),V3.Dot(dd,Fw)), rb=rAt(Math.max(yB,wp.y),ang).r-inset; if(r<=rb) continue;
         const nw=new V3(c.x,wp.y,c.z).add(dd.scale(Math.max(0.01,rb)/r));
         a16.fill(0); for(let k=0;k<4;k++){ const ww=mw[4*v+k]; if(!ww) continue; for(let q2=0;q2<16;q2++) a16[q2]+=TMm[mi[4*v+k]*16+q2]*ww; }
         const l=V3.TransformCoordinates(nw,BABYLON.Matrix.FromArray(a16).multiply(Wm).invert());
         if(!P1){ P1=Float32Array.from(P0); if(!m.__bootSq) m.__bootSq=Float32Array.from(P0); }
         P1[3*v]=l.x; P1[3*v+1]=l.y; P1[3*v+2]=l.z; }
       if(P1) m.setVerticesData(VBp,P1,true);
-    }catch(e){ console.warn("[stivali] pantalone dentro",e); } });
+    }catch(e){ console.warn("[stivali] stretta",e); } };
+    if(tucked) Ts.forEach(m=>squeeze(m,yB-0.06,yT-0.004,0.006));
+    /* v602 (Giacomo: «sistema anche il rigonfiamento»): il collo imbottito
+       della trainer spingeva in fuori lo stivale alla caviglia. Ora il
+       gambale non lo misura (vedi i raggi) e il collo si stringe DENTRO il
+       gambale, come il pantalone: stessa __bootSq, si rimette a ogni giro. */
+    Fs.forEach(m=>{ if(m.material && /^Skin/.test(m.material.name||"")) return; squeeze(m,yShoe-0.04,yShoe+0.03,0.004); });
     const rows=[[yB-0.004,-ST.gap-0.004]].concat(ys.map(y=>[y,0])); rows.push([yT+0.002,-0.002]); rows.push([yT+0.002,-0.006]);
     loft(rows,matMain);
     loft([[yT+0.002,-0.006],[yT-0.04,-0.007]],matIn,null,null,"bootIn");
