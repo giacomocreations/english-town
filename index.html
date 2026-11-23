@@ -380,6 +380,21 @@
     width:30px;height:30px;font-size:15px;line-height:1;font-weight:800;
     background:rgba(251,247,236,.20);color:var(--paper);touch-action:manipulation;}
   #prompt .iarr:hover{background:rgba(251,247,236,.36);}
+  /* v604 (Giacomo: «molti non capiscono che, quando le persone sono vicine,
+     possono scegliere con chi parlare»). Con due o piu' candidati il prompt
+     va su DUE righe: sopra «Press P to talk to Nina», sotto la scelta, grande
+     e spiegata (chi, 1/2, Q = cambia persona). */
+  #prompt.multi{border-radius:18px;text-align:center;padding:9px 16px 10px;bottom:64px;}   /* sopra la legenda dei tasti */
+  #prompt.multi .isel{display:flex;justify-content:center;flex-wrap:wrap;margin:7px 0 0;padding:6px 0 0;
+    border-left:none;border-top:1px solid rgba(251,247,236,.28);gap:8px;}
+  #prompt .isel-n{font-size:15px;}
+  #prompt .isel-n small{opacity:.8;font-weight:700;margin-left:3px;}
+  #prompt .isel-h{font-size:12.5px;font-weight:600;opacity:.92;}
+  #prompt .isel-h i{font-style:normal;color:#cfe3ff;}
+  #prompt .isel-h kbd{display:inline-block;font:inherit;font-weight:800;color:var(--ink);background:var(--sun);
+    border-radius:5px;padding:0 6px;}
+  #prompt.flash .isel-n b{animation:iselFlash .5s ease;}
+  @keyframes iselFlash{0%{color:#fff;text-shadow:0 0 10px #fff;}100%{color:var(--sun);text-shadow:none;}}
   #toast{left:50%;top:18px;transform:translateX(-50%) translateY(-8px);background:var(--ink);color:var(--paper);
     padding:10px 18px;border-radius:10px;font-size:14px;font-weight:600;opacity:0;transition:.25s;max-width:90vw;text-align:center;}
   #toast.show{opacity:1;transform:translateX(-50%);}
@@ -438,6 +453,31 @@
   #quest-hud .qh-help{margin-left:auto;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;border:1px solid rgba(0,0,0,.15);
     background:#fff;color:var(--ink);font:inherit;font-size:11px;font-weight:800;cursor:pointer;pointer-events:auto;}
   #quest-hud #qh-icon{font-size:16px;}
+  #quest-hud .qh-help{background:#fff;color:#c75f00;border:2px solid #e8730c;font-size:12px;padding:2px 10px;}
+  /* v604 — WhyHelp: la finestra «non capisco cosa devo fare». Uno strato a
+     parte, SOPRA #quest-modal: aprirla non chiude il dialogo sotto (le
+     tessere gia' messe restano li'). */
+  #why-help{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;
+    background:rgba(18,27,34,.55);padding:16px;box-sizing:border-box;}
+  #why-help.show{display:flex;}
+  #why-help .wh-card{background:var(--paper);color:var(--ink);border-radius:18px;max-width:480px;width:100%;
+    max-height:88vh;overflow:auto;padding:18px 20px;box-shadow:0 14px 40px rgba(0,0,0,.35);text-align:left;
+    font-size:16px;line-height:1.45;box-sizing:border-box;}
+  #why-help h3{margin:0 0 10px;font-size:20px;}
+  #why-help .wh-row{margin:0 0 10px;padding:9px 11px;border-radius:12px;background:rgba(0,0,0,.045);}
+  #why-help .wh-now{background:#fff3d6;border:2px solid #f2b23a;font-weight:600;}
+  #why-help .wh-lab{display:block;font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#8a5a12;margin-bottom:2px;}
+  #why-help .wh-warn{color:#b3261e;font-weight:800;}
+  #why-help details{font-size:14px;margin:0 0 10px;}
+  #why-help summary{cursor:pointer;font-weight:700;color:#3d5a80;}
+  #why-help .wh-btns{display:flex;flex-direction:column;gap:9px;margin-top:6px;}
+  #why-help .wh-big{border:none;border-radius:14px;padding:12px 14px;font:inherit;font-size:16px;font-weight:800;
+    cursor:pointer;text-align:left;background:#e8730c;color:#fff;}
+  #why-help .wh-big small{display:block;font-weight:600;font-size:13px;opacity:.92;margin-top:2px;}
+  #why-help .wh-big.alt{background:#3d5a80;}
+  #why-help .wh-big.off{background:#b9b2a4;cursor:default;}
+  #why-help .wh-close{border:none;border-radius:999px;padding:9px 18px;font:inherit;font-weight:800;cursor:pointer;
+    background:#1d2a32;color:#fff;align-self:center;margin-top:4px;}
   #quest-hud #qh-strand{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--plum);}
   #quest-hud .qh-prog{margin-left:auto;font-size:11px;font-weight:800;color:#fff;background:var(--signal);
     border-radius:999px;padding:1px 8px;}
@@ -1058,7 +1098,7 @@
 <canvas id="game" tabindex="0"></canvas>
 <div id="badge" class="hud"><div class="ey">QuestTown<span id="fpsv"></span></div><b id="area-name">Town</b></div>
 <div id="quest-hud" class="hud">
-  <div class="qh-top"><span id="qh-icon">📋</span><b id="qh-strand">…</b><span id="qh-prog" class="qh-prog">1/6</span><button id="qh-help" class="qh-help" type="button" title="Stuck? Ask Miss Grace for a lesson" style="display:none">🏫 Help</button></div>
+  <div class="qh-top"><span id="qh-icon">📋</span><b id="qh-strand">…</b><span id="qh-prog" class="qh-prog">1/6</span><button id="qh-help" class="qh-help" type="button" title="Help · Aiuto: non capisci cosa fare? Parole o grammatica?" style="display:none">❓ Help</button></div>
   <div id="qh-obj">…</div>
 </div>
 <div id="quest-nudge" class="hud" title="Tap to listen"></div>
@@ -2598,6 +2638,14 @@ const U8_INFO={
   "scarf":  { col:"brown",  hex:"#8a5a3a", price:"\u00a39.00",  say:"nine pounds",                    slot:"scarf" },
 };
 function u8Info(en){ return U8_INFO[en]||{col:"",hex:"#8a8f96",price:"\u00a310.00",say:"ten pounds",slot:"top"}; }
+/* v604: i capi appesi alle grucce (LEXPROPS.clothesRail -> __garments)
+   diventano gemelli dei capi sugli scaffali: stessa interazione, cliccabili. */
+function u8LinkRails(items,nodes){
+  (nodes||[]).forEach(r=>{ if(!r || !r.__garments) return;
+    r.__garments.forEach(gm=>{ const it=(items||[]).find(i=>i.en===gm.en); if(!it || !it.mesh) return;
+      gm.node.computeWorldMatrix(true); gm.node.getChildMeshes().forEach(m=>{ m.isPickable=true; m.computeWorldMatrix(true); });
+      const b=gm.node.getHierarchyBoundingVectors(true), c=b.min.add(b.max).scale(0.5);
+      (it.mesh.__alts=it.mesh.__alts||[]).push({ mesh:gm.node, pos:new BABYLON.Vector3(c.x,Math.max(0,c.y-0.2),c.z) }); }); }); }
 
 const UNIT8={ id:"u8", area:"clothes", areaName:"Clothes Shop",
   title:"Unit 8 — Our clothes", size:5.6, sizeX:4.6, tint:"#e7dbcd",
@@ -2618,6 +2666,8 @@ const UNIT8={ id:"u8", area:"clothes", areaName:"Clothes Shop",
      e portavano gli arrivi dal 96.7% al 88.9%). */
   enterToast:"Sei entrato al Clothes Shop",
   onEnter:()=>setTimeout(buildClothesNPCs,0),   // stesso pattern anti-TTS di buildEmma
+  /* v604: i capi sulle grucce valgono come quelli sugli scaffali */
+  afterProps:(items,nodes)=>u8LinkRails(items,nodes),
   props:[
     /* v259 — bancone-cassa da boutique (prima Desk.glb + cashDesk): stesso
        tratto in z (-2.3..1.1), meno profondo -> corsia di servizio piu' larga */
@@ -2633,8 +2683,8 @@ const UNIT8={ id:"u8", area:"clothes", areaName:"Clothes Shop",
     /* stender (isole) + camerino + VETRINA */
     /* spostato a est/nord: fra il bancone e lo stender restavano 1.19 m
        (passaggio "a imbuto" segnalato in aula). Ora il varco e' 1.59 m. */
-    { prop:"clothesRail", w:2.6, x: 0.90, z:-3.00, seed:5 },
-    { prop:"clothesRail", w:2.2, x: 2.90, z: 1.20, yaw:-Math.PI/2, seed:11 },
+    { prop:"clothesRail", w:2.6, x: 0.90, z:-3.00, seed:5, k0:0 },                       // v604: k0 = tutti e 6 i capi
+    { prop:"clothesRail", w:2.2, x: 2.90, z: 1.20, yaw:-Math.PI/2, seed:11, k0:5 },      //       sulle due grucce insieme
     { prop:"fittingRoom", x: 3.40, z: 4.70, yaw:Math.PI, solid:false },   // v323d: si ENTRA (pareti solide in clothesFitWalls)
     { prop:"mannequin",   x:-2.60, z: 4.60, yaw:Math.PI },
     /* ARREDO (mai nella corsia di servizio ovest) */
@@ -8493,7 +8543,8 @@ function _xmTree(L,x,y,z,H,rnd,big){
     { const yg=yb+hT*0.2, rg=R0*0.82*1.1, sw=big?7:5, sag=big?0.22:0.06, path=[];
       for(let k=0;k<=72;k++){ const a=k/72*Math.PI*2, f2=Math.abs(Math.sin(a*sw/2));
         path.push(new BABYLON.Vector3(x+Math.cos(a)*(rg+0.03*f2),yg-sag*f2,z+Math.sin(a)*(rg+0.03*f2))); }
-      const tb=BABYLON.MeshBuilder.CreateTube("xmGarT",{ path, radius:big?0.05:0.018, tessellation:6, cap:BABYLON.Mesh.NO_CAP },scene);
+      /* v604 (Giacomo: «troppo grossi, sembrano ciambelloni»): un filo, non un salsicciotto */
+      const tb=BABYLON.MeshBuilder.CreateTube("xmGarT",{ path, radius:big?0.026:0.0085, tessellation:6, cap:BABYLON.Mesh.NO_CAP },scene);
       (i%2?L.red:L.tinsel).push(tb); } }
   if(big) return _xmComet(L,x,apex,z,rnd);
   /* la stella vera, sulla punta del palco piu' alto */
@@ -8531,35 +8582,80 @@ function _xmGarland(L,p0,p1,y,sag,n,r){
   const dx=p1[0]-p0[0], dz=p1[1]-p0[1], Lg=Math.hypot(dx,dz); if(Lg<0.5) return;
   const ux=dx/Lg, uz=dz/Lg, yAt=t=>{ const u=(t/Lg)*n, f=u-Math.floor(u); return y-sag*4*f*(1-f); };
   const path=[]; for(let t=0;t<=Lg+1e-6;t+=0.12) path.push(new BABYLON.Vector3(p0[0]+ux*t,yAt(t),p0[1]+uz*t));
-  const tube=BABYLON.MeshBuilder.CreateTube("xmGar",{ path, radius:r||0.065, tessellation:6, cap:BABYLON.Mesh.CAP_ALL },scene); L.fir.push(tube);
-  let k=0; for(let t=0.16;t<Lg-0.1;t+=0.32,k++) _xmBulb(L,p0[0]+ux*t,yAt(t)-(r||0.065)-0.02,p0[1]+uz*t,0.032,k);
+  r=r||XM_GAR_R;
+  const tube=BABYLON.MeshBuilder.CreateTube("xmGar",{ path, radius:r, tessellation:7, cap:BABYLON.Mesh.CAP_ALL },scene); L.fir.push(tube);
+  _xmGarTwig(L,path,r);
+  let k=0; for(let t=0.16;t<Lg-0.1;t+=0.3,k++) _xmBulb(L,p0[0]+ux*t,yAt(t)-r-0.012,p0[1]+uz*t,0.024,k);
   /* un fiocco rosso a ogni punto d'attacco */
-  for(let i=0;i<=n;i++){ const t=Lg*i/n, b=BABYLON.MeshBuilder.CreateBox("xmBow",{ width:0.16, height:0.1, depth:0.05 },scene);
-    b.position.set(p0[0]+ux*t,y+0.02,p0[1]+uz*t); b.rotation.y=Math.atan2(ux,uz)+Math.PI/2; L.red.push(b); } }
+  for(let i=0;i<=n;i++){ const t=Lg*i/n; _xmBow(L,p0[0]+ux*t,y+0.01,p0[1]+uz*t,Math.atan2(ux,uz)+Math.PI/2); } }
+/* v604 (Giacomo: «i festoni sono troppo grossi, sembrano ciambelloni: falli
+   piu' fini, realistici»). Il festone era un tubo liscio di 13 cm: ora e' un
+   ramo di 6 cm con un secondo filo di rametti piu' scuri che gli gira
+   attorno (si legge «abete», non «salsiccia»), lucine e fiocchi piu' piccoli. */
+const XM_GAR_R=0.03;
+function _xmGarTwig(L,path,r){ if(!path || path.length<3) return;
+  const V=BABYLON.Vector3, tw=[]; let acc=0;
+  for(let i=0;i<path.length;i++){ const p=path[i], q=path[Math.min(i+1,path.length-1)], o=path[Math.max(i-1,0)];
+    if(i) acc+=V.Distance(p,o);
+    const dir=q.subtract(o); if(dir.lengthSquared()<1e-8) continue; dir.normalize();
+    let sd=V.Cross(dir,V.Up()); if(sd.lengthSquared()<1e-6) sd=new V(1,0,0); sd.normalize(); const up=V.Cross(sd,dir).normalize();
+    const a=acc/0.09*Math.PI;                                       // un giro ogni ~18 cm
+    tw.push(p.add(sd.scale(Math.cos(a)*r*0.85)).add(up.scale(Math.sin(a)*r*0.85))); }
+  if(tw.length>2) L.fir2.push(BABYLON.MeshBuilder.CreateTube("xmGar2",{ path:tw, radius:r*0.45, tessellation:5, cap:BABYLON.Mesh.CAP_ALL },scene)); }
+/* fiocco: nodo e due asole schiacciate, due codine */
+function _xmBow(L,x,y,z,ry){ const cr=Math.cos(ry), sr=Math.sin(ry);
+  const k=BABYLON.MeshBuilder.CreateSphere("xmBowK",{ diameter:0.035, segments:5 },scene); k.position.set(x,y,z); L.red.push(k);
+  [-1,1].forEach(sd=>{ const lp=BABYLON.MeshBuilder.CreateTorus("xmBowL",{ diameter:0.06, thickness:0.014, tessellation:12 },scene);
+    lp.position.set(x+cr*sd*0.033,y+0.004,z-sr*sd*0.033); lp.rotation.set(Math.PI/2,ry,sd*0.3); lp.scaling.set(1,1,0.5); L.red.push(lp);
+    const tl=BABYLON.MeshBuilder.CreateBox("xmBowT",{ width:0.016, height:0.07, depth:0.006 },scene);
+    tl.position.set(x+cr*sd*0.016,y-0.04,z-sr*sd*0.016); tl.rotation.set(0,ry,sd*0.3); L.red.push(tl); }); }
 /* v598: festone lungo una POLILINEA (i punti seguono il muro, vedi _xmPlan):
    festoni di ~2,6 m fra un attacco e l'altro, lucine e fiocchi agli attacchi */
 function _xmGarlandPath(L,pts,y,sag,r){
-  r=r||0.065; const cum=[0]; for(let i=1;i<pts.length;i++) cum.push(cum[i-1]+Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]));
+  r=r||XM_GAR_R; const cum=[0]; for(let i=1;i<pts.length;i++) cum.push(cum[i-1]+Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]));
   const Lg=cum[cum.length-1]; if(Lg<0.5) return; const n=Math.max(1,Math.round(Lg/2.6));
   const at=t=>{ let i=1; while(i<cum.length-1 && cum[i]<t) i++; const f=(t-cum[i-1])/((cum[i]-cum[i-1])||1);
     return [pts[i-1][0]+(pts[i][0]-pts[i-1][0])*f, pts[i-1][1]+(pts[i][1]-pts[i-1][1])*f]; };
   const yAt=t=>{ const u=(t/Lg)*n, f=u-Math.floor(u); return y-sag*4*f*(1-f); };
   const path=[]; for(let t=0;t<=Lg+1e-6;t+=0.12){ const q=at(Math.min(t,Lg)); path.push(new BABYLON.Vector3(q[0],yAt(t),q[1])); }
-  L.fir.push(BABYLON.MeshBuilder.CreateTube("xmGar",{ path, radius:r, tessellation:8, cap:BABYLON.Mesh.CAP_ALL },scene));
-  let k=0; for(let t=0.16;t<Lg-0.1;t+=0.3,k++){ const q=at(t); _xmBulb(L,q[0],yAt(t)-r-0.02,q[1],0.032,k); }
+  L.fir.push(BABYLON.MeshBuilder.CreateTube("xmGar",{ path, radius:r, tessellation:7, cap:BABYLON.Mesh.CAP_ALL },scene));
+  _xmGarTwig(L,path,r);
+  let k=0; for(let t=0.16;t<Lg-0.1;t+=0.28,k++){ const q=at(t); _xmBulb(L,q[0],yAt(t)-r-0.012,q[1],0.024,k); }
   for(let i=0;i<=n;i++){ const t=Lg*i/n, q=at(t), q2=at(Math.min(Lg,t+0.05)), q1=at(Math.max(0,t-0.05));
-    const b=BABYLON.MeshBuilder.CreateBox("xmBow",{ width:0.16, height:0.1, depth:0.05 },scene);
-    b.position.set(q[0],y+0.02,q[1]); b.rotation.y=Math.atan2(q2[0]-q1[0],q2[1]-q1[1])+Math.PI/2; L.red.push(b); } }
+    _xmBow(L,q[0],y+0.01,q[1],Math.atan2(q2[0]-q1[0],q2[1]-q1[1])+Math.PI/2); } }
 /* corona da porta: anello di abete, fiocco rosso e bacche; il piano della
    corona guarda verso ry (come _hwPlane: ry = atan2(nx,nz)+PI) */
-function _xmWreath(L,x,y,z,D,ry){
-  const t=BABYLON.MeshBuilder.CreateTorus("xmWr",{ diameter:D, thickness:D*0.24, tessellation:16 },scene);
-  t.position.set(x,y,z); t.rotation.set(Math.PI/2,ry,0); L.fir.push(t);
-  const fx=Math.sin(ry+Math.PI), fz=Math.cos(ry+Math.PI);       // verso la strada
-  const bow=BABYLON.MeshBuilder.CreateBox("xmWb",{ width:D*0.42, height:D*0.18, depth:0.04 },scene);
-  bow.position.set(x+fx*0.05,y-D*0.42,z+fz*0.05); bow.rotation.y=ry; L.red.push(bow);
-  for(let i=0;i<5;i++){ const a=0.4+i*1.2, s=BABYLON.MeshBuilder.CreateSphere("xmBer",{ diameter:D*0.08, segments:4 },scene);
-    s.position.set(x+Math.cos(ry)*Math.cos(a)*D*0.5*0.85+fx*0.06, y+Math.sin(a)*D*0.5*0.85, z-Math.sin(ry)*Math.cos(a)*D*0.5*0.85+fz*0.06); L.red.push(s); } }
+/* v604 (Giacomo: «i festoni sono troppo grossi, sembrano ciambelloni»): la
+   corona e' sottile (spessore 15% del diametro, era 24%), schiacciata contro
+   la porta, con un bordo di rametti piu' scuri, le bacche a grappoli e il
+   fiocco vero (due asole e due code); se c'e' `top` e' APPESA: un nastro
+   rosso sale dalla corona all'architrave, dove c'e' un fiocchetto. */
+function _xmWreath(L,x,y,z,D,ry,top){
+  const T=D*XM_WREATH_T, fx=Math.sin(ry+Math.PI), fz=Math.cos(ry+Math.PI);       // verso la strada
+  const cr=Math.cos(ry), sr=Math.sin(ry), P3=(u,v,w)=>[x+cr*u+fx*w, y+v, z-sr*u+fz*w];   // u: lungo la porta, v: su, w: in fuori
+  const t=BABYLON.MeshBuilder.CreateTorus("xmWr",{ diameter:D, thickness:T, tessellation:28 },scene);
+  t.position.set(x,y,z); t.rotation.set(Math.PI/2,ry,0); t.scaling.set(1,0.7,1); L.fir.push(t);   // schiacciata contro la porta
+  /* rametti: un secondo giro un filo piu' largo e ondulato, piu' scuro */
+  { const path=[]; for(let k=0;k<=56;k++){ const a=k/56*Math.PI*2, rr=D/2+T*0.18*Math.sin(a*14);
+      const q=P3(Math.cos(a)*rr,Math.sin(a)*rr,T*0.12); path.push(new BABYLON.Vector3(q[0],q[1],q[2])); }
+    L.fir2.push(BABYLON.MeshBuilder.CreateTube("xmWr2",{ path, radius:T*0.32, tessellation:6, cap:BABYLON.Mesh.NO_CAP },scene)); }
+  /* bacche a grappoli di tre */
+  for(let i=0;i<5;i++){ const a=0.35+i*1.25;
+    for(let j=0;j<3;j++){ const s=BABYLON.MeshBuilder.CreateSphere("xmBer",{ diameter:D*0.05, segments:5 },scene);
+      const rr=D*0.5+(j-1)*D*0.03, aa=a+(j===1?0.05:-0.04*j), q=P3(Math.cos(aa)*rr,Math.sin(aa)*rr,T*0.45);
+      s.position.set(q[0],q[1],q[2]); L.red.push(s); } }
+  /* il fiocco in basso: nodo, due asole, due code */
+  { const q=P3(0,-D*0.5,T*0.5); const k=BABYLON.MeshBuilder.CreateSphere("xmWk",{ diameter:D*0.08, segments:6 },scene);
+    k.position.set(q[0],q[1],q[2]); k.scaling.set(1,1,0.6); L.red.push(k);
+    [-1,1].forEach(sd=>{ const lp=BABYLON.MeshBuilder.CreateTorus("xmWl",{ diameter:D*0.17, thickness:D*0.035, tessellation:14 },scene);
+      const ql=P3(sd*D*0.085,-D*0.49,T*0.45); lp.position.set(ql[0],ql[1],ql[2]); lp.rotation.set(Math.PI/2,ry,sd*0.35); lp.scaling.set(1,1,0.55); L.red.push(lp);
+      const pth=[P3(sd*D*0.01,-D*0.52,T*0.48),P3(sd*D*0.06,-D*0.66,T*0.42),P3(sd*D*0.09,-D*0.78,T*0.3)].map(v=>new BABYLON.Vector3(v[0],v[1],v[2]));
+      L.red.push(BABYLON.MeshBuilder.CreateTube("xmWc",{ path:pth, radius:D*0.014, tessellation:5, cap:BABYLON.Mesh.CAP_ALL },scene)); }); }
+  /* appesa: il nastro dalla cima della corona all'architrave */
+  if(top){ const q0=P3(0,D/2-T*0.2,-T*0.2), h=top.y-q0[1];
+    if(h>0.03){ const rb=BABYLON.MeshBuilder.CreateBox("xmWn",{ width:D*0.07, height:h, depth:0.006 },scene);
+      rb.position.set((q0[0]+top.x)/2,(q0[1]+top.y)/2,(q0[2]+top.z)/2); rb.rotation.y=ry; L.red.push(rb);
+      const kn=BABYLON.MeshBuilder.CreateSphere("xmWk",{ diameter:D*0.07, segments:6 },scene); kn.position.set(top.x,top.y,top.z); kn.scaling.set(1,0.8,0.5); L.red.push(kn); } } }
 /* un pacchetto regalo (scatola + nastro) */
 function _xmGift(L,x,y,z,s,rnd,ry){ const col=[L.red,L.gold,L.white][(rnd()*3)|0];
   const b=BABYLON.MeshBuilder.CreateBox("xmGf",{ size:s },scene); b.position.set(x,y+s/2,z); b.rotation.y=ry||0; col.push(b);
@@ -8588,6 +8684,24 @@ function _xmFuse(parent,L){ const K=_xmMats();
        Restano fuori solo i fiocchi di neve (piani con la trasparenza). */
     if(k==="flake") _noGlow(m); }); }
 
+/* v604: la superficie VERA della facciata nel punto (a,y): il triangolo del
+   modello che una retta perpendicolare alla facciata incontra per primo
+   venendo dalla strada (frame F, d = in fuori). null se non c'e' niente. */
+function _xmHitD(C,g,a,y){ const fx=g.fx, s=g.s, c=g.fc.c; let best=null;
+  Object.keys(C.groups).forEach(k=>C.groups[k].forEach(gr=>{ const p=gr.p, ix=gr.ix; if(!ix) return;
+    for(let t=0;t<ix.length;t+=3){ const i0=ix[t]*3, i1=ix[t+1]*3, i2=ix[t+2]*3;
+      const A0=fx?p[i0]:p[i0+2], A1=fx?p[i1]:p[i1+2], A2=fx?p[i2]:p[i2+2];
+      if((a<A0&&a<A1&&a<A2)||(a>A0&&a>A1&&a>A2)) continue;
+      const Y0=p[i0+1], Y1=p[i1+1], Y2=p[i2+1];
+      if((y<Y0&&y<Y1&&y<Y2)||(y>Y0&&y>Y1&&y>Y2)) continue;
+      const den=(Y1-Y2)*(A0-A2)+(A2-A1)*(Y0-Y2); if(Math.abs(den)<1e-9) continue;   // triangolo di taglio
+      const w0=((Y1-Y2)*(a-A2)+(A2-A1)*(y-Y2))/den, w1=((Y2-Y0)*(a-A2)+(A0-A2)*(y-Y2))/den, w2=1-w0-w1;
+      if(w0<-1e-4||w1<-1e-4||w2<-1e-4) continue;
+      const D0=((fx?p[i0+2]:p[i0])-c)*s, D1=((fx?p[i1+2]:p[i1])-c)*s, D2=((fx?p[i2+2]:p[i2])-c)*s;
+      const d=w0*D0+w1*D1+w2*D2; if(d<2.5 && (best==null||d>best)) best=d; } }));
+  return best; }
+/* la corona: diametro e spessore (frazione del diametro) — v604 piu' sottile */
+const XM_WREATH_D=0.46, XM_WREATH_T=0.15;
 /* ---- IL PIANO di un edificio (chiamato da _dressBuilding, sempre) ---- */
 function _xmPlan(C,name){
   const g=_frontGeo(C), rnd=_seedRand("xm|"+(name||"x")), P={ name:name||"", F:C.F, ry:g.ry, trees:[], gar:null, wreath:null, sticker:null, flakes:[] };
@@ -8609,15 +8723,30 @@ function _xmPlan(C,name){
      segue; dove il muro fa un gradino (piu' di 25 cm) si spezza in tratti
      separati invece di attraversare il vuoto. */
   { const yb=g.gfTop+0.08, L0=g.a0+0.3, L1=g.a1-0.3, segs=[]; let cur=[], prev=null;
-    for(let a=L0;a<=L1+1e-6;a+=0.25){ const d=g.out(yb-0.45,yb+0.12,a-0.14,a+0.14)+0.08;
+    for(let a=L0;a<=L1+1e-6;a+=0.25){ const d=g.out(yb-0.45,yb+0.12,a-0.14,a+0.14)+0.045;   // v604: festone piu' sottile, piu' vicino al muro
       if(prev!=null && Math.abs(d-prev)>0.25){ if(cur.length) segs.push(cur); cur=[]; }
       cur.push(g.at(a,d)); prev=d; }
     if(cur.length) segs.push(cur);
     const ok=segs.filter(sg=>sg.length>=4);                       // tratti di almeno ~0,75 m
     if(ok.length) P.gar={ y:yb, segs:ok }; }
-  /* corona sulla porta */
-  if(g.door && g.dc!=null){ const y=Math.min(g.door.y1-0.42, 2.0), dd=g.out(y-0.35,y+0.35,g.door.a0,g.door.a1)+0.07, q=g.at(g.dc,dd);
-    P.wreath={ x:q[0], y:y, z:q[1] }; }
+  /* corona sulla porta.
+     v604 (Giacomo, screenshot del Clothes Shop: «questa decorazione e'
+     sospesa in aria!»). La profondita' era la SPORGENZA MASSIMA su tutta la
+     larghezza della porta (g.out): ci rientravano gli stipiti e i pilastri
+     ai lati, piu' avanti del pannello, e la corona restava a mezz'aria
+     davanti alla porta. Ora si misura il muro VERO dietro la corona (_xmHitD:
+     la superficie colpita in quel punto, sui triangoli del modello) e la
+     corona ci si appoggia, appesa a un nastro che sale fino all'architrave. */
+  if(g.door && g.dc!=null){ const D=XM_WREATH_D, y=Math.min(g.door.y1-0.42, 2.0);
+    let ds=null; [[0,0],[-0.8,0],[0.8,0],[0,0.8],[0,-0.8]].forEach(o2=>{ const h=_xmHitD(C,g,g.dc+o2[0]*D/2,y+o2[1]*D/2); if(h!=null && (ds==null||h>ds)) ds=h; });
+    if(ds==null) ds=g.out(y-0.35,y+0.35,g.door.a0,g.door.a1);
+    /* +0,035: davanti al pannello della porta-quest (q_<unit>_dp, che si
+       illumina quando la quest e' aperta) e alla luce notturna della
+       vetrina, che stanno 3 cm davanti al modello */
+    const q=g.at(g.dc,ds+0.035+D*XM_WREATH_T*0.35+0.004), yTop=Math.max(y+D/2+0.06, Math.min(g.door.y1-0.02, y+D/2+0.45));
+    let dTop=_xmHitD(C,g,g.dc,yTop-0.02); if(dTop==null || Math.abs(dTop-ds)>0.12) dTop=ds;
+    const qt=g.at(g.dc,dTop+0.042);
+    P.wreath={ x:q[0], y:y, z:q[1], top:{ x:qt[0], y:yTop, z:qt[1] } }; }
   /* fiocchi di neve sui piani alti */
   { const nF=3+((rnd()*3)|0), yLo=g.upY+0.4, yHi=Math.max(yLo+1,Math.min(C.Y1-1.2,yLo+6));
     for(let i=0;i<nF;i++){ const a=g.a0+0.8+rnd()*(g.a1-g.a0-1.6), y=yLo+rnd()*(yHi-yLo), sz=0.5+rnd()*0.4, q=g.at(a,g.out(y-0.4,y+0.4,a-0.6,a+0.6)+0.04);
@@ -8631,7 +8760,7 @@ function _xmFront(P){ const L=_xmL(), rnd=_seedRand("xmB|"+P.name), face=P.ry+Ma
   P.trees.forEach(t=>{ _xmTree(L,t.x,t.y,t.z,t.H,rnd,false); _xmGift(L,t.gift[0],(t.gy!=null?t.gy:t.y)-0.01,t.gift[1],0.26,rnd,t.gry);
     addSolid(t.solid[0],t.solid[1],t.solid[2],t.solid[3],"town"); });
   if(P.gar && P.gar.segs) P.gar.segs.forEach(sg=>_xmGarlandPath(L,sg,P.gar.y,0.2));
-  if(P.wreath) _xmWreath(L,P.wreath.x,P.wreath.y,P.wreath.z,0.55,face);
+  if(P.wreath) _xmWreath(L,P.wreath.x,P.wreath.y,P.wreath.z,XM_WREATH_D,face,P.wreath.top);
   P.flakes.forEach(f=>L.flake.push(_hwPlane(f.s,f.s,f.x,f.y,f.z,face,f.roll)));
   _xmFuse(P.F,L);
   if(P.sticker){ const s=_hwPlane(P.sticker.w,P.sticker.w/3,P.sticker.x,P.sticker.y,P.sticker.z,face);
@@ -24079,7 +24208,7 @@ function spawnNPC(cfg){
   // interazione E/tap
   if(cfg.interact||cfg.prompt){
     npc.inter=addInteract({ id:"npc_"+id, area:npc.area, radius:cfg.radius||3.0,
-      pos:()=>npc.pos(), meshes:meshes,
+      pos:()=>npc.pos(), meshes:meshes, label:npc.name, isNpc:true,   // v604: nome vero nel selettore (era "nina")
       prompt:cfg.prompt||('Press <b>P</b> to talk to <b>'+npc.name+'</b>'),
       interact:()=>{ if(!cfg.interact) return;
         if(fragNewsTell(npc,()=>cfg.interact(npc))) return;      // v301: prima la notizia della lettera
@@ -26693,7 +26822,7 @@ const qhud={ box:document.getElementById("quest-hud"), icon:document.getElementB
   strand:document.getElementById("qh-strand"), prog:document.getElementById("qh-prog"), obj:document.getElementById("qh-obj") };
 function questHudShow(v){ qhud.box.style.display=v?"block":"none"; try{ lessonHudUpdate(); }catch(e){} }
 /* v306: «🏫 Help» = chiedi una lezione di ripasso a Miss Grace */
-(function(){ const b=document.getElementById("qh-help"); if(b) b.onclick=function(e){ e.stopPropagation(); try{ lessonHelp(); }catch(err){} }; })();
+(function(){ const b=document.getElementById("qh-help"); if(b) b.onclick=function(e){ e.stopPropagation(); try{ WhyHelp.chooser(); }catch(err){ console.warn("[help]",err); } }; })();
 /* ============================================================================
    CONSEGNA BILINGUE (set 2026, chiesto da Giacomo: «anche in prima usiamo
    l'inglese nella consegna: find book, non trova book»).
@@ -26860,7 +26989,15 @@ function pick(a,n){ return shuffle(a).slice(0, Math.max(0, Math.min(n, a.length)
 const Quest={
   unit:null, i:-1, step:null, state:null, total:0, disposables:[],
   reg(fn){ this.disposables.push(fn); },
-  questInteract(o){ o.__quest=true; addInteract(o); this.reg(()=>removeInteract(o)); return o; },
+  questInteract(o){ o.__quest=true; addInteract(o); this.reg(()=>removeInteract(o));
+    /* v604: un oggetto puo' avere dei GEMELLI (mesh.__alts: i capi appesi
+       alle grucce del Clothes Shop, uguali a quelli sugli scaffali). Ogni
+       gemello riceve la stessa interazione: toccarlo e' come toccare
+       l'originale, in TUTTI gli step che usano quell'oggetto. */
+    try{ const m0=o.meshes&&o.meshes[0], alts=m0&&m0.__alts;
+      if(alts && !o.__alt) alts.forEach((a,k)=>{ const c=Object.assign({},o,{ id:o.id+"_alt"+k, pos:()=>a.pos, meshes:[a.mesh], __alt:true });
+        delete c.enabled; this.questInteract(c); }); }catch(e){}
+    return o; },
   dispose(){ while(this.disposables.length){ try{ this.disposables.pop()(); }catch(e){} }
     nearInter=null; promptEl.classList.remove("show"); },
   start(unit){ this.dispose(); this.unit=unit; this.total=unit.steps.length;
@@ -27955,6 +28092,7 @@ function u8Garment(root,kind,hex,x,H,hs,v){
   const hk=[[0,ys+0.004,0]];
   for(let k=0;k<=12;k++){ const t=Math.PI*1.2*k/12; hk.push([0,YC+HK*Math.sin(t),-hs*(HK-HK*Math.cos(t))]); }
   _u8Tube(G,hk,0.0045,"#c9ced3",false);
+  return G;
 }
 function u8Band(root,dia,th,hex,px,py,pz,sz){
   const t=BABYLON.MeshBuilder.CreateTorus("lpqb"+(_lpN++),
@@ -30562,13 +30700,22 @@ const LEXPROPS={
       kn.material=lpMat("#c9ced3"); kn.position.set(k*(w/2-0.05),H+0.03,0); kn.parent=r;
     });
     lpCyl(r,0.04,w-0.06,"#c9ced3",0,H,0,0,Math.PI/2);              // barra cromata
-    const KINDS=["tee","dress","hoodie","jeans","jacket","skirt","jumper","tee"];
+    /* v604 (Giacomo: «rendi selezionabili anche gli abiti appesi alle
+       grucce: ci vanno e si chiedono perche' sbagliano»). Prima erano capi
+       qualunque (felpe col cappuccio, colori a caso) e NON si potevano
+       toccare: chi cercava «the jacket» la vedeva appesa, la toccava e non
+       succedeva niente. Ora sulle grucce ci sono SOLO capi del negozio, dello
+       STESSO colore di quelli sugli scaffali (il colore e' quello che si
+       sente nel listening della vetrina), e ognuno vale come il suo gemello
+       sullo scaffale (r.__garments -> UNIT8.afterProps -> item.alts). */
+    const KINDS=["tee","dress","jumper","jeans","jacket","skirt"], EN={ tee:"T-shirt", dress:"dress", jumper:"jumper", jeans:"jeans", jacket:"jacket", skirt:"skirt" };
     const n=Math.max(3,Math.round((w-0.55)/0.40)), span=(w-0.75);
-    const k0=(rnd()*KINDS.length)|0;
+    const k0=(o.k0!=null)?o.k0:((rnd()*KINDS.length)|0); if(o.k0!=null) rnd(); r.__garments=[];
     for(let i=0;i<n;i++){ const x=-span/2+(n>1?i*(span/(n-1)):0);
-      const kind=KINDS[(k0+i)%KINDS.length];
-      const c=kind==="jeans"?["#3f5f86","#2c3e5a","#5a7aa6"][(rnd()*3)|0]:PAL[(rnd()*PAL.length)|0];
-      u8Garment(r,kind,c,x,H,i%2?1:-1,(rnd()*3)|0);
+      const kind=KINDS[(k0+i)%KINDS.length], en=EN[kind];
+      const c=(typeof U8_INFO!=="undefined" && U8_INFO[en])?U8_INFO[en].hex:PAL[(rnd()*PAL.length)|0];
+      const G=u8Garment(r,kind,c,x,H,i%2?1:-1,(rnd()*3)|0);
+      if(G) r.__garments.push({ en:en, node:G });
     }
     return r; },
   /* camerino di prova: 3 pareti + tetto + tenda (apertura verso +z locale) */
@@ -30718,6 +30865,48 @@ const LEXPROPS={
         {y:0.192,w:0.124,d:0.140,x:px,z:-0.048,sq:3.0},
         {y:0.206,w:0.112,d:0.108,x:px,z:-0.060,sq:3.0},
         {y:0.212,w:0.040,d:0.050,x:px,z:-0.064}],O)); }
+    /* v604 (Giacomo: «controlla se il manichino viene vestito veramente»).
+       Si vestiva, ma con TRE sole sagome: maglione e giacca diventavano una
+       maglietta a maniche corte e la GONNA un paio di pantaloni — chi sente
+       «a pink skirt» e vede comparire dei pantaloni rosa pensa di aver
+       sbagliato. Ora ogni capo ha la sua forma: maniche lunghe per maglione
+       e giacca (la giacca col collo, la zip e piu' lunga), una gonna vera.
+       u8Wear accende quella giusta e spegne le altre dello stesso posto. */
+    const longSleeves=(S,k)=>[-0.200,0.200].forEach(px=>u8Loft(S.n,null,[
+        {y:1.552,w:0.012,d:0.012,x:px*0.92},
+        {y:1.532,w:0.142*k,d:0.148*k,x:px*0.96},
+        {y:1.478,w:0.162*k,d:0.168*k,x:px},
+        {y:1.330,w:0.142*k,d:0.150*k,x:px},                        // gomito
+        {y:1.200,w:0.128*k,d:0.134*k,x:px},
+        {y:1.140,w:0.122*k,d:0.128*k,x:px},                        // polsino
+        {y:1.128,w:0.104,d:0.108,x:px},
+        {y:1.122,w:0.010,d:0.010,x:px}],{mat:S.m,nopick:true}));
+    const longBody=(S,k,hem)=>u8Loft(S.n,null,[
+        {y:hem-0.018,w:0.290,d:0.196},
+        {y:hem,w:0.378*k,d:0.254*k},
+        {y:1.180,w:0.356*k,d:0.238*k},
+        {y:1.320,w:0.384*k,d:0.250*k},
+        {y:1.440,w:0.390*k,d:0.252*k},
+        {y:1.520,w:0.376*k,d:0.240*k},
+        {y:1.578,w:0.282*k,d:0.194*k},
+        {y:1.606,w:0.172,d:0.132},
+        {y:1.600,w:0.010,d:0.010}],{mat:S.m,nopick:true});
+    { const S=wslot("jumper","#3e7a3a"); longBody(S,1,1.030); longSleeves(S,1);
+      u8Loft(S.n,null,[{y:1.585,w:0.150,d:0.128},{y:1.612,w:0.158,d:0.136},{y:1.622,w:0.120,d:0.104}],{mat:S.m,nopick:true}); }   // girocollo
+    { const S=wslot("jacket","#2f5a9e"); longBody(S,1.05,0.985); longSleeves(S,1.06);
+      u8Loft(S.n,null,[{y:1.560,w:0.250,d:0.200},{y:1.600,w:0.220,d:0.180},{y:1.660,w:0.180,d:0.160},{y:1.668,w:0.150,d:0.140}],{mat:S.m,nopick:true});   // collo alto
+      lpBox(S.n,0.012,0.6,0.006,"#c9ced3",0,1.29,0.137).isPickable=false;                      // zip
+      [-1,1].forEach(sg=>lpBox(S.n,0.085,0.012,0.006,"#2b2b2b",sg*0.105,1.12,0.135).isPickable=false); }   // tasche
+    { const S=wslot("skirt","#c25b8e");
+      u8Loft(S.n,null,[
+        {y:1.150,w:0.250,d:0.180},                                 // sotto la maglia
+        {y:1.130,w:0.300,d:0.210},
+        {y:1.090,w:0.340,d:0.232},                                 // cintura
+        {y:1.010,w:0.366,d:0.252},
+        {y:0.900,w:0.410,d:0.290},
+        {y:0.760,w:0.470,d:0.338,wv:0.035,wk:8},                   // orlo a pieghe
+        {y:0.745,w:0.440,d:0.316,wv:0.035,wk:8},
+        {y:0.740,w:0.010,d:0.010}],{mat:S.m,nopick:true}); }
     r.__wear=wear; r.__wearMat=wmat; U8_MANNEQUIN=r;
     return r; },
   /* listino prezzi (lessico "prices": abbinare il NUMERO alla PAROLA).
@@ -34431,10 +34620,128 @@ function lessonHelp(){
          { label:"Not now", act:()=>{} }]
       : [{ label:"OK", cls:"primary", act:()=>{} }] });
 }
+/* =====================================================================
+   v604 — ❓ HELP: «NON CAPISCO COSA DEVO FARE» (Giacomo, 23 nov: «molti
+   alunni non riescono a capire in italiano cosa devono fare!!! Ci vuole un
+   pop-up dove gli si spiega in italiano cosa devono fare in quel preciso
+   momento, per tutte le fasi della quest, ricordando la bussola. Poche frasi
+   ma efficaci». E: «per le tessere alcuni non capivano che dovevano ordinare
+   le frasi, con delle parti in piu', distrattori che ci sono apposta: deve
+   essere spiegato tutto»).
+   Il ❓ Help in alto a sinistra apre una SCELTA:
+     · 🤔 «Non capisco cosa devo fare» -> la spiegazione, in italiano;
+     · 📚 «Parole o grammatica» -> la lezione di Miss Grace (lessonHelp),
+       solo dove c'e'.
+   La spiegazione si COSTRUISCE da quello che c'e' adesso, cosi' vale per
+   tutte le 129 fasi di tutte le quest senza scriverne una per una:
+     1) ADESSO: la riga italiana dell'obiettivo nell'HUD (le meccaniche la
+        aggiornano passo passo: «Trova: the jumper (2/3)»), o quella dello
+        step (introObj);
+     2) COME SI FA: da cio' che e' aperto sullo schermo — tessere (con i
+        distrattori spiegati), scrittura, risposte a scelta, ascolto, un
+        messaggio da leggere, oppure niente (camminare e premere P, con la
+        scelta fra persone vicine);
+     3) DOVE: la bussola in basso a destra;
+     4) l'attivita' completa (step.intro, gia' in italiano per tutte).
+   E' uno strato suo (#why-help): NON tocca #quest-modal, quindi un dialogo
+   aperto sotto (tessere gia' messe, testo gia' scritto) resta com'e'.
+   Non costa stelle: e' comprensione della consegna, non la risposta.
+   ===================================================================== */
+const WhyHelp=(function(){
+  let el=null;
+  function box(){ if(el) return el;
+    el=document.createElement("div"); el.id="why-help";
+    el.innerHTML='<div class="wh-card" role="dialog" aria-modal="true"></div>';
+    el.addEventListener("click",e=>{ if(e.target===el) close(); });
+    el.addEventListener("keydown",e=>{ e.stopPropagation(); if(e.key==="Escape") close(); });
+    document.body.appendChild(el); return el; }
+  function card(){ return box().querySelector(".wh-card"); }
+  function show(html){ card().innerHTML=html; box().classList.add("show");
+    setTimeout(()=>{ try{ const b=el.querySelector("button"); if(b) b.focus(); }catch(e){} },30); }
+  function close(){ if(el) el.classList.remove("show"); try{ document.getElementById("game").focus(); }catch(e){} }
+  const txt=h=>{ const d=document.createElement("div"); d.innerHTML=hudItClean(String(h||"")); return (d.textContent||"").replace(/\s+/g," ").trim(); };
+  const strip=h=>hudItClean(String(h||"")).replace(/<(?!\/?(b|i)\b)[^>]*>/gi,"").trim();   // solo grassetto e corsivo
+  function hasLesson(){ const u=Quest.unit; return !!(u && u.id!=="u0" && typeof LESSONS!=="undefined" && LESSONS[u.id]); }
+  function chooser(){
+    if(!Quest.unit){ return; }
+    const L=hasLesson();
+    show('<h3>\u2753 Help \u2014 di che aiuto hai bisogno?</h3>'
+      +'<div class="wh-btns">'
+      +'<button type="button" class="wh-big" data-k="why">\u{1F914} Non capisco cosa devo fare'
+      +  '<small>Ti spiego in italiano cosa fare adesso, passo per passo.</small></button>'
+      +(L?'<button type="button" class="wh-big alt" data-k="lesson">\u{1F4DA} Problemi di lessico o grammatica'
+          +'<small>Non ricordi le parole o le regole? Miss Grace ti fa una lezione di ripasso alla Town School.</small></button>'
+         :'<button type="button" class="wh-big off" data-k="none" disabled>\u{1F4DA} Problemi di lessico o grammatica'
+          +'<small>Per questa attivit\u00e0 non c\u2019\u00e8 una lezione: chiedi al tuo insegnante.</small></button>')
+      +'<button type="button" class="wh-close" data-k="x">Chiudi</button></div>');
+    card().querySelectorAll("button[data-k]").forEach(b=>b.onclick=()=>{ const k=b.getAttribute("data-k");
+      if(k==="why") explain();
+      else if(k==="lesson"){ close(); try{ lessonHelp(); }catch(e){} }
+      else close(); });
+  }
+  /* che cosa c'e' aperto adesso sullo schermo */
+  function context(){
+    const qm=document.getElementById("quest-modal"), c=document.getElementById("qm-card");
+    const open=!!(qm && qm.classList.contains("show") && c && c.children.length);
+    if(!open) return { k:"world" };
+    if(c.querySelector(".wt-bank,.wt-tile,.wt-slots")) return { k:"tiles" };
+    if(c.querySelector("textarea,input[type=text]:not([readonly]),input:not([type])")) return { k:"write" };
+    const body=c.querySelector(".qm-body"), ch=body?body.querySelectorAll("button.qm-btn"):[];
+    if(ch.length>=2) return { k:"choice" };
+    const foot=Array.prototype.slice.call(c.querySelectorAll(".qm-btns > button.qm-btn"));
+    if(foot.filter(b=>!/^(leave|close|chiudi|not now|esci|ok)$/i.test((b.textContent||"").trim())).length>=2) return { k:"choice" };
+    return { k:"read", start:!!c.querySelector(".qm-btn.primary") && /let'?s go/i.test(c.textContent||"") };
+  }
+  function howTo(cx){
+    const tap=(typeof _tocco==="function" && _tocco());
+    const P=tap?"<b>tocca</b>":"premi <b>P</b> (o fai clic)";
+    switch(cx.k){
+      case "tiles": return "\u{1F9E9} <b>Tessere.</b> Devi <b>formare la frase giusta</b> in inglese: tocca le parole in basso <b>nell\u2019ordine giusto</b>, una dopo l\u2019altra."
+        +"<br><span class='wh-warn'>\u26a0\ufe0f Alcune tessere sono IN PI\u00d9: sono trappole messe apposta. NON devi usarle tutte!</span>"
+        +"<br>Hai sbagliato? Tocca una parola nella frase e torna gi\u00f9 (<b>\u232b Delete</b> toglie l\u2019ultima). Quando la frase \u00e8 pronta, premi <b>\u2714 Check</b> (controlla)."
+        +"<br>Leggi la frase in italiano sopra le tessere: ti dice che cosa devi scrivere.";
+      case "write": return "\u270d\ufe0f <b>Scrivere.</b> Scrivi <b>in inglese</b> nel riquadro bianco, con frasi complete (maiuscola all\u2019inizio, punto alla fine)."
+        +" Sopra c\u2019\u00e8 scritto in italiano quante frasi servono e che cosa usare. Poi premi il pulsante per <b>consegnare</b>: se manca qualcosa, il gioco ti dice che cosa aggiungere.";
+      case "choice": return "\u{1F518} <b>Scegli la risposta.</b> Leggi (o ascolta \u{1F50A}) la domanda e <b>tocca il pulsante</b> con la risposta giusta. Se sbagli, puoi riprovare.";
+      case "read": return cx.start
+        ? "\u{1F4AC} <b>Si comincia.</b> Leggi che cosa devi fare e premi <b>Let\u2019s go!</b> per partire."
+        : "\u{1F4AC} <b>Un messaggio.</b> Leggilo (\u{1F50A} per ascoltarlo; \u2753 <i>Non capisco</i> per la traduzione) e premi il pulsante per andare avanti.";
+      default: {
+        let m="\u{1F6B6} <b>Muoviti</b> con <b>W A S D</b> o le <b>frecce</b>"+(tap?" (sul tablet: tocca il punto dove andare)":"")+"."
+          +" Avvicinati alla persona o all\u2019oggetto e "+P+".";
+        m+="<br>\u{1F465} Se ci sono <b>pi\u00f9 persone o oggetti vicini</b>, la <b>freccia gialla</b> mostra chi scegli: "
+          +(tap?"con <b>\u25c0 \u25b6</b>":"con <b>Q</b>")+" cambi, con <b>P</b> confermi.";
+        return m; }
+    }
+  }
+  function explain(){
+    const s=Quest.step, u=Quest.unit; if(!s || !u || Quest.i>=u.steps.length){ close(); return; }
+    let now="";
+    try{ const o=qhud.last && qhud.last[1]; if(o && typeof o==="object" && o.it) now=strip(o.it); }catch(e){}
+    if(!now) now=strip(s.introObj||"");
+    const cx=context();
+    let listen="";
+    try{ if(s.strand==="listening" || (qhud.obj && qhud.obj.querySelector(".listen-replay-btn")))
+      listen="<div class='wh-row'>\u{1F3A7} <b>Ascolto.</b> Premi <b>\u{1F50A}</b> (in alto a sinistra) per riascoltare quante volte vuoi. Dopo due ascolti compare anche il <b>testo scritto</b>.</div>"; }catch(e){}
+    const m=(typeof STRAND_META!=="undefined" && STRAND_META[s.strand])||{ic:"\u{1F4CB}"};
+    const fase="Fase "+(Quest.i+1)+" di "+Quest.total;
+    show('<h3>\u{1F914} Che cosa devo fare?</h3>'
+      +'<div class="wh-row wh-now"><span class="wh-lab">\u{1F4CD} Adesso \u00b7 '+m.ic+' '+fase+'</span>'+(now||"\u2014")+'</div>'
+      +'<div class="wh-row"><span class="wh-lab">\u{1F449} Come si fa</span>'+howTo(cx)+'</div>'
+      +listen
+      +'<div class="wh-row"><span class="wh-lab">\u{1F9ED} Dove devo andare?</span>Guarda la <b>bussola in basso a destra</b>: la freccia ti indica dove andare e il numero quanti metri mancano. Se c\u2019\u00e8 scritto <b>HELP?</b>, toccala e ti mostra dove guardare.</div>'
+      +(s.intro?'<details><summary>\u{1F4D6} Tutta l\u2019attivit\u00e0 spiegata</summary><div style="margin-top:6px">'+strip(s.intro)+'</div></details>':'')
+      +'<div class="wh-btns"><button type="button" class="wh-close" data-k="x">\u2714 Ho capito</button></div>');
+    card().querySelectorAll("button[data-k]").forEach(b=>b.onclick=close);
+  }
+  return { chooser, explain, close, context };
+})();
 function lessonHudUpdate(){
   const b=document.getElementById("qh-help"); if(!b) return;
   const u=(typeof Quest!=="undefined")?Quest.unit:null;
-  b.style.display=(u && u.id!=="u0" && LESSONS[u.id])?"inline-flex":"none";
+  /* v604: il ❓ Help c'e' SEMPRE durante una quest (prima solo dove c'era una
+     lezione di ripasso): l'aiuto «non capisco cosa fare» serve ovunque. */
+  b.style.display=(u && Quest.step && Quest.i<u.steps.length)?"inline-flex":"none";
 }
 /* =====================================================================
    ALLENAMENTO CONTINUO — sistema GENERICO riusabile da ogni unita'.
@@ -40549,8 +40856,8 @@ function u8OutfitText(seq){
 function u8HudWindow(w){
   const reveal = w.revealed ? ('<div style="margin-top:4px;font-style:italic;">&quot;'+u8OutfitText(w.seq)+'&quot;</div>') : '';
   const btn=' <button type="button" class="qm-btn ghost listen-replay-btn" style="padding:3px 10px;margin-left:6px;">\u{1f50a}</button>';
-  return HOBJ("Listen \u{1f50a} and dress the shop window model ("+w.idx+"/"+w.seq.length+") \u2014 touch the right clothes on the shelves"+btn+reveal,
-              "Ascolta \u{1f50a} e vesti il manichino della vetrina ("+w.idx+"/"+w.seq.length+") \u2014 tocca i capi giusti sugli scaffali"+btn+reveal);
+  return HOBJ("Listen \u{1f50a} and dress the shop window model ("+w.idx+"/"+w.seq.length+") \u2014 touch the right clothes on the shelves or on the rails"+btn+reveal,
+              "Ascolta \u{1f50a} e vesti il manichino della vetrina ("+w.idx+"/"+w.seq.length+") \u2014 tocca i capi giusti sugli scaffali o sulle grucce"+btn+reveal);
 }
 function u8RefreshWindowHud(){
   const st=Quest.state, w=st&&st.win; if(!w) return;
@@ -40568,15 +40875,27 @@ function u8Announce(){
   u8RefreshWindowHud();
   TTS.say(u8OutfitText(w.seq));
 }
+/* v604: la SAGOMA giusta per ogni capo (vedi LEXPROPS.mannequin) e i posti
+   che si escludono: una sola cosa sopra, una sola sotto. */
+const U8_WEAR_KEY={ "T-shirt":"top", jumper:"jumper", jacket:"jacket", jeans:"bottom", skirt:"skirt", shoes:"shoes" };
+const U8_WEAR_GROUP={ top:["top","jumper","jacket"], jumper:["top","jumper","jacket"], jacket:["top","jumper","jacket"],
+                      bottom:["bottom","skirt"], skirt:["bottom","skirt"] };
 function u8Wear(entry){
   const M=U8_MANNEQUIN; if(!M||!M.__wear) return;
-  const inf=u8Info(entry.en), n=M.__wear[inf.slot], m=M.__wearMat[inf.slot];
+  const inf=u8Info(entry.en), key=(U8_WEAR_KEY[entry.en] && M.__wear[U8_WEAR_KEY[entry.en]])?U8_WEAR_KEY[entry.en]:inf.slot;
+  const n=M.__wear[key], m=M.__wearMat[key];
   if(!n||!m) return;
+  (U8_WEAR_GROUP[key]||[]).forEach(k=>{ if(k!==key && M.__wear[k]) M.__wear[k].setEnabled(false); });
   try{ m.diffuseColor=BABYLON.Color3.FromHexString(inf.hex); }catch(e){}
   n.setEnabled(true);
 }
+/* v604: all'inizio del listening la vetrina parte SPOGLIA (rifacendo lo
+   step, o dopo un ricaricamento, restavano addosso i capi di prima) */
+function u8Undress(){ const M=U8_MANNEQUIN; if(!M||!M.__wear) return;
+  for(const k in M.__wear){ try{ M.__wear[k].setEnabled(false); M.__wearMat[k].emissiveColor=new BABYLON.Color3(0,0,0); }catch(e){} } }
 function u8StartWindow(s){
   const st=Quest.state;
+  if(!st.win) u8Undress();
   st.win = st.win || { seq:u8WindowOutfit(), idx:0, plays:0, revealed:false, wrong:0, worn:{} };
   unitPool().forEach(entry=>{
     Quest.questInteract({ id:"win_"+entry.en, area:UNIT8.area, radius:3.2,
@@ -51376,7 +51695,11 @@ function buildInterior(u){
     if(pr.en) u.items.push({ en:pr.en, it:pr.it||pr.en, pl:pr.pl||null, noSing:!!pr.noSing, find:pr.find||null,
       room:u.areaName||u.title||"the shop",
       mesh:node, pos:new BABYLON.Vector3(C.x+pr.x,(pr.y||0),C.z+pr.z) });
+    if(node) (u.__propNodes=u.__propNodes||[]).push(node);
   });
+  /* v604: hook dopo gli arredi (Clothes Shop: le grucce diventano «gemelli»
+     dei capi sugli scaffali, vedi u8LinkRails / Quest.questInteract) */
+  if(typeof u.afterProps==="function"){ try{ u.afterProps(u.items,u.__propNodes||[]); }catch(e){ console.warn("[afterProps]",u.id,e); } }
   /* v224: PORTA VERA sull'uscita (Door.glb, come in casa). Il posto sul muro
      sud lo decide exitDoorSpot(): x=0 se e' libero, altrimenti il tratto
      libero piu' vicino. Tappeto, cartello, interazione e punto d'ingresso
@@ -51892,7 +52215,7 @@ const promptEl=document.getElementById("prompt"); let nearInter=null;
 let interCands=[], interSelId=null, _promptHtml="", interArrow=null;
 /* v221: interManual = la selezione l'ha scelta lo studente (Q / \u25c0 \u25b6).
    Senza, la selezione e' AUTOMATICA e segue il piu' vicino. */
-let interManual=false;
+let interManual=false, interManualGap=0;
 const INTER_HYST=0.25, INTER_MANUAL_RELEASE=1.2;
 function interLabel(o){
   if(o.label) return o.label;
@@ -51965,7 +52288,31 @@ function cycleInter(dir){
   i=(i+dir+interCands.length)%interCands.length;
   interSelId=interKeyOf(interCands[i]);
   interManual=true;                     // v221: scelta dello studente, non la si scavalca
+  /* v604: quanto era piu' lontano del primo AL MOMENTO della scelta. Prima la
+     scelta si mollava se il prescelto era oltre 1,2 m piu' lontano del piu'
+     vicino — cioe' SUBITO, quando le due persone erano a distanze diverse:
+     Q sembrava non fare niente (provato al Clothes Shop fra Holly e Ben). Ora
+     si molla solo se ci si allontana davvero da lui di 1,2 m in piu'. */
+  try{ interManualGap=Math.max(0,(interCands[i].__d3||0)-(interCands[0].__d3||0)); }catch(e){ interManualGap=0; }
   _promptHtml="";                       // forza il ridisegno del prompt
+  /* v604: si vede che e' cambiato qualcosa (il nome lampeggia) */
+  try{ promptEl.classList.remove("flash"); void promptEl.offsetWidth; promptEl.classList.add("flash"); }catch(e){}
+}
+/* v604 — l'etichetta sopra la freccia: «P ➜ Nina». La freccia da sola non
+   diceva che cosa succede premendo P: con due persone vicine molti non
+   capivano chi avrebbero chiamato. Compare solo quando c'e' da scegliere. */
+let interTag=null;
+function placeInterTag(sel,many){
+  if(!many || !sel || !interArrow || !interArrow.isEnabled()){ if(interTag) interTag.r.isVisible=false; return; }
+  if(!interTag){ if(!ensureUI()) return; const G=BABYLON.GUI;
+    const r=new G.Rectangle("interTag"); r.adaptWidthToChildren=true; r.height="34px"; r.cornerRadius=17; r.thickness=2;
+    r.color="#1d2a32"; r.background="#f2b23a"; r.paddingLeft="0px"; r.isPointerBlocker=false;
+    const t=new G.TextBlock(); t.color="#1d2a32"; t.fontSize=17; t.fontWeight="bold"; t.resizeToFit=true;
+    t.paddingLeft="14px"; t.paddingRight="14px"; r.addControl(t); adt.addControl(r);
+    r.linkWithMesh(interArrow); r.linkOffsetY=-34; r.zIndex=50; interTag={ r:r, t:t, txt:"" }; }
+  const txt=(_tocco()?"\u{1F446} ":"P \u279C ")+interLabel(sel);
+  if(txt!==interTag.txt){ interTag.txt=txt; interTag.t.text=txt; }
+  interTag.r.isVisible=true;
 }
 function _tocco(){ try{ return !!(window.matchMedia && window.matchMedia("(pointer:coarse)").matches); }catch(e){ return false; } }
 function updateProximity(){
@@ -51992,7 +52339,7 @@ function updateProximity(){
   list.sort((a,b)=>((a.prio||0)-(b.prio||0)) || (a.__d3-b.__d3));
   interCands=list;
   if(!list.length){ nearInter=null; interSelId=null; interManual=false; interHilite(null);
-    if(interArrow) interArrow.setEnabled(false);
+    if(interArrow) interArrow.setEnabled(false); placeInterTag(null,false);
     if(_promptHtml!==""){ _promptHtml=""; promptEl.classList.remove("show"); }
     else promptEl.classList.remove("show");
     return; }
@@ -52012,7 +52359,7 @@ function updateProximity(){
   else if(sel!==best){
     const better=((best.prio||0)<(sel.prio||0));
     const gap=sel.__d3-best.__d3;
-    if(better || (!interManual && gap>INTER_HYST) || (interManual && gap>INTER_MANUAL_RELEASE)){
+    if(better || (!interManual && gap>INTER_HYST) || (interManual && gap>interManualGap+INTER_MANUAL_RELEASE)){
       sel=best; interManual=false; }
   }
   interSelId=interKeyOf(sel); nearInter=sel; interHilite(sel);
@@ -52024,10 +52371,20 @@ function updateProximity(){
   if(html && (sel.__quest || sel.id==="pitch_edge") && sel.meshes && sel.meshes.length && /\bP\b/.test(html))
     html+=' <span style="opacity:.75;font-size:.9em">\u00b7 or '+(_tocco()?"tap":"click")+' it</span>';
   if(list.length>1){
-    html+='<span class="isel"><button type="button" class="iarr" data-dir="-1">\u25c0</button>'
-       +  '<b>'+interLabel(sel)+'</b>'
-       +  '<button type="button" class="iarr" data-dir="1">\u25b6</button></span>';
+    /* v604: la scelta spiegata. Persone (NPC, «talk to») o oggetti: la
+       parola cambia; in prima anche l'italiano. */
+    const pr=c=>{ try{ return String(typeof c.prompt==="function"?c.prompt():c.prompt||""); }catch(e){ return ""; } };
+    const ppl=list.every(c=>c.isNpc || /\btalk\b/i.test(pr(c)));
+    const k=list.indexOf(sel)+1, it=!yrEnglish(), tap=_tocco();
+    const how=tap?'tap <b>\u25c0 \u25b6</b>':'<kbd>Q</kbd>';
+    html='<div class="ip-main">'+html+'</div>'
+       +'<span class="isel"><button type="button" class="iarr" data-dir="-1">\u25c0</button>'
+       +  '<span class="isel-n">'+(ppl?'\u{1F465} ':'')+'<b>'+interLabel(sel)+'</b><small>'+k+'/'+list.length+'</small></span>'
+       +  '<button type="button" class="iarr" data-dir="1">\u25b6</button>'
+       +  '<span class="isel-h">'+how+' = '+(ppl?'change person':'change')
+       +    (it?' \u00b7 <i>'+(ppl?'cambia persona: P parla con chi ha la freccia':'cambia: P sceglie quello con la freccia')+'</i>':'')+'</span></span>';
   }
+  promptEl.classList.toggle("multi",list.length>1);
   if(html!==_promptHtml){                // innerHTML solo quando cambia davvero,
     _promptHtml=html;                    // altrimenti i bottoni si ricreerebbero
     promptEl.innerHTML=html;             // ad ogni frame e il tap non arriverebbe
@@ -52038,6 +52395,7 @@ function updateProximity(){
   }
   promptEl.classList.add("show");
   placeInterArrow(list.length>1?sel:null);   // la freccia appare quando serve scegliere
+  placeInterTag(sel,list.length>1);          // v604: e sopra la freccia, a chi va la P
 }
 /* =====================================================================
    v251 — COLLAUDO DOCENTE DA TASTIERA (1 / 2)
@@ -55271,6 +55629,21 @@ const Needs={
   last:null,                      // posizione al fotogramma prima (per i metri)
   sprintTo:0, slowTo:0, fastTo:0, // scatto (bevanda), fame lenta (sano), fame veloce (spazzatura)
   said:{}, low:false, noRunT:0, noStarT:0, nagT:0, t0:0, wasQuest:false, afterQuest:false, meal:null, mealT:null, hudT:0, el:null,
+  /* v604 (Giacomo, 23 nov: «essendo subito entrati nell'edificio per la
+     quest, fame e energia non sono scese: usciti, non devono fare niente.
+     Questi livelli vanno solo SOSPESI, ma il conto dei passi e del tempo in
+     cui non mangiano va preso comunque: quando escono gli si da' il conto e
+     si vedono i livelli veri — erano tutti al 98%»).
+     In pausa (quest in corso, dentro un edificio, in auto/volo) le barrette
+     restano FERME come prima e nessun effetto si fa sentire (la regola: le
+     quest non si bloccano mai). Ma tempo e passi finiscono nel CONTO
+     (pend): stesse formule di fuori; il tempo e' quello dell'orologio
+     (anche a scheda nascosta o Chromebook chiuso). Appena la pausa finisce
+     (fuori, senza quest) il conto si scala dai livelli: si vedono quelli
+     veri, e se ora c'e' fame lo si dice subito. Il salvataggio (et_needs)
+     tiene gia' conto del conto: chi chiude il gioco dentro un edificio non
+     ritrova i livelli di quando era entrato. */
+  pend:{ e:0, f:0, d:0 }, wallT:0, wasPaused:false,
   /* ---- la fame resta fra una sessione e l'altra (sull'account: Sync) ----
      Si legge al primo fotogramma DOPO l'accesso (tick non gira prima), cosi'
      il namespace dello studente e' gia' quello giusto. Il tempo passato a
@@ -55290,7 +55663,8 @@ const Needs={
     const now=performance.now();
     if(!force && (now<this.saveT || (this.savedF!==null && Math.abs(this.f-this.savedF)<1 && Math.abs(this.d-(this.savedD||0))<1))) return;
     this.saveT=now+60000; this.savedF=this.f; this.savedD=this.d;
-    try{ Sync.set("et_needs",{ f:Math.round(this.f*10)/10, d:Math.round(this.d*10)/10, t:Date.now() }); }catch(e){}
+    const P=this.pend||{f:0,d:0}, F=Math.max(0,this.f+P.f), D=Math.max(0,this.d+P.d);   // v604: col conto in sospeso
+    try{ Sync.set("et_needs",{ f:Math.round(F*10)/10, d:Math.round(D*10)/10, t:Date.now() }); }catch(e){}
   },
   hungry(){ return this.f<NEEDS_HUNGRY; },
   thirsty(){ return this.d<NEEDS_THIRSTY; },
@@ -55393,6 +55767,27 @@ const Needs={
     const dt=Math.min(0.5,(engine.getDeltaTime()||16)/1000), now=performance.now();
     const last=this.last; this.last={ x:p.x, z:p.z };
     const pause=this.paused();
+    /* v604: il secondo vero passato dall'ultimo fotogramma (per il conto in pausa) */
+    const wnow=Date.now(), wdt=this.wallT?Math.min(6*3600,Math.max(0,(wnow-this.wallT)/1000)):dt; this.wallT=wnow;
+    if(pause){ const P=this.pend;
+      let fx=1;
+      if(now<this.slowTo) fx*=0.6; else if(now<this.fastTo) fx*=1.5;
+      const tired=(this.e+P.e)<NEEDS_TIRED; if(tired) fx*=2;
+      P.f-=wdt*NEEDS_F_S*fx;
+      P.d-=wdt*NEEDS_D_S*(tired?1.5:1);
+      let d=last ? Math.hypot(p.x-last.x, p.z-last.z) : 0;
+      if(d>4) d=0;
+      if((typeof SKY!=="undefined" && SKY.on) || (typeof AUTO!=="undefined" && AUTO.on)) d=0;   // in auto/volo non si cammina
+      if(d>0.0005){
+        const ride=(typeof RIDE!=="undefined" && RIDE.on), run=this.run && !ride;
+        P.e-=d*(run?NEEDS_E_RUN:NEEDS_E_WALK)*(ride?0.5:1);
+        P.f-=d*NEEDS_F_M*(run?NEEDS_F_RUNX:1)*fx;
+        P.d-=d*NEEDS_D_M*(run?NEEDS_D_RUNX:1);
+      }
+      /* mai piu' giu' di zero, tutto compreso */
+      P.e=Math.max(-this.e,P.e); P.f=Math.max(-this.f,P.f); P.d=Math.max(-this.d,P.d);
+      this.wasPaused=true;
+    } else if(this.wasPaused){ this.wasPaused=false; this.settle(); }
     if(!pause){
       let fx=1;
       if(now<this.slowTo) fx*=0.6; else if(now<this.fastTo) fx*=1.5;
@@ -55413,7 +55808,9 @@ const Needs={
        l'energia non va oltre NEEDS_HUNGRY_CAP: riposare non basta */
     if(this.e<30) this.low=true;
     const cap=this.starving()?NEEDS_HUNGRY_CAP:100;
-    if(this.seated() && this.e<cap){ this.e=Math.min(cap, this.e+NEEDS_SIT_E*dt);
+    /* v604: seduti in pausa si paga prima il conto dell'energia */
+    if(pause && this.seated() && this.pend.e<0) this.pend.e=Math.min(0,this.pend.e+NEEDS_SIT_E*dt);
+    else if(this.seated() && this.e<cap){ this.e=Math.min(cap, this.e+NEEDS_SIT_E*dt);
       if(this.e>=cap){
         if(cap<100){ this.once("capped", true, ()=>{ if(this.thirsty() && (!this.hungry() || this.d<=this.f)) this.sayL("stillThirsty","riposarti non basta: devi bere qualcosa \u{1F964}","\u{1F975}");
           else this.sayL("stillHungry","riposarti non basta: devi mangiare qualcosa \u{1F354}","\u{1F62B}"); }); }
@@ -55441,6 +55838,21 @@ const Needs={
     try{ this.bagTick(); }catch(e){}
     this.save(false);
     if(now>this.hudT){ this.hudT=now+250; this.hud(pause); }
+  },
+  /* v604: si salda il conto della pausa — i livelli veri, e si dice che
+     cosa e' cambiato (solo se e' cambiato qualcosa che si vede) */
+  settle(){
+    const P=this.pend; if(!P) return;
+    const e0=this.e, f0=this.f, d0=this.d;
+    this.e=Math.max(0,Math.min(100,this.e+P.e)); this.f=Math.max(0,Math.min(100,this.f+P.f)); this.d=Math.max(0,Math.min(100,this.d+P.d));
+    P.e=0; P.f=0; P.d=0;
+    const de=Math.round(e0-this.e), df=Math.round(f0-this.f), dd=Math.round(d0-this.d);
+    if(this.e<30) this.low=true;
+    this.save(true); this.hudT=0;
+    if(de+df+dd>=3){
+      const parts=[]; if(de>0) parts.push("\u26a1 "+Math.round(this.e)+"%"); if(df>0) parts.push("\u{1F354} "+Math.round(this.f)+"%"); if(dd>0) parts.push("\u{1F4A7} "+Math.round(this.d)+"%");
+      try{ toast("\u23f1\ufe0f Time flies! "+parts.join(" \u00b7 ")+" \u2014 durante la quest il tempo e i passi contavano lo stesso", 7000); }catch(e){}
+    }
   },
   /* un sorso o un boccone di `item` (nome inglese del menu): `part` = che
      parte della porzione intera e' (1/numero di sorsi o bocconi) */
@@ -55686,7 +56098,7 @@ const Needs={
         +"\u{1F62B} <b>Hungry or thirsty?</b> You can't run, you can't rest well, and free activities give no stars. The compass shows you where to eat.<br>"
         +"<i>Con la fame o la sete non corri, non ti riposi bene e le attività libere non danno stelle: la bussola ti porta a mangiare.</i><br><br>"
         +"\u{1F3C3} All above 70%: you run faster. A drink: one minute of extra speed. Healthy food keeps you full for longer!<br><br>"
-        +"⏸ <b>Quests are never blocked.</b> During a quest nothing goes down. <i>Le quest si possono sempre fare: durante una quest non cala niente.</i>"
+        +"⏸ <b>Quests are never blocked.</b> During a quest (and inside buildings) the bars are paused, but time and steps still count: when you come out, you see your real levels. <i>Le quest si possono sempre fare: durante una quest e dentro gli edifici le barrette sono in pausa, ma il tempo e i passi si contano lo stesso. Quando esci, vedi i livelli veri.</i>"
         +(p?"<br><br><b>⏸ Now: paused.</b>":"")+"</div>",
       buttons:[{ label:"OK!", cls:"primary" }] });
   }
