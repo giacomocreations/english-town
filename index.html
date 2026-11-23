@@ -11078,17 +11078,54 @@ const RANGER_OOB_FORGET=120000;
 
 /* prossima meta: 1) la unit gia' avviata e non finita (si torna a chiuderla),
    2) altrimenti la prima non completata nell'ordine del libro. */
+/* v599 — DOVE TI PORTA IL RANGER (Giacomo: «quando ti riporta perche' non
+   stai facendo niente, ti deve portare nella quest che hai interrotto o, se
+   non ne hai iniziata nessuna, nell'ultima che il professore ha aperto»).
+   Prima: la quest in corso, altrimenti la PRIMA unit aperta e non finita di
+   RANGER_NAV — che conosceva solo le unit dell'Anno 1 e la stazione: per
+   chi e' in seconda o in terza non c'era quasi mai la meta giusta.
+   Ora, in ordine:
+     1. la quest in corso (Quest.unit);
+     2. quella INTERROTTA: uscito dall'edificio a meta' (QPAUSE), o l'ultima
+        su cui ha lavorato (et_last_quest, che resta anche ricaricando);
+     3. l'ULTIMA APERTA DAL PROFESSORE: la unit esattamente al cursore della
+        classe (Gate.cursor: anno e numero), se non e' gia' finita;
+     4. come prima, la prima aperta e non finita.
+   Ogni unit del programma ha la sua meta (rangerGoalFor): la porta della
+   quest, o il cartello delle quest all'aperto. */
+function rangerGoalFor(id){
+  if(!id) return null;
+  const n=RANGER_NAV.find(r=>r.id===id); if(n) return n;
+  let S=null; try{ S=Gate.info(id); }catch(e){} if(!S) return null;
+  let at=null;
+  try{ const q=QUESTS[id]; if(q && q.doorPos) at=q.doorPos;
+    else if(q && q.area==="home" && typeof homeDoorPos!=="undefined" && homeDoorPos) at=homeDoorPos; }catch(e){}   // u2_7: le faccende, a casa
+  if(!at){ const sign={ u1:"airport", u5:"clocktower", u7:"pitch", u2_3:"weatherstn", u2_8:"cy8plaza", u3_3:"survivalcamp" }[id];
+    const o=interactables.find(o=>o && o.area==="town" && (o.id===sign || o.id==="openq_"+id));
+    if(o){ try{ at=typeof o.pos==="function"?o.pos():o.pos; }catch(e){} } }
+  if(!at){ try{ const T=TOWN.find(t=>t.qid===id); if(T) at={ x:T.x, z:T.z }; }catch(e){} }
+  if(!at) return null;
+  const nm=S.t||id; let home=false; try{ home=QUESTS[id] && QUESTS[id].area==="home"; }catch(e){}
+  if(home) return { id, ic:S.ic||"\u{1F3E0}", en:"your house", it:"casa tua", x:at.x, z:at.z };
+  return { id, ic:S.ic||"\u{1F4CD}", en:(/^(the|your)\b/i.test(nm)?"":"the ")+nm, it:nm, x:at.x, z:at.z };
+}
+function _rangerOk(id){ try{ if(!Gate.unlocked(id)) return false; }catch(e){}
+  try{ if(Progress.get(id).done) return false; }catch(e){} return true; }
 function rangerNextGoal(){
   if(Quest.unit && Quest.unit.id){
-    const cur=RANGER_NAV.find(n=>n.id===Quest.unit.id);
+    const cur=rangerGoalFor(Quest.unit.id);
     if(cur){ try{ if(!Progress.get(cur.id).done) return cur; }catch(e){} }
   }
+  /* 2. la quest interrotta */
+  try{ if(QPAUSE && QPAUSE.u && _rangerOk(QPAUSE.u.id)){ const g=rangerGoalFor(QPAUSE.u.id); if(g) return g; } }catch(e){}
+  try{ const lq=Sync.get("et_last_quest",null); if(lq && lq.id && lq.id!=="u0" && _rangerOk(lq.id)){ const g=rangerGoalFor(lq.id); if(g) return g; } }catch(e){}
+  /* 3. l'ultima unit aperta dal professore (il cursore della classe) */
+  try{ const c=Gate.cursor(); if(c && c.yr<9){ const S=SYLLABUS.find(u=>u.yr===c.yr && u.n===c.n);
+      if(S && _rangerOk(S.id)){ const g=rangerGoalFor(S.id); if(g) return g; } } }catch(e){}
   /* mai indicare una unit che la coorte non ha ancora aperto: il Ranger
      manderebbe i ragazzi davanti a una porta chiusa. */
-  for(const n of RANGER_NAV){
-    try{ if(!Gate.unlocked(n.id)) continue; }catch(e){}
-    try{ if(!Progress.get(n.id).done) return n; }catch(e){}
-  }
+  /* 4. la prima aperta e non finita, in ordine di programma (tutte le unit) */
+  for(const S of SYLLABUS){ if(!_rangerOk(S.id)) continue; const g=rangerGoalFor(S.id); if(g) return g; }
   return null;
 }
 function rangerExempt(){
@@ -11148,7 +11185,7 @@ function escortSpot(goal){
     /* la CASA non passa dalla porta-quest generica (role:"home"): il suo
        punto davanti all'ingresso e' homeDoorPos. Senza, l'anello scaricava
        a z=20,7, sul retro. */
-    const dp=(q&&q.doorPos) || (goal.id==="u3" && typeof homeDoorPos!=="undefined" ? homeDoorPos : null);
+    const dp=(q&&q.doorPos) || ((goal.id==="u3" || (q && q.area==="home")) && typeof homeDoorPos!=="undefined" ? homeDoorPos : null);   // v599: anche u2_7
     if(dp && !blocked(dp.x,dp.z)) return new BABYLON.Vector3(dp.x,0,dp.z);
   }catch(e){}
   const BAD=/^(roadm|rbm|asphm|lnm|cwm|lakem)/;
