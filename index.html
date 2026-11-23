@@ -814,6 +814,19 @@
     padding:1px 3px;box-shadow:0 2px 6px rgba(20,30,40,.2);}
   #needs.paused{opacity:.55;} #needs.paused em{display:block;}
   #needs.boost{box-shadow:0 0 0 2px var(--sun),0 4px 14px rgba(20,30,40,.16);}
+  /* v598: l'avviso dei bisogni, grande, in alto al centro, lampeggia 3 volte */
+  #needs-alert{position:fixed;z-index:41;left:50%;top:112px;transform:translate(-50%,-10px);max-width:min(620px,calc(100vw - 32px));
+    box-sizing:border-box;padding:14px 22px 12px;border-radius:18px;text-align:center;pointer-events:none;opacity:0;
+    transition:opacity .35s ease, transform .35s ease;box-shadow:0 8px 26px rgba(0,0,0,.35);border:3px solid #fff;}
+  #needs-alert.show{opacity:1;transform:translate(-50%,0);animation:naBlink .55s ease-in-out 3;}
+  #needs-alert .na-en{font:800 clamp(20px,3.4vw,30px)/1.15 system-ui,sans-serif;letter-spacing:.01em;}
+  #needs-alert .na-it{font:600 clamp(13px,1.9vw,16px)/1.3 system-ui,sans-serif;margin-top:4px;opacity:.92;}
+  #needs-alert .na-ic{font-size:1.15em;}
+  #needs-alert.na-food{background:#e8730c;color:#fff;}
+  #needs-alert.na-drink{background:#2a7fd4;color:#fff;}
+  #needs-alert.na-tired{background:#7a4fc0;color:#fff;}
+  #needs-alert.na-ok{background:#2e8b57;color:#fff;}
+  @keyframes naBlink{0%,100%{filter:none;transform:translate(-50%,0) scale(1);}50%{filter:brightness(1.35);transform:translate(-50%,0) scale(1.06);}}
   #needs.hungry .nd-f span, #needs.thirsty .nd-d span{animation:ndHungry 1s ease-in-out infinite;}
   @keyframes ndHungry{0%,100%{transform:scale(1);}50%{transform:scale(1.35);}}
   body.veh #needs{display:none !important;}
@@ -8349,8 +8362,10 @@ let _xmM=null;
 function _xmMats(){ if(_xmM) return _xmM;
   const C3=BABYLON.Color3, std=(n,hex,spec,em)=>{ const m=new BABYLON.StandardMaterial(n,scene); m.diffuseColor=C3.FromHexString(hex);
     m.specularColor=new C3(spec||0.05,spec||0.05,spec||0.05); if(em) m.emissiveColor=C3.FromHexString(em); return m; };
-  const fir=std("xmFir","#2d6b3c",0.04); fir.emissiveColor=new C3(0.02,0.06,0.03);
-  const fir2=std("xmFir2","#245a32",0.04); fir2.emissiveColor=new C3(0.015,0.05,0.025);
+  /* v598: un filo di luce propria in piu': sotto i rami (che guardano in giu')
+     c'era nero pieno */
+  const fir=std("xmFir","#2d6b3c",0.04); fir.emissiveColor=new C3(0.045,0.1,0.05);
+  const fir2=std("xmFir2","#245a32",0.04); fir2.emissiveColor=new C3(0.035,0.085,0.04);
   fir.__glowK=0; fir2.__glowK=0;   // v597: nel bagliore i rami fanno solo da schermo (nero), non brillano
   /* le lucine: luci notturne vere (updateDayNight le accende col buio) */
   const bulb=(n,hex,glow)=>{ const m=std(n,hex,0.3); m.emissiveColor=new C3(0,0,0); m.__nightEmissive=C3.FromHexString(glow);
@@ -8372,10 +8387,20 @@ function _xmMats(){ if(_xmM) return _xmM;
   const fl=new BABYLON.StandardMaterial("xmFlake",scene); fl.diffuseTexture=flake; fl.useAlphaFromDiffuseTexture=true;
   fl.transparencyMode=BABYLON.Material.MATERIAL_ALPHATEST; fl.alphaCutOff=0.5; fl.specularColor=new C3(0,0,0);
   fl.emissiveColor=new C3(0.55,0.62,0.7); fl.backFaceCulling=false;
-  _xmM={ fir, fir2, bulbs, flake:fl,
+  /* v598: gli aghi dell'abete (una texture: verde scuro, aghi chiari e scuri) */
+  const ndl=_dnTex("xmNeedlesT",256,256,(c,w,h)=>{ c.fillStyle="#1f5c2f"; c.fillRect(0,0,w,h);
+    const R=_seedRand("xmNdl"), cols=["#2f7a3e","#3c8c48","#174a26","#26683a","#4a9a52"];
+    for(let i=0;i<1600;i++){ const x=R()*w, y=R()*h, l=5+R()*9, a=Math.PI/2+(R()-0.5)*1.1;
+      c.strokeStyle=cols[(R()*cols.length)|0]; c.lineWidth=1+R()*1.4; c.beginPath(); c.moveTo(x,y); c.lineTo(x+Math.cos(a)*l*(R()<0.5?-1:1)*0.6,y+Math.sin(a)*l); c.stroke(); } });
+  ndl.wrapU=ndl.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE; ndl.uScale=6; ndl.vScale=2.5;
+  [fir,fir2].forEach((m,i)=>{ m.diffuseTexture=ndl; m.diffuseColor=new C3(i?0.86:1,i?0.9:1,i?0.86:1); });
+  const tinsel=std("xmTinsel","#f2c445",0.9,"#5a4410"); tinsel.specularPower=48; tinsel.__glowK=0.35;   // luccica, ma non e' una luce
+  const silver=std("xmSilver","#d9dee6",0.9,"#303438"); silver.specularPower=64;
+  _xmM={ fir, fir2, bulbs, flake:fl, tinsel, silver,
     red:std("xmRed","#c4202e",0.25), gold:std("xmGold","#e0b040",0.5,"#5a4410"), pot:std("xmPot","#8a2a1f",0.1),
     trunk:std("xmTrunk","#5a3a22",0.05), white:std("xmWhite","#f4f4f0",0.2), sticker:{} };
   _xmM.star=std("xmStar","#ffd84a",0.6,"#c89a1c");
+  _xmM.gold.__glowK=0.35;   // v598: palline e nastri dorati luccicano, non sono luci
   return _xmM; }
 function _xmSticker(txt){ const K=_xmMats(); if(K.sticker[txt]) return K.sticker[txt];
   const dt=_dnTex("xmStkT"+txt.replace(/\W+/g,""),384,128,(c,w,h)=>{ c.clearRect(0,0,w,h);
@@ -8390,40 +8415,74 @@ const XM_TXT=["Merry Christmas!","Happy Holidays!","Season's Greetings!","Happy 
 
 /* ---- i pezzi (coordinate di un frame qualunque: il chiamante li fonde) ----
    L = { fir:[], fir2:[], red:[], gold:[], pot:[], trunk:[], white:[], star:[], flake:[], b0..b3:[] } */
-function _xmL(){ return { fir:[], fir2:[], red:[], gold:[], pot:[], trunk:[], white:[], star:[], flake:[], b0:[], b1:[], b2:[], b3:[] }; }
+function _xmL(){ return { fir:[], fir2:[], red:[], gold:[], pot:[], trunk:[], white:[], star:[], flake:[], tinsel:[], silver:[], b0:[], b1:[], b2:[], b3:[] }; }
 function _xmBulb(L,x,y,z,r,k){ const s=BABYLON.MeshBuilder.CreateIcoSphere("xmB",{ radius:r, subdivisions:1 },scene); s.position.set(x,y,z); L["b"+(k%4)].push(s); }
-/* alberello addobbato in vaso, base a quota y: H alto, palline e stella */
+/* alberello addobbato in vaso (o albero grande, big), base a quota y.
+   v598 (Giacomo: «alberi meno squadrati, meno poligoni, piu' realistici e
+   carini; e piu' decorazioni: ghirlande, oltre alle luci»). Ogni palco di
+   rami e' un cono a CIUFFI (_xmTier: bordo ondulato, punte che pendono un
+   po'), con la texture degli aghi; attorno a ogni palco una GHIRLANDA a
+   festoni (oro e rosso alternati), palline sulle punte dei rami, lucine fra
+   una punta e l'altra e a meta' palco, e una stella vera a cinque punte. */
+function _xmTier(d,h,K,big,rnd){
+  const T=big?40:24, m=BABYLON.MeshBuilder.CreateCylinder("xmCone",{ diameterTop:0, diameterBottom:d, height:h, tessellation:T, subdivisions:big?5:3, updatable:true },scene);
+  const P=m.getVerticesData(BABYLON.VertexBuffer.PositionKind), ph=rnd()*6.28;
+  for(let i=0;i<P.length;i+=3){ const x=P[i], y=P[i+1], z=P[i+2], r=Math.hypot(x,z);
+    /* il centro del fondo scende sotto le punte che pendono: senza, il fondo
+       saliva verso il centro e da di lato si vedevano triangoli neri fra un
+       palco e l'altro */
+    if(r<1e-5){ if(y<0) P[i+1]=y-0.18*h; continue; }
+    const a=Math.atan2(z,x), t=(y+h/2)/h, w=1-t;                    // w: 1 in fondo, 0 in punta
+    const bump=Math.pow(0.5+0.5*Math.cos(K*a+ph),1.6);              // le punte dei ciuffi
+    const k=1+0.2*bump*w;
+    P[i]=x*k; P[i+2]=z*k; P[i+1]=y-0.16*h*bump*w*w; }               // le punte pendono un po'
+  m.updateVerticesData(BABYLON.VertexBuffer.PositionKind,P);
+  const N=[]; BABYLON.VertexData.ComputeNormals(P,m.getIndices(),N); m.updateVerticesData(BABYLON.VertexBuffer.NormalKind,N);
+  m.__ph=ph; return m; }
+/* stella vera a cinque punte (prisma: due facce a ventaglio + i fianchi) */
+function _xmStarMesh(R,th){ const r=R*0.45, pos=[], ind=[], pts=[];
+  for(let i=0;i<10;i++){ const a=Math.PI/2+i*Math.PI/5, q=(i%2)?r:R; pts.push([Math.cos(a)*q,Math.sin(a)*q]); }
+  [th/2,-th/2].forEach((z,f)=>{ const c=pos.length/3; pos.push(0,0,z*1.6);
+    pts.forEach(p=>pos.push(p[0],p[1],z));
+    for(let i=0;i<10;i++){ const a=c+1+i, b=c+1+(i+1)%10; if(f) ind.push(c,a,b); else ind.push(c,b,a); } });
+  for(let i=0;i<10;i++){ const j=(i+1)%10, v=pos.length/3, A=pts[i], B=pts[j];
+    pos.push(A[0],A[1],th/2, B[0],B[1],th/2, B[0],B[1],-th/2, A[0],A[1],-th/2); ind.push(v,v+1,v+2, v,v+2,v+3); }
+  const m=new BABYLON.Mesh("xmStar",scene), vd=new BABYLON.VertexData(), nor=[];
+  BABYLON.VertexData.ComputeNormals(pos,ind,nor); vd.positions=pos; vd.indices=ind; vd.normals=nor; vd.applyToMesh(m); return m; }
 function _xmTree(L,x,y,z,H,rnd,big){
   const potH=big?0:H*0.16, base=y+potH, D=H*0.62;
-  if(!big){ const p=BABYLON.MeshBuilder.CreateCylinder("xmPot",{ diameterTop:D*0.55, diameterBottom:D*0.42, height:potH, tessellation:10 },scene);
-    p.position.set(x,y+potH/2,z); L.pot.push(p); }
+  if(!big){ const p=BABYLON.MeshBuilder.CreateCylinder("xmPot",{ diameterTop:D*0.55, diameterBottom:D*0.42, height:potH, tessellation:20 },scene);
+    p.position.set(x,y+potH/2,z); L.pot.push(p);
+    const rim=BABYLON.MeshBuilder.CreateTorus("xmPotR",{ diameter:D*0.55, thickness:D*0.045, tessellation:24 },scene); rim.position.set(x,y+potH,z); L.gold.push(rim); }
   /* v597 (Giacomo, di nuovo: «e' ancora sospeso»). Anche a 0,45 m un cono
      largo 4 m, visto ad altezza d'occhi, lascia sotto un vuoto buio e sembra
      sollevato: i rami bassi di un abete vero toccano quasi il prato. Ora il
      primo cono parte a 12 cm da terra. */
-  const t0=big?0.12:H*0.04, tiers=big?4:3, hT=(H-t0)/tiers*1.45; let apex=base;
-  /* v596 (Giacomo, screenshot: «l'albero del parco e' sospeso in aria, manca
-     il tronco fino alla fine»): prima il primo cono partiva a 0,7 m da terra
-     e il tronco (alto 0,84, largo 0,49) restava nell'ombra dei rami. Ora i
-     rami partono piu' bassi e il tronco, piu' grosso, sale fin dentro il
-     primo cono: da terra ai rami c'e' sempre legno. */
-  if(big){ const th=t0+hT*0.45, t=BABYLON.MeshBuilder.CreateCylinder("xmTr",{ diameterTop:H*0.07, diameterBottom:H*0.1, height:th, tessellation:10 },scene);
+  const t0=big?0.12:H*0.04, tiers=big?5:3, hT=(H-t0)/tiers*1.5; let apex=base;
+  /* v596: il tronco, piu' grosso, sale da terra fin dentro il primo palco */
+  if(big){ const th=t0+hT*0.45, t=BABYLON.MeshBuilder.CreateCylinder("xmTr",{ diameterTop:H*0.07, diameterBottom:H*0.1, height:th, tessellation:12 },scene);
     t.position.set(x,y+th/2,z); L.trunk.push(t); }
-  for(let i=0;i<tiers;i++){ const f=i/tiers, d=D*(1-f*0.68), yb=base+t0+(H-t0)*f*0.78; apex=Math.max(apex,yb+hT);
-    const c=BABYLON.MeshBuilder.CreateCylinder("xmCone",{ diameterTop:0, diameterBottom:d, height:hT, tessellation:big?14:10 },scene);
-    c.position.set(x,yb+hT/2,z); (i%2?L.fir2:L.fir).push(c);
-    /* palline e lucine sul bordo del cono */
-    const n=big?14:6;
-    for(let k=0;k<n;k++){ const a=(k/n)*Math.PI*2+i*0.7+rnd()*0.3, rr=d*0.47, yy=yb+hT*(0.12+rnd()*0.12);
-      const px=x+Math.cos(a)*rr, pz=z+Math.sin(a)*rr;
-      if(big || k%2){ _xmBulb(L,px,yy,pz,big?0.07:0.035,(k+i)%4); }
-      else { const s=BABYLON.MeshBuilder.CreateSphere("xmBall",{ diameter:H*0.06, segments:6 },scene); s.position.set(px,yy,pz); (k%4===0?L.gold:L.red).push(s); } } }
-  /* la stella: due rombi incrociati + un nucleo, oro acceso */
-  /* la stella sulla punta del cono piu' alto (prima restava sospesa sopra) */
-  const ss=big?0.55:0.2, sy=apex+ss*0.22;
-  [0,Math.PI/2].forEach(r=>{ const b=BABYLON.MeshBuilder.CreateBox("xmSt",{ width:ss*0.7, height:ss*0.7, depth:ss*0.12 },scene);
-    b.position.set(x,sy,z); b.rotation.set(0,r,Math.PI/4); L.star.push(b); });
-  const c=BABYLON.MeshBuilder.CreateIcoSphere("xmStC",{ radius:ss*0.22, subdivisions:1 },scene); c.position.set(x,sy,z); L.star.push(c);
+  const K=big?13:9;                                   // ciuffi per palco
+  for(let i=0;i<tiers;i++){ const f=i/tiers, d=D*(1-f*0.72), yb=base+t0+(H-t0)*f*0.8;
+    const c=_xmTier(d,hT,K-((i/2)|0),big,rnd); c.position.set(x,yb+hT/2,z); (i%2?L.fir2:L.fir).push(c); apex=Math.max(apex,yb+hT);
+    const Kt=K-((i/2)|0), ph=c.__ph, R0=d/2;
+    /* palline sulle punte dei ciuffi, lucine fra una punta e l'altra */
+    for(let k=0;k<Kt;k++){ const a=(2*Math.PI*k-ph)/Kt, tip=R0*1.2*0.96, yy=yb-0.16*hT*0.9+hT*0.02;
+      const px=x+Math.cos(a)*tip, pz=z+Math.sin(a)*tip;
+      if(k%2===0 || big){ const s=BABYLON.MeshBuilder.CreateSphere("xmBall",{ diameter:big?0.2:H*0.065, segments:10 },scene);
+        s.position.set(px,yy-(big?0.1:H*0.035),pz); [L.red,L.gold,L.red,L.silver][(k+i)%4].push(s); }
+      const a2=a+Math.PI/Kt, r2=R0*0.98; _xmBulb(L,x+Math.cos(a2)*r2,yb+hT*0.04,z+Math.sin(a2)*r2,big?0.06:0.032,k+i);
+      /* lucine anche a meta' palco */
+      const r3=R0*0.62; if(k%2===1 || big) _xmBulb(L,x+Math.cos(a+0.3)*r3,yb+hT*0.36,z+Math.sin(a+0.3)*r3,big?0.055:0.028,k+i+1); }
+    /* la ghirlanda: un giro attorno al palco, a festoni (oro / rosso) */
+    { const yg=yb+hT*0.2, rg=R0*0.82*1.1, sw=big?7:5, sag=big?0.22:0.06, path=[];
+      for(let k=0;k<=72;k++){ const a=k/72*Math.PI*2, f2=Math.abs(Math.sin(a*sw/2));
+        path.push(new BABYLON.Vector3(x+Math.cos(a)*(rg+0.03*f2),yg-sag*f2,z+Math.sin(a)*(rg+0.03*f2))); }
+      const tb=BABYLON.MeshBuilder.CreateTube("xmGarT",{ path, radius:big?0.05:0.018, tessellation:6, cap:BABYLON.Mesh.NO_CAP },scene);
+      (i%2?L.red:L.tinsel).push(tb); } }
+  /* la stella vera, sulla punta del palco piu' alto */
+  const ss=big?0.6:0.22, sy=apex+ss*0.45;
+  const st=_xmStarMesh(ss*0.5,ss*0.16); st.position.set(x,sy,z); st.rotation.y=rnd()*Math.PI; L.star.push(st);
   return sy; }
 /* festone di abete fra p0 e p1 ([x,z]) a quota y, n campate di freccia sag,
    con le lucine colorate ogni ~0,32 m */
@@ -8436,6 +8495,20 @@ function _xmGarland(L,p0,p1,y,sag,n,r){
   /* un fiocco rosso a ogni punto d'attacco */
   for(let i=0;i<=n;i++){ const t=Lg*i/n, b=BABYLON.MeshBuilder.CreateBox("xmBow",{ width:0.16, height:0.1, depth:0.05 },scene);
     b.position.set(p0[0]+ux*t,y+0.02,p0[1]+uz*t); b.rotation.y=Math.atan2(ux,uz)+Math.PI/2; L.red.push(b); } }
+/* v598: festone lungo una POLILINEA (i punti seguono il muro, vedi _xmPlan):
+   festoni di ~2,6 m fra un attacco e l'altro, lucine e fiocchi agli attacchi */
+function _xmGarlandPath(L,pts,y,sag,r){
+  r=r||0.065; const cum=[0]; for(let i=1;i<pts.length;i++) cum.push(cum[i-1]+Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]));
+  const Lg=cum[cum.length-1]; if(Lg<0.5) return; const n=Math.max(1,Math.round(Lg/2.6));
+  const at=t=>{ let i=1; while(i<cum.length-1 && cum[i]<t) i++; const f=(t-cum[i-1])/((cum[i]-cum[i-1])||1);
+    return [pts[i-1][0]+(pts[i][0]-pts[i-1][0])*f, pts[i-1][1]+(pts[i][1]-pts[i-1][1])*f]; };
+  const yAt=t=>{ const u=(t/Lg)*n, f=u-Math.floor(u); return y-sag*4*f*(1-f); };
+  const path=[]; for(let t=0;t<=Lg+1e-6;t+=0.12){ const q=at(Math.min(t,Lg)); path.push(new BABYLON.Vector3(q[0],yAt(t),q[1])); }
+  L.fir.push(BABYLON.MeshBuilder.CreateTube("xmGar",{ path, radius:r, tessellation:8, cap:BABYLON.Mesh.CAP_ALL },scene));
+  let k=0; for(let t=0.16;t<Lg-0.1;t+=0.3,k++){ const q=at(t); _xmBulb(L,q[0],yAt(t)-r-0.02,q[1],0.032,k); }
+  for(let i=0;i<=n;i++){ const t=Lg*i/n, q=at(t), q2=at(Math.min(Lg,t+0.05)), q1=at(Math.max(0,t-0.05));
+    const b=BABYLON.MeshBuilder.CreateBox("xmBow",{ width:0.16, height:0.1, depth:0.05 },scene);
+    b.position.set(q[0],y+0.02,q[1]); b.rotation.y=Math.atan2(q2[0]-q1[0],q2[1]-q1[1])+Math.PI/2; L.red.push(b); } }
 /* corona da porta: anello di abete, fiocco rosso e bacche; il piano della
    corona guarda verso ry (come _hwPlane: ry = atan2(nx,nz)+PI) */
 function _xmWreath(L,x,y,z,D,ry){
@@ -8449,17 +8522,21 @@ function _xmWreath(L,x,y,z,D,ry){
 /* un pacchetto regalo (scatola + nastro) */
 function _xmGift(L,x,y,z,s,rnd,ry){ const col=[L.red,L.gold,L.white][(rnd()*3)|0];
   const b=BABYLON.MeshBuilder.CreateBox("xmGf",{ size:s },scene); b.position.set(x,y+s/2,z); b.rotation.y=ry||0; col.push(b);
-  const r1=BABYLON.MeshBuilder.CreateBox("xmGr",{ width:s*1.02, height:s*1.02, depth:s*0.18 },scene); r1.position.copyFrom(b.position); r1.rotation.y=ry||0;
-  ((col===L.red)?L.gold:L.red).push(r1); }
+  const rib=(col===L.red)?L.gold:L.red;
+  const r1=BABYLON.MeshBuilder.CreateBox("xmGr",{ width:s*1.02, height:s*1.02, depth:s*0.18 },scene); r1.position.copyFrom(b.position); r1.rotation.y=ry||0; rib.push(r1);
+  /* v598: il secondo nastro (a croce) e il fiocco in cima: due anelli */
+  const r2=BABYLON.MeshBuilder.CreateBox("xmGr",{ width:s*0.18, height:s*1.02, depth:s*1.02 },scene); r2.position.copyFrom(b.position); r2.rotation.y=ry||0; rib.push(r2);
+  [-1,1].forEach(sd=>{ const t=BABYLON.MeshBuilder.CreateTorus("xmGb",{ diameter:s*0.32, thickness:s*0.07, tessellation:14 },scene);
+    t.position.set(x+Math.cos(ry||0)*sd*s*0.13,y+s+s*0.1,z-Math.sin(ry||0)*sd*s*0.13); t.rotation.set(Math.PI/2,(ry||0)+Math.PI/2,sd*0.5); t.scaling.set(1,1,0.75); rib.push(t); }); }
 /* fonde le liste per materiale sotto `parent` (coordinate gia' nel suo frame) */
 function _xmFuse(parent,L){ const K=_xmMats();
-  const map={ fir:K.fir, fir2:K.fir2, red:K.red, gold:K.gold, pot:K.pot, trunk:K.trunk, white:K.white, star:K.star, flake:K.flake,
+  const map={ fir:K.fir, fir2:K.fir2, red:K.red, gold:K.gold, pot:K.pot, trunk:K.trunk, white:K.white, star:K.star, flake:K.flake, tinsel:K.tinsel, silver:K.silver,
               b0:K.bulbs[0], b1:K.bulbs[1], b2:K.bulbs[2], b3:K.bulbs[3] };
   Object.keys(map).forEach(k=>{ const arr=L[k]; if(!arr || !arr.length) return;
     const m=arr.length===1?arr[0]:BABYLON.Mesh.MergeMeshes(arr,true,true,undefined,false,false);
     if(!m) return; m.material=map[k]; m.parent=parent; m.isPickable=false; _xmTieni(m);
     /* abeti, vasi, regali e corone fanno ombra; lucine, fiocchi e stelle no */
-    if(k==="fir"||k==="fir2"||k==="pot"||k==="red"||k==="gold"||k==="white"||k==="trunk") m.__cast=true;
+    if(k==="fir"||k==="fir2"||k==="pot"||k==="red"||k==="gold"||k==="white"||k==="trunk"||k==="silver") m.__cast=true;
     /* v597: nel bagliore i rami, i vasi e i regali NON vanno esclusi: sono
        quelli che COPRONO le lucine dietro di loro (lo strato del bagliore
        disegna in nero chi non brilla). Esclusi, le lucine sul retro
@@ -8479,9 +8556,21 @@ function _xmPlan(C,name){
       gift:g.at(a+sd*0.55,g.d0+0.3), gry:rnd()*0.8 });
     /* v597: anche il pacco accanto all'alberello sul suo terreno (gradino o marciapiede) */
     try{ const T=P.trees[P.trees.length-1], gw=C.toW(T.gift[0],T.gift[1]); T.gy=_hwGroundY(gw[0],gw[1]); }catch(e){} });
-  /* festone sopra il piano terra */
-  { const yb=g.gfTop+0.08, dd=g.out(yb-0.5,yb+0.1)+0.1, L0=g.a0+0.3, L1=g.a1-0.3;
-    if(L1-L0>1) P.gar={ p0:g.at(L0,dd), p1:g.at(L1,dd), y:yb, n:Math.max(1,Math.round((L1-L0)/2.6)) }; }
+  /* festone sopra il piano terra.
+     v598 (Giacomo, screenshot: «i festoni rimangono sospesi, non si adattano
+     alla struttura reale del palazzo»). Prima era UNA retta alla profondita'
+     della parte piu' sporgente della facciata: davanti alle parti rientrate
+     (avancorpi, nicchie, porte arretrate) restava in aria. Ora si misura la
+     sporgenza del muro OGNI 25 cm all'altezza del festone e il festone la
+     segue; dove il muro fa un gradino (piu' di 25 cm) si spezza in tratti
+     separati invece di attraversare il vuoto. */
+  { const yb=g.gfTop+0.08, L0=g.a0+0.3, L1=g.a1-0.3, segs=[]; let cur=[], prev=null;
+    for(let a=L0;a<=L1+1e-6;a+=0.25){ const d=g.out(yb-0.45,yb+0.12,a-0.14,a+0.14)+0.08;
+      if(prev!=null && Math.abs(d-prev)>0.25){ if(cur.length) segs.push(cur); cur=[]; }
+      cur.push(g.at(a,d)); prev=d; }
+    if(cur.length) segs.push(cur);
+    const ok=segs.filter(sg=>sg.length>=4);                       // tratti di almeno ~0,75 m
+    if(ok.length) P.gar={ y:yb, segs:ok }; }
   /* corona sulla porta */
   if(g.door && g.dc!=null){ const y=Math.min(g.door.y1-0.42, 2.0), dd=g.out(y-0.35,y+0.35,g.door.a0,g.door.a1)+0.07, q=g.at(g.dc,dd);
     P.wreath={ x:q[0], y:y, z:q[1] }; }
@@ -8497,7 +8586,7 @@ function _xmPlan(C,name){
 function _xmFront(P){ const L=_xmL(), rnd=_seedRand("xmB|"+P.name), face=P.ry+Math.PI;
   P.trees.forEach(t=>{ _xmTree(L,t.x,t.y,t.z,t.H,rnd,false); _xmGift(L,t.gift[0],(t.gy!=null?t.gy:t.y)-0.01,t.gift[1],0.26,rnd,t.gry);
     addSolid(t.solid[0],t.solid[1],t.solid[2],t.solid[3],"town"); });
-  if(P.gar) _xmGarland(L,P.gar.p0,P.gar.p1,P.gar.y,0.2,P.gar.n);
+  if(P.gar && P.gar.segs) P.gar.segs.forEach(sg=>_xmGarlandPath(L,sg,P.gar.y,0.2));
   if(P.wreath) _xmWreath(L,P.wreath.x,P.wreath.y,P.wreath.z,0.55,face);
   P.flakes.forEach(f=>L.flake.push(_hwPlane(f.s,f.s,f.x,f.y,f.z,face,f.roll)));
   _xmFuse(P.F,L);
@@ -8578,54 +8667,81 @@ function _xmSantaMats(){ if(_xmSM) return _xmSM; const K=_xmMats(), C3=BABYLON.C
   _xmSM={ red:K.red, white:K.white, gold:K.gold, black:std("xmBlack","#1c1a1a",0.15), skin:std("xmSkin","#f0c3a0",0.05), sack:std("xmSack","#7a2a22",0.05), pink:std("xmPink","#e89a8a",0.1) };
   return _xmSM; }
 /* un Babbo Natale alto ~1,8 m, davanti verso +z locale; il braccio destro
-   (node.__arm) saluta: lo muove _xmSantaTick */
+   (node.__arm) saluta: lo muove _xmSantaTick.
+   v598 (Giacomo: «rendili un po' piu' realistici e carini»). Niente piu'
+   cilindri e scatole: forme TORNITE (lathe) e TUBI col raggio che varia,
+   ombreggiatura morbida. Giacca a campana con la pancia, pelliccia sul
+   fondo e lungo il davanti (segue la pancia), cintura con la fibbia vera
+   (cornice d'oro), viso con le guance rosa, occhi col riflesso,
+   sopracciglia, barba piena e baffi a manubrio, cappello morbido che
+   ricade di lato col pompon, braccia tonde e piegate coi guanti (e il
+   pollice), stivali con la punta, sacco con il laccio. */
 function _xmSanta(S){ const M=_xmSantaMats(), B=BABYLON.MeshBuilder, V=BABYLON.Vector3;
   const L={ red:[], white:[], black:[], skin:[], gold:[], sack:[], pink:[] };
-  const cyl=(k,o,x,y,z,rx,rz)=>{ const m=B.CreateCylinder("xmS",Object.assign({ tessellation:12 },o),scene); m.position.set(x,y,z); if(rx) m.rotation.x=rx; if(rz) m.rotation.z=rz; L[k].push(m); return m; };
-  const sph=(k,d,x,y,z,sx,sy,sz)=>{ const m=B.CreateSphere("xmS",{ diameter:d, segments:8 },scene); m.position.set(x,y,z); m.scaling.set(sx||1,sy||1,sz||1); L[k].push(m); return m; };
-  const box=(k,w,h,d,x,y,z)=>{ const m=B.CreateBox("xmS",{ width:w, height:h, depth:d },scene); m.position.set(x,y,z); L[k].push(m); return m; };
-  const tor=(k,d,t,x,y,z,sx,sz)=>{ const m=B.CreateTorus("xmS",{ diameter:d, thickness:t, tessellation:18 },scene); m.position.set(x,y,z); m.scaling.set(sx||1,1,sz||1); L[k].push(m); return m; };
-  /* stivali e gambe */
-  [-1,1].forEach(s=>{ cyl("black",{ diameter:0.17, height:0.16 },s*0.11,0.08,0); box("black",0.15,0.08,0.12,s*0.11,0.04,0.09);
-    cyl("red",{ diameter:0.15, height:0.45 },s*0.11,0.38,0); });
-  /* giacca, pancia, bordo di pelliccia, cintura e fibbia */
-  cyl("red",{ diameterTop:0.5, diameterBottom:0.64, height:0.62 },0,0.88,0);
-  sph("red",0.58,0,0.95,0.05,1,0.9,0.85);
-  tor("white",0.64,0.08,0,0.58,0,1,0.95);
-  box("white",0.09,0.58,0.04,0,0.88,0.3);
-  cyl("black",{ diameter:0.62, height:0.08 },0,0.99,0.02).scaling.z=0.92;
-  box("gold",0.13,0.1,0.03,0,0.99,0.315);
-  sph("red",0.5,0,1.2,0,1,0.62,0.82);
-  /* testa: viso, naso, occhi, barba e baffi */
-  sph("skin",0.27,0,1.43,0.01);
-  sph("pink",0.055,0,1.44,0.135);
-  [-1,1].forEach(s=>{ sph("black",0.026,s*0.05,1.48,0.115); sph("white",0.095,s*0.045,1.405,0.125,1.3,0.7,0.8); });
-  sph("white",0.31,0,1.33,0.06,1,1.15,0.72);
-  /* cappello piegato di lato, bordo e pompon */
-  tor("white",0.28,0.065,0,1.545,0);
-  const hat=cyl("red",{ diameterTop:0, diameterBottom:0.26, height:0.33 },0.03,1.69,-0.01,0,-0.42);
-  sph("white",0.085,0.03+Math.sin(0.42)*0.165,1.69+Math.cos(0.42)*0.165,-0.01);
-  /* v596 (Giacomo, screenshot: «braccia staccate, messe un po' a caso»).
-     Le braccia nascono dalla SPALLA: un perno per lato (SH), con la palla
-     della spalla nel corpo a coprire la giuntura, e il braccio che PENDE dal
-     perno (verso -y). Il sinistro sta giu' lungo il fianco; il destro
-     (node.__arm) si alza e saluta ruotando sul perno: resta attaccato. */
-  [-1,1].forEach(sd=>sph("red",0.19,sd*0.25,1.22,0.02));
-  /* il sacco dei regali (solo al parco) */
-  if(S.sack){ sph("sack",0.62,-0.6,0.3,-0.2,1,0.95,0.9); cyl("gold",{ diameter:0.16, height:0.06 },-0.6,0.6,-0.2);
-    box("red",0.2,0.18,0.2,-0.52,0.66,-0.12); box("white",0.17,0.15,0.17,-0.7,0.64,-0.25); }
+  const add=(k,m)=>{ L[k].push(m); return m; };
+  const lathe=(k,pts,tess,x,y,z,sz)=>{ const m=B.CreateLathe("xmS",{ shape:pts.map(p=>new V(p[0],p[1],0)), tessellation:tess||28, cap:BABYLON.Mesh.CAP_ALL },scene);
+    m.position.set(x||0,y||0,z||0); if(sz) m.scaling.z=sz; return add(k,m); };
+  const sph=(k,d,x,y,z,sx,sy,sz,seg)=>{ const m=B.CreateSphere("xmS",{ diameter:d, segments:seg||14 },scene); m.position.set(x,y,z); m.scaling.set(sx||1,sy||1,sz||1); return add(k,m); };
+  const tor=(k,d,t,x,y,z,sx,sz)=>{ const m=B.CreateTorus("xmS",{ diameter:d, thickness:t, tessellation:32 },scene); m.position.set(x,y,z); m.scaling.set(sx||1,1,sz||1); return add(k,m); };
+  const tube=(k,pts,r0,r1,cap)=>{ const path=pts.map(p=>new V(p[0],p[1],p[2])), n=path.length;
+    return add(k,B.CreateTube("xmS",{ path, radiusFunction:(i)=>r0+(r1-r0)*(i/(n-1)), tessellation:16, cap:cap===false?BABYLON.Mesh.NO_CAP:BABYLON.Mesh.CAP_ALL },scene)); };
+  const box=(k,w,h,d,x,y,z)=>{ const m=B.CreateBox("xmS",{ width:w, height:h, depth:d },scene); m.position.set(x,y,z); return add(k,m); };
+  /* stivali (con la punta) e gambe */
+  [-1,1].forEach(s=>{ lathe("black",[[0,0],[0.09,0],[0.095,0.06],[0.085,0.2],[0,0.2]],18,s*0.11,0,0);
+    sph("black",0.15,s*0.11,0.05,0.08,1,0.6,1.3);
+    lathe("red",[[0,0.18],[0.075,0.18],[0.08,0.4],[0.085,0.6],[0,0.6]],16,s*0.11,0,0);
+    tor("white",0.17,0.05,s*0.11,0.2,0); });
+  /* giacca a campana con la pancia (z schiacciata dietro, la pancia avanti) */
+  const coat=[[0,0.55],[0.36,0.55],[0.37,0.62],[0.36,0.74],[0.35,0.86],[0.33,0.98],[0.3,1.08],[0.26,1.17],[0.2,1.25],[0.1,1.3],[0,1.31]];
+  lathe("red",coat,32,0,0,0,0.88);
+  sph("red",0.54,0,0.9,0.08,1,1.05,0.75,18);                       // la pancia
+  tor("white",0.74,0.1,0,0.57,0,1,0.89);                            // pelliccia in fondo
+  /* la pelliccia lungo il davanti: segue la pancia (tubo sulla superficie) */
+  { const coatR=y=>{ for(let i=1;i<coat.length;i++){ const a=coat[i-1], b=coat[i]; if(y<=b[1]) return a[0]+(b[0]-a[0])*((y-a[1])/(b[1]-a[1]||1)); } return 0; };
+    const pts=[]; for(let i=0;i<=10;i++){ const y=0.6+i*0.058;
+      const bel=0.2*Math.sqrt(Math.max(0,1-Math.pow((y-0.9)/0.28,2))); pts.push([0,y,Math.max(coatR(y)*0.88,0.08+bel)+0.015]); }
+    tube("white",pts,0.04,0.035); }
+  /* cintura e fibbia (cornice d'oro, dentro nero) */
+  lathe("black",[[0.335,0.95],[0.345,0.95],[0.345,1.04],[0.335,1.04],[0,1.04],[0,0.95]],32,0,0,0.04,0.9).scaling.x=1.0;
+  { const zf=0.39; box("gold",0.16,0.02,0.02,0,1.035,zf); box("gold",0.16,0.02,0.02,0,0.955,zf);
+    box("gold",0.02,0.1,0.02,-0.07,0.995,zf); box("gold",0.02,0.1,0.02,0.07,0.995,zf); box("black",0.12,0.06,0.012,0,0.995,zf-0.002); }
+  /* spalle (dove si attaccano le braccia) */
+  [-1,1].forEach(sd=>sph("red",0.2,sd*0.24,1.21,0.02));
+  /* testa: viso, guance, naso, occhi col riflesso, sopracciglia */
+  sph("skin",0.28,0,1.44,0.01,1,1,0.95,18);
+  [-1,1].forEach(s=>{ sph("pink",0.075,s*0.075,1.415,0.105,1,0.8,0.5); sph("black",0.034,s*0.048,1.475,0.118);
+    sph("white",0.012,s*0.048+0.008,1.483,0.133); sph("white",0.06,s*0.052,1.515,0.11,1.2,0.45,0.6); });
+  sph("pink",0.06,0,1.445,0.14,1,0.9,1);
+  /* barba piena (sotto) e baffi a manubrio */
+  sph("white",0.33,0,1.33,0.07,1,0.75,0.72,18);
+  sph("white",0.2,0,1.24,0.1,1,1,0.7);
+  [-1,1].forEach(s=>{ const m=sph("white",0.11,s*0.055,1.405,0.135,1.5,0.6,0.7); m.rotation.z=s*0.35; });
+  /* cappello morbido che ricade di lato, bordo di pelliccia, pompon */
+  tor("white",0.31,0.075,0,1.555,0);
+  { const pts=[[0,1.56,0],[0.005,1.66,-0.005],[0.03,1.75,-0.01],[0.08,1.81,-0.015],[0.15,1.82,-0.02],[0.21,1.77,-0.02],[0.24,1.69,-0.02]];
+    tube("red",pts,0.14,0.022); sph("white",0.1,0.245,1.66,-0.02); }
+  /* il sacco dei regali (solo al parco): sacco tornito, laccio, regali che spuntano */
+  if(S.sack){ lathe("sack",[[0,0],[0.22,0.02],[0.31,0.15],[0.32,0.32],[0.26,0.48],[0.12,0.58],[0.09,0.62],[0,0.62]],24,-0.62,0,-0.18);
+    tor("gold",0.19,0.03,-0.62,0.58,-0.18);
+    const g1=box("red",0.18,0.16,0.18,-0.58,0.68,-0.12); g1.rotation.y=0.4; box("gold",0.19,0.03,0.19,-0.58,0.75,-0.12).rotation.y=0.4;
+    box("white",0.15,0.14,0.15,-0.7,0.66,-0.26).rotation.y=-0.3; }
   const node=new BABYLON.TransformNode("xmSanta",scene); node.parent=townRoot;
   let gy=0; try{ gy=_hwGroundY(S.x,S.z); }catch(e){}
   node.position.set(S.x,gy,S.z); node.rotation.y=Math.atan2(S.face[0],S.face[1]);
-  /* le braccia: perno alla spalla, braccio che pende dal perno (verso -y) */
   const fuse=(lists,mats,parent)=>Object.keys(lists).forEach(k=>{ const arr=lists[k]; if(!arr.length) return;
     const m=arr.length===1?arr[0]:BABYLON.Mesh.MergeMeshes(arr,true,true,undefined,false,false); if(!m) return;
-    m.material=mats[k]; m.parent=parent; m.isPickable=false; m.__cast=true; _noGlow(m); });
-  const mkArm=sd=>{ const a=new BABYLON.TransformNode("xmSantaArm",scene); a.parent=node; a.position.set(sd*0.25,1.22,0.02);
+    m.material=mats[k]; m.parent=parent; m.isPickable=false; m.__cast=true; });
+  /* v598: NON escluso dal bagliore: cosi' copre le luci che ha dietro (prima
+     l'alone dorato della ghirlanda dell'albero gli passava attraverso) */
+  /* le braccia: perno alla spalla, braccio TONDO e appena piegato che pende
+     dal perno (verso -y), polsino di pelliccia, guanto col pollice */
+  const mkArm=sd=>{ const a=new BABYLON.TransformNode("xmSantaArm",scene); a.parent=node; a.position.set(sd*0.24,1.21,0.02);
     const A={ red:[], white:[], black:[] };
-    const c=B.CreateCylinder("xmS",{ diameterTop:0.15, diameterBottom:0.13, height:0.5, tessellation:12 },scene); c.position.set(0,-0.25,0); A.red.push(c);
-    const t=B.CreateTorus("xmS",{ diameter:0.15, thickness:0.05, tessellation:18 },scene); t.position.set(0,-0.5,0); A.white.push(t);
-    const g=B.CreateSphere("xmS",{ diameter:0.13, segments:8 },scene); g.position.set(0,-0.57,0); A.black.push(g);
+    const path=[new V(0,0,0),new V(sd*0.01,-0.16,0.01),new V(sd*0.015,-0.3,0.04),new V(0,-0.44,0.07)];
+    A.red.push(B.CreateTube("xmS",{ path, radiusFunction:i=>0.085-i*0.007, tessellation:16, cap:BABYLON.Mesh.CAP_ALL },scene));
+    const t=B.CreateTorus("xmS",{ diameter:0.15, thickness:0.055, tessellation:28 },scene); t.position.set(0,-0.45,0.075); t.rotation.x=0.25; A.white.push(t);
+    const g=B.CreateSphere("xmS",{ diameter:0.13, segments:14 },scene); g.position.set(0,-0.53,0.085); g.scaling.set(0.9,1.1,0.8); A.black.push(g);
+    const th=B.CreateSphere("xmS",{ diameter:0.06, segments:10 },scene); th.position.set(-sd*0.05,-0.5,0.11); th.scaling.set(1,1.4,1); A.black.push(th);
     fuse(A,M,a); return a; };
   const armL=mkArm(-1), arm=mkArm(1);
   armL.rotation.z=-0.13;                          // giu' lungo il fianco, appena staccato dalla giacca
@@ -11121,11 +11237,23 @@ function talkToRanger(npc,hailed){
     RANGER_A.idleSeen=(RANGER_A.idleSeen||0)+1;
     if(RANGER_A.idleSeen>=2){ RANGER_A.idleSeen=0;
       let gone=false; const go=()=>{ if(gone) return; gone=true; rangerTakeToQuest(goal); };
+      /* v598 (Giacomo: «la frase del Ranger viene spezzata e non si sente
+         perche' si viene trasportati subito dentro l'edificio: fagliela
+         dire»). Prima si partiva dopo 3,5 s fissi (o subito col bottone, che
+         chiudeva il dialogo e con lui la voce): con una voce lenta la frase
+         restava a meta'. Ora si parte solo quando la voce ha FINITO (al
+         massimo 10 s), e il bottone non chiude il dialogo: aspetta lo stesso. */
+      let waiting=false; const t0=performance.now();
+      const goWhenSaid=()=>{ if(gone || waiting) return; waiting=true;
+        const chk=()=>{ if(gone) return; let sp=false; try{ sp=speechSynthesis.speaking||speechSynthesis.pending; }catch(e){}
+          if(sp && performance.now()-t0<10000){ setTimeout(chk,200); return; }
+          setTimeout(go,450); };                       // un attimo di respiro dopo l'ultima parola
+        chk(); };
       DialogueBox.open({ npc, icon:"\u{1F9E5}", sub:"Town Ranger", autoSpeak:true,
         text:"No more wasting your time, kid! I'll take you to your quest!",
         italian:"Basta perdere tempo! Il Ranger ti accompagna alla tua quest: "+goal.ic+" "+goal.it+".",
-        buttons:[{ label:"\u{1F9ED} Let's go!", cls:"primary", act:go }] });
-      setTimeout(go,3500);
+        buttons:[{ label:"\u{1F9ED} Let's go!", cls:"primary", keepOpen:true, act:goWhenSaid }] });
+      setTimeout(goWhenSaid,2500);
       return; } }
   const av=npcTopics(npc);
   const ch=[];
@@ -55084,8 +55212,23 @@ const Needs={
     const v=new BABYLON.Vector3(best.x,0,best.z);
     v.__kind=(this.thirsty() && (!this.hungry() || this.d<=this.f))?"drink":"food"; return v;
   },
+  /* v598 (Giacomo: «gli avvisi che dicono che hai fame etc. piu' grandi,
+     lampeggianti, e che durino un po' di piu'»). Non piu' il toast (piccolo,
+     4 s): un RIQUADRO grande in alto al centro (#needs-alert), colorato
+     secondo il bisogno, che lampeggia tre volte e resta ~8 s. L'inglese
+     grande, l'italiano sotto. Un avviso nuovo sostituisce quello di prima. */
+  alert(en,it,ic){
+    let el=document.getElementById("needs-alert");
+    if(!el){ el=document.createElement("div"); el.id="needs-alert"; document.body.appendChild(el); }
+    const tone=/thirst|drink|parched|refresh|spot|dry/i.test(en)?"drink":/tired|exhaust|knackered|worn|legs|rest|breath|run any/i.test(en)?"tired"
+      :/hungry|starv|famish|stomach|horse|ravenous|peckish|eat|empty/i.test(en)?"food":"ok";
+    el.className="na-"+tone;
+    el.innerHTML='<div class="na-en">'+(ic?'<span class="na-ic">'+ic+'</span> ':'')+_escHtml(en)+'</div><div class="na-it">'+_escHtml(it)+'</div>';
+    el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
+    clearTimeout(this.alertT); this.alertT=setTimeout(()=>{ try{ el.classList.remove("show"); }catch(e){} },8000);
+  },
   say(en,it,ic,voice){
-    try{ toast((ic||"")+" "+en+" · "+it, 4200); }catch(e){}
+    try{ this.alert(en,it,ic); }catch(e){ try{ toast((ic||"")+" "+en+" · "+it, 6000); }catch(e2){} }
     if(voice!==false) try{ if(!(typeof _dlgOpen==="function" && _dlgOpen())) TTS.say(en); }catch(e){}
   },
   /* la prossima frase della lista `cat` (NEEDS_LINES), con un consiglio in coda */
