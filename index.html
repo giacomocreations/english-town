@@ -51401,8 +51401,23 @@ function buildInterior(u){
   guiLabel(anchorMesh(I.root,C.x+EX,1.2,C.z+S-1.0),"EXIT","",true,u.area);
   addInteract({ id:"exit_"+u.area, area:u.area, radius:2.2,
     pos:()=>new BABYLON.Vector3(C.x+EX,0,C.z+S-1.0), meshes:[ex],
-    prompt:'Press <b>P</b> to go out', interact:()=>exitUnit(u) });
+    prompt:'Press <b>P</b> to go out', interact:()=>{ if(shopExitBlocked(u)) return; exitUnit(u); } });
 }
+/* v603 (Giacomo: «nel Clothes Shop non si deve poter uscire senza pagare: se
+   ci provi, la scritta in inglese "devi pagare, dove stai andando!"»). Col
+   capo addosso (provato in camerino, o scelto e non ancora pagato) la porta
+   non si apre: Nina ti ferma. «Sorry! I'll pay.» -> la bussola torna su di
+   lei; «I'll leave it.» -> il capo torna sullo scaffale e si esce. */
+function shopExitBlocked(u){
+  try{ if(!u || u!==UNIT8) return false;
+    if(!(CSHOP.stage==="back" || (CSHOP.stage==="fitting" && Look.trying()))) return false;
+    const npc=CSHOP.npc, it=CSHOP.it, P=CSHOP.cat&&CSHOP.cat.pl, O=P?"them":"it";
+    DialogueBox.open({ npc, icon:"\u{1F6A8}", sub:"Shopping with Nina",       // la voce di Nina legge la frase (come in ogni dialogo)
+      text:"Hey! You have to pay for "+O+"! Where are you going?!",
+      italian:"Ehi! Devi pagare"+(it?" ("+it.en.toLowerCase()+")":"")+"! Dove stai andando?! Torna alla cassa da Nina, oppure lascia qui il capo.",
+      buttons:[ { label:"Sorry! I'll pay.", cls:"primary", act:()=>{ if(CSHOP.stage!=="back") clothesBackTo(); else toast("\u{1F457} Go back to Nina to pay.",3000); } },
+                { label:"I'll leave "+O+".", cls:"ghost", act:()=>{ clothesReset(); toast("\u{1F457} You leave "+O+" in the shop. Bye!",3000); } } ] });
+    return true; }catch(e){ return false; } }
 /* v224: dove mettere la porta d'uscita sul muro sud di un interno generico.
    Misura, non stima: guarda le mesh GIA' costruite dell'interno (arredi,
    cartelli, scaffali a muro) e i solidi dell'area.
@@ -78175,8 +78190,13 @@ const Look=(function(){
   function setFit(id){ const s=raw(); s.fit=id; save(s); return id; }
   function setBottom(id){ const s=raw(); s.bottom=id; save(s); return id; }
   function setBcol(id){ const s=raw(); s.bcol=id; save(s); return id; }
-  function setAcc(slot,id){ const s=state(), k=(slot==="head"?"hat":slot); s[k]=id||""; save(s); return id; }
-  function setAccCol(slot,id){ const s=state(), k=(slot==="head"?"hat":slot)+"c"; s[k]=id||""; save(s); return id; }
+  /* ⚠️ v603: raw(), non state(). state() contiene anche il capo del camerino
+     (TRY): cambiando un accessorio o un colore dalla Teca mentre si provava
+     qualcosa, il capo provato finiva SALVATO e restava addosso uscendo dal
+     negozio senza pagare (Giacomo: «ho preso un medaglione senza pagare,
+     all'uscita l'avevo ancora»). */
+  function setAcc(slot,id){ const s=raw(), k=(slot==="head"?"hat":slot); s[k]=id||""; save(s); return id; }
+  function setAccCol(slot,id){ const s=raw(), k=(slot==="head"?"hat":slot)+"c"; s[k]=id||""; save(s); return id; }
   function setCut(id){ const s=raw(); s.cut=id||""; save(s); return id; }
   /* v313: cambiando giacca il colore torna «Original». A differenza di
      cappelli e collane (colore per slot, vedi ACC_COLS) il colore di una
