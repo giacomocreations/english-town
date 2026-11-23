@@ -11189,7 +11189,9 @@ function escortSpot(goal){
     if(dp && !blocked(dp.x,dp.z)) return new BABYLON.Vector3(dp.x,0,dp.z);
   }catch(e){}
   const BAD=/^(roadm|rbm|asphm|lnm|cwm|lakem)/;
-  for(const r of [8,10,12,14,16,20]){
+  /* v599: le quest all'aperto cominciano al loro cartello: prima si prova
+     a 3-6 m (davanti al cartello), poi l'anello largo di sempre */
+  for(const r of [3,4.5,6,8,10,12,14,16,20]){
     for(let a=0;a<24;a++){
       const ang=a/24*Math.PI*2;
       const x=goal.x+Math.sin(ang)*r, z=goal.z+Math.cos(ang)*r;
