@@ -31694,14 +31694,116 @@ function buildWritePad(u,s){
   const C=I?I.center:(HB?HB.center:{x:0,z:0});
   const parentNode=I?I.root:(HB?HB.root:null);
   const px=C.x+((s.pad&&s.pad.x)||0), pz=C.z+((s.pad&&s.pad.z)||0);
-  const stand=BABYLON.MeshBuilder.CreateCylinder("wpadS_"+u.id,{diameter:0.35,height:0.95,tessellation:12},scene);
-  stand.material=mat("wpadSM_"+u.id,"#6b6257"); stand.position.set(px,0.475,pz);
-  if(parentNode) stand.parent=parentNode; stand.__occluder=true;
-  const padM=mat("wpadM_"+u.id,"#7a3b2e","#ffce6a");
-  const padB=BABYLON.MeshBuilder.CreateBox("wpad_"+u.id,{width:0.42,height:0.06,depth:0.30},scene);
-  padB.material=padM; padB.position.set(px,0.98,pz); if(parentNode) padB.parent=parentNode; padB.__occluder=true;
-  padM.__pulse=BABYLON.Color3.FromHexString("#ffce6a"); gatePanels.push(padM);   // pulse riusato
-  WPADS[u.id]={ mesh:padB, pos:new BABYLON.Vector3(px,0.9,pz) };
+  WPADS[u.id]=wpadLectern("wpad_"+u.id,parentNode,px,pz,C);
+}
+/* =====================================================================
+   ✏️ IL LEGGIO CHE SI VEDE (Giacomo, 23 nov: «il notepad che lampeggia
+   nelle quest a volte non viene individuato... facciamo che sia ancora piu'
+   glowing e lampeggia tutto il leggio?»). Prima: un cilindro grigio e una
+   tavoletta di 42x30 cm, e lampeggiava SOLO la tavoletta (e per sempre,
+   anche a quest finita). Da lontano, in una stanza piena, era un puntino.
+   Ora un leggio vero (base, asta, piano inclinato verso il centro della
+   stanza, foglio a righe e matita) e, SOLO mentre lo step di scrittura e'
+   attivo (c'e' un'interazione di quest accesa sul leggio, vedi wpadTick):
+     · lampeggia TUTTO il leggio (asta, base e piano), piu' forte e piu'
+       veloce dei portoni; il foglio si accende di bianco caldo;
+     · un ANELLO a terra che pulsa e si allarga;
+     · una COLONNA di luce morbida che sale dal leggio (si vede da lontano
+       e da dietro ai banconi);
+     · un'icona ✏️ che galleggia sopra, sempre rivolta verso la camera.
+   A step finito il leggio resta come arredo, spento. Stesso ingombro di
+   prima (base 50 cm): niente solidi nuovi, le strettoie verificate (Climate
+   Centre, reparto) restano come erano.
+   ===================================================================== */
+const WPAD_LIST=[];
+function _wpadTex(name,w,h,draw){ const t=new BABYLON.DynamicTexture(name,{ width:w, height:h },scene,true); t.hasAlpha=true; draw(t.getContext(),w,h); t.update(); return t; }
+function wpadLectern(id,parentNode,px,pz,face){
+  const B=BABYLON.MeshBuilder, gold=BABYLON.Color3.FromHexString("#ffce6a");
+  const root=new BABYLON.TransformNode(id+"_lec",scene); if(parentNode) root.parent=parentNode; root.position.set(px,0,pz);
+  /* il piano guarda il centro della stanza (da li' arriva chi scrive) */
+  const fx=face?face.x-px:0, fz=face?face.z-pz:1; root.rotation.y=(Math.abs(fx)+Math.abs(fz)>0.3)?Math.atan2(fx,fz):0;
+  const woodM=mat(id+"_wood","#7a4a2c"), metalM=mat(id+"_met","#4a4f55");
+  const base=B.CreateCylinder(id+"_base",{ diameterTop:0.36, diameterBottom:0.5, height:0.06, tessellation:20 },scene);
+  base.material=metalM; base.parent=root; base.position.y=0.03;
+  const post=B.CreateCylinder(id+"_post",{ diameterTop:0.07, diameterBottom:0.1, height:0.92, tessellation:12 },scene);
+  post.material=metalM; post.parent=root; post.position.y=0.06+0.46;
+  const head=new BABYLON.TransformNode(id+"_head",scene); head.parent=root; head.position.y=1.0; head.rotation.x=0.42;   // il bordo basso verso chi scrive
+  const top=B.CreateBox(id,{ width:0.58, height:0.045, depth:0.42 },scene);
+  top.material=woodM; top.parent=head;
+  const lip=B.CreateBox(id+"_lip",{ width:0.58, height:0.05, depth:0.03 },scene);    // il bordino che tiene il foglio
+  lip.material=woodM; lip.parent=head; lip.position.set(0,0.035,0.205);
+  const pageM=new BABYLON.StandardMaterial(id+"_pageM",scene);
+  pageM.diffuseTexture=_wpadTex(id+"_pageT",256,192,(c,W,H)=>{
+    c.fillStyle="#fbf8ef"; c.fillRect(0,0,W,H);
+    c.strokeStyle="#9cc0de"; c.lineWidth=3; for(let y=40;y<H-8;y+=24){ c.beginPath(); c.moveTo(14,y); c.lineTo(W-14,y); c.stroke(); }
+    c.strokeStyle="#e58b8b"; c.beginPath(); c.moveTo(38,8); c.lineTo(38,H-8); c.stroke();
+    c.strokeStyle="#5a6b7a"; c.lineWidth=4; c.lineCap="round";
+    [[48,150],[48,190],[48,120]].forEach((r,i)=>{ c.beginPath(); c.moveTo(r[0],40+i*24-6); c.bezierCurveTo(r[0]+40,40+i*24-14,r[0]+80,40+i*24+2,r[0]+r[1]-40,40+i*24-6); c.stroke(); }); });
+  pageM.diffuseTexture.hasAlpha=false; pageM.specularColor=new BABYLON.Color3(0,0,0);
+  const page=B.CreatePlane(id+"_page",{ width:0.46, height:0.34 },scene);
+  page.material=pageM; page.parent=head; page.position.y=0.024; page.rotation.x=Math.PI/2;
+  const penM=mat(id+"_penM","#f2c230");
+  const pen=B.CreateCylinder(id+"_pen",{ diameterTop:0.012, diameterBottom:0.018, height:0.2, tessellation:8 },scene);
+  pen.material=penM; pen.parent=head; pen.position.set(0.17,0.035,0.02); pen.rotation.set(Math.PI/2,0,0.5);
+  [base,post,top,lip,pen].forEach(m=>{ m.__occluder=true; m.__cast=true; });
+  [base,post,top,lip,page,pen].forEach(m=>{ m.isPickable=true; });
+  /* la segnalazione (spenta finche' lo step non e' attivo) */
+  const fx2=new BABYLON.TransformNode(id+"_fx",scene); fx2.parent=root;
+  const ringM=new BABYLON.StandardMaterial(id+"_ringM",scene); ringM.disableLighting=true; ringM.emissiveColor=gold; ringM.alpha=0.9; ringM.backFaceCulling=false;
+  const ring=B.CreateTorus(id+"_ring",{ diameter:0.95, thickness:0.05, tessellation:36 },scene);
+  ring.material=ringM; ring.parent=fx2; ring.position.y=0.03;
+  const discM=new BABYLON.StandardMaterial(id+"_discM",scene); discM.disableLighting=true; discM.emissiveColor=gold; discM.backFaceCulling=false;
+  discM.opacityTexture=_wpadTex(id+"_discT",128,128,(c,W,H)=>{ const g=c.createRadialGradient(W/2,H/2,0,W/2,H/2,W/2);
+    g.addColorStop(0,"rgba(255,255,255,0.75)"); g.addColorStop(0.55,"rgba(255,255,255,0.35)"); g.addColorStop(1,"rgba(255,255,255,0)"); c.fillStyle=g; c.fillRect(0,0,W,H); });
+  const disc=B.CreateGround(id+"_disc",{ width:1.6, height:1.6 },scene); disc.material=discM; disc.parent=fx2; disc.position.y=0.02;
+  const beamM=new BABYLON.StandardMaterial(id+"_beamM",scene); beamM.disableLighting=true; beamM.emissiveColor=gold; beamM.backFaceCulling=false;
+  beamM.opacityTexture=_wpadTex(id+"_beamT",8,128,(c,W,H)=>{ const g=c.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,"rgba(255,255,255,0)"); g.addColorStop(0.6,"rgba(255,255,255,0.22)"); g.addColorStop(1,"rgba(255,255,255,0.5)"); c.fillStyle=g; c.fillRect(0,0,W,H); });
+  const beam=B.CreateCylinder(id+"_beam",{ diameterTop:0.5, diameterBottom:0.75, height:2.6, tessellation:24, cap:BABYLON.Mesh.NO_CAP },scene);
+  beam.material=beamM; beam.parent=fx2; beam.position.y=1.3;
+  const badgeM=new BABYLON.StandardMaterial(id+"_badgeM",scene); badgeM.disableLighting=true; badgeM.emissiveColor=new BABYLON.Color3(1,1,1); badgeM.backFaceCulling=false;
+  badgeM.diffuseTexture=_wpadTex(id+"_badgeT",256,256,(c,W,H)=>{
+    c.clearRect(0,0,W,H);
+    const g=c.createRadialGradient(W/2,H/2,20,W/2,H/2,W/2); g.addColorStop(0,"rgba(255,220,120,0.9)"); g.addColorStop(0.62,"rgba(255,200,90,0.55)"); g.addColorStop(1,"rgba(255,200,90,0)");
+    c.fillStyle=g; c.fillRect(0,0,W,H);
+    c.beginPath(); c.arc(W/2,H/2,78,0,Math.PI*2); c.fillStyle="#fffaf0"; c.fill(); c.lineWidth=10; c.strokeStyle="#f0a92e"; c.stroke();
+    c.font="96px 'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif"; c.textAlign="center"; c.textBaseline="middle"; c.fillText("\u270F\uFE0F",W/2,H/2+6); });
+  badgeM.useAlphaFromDiffuseTexture=true;
+  const badge=B.CreatePlane(id+"_badge",{ size:0.6 },scene); badge.material=badgeM; badge.parent=fx2; badge.position.y=1.85;
+  badge.billboardMode=BABYLON.Mesh.BILLBOARDMODE_ALL;
+  [ring,disc,beam,badge].forEach(m=>{ m.isPickable=false; try{ if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(m); }catch(e){} });
+  fx2.setEnabled(false);
+  const L={ mesh:top, meshes:[top,page,lip,post,base,pen], pos:new BABYLON.Vector3(px,0.9,pz), root, fx:fx2, ring, ringM, discM, beamM, badge,
+            lit:[woodM,metalM,penM], pageM, on:false, gold };
+  WPAD_LIST.push(L);
+  return L;
+}
+/* acceso se c'e' un'interazione di QUEST attiva che punta al leggio, nell'area dove sei: la ritorna */
+function _wpadActive(L){
+  if(!L.root.isEnabled()) return null;
+  for(let i=0;i<interactables.length;i++){ const o=interactables[i];
+    if(!o.__quest || o.enabled===false || (o.area && o.area!==area) || !o.meshes) continue;
+    for(let j=0;j<o.meshes.length;j++) if(L.meshes.indexOf(o.meshes[j])>=0) return o; }
+  return null;
+}
+let _wpadChk=0;
+function wpadTick(){
+  if(!WPAD_LIST.length) return;
+  const now=performance.now();
+  if(now-_wpadChk>250){ _wpadChk=now;
+    WPAD_LIST.forEach(L=>{ const o=_wpadActive(L), on=!!o;
+      /* il tocco su TUTTO il leggio (non solo sul piano) apre la scrittura */
+      L.meshes.forEach(m=>{ if(m===L.mesh) return; const want=o||null; if(m.__inter!==want) m.__inter=want; });
+      if(on===L.on) return; L.on=on; L.fx.setEnabled(on);
+      if(!on){ L.lit.forEach(m=>m.emissiveColor.set(0,0,0)); L.pageM.emissiveColor.set(0,0,0); } }); }
+  const t=now/1000, k=0.5+0.5*Math.sin(t*6.3);            // un lampeggio al secondo, deciso
+  for(const L of WPAD_LIST){ if(!L.on) continue;
+    const g=L.gold, a=0.25+0.75*k;
+    L.lit.forEach(m=>m.emissiveColor.set(g.r*a,g.g*a*0.9,g.b*a*0.6));
+    L.pageM.emissiveColor.set(0.55+0.45*k,0.52+0.43*k,0.42+0.38*k);
+    const r=(t*0.9)%1; L.ring.scaling.set(1+r*0.9,1,1+r*0.9); L.ringM.alpha=0.95*(1-r);
+    L.discM.alpha=0.45+0.55*k; L.beamM.alpha=0.55+0.45*k;
+    L.badge.position.y=1.85+0.09*Math.sin(t*2.4); const sc=1+0.1*k; L.badge.scaling.set(sc,sc,sc); }
 }
 function openWritePad(s){
   const req=s.req||U4_WRITE_REQ, P=s.pad||{};
@@ -42791,15 +42893,8 @@ function buildCinemaPad(s){
   if(CIN_PAD) return CIN_PAD;
   const C=CINEMA_C, P=(s&&s.pad)||{};
   const px=C.x+(P.x||0), pz=C.z+(P.z||0);
-  const stand=BABYLON.MeshBuilder.CreateCylinder("cinPadS",{diameter:0.35,height:0.95,tessellation:12},scene);
-  stand.material=mat("cinPadSM","#6b6257"); stand.position.set(px,0.475,pz);
-  stand.parent=cinemaRoot; stand.__occluder=true;
-  const padM=mat("cinPadM","#7a3b2e","#ffce6a");
-  const padB=BABYLON.MeshBuilder.CreateBox("cinPad",{width:0.42,height:0.06,depth:0.30},scene);
-  padB.material=padM; padB.position.set(px,0.98,pz); padB.parent=cinemaRoot; padB.__occluder=true;
-  padM.__pulse=BABYLON.Color3.FromHexString("#ffce6a"); gatePanels.push(padM);
   addSolid(px-0.22,px+0.22,pz-0.22,pz+0.22,"cinema");
-  CIN_PAD={ mesh:padB, pos:new BABYLON.Vector3(px,0.9,pz) };
+  CIN_PAD=wpadLectern("cinPad",cinemaRoot,px,pz,C);       // ✏️ il leggio che si vede (vedi wpadLectern)
   return CIN_PAD;
 }
 function runWriteReview(){
@@ -54989,9 +55084,13 @@ function fkStart(){
 const FK_SPIN=[ { en:"Straight", ic:"\u{1F9B6}", curl:0 },
                 { en:"Inside",   ic:"↰",    curl:-8.5 },          // interno destro: gira a sinistra
                 { en:"Outside",  ic:"↱",    curl:7 } ];           // esterno destro: gira a destra (un po' meno)
-function fkSpinCycle(){
+function fkSpinCycle(){ const A=FK.aim; if(!A) return; fkSpinSet(((A.spin||0)+1)%FK_SPIN.length); }
+/* ⚽ v2 della barra: l'effetto si sceglie anche toccando direttamente uno
+   dei tre segmenti (Q e il tocco sul selettore continuano a farlo girare) */
+function fkSpinSet(i){
   const A=FK.aim; if(!A || A.kick || A.res) return;
-  A.spin=(A.spin+1)%FK_SPIN.length; FK.spin=A.spin;
+  i=Math.max(0,Math.min(FK_SPIN.length-1,i|0)); if(i===(A.spin||0)){ fkSpinHud(); return; }
+  A.spin=i; FK.spin=A.spin;
   const S=FK_SPIN[A.spin];
   toast("⚽ "+S.en+(A.spin===1?" of the foot: the ball curls left · interno: rientra da destra a sinistra":
                        A.spin===2?" of the foot: the ball curls right · esterno: rientra da sinistra a destra":
@@ -54999,9 +55098,10 @@ function fkSpinCycle(){
   fkSpinHud();
 }
 function fkSpinHud(){
-  const b=document.querySelector('#fkHud [data-fk="spin"]'); if(!b || !FK.aim) return;
-  const S=FK_SPIN[FK.aim.spin||0];
-  b.innerHTML=S.ic+"<span class=\"fk-txt\"> "+S.en+"</span>"; b.style.background=FK.aim.spin?"#3d7fa6":"#e8dfc8"; b.style.color=FK.aim.spin?"#fff":"#1d2a32";
+  const g=document.querySelector('#fkHud [data-fk="spin"]'); if(!g || !FK.aim) return;
+  const sp=FK.aim.spin||0;
+  g.querySelectorAll("[data-sp]").forEach(b=>b.classList.toggle("on",+b.getAttribute("data-sp")===sp));
+  const n=document.querySelector("#fkHud .fk-spn"); if(n) n.textContent=FK_SPIN[sp].en;
 }
 function _fkPlace(){ const S=FK.sets.me; player.position.x=S.spot.x-S.dir.x*2.4+S.perp.x*0.5; player.position.z=S.spot.z-S.dir.z*2.4+S.perp.z*0.5;
   player.rotation.y=Math.atan2(S.dir.x,S.dir.z); moveTarget=null; pendingInteract=null;
@@ -55347,16 +55447,86 @@ function _fkCss(){
    +"#fkNotesList{left:10px;top:68px;padding:4px 9px;font-size:11.5px;max-width:min(280px,calc(50vw - 140px))}"
    +"#fkNotesList .fkn-it{display:none}"
    +"#fkNotesList .fkn-o{line-height:1.25;padding:1px 0 2px}}"
+   /* ⚽ LA BARRA v2 (vedi fkHud) */
+   +"#fkHud{position:fixed;left:50%;bottom:8px;transform:translateX(-50%);z-index:30;display:none;align-items:center;gap:12px;"
+   +"padding:8px 12px 8px 12px;border-radius:18px;box-sizing:border-box;max-width:calc(100vw - 12px);"
+   +"background:linear-gradient(180deg,rgba(28,66,44,.92),rgba(12,34,22,.94));border:1px solid rgba(255,255,255,.16);"
+   +"box-shadow:0 10px 28px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.12);color:#f3f6ee;font:700 12px system-ui,sans-serif;"
+   +"touch-action:manipulation;user-select:none;-webkit-user-select:none;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}"
+   +"#fkHud::before{content:'';position:absolute;inset:0;border-radius:18px;pointer-events:none;"
+   +"background:repeating-linear-gradient(90deg,rgba(255,255,255,.035) 0 22px,transparent 22px 44px)}"
+   +"#fkHud .fk-grp{position:relative;display:flex;align-items:center;gap:6px;padding-bottom:13px}"
+   +"#fkHud .fk-cap{position:absolute;left:0;right:0;bottom:-1px;text-align:center;font:700 9.5px system-ui,sans-serif;letter-spacing:.04em;"
+   +"text-transform:uppercase;color:rgba(235,245,230,.62);white-space:nowrap}"
+   +"#fkHud kbd{display:inline-block;min-width:11px;padding:0 3px;margin:0 1px;border-radius:3px;background:rgba(255,255,255,.14);"
+   +"border-bottom:1px solid rgba(0,0,0,.35);font:800 8.5px system-ui,sans-serif;color:#fff;text-transform:none}"
+   +"#fkHud .fk-b{min-width:34px;height:34px;border:none;border-radius:11px;cursor:pointer;touch-action:manipulation;color:#fff;"
+   +"font:800 15px system-ui;background:linear-gradient(180deg,rgba(255,255,255,.2),rgba(255,255,255,.08));"
+   +"box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 2px 0 rgba(0,0,0,.35);transition:transform .08s,background .08s}"
+   +"#fkHud .fk-b.hold,#fkHud .fk-b:active{transform:translateY(1px) scale(.95);background:#f2c230;color:#1d2a32}"
+   +"#fkHud .fk-ud{display:flex;flex-direction:column;gap:3px}"
+   +"#fkHud .fk-ud .fk-b{height:22px;min-width:30px;font-size:11px;border-radius:8px}"
+   /* il mirino: porta in miniatura, barriera, punto */
+   +"#fkHud .fk-goal{position:relative;width:84px;height:48px;border-radius:8px;overflow:hidden;"
+   +"background:linear-gradient(180deg,#3f8a55 0%,#2f7446 70%,#286a3e 100%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.18),inset 0 -6px 10px rgba(0,0,0,.18)}"
+   +"#fkHud .fk-gpost{position:absolute;left:21%;right:21%;top:24%;bottom:0;border:2.5px solid #fff;border-bottom:none;border-radius:2px 2px 0 0;"
+   +"background:repeating-linear-gradient(0deg,rgba(255,255,255,.22) 0 1px,transparent 1px 5px),repeating-linear-gradient(90deg,rgba(255,255,255,.22) 0 1px,transparent 1px 5px)}"
+   +"#fkHud .fk-gwall{position:absolute;left:33%;right:33%;bottom:0;height:46%;display:flex;gap:2px;align-items:flex-end;justify-content:center}"
+   +"#fkHud .fk-gwall b{flex:1;height:100%;background:#f2c230;border-radius:5px 5px 1px 1px;box-shadow:inset 0 -2px 0 rgba(0,0,0,.18)}"
+   +"#fkHud .fk-dot{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:#fff;"
+   +"box-shadow:0 0 0 2px #e0502a,0 0 10px 3px rgba(255,190,90,.95);transition:left .05s linear,top .05s linear}"
+   +"#fkHud .fk-dot::after{content:'';position:absolute;inset:-7px;border-radius:50%;border:1.5px solid rgba(255,255,255,.7);animation:fkRing 1.1s ease-out infinite}"
+   +"@keyframes fkRing{0%{transform:scale(.4);opacity:1}100%{transform:scale(1.25);opacity:0}}"
+   /* la potenza */
+   +"#fkHud .fk-pow{position:relative;width:150px;height:22px;border-radius:11px;overflow:hidden;background:rgba(0,0,0,.38);"
+   +"box-shadow:inset 0 2px 4px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.14)}"
+   +"#fkHud .fk-pow i{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:11px;"
+   +"background:linear-gradient(90deg,#4cc46a 0%,#b8d84a 40%,#f2c230 62%,#f08a3a 82%,#e0442a 100%);background-size:150px 100%;"
+   +"box-shadow:0 0 12px rgba(255,200,80,.55),inset 0 1px 0 rgba(255,255,255,.45)}"
+   +"#fkHud .fk-pow i::after{content:'';position:absolute;right:0;top:-2px;bottom:-2px;width:4px;border-radius:2px;background:#fff;box-shadow:0 0 8px 2px #fff}"
+   +"#fkHud .fk-pow u{position:absolute;top:4px;bottom:4px;width:1px;background:rgba(255,255,255,.28);text-decoration:none}"
+   +"#fkHud .fk-pow u:nth-of-type(1){left:20%}#fkHud .fk-pow u:nth-of-type(2){left:40%}#fkHud .fk-pow u:nth-of-type(3){left:60%}#fkHud .fk-pow u:nth-of-type(4){left:80%}"
+   +"#fkHud .fk-pow em{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 12px system-ui;font-style:normal;"
+   +"color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.8)}"
+   +"#fkHud.shot .fk-pow{animation:fkLock .5s ease-out 2}"
+   +"@keyframes fkLock{0%{box-shadow:0 0 0 2px #fff,0 0 18px 4px rgba(255,220,120,.9)}100%{box-shadow:inset 0 2px 4px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.14)}}"
+   /* l'effetto: tre segmenti */
+   +"#fkHud .fk-spin{display:flex;padding:3px;gap:2px;border-radius:12px;background:rgba(0,0,0,.32);box-shadow:inset 0 1px 3px rgba(0,0,0,.45)}"
+   +"#fkHud .fk-spin button{width:32px;height:28px;border:none;border-radius:9px;background:transparent;color:#e9efe4;font:800 15px system-ui;"
+   +"cursor:pointer;touch-action:manipulation;transition:background .12s,transform .12s}"
+   +"#fkHud .fk-spin button.on{background:linear-gradient(180deg,#5aa6d6,#3d7fa6);color:#fff;box-shadow:0 0 10px rgba(90,166,214,.7),inset 0 1px 0 rgba(255,255,255,.35);transform:scale(1.04)}"
+   /* KICK */
+   +"#fkHud .fk-kick{position:relative;width:64px;height:64px;margin:-4px 0;border:none;border-radius:50%;cursor:pointer;touch-action:manipulation;color:#fff;"
+   +"display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;"
+   +"background:radial-gradient(circle at 35% 30%,#ffb36a 0%,#f0743a 45%,#c8401f 100%);"
+   +"box-shadow:0 4px 0 #8f2b12,0 6px 14px rgba(0,0,0,.45),inset 0 2px 0 rgba(255,255,255,.35);animation:fkKick 1.3s ease-in-out infinite}"
+   +"#fkHud .fk-kick:active{transform:translateY(3px);box-shadow:0 1px 0 #8f2b12,0 3px 8px rgba(0,0,0,.45)}"
+   +"#fkHud .fk-kb{font-size:19px;line-height:1}"
+   +"#fkHud .fk-kt{font:900 12px system-ui;letter-spacing:.06em;line-height:1.1}"
+   +"#fkHud .fk-kk{font-size:7.5px;margin-top:1px;background:rgba(0,0,0,.25)}"
+   +"#fkHud.shot .fk-kick{animation:none;filter:grayscale(.6) brightness(.8)}"
+   +"@keyframes fkKick{0%,100%{box-shadow:0 4px 0 #8f2b12,0 6px 14px rgba(0,0,0,.45),inset 0 2px 0 rgba(255,255,255,.35),0 0 0 0 rgba(255,140,70,.55)}"
+   +"50%{box-shadow:0 4px 0 #8f2b12,0 6px 14px rgba(0,0,0,.45),inset 0 2px 0 rgba(255,255,255,.35),0 0 0 9px rgba(255,140,70,0)}}"
+   /* chiudi */
+   +"#fkHud .fk-x{position:absolute;top:-10px;right:-10px;width:26px;height:26px;border-radius:50%;border:2px solid rgba(255,255,255,.85);"
+   +"background:#2b3036;color:#fff;font:900 12px system-ui;cursor:pointer;box-shadow:0 3px 8px rgba(0,0,0,.4);touch-action:manipulation}"
    /* telefono (orizzontale o verticale): barra compatta su una riga */
    +"@media (max-height:500px),(max-width:620px){"
-   +"#fkHud{gap:5px!important;padding:3px 6px!important;bottom:4px!important;flex-wrap:nowrap!important;max-width:calc(100vw - 8px)!important}"
-   +"#fkHud button{min-width:30px!important;height:30px!important;font-size:14px!important}"
-   +"#fkHud [data-fk=kick]{padding:0 9px!important;font-size:13px!important}"
-   +"#fkHud [data-fk=spin]{padding:0 6px!important}"
-   +"#fkHud .fk-txt,#fkHud .fk-ball{display:none}"
-   +"#fkHud .fk-pow{width:64px!important}"
-   +"#fkHud .fk-loft{height:30px!important}}"
-   +"@media (max-height:500px) and (min-width:621px){#fkHud{max-width:calc(100vw - 300px)!important}}";
+   +"#fkHud{gap:6px;padding:4px 8px;bottom:4px;border-radius:14px;max-width:calc(100vw - 8px)}"
+   +"#fkHud .fk-grp{padding-bottom:0;gap:4px}"
+   +"#fkHud .fk-cap,#fkHud .fk-kk{display:none}"
+   +"#fkHud .fk-b{min-width:30px;height:30px;font-size:13px}"
+   +"#fkHud .fk-ud .fk-b{height:14px;min-width:26px;font-size:8px;border-radius:5px}"
+   +"#fkHud .fk-goal{width:56px;height:32px}"
+   +"#fkHud .fk-pow{width:68px;height:18px}"
+   +"#fkHud .fk-pow em{font-size:10px}"
+   +"#fkHud .fk-spin{padding:2px}"
+   +"#fkHud .fk-spin button{width:24px;height:26px;font-size:12px}"
+   +"#fkHud .fk-kick{width:44px;height:44px;margin:-2px 0}"
+   +"#fkHud .fk-kb{font-size:14px}#fkHud .fk-kt{font-size:9px}"
+   +"#fkHud .fk-x{top:-8px;right:-6px;width:22px;height:22px;font-size:10px}}"
+   +"@media (max-width:420px){#fkHud .fk-goal{width:44px}#fkHud .fk-pow{width:52px}#fkHud .fk-lr{min-width:26px}}"
+   +"@media (max-height:500px) and (min-width:621px){#fkHud{max-width:calc(100vw - 300px)}}";
   document.head.appendChild(st);
 }
 function fkNoteZoom(i){
@@ -55394,22 +55564,44 @@ function _fkMeLegs(){ const K=FK.K; if(!K || !FK.aim || K.root!==avatarRoot) ret
   if(K.u!=null){ _fkKickLegs(K,K.u,null); _fkKickArms(K,K.u,null); } else if(K.rec!=null){ _fkKickLegs(K,1,K.rec); _fkKickArms(K,1,K.rec); } }
 
 /* ---- HUD: potenza, altezza, e i tasti per il tablet ---------------------- */
+/* ⚽ LA BARRA v2 (Giacomo, 23 nov: «migliora il controller delle punizioni,
+   stesso principio ma migliora la grafica»). Stessi comandi e stessi tasti
+   (A/D o ◀ ▶ la mira, W/S o ▲ ▼ l'altezza, Q l'effetto, SPAZIO il tiro), ma:
+     · un pannello scuro «da campo» invece della striscia color crema;
+     · il MIRINO: una porta in miniatura con la barriera, e un punto che
+       mostra dove stai puntando (destra/sinistra = mira, su/giu' = altezza).
+       Non e' dove arriva il pallone (quello lo decidono potenza ed effetto)
+       ma si vede subito se si mira dentro, fuori o sopra la barriera;
+     · la POTENZA: barra grande con tacche e percentuale; al tiro si ferma
+       e lampeggia sul valore preso;
+     · l'EFFETTO: tre segmenti (dritto / interno / esterno), tocchi quello
+       che vuoi;
+     · KICK: un bottone tondo che pulsa, pronto a calciare. */
 function fkHud(on){
   let h=document.getElementById("fkHud");
   if(!h){ h=document.createElement("div"); h.id="fkHud";
-    h.style.cssText="position:fixed;left:50%;bottom:6px;transform:translateX(-50%);z-index:30;background:rgba(251,247,236,.92);"   // in basso: non copre il tiro
-      +"border-radius:12px;padding:5px 9px;box-shadow:0 6px 18px rgba(0,0,0,.25);font:700 13px system-ui,sans-serif;color:#1d2a32;display:none;"
-      +"align-items:center;gap:10px;touch-action:manipulation;user-select:none;-webkit-user-select:none;"
-      +"flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 12px);box-sizing:border-box";   // ⚽ col bottone dell'effetto: sugli schermi stretti va a capo
-    const B=(id,t)=>'<button type="button" data-fk="'+id+'" style="min-width:34px;height:34px;border:none;border-radius:10px;background:#e8dfc8;font:800 16px system-ui;cursor:pointer;touch-action:manipulation">'+t+'</button>';
+    const B=(id,t,c)=>'<button type="button" data-fk="'+id+'" class="fk-b'+(c?" "+c:"")+'">'+t+'</button>';
     _fkCss();
-    h.innerHTML='<span class="fk-ball">⚽</span>'+B("l","◀")+B("r","▶")
-      +'<div class="fk-loft" title="Height" style="width:10px;height:44px;border-radius:5px;background:#e8dfc8;position:relative;overflow:hidden"><i id="fkLoft" style="position:absolute;left:0;right:0;bottom:0;background:#3d7fa6"></i></div>'
-      +B("u","▲")+B("d","▼")
-      +'<div class="fk-pow" title="Power" style="width:120px;height:14px;border-radius:7px;background:#e8dfc8;overflow:hidden"><i id="fkPow" style="display:block;height:100%;width:0;background:linear-gradient(90deg,#58b368,#e8b04b,#e0673a)"></i></div>'
-      +'<button type="button" data-fk="spin" title="Spin: straight / inside / outside (Q)" style="height:34px;padding:0 9px;border:none;border-radius:10px;background:#e8dfc8;font:800 13px system-ui;cursor:pointer;touch-action:manipulation;white-space:nowrap">\u{1F9B6}<span class="fk-txt"> Straight</span></button>'
-      +'<button type="button" data-fk="kick" style="height:36px;padding:0 12px;border:none;border-radius:10px;background:#e0673a;color:#fff;font:800 14px system-ui;cursor:pointer">KICK</button>'
-      +B("x","✕");
+    h.innerHTML=
+       '<div class="fk-grp fk-aimg">'
+      +  B("l","◀","fk-lr")
+      +  '<div class="fk-goal" title="Aim · Mira"><i class="fk-gpost"></i><i class="fk-gwall"><b></b><b></b><b></b><b></b></i><i id="fkDot" class="fk-dot"></i></div>'
+      +  B("r","▶","fk-lr")
+      +  '<div class="fk-ud">'+B("u","▲")+B("d","▼")+'</div>'
+      +  '<span class="fk-cap">Aim <kbd>A</kbd><kbd>D</kbd> · Height <kbd>W</kbd><kbd>S</kbd></span>'
+      +'</div>'
+      +'<div class="fk-grp fk-powg">'
+      +  '<div class="fk-pow" title="Power · Potenza"><i id="fkPow"></i><u></u><u></u><u></u><u></u><em id="fkPowN">0%</em></div>'
+      +  '<span class="fk-cap">Power · kick when it\'s right!</span>'
+      +'</div>'
+      +'<div class="fk-grp fk-spg">'
+      +  '<div class="fk-spin" data-fk="spin" title="Spin: straight / inside / outside (Q)">'
+      +    FK_SPIN.map((S,i)=>'<button type="button" data-sp="'+i+'" title="'+S.en+'">'+S.ic+'</button>').join("")
+      +  '</div>'
+      +  '<span class="fk-cap"><span class="fk-spn">Straight</span> <kbd>Q</kbd></span>'
+      +'</div>'
+      +'<button type="button" data-fk="kick" class="fk-kick"><span class="fk-kb">⚽</span><span class="fk-kt">KICK</span><kbd class="fk-kk">Space</kbd></button>'
+      +'<button type="button" data-fk="x" class="fk-x" title="Stop (Esc)">✕</button>';
     document.body.appendChild(h);
     FK.hold={};
     h.querySelectorAll("[data-fk]").forEach(b=>{ const k=b.getAttribute("data-fk");
@@ -55417,19 +55609,30 @@ function fkHud(on){
          l'altro dito, e con due dita sullo schermo il click non arriva (vedi
          il bottone dell'airwalk). Niente preventDefault (touchcancel alla levetta). */
       if(k==="kick"){ b.addEventListener("pointerdown",()=>{ fkKick(); },{passive:true}); return; }
-      if(k==="spin"){ b.addEventListener("pointerdown",()=>{ fkSpinCycle(); },{passive:true}); return; }
+      if(k==="spin"){ b.addEventListener("pointerdown",e=>{ const sg=e.target.closest && e.target.closest("[data-sp]");
+          if(sg) fkSpinSet(+sg.getAttribute("data-sp")); else fkSpinCycle(); },{passive:true}); return; }
       if(k==="x"){ b.addEventListener("click",e=>{ e.preventDefault(); fkStop(); }); return; }
-      const on=e=>{ e.preventDefault(); FK.hold[k]=true; }, off=()=>{ FK.hold[k]=false; };
+      const on=e=>{ e.preventDefault(); FK.hold[k]=true; b.classList.add("hold"); }, off=()=>{ FK.hold[k]=false; b.classList.remove("hold"); };
       b.addEventListener("pointerdown",on); b.addEventListener("pointerup",off); b.addEventListener("pointerleave",off); b.addEventListener("pointercancel",off); }); }
   h.style.display=on?"flex":"none";
+  if(on){ h.classList.remove("shot"); fkSpinHud(); }
   try{ document.body.classList.toggle("fk-aim",!!on); }catch(e){}   // via il riquadro della quest, in alto c'e' la lista
   try{ const kb=document.getElementById("kbhelp"); if(kb) kb.style.visibility=on?"hidden":""; }catch(e){}   // la legenda dei tasti finirebbe sotto la barra
   if(!on && FK.aimN) FK.aimN.root.setEnabled(false);
 }
 function fkHudDraw(pw){
-  const p=document.getElementById("fkPow"), l=document.getElementById("fkLoft"); if(!p||!l||!FK.aim) return;
-  p.style.width=Math.round(pw*100)+"%";
-  l.style.height=Math.round((FK.aim.loft-2*Math.PI/180)/(33*Math.PI/180)*100)+"%";
+  const h=document.getElementById("fkHud"), p=document.getElementById("fkPow"), A=FK.aim; if(!h||!p||!A) return;
+  const P=Math.round(pw*100);
+  p.style.width=P+"%";
+  const n=document.getElementById("fkPowN"); if(n && n.__v!==P){ n.__v=P; n.textContent=P+"%"; }
+  /* il punto nel mirino: la mira e l'altezza del tiro (quelle prese al tiro, poi) */
+  const K=A.kick, yaw=K?K.yaw:A.yaw, loft=K?K.loft:A.loft;
+  const d=document.getElementById("fkDot");
+  if(d){ const x=50+yaw/0.45*46, y=94-(loft-2*Math.PI/180)/(33*Math.PI/180)*86;
+    d.style.left=x.toFixed(1)+"%"; d.style.top=y.toFixed(1)+"%"; }
+  /* in volo (o a esito appena arrivato) la barra e' «ferma»: niente pulsare del KICK */
+  const busy=!!(K || A.res);
+  if(h.__busy!==busy){ h.__busy=busy; h.classList.toggle("shot",busy); }
 }
 
 /* ---- IL RANGER: «What are you doing?» (una volta al giorno) ------------- */
@@ -56296,6 +56499,7 @@ scene.registerBeforeRender(()=>{
     questDoorPanel.emissiveColor.set(e.r*k,e.g*k,e.b*k); }
   if(gatePanels.length){ const k2=0.55+0.45*Math.sin(performance.now()*0.005);
     for(const gm of gatePanels){ const e=gm.__pulse; gm.emissiveColor.set(e.r*k2,e.g*k2,e.b*k2); } }
+  try{ wpadTick(); }catch(e){}   // ✏️ i leggii delle quest di scrittura
   if(metroCinematic){   // discesa cinematica: la posizione la guida playMetroDescent.
     // La camera NON insegue l'avatar in basso: resta puntata all'imbocco in superficie, così
     // si vede l'avatar SCENDERE nel vano e rimpicciolirsi (niente effetto "sprofondamento sul posto").
