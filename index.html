@@ -6732,6 +6732,7 @@ function updateDayNight(dt){ if(!DAY.enabled) return;
   const h=sunHeightNow();
   const dayF=Math.max(0,Math.min(1,(h+0.10)/0.9));        // 0 notte .. 1 giorno
   const nightF=1-Math.max(0,Math.min(1,(h+0.06)/0.22));   // si accende dopo il tramonto
+  const _duskF=1-Math.max(0,Math.min(1,(h-0.02)/0.26));   // v619: i fari delle auto, gia' quando il sole scende
   /* \u26a0\ufe0f PIOGGIA: piu' forte piove, piu' si scurisce (Giacomo). Il fattore
      si applica DOPO il calcolo diurno e PRIMA del ramo del finale, cosi' la
      cutscene continua a vincere su tutto come prima.
@@ -6799,7 +6800,8 @@ function updateDayNight(dt){ if(!DAY.enabled) return;
        citta' e' al buio. Serve all'aeroporto, le cui luci vivono qui dentro e
        verrebbero riscritte a ogni frame da questa stessa riga. */
     const _fd=_fin?(m.__finOn?1:FIN.dim):1;
-    m.emissiveColor.set(e.r*nightF*_fd,e.g*nightF*_fd,e.b*nightF*_fd); }
+    const k=m.__dusk?_duskF:nightF;                       // v619: i fari delle auto gia' al tramonto
+    m.emissiveColor.set(e.r*k*_fd,e.g*k*_fd,e.b*k*_fd); }
   if(hzWinTex){ hzWinTex.level=nightF*2.2; if(hzWinTex.__twin) hzWinTex.__twin.level=hzWinTex.level; }   // finestre skyline: bloom caldo di notte
   /* v304 (Giacomo, 7 ott: «diminuire glow notturno»): di notte arrivava a
      0,8 e finestre, lampioni e perfino le strisce pedonali si sfocavano in
@@ -9757,7 +9759,33 @@ function spawnProp(key,x,z,target,opt){ opt=opt||{};
   if(opt.occluder!==false) root.getChildMeshes().forEach(m=>{ if(m) m.__occluder=true; });
   if(opt.solid) _solidify(root, opt.solidInset);
   if(PROP_FUSI[key]===true){ try{ fondiProp(root); }catch(e){ console.warn("[fusione prop]",key,e); } }
+  if(/^car_/.test(key)) try{ carLedLights(root); }catch(e){}           // v619: fari LED delle auto
   return root; }
+/* v619 — I FARI DELLE AUTO, LED BIANCHI DAL TRAMONTO (Giacomo, 24 nov: «i
+   fari delle car ora li vedo spenti; fai la prima proposta»: colore LED,
+   niente luci vere). Si accendevano solo i fari delle auto PROCEDURALI
+   (pp_head, vedi _propMats); le auto vere sono GLB con i materiali
+   «Headlights» (arancio scuro, da spenti) e «TailLights», mai agganciati alla
+   notte: di notte restavano spenti. Ora alla posa di ogni auto: la lente
+   davanti diventa bianca (LED) e si accende bianco-freddo, i fanali dietro
+   rossi; entrano in nightLights con __dusk, cioe' si accendono gia' AL
+   TRAMONTO (prima dei lampioni, vedi updateDayNight). Costo: nessuna luce
+   vera (sui Chromebook ogni luce pesa su tutta la scena), solo il colore
+   emissivo dei materiali, condivisi fra le auto dello stesso modello; sulle
+   qualita' Alta/Max il bagliore li fa brillare. */
+const CAR_LED_HEAD=BABYLON.Color3.FromHexString("#eef5ff"), CAR_LED_TAIL=BABYLON.Color3.FromHexString("#ff3b30");
+function carLedLights(root){
+  root.getChildMeshes(false).forEach(m=>{ const mt=m.material; if(!mt || mt.__led) return;
+    const nm=String(mt.name||"");
+    let e=null;
+    if(/(^|_)(Headlights?|WhiteLights)$/i.test(nm)){ e=CAR_LED_HEAD;
+      const w=BABYLON.Color3.FromHexString("#e9eef4"); if(mt.albedoColor) mt.albedoColor=w; else if(mt.diffuseColor) mt.diffuseColor=w; }
+    else if(/(^|_)TailLights?$/i.test(nm)) e=CAR_LED_TAIL;
+    if(!e) return;
+    mt.__led=true; mt.__dusk=true; mt.__nightEmissive=e.clone();
+    if(!mt.emissiveColor) mt.emissiveColor=new BABYLON.Color3(0,0,0);
+    nightLights.push(mt); });
+}
 /* v557 — ARREDI FERMI IN POCHI PEZZI. Yard.glb (l'aiuola del parco) sono 66
    mesh, ogni fila di rocce 5: ognuna e' un disegno, e ognuna si ridisegna
    per le ombre. Sono arredi che nessuno tocca dopo averli posati, quindi a
