@@ -52018,21 +52018,60 @@ function questInProgress(target){
    blocco: finche' la quest in corso non e' finita non se ne apre un'altra
    (porte, cinema e cartelli passano tutti da qui). Vale per la sessione:
    Quest.unit vive in memoria, i passi finiti restano salvati.
-   Il docente conserva la vecchia conferma, per poter saltare fra le unit. */
+   Il docente conserva la vecchia conferma, per poter saltare fra le unit.
+   ⚠️ Dalla v608 il blocco vale SOLO per l'ultima unit aperta dal docente (sotto). */
+/* v608 — SI PUO' CAMBIARE QUEST, TRANNE L'ULTIMA APERTA (Giacomo, 24 nov:
+   «fai in modo che si possa interrompere una quest per un'altra, a meno che
+   non si stia svolgendo la quest ultima aperta dal docente: quella si deve
+   finire prima di iniziarne un'altra»). Quindi, per l'alunno:
+     · la quest in corso e' l'ULTIMA unit aperta dal docente (la piu' avanti
+       nel cursore della classe, vedi questIsLatest) -> blocco come prima:
+       prima si finisce quella;
+     · qualunque altra (una vecchia da ripassare, una gia' aperta da tempo)
+       -> si puo' lasciare: una conferma, poi la nuova parte. I passi finiti
+       restano salvati e la vecchia riprende da li' (il passo a meta'
+       ricomincia).
+   Il docente conserva la conferma per tutte; se SIMULA una classe (et_sim)
+   valgono le regole dell'alunno, cosi' il blocco si puo' collaudare. */
+/* l'unit (o le unit) piu' avanti fra quelle aperte dal cursore: le ultime aperte dal docente */
+function questLatestIds(){
+  try{ const c=Gate.cursor(); let best=null; const ids=[];
+    SYLLABUS.forEach(s=>{ if(!(s.yr<c.yr || (s.yr===c.yr && s.n<=c.n))) return;
+      const k=s.yr*1000+s.n; if(best===null || k>best){ best=k; ids.length=0; } if(k===best) ids.push(s.id); });
+    return ids; }catch(e){ return []; }
+}
+function questIsLatest(q){ return !!q && questLatestIds().indexOf(q.id)>=0; }
 function questBusyBlock(target, act){
   const q=questInProgress(target); if(!q) return false;
-  let doc=false; try{ doc=!!Student.teacher; }catch(e){}
-  if(doc){ confirmLeaveQuest(q, target, act); return true; }
+  let doc=false, sim=false; try{ doc=!!Student.teacher; sim=!!Sync.get("et_sim",null); }catch(e){}
+  if(doc && !sim){ confirmLeaveQuest(q, target, act); return true; }
   const sy=(typeof Gate!=="undefined" && Gate.info) ? (Gate.info(q.id)||{}) : {};
-  const nome=(q.title||q.id);
+  const nome=(sy.t||q.title||q.id);
+  if(!questIsLatest(q)){ confirmSwitchQuest(q, target, act); return true; }
   QModal.open({
-    title:"\u26A0\uFE0F One quest at a time!",
+    title:"⚠️ Finish this quest first!",
     sub:(sy.ic||"\u{1F4CB}")+" "+nome,
-    html:"<div style='line-height:1.55'>You're in the middle of a quest: <b>finish it first</b>, "
-        +"then come back here.<br><span style='opacity:.75'>Stai gi\u00e0 facendo la quest <b>"+nome
-        +"</b>: finiscila, poi torna qui. Le quest si fanno una alla volta.</span></div>",
+    html:"<div style='line-height:1.55'><b>"+nome+"</b> is the new quest your teacher has just opened: "
+        +"<b>finish it first</b>, then you can do the other quests.<br><span style='opacity:.75'><b>"+nome
+        +"</b> è la quest nuova che ha appena aperto il docente: <b>finiscila prima</b>, poi potrai fare le altre.</span></div>",
     buttons:[{label:"OK", cls:"primary"}] });
   return true;
+}
+/* l'alunno lascia una quest che NON e' l'ultima aperta: si chiede solo conferma */
+function confirmSwitchQuest(q, target, act){
+  const sy=(typeof Gate!=="undefined" && Gate.info) ? (Gate.info(q.id)||{}) : {};
+  const ty=(target && typeof Gate!=="undefined" && Gate.info) ? (Gate.info(target.id)||{}) : {};
+  const nome=(sy.t||q.title||q.id), nuova=(ty.t||(target&&target.title)||"");
+  QModal.open({
+    title:"\u{1F500} Switch quest?",
+    sub:(sy.ic||"\u{1F4CB}")+" "+nome+(nuova?"  →  "+(ty.ic||"\u{1F4CB}")+" "+nuova:""),
+    html:"<div style='line-height:1.55'>You're doing <b>"+nome+"</b>. If you start "+(nuova?"<b>"+nuova+"</b>":"this quest")
+        +", <b>"+nome+"</b> pauses: the steps you've finished stay saved and you can go back to it later.<br>"
+        +"<span style='opacity:.75'>Stai facendo <b>"+nome+"</b>. Se inizi "+(nuova?"<b>"+nuova+"</b>":"questa quest")
+        +", <b>"+nome+"</b> si mette in pausa: i passi finiti restano salvati e potrai riprenderla dopo "
+        +"(il passo che stavi facendo ricomincia da capo).</span></div>",
+    buttons:[{label:"Stay on "+nome, cls:"primary"},
+             {label:"Switch quest", cls:"ghost", act:act}] });
 }
 function confirmLeaveQuest(q, target, act){
   const sy=(typeof Gate!=="undefined" && Gate.info) ? (Gate.info(q.id)||{}) : {};
