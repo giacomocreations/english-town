@@ -56104,13 +56104,24 @@ const Needs={
   },
   /* si puo' correre? Con la quest in corso SEMPRE. `want` = sta chiedendo di
      correre (Shift / tasto corsa): se non puo', glielo si dice, ogni tanto. */
+  /* v610 (Giacomo, 24 nov: «da docente ho energia al massimo, food and
+     drink 0% ma posso correre... lo fa anche con alunni?»). Si': la fame
+     fermava la corsa solo tramite starving(), che nei primi 5 minuti di
+     sessione (la tregua, NEEDS_GRACE) non scatta — e siccome la fame cala
+     anche a gioco chiuso, moltissimi partono gia' a 0% e correvano.
+     Ora fame o sete sotto soglia fermano la corsa SEMPRE fuori dalle quest;
+     la tregua resta solo per bussola e stelle (chi va alla quest del
+     docente cammina, ma non viene mandato al café). Con una quest in corso
+     resta tutto fermo come prima: le quest non si bloccano mai. */
   canRun(want){
-    if(this.paused() || (this.e>0 && !this.starving())) return true;
+    if(this.paused()) return true;
+    if(this.e>0 && !(this.loaded && this.lacking())) return true;
     if(want){ const now=performance.now();
       if(now>this.noRunT){ this.noRunT=now+15000;
+        const nav=this.starving()?" (segui la bussola ":" (";
         if(this.e<=0) this.sayL("noRunTired","siediti su una panchina \u{1FA91}","\u{1F629}",false);
-        else if(this.thirsty() && (!this.hungry() || this.d<=this.f)) this.sayL("noRunThirsty","bevi qualcosa al café o al Sunny Side Diner (segui la bussola \u{1F964})","\u{1F975}",false);
-        else this.sayL("noRunHungry","mangia qualcosa al café o al Sunny Side Diner (segui la bussola \u{1F354})","\u{1F62B}",false); } }
+        else if(this.thirsty() && (!this.hungry() || this.d<=this.f)) this.sayL("noRunThirsty","bevi qualcosa al café o al Sunny Side Diner"+nav+"\u{1F964})","\u{1F975}",false);
+        else this.sayL("noRunHungry","mangia qualcosa al café o al Sunny Side Diner"+nav+"\u{1F354})","\u{1F62B}",false); } }
     return false;
   },
   /* moltiplicatore della corsa: premio, mai malus */
