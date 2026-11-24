@@ -11929,7 +11929,6 @@ function clueBadge(){
      se la scheda della quest (in alto a sinistra) e' piu' lunga, subito sotto
      di lei. Lo tiene aggiornato anche Needs.hud, 4 volte al secondo. */
   el.style.top=clueTop()+"px";
-  const f=av[0];
   let yr=1; try{ yr=studentYear(); }catch(e){}
   const mini=clueMini();
   const sig=av.map(x=>x.id).join(",")+"|"+yr+"|"+mini;
@@ -11938,16 +11937,27 @@ function clueBadge(){
   el.classList.toggle("mini",mini);
   el.style.width=mini?"auto":"270px"; el.style.padding=mini?"6px 10px":"8px 10px";
   const head='<div style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="clueGira()" title="'+(mini?"Open":"Close")+'">'
-    +'<span style="flex:1">\u{1F50E} <b class="clue-t">You have a clue to collect!</b></span>'
+    +'<span style="flex:1">\u{1F50E} <b class="clue-t">'+(av.length>1?"You have "+av.length+" clues to collect!":"You have a clue to collect!")+'</b></span>'
     +'<span style="font-size:15px;color:#8a6a3a">'+(mini?"\u25b8":"\u25be")+'</span></div>';
   if(mini){ el.innerHTML=head; return; }
-  const where=(f.ch==="gazette")?"Read the Letters column in the newspaper ("+f.where+")."
-                                :"A letter from The Architect is waiting for you: "+f.where+".";
-  const more=av.length>1?" And it's not the only one: you have <b>"+av.length+"</b> to collect.":"";
-  const it=(yr<=1)?'<div style="margin-top:4px;font-size:11.5px;font-weight:500;opacity:.8">Hai un indizio da prendere: '
-      +_escHtml(f.place||f.where)+'. Leggi la lettera e rispondi alla domanda.</div>':"";
+  /* v617 (Giacomo, 24 nov: «se un alunno ha piu' indizi da prendere, gli
+     puoi segnalare dove stanno ciascuno di essi? Ora gli viene detto solo
+     dell'ultimo»). Il riquadro descriveva solo av[0] e per gli altri diceva
+     «you have 3 to collect», senza dove. Ora c'e' UNA RIGA PER INDIZIO, col
+     suo posto (in prima anche in italiano, sotto). Sempre la ZONA, mai le
+     coordinate ne' la bussola: cercarli resta parte del gioco. */
+  const ic=x=>x.ch==="gazette"?"\u{1F4F0}":(x.ch==="bench"?"\u{1FA91}":"\u{1F4DC}");
+  const line=x=>{ const en=(x.ch==="gazette")?"The newspaper: read the Letters column ("+x.where+")":x.where;
+    return '<div style="display:flex;gap:6px;margin-top:4px;align-items:flex-start"><span>'+ic(x)+'</span><span style="flex:1">'
+      +'<span style="font-weight:600">'+_escHtml(en)+'</span>'
+      +((yr<=1 && x.place)?'<div style="font-size:11.5px;font-weight:500;opacity:.8">'+_escHtml(x.place)+'</div>':'')+'</span></div>'; };
+  const intro=av.length>1?"You have <b>"+av.length+"</b> letters from The Architect to collect:":"A letter from The Architect is waiting for you:";
   el.innerHTML=head
-    +'<div style="margin-top:3px;font-weight:500">'+_escHtml(where)+more+' Read it and answer the question to get the word.</div>'+it;
+    +'<div style="margin-top:3px;font-weight:500">'+intro+'</div>'
+    +av.map(line).join("")
+    +'<div style="margin-top:5px;font-weight:500;font-size:12px">Read each one and answer the question to get the word.</div>'
+    +((yr<=1)?'<div style="margin-top:2px;font-size:11.5px;font-weight:500;opacity:.8">'+(av.length>1?"Hai "+av.length+" indizi da prendere":"Hai un indizio da prendere")
+      +': leggi la lettera e rispondi alla domanda.</div>':"");
 }
 setInterval(function(){ try{ clueBadge(); }catch(e){} }, 5000);
 /* ---- stato: le foto scattate + le sfide gia' annunciate col toast ------
