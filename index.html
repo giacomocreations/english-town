@@ -6800,7 +6800,7 @@ function updateDayNight(dt){ if(!DAY.enabled) return;
        citta' e' al buio. Serve all'aeroporto, le cui luci vivono qui dentro e
        verrebbero riscritte a ogni frame da questa stessa riga. */
     const _fd=_fin?(m.__finOn?1:FIN.dim):1;
-    const k=m.__dusk?_duskF:nightF;                       // v619: i fari delle auto gia' al tramonto
+    const k=m.__dusk?((m.__ledRoot && !_carLit(m.__ledRoot))?0:_duskF):nightF;   // v619: i fari delle auto gia' al tramonto (v621: la flotta solo in strada)
     m.emissiveColor.set(e.r*k*_fd,e.g*k*_fd,e.b*k*_fd); }
   if(hzWinTex){ hzWinTex.level=nightF*2.2; if(hzWinTex.__twin) hzWinTex.__twin.level=hzWinTex.level; }   // finestre skyline: bloom caldo di notte
   /* v304 (Giacomo, 7 ott: «diminuire glow notturno»): di notte arrivava a
@@ -9759,33 +9759,86 @@ function spawnProp(key,x,z,target,opt){ opt=opt||{};
   if(opt.occluder!==false) root.getChildMeshes().forEach(m=>{ if(m) m.__occluder=true; });
   if(opt.solid) _solidify(root, opt.solidInset);
   if(PROP_FUSI[key]===true){ try{ fondiProp(root); }catch(e){ console.warn("[fusione prop]",key,e); } }
-  if(/^car_/.test(key)) try{ carLedLights(root); }catch(e){}           // v619: fari LED delle auto
   return root; }
 /* v619 — I FARI DELLE AUTO, LED BIANCHI DAL TRAMONTO (Giacomo, 24 nov: «i
    fari delle car ora li vedo spenti; fai la prima proposta»: colore LED,
    niente luci vere). Si accendevano solo i fari delle auto PROCEDURALI
    (pp_head, vedi _propMats); le auto vere sono GLB con i materiali
    «Headlights» (arancio scuro, da spenti) e «TailLights», mai agganciati alla
-   notte: di notte restavano spenti. Ora alla posa di ogni auto: la lente
-   davanti diventa bianca (LED) e si accende bianco-freddo, i fanali dietro
-   rossi; entrano in nightLights con __dusk, cioe' si accendono gia' AL
-   TRAMONTO (prima dei lampioni, vedi updateDayNight). Costo: nessuna luce
-   vera (sui Chromebook ogni luce pesa su tutta la scena), solo il colore
-   emissivo dei materiali, condivisi fra le auto dello stesso modello; sulle
-   qualita' Alta/Max il bagliore li fa brillare. */
+   notte. Costo: nessuna luce vera (sui Chromebook ogni luce pesa su tutta la
+   scena), solo il colore emissivo; sulle qualita' Alta/Max il bagliore li fa
+   brillare. Si accendono gia' AL TRAMONTO (__dusk, vedi updateDayNight).
+   v621 (Giacomo: «le macchine parcheggiate devono avere i fari spenti!!!»;
+   «la Lambo non ha le luci dei fari»):
+   · i materiali dei GLB sono CONDIVISI fra tutte le auto dello stesso
+     modello: accenderli accendeva anche le parcheggiate. Ora le auto IN
+     STRADA (traffico) prendono una copia «accesa» del materiale fari
+     (condivisa fra loro), le parcheggiate tengono l'originale, spento;
+   · Nelson 1 e The Beast (materiali propri) hanno i fari accesi solo
+     quando sono in strada: nel traffico, chiamate, con te a bordo; nello
+     stallo spenti (root.__ledOn);
+   · la Lamborghini (CAR_Model, anche The Beast) non ha un materiale fari:
+     le si mettono fari LED veri, strisce sottili bianche sul muso e rosse
+     in coda, misurate sulla sagoma con l'auto a rotta 0 (muso verso +z).
+   `root` = il nodo che porta la ROTTA (quello del traffico, o C.root della
+   flotta): own = l'auto ha materiali suoi (flotta). */
 const CAR_LED_HEAD=BABYLON.Color3.FromHexString("#eef5ff"), CAR_LED_TAIL=BABYLON.Color3.FromHexString("#ff3b30");
-function carLedLights(root){
-  root.getChildMeshes(false).forEach(m=>{ const mt=m.material; if(!mt || mt.__led) return;
-    const nm=String(mt.name||"");
-    let e=null;
-    if(/(^|_)(Headlights?|WhiteLights)$/i.test(nm)){ e=CAR_LED_HEAD;
-      const w=BABYLON.Color3.FromHexString("#e9eef4"); if(mt.albedoColor) mt.albedoColor=w; else if(mt.diffuseColor) mt.diffuseColor=w; }
-    else if(/(^|_)TailLights?$/i.test(nm)) e=CAR_LED_TAIL;
-    if(!e) return;
-    mt.__led=true; mt.__dusk=true; mt.__nightEmissive=e.clone();
-    if(!mt.emissiveColor) mt.emissiveColor=new BABYLON.Color3(0,0,0);
-    nightLights.push(mt); });
+const _carLitM={};
+function _carLedSetup(mt,kind,owner){
+  mt.__led=true; mt.__dusk=true; mt.__nightEmissive=(kind==="head"?CAR_LED_HEAD:CAR_LED_TAIL).clone();
+  if(owner) mt.__ledRoot=owner;
+  if(!mt.emissiveColor) mt.emissiveColor=new BABYLON.Color3(0,0,0);
+  if(kind==="head"){ const w=BABYLON.Color3.FromHexString("#e9eef4"); if(mt.albedoColor) mt.albedoColor=w; else if(mt.diffuseColor) mt.diffuseColor=w; }
+  nightLights.push(mt); return mt; }
+function carLedLights(root,own){
+  if(!root || root.__ledDone) return; root.__ledDone=true;
+  let hasHead=false;
+  root.getChildMeshes(false).forEach(m=>{ const mt=m.material; if(!mt) return;
+    const nm=String(mt.name||""), kind=/(^|_)(Headlights?|WhiteLights)$/i.test(nm)?"head":(/(^|_)TailLights?$/i.test(nm)?"tail":null);
+    if(!kind) return; if(kind==="head") hasHead=true;
+    if(own){ if(!mt.__led) _carLedSetup(mt,kind,root); return; }
+    const k=mt.uniqueId+"|"+kind;
+    if(!_carLitM[k]) _carLitM[k]=_carLedSetup(mt.clone(mt.name+"_lit"),kind,null);
+    m.material=_carLitM[k]; });
+  if(hasHead) return;
+  /* la Lamborghini: le strisce LED */
+  const ry=root.rotation.y; root.rotation.y=TRAFFIC_YAW; root.computeWorldMatrix(true);
+  root.getChildMeshes(false).forEach(m=>m.computeWorldMatrix(true));
+  /* v622: l'ingombro della SOLA scocca (prima entravano l'ombra a terra
+     h7sh e l'abitacolo, piu' larghi e lunghi: la striscia posteriore
+     galleggiava 15 cm dietro la coda) */
+  const bb={ min:new BABYLON.Vector3(1e9,1e9,1e9), max:new BABYLON.Vector3(-1e9,-1e9,-1e9) };
+  const body=[];
+  root.getChildMeshes(false).forEach(m=>{ const mn=String(m.name), mt=m.material?String(m.material.name):"";
+    if(!m.material || !m.getTotalVertices() || /^(h7sh|a1|carLed|lid)/i.test(mn) || /^(h7sh|a1|carLed)/i.test(mt)) return;
+    body.push(m); const b=m.getBoundingInfo().boundingBox; (b.vectorsWorld||[b.minimumWorld,b.maximumWorld]).forEach(v=>{ bb.min.minimizeInPlace(v); bb.max.maximizeInPlace(v); }); });
+  if(!body.length){ root.rotation.y=ry; root.computeWorldMatrix(true); return; }
+  const W=bb.max.x-bb.min.x, H=bb.max.y-bb.min.y, cx=(bb.min.x+bb.max.x)/2;
+  /* la superficie vera della scocca a quella quota: un raggio da fuori
+     (il muso della Lambo e' inclinato: col solo ingombro la striscia
+     restava sospesa davanti al paraurti) */
+  const hit=(x,y,front)=>{ const o=new BABYLON.Vector3(x,y,front?bb.max.z+1:bb.min.z-1), r=new BABYLON.Ray(o,new BABYLON.Vector3(0,0,front?-1:1),4);
+    let best=null; body.forEach(m=>{ const pi=r.intersectsMesh(m,false); if(pi&&pi.hit&&(!best||pi.distance<best.distance)) best=pi; });
+    return best?best.pickedPoint:null; };
+  const strip=(nm,mt,sg,front,y,f0,f1,th)=>{
+    const A=hit(cx+sg*W*f0,y,front), B=hit(cx+sg*W*f1,y,front); if(!A||!B) return;
+    const dx=B.x-A.x, dz=B.z-A.z, L=Math.hypot(dx,dz)+0.02, out=front?0.012:-0.012;
+    const s=BABYLON.MeshBuilder.CreateBox(nm,{ width:L, height:th, depth:0.035 },scene);
+    s.material=mt; s.isPickable=false; s.position.set((A.x+B.x)/2,y,(A.z+B.z)/2+out); s.rotation.y=-Math.atan2(dz,dx); s.setParent(root); };
+  const head=own?_carLedSetup(_carLedBase("head"),"head",root):_carLedMat("head"), tail=own?_carLedSetup(_carLedBase("tail"),"tail",root):_carLedMat("tail");
+  [-1,1].forEach(sg=>{
+    strip("carLedH",head,sg,true, bb.min.y+H*0.50,0.20,0.40,H*0.035);
+    strip("carLedT",tail,sg,false,bb.min.y+H*0.56,0.16,0.40,H*0.04); });
+  root.rotation.y=ry; root.computeWorldMatrix(true);
 }
+/* le strisce LED: un materiale per tipo (traffico, condiviso) o per auto (flotta) */
+function _carLedBase(k){ const m=new BABYLON.StandardMaterial("carLed_"+k+(_lpN++),scene);
+  m.diffuseColor=(k==="head")?BABYLON.Color3.FromHexString("#e9eef4"):BABYLON.Color3.FromHexString("#7a1a16");
+  m.specularColor=new BABYLON.Color3(0.6,0.6,0.6); m.emissiveColor=new BABYLON.Color3(0,0,0); return m; }
+const _carLedM={};
+function _carLedMat(k){ if(_carLedM[k]) return _carLedM[k]; return (_carLedM[k]=_carLedSetup(_carLedBase(k),k,null)); }
+/* i fari di un'auto della flotta sono accesi? (root.__ledOn, vedi tlAutoBuildCar) */
+function _carLit(root){ try{ return typeof root.__ledOn==="function" ? !!root.__ledOn() : true; }catch(e){ return true; } }
 /* v557 — ARREDI FERMI IN POCHI PEZZI. Yard.glb (l'aiuola del parco) sono 66
    mesh, ogni fila di rocce 5: ognuna e' un disegno, e ognuna si ridisegna
    per le ombre. Sono arredi che nessuno tocca dopo averli posati, quindi a
@@ -10200,6 +10253,7 @@ function _addTrafficCar(loop,phase,speed,ci){
   const root=new BABYLON.TransformNode("tcar"+(_sgN++),scene);
   root.parent=townRoot; root.position.set(loop[0][0],0,loop[0][1]);
   car.parent=root; car.position.set(0,car.position.y,0);
+  try{ carLedLights(root,false); }catch(e){ console.warn("[fari]",e); }   // v621: fari LED (solo le auto in strada)
   // yaw iniziale = direzione del primo segmento (niente giravolta al via)
   root.rotation.y=Math.atan2(loop[2][0]-loop[0][0],loop[2][1]-loop[0][1])+TRAFFIC_YAW;
   const tc={root,s:0,v:speed,cv:speed,near:false,halt:0};
@@ -11166,6 +11220,7 @@ function buildPedestrians(){
   initBenches();   // v291: sedersi sulle panchine (prima di costruirle)
   buildTownCafe(); buildCafeNPCs(); buildKiosk(); buildStoryBench(); buildNightBench();
   try{ buildDiner(); }catch(e){ console.warn("[diner]",e); }   // v288: il diner nel lotto a sud di Home
+  try{ buildGreenTableOutside(); }catch(e){ console.warn("[green table]",e); }   // 🌿 v621: il ristorante raffinato nel New District
   halloweenDiner();   // v331: solo nei giorni di HALLOWEEN.on
   /* v594: la citta' e' pronta (edifici, café, diner): il Natale si accende se e' stagione */
   try{ XMAS.pronto=true; XMAS.sync(); }catch(e){ console.warn("[natale]",e); }
@@ -25450,6 +25505,7 @@ const STAR_RULES={
   cafeOrderReady:10,  // Anno 1: frasi pronte, percorso guidato
   cafeDaily:2,        // ordini premiati al giorno con LO STESSO barista
   cafeDailyCap:50,    // tetto ⭐ del caffe', separato da quello degli ambient
+  gtBonusDaily:20,    // 🌿 v621: tetto giornaliero dei bonus del The Green Table (cortesia, prenotazione, piatto del giorno)
                       // e delle domande: e' gia' il massimo che cafeDaily consente
   /* v312 (Giacomo, 15 ott: «dopo pochi giorni un alunno ha gia' 900 punti»)
      — I CRISTALLI. Ogni cristallo dava 6 ⭐ (3 la scheda di scoperta) SENZA
@@ -25597,6 +25653,13 @@ const Stars=(function(){
      separato: chi fa due cose diverse va premiato per entrambe.
      Il freno vero non e' il tetto, e' cafeDaily=2 per barista: con un solo
      barista in citta' il massimo giornaliero del caffe' e' 50 e basta. */
+  /* 🌿 v621: i bonus del The Green Table, con un tetto giornaliero loro */
+  function awardGreenTable(n, why){
+    const s=ledger(), t=_today();
+    if(s.gtDay!==t){ s.gtDay=t; s.gtTot=0; }
+    const give=Math.max(0,Math.min(n, STAR_RULES.gtBonusDaily-(s.gtTot||0)));
+    if(give>0){ s.gtTot=(s.gtTot||0)+give; s.tot+=give; _save(s); flash(give, why||"bonus"); } else _save(s);
+    return give; }
   function awardCafeOrder(npcId, kind){
     const s=ledger(), t=_today();
     if(s.day!==t){ s.day=t; s.dayAmb=0; s.dayNpc={}; s.dayAsk=0; s.dayNpcAsk={};
@@ -25725,7 +25788,7 @@ const Stars=(function(){
   }
   function reset(){ _save({tot:0,given:{},day:"",dayAmb:0,dayNpc:{},master:false}); refreshStarHud(); }
   return { total, award, awardStep, awardAmbient, awardAmbientNPC, awardAskNPC,
-           awardCafeOrder, awardShopping, awardGem, awardFkNote, awardSpeak, speakToday, awardSkWord, penaltySkWord, awardSing, awardDanceCmd, awardFragment, awardPhoto,
+           awardCafeOrder, awardGreenTable, awardShopping, awardGem, awardFkNote, awardSpeak, speakToday, awardSkWord, penaltySkWord, awardSing, awardDanceCmd, awardFragment, awardPhoto,
            checkYearBonus, setMaster, title, next, unitStars, ledger, reset };
 })();
 
@@ -41441,10 +41504,22 @@ registerAmbient("u8",[   // Unit 8 — Our clothes: present continuous, vestiti,
 
 const INTERIORS={};            // area -> {root, center, def, built}
 let _intNextX=120;             // allocatore X per gli interni generici
+const INT_SLOTS=["school","townhall","shop","market","clothes","station","salon","beatclub","climate","ecopoint",
+                 "jobcentre","techlab","hospital","greentable"];   // v620: l'ordine e' il posto (non cambiarlo: si aggiunge in fondo)
 function allocInterior(u){
   if(INTERIORS[u.area]) return INTERIORS[u.area];
   const root=new BABYLON.TransformNode("int_"+u.area,scene); root.setEnabled(false);
-  const center=new BABYLON.Vector3(_intNextX,0,-300); _intNextX+=90;
+  /* v620 — OGNI INTERNO HA IL SUO POSTO FISSO (presenza). Prima il centro
+     dipendeva dall'ORDINE in cui si entrava negli edifici (_intNextX+=90):
+     due compagni entrati in negozi diversi prima di ritrovarsi al Market
+     avevano il Market a 90 m di distanza l'uno dall'altro, e con la
+     presenza accesa si vedevano fuori dalla stanza o non si vedevano.
+     Ora lo slot viene dal NOME dell'area (stessa lista per tutti): stesso
+     interno, stesse coordinate su ogni dispositivo. Un'area nuova non in
+     lista prende uno slot dal suo nome (hash), dopo quelli fissi. */
+  let slot=INT_SLOTS.indexOf(u.area);
+  if(slot<0){ let h=0; const t=String(u.area); for(let i=0;i<t.length;i++) h=(h*31+t.charCodeAt(i))|0; slot=INT_SLOTS.length+Math.abs(h)%40; }
+  const center=new BABYLON.Vector3(120+slot*90,0,-300); _intNextX=Math.max(_intNextX,center.x+90);
   const S=u.size||9, SX=u.sizeX||S;   // S=semilato Z (profondita'); SX=semilato X (larghezza,
                                        // indipendente SOLO se una unit lo specifica: retrocompatibile,
                                        // tutte le unita' esistenti restano quadrate S=SX come prima).
@@ -52913,6 +52988,1124 @@ function tryInteract(){ if(loginPending) return;
   if(nearInter&&nearInter.enabled) nearInter.interact(); }
 
 /* =====================================================================
+   🌿 THE GREEN TABLE — IL RISTORANTE RAFFINATO (Giacomo, 24 nov: «un altro
+   ristorante diverso dal diner, con posti all'interno, un menu piu'
+   "healthy" tipo pasta, carne. Riprendi la logica dei due camerieri del
+   diner, ci si siede e tutto il resto. Pero' e' un locale raffinato,
+   interni curati. Apre alle 11 e chiude alle 22». Poi: «The Green Table,
+   metti tutti gli extra, nel New District: dimmi tu uno spazio ideale; non
+   e' legato a unit, e' libero»).
+   DOVE: in fondo al Modern Boulevard, il lotto pavimentato libero a est del
+   City Hospital (x 46..62, z -44.5..-55.5, misurato con blocked() sulla
+   mappa vera): l'ingresso guarda il boulevard (nord), l'aeroporto e' dietro.
+   COM'E' FATTO (tutto procedurale, 0 KB):
+   · FUORI: facciata verde bosco con lo zoccolo in pietra chiara, vetrate
+     alte illuminate dall'interno, la doppia porta in legno con la tettoia
+     verde e l'insegna dorata, due lanterne d'ottone, due ulivi in vaso,
+     le fioriere e la targa degli orari («Open daily 11 am – 10 pm»).
+   · DENTRO (un interno a POSTO FISSO, vedi INT_SLOTS): parquet a spina di
+     pesce, pareti con la boiserie verde salvia e il filo d'oro, soffitto
+     scuro con i lampadari, otto tavoli con la tovaglia bianca, la candela,
+     il fiore, i calici e le posate; il banco del maitre col libro delle
+     prenotazioni, la lavagna sul cavalletto, il pianoforte a coda, i
+     quadri, le applique e le piante; in fondo il passe della cucina.
+   · LE PERSONE (stessa logica del Diner, v305): Oliver, il maitre, ti
+     accoglie alla porta; Marco e' il TUO cameriere (ognuno ha il suo, sul
+     suo dispositivo); Sofia fa da cameriera ai compagni collegati (va dove
+     sta il cameriere del primo compagno servito, Presenza.camerieri); tre
+     clienti gia' seduti.
+   · IL SERVIZIO, a portate, nel registro CORTESE (I'd like… / Could I
+     have… / May I…): bevanda, antipasto, piatto principale (con «How would
+     you like your steak?» se e' la bistecca), contorno; prima arrivano
+     bevanda e antipasto, poi il principale; «Would you like a dessert?»;
+     il conto (il totale si ASCOLTA, pricePick) e il pagamento. In prima le
+     frasi si scelgono, dalla seconda si scrivono (come al Diner).
+   · GLI EXTRA: la PRENOTAZIONE (al maitre: l'ora detta in inglese, «at half
+     past seven»; arrivando in orario, ±20 minuti, bonus); il PIATTO DEL
+     GIORNO, detto a voce dal cameriere (la lavagna dice solo «ask your
+     waiter»: e' ascolto; ordinarlo da' bonus); il bonus CORTESIA (tutto con
+     please e almeno due richieste formali); i compagni seduti ai tavoli si
+     vedono con la presenza (interno a posto fisso).
+   · ORARI: 11:00-22:00 sull'orologio vero (il docente entra sempre).
+   · Non e' una quest: entrare e uscire non tocca la quest in corso.
+   ===================================================================== */
+/* v621 (Giacomo: «l'hai messo vicino alla strada, troppo vicino: deve essere
+   piu' lontano»): la facciata stava a 3 m dalla carreggiata. Ora e' 7 m piu'
+   indietro (z -49,5) e davanti c'e' il CORTILE: vialetto in pietra, siepi,
+   aiuole fiorite, i lampioni e il leggio del menu (vedi _gtForecourt). */
+const GT_X=54, GT_Z=-55, GT_HW=8, GT_HD=5.5;        // centro e semilati dell'edificio
+const GT_DEF={ area:"greentable", size:9, sizeX:11, areaName:"The Green Table", title:"The Green Table" };
+const GT={ built:false, exBuilt:false, I:null, C:null, gy:0.02, tables:[], seats:[], waiter:null, w2:null, host:null,
+  guests:[], st:"idle", seat:null, o:null, food:[], timer:null, walking:null, pending:null, eating:false, eatG:{},
+  meInter:null, assigned:null, welcome:null, debt:null, ring:null, w2mir:null, w2walk:null, w2pend:null, M:null, remT:0 };
+const GT_OPEN_H=11, GT_CLOSE_H=22;
+function gtNowMin(){ const d=new Date(); return d.getHours()*60+d.getMinutes(); }
+function gtOpen(){ const m=gtNowMin(); return m>=GT_OPEN_H*60 && m<GT_CLOSE_H*60; }
+function gtTeacher(){ try{ return !!Student.teacher; }catch(e){ return false; } }
+function _gtYear(){ try{ return studentYear(); }catch(e){ return 1; } }
+/* ---- IL MENU (prezzi in sterline) ---- */
+const GT_MENU={
+  drinks:[
+    { k:["still water","still","water","glass of water","tap water"], en:"Still water", p:2.00, ic:"water", c:"#cfe8f2" },
+    { k:["sparkling water","sparkling","fizzy water"],             en:"Sparkling water", p:2.20, ic:"water", c:"#dff1f7" },
+    { k:["orange juice","fresh orange","orange","juice"],          en:"Fresh orange juice", p:3.20, ic:"juice", c:"#f0a02c" },
+    { k:["apple juice","apple"],                                   en:"Apple juice", p:3.00, ic:"juice", c:"#e7c35a" },
+    { k:["homemade lemonade","lemonade","lemon"],                  en:"Homemade lemonade", p:3.20, ic:"juice", c:"#f2e38a" },
+    { k:["mint tea","tea","mint"],                                 en:"Mint tea", p:2.60, ic:"tea", c:"#9cbf6a" },
+  ],
+  starters:[
+    { k:["tomato soup","tomato"],                                  en:"Tomato soup", p:4.80, ic:"soup", c:"#c8452f" },
+    { k:["vegetable soup","minestrone","soup"],                    en:"Vegetable soup", p:4.80, ic:"soup", c:"#c99a3e" },
+    { k:["greek salad","greek","feta"],                            en:"Greek salad", p:5.50, ic:"salad", c:"#5f9a4a" },
+    { k:["bruschetta","toast","bread"],                            en:"Bruschetta", p:4.50, ic:"brus", c:"#d9a45a" },
+  ],
+  mains:[
+    { k:["spaghetti with tomato sauce","spaghetti","tomato sauce","pasta with tomato"], en:"Spaghetti with tomato sauce", p:9.50, ic:"pasta", c:"#c8452f" },
+    { k:["pasta with pesto","pesto","pasta"],                      en:"Pasta with pesto", p:9.80, ic:"pasta", c:"#6f9a3a" },
+    { k:["vegetable lasagne","lasagne","lasagna"],                 en:"Vegetable lasagne", p:11.00, ic:"lasagne", c:"#d97f3e" },
+    { k:["mushroom risotto","risotto","mushroom","rice"],          en:"Mushroom risotto", p:11.50, ic:"risotto", c:"#e8dcb8" },
+    { k:["grilled chicken","chicken"],                             en:"Grilled chicken with herbs", p:12.50, ic:"chicken", c:"#c98a3e" },
+    { k:["steak","beef","meat"],                                   en:"Steak", p:16.00, ic:"steak", c:"#6b3322", steak:true },
+    { k:["grilled salmon","salmon","fish"],                        en:"Grilled salmon", p:15.00, ic:"salmon", c:"#f08a6a" },
+  ],
+  sides:[
+    { k:["roast potatoes","potatoes","potato","roast"],            en:"Roast potatoes", p:3.50, ic:"potatoes", c:"#d9a45a" },
+    { k:["steamed vegetables","vegetables","veg","steamed"],       en:"Steamed vegetables", p:3.20, ic:"veg", c:"#4f9a4a" },
+    { k:["green salad","salad"],                                   en:"Green salad", p:3.00, ic:"greens", c:"#6fb04a" },
+  ],
+  desserts:[
+    { k:["fruit salad","fruit"],                                   en:"Fruit salad", p:4.20, ic:"fruit", c:"#f0b33a" },
+    { k:["yoghurt with honey","yoghurt","yogurt","honey"],         en:"Yoghurt with honey", p:3.80, ic:"yog", c:"#f6f1e4" },
+    { k:["lemon sorbet","sorbet","lemon"],                         en:"Lemon sorbet", p:3.60, ic:"sorbet", c:"#f4e27a" },
+    { k:["panna cotta","pannacotta","cream"],                      en:"Panna cotta", p:4.50, ic:"panna", c:"#f8f3e6" },
+  ]
+};
+const GT_DONENESS=[ { k:["rare"], en:"rare", p:0 }, { k:["medium rare","medium-rare"], en:"medium rare", p:0 },
+                    { k:["medium"], en:"medium", p:0 }, { k:["well done","well-done","well"], en:"well done", p:0 } ];
+const _GT_NO={ k:["no thanks","no thank","nothing","that's all","thats all","i'm fine","im fine","no starter","no dessert","no"], en:"—", p:0 };
+/* fame e sete (Needs): tutto «sano» (h:1), cosi' la fame torna piu' piano */
+(function(){ try{
+  const F={ "still water":{e:12,f:0,d:1,h:1,w:85}, "sparkling water":{e:12,f:0,d:1,h:1,w:80}, "fresh orange juice":{e:20,f:5,d:1,h:1,w:60},
+    "apple juice":{e:18,f:5,d:1,h:1,w:60}, "homemade lemonade":{e:15,f:0,d:1,h:1,w:65}, "mint tea":{e:15,f:0,d:1,h:1,w:55},
+    "tomato soup":{e:0,f:25,h:1}, "vegetable soup":{e:0,f:25,h:1}, "greek salad":{e:0,f:20,h:1}, "bruschetta":{e:0,f:20,h:1},
+    "spaghetti with tomato sauce":{e:0,f:60,h:1}, "pasta with pesto":{e:0,f:60,h:1}, "vegetable lasagne":{e:0,f:65,h:1},
+    "mushroom risotto":{e:0,f:60,h:1}, "grilled chicken with herbs":{e:0,f:65,h:1}, "steak":{e:0,f:70,h:1}, "grilled salmon":{e:0,f:65,h:1},
+    "roast potatoes":{e:0,f:20,h:1}, "steamed vegetables":{e:0,f:15,h:1}, "green salad":{e:0,f:20,h:1},
+    "fruit salad":{e:0,f:15,h:1}, "yoghurt with honey":{e:0,f:15,h:1}, "lemon sorbet":{e:0,f:10,h:1}, "panna cotta":{e:0,f:15,h:1} };
+  for(const k in F) if(!NEEDS_FOOD[k]) NEEDS_FOOD[k]=F[k]; }catch(e){} })();
+/* ---- IL PIATTO DEL GIORNO: uno al giorno, uguale per tutta la classe ---- */
+const GT_SPECIALS=[
+  { en:"Grilled salmon", desc:"grilled salmon with lemon and fresh herbs" },
+  { en:"Mushroom risotto", desc:"a creamy mushroom risotto with parmesan" },
+  { en:"Vegetable lasagne", desc:"our homemade vegetable lasagne" },
+  { en:"Grilled chicken with herbs", desc:"grilled chicken with rosemary and garlic" },
+  { en:"Pasta with pesto", desc:"fresh pasta with basil pesto and pine nuts" },
+  { en:"Steak", desc:"a tender steak with black pepper sauce" },
+  { en:"Spaghetti with tomato sauce", desc:"spaghetti with a rich tomato and basil sauce" } ];
+function gtSpecial(){ const d=Math.floor(Date.now()/86400000); const s=GT_SPECIALS[d%GT_SPECIALS.length];
+  return { s, item:GT_MENU.mains.find(m=>m.en===s.en) }; }
+/* le voci del principale: il piatto del giorno si chiama anche «the special» */
+function _gtMains(){ const sp=gtSpecial().item;
+  return GT_MENU.mains.map(v=>v===sp?Object.assign({},v,{ k:v.k.concat(["today's special","todays special","the special","special"]), __ref:v }):v); }
+const GT_TURNS={
+  drink:{ field:"Drink", q:"Good afternoon, and welcome to The Green Table! My name is Marco. Here's the menu. May I bring you something to drink?",
+    it:"Buongiorno e benvenuto! Sono Marco, ecco il menu. Posso portarti qualcosa da bere?",
+    qAgain:"So, what would you like to drink?", itAgain:"Allora, cosa desideri da bere?",
+    voci:()=>GT_MENU.drinks,
+    pool:["water","still","sparkling","juice","orange","apple","lemonade","tea","mint","please","could","may","would","have","like","i'd","some","a"],
+    hint:"ordina da bere in modo cortese — «Could I have some sparkling water, please?»",
+    ready:["Could I have some sparkling water, please?","I'd like a fresh orange juice, please.","May I have some still water, please?","A homemade lemonade, please."], nulla:null },
+  starter:{ field:"Starter", q:"Would you like a starter? We have tomato soup, vegetable soup, a Greek salad or bruschetta.",
+    it:"Desideri un antipasto? Zuppa di pomodoro, zuppa di verdure, insalata greca o bruschetta.",
+    qAgain:"So, would you like a starter?", itAgain:"Allora, desideri un antipasto?",
+    voci:()=>GT_MENU.starters,
+    pool:["soup","tomato","vegetable","salad","greek","bruschetta","no","thanks","please","could","i'd","like","have","the","a"],
+    hint:"scegli un antipasto, oppure di' di no — «I'd like the tomato soup, please.»",
+    ready:["I'd like the tomato soup, please.","Could I have the Greek salad, please?","The bruschetta, please.","No starter for me, thank you."], nulla:_GT_NO },
+  main:{ field:"Main course", q:"", it:"", qAgain:"So, what would you like for your main course?", itAgain:"Allora, cosa desideri come piatto principale?",
+    voci:()=>_gtMains(),
+    pool:["spaghetti","pasta","pesto","tomato","lasagne","risotto","chicken","steak","salmon","special","please","could","i'd","like","have","the","today's"],
+    hint:"scegli il piatto principale — «I'd like the grilled salmon, please.»",
+    ready:["I'd like today's special, please.","Could I have the spaghetti with tomato sauce, please?","I'd like the steak, please.","The mushroom risotto, please."], nulla:null },
+  done:{ field:"Steak", q:"How would you like your steak? Rare, medium or well done?", it:"Come preferisci la bistecca? Al sangue, media o ben cotta?",
+    voci:()=>GT_DONENESS,
+    pool:["rare","medium","well","done","please","i'd","like","it"],
+    hint:"di' la cottura — «Medium, please.» / «Well done, please.»",
+    ready:["Medium, please.","Well done, please.","Rare, please.","Medium rare, please."], nulla:null },
+  side:{ field:"Side", q:"And would you like a side dish with that? Roast potatoes, steamed vegetables or a green salad?",
+    it:"E desideri un contorno? Patate arrosto, verdure al vapore o insalata verde?",
+    voci:()=>GT_MENU.sides,
+    pool:["potatoes","roast","vegetables","steamed","salad","green","no","thanks","please","could","i'd","like","some","the"],
+    hint:"scegli un contorno, oppure di' di no — «Some roast potatoes, please.»",
+    ready:["Some roast potatoes, please.","Could I have the steamed vegetables, please?","A green salad, please.","No, thank you."], nulla:_GT_NO },
+  dessert:{ field:"Dessert", q:"How was your meal? Would you like a dessert?", it:"Com'era? Desideri un dolce?",
+    qAgain:"So, would you like a dessert?", itAgain:"Allora, desideri un dolce?",
+    voci:()=>GT_MENU.desserts,
+    pool:["fruit","salad","yoghurt","honey","sorbet","lemon","panna","cotta","no","thanks","delicious","lovely","please","could","i'd","like"],
+    hint:"di' com'era e scegli un dolce, oppure no — «It was delicious, thank you! I'd like the lemon sorbet, please.»",
+    ready:["It was delicious, thank you! I'd like the fruit salad, please.","It was lovely. Could I have the lemon sorbet, please?","Yes, the panna cotta, please.","It was delicious, but no dessert for me, thank you."], nulla:_GT_NO },
+  bill:{ field:"Bill", q:"Is everything all right? Can I get you anything else?", it:"Tutto bene? Desideri altro?",
+    voci:()=>[{ k:["bill","check","pay","cheque"], en:"The bill", p:0 }],
+    pool:["bill","check","cheque","pay","please","could","may","have","i"],
+    hint:"chiedi il conto con cortesia — «Could I have the bill, please?»",
+    ready:["Could I have the bill, please?","May I have the bill, please?"], nulla:null },
+  pay:{ field:"Payment", q:"How would you like to pay?", it:"Come desideri pagare?",
+    voci:()=>[ { k:["card","credit card","debit card","credit","debit"], en:"By card", p:0 },
+               { k:["cash","coins","notes","money"], en:"In cash", p:0 } ],
+    pool:["card","cash","credit","debit","by","in","please","pay","here","you","are"],
+    hint:"«By card, please» oppure «In cash, please»",
+    ready:["By card, please.","In cash, please. Here you are."], nulla:null },
+};
+const GT_KEYS=["drink","starter","main","side","dessert"];
+/* ---- MATERIALI ---- */
+function _gtMats(){ if(GT.M) return GT.M;
+  const sh=(m,s,pw)=>{ m.specularColor=new BABYLON.Color3(s,s,s); m.specularPower=pw||48; return m; };
+  const M={
+    green:sh(mat("gt_green","#3f6a54","#14261d"),0.10,24), green2:sh(mat("gt_green2","#2f5444","#0e1c15"),0.10,24), stone:sh(mat("gt_stone","#e6dcc8"),0.06,16),
+    gold:sh(mat("gt_gold","#c9a24a","#2a1f08"),0.85,90), brass:sh(mat("gt_brass","#b8913e"),0.8,80), wood:sh(mat("gt_wood","#4a2f1e"),0.25,40),
+    woodL:sh(mat("gt_woodL","#7a5232"),0.2,32), cloth:sh(mat("gt_cloth","#f7f5ef"),0.12,20), white:sh(mat("gt_white","#fbfaf6"),0.45,64),
+    silver:sh(mat("gt_silver","#cfd4d8"),0.9,96), black:sh(mat("gt_black","#151618"),0.6,80), velvet:sh(mat("gt_velvet","#4f7d62","#142a1e"),0.14,20),
+    leaf:mat("gt_leaf","#4f8a52"), leaf2:mat("gt_leaf2","#3d7244"), pot:sh(mat("gt_pot","#d8cfc0"),0.2,30), trunk:mat("gt_trunk","#6b5236"),
+    dark:mat("gt_dark","#1e2421"), wax:mat("gt_wax","#f4efe2","#3a352a"),
+    glass:(function(){ const g=sh(mat("gt_glass","#d8eef6"),0.9,120); g.alpha=0.28; g.backFaceCulling=false; return g; })(),
+  };
+  const fl=mat("gt_flame","#ffd27a","#ffb347"); fl.disableLighting=true; M.flame=fl;
+  const bu=mat("gt_bulb","#fff1c8","#ffd98a"); bu.disableLighting=true; M.bulb=bu;
+  /* vetrate da fuori: calde di sera (nightLights), luminose anche di giorno */
+  /* le vetrate: da fuori si vede la sala calda (lampadario, tavoli con le
+     tovaglie bianche, il riflesso del cielo in alto); di giorno a meta', di
+     sera piena (la texture e' emissiva, il livello lo alza updateDayNight) */
+  const wt=_gtTex("gtWinT",128,192,(c,W,H)=>{ const g=c.createLinearGradient(0,0,0,H); g.addColorStop(0,"#5a3a22"); g.addColorStop(0.5,"#a2703c"); g.addColorStop(1,"#6a4528"); c.fillStyle=g; c.fillRect(0,0,W,H);
+    c.fillStyle="rgba(255,226,160,0.9)"; for(let i=0;i<6;i++){ c.beginPath(); c.arc(24+i*16,40+Math.sin(i)*3,4,0,7); c.fill(); }
+    c.fillStyle="rgba(255,236,190,0.35)"; c.beginPath(); c.ellipse(W/2,44,46,14,0,0,7); c.fill();
+    c.fillStyle="#f6f1e4"; c.fillRect(10,128,46,22); c.fillRect(72,128,46,22); c.fillStyle="#2f5444"; c.fillRect(14,150,8,26); c.fillRect(44,150,8,26); c.fillRect(76,150,8,26); c.fillRect(106,150,8,26);
+    c.fillStyle="#ffd27a"; c.fillRect(30,120,3,8); c.fillRect(92,120,3,8);
+    const r=c.createLinearGradient(0,0,W,H); r.addColorStop(0,"rgba(220,235,245,0.35)"); r.addColorStop(0.45,"rgba(220,235,245,0.0)"); r.addColorStop(1,"rgba(220,235,245,0.12)"); c.fillStyle=r; c.fillRect(0,0,W,H); });
+  const win=new BABYLON.StandardMaterial("gt_win",scene); win.diffuseTexture=wt; win.emissiveTexture=wt; win.emissiveColor=new BABYLON.Color3(0.55,0.55,0.55);
+  win.specularColor=new BABYLON.Color3(0.6,0.6,0.6); win.specularPower=96; M.win=win;
+  const lan=mat("gt_lan","#fff2cc","#000000"); lan.__nightEmissive=BABYLON.Color3.FromHexString("#ffd27a"); lan.__dusk=true; nightLights.push(lan); M.lan=lan;
+  return (GT.M=M);
+}
+function _gtTex(name,w,h,draw){ const dt=new BABYLON.DynamicTexture(name,{width:w,height:h},scene,true); draw(dt.getContext(),w,h); dt.update(); return dt; }
+function _gtBox(p,w,h,d,m,x,y,z,ry){ const b=BABYLON.MeshBuilder.CreateBox("gtb",{width:w,height:h,depth:d},scene); b.material=m; b.parent=p; b.position.set(x,y,z); if(ry) b.rotation.y=ry; b.isPickable=false; return b; }
+function _gtCyl(p,dt,db,h,m,x,y,z,tess){ const c=BABYLON.MeshBuilder.CreateCylinder("gtc",{diameterTop:dt,diameterBottom:db,height:h,tessellation:tess||16},scene); c.material=m; c.parent=p; c.position.set(x,y,z); c.isPickable=false; return c; }
+/* v622 (Giacomo: «ci sono 4 piante che sono 4 palloni»): la pianta da
+   vaso e' una kentia vera e propria — fronde arcuate (un tubo sottile lungo
+   una curva) con le foglioline strette e appuntite ai due lati, che si
+   piegano verso il basso. Niente sfere. par = nodo; (x,y,z) = colmo del vaso. */
+function _gtPalm(par,M,x,y,z,sc,seed){ sc=sc||1; let sd=(seed||1)*7919+13; const rnd=()=>{ sd=(sd*16807)%2147483647; return (sd%10000)/10000; };
+  const stemM=M.trunk, lf=[M.leaf,M.leaf2];
+  const nF=9;
+  for(let f=0;f<nF;f++){
+    const a=f*(Math.PI*2/nF)+rnd()*0.5, d=new BABYLON.Vector3(Math.sin(a),0,Math.cos(a)), pp=new BABYLON.Vector3(Math.cos(a),0,-Math.sin(a));
+    const L=(0.75+rnd()*0.35)*sc, rise=(0.55+rnd()*0.5+(f%3===0?0.35:0))*sc, droop=(0.5+rnd()*0.25)*sc, y0=y+0.05+rnd()*0.25*sc;
+    const P=t=>new BABYLON.Vector3(x+d.x*L*t*0.95, y0+rise*t-droop*t*t, z+d.z*L*t*0.95);
+    const path=[]; for(let k=0;k<=8;k++) path.push(P(k/8));
+    const tb=BABYLON.MeshBuilder.CreateTube("gtPalmS",{path,radius:0.011*sc,tessellation:4},scene); tb.material=stemM; tb.parent=par;
+    const nL=11;
+    for(let k=1;k<=nL;k++){ const t=0.18+0.8*k/nL, q=P(t), ln=(0.16+0.16*Math.sin(Math.PI*Math.min(1,t*1.05)))*sc;
+      [-1,1].forEach(sg=>{ const m=BABYLON.MeshBuilder.CreateSphere("gtPalmL",{diameter:1,segments:3},scene);
+        m.scaling.set(ln,0.012*sc,0.045*sc); m.rotation.y=a; m.rotation.z=sg*(0.35+t*0.45);
+        m.position.set(q.x+pp.x*sg*ln*0.46, q.y-ln*0.12*(0.5+t), q.z+pp.z*sg*ln*0.46);
+        m.material=lf[(k+f)%2]; m.parent=par; }); } }
+}
+function _gtSph(p,d,m,x,y,z,sy){ const s=BABYLON.MeshBuilder.CreateSphere("gts",{diameter:d,segments:8},scene); s.material=m; s.parent=p; s.position.set(x,y,z); if(sy) s.scaling.y=sy; s.isPickable=false; return s; }
+/* il testo dorato su fondo verde (insegna, targa, lavagna) */
+function _gtSignMat(name,w,h,draw){ const t=_gtTex(name+"T",w,h,draw); const m=new BABYLON.StandardMaterial(name,scene); m.diffuseTexture=t;
+  m.emissiveColor=new BABYLON.Color3(0.35,0.35,0.35); m.specularColor=new BABYLON.Color3(0.05,0.05,0.05); return m; }
+function _gtPlane(p,w,h,m,x,y,z,ry){ const pl=BABYLON.MeshBuilder.CreatePlane("gtp",{width:w,height:h,sideOrientation:BABYLON.Mesh.DOUBLESIDE},scene); pl.material=m; pl.parent=p; pl.position.set(x,y,z); pl.rotation.y=ry||0; pl.isPickable=false; return pl; }
+/* ------------------------------------------------------------------ */
+/* FUORI: la facciata sul Modern Boulevard                              */
+/* ------------------------------------------------------------------ */
+/* IL CORTILE davanti alla facciata (dal marciapiede del boulevard alla porta) */
+function _gtForecourt(r,M,FZ){
+  const L=6.4, z0=FZ+0.15, zc=z0+L/2, zE=z0+L;          // da 15 cm dalla facciata fino al marciapiede
+  /* il vialetto: lastre di pietra chiara con i giunti */
+  const pv=_gtSignMat("gtPathM",128,384,(c,W,H)=>{ c.fillStyle="#d9cfbc"; c.fillRect(0,0,W,H);
+    for(let y=0;y<H;y+=48){ const o=(y/48)%2?32:0; for(let x=-64+o;x<W;x+=64){ const t=200+Math.floor(Math.random()*24);
+      c.fillStyle="rgb("+t+","+(t-8)+","+(t-22)+")"; c.fillRect(x+2,y+2,60,44); } }
+    c.fillStyle="rgba(0,0,0,0.12)"; for(let i=0;i<300;i++) c.fillRect(Math.random()*W,Math.random()*H,1,1); });
+  pv.emissiveColor=new BABYLON.Color3(0.15,0.15,0.15);
+  const path=BABYLON.MeshBuilder.CreateGround("gtPath",{ width:2.4, height:L },scene); path.material=pv; path.parent=r; path.position.set(0,0.018,zc); path.isPickable=false;
+  /* le aiuole: prato rasato, siepi basse di bosso sul bordo, fiori a file */
+  /* prato rasato a strisce chiare e scure (come i giardini all'inglese) */
+  const lawn=_gtSignMat("gtLawnM",256,256,(c,W,H)=>{ for(let i=0;i<8;i++){ c.fillStyle=i%2?"#4c7a3a":"#567f42"; c.fillRect(0,i*32,W,32); }
+    c.globalAlpha=0.18; for(let k=0;k<2200;k++){ c.fillStyle=Math.random()<0.5?"#2f5a28":"#7aa55a"; c.fillRect(Math.random()*W,Math.random()*H,1,2); } c.globalAlpha=1; });
+  lawn.emissiveColor=new BABYLON.Color3(0.05,0.07,0.04); lawn.specularColor=new BABYLON.Color3(0.02,0.02,0.02);
+  /* v622 (Giacomo: «le siepi le hai fatte bene lungo la strada, quindi le
+     puoi fare; anche l'albero e' grossolano»): le siepi sono quelle della
+     citta' (hedge(): bosso potato a ciuffi, cordolo di pietra, pacciame) e
+     gli alberi sono il modello vero dei viali (Tree_single), non sfere.
+     Coordinate del mondo: la siepe e l'albero si appendono a townRoot. */
+  const W=(x,z)=>[GT_X+x,GT_Z+z];
+  const zH=zE-0.5, zB=z0+0.35;                               // siepe sul marciapiede / fondo verso la facciata
+  [-1,1].forEach(sd=>{ const bx=sd*4.2, bw=5.6;
+    const g=BABYLON.MeshBuilder.CreateGround("gtLawn",{ width:bw, height:L-0.4 },scene); g.material=lawn; g.parent=r; g.position.set(bx,Math.max(0.055,0.215-GT.oy),zc); g.isPickable=false;
+    const hp=(x0,z0h,x1,z1h,h)=>{ const A=W(x0,z0h), B=W(x1,z1h); try{ hedge(A[0],A[1],B[0],B[1],h); }catch(e){ console.warn("[gt] siepe",e); } };
+    hp(sd*1.68,zH,sd*6.75,zH,0.95);                                      // lungo il marciapiede (fino al vialetto)
+    hp(sd*1.68,zB,sd*1.68,zH-0.42,0.8);                                  // lungo il vialetto, piu' bassa
+    hp(sd*6.75,zB,sd*6.75,zH-0.42,0.95);                                 // bordo esterno
+    /* un albero vero in ogni aiuola, al centro del prato */
+    try{ const T=W(bx+sd*0.3,zc-0.3);
+      solids.push({x0:T[0]-0.42,x1:T[0]+0.42,z0:T[1]-0.42,z1:T[1]+0.42,area:"town",tree:true});
+      spawnProp('tree_broad',T[0],T[1],5.2,{byHeight:true,yaw:(PROP_YAW&&PROP_YAW.tree||0)+sd*0.9,occluder:true}); }catch(e){ console.warn("[gt] albero",e); }
+    /* cespugli fioriti (quelli del parco) negli angoli delle aiuole */
+    [[bx-sd*1.6,zH-1.1],[bx+sd*1.6,zB+0.9]].forEach(q=>{ try{ const P=W(q[0],q[1]); spawnProp('bush_flower',P[0],P[1],0.95,{byHeight:true,yaw:q[0]}); }catch(e){} });
+  });
+  /* i lampioni all'imbocco del vialetto (lanterne accese dal tramonto) */
+  [-0.95,0.95].forEach(x=>{ const z=zE-0.45;
+    _gtCyl(r,0.08,0.12,2.6,M.black,x,1.3,z,10); _gtCyl(r,0.22,0.22,0.06,M.black,x,0.03,z,12);
+    _gtBox(r,0.26,0.36,0.26,M.lan,x,2.78,z); _gtCyl(r,0.02,0.34,0.14,M.black,x,3.02,z,4); _gtBox(r,0.3,0.04,0.3,M.brass,x,2.6,z);
+    addSolid(GT_X+x-0.18,GT_X+x+0.18,GT_Z+z-0.18,GT_Z+z+0.18,"town"); });
+  /* il leggio col menu, a destra dell'imbocco */
+  const mx=1.95, mz=zE+0.45;
+  const men=_gtSignMat("gtMenuStandM",256,360,(c,W,H)=>{ c.fillStyle="#1f3a2d"; c.fillRect(0,0,W,H); c.strokeStyle="#c9a24a"; c.lineWidth=6; c.strokeRect(8,8,W-16,H-16);
+    c.fillStyle="#e3c77a"; c.textAlign="center"; c.font="italic 700 34px Georgia, serif"; c.fillText("Menu",W/2,58);
+    c.font="15px Georgia"; c.fillStyle="#f1ecd8"; ["Soups & salads","Fresh pasta","Risotto","Grilled chicken","Steak & salmon","Fruit & sorbets"].forEach((t,i)=>c.fillText(t,W/2,104+i*30));
+    c.fillStyle="#e3c77a"; c.font="italic 16px Georgia"; c.fillText("Today's special:",W/2,300); c.fillText("ask inside!",W/2,322); });
+  const mp=_gtPlane(r,0.48,0.68,men,mx,1.15,mz,Math.PI); mp.rotation.x=-0.35;
+  _gtCyl(r,0.03,0.03,1.0,M.brass,mx,0.5,mz-0.05,8); _gtCyl(r,0.3,0.3,0.03,M.brass,mx,0.015,mz-0.05,16);
+}
+function buildGreenTableOutside(){
+  if(GT.exBuilt) return; GT.exBuilt=true;
+  const M=_gtMats();
+  const h=scene.pickWithRay(new BABYLON.Ray(new BABYLON.Vector3(GT_X,8,GT_Z+GT_HD+1),new BABYLON.Vector3(0,-1,0),16),m=>(m.__ground===true||String(m.name).indexOf("nbApron")===0)&&m.isEnabled());
+  const gy=(h&&h.hit)?h.pickedPoint.y:0.04; GT.oy=gy;
+  const r=new BABYLON.TransformNode("greenTable",scene); r.parent=townRoot; r.position.set(GT_X,gy,GT_Z);
+  const H=5.6, FZ=GT_HD;                                   // facciata a z=+FZ (nord)
+  const body=_gtBox(r,GT_HW*2,H,GT_HD*2,M.green,0,H/2,0); body.__occluder=true; body.__cast=true;
+  _gtBox(r,GT_HW*2+0.12,0.7,GT_HD*2+0.12,M.stone,0,0.35,0).__cast=true;                  // zoccolo in pietra
+  _gtBox(r,GT_HW*2+0.3,0.35,GT_HD*2+0.3,M.stone,0,H+0.17,0);                               // cornicione
+  _gtBox(r,GT_HW*2+0.06,0.08,0.06,M.gold,0,H-0.25,FZ+0.03);                                // filo d'oro
+  [-7.7,-4.3,-1.6,1.6,4.3,7.7].forEach(x=>{ _gtBox(r,0.42,H-0.7,0.14,M.stone,x,(H-0.7)/2+0.7,FZ+0.07); _gtBox(r,0.54,0.16,0.2,M.stone,x,H-0.42,FZ+0.09); });   // lesene
+  /* le vetrate: quattro finestre alte con la cornice d'ottone e i montanti */
+  [-5.6,-3.0,3.0,5.6].forEach(x=>{
+    _gtBox(r,1.7,2.6,0.06,M.win,x,1.95,FZ+0.03);
+    _gtBox(r,1.86,0.08,0.08,M.brass,x,3.28,FZ+0.06); _gtBox(r,1.86,0.08,0.08,M.brass,x,0.62,FZ+0.06);
+    [-0.9,0,0.9].forEach(dx=>_gtBox(r,0.06,2.7,0.08,M.brass,x+dx,1.95,FZ+0.06));
+    _gtBox(r,1.86,0.05,0.08,M.brass,x,2.45,FZ+0.06);
+    /* la fioriera sotto la finestra */
+    _gtBox(r,1.7,0.32,0.36,M.wood,x,0.86,FZ+0.24);
+    for(let i=0;i<5;i++) _gtSph(r,0.32,i%2?M.leaf:M.leaf2,x-0.68+i*0.34,1.08,FZ+0.24,0.8); });
+  /* la porta: doppia, in legno scuro, maniglie d'ottone, sopraluce */
+  _gtBox(r,2.1,2.7,0.1,M.wood,0,1.35+0.0,FZ+0.05);
+  _gtBox(r,0.04,2.6,0.12,M.dark,0,1.35,FZ+0.07);
+  [-0.18,0.18].forEach(x=>_gtBox(r,0.04,0.5,0.05,M.brass,x,1.25,FZ+0.13));
+  _gtBox(r,2.1,0.5,0.06,M.win,0,3.0,FZ+0.03);
+  /* la tettoia verde sopra la porta */
+  const can=_gtBox(r,3.2,0.12,1.4,M.green2,0,3.55,FZ+0.7); can.rotation.x=-0.12;
+  _gtBox(r,3.24,0.25,0.04,M.green2,0,3.4,FZ+1.38);
+  [-1.5,1.5].forEach(x=>_gtCyl(r,0.04,0.04,0.9,M.brass,x,3.2,FZ+1.3,8));
+  /* l'insegna dorata */
+  const sm=_gtSignMat("gt_signM",1024,192,(c,W,Hh)=>{ c.fillStyle="#1f3a2d"; c.fillRect(0,0,W,Hh);
+    c.strokeStyle="#c9a24a"; c.lineWidth=8; c.strokeRect(10,10,W-20,Hh-20);
+    c.fillStyle="#e3c77a"; c.font="italic 700 96px Georgia, serif"; c.textAlign="center"; c.textBaseline="middle"; c.fillText("The Green Table",W/2,Hh/2-6);
+    c.font="600 26px Georgia, serif"; c.fillText("R E S T A U R A N T",W/2,Hh-34); });
+  _gtPlane(r,6.4,1.2,sm,0,4.55,FZ+0.08,Math.PI);
+  /* targa degli orari accanto alla porta */
+  const hm=_gtSignMat("gt_hoursM",256,256,(c,W,Hh)=>{ c.fillStyle="#c9a24a"; c.fillRect(0,0,W,Hh); c.fillStyle="#1f3a2d"; c.fillRect(8,8,W-16,Hh-16);
+    c.fillStyle="#e3c77a"; c.textAlign="center"; c.font="italic 700 34px Georgia, serif"; c.fillText("Open daily",W/2,78);
+    c.font="700 40px Georgia, serif"; c.fillText("11 am",W/2,134); c.font="600 26px Georgia"; c.fillText("to",W/2,170); c.font="700 40px Georgia, serif"; c.fillText("10 pm",W/2,214); });
+  _gtPlane(r,0.55,0.55,hm,1.55,1.6,FZ+0.08,Math.PI);
+  /* le lanterne d'ottone (accese dal tramonto) */
+  [-1.45,1.45].forEach(x=>{ _gtBox(r,0.08,0.4,0.2,M.brass,x,2.85,FZ+0.12); _gtBox(r,0.22,0.32,0.22,M.lan,x,2.72,FZ+0.3); _gtBox(r,0.26,0.05,0.26,M.brass,x,2.9,FZ+0.3); });
+  /* due ulivi in vaso ai lati della porta */
+  [-2.2,2.2].forEach(x=>{ _gtCyl(r,0.62,0.5,0.7,M.pot,x,0.35,FZ+0.9,18); _gtCyl(r,0.56,0.56,0.03,M.trunk,x,0.69,FZ+0.9,16);
+    _gtPalm(r,M,x,0.72,FZ+0.9,1.0,x>0?11:17); });
+  try{ _gtForecourt(r,M,FZ); }catch(e){ console.warn("[gt] cortile",e); }
+  try{ hm7Shadow(r,GT_HW*2+1.2,GT_HD*2+1.2,0,0,0.03,0.5); }catch(e){}
+  r.getChildMeshes().forEach(m=>{ m.__cast=true; });
+  addSolid(GT_X-GT_HW-0.1,GT_X+GT_HW+0.1,GT_Z-GT_HD-0.1,GT_Z+GT_HD+0.1,"town");
+  [-2.2,2.2].forEach(x=>addSolid(GT_X+x-0.35,GT_X+x+0.35,GT_Z+FZ+0.55,GT_Z+FZ+1.25,"town"));
+  try{ fondiProp(r); }catch(e){}
+  try{ const anc=anchorMesh(townRoot,GT_X,gy+H+1.4,GT_Z+FZ); guiLabel(anc,"\u{1F33F} The Green Table","Restaurant · 11 am – 10 pm",true,"town"); }catch(e){}
+  /* la porta: entra (aperto) o dice gli orari (chiuso) */
+  GT.door=addInteract({ id:"gt_door", area:"town", radius:2.6, label:"The Green Table",
+    pos:()=>new BABYLON.Vector3(GT_X,gy+1,GT_Z+FZ+0.6),
+    prompt:()=>(gtOpen()||gtTeacher())?'\u{1F33F} Press <b>P</b> to enter <b>The Green Table</b>':'\u{1F319} <b>The Green Table</b> is closed · open 11 am – 10 pm',
+    interact:()=>gtEnter() });
+  try{ refreshShadowCasters(); }catch(e){}
+}
+/* ------------------------------------------------------------------ */
+/* DENTRO: la sala                                                      */
+/* ------------------------------------------------------------------ */
+/* parquet a spina di pesce, rovere caldo, con le doghe una per una */
+function _gtFloorMat(W,D){
+  const PPM=80, CW=Math.round(W*PPM), CH=Math.round(D*PPM), rnd=_seedRand("gt-floor");
+  const t=_gtTex("gtFloorT",CW,CH,(c)=>{
+    c.fillStyle="#5a3a22"; c.fillRect(0,0,CW,CH);
+    const L=48, Wd=12;                                       // doga 60 x 15 cm
+    for(let y=-L;y<CH+L;y+=Wd*2) for(let x=-L*2;x<CW+L;x+=L){
+      for(let k=0;k<2;k++){ const tone=58+Math.floor(rnd()*30), g=tone-18-Math.floor(rnd()*8);
+        c.save(); c.translate(x+(k?Wd:0),y+(k?Wd:0)); c.rotate(k?-Math.PI/4:Math.PI/4);
+        c.fillStyle="rgb("+(tone+62)+","+(g+44)+","+(g+18)+")"; c.fillRect(0,0,L,Wd);
+        c.fillStyle="rgba(40,22,10,0.35)"; c.fillRect(0,0,L,1); c.fillRect(0,0,1,Wd);
+        c.globalAlpha=0.10; c.fillStyle="#2a160a"; for(let v=0;v<3;v++) c.fillRect(rnd()*L,rnd()*Wd,L*0.4,1); c.globalAlpha=1;
+        c.restore(); } }
+    const g=c.createRadialGradient(CW/2,CH/2,CW*0.1,CW/2,CH/2,CW*0.7); g.addColorStop(0,"rgba(0,0,0,0)"); g.addColorStop(1,"rgba(0,0,0,0.25)");
+    c.fillStyle=g; c.fillRect(0,0,CW,CH); });
+  const m=new BABYLON.StandardMaterial("gtFloorM",scene); m.diffuseTexture=t; m.specularColor=new BABYLON.Color3(0.22,0.18,0.14); m.specularPower=40;
+  return m; }
+/* la parete: boiserie verde salvia in basso, filo d'oro, stoffa crema a righine sopra */
+function _gtWallMat(){
+  const t=_gtTex("gtWallT",1024,512,(c,W,H)=>{
+    c.fillStyle="#efe6d2"; c.fillRect(0,0,W,H);
+    c.globalAlpha=0.07; c.fillStyle="#8a7a5a"; for(let x=0;x<W;x+=16) c.fillRect(x,0,2,H*0.62); c.globalAlpha=1;
+    const y0=H*0.62;                                           // boiserie da 1,3 m su 3,4
+    c.fillStyle="#3f5f4a"; c.fillRect(0,y0,W,H-y0);
+    for(let x=24;x<W;x+=128){ c.strokeStyle="rgba(20,40,28,0.7)"; c.lineWidth=4; c.strokeRect(x,y0+26,104,H-y0-58);
+      c.strokeStyle="rgba(150,190,160,0.25)"; c.lineWidth=2; c.strokeRect(x+5,y0+31,94,H-y0-68); }
+    c.fillStyle="#c9a24a"; c.fillRect(0,y0-6,W,8); c.fillStyle="#2c4a3b"; c.fillRect(0,y0+2,W,10);
+    c.fillStyle="#2a2016"; c.fillRect(0,H-14,W,14); });
+  const m=new BABYLON.StandardMaterial("gtWallM",scene); m.diffuseTexture=t; m.specularColor=new BABYLON.Color3(0.04,0.04,0.04);
+  m.emissiveTexture=t; m.emissiveColor=new BABYLON.Color3(0.22,0.20,0.17);
+  m.backFaceCulling=true; return m; }
+/* un quadro: paesaggi e nature morte a pennellate, ognuno il suo */
+function _gtPainting(i){
+  const rnd=_seedRand("gt-paint-"+i), P=[["#e9b872","#c96a3a","#4d7a5a","#2f4f6f"],["#9cc3d8","#5d8fb0","#e8d6a8","#6a8a4a"],
+    ["#f2d4a0","#d98a5a","#8a4a3a","#3a5a4a"],["#c8d8b8","#7aa070","#e8c070","#506a8a"]][i%4];
+  return _gtSignMat("gtPaint"+i,256,192,(c,W,H)=>{
+    const g=c.createLinearGradient(0,0,0,H); g.addColorStop(0,P[0]); g.addColorStop(0.55,P[1]); g.addColorStop(1,P[2]); c.fillStyle=g; c.fillRect(0,0,W,H);
+    if(i%2===0){ c.fillStyle=P[3]; c.beginPath(); c.moveTo(0,H*0.7); for(let x=0;x<=W;x+=16) c.lineTo(x,H*0.55+Math.sin(x*0.03+i)*18+rnd()*10); c.lineTo(W,H); c.lineTo(0,H); c.fill();
+      c.fillStyle="rgba(255,240,200,0.8)"; c.beginPath(); c.arc(W*0.75,H*0.25,16,0,7); c.fill(); }
+    else { c.fillStyle=P[3]; c.fillRect(W*0.2,H*0.62,W*0.6,H*0.1);
+      [[0.35,0.5,"#d84a3a"],[0.5,0.45,"#e8b040"],[0.63,0.52,"#7aa040"]].forEach(f=>{ c.fillStyle=f[2]; c.beginPath(); c.arc(W*f[0],H*f[1],20,0,7); c.fill(); }); }
+    for(let k=0;k<260;k++){ c.fillStyle="rgba("+(rnd()*255|0)+","+(rnd()*255|0)+","+(rnd()*200|0)+",0.06)"; c.fillRect(rnd()*W,rnd()*H,6+rnd()*14,3); } }); }
+/* un tavolo apparecchiato (decor: si fonde poi per materiale) */
+function _gtTable(dec,M,x,z){
+  _gtCyl(dec,0.12,0.12,0.5,M.wood,x,0.25,z,10); _gtCyl(dec,0.5,0.56,0.04,M.wood,x,0.02,z,20);
+  _gtBox(dec,1.12,0.36,1.12,M.cloth,x,0.6,z);                                      // tovaglia (cade a 42 cm)
+  _gtBox(dec,1.14,0.012,1.14,M.cloth,x,0.786,z);
+  _gtCyl(dec,0.05,0.05,0.13,M.wax,x+0.12,0.86,z,10); _gtSph(dec,0.035,M.flame,x+0.12,0.945,z,1.6);   // candela
+  _gtCyl(dec,0.06,0.07,0.14,M.glass,x-0.12,0.86,z,12); _gtSph(dec,0.09,[M.velvet,M.flame,M.leaf][(Math.abs(x*3+z)|0)%3],x-0.12,0.97,z);  // vasetto col fiore
+  [-1,1].forEach(sd=>{ const zz=z+sd*0.33;
+    _gtCyl(dec,0.27,0.27,0.012,M.white,x,0.8,zz,24);                               // sottopiatto
+    _gtBox(dec,0.02,0.006,0.2,M.silver,x-0.18,0.796,zz); _gtBox(dec,0.022,0.006,0.21,M.silver,x+0.18,0.796,zz);   // posate
+    _gtCyl(dec,0.065,0.02,0.09,M.glass,x+0.2,0.93,zz-sd*0.12,12); _gtCyl(dec,0.01,0.01,0.1,M.glass,x+0.2,0.84,zz-sd*0.12,6);   // calice
+    const nap=_gtBox(dec,0.12,0.06,0.12,M.cloth,x,0.84,zz); nap.rotation.y=Math.PI/4; nap.rotation.x=0.4; });
+}
+/* una sedia imbottita verde col legno scuro; face = dove guarda chi siede */
+function _gtChair(dec,M,x,z,face){
+  const f={ x:Math.sin(face), z:Math.cos(face) }, b={ x:-f.x*0.2, z:-f.z*0.2 };
+  _gtBox(dec,0.46,0.07,0.46,M.velvet,x,0.47,z);
+  _gtBox(dec,0.48,0.04,0.48,M.wood,x,0.43,z);
+  [[-0.19,-0.19],[0.19,-0.19],[-0.19,0.19],[0.19,0.19]].forEach(q=>_gtBox(dec,0.04,0.42,0.04,M.wood,x+q[0],0.21,z+q[1]));
+  const bk=_gtBox(dec,0.44,0.52,0.06,M.velvet,x+b.x,0.78,z+b.z,face);
+  _gtBox(dec,0.48,0.06,0.07,M.wood,x+b.x*1.05,1.06,z+b.z*1.05,face);
+  try{ hm7Shadow(dec,0.6,0.6,x,z,0.028,0.4); }catch(e){}
+  return bk; }
+function buildGreenTable(){
+  const I=allocInterior(GT_DEF); GT.I=I; if(I.built) return I; I.built=true; GT.built=true;
+  const C=GT.C=I.center, S=GT_DEF.size, SX=GT_DEF.sizeX, WH=3.4, M=_gtMats(), root=I.root;
+  I.root.setEnabled(true);
+  const dec=new BABYLON.TransformNode("gtDecor",scene); dec.parent=root; dec.position.copyFrom(C);   // decor in coordinate LOCALI al centro
+  /* pavimento (calpestabile) */
+  const fl=BABYLON.MeshBuilder.CreateGround("gtFloor",{width:SX*2,height:S*2},scene);
+  fl.material=_gtFloorMat(SX*2,S*2); fl.position.set(C.x,0.02,C.z); fl.parent=root; fl.__ground=true; fl.receiveShadows=true;
+  /* il tappeto verde col bordo d'oro sotto i tavoli */
+  const rug=BABYLON.MeshBuilder.CreateGround("gtRug",{width:17,height:9.5},scene);
+  rug.material=_gtSignMat("gtRugM",512,288,(c,W,H)=>{ c.fillStyle="#2c4a3b"; c.fillRect(0,0,W,H); c.strokeStyle="#b8913e"; c.lineWidth=6; c.strokeRect(14,14,W-28,H-28);
+    c.strokeStyle="rgba(184,145,62,0.5)"; c.lineWidth=2; c.strokeRect(26,26,W-52,H-52);
+    c.globalAlpha=0.08; c.fillStyle="#9ac0a0"; for(let i=0;i<4000;i++) c.fillRect(Math.random()*W,Math.random()*H,1,1); });
+  rug.material.emissiveColor=new BABYLON.Color3(0.08,0.08,0.08); rug.position.set(C.x,0.025,C.z-0.6); rug.parent=root; rug.isPickable=false;
+  /* muri (piani con la faccia verso l'interno) e soffitto */
+  const wm=_gtWallMat();
+  const wall=(w,x,z,ry)=>{ const p=BABYLON.MeshBuilder.CreatePlane("gtWall",{width:w,height:WH},scene); p.material=wm; p.position.set(C.x+x,WH/2,C.z+z); p.rotation.y=ry; p.parent=root; p.isPickable=false; return p; };
+  wall(SX*2,0,S,0); wall(SX*2,0,-S,Math.PI); wall(S*2,SX,0,Math.PI/2); wall(S*2,-SX,0,-Math.PI/2);
+  const ce=BABYLON.MeshBuilder.CreatePlane("gtCeil",{width:SX*2,height:S*2},scene);
+  const cm=_gtSignMat("gtCeilM",512,420,(c,W,H)=>{ c.fillStyle="#efe4cc"; c.fillRect(0,0,W,H);
+    for(let x=0;x<W;x+=64) for(let y=0;y<H;y+=60){ c.fillStyle="#d9c9a6"; c.fillRect(x+6,y+6,52,48); c.fillStyle="#e9dcc0"; c.fillRect(x+12,y+12,40,36);
+      c.strokeStyle="rgba(201,162,74,0.7)"; c.lineWidth=1.5; c.strokeRect(x+12,y+12,40,36); } });
+  cm.emissiveColor=new BABYLON.Color3(0.42,0.38,0.32); cm.backFaceCulling=true; ce.material=cm; ce.rotation.x=-Math.PI/2; ce.position.set(C.x,WH,C.z); ce.parent=root; ce.isPickable=false;
+  for(let k=-2;k<=2;k++) _gtBox(dec,0.22,0.22,S*2,M.woodL,k*4.4,WH-0.11,0);          // travi
+  [[SX*2,0.16,0,S-0.08],[SX*2,0.16,0,-S+0.08]].forEach(q=>{ _gtBox(dec,q[0],0.2,q[1],M.woodL,q[2],WH-0.1,q[3]); _gtBox(dec,q[0],0.04,q[1]+0.02,M.gold,q[2],WH-0.22,q[3]); });
+  [[0.16,S*2,SX-0.08,0],[0.16,S*2,-SX+0.08,0]].forEach(q=>{ _gtBox(dec,q[0],0.2,q[1],M.woodL,q[2],WH-0.1,q[3]); _gtBox(dec,q[0]+0.02,0.04,q[1],M.gold,q[2],WH-0.22,q[3]); });   // cornice
+  try{ const A=_wallAoMat(), D=0.95;
+    [[SX*2,0,S-D/2,0],[SX*2,0,-S+D/2,Math.PI],[S*2,SX-D/2,0,Math.PI/2],[S*2,-SX+D/2,0,-Math.PI/2]].forEach(q=>{
+      const g=BABYLON.MeshBuilder.CreateGround("gtAO",{width:q[0],height:D},scene); g.material=A; g.position.set(C.x+q[1],0.027,C.z+q[2]); g.rotation.y=q[3]; g.parent=root; g.isPickable=false; }); }catch(e){}
+  const T=0.3, A=GT_DEF.area;
+  addSolid(C.x-SX-T,C.x+SX+T,C.z+S-T/2,C.z+S+T,A); addSolid(C.x-SX-T,C.x+SX+T,C.z-S-T,C.z-S+T/2,A);
+  addSolid(C.x-SX-T,C.x-SX+T/2,C.z-S,C.z+S,A); addSolid(C.x+SX-T/2,C.x+SX+T,C.z-S,C.z+S,A);
+  /* l'ingresso (sud): la doppia porta e due finestre con la luce di fuori */
+  _gtBox(dec,2.0,2.6,0.08,M.wood,0,1.3,S-0.05); _gtBox(dec,0.04,2.5,0.1,M.dark,0,1.3,S-0.08);
+  [-0.16,0.16].forEach(x=>_gtBox(dec,0.04,0.45,0.05,M.brass,x,1.2,S-0.12));
+  _gtBox(dec,2.3,0.12,0.12,M.brass,0,2.66,S-0.08);
+  const sky=mat("gtSkyM","#bcd6e6","#7c96a8"); [-5.5,5.5].forEach(x=>{ _gtBox(dec,1.6,2.2,0.04,sky,x,1.75,S-0.03);
+    _gtBox(dec,1.72,0.07,0.08,M.brass,x,2.88,S-0.07); _gtBox(dec,1.72,0.07,0.08,M.brass,x,0.62,S-0.07); _gtBox(dec,0.05,2.3,0.08,M.brass,x,1.75,S-0.07);
+    _gtBox(dec,1.9,2.6,0.05,M.velvet,x-1.15,1.6,S-0.12); });                      // tende
+  /* il passe della cucina (nord): legno scuro, il piano di marmo, la luce calda e il campanello */
+  _gtBox(dec,7.0,3.0,0.12,M.wood,0,1.5,-S+0.06);
+  const pass=mat("gtPassM","#f4d9a0","#c89a50"); pass.disableLighting=true; _gtBox(dec,4.6,0.9,0.05,pass,0,1.75,-S+0.14);
+  const marble=_gtSignMat("gtMarbleM",256,64,(c,W,H)=>{ c.fillStyle="#efece6"; c.fillRect(0,0,W,H); c.strokeStyle="rgba(120,120,130,0.35)"; c.lineWidth=1.5;
+    for(let i=0;i<7;i++){ c.beginPath(); c.moveTo(Math.random()*W,0); c.bezierCurveTo(Math.random()*W,H*0.3,Math.random()*W,H*0.7,Math.random()*W,H); c.stroke(); } });
+  _gtBox(dec,5.2,1.0,0.7,M.wood,0,0.5,-S+0.6); _gtBox(dec,5.3,0.06,0.78,marble,0,1.03,-S+0.6);
+  [-1.6,0,1.6].forEach(x=>{ _gtCyl(dec,0.02,0.02,0.7,M.brass,x,2.6,-S+0.5,6); _gtCyl(dec,0.05,0.32,0.22,M.brass,x,2.2,-S+0.5,16); _gtSph(dec,0.12,M.bulb,x,2.1,-S+0.5); });
+  _gtCyl(dec,0.12,0.12,0.03,M.brass,1.9,1.07,-S+0.55,16); _gtSph(dec,0.09,M.brass,1.9,1.11,-S+0.55,0.6);   // campanello
+  const ksign=_gtSignMat("gtKitM",512,96,(c,W,H)=>{ c.fillStyle="#1f3a2d"; c.fillRect(0,0,W,H); c.fillStyle="#e3c77a"; c.font="italic 700 52px Georgia, serif"; c.textAlign="center"; c.textBaseline="middle"; c.fillText("Kitchen",W/2,H/2); });
+  _gtPlane(dec,1.8,0.34,ksign,0,2.55,-S+0.14,Math.PI);
+  addSolid(C.x-2.7,C.x+2.7,C.z-S,C.z-S+1.0,A);
+  /* il banco del maitre (accanto alla porta) col libro e la lampada */
+  const hx=3.4, hz=S-1.9;
+  _gtBox(dec,1.0,1.1,0.55,M.wood,hx,0.55,hz); _gtBox(dec,1.06,0.05,0.6,M.woodL,hx,1.12,hz); _gtBox(dec,1.1,0.02,0.64,M.brass,hx,1.095,hz);
+  _gtBox(dec,0.9,0.7,0.02,M.velvet,hx,0.6,hz+0.28);                                  // il pannello davanti
+  const book=_gtSignMat("gtBookM",256,128,(c,W,H)=>{ c.fillStyle="#fbf8ef"; c.fillRect(0,0,W,H); c.fillStyle="#7a2a2a"; c.fillRect(W/2-2,0,4,H);
+    c.strokeStyle="#9cb4cc"; c.lineWidth=1; for(let y=18;y<H;y+=12){ c.beginPath(); c.moveTo(10,y); c.lineTo(W/2-10,y); c.moveTo(W/2+10,y); c.lineTo(W-10,y); c.stroke(); }
+    c.fillStyle="#334"; c.font="italic 14px Georgia"; c.fillText("Reservations",20,12); });
+  const bk=BABYLON.MeshBuilder.CreatePlane("gtBook",{width:0.5,height:0.25},scene); bk.material=book; bk.parent=dec; bk.position.set(hx,1.16,hz+0.02); bk.rotation.x=Math.PI/2.4; bk.rotation.y=Math.PI; bk.isPickable=false;
+  _gtCyl(dec,0.03,0.03,0.35,M.brass,hx-0.35,1.32,hz-0.1,8); _gtCyl(dec,0.08,0.2,0.14,M.velvet,hx-0.35,1.52,hz-0.1,16);
+  addSolid(C.x+hx-0.55,C.x+hx+0.55,C.z+hz-0.32,C.z+hz+0.32,A);
+  /* la lavagna sul cavalletto: il piatto del giorno si chiede al cameriere */
+  const bx=-3.3, bz=S-1.7;
+  const board=_gtSignMat("gtBoardM",256,320,(c,W,H)=>{ c.fillStyle="#22302a"; c.fillRect(0,0,W,H); c.strokeStyle="#7a5232"; c.lineWidth=14; c.strokeRect(0,0,W,H);
+    c.fillStyle="#f1ecd8"; c.textAlign="center"; c.font="italic 700 34px Georgia, serif"; c.fillText("Welcome",W/2,62);
+    c.font="600 22px Georgia, serif"; c.fillText("Today's special:",W/2,124); c.font="italic 22px Georgia, serif"; c.fillText("ask your waiter!",W/2,156);
+    c.font="20px Georgia"; c.fillStyle="#cfe0b8"; c.fillText("~ healthy food ~",W/2,214); c.fillStyle="#f1ecd8"; c.fillText("Open 11 am - 10 pm",W/2,268); });
+  const bd=_gtPlane(dec,0.75,0.94,board,bx,1.15,bz,0); bd.rotation.x=-0.12;
+  [-0.32,0.32].forEach(dx=>{ const l=_gtBox(dec,0.04,1.5,0.04,M.woodL,bx+dx,0.75,bz-0.05); l.rotation.x=-0.12; });
+  const lb=_gtBox(dec,0.04,1.4,0.04,M.woodL,bx,0.7,bz+0.3); lb.rotation.x=0.35;
+  addSolid(C.x+bx-0.42,C.x+bx+0.42,C.z+bz-0.25,C.z+bz+0.45,A);
+  /* il pianoforte a coda nell'angolo sud-ovest, con lo sgabello */
+  const px=-8.6, pz=5.6, pr=new BABYLON.TransformNode("gtPiano",scene); pr.parent=dec; pr.position.set(px,0,pz); pr.rotation.y=0.5;
+  _gtBox(pr,1.45,0.32,1.9,M.black,0,0.82,0);
+  const lid=_gtBox(pr,1.4,0.03,1.8,M.black,0.25,1.32,0.05); lid.rotation.z=0.55;
+  _gtBox(pr,0.03,0.6,0.03,M.black,-0.05,1.15,0.1);
+  [[-0.6,-0.8],[0.6,-0.8],[0,0.85]].forEach(q=>_gtCyl(pr,0.09,0.07,0.66,M.black,q[0],0.33,q[1],10));
+  _gtBox(pr,1.25,0.06,0.2,M.white,0,0.98,-1.0);
+  for(let k=0;k<10;k++) _gtBox(pr,0.03,0.03,0.11,M.black,-0.55+k*0.12,1.02,-0.97);
+  _gtBox(pr,0.7,0.06,0.36,M.velvet,0,0.5,-1.55); [[-0.3,-0.14],[0.3,-0.14],[-0.3,0.14],[0.3,0.14]].forEach(q=>_gtBox(pr,0.04,0.47,0.04,M.black,q[0],0.24,-1.55+q[1]));
+  addSolid(C.x+px-1.2,C.x+px+1.2,C.z+pz-1.6,C.z+pz+1.3,A);
+  /* i quadri con la cornice dorata e le applique fra l'uno e l'altro */
+  [[-SX+0.05,-4.5,Math.PI/2],[-SX+0.05,0.5,Math.PI/2],[SX-0.05,-4.5,-Math.PI/2],[SX-0.05,0.5,-Math.PI/2],[SX-0.05,5.0,-Math.PI/2]].forEach((q,i)=>{
+    const pm=_gtPainting(i); const pl=_gtPlane(dec,1.5,1.1,pm,q[0]-Math.sign(q[0])*0.05,2.0,q[1],q[2]); pl.material.emissiveColor=new BABYLON.Color3(0.45,0.45,0.45);
+    const sx=Math.sign(q[0]); const fr=_gtBox(dec,0.04,1.24,1.64,M.gold,q[0]-sx*0.02,2.0,q[1]); fr.position.x-=sx*0.0;
+    _gtBox(dec,0.02,1.12,1.52,M.dark,q[0]-sx*0.035,2.0,q[1]); });
+  [[-SX+0.08,-2.0],[-SX+0.08,3.0],[SX-0.08,-2.0],[SX-0.08,2.75]].forEach(q=>{ const sx=Math.sign(q[0]);
+    _gtBox(dec,0.06,0.18,0.1,M.brass,q[0]-sx*0.02,2.2,q[1]); _gtCyl(dec,0.1,0.16,0.18,M.velvet,q[0]-sx*0.16,2.42,q[1],14); _gtSph(dec,0.08,M.bulb,q[0]-sx*0.16,2.35,q[1]); });
+  /* i lampadari: anello d'ottone con le candele elettriche, appesi alle travi */
+  [[-4.6,-0.6],[4.6,-0.6]].forEach(q=>{ _gtCyl(dec,0.02,0.02,0.9,M.brass,q[0],WH-0.45,q[1],6);
+    const ring=BABYLON.MeshBuilder.CreateTorus("gtRing",{diameter:1.1,thickness:0.04,tessellation:32},scene); ring.material=M.brass; ring.parent=dec; ring.position.set(q[0],WH-0.95,q[1]); ring.isPickable=false;
+    for(let k=0;k<8;k++){ const a=k/8*Math.PI*2, x=q[0]+Math.cos(a)*0.55, z=q[1]+Math.sin(a)*0.55;
+      _gtCyl(dec,0.03,0.03,0.12,M.wax,x,WH-0.88,z,8); _gtSph(dec,0.06,M.bulb,x,WH-0.79,z,1.4); } });
+  /* le piante negli angoli */
+  [[-SX+0.8,-S+0.8],[SX-0.8,-S+0.8],[SX-0.8,S-0.9],[-SX+0.8,1.8]].forEach((q,i)=>{
+    _gtCyl(dec,0.55,0.42,0.6,M.pot,q[0],0.3,q[1],18); _gtCyl(dec,0.57,0.57,0.04,M.brass,q[0],0.6,q[1],18).scaling.y=0.6;
+    _gtCyl(dec,0.5,0.5,0.03,M.trunk,q[0],0.63,q[1],16); _gtPalm(dec,M,q[0],0.64,q[1],1.3,i+3);
+    addSolid(C.x+q[0]-0.32,C.x+q[0]+0.32,C.z+q[1]-0.32,C.z+q[1]+0.32,A); });
+  /* gli otto tavoli (4 x 2) con due sedie ciascuno */
+  GT.tables=[]; GT.seats=[];
+  const TX=[-7,-2.5,2.5,7], TZ=[-3.4,1.6];
+  TZ.forEach(tz=>TX.forEach(tx=>{
+    _gtTable(dec,M,tx,tz);
+    const t={ x:C.x+tx, z:C.z+tz, top:0.793, lx:tx, lz:tz };
+    GT.tables.push(t);
+    addSolid(t.x-0.58,t.x+0.58,t.z-0.58,t.z+0.58,A);
+    try{ hm7Shadow(dec,1.5,1.5,tx,tz,0.029,0.55); }catch(e){}
+    [[-1,0],[1,Math.PI]].forEach(q=>{ const sd=q[0], face=q[1], sz=tz+sd*0.82;
+      _gtChair(dec,M,tx,sz,face);
+      const side=(tx<0)?1:-1;                                  // ci si alza verso il corridoio di mezzo
+      GT.seats.push({ t, sd, x:C.x+tx, z:C.z+sz, face, seatY:GT.gy+0.50, standX:C.x+tx+side*0.75, standZ:C.z+sz }); }); }));
+  try{ fondiProp(dec); }catch(e){ console.warn("[gt] fusione",e); }
+  dec.getChildMeshes().forEach(m=>{ m.isPickable=false; m.__occluder=m.__occluder||false; });
+  /* l'anello dorato che indica il tavolo assegnato dal maitre */
+  const rm=mat("gtRingM","#3a3320","#ffce6a"); rm.__pulse=BABYLON.Color3.FromHexString("#ffce6a");
+  const ring=BABYLON.MeshBuilder.CreateTorus("gtAssign",{diameter:1.9,thickness:0.05,tessellation:40},scene);
+  ring.material=rm; ring.parent=root; ring.position.y=0.04; ring.setEnabled(false); ring.isPickable=false; GT.ring={ mesh:ring, mat:rm };
+  try{ if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(ring); }catch(e){}
+  /* l'uscita */
+  addInteract({ id:"gt_exit", area:A, radius:1.9, label:"door",
+    pos:()=>new BABYLON.Vector3(C.x,1,C.z+S-0.6), prompt:'\u{1F6AA} Press <b>P</b> to <b>go outside</b>', interact:()=>gtExit() });
+  AREAS[A].spawn=new BABYLON.Vector3(C.x,0,C.z+S-1.5); AREAS[A].faceY=Math.PI;
+  buildGreenTableNPCs();
+  gtSeatInteracts();
+  scene.onBeforeRenderObservable.add(gtTick);
+  try{ refreshShadowCasters(); }catch(e){}
+  return I;
+}
+/* ------------------------------------------------------------------ */
+/* LE PERSONE                                                           */
+/* ------------------------------------------------------------------ */
+const GT_HOST_L={ x:3.4, z:6.45 }, GT_W1_L={ x:-2.0, z:-7.2 }, GT_W2_L={ x:2.0, z:-7.2 }, GT_LANE_Z=-0.9;
+function buildGreenTableNPCs(){
+  const C=GT.C, A=GT_DEF.area, gy=GT.gy;
+  GT.host=spawnNPC({ id:"gt_oliver", name:"Oliver", sub:"Maître d'", area:A, model:"avatar", dress:false, keepModel:true,
+    tint:{ Purple:"#1f2a24", LightBlue:"#1a1d20" }, height:1.80, x:C.x+GT_HOST_L.x, y:gy, z:C.z+GT_HOST_L.z, face:0, snap:false, radius:2.6,
+    interact:n=>gtTalkHost(n) });
+  GT.waiter=spawnNPC({ id:"gt_marco", name:"Marco", sub:"Waiter", area:A, model:"avatar", dress:false, keepModel:true,
+    tint:{ Purple:"#f4f1ea", LightBlue:"#1d1f22" }, height:1.78, x:C.x+GT_W1_L.x, y:gy, z:C.z+GT_W1_L.z, face:0, snap:false, radius:2.4,
+    interact:n=>gtTalkWaiter(n) });
+  GT.w2=spawnNPC({ id:"gt_sofia", name:"Sofia", sub:"Waitress", area:A, model:"npcWomanB", keepModel:true, dress:false,
+    tint:{ LimeGreen:"#f4f1ea", Red:"#2a221c" }, height:1.68, x:C.x+GT_W2_L.x, y:gy, z:C.z+GT_W2_L.z, face:0, snap:false, radius:2.4,
+    interact:n=>gtTalkWaiter(n) });
+  /* tre clienti: una signora sola che legge il menu, una coppia */
+  const G=[ { id:"gt_lane", name:"Ms. Lane", model:"npcWomanB", tint:"teal", h:1.66, seat:0, dish:"Mushroom risotto" },
+            { id:"gt_hughes", name:"Mr. Hughes", model:"npcMan2", tint:{ Shirt:"#2a3140", Pants:"#22262e" }, h:1.80, seat:14, dish:"Steak" },   // npcSuit non si siede (ossa diverse)
+            { id:"gt_hughes2", name:"Mrs. Hughes", model:"npcWoman", tint:"purple", h:1.66, seat:15, dish:"Grilled salmon" } ];
+  G.forEach(g=>{ const s=GT.seats[g.seat]; if(!s) return;
+    const n=spawnNPC({ id:g.id, name:g.name, sub:"Guest", area:A, model:g.model, keepModel:true, tint:g.tint||undefined, height:g.h,
+      x:s.x, y:gy, z:s.z, face:s.face, snap:false, watch:false, radius:2.0, interact:n=>gtTalkGuest(n) });
+    if(!n) return; s.taken=n.id; n.watch=false; GT.guests.push(n);
+    setTimeout(()=>{ try{ npcSitAt(n,s.x,s.z,s.face,s.seatY,gy,0.05); }catch(e){ console.warn("[gt] sit",e); } },0);
+    try{ const v=GT_MENU.mains.find(m=>m.en===g.dish), d=GT_MENU.drinks[(g.seat%3)+0];
+      const set=gtFoodSet([{ key:"main", v },{ key:"drink", v:d }],s); set.__guest=true; } catch(e){} });
+  GT.meInter=addInteract({ id:"gt_me", area:A, radius:3.0, enabled:false, prio:-2,
+    pos:()=>player.position, prompt:()=>gtMePrompt(), interact:()=>gtMeAction() });
+  if(!GT.mirT) GT.mirT=setInterval(()=>{ try{ gtMirror(); }catch(e){} },700);
+}
+function gtTalkGuest(n){
+  if(typeof ambientReady==="function" && ambientReady(n,null)){ openAmbient(n,null,"\u{1F33F}","Guest"); return; }
+  const L={ gt_lane:["Good evening! The mushroom risotto here is wonderful. I come every Thursday.","Buonasera! Il risotto ai funghi qui è squisito. Vengo ogni giovedì."],
+    gt_hughes:["Good evening! It's our anniversary today. The steak is excellent, medium rare of course!","Buonasera! Oggi è il nostro anniversario. La bistecca è ottima, media al sangue naturalmente!"],
+    gt_hughes2:["Hello! Have you tried today's special? Ask the waiter, it's always delicious.","Ciao! Hai provato il piatto del giorno? Chiedilo al cameriere, è sempre buonissimo."] }[n.id]
+    ||["Good evening!","Buonasera!"];
+  DialogueBox.open({ npc:n, icon:"\u{1F33F}", sub:"Guest", text:L[0], italian:L[1], buttons:[{ label:"Enjoy your meal!", cls:"primary", act:()=>{} }] });
+}
+/* ---- le sedie ---- */
+function gtSeatTaken(s){ return !!s && !s.taken && classmateSeatedAt(s.x,s.z); }
+function gtSeatInteracts(){
+  GT.seats.forEach((s,i)=>{ if(s.taken) return;
+    s.inter=addInteract({ id:"gt_seat_"+i, area:GT_DEF.area, radius:1.15,
+      pos:()=>new BABYLON.Vector3(s.x,0.5,s.z),
+      prompt:()=>gtSeatTaken(s)?'\u{1FA91} This seat is taken'
+        :(GT.assigned===s.t?'\u{1F33F} Press <b>P</b> to <b>sit down</b> · your table':'Press <b>P</b> to <b>sit down</b>'),
+      interact:()=>gtSit(s) }); });
+}
+/* ---- il TUO cameriere cammina (una camminata alla volta, la nuova annulla la vecchia) ---- */
+function _gtWalk(targets,arrive,done){
+  const job={ targets, arrive, done, cancel:false };
+  if(GT.walking){ GT.pending=job; GT.walking.cancel=true; return; }
+  _gtWalkStart(job); }
+function _gtWalkStart(job){
+  const w=GT.waiter; if(!w){ return; } GT.walking=job;
+  const T=job.targets.map(fn=>()=>job.cancel?w.pos():fn());
+  const fin=ok=>{ if(GT.walking===job) GT.walking=null;
+    if(GT.pending){ const nx=GT.pending; GT.pending=null; _gtWalkStart(nx); return; }
+    if(ok && !job.cancel && job.done) job.done(); };
+  npcWalkSeq(w,T,job.arrive,()=>fin(true),GT_DEF.area,()=>fin(false),{ detour:true, speed:2.3 }); }
+function _gtSpot(t){ return new BABYLON.Vector3(t.x-Math.sign(t.lx)*0.98, 0, t.z); }
+function _gtPath(dest){ const C=GT.C, V=BABYLON.Vector3, d=dest();
+  return [()=>new V(C.x,0,C.z-5.6),()=>new V(C.x,0,C.z+GT_LANE_Z),()=>new V(d.x,0,C.z+GT_LANE_Z),dest]; }
+function gtWaiterTo(t,then){
+  const w=GT.waiter; if(!w){ then(); return; }
+  _gtWalk(_gtPath(()=>_gtSpot(t)),0.35,()=>{
+    const p=w.pos(); w.carrier.rotation.y=Math.atan2(player.position.x-p.x,player.position.z-p.z)+NPC_FACE_OFFSET;
+    w.watch=true; if(GT.seat) then(); else gtWaiterHome(); }); }
+function gtWaiterHome(then){
+  const w=GT.waiter, C=GT.C; if(!w){ if(then) then(); return; }
+  const V=BABYLON.Vector3, p=w.pos();
+  _gtWalk([()=>new V(p.x,0,C.z+GT_LANE_Z),()=>new V(C.x,0,C.z+GT_LANE_Z),()=>new V(C.x,0,C.z-5.6),()=>new V(C.x+GT_W1_L.x,0,C.z+GT_W1_L.z)],0.3,()=>{
+    w.carrier.rotation.y=0; w.baseYaw=0; w.watch=true; if(then) then(); }); }
+function gtLater(ms,fn){ clearTimeout(GT.timer); GT.timer=setTimeout(()=>{ GT.timer=null; if(GT.seat) fn(); },ms); }
+/* ---- Sofia: va dove sta il cameriere del primo compagno servito (come Lucy al Diner) ---- */
+function gtMirror(){
+  if(typeof area==="undefined" || area!==GT_DEF.area || !GT.w2 || !GT.w2.carrier) return;
+  let L=[]; try{ L=Presenza.camerieri(); }catch(e){}
+  const w=GT.w2, C=GT.C, V=BABYLON.Vector3, m=L[0]||null;
+  const go=(T,fin)=>{ if(GT.w2walk) GT.w2walk.cancel=true; const job={ cancel:false }; GT.w2walk=job;
+    npcWalkSeq(w,T.map(fn=>()=>job.cancel?w.pos():fn()),0.3,()=>{ if(GT.w2walk===job) GT.w2walk=null; if(!job.cancel) fin(); },GT_DEF.area,()=>{ if(GT.w2walk===job) GT.w2walk=null; },{ detour:true, speed:2.3 }); };
+  if(m){ if(GT.w2mir && Math.hypot(GT.w2mir.x-m.x,GT.w2mir.z-m.z)<0.6) return;
+    GT.w2mir={ x:m.x, z:m.z };
+    go([()=>new V(C.x,0,C.z-5.6),()=>new V(C.x,0,C.z+GT_LANE_Z),()=>new V(m.x,0,C.z+GT_LANE_Z),()=>new V(m.x,0,m.z)],()=>{
+      const p=w.pos(); w.carrier.rotation.y=Math.atan2(m.cx-p.x,m.cz-p.z)+NPC_FACE_OFFSET; w.baseYaw=w.carrier.rotation.y; w.watch=false; });
+  } else if(GT.w2mir){ GT.w2mir=null; const p=w.pos();
+    go([()=>new V(p.x,0,C.z+GT_LANE_Z),()=>new V(C.x,0,C.z+GT_LANE_Z),()=>new V(C.x,0,C.z-5.6),()=>new V(C.x+GT_W2_L.x,0,C.z+GT_W2_L.z)],()=>{
+      w.carrier.rotation.y=0; w.baseYaw=0; w.watch=true; }); }
+}
+/* ------------------------------------------------------------------ */
+/* ENTRARE E USCIRE (non e' una quest: la quest in corso resta com'e')  */
+/* ------------------------------------------------------------------ */
+function gtEnter(){
+  if(!gtOpen() && !gtTeacher()){ toast("\u{1F319} The Green Table is closed. We're open every day from 11 am to 10 pm. · Chiuso: apre alle 11, chiude alle 22.",5000); return; }
+  if(!gtOpen()) toast("\u{1F469}‍\u{1F3EB} Docente: il ristorante è chiuso, ma entri per provarlo.",3500);
+  const I=buildGreenTable(); const A=GT_DEF.area;
+  enterArea(A);
+  player.position.copyFrom(AREAS[A].spawn); player.rotation.y=Math.PI;
+  camera.target.copyFrom(player.position); camera.target.y+=1.4; camera.alpha=Math.PI/2;
+  moveTarget=null; pendingInteract=null;
+  toast("\u{1F33F} Welcome to The Green Table! Oliver is at the desk: press P to talk to him. · Parla con Oliver al banco.",4800);
+}
+function gtExit(){
+  if(GT.seat) gtStand(true);
+  if(GT.debt && GT.host){ gtDebtAsk(GT.host); return; }
+  GT.assigned=null; gtRingOff();
+  enterArea("town");
+  player.position.set(GT_X,(GT.oy||0),GT_Z+GT_HD+1.5); player.rotation.y=0;
+  camera.target.copyFrom(player.position); camera.target.y+=2.0;
+  toast("\u{1F3D9}️ Back in town · Thank you for coming!",2600);
+}
+/* ------------------------------------------------------------------ */
+/* IL MAITRE: l'accoglienza e la PRENOTAZIONE                           */
+/* ------------------------------------------------------------------ */
+function gtGreet(){ const h=new Date().getHours(); return h<12?"Good morning":(h<17?"Good afternoon":"Good evening"); }
+function gtTimeWords(min){ const h=Math.floor(min/60), m=min%60, h12=h%12||12, nx=(h12%12)+1;
+  return m===0?h12+" o'clock":m===30?"half past "+h12:m===15?"quarter past "+h12:m===45?"quarter to "+nx:h12+":"+String(m).padStart(2,"0"); }
+function gtClock(min){ return Math.floor(min/60)+":"+String(min%60).padStart(2,"0"); }
+function gtFirstName(){ let n=""; try{ n=String(Student.nome||"").trim().split(/\s+/)[0]; }catch(e){} return n||"Alex"; }
+function gtRes(){ try{ const r=Sync.get("et_gt_res",null); if(r && r.day===new Date().toDateString()) return r; }catch(e){} return null; }
+function gtResSave(r){ try{ if(r) Sync.set("et_gt_res",r); else Sync.del("et_gt_res"); }catch(e){} }
+function gtTalkHost(n){
+  if(GT.seat){ gtMeAction(); return; }
+  if(GT.debt){ gtDebtAsk(n); return; }
+  const g=gtGreet(), res=gtRes(), now=gtNowMin(), nm=gtFirstName();
+  if(res && !res.used){
+    const d=now-res.min, tw=gtTimeWords(res.min);
+    if(Math.abs(d)<=20){
+      DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — Maître d'", text:g+", and welcome to The Green Table! Do you have a reservation?",
+        italian:"Benvenuto! Hai una prenotazione? (hai prenotato per le "+gtClock(res.min)+")",
+        choices:[ { label:"Yes, I've booked a table for "+tw+". My name is "+nm+".", act:()=>{ res.used=true; gtResSave(res);
+                    setTimeout(()=>{ DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — Maître d'", text:"Ah yes, here you are: "+nm+", a table for one at "+tw+". Your table is ready. Please follow me!",
+                      italian:"Eccoti: "+nm+", un tavolo per uno alle "+gtClock(res.min)+". Il tavolo è pronto, seguimi! (in orario: bonus ⭐)",
+                      buttons:[{ label:"Thank you!", cls:"primary", act:()=>gtShowTable("booked") }] }); },260); } },
+                  { label:"No, I haven't.", act:()=>setTimeout(()=>gtWalkIn(n),260) } ] }); return; }
+    if(d<-20){
+      DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — Maître d'", text:g+"! I see your table is booked for "+tw+". You're a bit early! Would you like to sit down now?",
+        italian:"Il tuo tavolo è prenotato per le "+gtClock(res.min)+": sei in anticipo. Vuoi sederti adesso? (il bonus della prenotazione vale solo in orario)",
+        choices:[ { label:"Yes, could I sit down now, please?", act:()=>{ res.used=true; gtResSave(res); setTimeout(()=>gtShowTable("walkin"),260); } },
+                  { label:"No, thank you. I'll come back later.", act:()=>{} } ] }); return; }
+    res.used=true; gtResSave(res);
+    DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — Maître d'", text:g+"! I'm afraid your booking was for "+tw+", but don't worry: we have a free table for you.",
+      italian:"La prenotazione era per le "+gtClock(res.min)+" (sei in ritardo), ma c'è comunque un tavolo libero.",
+      buttons:[{ label:"Thank you! Sorry I'm late.", cls:"primary", act:()=>gtShowTable("walkin") }] }); return; }
+  DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — Maître d'", text:g+", and welcome to The Green Table! How can I help you?",
+    italian:"Benvenuto! Come posso aiutarti? Puoi chiedere un tavolo, prenotare per più tardi o vedere il menu.",
+    choices:[ { label:"A table for one, please.", act:()=>setTimeout(()=>gtShowTable("walkin"),260) },
+              { label:"I'd like to book a table for later, please.", act:()=>setTimeout(()=>gtBook(n),260) },
+              { label:"Could I see the menu, please?", act:()=>setTimeout(()=>gtShowMenu(()=>{}),260) },
+              { label:"Goodbye!", act:()=>{} } ] });
+}
+function gtWalkIn(n){
+  DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — Maître d'", text:"No problem. A table for one?",
+    italian:"Nessun problema. Un tavolo per uno?", choices:[ { label:"Yes, a table for one, please.", act:()=>setTimeout(()=>gtShowTable("walkin"),260) },
+      { label:"No, thank you. Goodbye!", act:()=>{} } ] }); }
+/* la prenotazione: l'ora (in parole), per quante persone, il nome */
+function gtBook(n){
+  const now=gtNowMin(), last=21*60+30; let t=Math.ceil((now+30)/30)*30; const slots=[];
+  while(t<=last && slots.length<4){ slots.push(t); t+=30; }
+  if(!slots.length){ DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — Maître d'", text:"I'm sorry, the last booking is at half past nine. Please come back tomorrow!",
+      italian:"Mi dispiace: l'ultima prenotazione è alle 21:30. Torna domani!", buttons:[{ label:"OK, thank you!", cls:"primary", act:()=>{} }] }); return; }
+  DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — reservations", text:"Of course! What time would you like?",
+    italian:"Certo! A che ora? (scegli l'ora detta in inglese)",
+    choices:slots.map(m=>({ label:"At "+gtTimeWords(m)+", please.", act:()=>setTimeout(()=>gtBook2(n,m),260) })) }); }
+function gtBook2(n,m){
+  DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — reservations", text:"At "+gtTimeWords(m)+". And how many people is the table for?",
+    italian:"Alle "+gtClock(m)+". Per quante persone?",
+    choices:[ { label:"Just for me, please.", act:()=>setTimeout(()=>gtBook3(n,m),260) }, { label:"A table for one, please.", act:()=>setTimeout(()=>gtBook3(n,m),260) } ] }); }
+function gtBook3(n,m){ const nm=gtFirstName();
+  DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — reservations", text:"Lovely. May I have your name, please?", italian:"Perfetto. Posso avere il tuo nome?",
+    choices:[ { label:"It's "+nm+".", act:()=>setTimeout(()=>gtBook4(n,m,nm),260) }, { label:"My name is "+nm+".", act:()=>setTimeout(()=>gtBook4(n,m,nm),260) } ] }); }
+function gtBook4(n,m,nm){
+  gtResSave({ day:new Date().toDateString(), min:m, used:false, rem:false });
+  DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — reservation confirmed",
+    text:"Perfect! That's a table for one at "+gtTimeWords(m)+", "+nm+". See you later!",
+    italian:"Prenotato: un tavolo per uno alle "+gtClock(m)+". Arriva in orario (fino a 20 minuti prima o dopo) per il bonus ⭐!",
+    html:'<div style="margin-top:8px;padding:10px 12px;border-radius:10px;background:#1f3a2d;color:#f1ecd8;font:600 14px Georgia,serif;text-align:center">\u{1F33F} The Green Table<br><span style="font-size:20px;color:#e3c77a">'+gtClock(m)+'</span> · table for one · '+_escHtml(nm)+'</div>',
+    buttons:[{ label:"Thank you! See you later.", cls:"primary", act:()=>{} }] });
+  toast("\u{1F33F} Booked: The Green Table at "+gtClock(m)+" · Prenotato per le "+gtClock(m),5000);
+}
+/* il maitre accompagna al tavolo: l'anello dorato lo indica */
+function gtRingOff(){ if(!GT.ring) return; GT.ring.mesh.setEnabled(false); const i=gatePanels.indexOf(GT.ring.mat); if(i>=0) gatePanels.splice(i,1); }
+function gtShowTable(kind){
+  const free=GT.tables.filter(t=>GT.seats.filter(s=>s.t===t).every(s=>!s.taken && !gtSeatTaken(s)));
+  const t=free.sort((a,b)=>Math.hypot(a.x-player.position.x,a.z-player.position.z)-Math.hypot(b.x-player.position.x,b.z-player.position.z))[0]
+       || GT.tables.find(t=>GT.seats.some(s=>s.t===t && !s.taken && !gtSeatTaken(s)));
+  if(!t){ DialogueBox.open({ npc:GT.host, icon:"\u{1F4D6}", sub:"Oliver", text:"I'm so sorry, all our tables are taken right now. Please come back a little later!",
+      italian:"Tutti i tavoli sono occupati: torna fra poco!", buttons:[{ label:"OK, thank you!", cls:"primary", act:()=>{} }] }); return; }
+  GT.assigned=t; GT.welcome=kind; GT.welcomeT=performance.now();
+  if(GT.ring){ GT.ring.mesh.position.set(t.x,0.04,t.z); GT.ring.mesh.setEnabled(true); if(gatePanels.indexOf(GT.ring.mat)<0) gatePanels.push(GT.ring.mat); }
+  const h=GT.host, C=GT.C, V=BABYLON.Vector3;
+  if(h){ npcWalkSeq(h,[()=>new V(C.x+1.2,0,C.z+4.5),()=>new V(C.x+1.2,0,t.z+(t.lz<0?2.0:-2.2)),()=>new V(t.x-Math.sign(t.lx)*1.2,0,t.z+(t.lz<0?2.0:-2.2))],0.4,()=>{
+      const p=h.pos(); h.carrier.rotation.y=Math.atan2(t.x-p.x,t.z-p.z)+NPC_FACE_OFFSET; h.watch=false;
+      setTimeout(()=>{ try{ gtHostHome(); }catch(e){} },5000); },GT_DEF.area,()=>{},{ detour:true, speed:1.6 }); }
+  toast("\u{1F33F} This way, please! Your table is the one with the golden ring: sit down with P. · Il tuo tavolo ha l'anello dorato.",5200);
+}
+function gtHostHome(){ const h=GT.host, C=GT.C, V=BABYLON.Vector3; if(!h) return; const p=h.pos();
+  npcWalkSeq(h,[()=>new V(C.x+1.2,0,p.z),()=>new V(C.x+1.2,0,C.z+4.5),()=>new V(C.x+GT_HOST_L.x,0,C.z+GT_HOST_L.z)],0.3,()=>{
+    h.carrier.rotation.y=0; h.baseYaw=0; h.watch=true; },GT_DEF.area,()=>{},{ detour:true, speed:1.6 }); }
+/* chi se ne va senza pagare: Oliver lo ferma alla porta */
+function gtDebtAsk(n){
+  const o=GT.debt&&GT.debt.o; if(!o){ GT.debt=null; return; }
+  const c=Math.round(gtTotal(o)*100);
+  DialogueBox.open({ npc:n, icon:"\u{1F9FE}", sub:"Oliver — the bill", text:"Excuse me! I think you've forgotten to pay the bill.",
+    italian:"Scusa! Credo che tu abbia dimenticato di pagare il conto.", html:gtSlipHtml(o),
+    choices:[ { label:"Oh, I'm so sorry! Here you are.", act:()=>setTimeout(()=>pricePick({ npc:n, icon:"\u{1F9FE}", sub:"Oliver — the bill", said:"That's "+priceWords(c)+", please.", price:c,
+      next:()=>{ GT.debt=null; DialogueBox.open({ npc:n, icon:"\u{1F33F}", sub:"Oliver", text:"Thank you! Have a lovely evening.", italian:"Grazie! Buona serata. (pagato in ritardo: niente stelle)",
+        buttons:[{ label:"Goodbye!", cls:"primary", act:()=>{} }] }); } }),260) } ] });
+}
+function gtTalkWaiter(n){
+  if(GT.seat){ gtMeAction(); return; }
+  if(GT.debt){ gtDebtAsk(GT.host||n); return; }
+  DialogueBox.open({ npc:n, icon:"\u{1F33F}", sub:n.sub||"Waiter", text:gtGreet()+"! Please ask Oliver at the door for a table: he'll show you where to sit.",
+    italian:"Chiedi un tavolo a Oliver, al banco vicino alla porta: ti accompagna lui.", buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] });
+}
+/* ------------------------------------------------------------------ */
+/* SEDERSI E ALZARSI                                                    */
+/* ------------------------------------------------------------------ */
+function gtSit(s){
+  if(GT.seat) return;
+  if(GT.debt){ toast("\u{1F9FE} You haven't paid the bill yet! Oliver is at the door."); return; }
+  if(gtSeatTaken(s)){ const f=GT.seats.find(q=>!q.taken && !gtSeatTaken(q)); toast("\u{1FA91} Sorry, this seat is taken! · Posto occupato");
+    if(f){ moveTarget=new BABYLON.Vector3(f.x,0,f.z); pendingInteract=f.inter; } return; }
+  try{ if(rideSitPark()===false) return; }catch(e){}
+  GT.seat=s; GT.st="seated";
+  const booked=(GT.welcome==="booked" && GT.assigned===s.t && performance.now()-(GT.welcomeT||0)<6*60000);
+  GT.o={ slip:{}, sbagli:0, tent:0, formal:0, asked:{}, booked, special:false, served:false };
+  GT.welcome=null; GT.assigned=null; gtRingOff();
+  moveTarget=null; pendingInteract=null; try{ tapMark.setEnabled(false); }catch(e){}
+  const f=new BABYLON.Vector3(Math.sin(s.face),0,Math.cos(s.face));
+  player.position.set(s.x,GT.gy,s.z); player.rotation.y=s.face; player.computeWorldMatrix(true);
+  playAvatarAnim(IDLE_ANIM);
+  eatPrepare(f,s.seatY,GT.gy);
+  const off=playerSit(f,s.seatY,GT.gy);
+  eatAfterSit();
+  if(off){ player.position.x=s.x-f.x*0.05-off.x; player.position.z=s.z-f.z*0.05-off.z; }
+  GT.seats.forEach(q=>{ if(q.inter) q.inter.enabled=false; });
+  if(GT.meInter) GT.meInter.enabled=true;
+  toast("\u{1FA91} You sit down. Marco, your waiter, is coming…");
+  gtLater(1400,()=>gtWaiterTo(s.t,()=>gtAsk("drink",()=>gtAsk("starter",gtAskMain))));
+}
+function gtStand(silent){
+  const s=GT.seat; if(!s) return;
+  clearTimeout(GT.timer); GT.timer=null;
+  eatStop(); GT.eating=false;
+  playerStand();
+  player.position.set(s.standX,GT.gy,s.standZ);
+  const o=GT.o, owes=!!(o && o.served && GT.st!=="paid");
+  GT.seat=null; GT.st="idle"; GT.o=null; gtClearFood();
+  GT.seats.forEach(q=>{ if(q.inter) q.inter.enabled=true; });
+  if(GT.meInter) GT.meInter.enabled=false;
+  try{ DialogueBox.close(); }catch(e){}
+  gtWaiterHome();
+  if(owes){ GT.debt={ o }; toast("\u{1F9FE} You stand up… but you haven't paid the bill! Oliver will ask you at the door.",4200); }
+  else if(!silent) toast("\u{1F6B6} You stand up.");
+}
+/* ------------------------------------------------------------------ */
+/* L'ORDINE: un turno alla volta (stesso impianto del Diner)            */
+/* ------------------------------------------------------------------ */
+function gtTotal(o){ let t=0; GT_KEYS.forEach(k=>{ const v=o.slip[k]; if(v) t+=(v.p||0); }); (o.extra||[]).forEach(v=>t+=(v.p||0)); return t; }
+function gtSlipHtml(o,final){
+  const row=(lab,v)=>'<div style="display:flex;justify-content:space-between;gap:10px;padding:2px 0"><span>'+lab+': '+_escHtml(v.en)+(lab==="Main"&&o.slip.done?' ('+_escHtml(o.slip.done.en)+')':'')+'</span><span style="opacity:.75">'+(v.p?'£'+v.p.toFixed(2):'')+'</span></div>';
+  const L={ drink:"Drink", starter:"Starter", main:"Main", side:"Side", dessert:"Dessert" };
+  let h=''; GT_KEYS.forEach(k=>{ const v=o.slip[k]; if(v && v.en!=="—") h+=row(L[k],v); });
+  if(!h) return "";
+  return '<div style="margin-top:8px;padding:8px 12px;border-radius:10px;background:#fbf8ef;border:1px solid #d8c9a0;font:14px Georgia,serif;color:#2c3a30">'
+    +'<div style="font:italic 700 15px Georgia,serif;color:#2c4a3b;margin-bottom:4px">\u{1F33F} The Green Table</div>'+h
+    +(final?'<div style="display:flex;justify-content:space-between;border-top:1px solid #d8c9a0;margin-top:4px;padding-top:4px;font-weight:700"><span>Total</span><span>£'+gtTotal(o).toFixed(2)+'</span></div>':'')+'</div>'; }
+function gtMenuHtml(){
+  const sec=(t,L)=>'<div style="font:italic 700 16px Georgia,serif;color:#2c4a3b;margin:10px 0 4px;border-bottom:1px solid #c9a24a">'+t+'</div>'
+    +L.map(v=>'<div style="display:flex;justify-content:space-between;gap:12px;padding:1px 0"><span>'+_escHtml(v.en)+'</span><span style="color:#7a6a4a">£'+v.p.toFixed(2)+'</span></div>').join("");
+  return '<div style="padding:12px 16px;border-radius:12px;background:#fbf8ef;border:2px solid #c9a24a;font:14px Georgia,serif;color:#2c3a30;max-height:52vh;overflow:auto">'
+    +'<div style="text-align:center;font:italic 700 22px Georgia,serif;color:#2c4a3b">The Green Table</div>'
+    +'<div style="text-align:center;font-size:12px;color:#7a6a4a;letter-spacing:.2em">M E N U</div>'
+    +sec("Drinks",GT_MENU.drinks)+sec("Starters",GT_MENU.starters)+sec("Main courses",GT_MENU.mains)+sec("Side dishes",GT_MENU.sides)+sec("Desserts",GT_MENU.desserts)
+    +'<div style="margin-top:10px;text-align:center;font-style:italic;color:#2c4a3b">✨ Today\'s special: ask your waiter! ✨</div></div>'; }
+function gtShowMenu(back){
+  DialogueBox.open({ name:"\u{1F4DC} Menu", sub:"The Green Table", text:"", autoSpeak:false, html:gtMenuHtml(),
+    buttons:[{ label:"Close the menu", cls:"primary", act:()=>{ if(back) setTimeout(back,200); } }] }); }
+function gtAsk(key,poi,qOverride,itOverride){
+  const o=GT.o, w=GT.waiter; if(!o||!GT.seat) return;
+  const t=GT_TURNS[key];
+  const first=!o.asked[key]; o.asked[key]=1;
+  const q=first?(qOverride||t.q):(t.qAgain||qOverride||t.q), itq=first?(itOverride||t.it):(t.itAgain||itOverride||t.it);
+  GT.st="ask:"+key; GT.askNext={ key, poi, qOverride, itOverride };
+  const sub="Marco — "+t.field;
+  const again=()=>gtAsk(key,poi,qOverride,itOverride);
+  const leave={ label:"Leave", cls:"ghost", act:()=>gtStand() };
+  const menuBtn=(key!=="bill"&&key!=="pay"&&key!=="done");
+  if(_gtYear()<=1){
+    const ch=t.ready.map(fr=>({ label:fr, act:()=>_gtTake(key,fr,false,poi) }));
+    if(menuBtn) ch.push({ label:"\u{1F4DC} Menu", act:()=>gtShowMenu(again) });
+    DialogueBox.open({ npc:w, icon:"\u{1F33F}", sub, text:q, italian:itq, html:gtSlipHtml(o,key==="pay"), choices:ch, buttons:[leave] });
+    return; }
+  o.tent=0;
+  DialogueBox.open({ npc:w, icon:"\u{1F33F}", sub, text:q, italian:itq,
+    html:gtSlipHtml(o,key==="pay")
+      +'<textarea id="gtTA" rows="2" style="width:100%;box-sizing:border-box;font:inherit;margin-top:8px;padding:8px;border-radius:10px;border:1px solid #ccd6da;resize:vertical;" placeholder="Answer in English... (be polite: Could I have..., please?)"></textarea>'
+      +'<div id="gtFb" style="margin-top:8px;"></div>',
+    buttons:[ { label:"✔ Say it", cls:"primary", keepOpen:true, act:()=>_gtSubmit(key,poi) },
+      ...(menuBtn?[{ label:"\u{1F4DC} Menu", act:()=>gtShowMenu(again) }]:[]), leave ] });
+}
+function _gtTake(key,testo,male,poi,ms,formale){
+  const o=GT.o; if(!o) return;
+  const t=GT_TURNS[key];
+  let v=t.nulla?_cafeTrova(testo,[t.nulla]):null;
+  if(!v) v=_cafeTrova(testo,t.voci());
+  if(!v) v=t.voci()[0];
+  v=v.__ref||v;
+  o.slip[key]=v; if(male) o.sbagli++;
+  if(formale==null) formale=/\b(could|may|would)\b|\bi'?d like\b|\bi would like\b/i.test(testo);
+  if(formale && key!=="pay" && key!=="done") o.formal++;
+  setTimeout(()=>{ if(GT.seat) poi(v); },ms||260);
+}
+function _gtSubmit(key,poi){
+  const o=GT.o; if(!o) return;
+  const ta=document.getElementById("gtTA"), fb=document.getElementById("gtFb"); if(!ta||!fb) return;
+  if(ta.__passed) return;
+  const t=GT_TURNS[key];
+  if(linguaccia(ta.value)){ fb.innerHTML=linguacciaHtml(); return; }
+  const ev=ambEval(ta.value,{ q:t.q||"May I help you?", it:t.it, expect:{ pool:t.pool, hint:t.hint } });
+  if(ev.stage==="short" && key!=="done" && key!=="pay"){ o.tent++;
+    fb.innerHTML='<div style="font-weight:800;color:#a05a2c;">\u{1F7E1} Say a full sentence!</div>'
+      +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">'+_trSpan("Say a full sentence!","Una parola sola non basta: "+t.hint+".")+'</div>';
+    return; }
+  const scelta=(t.nulla?_cafeTrova(ta.value,[t.nulla]):null)||_cafeTrova(ta.value,t.voci());
+  if(!scelta && o.tent<1){ o.tent++;
+    const enMsg=(key==="bill"||key==="pay"||key==="done")?"I'm sorry, could you say that again?":"I'm sorry, that's not on the menu. Have a look!";
+    fb.innerHTML='<div style="font-weight:800;color:#a05a2c;">\u{1F7E1} '+_escHtml(enMsg)+'</div>'
+      +'<div style="opacity:.72;font-size:.93em;margin-top:4px;">'+_trSpan(enMsg,t.hint.charAt(0).toUpperCase()+t.hint.slice(1)+".")+'</div>';
+    try{ speechSynthesis.resume(); TTS.say(enMsg,{gender:"m"}); }catch(e){}
+    return; }
+  /* in un locale raffinato si chiede per favore (come al Diner) e, se si
+     puo', con la forma cortese: «Could I have…» / «I'd like…» / «May I…» */
+  const cortese=/\b(please|thanks|thank\s*you|thank)\b/i.test(ta.value);
+  const formale=/\b(could|may|would)\b|\bi'?d like\b|\bi would like\b/i.test(ta.value);
+  const male=(!scelta)||!!ev.form||(ev.pert&&ev.pert.checked&&!ev.pert.ok)||!cortese;
+  const nota=ev.form?(ev.form.recast?_escHtml(ev.form.recast):ev.form.it):"";
+  const esPl=(t.ready.find(r=>/please/i.test(r))||"Could I have some water, please?");
+  const askLike=(key!=="pay"&&key!=="done"&&key!=="bill");
+  fb.innerHTML='<div style="font-weight:800;color:#1c7a4a;">\u{1F7E2} '+(scelta?("✓ "+_escHtml(scelta.en)):"✓ OK")+'</div>'
+    +(nota?('<div style="opacity:.78;font-size:.93em;margin-top:4px;">\u{1F4A1} '+nota+'</div>'):"")
+    +(cortese?"":('<div style="font-weight:800;color:#a05a2c;margin-top:6px;">\u{1F7E1} Don\'t forget to say <i>please</i>!</div>'
+      +'<div style="opacity:.78;font-size:.93em;margin-top:2px;">'+_trSpan("Don't forget to say please!","In un ristorante elegante si chiede sempre per favore: «"+_escHtml(esPl)+"».")+'</div>'))
+    +((cortese && !formale && askLike)?('<div style="opacity:.82;font-size:.93em;margin-top:6px;">\u{1F4A1} '+_trSpan("Even more polite: «Could I have…, please?» or «I'd like…, please.»","Ancora più cortese: «Could I have…, please?» oppure «I'd like…, please.» (vale il bonus cortesia)")+'</div>'):"");
+  ta.__passed=true;
+  _gtTake(key,ta.value,!!male,poi,cortese?(formale||!askLike?260:2200):2600,formale);
+}
+/* il principale: prima il cameriere dice il piatto del giorno (si ascolta) */
+function gtAskMain(){
+  const sp=gtSpecial();
+  gtAsk("main",gtAfterMain,"And now, our special today is "+sp.s.desc+". What would you like for your main course?",
+    "Il piatto del giorno: ascolta il cameriere (si riascolta con \u{1F50A}). Cosa desideri come piatto principale?");
+}
+function gtAfterMain(v){
+  const o=GT.o; if(!o) return;
+  if(v===gtSpecial().item) o.special=true;
+  if(v.steak) gtAsk("done",()=>gtAsk("side",gtKitchen)); else gtAsk("side",gtKitchen);
+}
+/* ---- in cucina e ritorno: prima bevanda e antipasto, poi il principale ---- */
+function gtKitchen(){
+  const w=GT.waiter, s=GT.seat, o=GT.o; if(!s||!o) return;
+  const hasStarter=o.slip.starter && o.slip.starter.en!=="—";
+  GT.st="cooking";
+  DialogueBox.open({ npc:w, icon:"\u{1F33F}", sub:"Marco", text:hasStarter?"Excellent choice! I'll bring your drink and your starter first.":"Excellent choice! I'll be right back with your order.",
+    italian:hasStarter?"Ottima scelta! Prima ti porto da bere e l'antipasto.":"Ottima scelta! Torno subito.", html:gtSlipHtml(o),
+    buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] });
+  gtWaiterHome(()=>gtLater(2200,()=>gtWaiterTo(s.t,()=>{
+    if(hasStarter){ gtServe(["drink","starter"],()=>gtStarterDone()); GT.st="starter";
+      DialogueBox.open({ npc:w, icon:"\u{1F33F}", sub:"Marco", text:"Here's your "+o.slip.drink.en.toLowerCase()+" and your "+o.slip.starter.en.toLowerCase()+". Enjoy!",
+        italian:"Ecco da bere e l'antipasto. Buon appetito!", buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] });
+      gtWaiterHome(); }
+    else gtServeMain(true); })));
+}
+function gtStarterDone(){ const s=GT.seat; if(!s) return;
+  gtLater(1800,()=>gtWaiterHome(()=>gtLater(2000,()=>gtWaiterTo(s.t,()=>gtServeMain(false))))); }
+function gtServeMain(withDrink){
+  const w=GT.waiter, o=GT.o; if(!GT.seat||!o) return;
+  gtRemoveFood(["starter"]);
+  const keys=["main"]; if(withDrink) keys.unshift("drink"); if(o.slip.side && o.slip.side.en!=="—") keys.push("side");
+  gtServe(keys,()=>gtMainDone()); GT.st="eating"; o.served=true;
+  DialogueBox.open({ npc:w, icon:"\u{1F33F}", sub:"Marco", text:"Here is your "+o.slip.main.en.toLowerCase()+(o.slip.done?", "+o.slip.done.en:"")+". Enjoy your meal!",
+    italian:"Ecco il tuo piatto. Buon appetito!", buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] });
+  gtWaiterHome();
+}
+function gtMainDone(){ const s=GT.seat; if(!s || GT.st!=="eating") return;
+  gtLater(2200,()=>gtWaiterTo(s.t,()=>{ if(GT.st!=="eating") return; gtAsk("dessert",gtDessert); })); }
+function gtDessert(v){
+  const w=GT.waiter, s=GT.seat; if(!s) return;
+  if(v && v.en!=="—"){
+    GT.st="dessert";
+    DialogueBox.open({ npc:w, icon:"\u{1F33F}", sub:"Marco", text:"Wonderful. It's coming right up!", italian:"Arriva subito!", buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] });
+    gtWaiterHome(()=>gtLater(1800,()=>gtWaiterTo(s.t,()=>{ gtRemoveFood(["main","side"]); gtServe(["dessert"]); GT.st="eating2";
+      DialogueBox.open({ npc:w, icon:"\u{1F33F}", sub:"Marco", text:"Your "+v.en.toLowerCase()+". Just call me when you'd like the bill!",
+        italian:"Ecco il dolce. Chiamami quando vuoi il conto (premi P).", buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] });
+      gtWaiterHome(); })));
+  } else { GT.st="eating2";
+    DialogueBox.open({ npc:w, icon:"\u{1F33F}", sub:"Marco", text:"Of course. Just call me when you'd like the bill.",
+      italian:"Certo. Chiamami quando vuoi il conto (premi P).", buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] });
+    gtWaiterHome(); }
+}
+/* ---- il conto e il pagamento ---- */
+function gtBill(){
+  const w=GT.waiter, s=GT.seat, o=GT.o; if(!s||!o) return;
+  GT.st="bill";
+  gtWaiterTo(s.t,()=>gtAsk("bill",()=>{
+    DialogueBox.open({ npc:w, icon:"\u{1F33F}", sub:"Marco", text:"Certainly! I'll bring it right away.", italian:"Certamente! Te lo porto subito.",
+      buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] });
+    gtWaiterHome(()=>gtLater(900,()=>gtWaiterTo(s.t,()=>{
+      const c=Math.round(gtTotal(o)*100);
+      pricePick({ npc:w, icon:"\u{1F9FE}", sub:"The Green Table — the bill", said:"Here's your bill. That's "+priceWords(c)+", please.", price:c,
+        next:()=>gtAsk("pay",v=>gtPaid(v)) }); })));
+  }));
+}
+function gtPaid(v){
+  const w=GT.waiter, o=GT.o; if(!o) return;
+  const cash=v && /cash/i.test(v.en);
+  const kind=(_gtYear()<=1)?"cafeOrderReady":(o.sbagli?"cafeOrderRetry":"cafeOrder");
+  let got=0; try{ got=Stars.awardCafeOrder(npcCardId(w),kind); }catch(e){}
+  const bon=[];
+  const add=(n,en,it)=>{ let g=0; try{ g=Stars.awardGreenTable(n,en); }catch(e){} if(g>0){ got+=g; bon.push("⭐ +"+g+" "+en+" · "+it); } };
+  if(o.sbagli===0 && o.formal>=2) add(5,"polite order","ordine cortese");
+  if(o.booked) add(5,"on time for your booking","in orario per la prenotazione");
+  if(o.special) add(3,"today's special","piatto del giorno");
+  GT.st="paid"; GT.ate=true;
+  DialogueBox.open({ npc:w, icon:"\u{1F33F}", sub:"The Green Table — paid"+(got>0?"  ⭐ +"+got:""),
+    text:(cash?"Thank you! Here's your change. ":"Thank you very much! ")+"It was a pleasure. We hope to see you again soon!",
+    italian:"Grazie! "+(cash?"Ecco il resto. ":"")+"È stato un piacere, a presto!",
+    html:gtSlipHtml(o,true)+(bon.length?'<div style="margin-top:6px;font-size:.92em;line-height:1.5">'+bon.join("<br>")+'</div>':''),
+    buttons:[{ label:"\u{1F44B} Thank you! Goodbye! (stand up)", cls:"primary", act:()=>gtStand() },
+             { label:"\u{1F33F} Something else, please!", act:()=>gtOrderAgain() },
+             { label:"Stay a bit", cls:"ghost", act:()=>{} }] });
+  gtWaiterHome();
+}
+function gtOrderAgain(){
+  const s=GT.seat; if(!s || GT.st!=="paid") return;
+  try{ eatStop(); }catch(e){} GT.eating=false; gtClearFood();
+  GT.o={ slip:{}, sbagli:0, tent:0, formal:0, asked:{}, booked:false, special:false, served:false }; GT.st="seated";
+  gtLater(600,()=>gtWaiterTo(s.t,()=>gtAsk("drink",()=>gtAsk("starter",gtAskMain),"Still hungry? Here's the menu again. May I bring you something to drink?","Ancora fame? Ecco il menu. Cosa desideri da bere?")));
+}
+/* la P su di te mentre sei seduto */
+function gtMePrompt(){ const st=GT.st;
+  if(st==="eating"||st==="eating2"||st==="starter") return 'Press <b>P</b>: <b>ask for the bill</b> or stand up';
+  if(st==="paid") return 'Press <b>P</b> to <b>stand up</b> or order something else';
+  return 'Press <b>P</b>: talk to the waiter or stand up'; }
+function gtMeAction(){
+  const st=GT.st, ch=[];
+  if(st==="eating"||st==="eating2"||st==="starter") ch.push({ label:"\u{1F9FE} Ask for the bill", act:()=>gtBill() });
+  if(/^ask:/.test(st) && GT.askNext){ const a=GT.askNext; ch.push({ label:"\u{1F33F} Back to the waiter", act:()=>gtAsk(a.key,a.poi,a.qOverride,a.itOverride) }); }
+  if(st==="paid") ch.push({ label:"\u{1F33F} Order something else", act:()=>gtOrderAgain() });
+  ch.push({ label:"\u{1F4DC} Look at the menu", act:()=>gtShowMenu(()=>{}) });
+  ch.push({ label:"\u{1F6B6} Stand up", act:()=>gtStand() });
+  DialogueBox.open({ name:"\u{1FA91} The Green Table", sub:"At your table", text:(st==="paid")?"Time to go?":"What would you like to do?",
+    italian:(st==="eating"||st==="eating2")?"Quando hai finito, chiedi il conto al cameriere.":"Scegli che cosa fare.", autoSpeak:false, choices:ch,
+    buttons:[{ label:"Close", cls:"ghost", act:()=>{} }] });
+}
+/* ------------------------------------------------------------------ */
+/* I PIATTI: ognuno il suo, impiattato. Quello che si mangia ha i        */
+/* materiali «gt_c_*» (va alla bocca e si rimpicciolisce, come al Diner) */
+/* ------------------------------------------------------------------ */
+const _gtFM={};
+function _gtFood(hex,em){ const k=hex+(em||""); if(_gtFM[k]) return _gtFM[k];
+  const m=mat("gt_c_"+hex.slice(1)+(_lpN++),hex,em||null); m.specularColor=new BABYLON.Color3(0.15,0.15,0.15); m.specularPower=24; return (_gtFM[k]=m); }
+function _gtPlate(p,M,d,deep){ const pl=_gtCyl(p,d,d*0.72,deep?0.05:0.018,M.white,0,deep?0.025:0.009,0,28);
+  const rim=BABYLON.MeshBuilder.CreateTorus("gtRim",{ diameter:d*0.94, thickness:0.008, tessellation:28 },scene); rim.material=M.gold; rim.parent=p; rim.position.y=deep?0.05:0.019; rim.isPickable=false;
+  return pl; }
+function _gtDish(key,v,par){
+  const M=_gtMats(), g=new BABYLON.TransformNode("gtDish_"+key,scene); g.parent=par;
+  const F=(hex,em)=>_gtFood(hex,em), mark=n=>{ n.getChildMeshes?0:0; return n; };
+  const ic=v.ic, c=v.c;
+  const S=(d,m,x,y,z,sy)=>_gtSph(g,d,m,x,y,z,sy), B=(w,h,dd,m,x,y,z,ry)=>_gtBox(g,w,h,dd,m,x,y,z,ry), Cy=(dt,db,h,m,x,y,z)=>_gtCyl(g,dt,db,h,m,x,y,z,16);
+  if(ic==="water"||ic==="juice"){
+    Cy(0.072,0.06,0.13,M.glass,0,0.065,0); Cy(0.062,0.052,0.095,F(c),0,0.05,0);
+    if(/sparkling/i.test(v.en)) for(let i=0;i<5;i++) S(0.008,M.white,(i-2)*0.009,0.04+i*0.012,0.01);
+    if(/lemonade/i.test(v.en)){ const l=Cy(0.05,0.05,0.006,F("#f6e05a"),0.035,0.12,0); l.rotation.z=1.2; }
+  } else if(ic==="tea"){
+    Cy(0.13,0.13,0.008,M.white,0,0.004,0); Cy(0.085,0.06,0.06,M.white,0,0.035,0); Cy(0.075,0.075,0.006,F(c),0,0.058,0);
+    const h=BABYLON.MeshBuilder.CreateTorus("gtH",{ diameter:0.04, thickness:0.008 },scene); h.material=M.white; h.parent=g; h.position.set(0.05,0.035,0); h.rotation.x=Math.PI/2; h.isPickable=false;
+  } else if(ic==="soup"){
+    _gtPlate(g,M,0.24,false); Cy(0.17,0.1,0.06,M.white,0,0.045,0); Cy(0.15,0.15,0.008,F(c),0,0.07,0);
+    S(0.03,F("#f4f0e6"),0.02,0.078,-0.01,0.3); S(0.012,F("#4f8a3a"),-0.02,0.08,0.015,0.4);
+  } else if(ic==="salad"||ic==="greens"){
+    if(ic==="salad") _gtPlate(g,M,0.24,false); else Cy(0.15,0.1,0.05,M.white,0,0.025,0);
+    const y0=ic==="salad"?0.03:0.055;
+    for(let i=0;i<9;i++){ const a=i*2.3; S(0.045,F(i%2?"#5f9a4a":"#7cb860"),Math.cos(a)*0.04,y0,Math.sin(a)*0.04,0.45); }
+    if(ic==="salad"){ for(let i=0;i<4;i++) S(0.026,F("#d8452f"),Math.cos(i*1.6)*0.05,y0+0.018,Math.sin(i*1.6)*0.05);
+      for(let i=0;i<3;i++) B(0.025,0.025,0.025,F("#f6f3ea"),-0.03+i*0.03,y0+0.025,0.01);
+      for(let i=0;i<3;i++) S(0.016,F("#2a2a2a"),0.04-i*0.035,y0+0.02,-0.03); }
+  } else if(ic==="brus"){
+    _gtPlate(g,M,0.24,false);
+    [-0.045,0.045].forEach(x=>{ B(0.075,0.02,0.055,F("#d9a45a"),x,0.03,0,0.2); for(let i=0;i<4;i++) B(0.016,0.012,0.016,F("#c8392b"),x-0.02+i*0.013,0.046,(i%2)*0.012-0.006);
+      S(0.012,F("#3f7a2a"),x+0.01,0.05,0.012,0.4); });
+  } else if(ic==="pasta"){
+    _gtPlate(g,M,0.27,false);
+    for(let i=0;i<5;i++){ const t=BABYLON.MeshBuilder.CreateTorus("gtSp",{ diameter:0.11-i*0.014, thickness:0.016, tessellation:20 },scene);
+      t.material=F("#f0d48a"); t.parent=g; t.position.set(0,0.022+i*0.009,0); t.rotation.set(0.15*(i%2?1:-1),i,0); t.isPickable=false; }
+    S(0.07,F(c),0,0.07,0,0.45); S(0.022,F("#3f8a3a"),0.015,0.09,0.01,0.3); S(0.02,F("#f4f0e0"),-0.02,0.085,-0.015,0.4);
+  } else if(ic==="lasagne"){
+    _gtPlate(g,M,0.27,false);
+    B(0.13,0.016,0.09,F("#f0d48a"),0,0.02,0); B(0.13,0.014,0.09,F(c),0,0.035,0); B(0.13,0.016,0.09,F("#f0d48a"),0,0.05,0); B(0.132,0.012,0.092,F("#e8b85a"),0,0.064,0);
+    S(0.022,F("#3f8a3a"),0.02,0.074,0,0.3);
+  } else if(ic==="risotto"){
+    _gtPlate(g,M,0.27,false); S(0.16,F(c),0,0.03,0,0.28);
+    for(let i=0;i<6;i++) S(0.026,F("#7a5232"),Math.cos(i)*0.04,0.05,Math.sin(i)*0.04,0.5);
+    S(0.016,F("#4f8a3a"),0,0.058,0,0.4);
+  } else if(ic==="chicken"){
+    _gtPlate(g,M,0.27,false); [-0.03,0.035].forEach((x,i)=>{ const b=B(0.1,0.03,0.06,F(c),x,0.03,i?0.02:-0.015,0.4*(i?1:-1)); b.scaling.y=1; });
+    for(let i=0;i<5;i++) S(0.014,F("#4f8a3a"),-0.05+i*0.025,0.05,0.035,0.4);
+    Cy(0.04,0.04,0.008,F("#f6e05a"),0.07,0.03,-0.05);
+  } else if(ic==="steak"){
+    _gtPlate(g,M,0.27,false); B(0.13,0.03,0.09,F(c),0,0.03,0,0.2);
+    for(let i=0;i<3;i++) B(0.11,0.002,0.008,F("#2a140c"),0,0.0465,-0.025+i*0.025,0.9);
+    S(0.04,F("#3a1c10"),0.075,0.025,0.05,0.25); S(0.016,F("#4f8a3a"),-0.05,0.05,0.04,0.4);
+  } else if(ic==="salmon"){
+    _gtPlate(g,M,0.27,false); B(0.12,0.028,0.07,F(c),0,0.028,0,0.15);
+    for(let i=0;i<4;i++) B(0.002,0.004,0.06,F("#f8c0a8"),-0.04+i*0.027,0.043,0,0.15);
+    Cy(0.045,0.045,0.008,F("#f6e05a"),0.075,0.03,0.04); S(0.016,F("#4f8a3a"),-0.06,0.045,-0.03,0.4); S(0.014,F("#4f8a3a"),-0.05,0.045,-0.015,0.4);
+  } else if(ic==="potatoes"||ic==="veg"){
+    Cy(0.15,0.1,0.05,M.white,0,0.025,0);
+    for(let i=0;i<7;i++){ const a=i*0.9, r=0.035; if(ic==="potatoes") S(0.035,F(c),Math.cos(a)*r,0.058,Math.sin(a)*r,0.85);
+      else (i%2?B(0.03,0.016,0.016,F("#e8862a"),Math.cos(a)*r,0.058,Math.sin(a)*r,a):S(0.032,F(i%3?"#4f9a4a":"#3a7a3a"),Math.cos(a)*r,0.058,Math.sin(a)*r,0.8)); }
+  } else if(ic==="fruit"){
+    Cy(0.13,0.09,0.06,M.glass,0,0.03,0);
+    const cols=["#e84a3a","#f0b33a","#8ac040","#7a3aa0","#f4e27a"]; for(let i=0;i<9;i++){ const a=i*0.7; S(0.028,F(cols[i%5]),Math.cos(a)*0.03,0.05+(i%3)*0.012,Math.sin(a)*0.03); }
+  } else if(ic==="yog"){
+    Cy(0.09,0.07,0.08,M.glass,0,0.04,0); Cy(0.078,0.06,0.06,F("#f6f1e4"),0,0.035,0); Cy(0.07,0.07,0.008,F("#d98a1e","#3a2008"),0,0.068,0);
+  } else if(ic==="sorbet"){
+    Cy(0.11,0.04,0.05,M.glass,0,0.085,0); Cy(0.012,0.012,0.06,M.glass,0,0.03,0); Cy(0.06,0.06,0.006,M.glass,0,0.003,0);
+    S(0.05,F(c),-0.015,0.12,0); S(0.045,F(c),0.02,0.125,0.01); S(0.018,F("#3f8a3a"),0.0,0.15,0.0,0.3);
+  } else if(ic==="panna"){
+    _gtPlate(g,M,0.2,false); Cy(0.07,0.08,0.06,F(c),0,0.04,0); Cy(0.072,0.072,0.008,F("#a8202a"),0,0.072,0);
+    S(0.018,F("#c8202a"),0.05,0.02,0.03,0.6); S(0.016,F("#c8202a"),-0.05,0.02,-0.03,0.6);
+  } else { _gtPlate(g,M,0.24,false); S(0.08,F(c),0,0.035,0,0.5); }
+  g.getChildMeshes(false).forEach(m=>{ m.__key=key; m.isPickable=false; m.__noTint=true; });
+  return g; }
+/* dove va ogni portata, nel sistema del posto: x = a destra di chi siede, z = verso il centro del tavolo */
+const GT_PLACE={ drink:[0.2,0.16], starter:[0,0], main:[0,0], side:[-0.2,0.12], dessert:[0,0] };
+function gtFoodSet(items,s){
+  const t=s.t, set=new BABYLON.TransformNode("gtFood",scene); set.parent=GT.I.root;
+  const f={ x:Math.sin(s.face), z:Math.cos(s.face) };
+  set.position.set(s.x+f.x*0.49, t.top, s.z+f.z*0.49); set.rotation.y=s.face;
+  items.forEach(it=>{ if(!it.v || it.v.en==="—") return; const d=_gtDish(it.key,it.v,set), P=GT_PLACE[it.key]||[0,0];
+    d.position.set(P[0],0,P[1]); });
+  set.getChildMeshes(false).forEach(m=>{ m.isPickable=false; });
+  GT.food.push(set); return set; }
+function gtClearFood(){ GT.food=GT.food.filter(st=>{ if(st.__guest) return true; try{ st.dispose(false,false); }catch(e){} return false; }); GT.eatG={}; }
+function gtRemoveFood(keys){ GT.food.forEach(st=>{ if(st.__guest) return; try{ st.getChildMeshes(false).forEach(m=>{ if(keys.indexOf(m.__key)>=0) m.dispose(false,false); }); }catch(e){} }); }
+/* in tavola e si mangia (col braccio vero, eatRun: sorsi e bocconi alternati) */
+function gtServe(keys,onDone){
+  const s=GT.seat, o=GT.o; if(!s||!o) return;
+  const set=gtFoodSet(keys.map(k=>({ key:k, v:o.slip[k] })),s);
+  const groups={};
+  keys.forEach(key=>{ const v=o.slip[key]; if(!v || v.en==="—") return;
+    const ms=set.getChildMeshes(false).filter(m=>m.__key===key); if(!ms.length) return;
+    const food=(key==="drink")?ms:ms.filter(m=>m.material && /^gt_c_/.test(m.material.name)); if(!food.length) return;
+    set.computeWorldMatrix(true); const inv=set.getWorldMatrix().clone().invert(), c=new BABYLON.Vector3(0,0,0);
+    food.forEach(m=>{ m.computeWorldMatrix(true); m.refreshBoundingInfo(); c.addInPlace(BABYLON.Vector3.TransformCoordinates(m.getBoundingInfo().boundingBox.centerWorld,inv)); });
+    c.scaleInPlace(1/food.length);
+    const gg=new BABYLON.TransformNode("gtEat_"+key,scene); gg.parent=set; gg.position.copyFrom(c); set.computeWorldMatrix(true); gg.computeWorldMatrix(true);
+    food.forEach(m=>m.setParent(gg));
+    groups[key]={ g:gg, v, n:(key==="drink"?3:3), done:0 }; });
+  const ks=Object.keys(groups); if(!ks.length){ if(onDone) onDone(); return; }
+  if(ks.length===1) groups[ks[0]].n=2;
+  const order=[]; for(let r=0;r<4;r++) ks.forEach(k=>{ if(r<groups[k].n) order.push(k); });
+  const steps=order.map(k=>{ const G=groups[k]; return { g:G.g, key:k, what:(k==="drink"?"sip":"bite"), apply:()=>{ G.done++;
+      try{ Needs.eat(G.v.en, 1/G.n); }catch(e){}
+      const f=Math.max(0.05,1-G.done/G.n); if(k==="drink"){ G.g.scaling.y=Math.max(0.15,f); } else { G.g.scaling.setAll(Math.max(0.001,f)); if(G.done>=G.n) G.g.setEnabled(false); } } }; });
+  GT.eating=true;
+  const fw=new BABYLON.Vector3(Math.sin(s.face),0,Math.cos(s.face));
+  eatRun(steps,fw,()=>{ GT.eating=false; toast("\u{1F60B} Delicious! · Squisito!"); if(onDone) try{ onDone(); }catch(e){} });
+}
+/* ------------------------------------------------------------------ */
+/* IL BATTITO: il promemoria della prenotazione                          */
+/* ------------------------------------------------------------------ */
+function gtTick(){
+  const now=performance.now(); if(now<(GT.remT||0)) return; GT.remT=now+30000;
+  const r=gtRes(); if(!r || r.used || r.rem) return;
+  const left=r.min-gtNowMin();
+  if(left>=0 && left<=15){ r.rem=true; gtResSave(r);
+    toast("\u{1F33F} Don't forget: your table at The Green Table is booked for "+gtClock(r.min)+"! · Hai prenotato per le "+gtClock(r.min),7000); }
+}
+/* il promemoria vale anche fuori dal ristorante (il battito in sala parte solo dopo averla costruita) */
+setInterval(()=>{ try{ if(!GT.built) gtTick(); }catch(e){} },30000);
+
+/* =====================================================================
    v285 — VISUALE IN PRIMA PERSONA (Giacomo, 30 set: «calcando un tasto la
    visione POV, dagli occhi dell'avatar: tra gli scaffali piu' stretti non si
    riesce a vedere bene»). Tasto O su computer, bottone 👁️ sul tablet.
@@ -53715,6 +54908,7 @@ function rideBusy(){
   try{ if(typeof PDANCE!=="undefined" && PDANCE.on) return true; }catch(e){}
   try{ if(typeof SHOW!=="undefined" && SHOW.seated) return true; }catch(e){}
   try{ if(typeof DINER!=="undefined" && DINER.seat) return true; }catch(e){}
+  try{ if(typeof GT!=="undefined" && GT.seat) return true; }catch(e){}                // 🌿 v621
   try{ if(typeof BSIT!=="undefined" && BSIT.b) return true; }catch(e){}
   try{ if(typeof CAFE_PICK!=="undefined" && CAFE_PICK.seated) return true; }catch(e){}
   try{ if(typeof LESSON!=="undefined" && LESSON.seated) return true; }catch(e){}
@@ -56287,6 +57481,7 @@ const Needs={
     try{ if(BSIT.b) return true; }catch(e){}
     try{ if(CAFE_PICK.seated) return true; }catch(e){}
     try{ if(DINER.seat) return true; }catch(e){}
+    try{ if(GT.seat) return true; }catch(e){}                                           // 🌿 v621
     try{ if(SUBSIT.on) return true; }catch(e){}
     try{ if(LESSON.seated) return true; }catch(e){}
     try{ if(SHOW.seated) return true; }catch(e){}
@@ -57313,6 +58508,7 @@ const DESTS=[
   { name:"Old Town · Anno 1", ic:"🏪", x:-26, z:9   },
   { name:"Downtown · Anno 2", ic:"🎬", x:0,   z:-2  },
   { name:"New District · A.3",ic:"💼", x:0,   z:-40 },
+  { name:"The Green Table",   ic:"🌿", x:54,  z:-42.4 },   // v621: il ristorante (all'imbocco del vialetto)
   { name:"Stazione",          ic:"🚉", x:-78, z:7   },
   { name:"Aeroporto",         ic:"✈️", x:14,  z:-70 },
   { name:"Central Park",      ic:"🌳", x:84,  z:0   },
@@ -57712,6 +58908,7 @@ function standUpAll(){
   try{ if(typeof RIDE!=="undefined" && RIDE.on) rideDrop(); }catch(e){}   // 🛹 sedersi, ballare, taxi, cambio luogo: giu' dalla tavola (🛴 l'alunno lo lascia li')
   try{ if(typeof CAFE_PICK!=="undefined" && CAFE_PICK.seated) cafeLeaveSeat(); }catch(e){}
   try{ if(typeof DINER!=="undefined" && DINER.seat) dinerStand(true); }catch(e){}
+  try{ if(typeof GT!=="undefined" && GT.seat) gtStand(true); }catch(e){}              // 🌿 v621
   try{ if(typeof BSIT!=="undefined" && BSIT.b) benchStand(true); }catch(e){}
   try{ if(typeof SUBSIT!=="undefined" && SUBSIT.on) subBenchStand(true); }catch(e){}
   try{ if(typeof LESSON!=="undefined" && LESSON.seated) lessonStand(true); }catch(e){}   // v306
@@ -66841,7 +68038,14 @@ function tlAutoBuildCar(key,id){
      misura vera degli occhi dell'avatar seduto: vedi tlAutoCabin */
   const seat={ x:-HW*0.92*(F.seatX||0.48), z:(F.seatZ!=null?F.seatZ:0.10) };      // v517: un po' avanti, dove il tetto e' piu' alto
   root.getChildMeshes().forEach(m=>{ m.isPickable=false; });
-  return { root, H, HW, HL, seat, kit, body:car, lid:[lid,lr], ck:null, cabE:null, tab:null, fid:F.id, theme:F.theme };
+  const C={ root, H, HW, HL, seat, kit, body:car, lid:[lid,lr], ck:null, cabE:null, tab:null, fid:F.id, theme:F.theme };
+  /* v621: i fari della flotta sono accesi solo in strada (nel traffico,
+     chiamata, con te a bordo, o l'auto di un compagno); nello stallo spenti */
+  root.__ledOn=()=>{ const tc=C.tc;
+    return !!C.__peer || (!!tc && _trafficCars.indexOf(tc)>=0) || (typeof AUTO!=="undefined" && AUTO.on && AUTO.car===C)
+      || (typeof AUTO_CALL!=="undefined" && !!AUTO_CALL.phase && AUTO_CALL.id===C.fid); };
+  try{ carLedLights(root,true); }catch(e){ console.warn("[fari flotta]",e); }
+  return C;
 }
 /* =====================================================================
    v501 — L'ABITACOLO VERO (Giacomo, 21 nov, con due foto: «come mi muovo
@@ -67244,6 +68448,7 @@ function tlAutoInside(on){
   try{ if(C.body) C.body.setEnabled(!on); }catch(e){}
   try{ C.lid.forEach(m=>m.setEnabled(!on)); }catch(e){}
   try{ if(C.door) C.door.parts.forEach(m=>m.setEnabled(!on)); }catch(e){}
+  if(!on && AUTO.on && AUTO.phase!=="end"){ try{ tlDoorPeek(C,true); }catch(e){} }      // v622: tornati fuori (O), l'abitacolo dal vetro
 }
 /* ---- la prenotazione al parcheggio (dopo il TechLab) ----
    v502: una E per ogni auto, DOVE l'auto e' adesso (lo stallo dove ti ha
@@ -67563,7 +68768,7 @@ function tlAutoStart(mode,id){
       AUTO.phase="ask";
       AUTO.obs=scene.onBeforeRenderObservable.add(tlAutoTick);
       if(show) tlAutoAsk(); else finFade(0,800,()=>tlAutoAsk()); };
-    if(show) tlAutoEnterShow(C,go); else { tlAutoSeat(); go(); }
+    if(show) tlAutoEnterShow(C,go); else { tlAutoSeat(); try{ tlDoorPeek(C,true); }catch(e){} go(); }
   });
 }
 /* v517 — SALIRE: davanti alla portiera, la portiera si alza, si entra, ci si
@@ -67709,6 +68914,13 @@ function tlDoorAnim(C,to,ms,cb){
 /* l'abitacolo visto da fuori, a portiera aperta: solo cio' che sta dentro la scocca */
 function tlDoorPeek(C,on){
   if(!C) return;
+  /* v622 (Giacomo: «ho preso la Lambo e non sono comparsi gli interni, lo
+     fa a volte»): l'abitacolo si vedeva solo a portiera aperta; chiusa la
+     portiera si spegneva, e dal vetro si vedeva l'auto vuota. E chi saliva
+     su un'auto CHIAMATA (in strada, con la dissolvenza) non lo vedeva mai.
+     Ora, finche' si e' a bordo, resta acceso (senza i pezzi che uscirebbero
+     dalla scocca, gia' spenti qui sotto); si spegne scendendo. */
+  if(!on && AUTO.on && AUTO.car===C && !AUTO.pov && AUTO.phase!=="end") return;
   if(!on){ if(C.ck && !AUTO.pov){ C.ck.setEnabled(false); } if(C.ck) C.ck.getChildMeshes(false).forEach(m=>{ if(m.__peekOff){ m.setEnabled(true); m.__peekOff=false; } }); return; }
   try{ tlAutoCabin(C,C.cabE||((tlAutoF(C.fid).sitY||0.5)+0.82)); }catch(e){ console.warn("[peek]",e); return; }
   if(!C.ck) return;
@@ -68830,6 +70042,7 @@ function tlAutoEnd(cb,abort,keepCar){
     try{ promptEl.style.display=""; }catch(e){}
     try{ setLabelsVisible(area); }catch(e){}
     AUTO.on=false; AUTO.pov=false; AUTO.phase="";
+    try{ const Cd=AUTO.car; if(Cd && (!Cd.door || Cd.door.a<=0.01)) tlDoorPeek(Cd,false); }catch(e){}   // v622: scesi a portiere chiuse, l'abitacolo si spegne
     /* v604: chiamata, saliti e scesi senza partire: l'auto resta li' ad aspettare */
     if(AUTO.pickupFrom){ AUTO_CALL.phase="wait"; AUTO_CALL.t0=performance.now(); }
     document.body.classList.remove("veh","auto");
@@ -82127,6 +83340,10 @@ const Presenza=(function(){
      guarda, se il proprio Ray in quel momento non serve lui, lo manda li'
      (dinerMirror). */
   function _camerierePos(){
+    /* 🌿 v621: anche Marco, al The Green Table (Sofia lo rispecchia dai compagni) */
+    try{ if(typeof GT!=="undefined" && area===GT_DEF.area && GT.seat && GT.waiter && GT.C){ const w=GT.waiter.pos();
+        if(Math.hypot(w.x-(GT.C.x+GT_W1_L.x), w.z-(GT.C.z+GT_W1_L.z))<1.0) return "";
+        return ",w"+w.x.toFixed(1)+":"+w.z.toFixed(1); } }catch(e){}
     try{ if(area!=="town" || typeof DINER==="undefined" || !DINER.seat || !DINER.waiter) return "";
       const w=DINER.waiter.pos();
       if(Math.hypot(w.x-(DINER.x+DINER_WAITER_HOME.x), w.z-DINER_WAITER_HOME.z)<1.0) return "";
