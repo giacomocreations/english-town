@@ -67924,13 +67924,32 @@ function tlAutoRoute(at,from){
     else if(!from && AUTO.pickupFrom) ei=(AUTO.pickupFrom.loop===L)?AUTO.pickupFrom.i:-1;   // v604: chiamata, ferma in strada
     else if(!from){ const sp=tlAutoSpot(); ei=L.__find(sp.x+5,AUTO_LANE_Z,1,0,2.5); }   // davanti allo stallo dov'e' (a casa: -34)
     if(ei<0) return;
-    let di=-1, dd=1e9; for(let i=0;i<L.length;i++){ const d=Math.hypot(L[i][0]-at.x,L[i][1]-at.z); if(d<dd){ dd=d; di=i; } }
-    if(di<0) return;
-    let g=0; while(g++<80 && _aNearNode(L[di],3.5)) di=(di-1+L.length)%L.length;
-    const dEnd=Math.hypot(L[di][0]-at.x,L[di][1]-at.z);
-    let len=(L.L[di]-L.L[ei]+L.tot)%L.tot; if(len<25) len+=L.tot;     // troppo vicino: un giro intero, non un salto
-    const score=dEnd*200+len;                                      // prima la vicinanza alla meta (Giacomo: «il posto piu' vicino possibile»), poi la strada
-    if(!best || score<best.score) best={ L, ei, di, len, at, dEnd, score }; });
+    let dd=1e9; for(let i=0;i<L.length;i++){ const d=Math.hypot(L[i][0]-at.x,L[i][1]-at.z); if(d<dd) dd=d; }
+    if(dd>=1e9) return;
+    /* v613 — DAL LATO GIUSTO DELLA STRADA (Giacomo, 24 nov: «ho prenotato
+       la macchina vicino all'aeroporto, in quella strada, pero' e' arrivata
+       dall'altra parte della strada, a fianco»). Prima si prendeva SOLO il
+       punto del giro piu' vicino a te; se cadeva in un incrocio si tornava
+       indietro lungo il giro (_aNearNode) — e in fondo alla strada
+       dell'aeroporto, dove la corsia «giusta» esce dall'incrocio, tornare
+       indietro voleva dire passare sull'ALTRA corsia: l'auto accostava
+       dall'altra parte della carreggiata (misurato: 17 punti su 115 lungo
+       quella strada, tutti verso i due incroci). Ora si guardano tutti i
+       punti del giro entro 12 m dal piu' vicino, e chi ti lascerebbe
+       dall'altra parte paga come 8 m in piu': si guida a SINISTRA (Regno
+       Unito), quindi il marciapiede buono e' alla sinistra dell'auto. Se
+       una corsia dal tuo lato non c'e', si ripiega sulla piu' vicina. */
+    const sideOf=i=>{ const A=L[i], B=L[(i+1)%L.length], dx=B[0]-A[0], dz=B[1]-A[1], l=Math.hypot(dx,dz)||1;
+      return (at.x-A[0])*(dz/l)+(at.z-A[1])*(-dx/l); };            // >0: a destra dell'auto, cioe' oltre la carreggiata
+    const seen={};
+    for(let i0=0;i0<L.length;i0++){
+      if(Math.hypot(L[i0][0]-at.x,L[i0][1]-at.z)>dd+12) continue;
+      let di=i0, g=0; while(g++<80 && _aNearNode(L[di],3.5)) di=(di-1+L.length)%L.length;
+      if(seen[di]) continue; seen[di]=1;
+      const dEnd=Math.hypot(L[di][0]-at.x,L[di][1]-at.z), wrong=sideOf(di)>1.2;
+      let len=(L.L[di]-L.L[ei]+L.tot)%L.tot; if(len<25) len+=L.tot;     // troppo vicino: un giro intero, non un salto
+      const score=dEnd*200+(wrong?1600:0)+len;                       // prima la vicinanza alla meta (Giacomo: «il posto piu' vicino possibile»), poi il lato, poi la strada
+      if(!best || score<best.score) best={ L, ei, di, len, at, dEnd, score, wrong }; } });
   return best;
 }
 function tlAutoPts(R){ const L=R.L, tmp={ loop:L, seg:L.seg, L:L.L, tot:L.tot, si:0 }, pts=[];
