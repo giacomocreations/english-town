@@ -11822,7 +11822,15 @@ function despawnFragment(id){
    personaggio con cui si parla (chiunque sia) lo dice a voce, con il posto,
    e poi la conversazione continua normalmente. Una volta sola per lettera
    (et_frags.told, salvato con il resto dei frammenti). */
+/* v618 (Giacomo, 24 nov: «nella modalita' docente mi segnala un indizio che
+   in realta' ho gia' preso: ho iniziato apposta una unita' gia' fatta»).
+   Gli indizi dell'Architetto sono una cosa degli ALUNNI: il docente rifa' le
+   unit per mostrarle e non deve essere inseguito da riquadri e annunci.
+   In modalita' docente niente riquadro, niente toast, niente «Have you
+   heard?» — tranne mentre simula una classe (et_sim), per collaudarli. */
+function clueOffForTeacher(){ try{ return !!Student.teacher && !Sync.get("et_sim",null); }catch(e){ return false; } }
 function fragNewsTell(npc,cont){
+  if(clueOffForTeacher()) return false;
   let av=[]; try{ av=Frag.available()||[]; }catch(e){ return false; }
   if(!av.length) return false;
   let s; try{ s=Sync.get("et_frags",{got:{}})||{got:{}}; }catch(e){ return false; }
@@ -11851,6 +11859,7 @@ function fragNewToast(f){
     : "\u{1F4DC} A new letter from The Architect! Where? "+f.where+".";
 }
 function checkFragments(announce){
+  if(clueOffForTeacher()) announce=false;                 // v618: il docente non riceve gli annunci
   try{ refreshBenchMark(); }catch(e){}
   try{ refreshNightBenchMark(); }catch(e){}
   const av=Frag.available();
@@ -11915,6 +11924,7 @@ function clueBadge(){
   let el=document.getElementById("clue-pin");
   let av=[];
   try{ if(!(typeof loginPending!=="undefined" && loginPending) && typeof started!=="undefined" && started) av=Frag.available()||[]; }catch(e){ av=[]; }
+  if(clueOffForTeacher()) av=[];                          // v618: niente riquadro degli indizi al docente
   if(!av.length){ if(el) el.remove(); _clueSig=""; return; }
   if(!el){
     el=document.createElement("div"); el.id="clue-pin";
@@ -24362,8 +24372,20 @@ function updatePlayerFacing(stopped){
   if(typeof POV!=="undefined" && POV.on) return;          // v292: in prima persona il corpo guarda dove guardi tu
   if(typeof DINER!=="undefined" && DINER.seat) return;   // seduti si guarda il tavolo, non il cameriere
   if(typeof BSIT!=="undefined" && BSIT.b) return;         // v291: e sulla panchina si guarda davanti
+  if(typeof SIT!=="undefined" && SIT.on) return;          // v618: seduti (sgabello del café compreso) il corpo non ruota: la posa e' calcolata per quella direzione
+  /* v618 (Giacomo, 24 nov: «nel cafe', quando parli con Rosa, ora non si
+     gira verso di lei: deve sempre girarsi verso Rosa»). Vinceva l'NPC PIU'
+     VICINO, e al bancone i clienti seduti accanto sono piu' vicini della
+     barista dietro il banco: mentre Rosa parlava ci si voltava verso un
+     cliente. Ora, nell'ordine: (1) chi ti sta PARLANDO (il dialogo aperto,
+     quest-modal.__npc); (2) la persona SELEZIONATA per il tasto P; (3) solo
+     allora la piu' vicina, come prima. */
   let best=null, bestD=1e9;
-  for(let i=0;i<NPCS.length;i++){ const n=NPCS[i];
+  try{ const qm=document.getElementById("quest-modal"), t=(qm && qm.classList.contains("show"))?qm.__npc:null;
+    if(t && t.carrier && t.area===area && NPCS.indexOf(t)>=0){ const p=t.pos(); if(Math.hypot(p.x-player.position.x,p.z-player.position.z)<9) best=t; } }catch(e){}
+  if(!best && typeof nearInter!=="undefined" && nearInter && nearInter.isNpc){
+    for(let i=0;i<NPCS.length;i++){ if(NPCS[i].inter===nearInter && NPCS[i].area===area){ best=NPCS[i]; break; } } }
+  if(!best) for(let i=0;i<NPCS.length;i++){ const n=NPCS[i];
     if(n.area!==area) continue;
     const r=(n.inter&&n.inter.radius)||3.0;
     const p=n.pos(); const dx=p.x-player.position.x, dz=p.z-player.position.z;
