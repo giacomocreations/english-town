@@ -26871,6 +26871,7 @@ function subEn(sub){
 function _escAttrIt(t){ return String(t).replace(/&/g,"&amp;").replace(/"/g,"&quot;"); }
 
 /* ---- overlay riusabile (scaffold per gli step successivi) ---- */
+let _stepTok=0;                     // v615: quale consegna di step e' nella finestra (Quest.loadStep)
 const QModal=(function(){
   const el=document.getElementById("quest-modal"), card=document.getElementById("qm-card");
   function close(){ el.classList.remove("show"); card.innerHTML=""; try{ SpeakLock.unlock(); }catch(e){} }
@@ -26889,6 +26890,7 @@ const QModal=(function(){
   });
   function open(cfg){
     cfg=cfg||{}; card.innerHTML=""; SpeakLock.sync(); el.__t0=performance.now();   // per _dlgOkAdvance
+    try{ delete card.dataset.step; }catch(e){}            // v615: la consegna dello step (vedi Quest.loadStep)
     card.classList.remove("qm-wide");                     // v402: la card e' la stessa di DialogueBox
     if(cfg.title){ const h=document.createElement("div"); h.className="qm-title"; h.innerHTML=cfg.title; card.appendChild(h); }
     if(cfg.sub){ const s=document.createElement("div"); s.className="qm-sub"; s.innerHTML=cfg.sub; card.appendChild(s); }
@@ -27128,17 +27130,39 @@ const Quest={
     questHudSet(s.strand, (s.introObjEn?HOBJ(s.introObjEn,s.introObj):(s.introObj||"…")),
       this.i, this.total);
     const mech=MECH[s.type];
+    /* v615 — LO STEP PARTE COMUNQUE (Giacomo, 24 nov: «con presenza accesa,
+       18 ragazzi insieme, nella City Plaza, dove dovevano parlare con Ivy
+       per avere le indicazioni, anche avvicinandosi non riuscivano a
+       parlarci e andare avanti»). La meccanica dello step (le interazioni,
+       qui «ask Ivy the way») partiva SOLO dal bottone «Let's go!» della
+       finestra della consegna. Ma quella finestra si chiude anche con Esc,
+       e la card e' la stessa di DialogueBox: un dialogo aperto sopra (un
+       NPC toccato, un invito, un fumetto...) la SOSTITUIVA. In tutti e due i
+       casi lo step restava vuoto: consegna in alto, nessuna interazione,
+       e si sbloccava solo ricaricando (o con Help -> «Sono bloccato»).
+       Ora un guardiano controlla: se la finestra della consegna non c'e'
+       piu' e non c'e' nessun altro dialogo aperto, lo step parte da solo
+       (una volta sola, e solo se e' ancora lo step di adesso). */
+    const u=this.unit, tok="st"+(++_stepTok);
+    let ran=false;
+    const go=()=>{ if(ran) return; ran=true; if(this.unit!==u || this.step!==s) return; (mech||mechStub)(s); };
     /* v252: da Anno 2 la consegna e' in inglese (introObjEn: c'e' in tutti i
-       132 step) e l'italiano completo resta dietro «❓ Non capisco». */
+       132 step) e l'italiano completo resta dietro «Non capisco». */
     if(yrEnglish()){
       QModal.open({ title:m.ic+" "+strandLabel(s.strand), sub:"<b>"+(s.introObjEn||"")+"</b>",
         html:(s.intro ? '<button type="button" class="dlg-tr-btn" data-it="'+_escAttrIt(s.intro)
-                        +'" onclick="_ambTrReveal(this)">\u2753 Non capisco</button>' : ""),
-        buttons:[{ label: mech?"Let's go!":"OK", cls:"primary", act:()=>{ (mech||mechStub)(s); } }] });
-      return;
-    }
+                        +'" onclick="_ambTrReveal(this)">❓ Non capisco</button>' : ""),
+        buttons:[{ label: mech?"Let's go!":"OK", cls:"primary", act:go }] });
+    } else
     QModal.open({ title:m.ic+" "+strandLabel(s.strand), sub:s.intro||"",
-      buttons:[{ label: mech?"Let's go!":"OK", cls:"primary", act:()=>{ (mech||mechStub)(s); } }] });
+      buttons:[{ label: mech?"Let's go!":"OK", cls:"primary", act:go }] });
+    try{ QModal.card.dataset.step=tok; }catch(e){}
+    const wd=setInterval(()=>{
+      if(ran || this.unit!==u || this.step!==s){ clearInterval(wd); return; }
+      const qm=document.getElementById("quest-modal");
+      if(qm && qm.classList.contains("show") && QModal.card.dataset.step===tok) return;   // la consegna e' ancora li'
+      if(_dlgOpen()) return;                                                          // c'e' un altro dialogo: si aspetta
+      clearInterval(wd); console.log("[step] partito senza Let's go",u.id,s.id); go(); },400);
   },
   complete(msg,score){ if(this.unit && this.step){ Progress.completeStep(this.unit.id, this.step.id, score!=null?score:100, this.i);
       /* v588: conta doppio anche l'ultimo step di una unit senza "final"
