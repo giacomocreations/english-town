@@ -24240,6 +24240,8 @@ function spawnNPC(cfg){
   if(typeof refreshShadowCasters==="function") refreshShadowCasters();
   /* v285: i gemelli del protagonista si vestono col guardaroba (in coda) */
   try{ npcDressLater(npc,cfg); }catch(e){}
+  /* 👀 e il viso: occhi, bocca, naso secondo la sua identita' (in coda, vedi npcFaceLater) */
+  try{ npcFaceLater(npc,cfg); }catch(e){}
   return npc;
 }
 /* rotazione dolce verso il giocatore quando è vicino (chiamata dal render loop) */
@@ -60730,6 +60732,8 @@ const ET={
   /* ET.graduatoria("2F") — punteggi dal primo all'ultimo, per i premi. */
   graduatoria(c){ apriGraduatoria(c); return "\u{1F3C6} "+(normClasse(c||Student.cls||"")||"?"); },
   quaderno(){ apriQuaderno(); return "\u{1F4D3}"; },
+  /* 👀 ET.visiNpc(false) spegne i visi disegnati degli NPC, (true) li riaccende */
+  visiNpc(on){ _npcFaceOn=on!==false; NPCS.forEach(n=>{ n.__faceVis=undefined; }); return { visi:_npcFaceOn, conViso:NPCS.filter(n=>n.__faceMs&&n.__faceMs.length).length, senza:NPCS.filter(n=>n.__faceFail).map(n=>n.id) }; },
   apriTutto(){ Gate.set(9,99); toast("\u{1F513} Tutte le unit\u00e0 aperte"); return Gate.cursor(); },
   /* ---- SALTO STRAND (prova rapida) --------------------------------------
      Serve a Giacomo per arrivare allo strand che vuole provare senza rifare
@@ -78099,11 +78103,20 @@ function _faceMeasure(meshes,M){
   const hd=meshes.filter(m=>/Casual_Head/.test(m.name)&&m.material);
   const skin=hd.find(m=>/(^|_)Skin/.test(m.material.name)), eye=hd.find(m=>/(^|_)(Eye|Brown)(_|$)/.test(m.material.name)&&!/Hair/.test(m.material.name));
   if(!skin||!eye) return null;
-  const loc=(p,i)=>{ const d=new V3(p[i],p[i+1],p[i+2]).subtract(M.E); return { x:V3.Dot(d,M.R)/M.s, y:V3.Dot(d,M.U)/M.s, z:V3.Dot(d,M.F)/M.s }; };
   const sp=skin.__noseP0||skin.getVerticesData(BABYLON.VertexBuffer.PositionKind), si=skin.getIndices();
-  const SL=[]; for(let i=0;i<sp.length;i+=3) SL.push(loc(sp,i));
+  return _faceMeasureCore(sp,si,eye.getVerticesData(BABYLON.VertexBuffer.PositionKind),M,null);
+}
+/* il cuore della misura, uguale per tutti i rig: sp/si = posizioni e indici
+   della pelle, ep = posizioni degli occhi, M = sistema della faccia;
+   mask (facoltativo) = 1 per i vertici della pelle che sono TESTA (sui rig
+   in un pezzo solo la pelle e' quella di tutto il corpo) */
+function _faceMeasureCore(sp,si,ep,M,mask){
+  const V3=BABYLON.Vector3;
+  const loc=(p,i)=>{ const d=new V3(p[i],p[i+1],p[i+2]).subtract(M.E); return { x:V3.Dot(d,M.R)/M.s, y:V3.Dot(d,M.U)/M.s, z:V3.Dot(d,M.F)/M.s }; };
+  const SL=[]; for(let i=0;i<sp.length;i+=3) SL.push((mask && !mask[i/3])?null:loc(sp,i));
   /* solo i triangoli che guardano avanti: la nuca non deve «vincere» il raggio */
   const T=[]; for(let t=0;t<si.length;t+=3){ const a=SL[si[t]], b=SL[si[t+1]], c=SL[si[t+2]];
+    if(!a||!b||!c) continue;
     if(Math.max(a.z,b.z,c.z)<-0.04) continue; T.push([a,b,c]); }
   /* la pelle davanti nel punto (x,y): il triangolo piu' avanti che lo copre */
   const surf=(x,y)=>{ let best=-9;
@@ -78114,17 +78127,17 @@ function _faceMeasure(meshes,M){
       const z=u*a.z+v*b.z+w*c.z; if(z>best) best=z; }
     return best>-9?best:null; };
   /* gli occhi: le due scatolette del modello, lato per lato */
-  const ep=eye.getVerticesData(BABYLON.VertexBuffer.PositionKind), EL=[]; for(let i=0;i<ep.length;i+=3) EL.push(loc(ep,i));
+  const EL=[]; for(let i=0;i<ep.length;i+=3) EL.push(loc(ep,i));
   const side=sg=>{ const L=EL.filter(l=>l.x*sg>0); if(!L.length) return null;
     let x0=9,x1=-9,y0=9,y1=-9; L.forEach(l=>{ x0=Math.min(x0,l.x); x1=Math.max(x1,l.x); y0=Math.min(y0,l.y); y1=Math.max(y1,l.y); });
     return { x:(x0+x1)/2, y:(y0+y1)/2, w:x1-x0, h:y1-y0, s:sg }; };
   const eR=side(1), eL=side(-1); if(!eR||!eL) return null;
   const ey=(eR.y+eL.y)/2;
   /* la punta del naso: la pelle piu' avanti sulla linea di mezzo, sotto gli occhi */
-  let tip=null; SL.forEach(l=>{ if(Math.abs(l.x)<0.012 && l.y<ey-0.015 && l.y>ey-0.10 && (!tip||l.z>tip.z)) tip=l; });
+  let tip=null; SL.forEach(l=>{ if(l && Math.abs(l.x)<0.012 && l.y<ey-0.015 && l.y>ey-0.10 && (!tip||l.z>tip.z)) tip=l; });
   if(!tip) return null;
   /* il mento: il punto piu' basso della pelle davanti, sotto il naso */
-  let chin=tip.y-0.06; SL.forEach(l=>{ if(Math.abs(l.x)<0.012 && l.z>tip.z-0.04 && l.y<tip.y && l.y>tip.y-0.09 && l.y<chin) chin=l.y; });
+  let chin=tip.y-0.06; SL.forEach(l=>{ if(l && Math.abs(l.x)<0.012 && l.z>tip.z-0.04 && l.y<tip.y && l.y>tip.y-0.09 && l.y<chin) chin=l.y; });
   return { surf, eyes:[eL,eR], ey, tip:{ y:tip.y, z:tip.z }, chin, my:tip.y+(chin-tip.y)*0.42 };
 }
 /* materiali del viso: in _accM come quelli degli accessori, cosi'
@@ -78354,6 +78367,270 @@ function dressFace(meshes,face,holder){
   H.__face={ key, meshes:out }; _octDirty();
   return true;
 }
+
+/* =====================================================================
+   👀 IL VISO DI TUTTI GLI NPC (Giacomo, 24 nov: «alcuni npc o forse tutti
+   non hanno occhi, bocca e naso, mettili a tutti secondo la loro identita'»).
+   Com'erano: i sette modelli hanno per occhi due scatolette scure di ~2 cm
+   (da qualche metro: un puntino o niente), il naso e' una sporgenza della
+   pelle dello stesso colore (con la luce piatta non si vede) e la bocca
+   quasi sempre NON C'E'. Il viso disegnato (dressFace, v302) c'era solo per
+   il giocatore e i compagni.
+   Ora ogni NPC, in coda e uno per fotogramma come il guardaroba (v285):
+     · OCCHI veri: bianco, iride colorata, pupilla e riflesso, al posto
+       delle scatolette (che si spengono: sul rig «uomo» lo stesso
+       materiale nero fa anche altri pezzi, quindi si schiacciano solo i
+       vertici della TESTA, non la mesh intera);
+     · la BOCCA: labbra del colore della pelle, scurite e rosate;
+     · il NASO: la forma (piccolo, a patata, largo, lungo) e un'ombra
+       morbida sotto la punta con le narici, che lo fa leggere anche in
+       piena luce.
+   «SECONDO LA LORO IDENTITA'»: si decide dall'id (deterministico, come
+   modello, tinta e guardaroba: Mr. Finch ha sempre la stessa faccia), ma
+   pescando fra le scelte che stanno bene a QUELLA persona: il genere del
+   rig, il tono della pelle (pelle scura -> occhi castani o scuri; pelle
+   chiara anche azzurri, verdi, grigi), i capelli biondi o rossi (piu'
+   azzurri e verdi), l'eta' (l'uomo in giacca con la barba grigia: occhi
+   piu' stretti, bocca sottile). Per un personaggio da tenere com'e', o
+   da descrivere in una quest: cfg.faceLook = { eyes, eyec, mouth, nose }
+   (vince sul sorteggio), oppure faceLook:false.
+   COME E' FATTO: lo stesso motore del giocatore (FACE_EYES, FACE_MOUTHS,
+   _faceNose, _accSkin), ma tutto il viso diventa UNA mesh a colori per
+   vertice (_faceVC: un disegno per NPC invece di tredici). Per i rig del
+   giocatore (avatar, avatarW) le misure sono quelle di dressFace; per gli altri cinque (Man, Man_B, Man_in_Suit,
+   Woman, Woman_B) _npcFaceRig misura la testa in modo generico: i vertici
+   della TESTA sono quelli pesati sull'osso Head, «su» va dal collo alla
+   testa, «avanti» dalla testa agli occhi, e la scala dalle ossa (distanza
+   Head-Hips nella posa di bind contro quella nel mondo).
+   DISTANZA: oltre NPC_FACE_DIST il viso si spegne (isVisible): da li' gli
+   occhi sono meno di un pixel, e risparmia una decina di disegni per NPC.
+   Via d'uscita: ET.visiNpc(false) li toglie tutti, ET.visiNpc(true) li rimette.
+   ===================================================================== */
+const NPC_FACE_DIST=24;
+let _npcFaceOn=true;
+const _npcFaceQ=[];
+const _NPC_EYE_RE=/(^|_)(Eyes?|Brown)$/;
+/* l'identita' -> il viso. o = { f (donna), skin, hair (hex), old } */
+function npcFaceFor(id,o){
+  const mix=x=>{ x^=x>>>16; x=Math.imul(x,0x7feb352d); x^=x>>>15; x=Math.imul(x,0x846ca68b); x^=x>>>16; return x>>>0; };
+  const h=salt=>mix(_npcHash("face"+salt+"|"+id));
+  const wpick=(W,salt)=>{ let tot=0; for(const k in W) tot+=W[k]; let r=h(salt)%Math.max(1,tot);
+    for(const k in W){ if(r<W[k]) return k; r-=W[k]; } return Object.keys(W)[0]; };
+  const L=_hexLum(o.skin||"#d3a172"), hc=o.hair?BABYLON.Color3.FromHexString(o.hair):null;
+  const blond=!!(hc && 0.3*hc.r+0.59*hc.g+0.11*hc.b>0.42 && hc.r>=hc.b), red=!!(hc && hc.r>0.35 && hc.r>hc.g*1.6 && hc.r>hc.b*1.8);
+  /* il colore degli occhi dal tono della pelle (e dai capelli) */
+  let EC;
+  if(L<0.30)      EC={ dark:55, brown:40, hazel:5 };
+  else if(L<0.50) EC={ brown:45, dark:25, hazel:20, green:10 };
+  else            EC={ brown:30, blue:24, hazel:15, green:15, grey:9, dark:7 };
+  if(L>=0.30 && (blond||red)){ EC.blue=(EC.blue||0)+30; EC.green=(EC.green||0)+(red?30:12); }
+  if(o.old && L>=0.30) EC.grey=(EC.grey||0)+14;
+  const eyec=wpick(EC,"c");
+  /* la forma: niente espressioni (come per il giocatore), solo forme */
+  const ES=o.old ? { narrow:4, down:4, almond:2 }
+         : o.f ? { almond:5, big:4, round:3, up:3 } : { round:4, almond:4, narrow:2, down:2, up:1 };
+  const MS=o.old ? { thin:6, small:2, wide:2 }
+         : o.f ? { full:4, heart:3, thin:2, small:2, wide:1 } : { thin:4, wide:3, small:2, full:2 };
+  const NS=o.f ? { "":3, small:4, button:3, long:1 } : { "":4, wide:3, long:2, button:1, small:1 };
+  return { eyes:wpick(ES,"e"), eyec, mouth:wpick(MS,"m"), nose:wpick(NS,"n") };
+}
+/* il colore (hex) del primo materiale che corrisponde */
+function _npcMatHex(meshes,re,skip){ const m=meshes.find(x=>x.material && re.test(x.material.name) && !(skip&&skip.test(x.material.name)));
+  return m?_npcCol(m.material):null; }
+/* misura generica della testa (rig NON del giocatore). Ritorna { H, hi, M, F, skin, eyes:[{mesh,idx}] } o null */
+function _npcFaceRig(npc){
+  const V3=BABYLON.Vector3, VB=BABYLON.VertexBuffer;
+  const own=npc.meshes.filter(m=>m.skeleton && m.material && m.getTotalVertices()>0 && String(m.material.name).indexOf(npc.id+"_")===0);
+  if(!own.length) return null;
+  const sk=own[0].skeleton, hi=sk.bones.findIndex(b=>b.name==="Head"); if(hi<0) return null;
+  const headMask=m=>{ const mi=m.getVerticesData(VB.MatricesIndicesKind), mw=m.getVerticesData(VB.MatricesWeightsKind); if(!mi||!mw) return null;
+    const n=m.getTotalVertices(), out=new Uint8Array(n);
+    for(let v=0;v<n;v++){ let w=0; for(let k=0;k<4;k++) if(mi[4*v+k]===hi) w+=mw[4*v+k]; if(w>=0.5) out[v]=1; }
+    return out; };
+  /* la pelle della testa: la mesh «Skin» con piu' vertici sull'osso Head */
+  let H=null, Hm=null, Hn=0;
+  own.filter(m=>/(^|_)Skin$/.test(m.material.name)).forEach(m=>{ const k=headMask(m); if(!k) return; let n=0; for(let i=0;i<k.length;i++) n+=k[i]; if(n>Hn){ H=m; Hm=k; Hn=n; } });
+  if(!H || Hn<20) return null;
+  /* stessi «spazi grezzi» di H: stesso nodo (sui rig a piu' pezzi le altre mesh hanno un'altra trasformazione) */
+  const same=m=>m===H || (m.parent===H.parent && m.position.equalsWithEpsilon(H.position,1e-6) && m.scaling.equalsWithEpsilon(H.scaling,1e-6));
+  const raw=(m,mask)=>{ const p=(m===H && H.__noseP0)||m.getVerticesData(VB.PositionKind), o=[];
+    for(let i=0;i<p.length;i+=3) if(!mask || mask[i/3]) o.push({ p:new V3(p[i],p[i+1],p[i+2]), v:i/3 }); return o; };
+  const HP=raw(H,Hm).map(x=>x.p);
+  /* gli occhi: SOLO i vertici della testa dei materiali «occhi». ⚠️ Sul rig
+     Woman non c'e' un materiale occhi: sono fatti col nero delle SCARPE
+     («Shoes»). Se i nomi non bastano si prendono i materiali quasi neri che
+     non sono capelli, sopracciglia o pelle. */
+  const eyeMeshes=re=>{ const L=[]; own.filter(m=>same(m) && re(m)).forEach(m=>{ const k=headMask(m); if(!k) return;
+    const pts=raw(m,k); if(pts.length) L.push({ mesh:m, pts }); }); return L; };
+  let EM=eyeMeshes(m=>_NPC_EYE_RE.test(m.material.name) && !/Hair/.test(m.material.name));
+  if(EM.reduce((t,e)=>t+e.pts.length,0)<6) EM=eyeMeshes(m=>{ const c=m.material.albedoColor||m.material.diffuseColor;
+    return !!c && (0.3*c.r+0.59*c.g+0.11*c.b)<0.08 && !/Hair|Eyebrows|Skin/.test(m.material.name); });
+  if(!EM.length) return null;
+  own.filter(m=>same(m) && m!==H).forEach(m=>{ const k=headMask(m); if(k) raw(m,k).forEach(x=>HP.push(x.p)); });
+  const avg=a=>a.reduce((s,p)=>s.addInPlace(p),new V3(0,0,0)).scale(1/a.length);
+  const bindP=n=>{ const b=sk.bones.find(x=>x.name===n); return b&&b.getAbsoluteInverseBindMatrix?b.getAbsoluteInverseBindMatrix().clone().invert().getTranslation():null; };
+  const ph=bindP("Head"), pn=bindP("Neck")||bindP("Torso")||bindP("Chest"), pHip=bindP("Hips")||bindP("Body");
+  if(!ph||!pn) return null;
+  const U=ph.subtract(pn).normalize();
+  const allE=[]; EM.forEach(e=>e.pts.forEach(x=>allE.push(x.p)));
+  const Ch=avg(HP); let E=avg(allE);
+  let F=E.subtract(Ch); F=F.subtract(U.scale(V3.Dot(F,U))); if(F.length()<1e-9) return null; F.normalize();
+  let R=V3.Cross(U,F).normalize();
+  /* per lato: se il pezzo «occhi» ha anche le sopracciglia (Woman, Woman_B)
+     sono due grappoli in altezza; gli occhi sono quello di sotto */
+  const eyeV=[], eyeP=[];
+  EM.forEach(e=>{ [1,-1].forEach(sg=>{ const L=e.pts.filter(x=>V3.Dot(x.p.subtract(E),R)*sg>0).map(x=>({ x, u:V3.Dot(x.p.subtract(E),U) })).sort((a,b)=>a.u-b.u);
+      if(!L.length) return;
+      let gi=-1, g=0; for(let i=0;i<L.length-1;i++){ const d=L[i+1].u-L[i].u; if(d>g){ g=d; gi=i; } }
+      const rng=L[L.length-1].u-L[0].u, pick=(gi>=3 && gi<L.length-2 && g>0.25*rng)?L.slice(0,gi+1):L;
+      pick.forEach(q=>{ eyeV.push({ mesh:e.mesh, v:q.x.v }); eyeP.push(q.x.p); }); }); });
+  if(eyeP.length<6) return null;
+  E=avg(eyeP);
+  /* destra/sinistra dalla retta fra i due occhi (come _accMeasure) */
+  { const A=[],B=[]; eyeP.forEach(p=>{ (V3.Dot(p.subtract(E),R)>0?A:B).push(p); });
+    if(A.length&&B.length){ let Rr=avg(A).subtract(avg(B)); Rr=Rr.subtract(U.scale(V3.Dot(Rr,U)));
+      if(Rr.length()>1e-9){ const Fn=V3.Cross(Rr.normalize(),U).normalize(); F=(V3.Dot(Fn,F)<0)?Fn.scale(-1):Fn; R=V3.Cross(U,F).normalize(); } } }
+  /* la scala: unita' grezze per metro, dalle ossa (bind) contro il mondo (riposo) */
+  let s=0;
+  try{ const tn=n=>{ const b=sk.bones.find(x=>x.name===n); const t=b&&b.getTransformNode&&b.getTransformNode(); if(t){ t.computeWorldMatrix(true); return t.getAbsolutePosition().clone(); } return b?b.getAbsolutePosition(H):null; };
+    _botRest(sk);
+    const wH=tn("Head"), wB=tn(pHip?(sk.bones.find(x=>x.name==="Hips")?"Hips":"Body"):"Neck");
+    const rB=pHip||pn;
+    if(wH&&wB){ const dw=V3.Distance(wH,wB); if(dw>1e-4) s=V3.Distance(ph,rB)/dw; } }catch(e){}
+  if(!(s>0)) return null;
+  const M={ E, R, U, F, s };
+  const sp=H.__noseP0||H.getVerticesData(VB.PositionKind);
+  const ep=[]; eyeP.forEach(p=>ep.push(p.x,p.y,p.z));
+  const Fm=_faceMeasureCore(sp,H.getIndices(),ep,M,Hm);
+  if(!Fm) return null;
+  return { H, hi, M, F:Fm, eyeV, sk };
+}
+/* le scatolette originali spariscono: i loro vertici della testa si
+   schiacciano in un punto dentro la testa (triangoli nulli, non si vedono).
+   Geometria resa UNICA prima: e' condivisa con gli altri NPC dello stesso modello. */
+function _npcEyesHide(R){
+  const VB=BABYLON.VertexBuffer, by=new Map();
+  R.eyeV.forEach(e=>{ if(!by.has(e.mesh)) by.set(e.mesh,[]); by.get(e.mesh).push(e.v); });
+  const c=R.M.E.subtract(R.M.F.scale(0.03*R.M.s));
+  by.forEach((vs,m)=>{ try{ m.makeGeometryUnique(); const P=Float32Array.from(m.getVerticesData(VB.PositionKind));
+    vs.forEach(v=>{ P[v*3]=c.x; P[v*3+1]=c.y; P[v*3+2]=c.z; });
+    m.setVerticesData(VB.PositionKind,P,true); m.refreshBoundingInfo(); }catch(e){ console.warn("[npc] occhi",e); } });
+}
+/* il naso che si legge: ombra morbida sotto la punta e le due narici */
+function _faceNoseShade(g,F){
+  const skin=F.skin||"#d3a172", L=_hexLum(skin);
+  const sh=_faceSkinMat(_hexMul(skin,L<0.36?0.78:0.84)), dk=_faceSkinMat(_hexMul(skin,L<0.36?0.55:0.6));
+  const y=F.tip.y-0.0085;
+  _faceBlob(g,F,0,y,0.0105,0.0042,2,0,0.0009,sh);
+  [-1,1].forEach(sg=>_faceBlob(g,F,sg*0.0048,y+0.0006,0.0022,0.0014,2,sg*0.35,0.0016,dk));
+}
+/* UN SOLO PEZZO PER VISO. Occhi, labbra e naso sono una decina di
+   materiali (bianco, iride, pupilla, riflesso, labbro sopra e sotto, ombre...):
+   una decina di disegni per NPC, al parco 15 NPC = 150 disegni in piu'. Qui
+   ogni pezzo diventa un COLORE PER VERTICE e tutto si fonde in una mesh sola
+   con un materiale solo, condiviso da tutti gli NPC. Il colore si sceglie
+   perche' sotto la luce di tutti i giorni (L0) venga come col suo materiale:
+   lo standard e' (L*diffuse + emissive), la pelle PBR (L+0,25)*albedo (in
+   lineare), e il materiale unico fa (L+K)*colore. */
+const FACE_VC_K=0.4;
+function _faceVCMat(){ const k="faceVC"; if(_accM[k]) return _accM[k];
+  const m=new BABYLON.StandardMaterial("faceVC"+(_lpN++),scene); m.diffuseColor=new BABYLON.Color3(1,1,1);
+  m.emissiveColor=new BABYLON.Color3(FACE_VC_K,FACE_VC_K,FACE_VC_K); m.specularColor=new BABYLON.Color3(0.05,0.05,0.05);
+  m.backFaceCulling=false; m.twoSidedLighting=true; return (_accM[k]=m); }
+function _faceVC(g){
+  const L0=0.8, K=FACE_VC_K, VB=BABYLON.VertexBuffer;
+  const kids=g.getChildMeshes().filter(m=>m.getTotalVertices()>0 && m.material); if(!kids.length) return;
+  kids.forEach(m=>{ const mt=m.material; let c;
+    /* la pelle PBR lavora in lineare (albedo = hex^1,6, vedi _skinPaint) e lo schermo
+       la rimette in gamma: qui si torna in gamma (^1/2,2), come i materiali standard */
+    if(mt.albedoColor){ const a=mt.albedoColor, f=(L0+0.25)/(L0+K)*0.92, gm=v=>Math.pow(Math.max(0,v),1/2.2)*f; c=[gm(a.r),gm(a.g),gm(a.b)]; }
+    else { const d=mt.diffuseColor, e=mt.emissiveColor||new BABYLON.Color3(0,0,0); c=[(d.r*L0+e.r)/(L0+K),(d.g*L0+e.g)/(L0+K),(d.b*L0+e.b)/(L0+K)]; }
+    const n=m.getTotalVertices(), C=new Float32Array(n*4);
+    for(let i=0;i<n;i++){ C[i*4]=Math.min(1,c[0]); C[i*4+1]=Math.min(1,c[1]); C[i*4+2]=Math.min(1,c[2]); C[i*4+3]=1; }
+    [VB.UVKind,VB.UV2Kind].forEach(k=>{ if(m.isVerticesDataPresent(k)) m.removeVerticesData(k); });
+    m.setVerticesData(VB.ColorKind,C,false,4); });
+  const r=kids.length>1?BABYLON.Mesh.MergeMeshes(kids,true,true):kids[0];
+  if(r){ r.material=_faceVCMat(); r.parent=g; }
+}
+/* gli occhi per il disegno: sui rig con gli occhi «a fessura» (Woman_B:
+   2,2 x 0,5 cm) le forme verrebbero una riga; l'altezza minima e' 0,6 volte la larghezza */
+function _faceEyesFor(F){ return Object.assign({},F,{ eyes:F.eyes.map(e=>Object.assign({},e,{ h:Math.max(e.h,e.w*0.6) })) }); }
+/* costruisce il viso (tutti i rig): H = la mesh della testa con lo
+   scheletro, M = il suo sistema, F = le misure, skinM = la pelle (naso) */
+function _npcFaceBuild(H,M,F,hi,skinM,face){
+  const out=[];
+  try{ if(skinM) _faceNose(skinM,M,F,face.nose||""); }catch(e){ console.warn("[npc] naso",e); }
+  const col=(LOOK_EYEC.find(x=>x.id===face.eyec)||LOOK_EYEC[1]).hex;
+  F.skin=face.skin||null;
+  const F2=_faceEyesFor(F);
+  const g=new BABYLON.TransformNode("npcFace",scene);
+  try{ (FACE_EYES[face.eyes]||FACE_EYES.round)(g,F2,col); }catch(e){ console.warn("[npc] occhi",e); }
+  try{ (FACE_MOUTHS[face.mouth]||FACE_MOUTHS.thin)(g,F2); }catch(e){ console.warn("[npc] bocca",e); }
+  try{ _faceNoseShade(g,F2); }catch(e){}
+  try{ _faceVC(g); }catch(e){ console.warn("[npc] viso unico",e); try{ _accMerge(g); }catch(e2){} }
+  g.getChildMeshes().forEach(m=>{ if(!m.getTotalVertices()) return;
+    try{ const o=_accSkin(m,H,M,hi); o.__noTint=true; o.receiveShadows=false; out.push(o); }catch(e){ console.warn("[npc] viso",e); } });
+  g.dispose(false,false);
+  return out;
+}
+function npcFaceLater(npc,cfg){
+  if(!npc || (cfg && cfg.faceLook===false)) return;
+  npc.__faceCfg=(cfg && cfg.faceLook) || null;
+  npc.__faceOld=npc.__model==="npcSuit" || /grand|granny|grandpa|grandma|retired|old /i.test(String((cfg&&cfg.sub)||""));
+  _npcFaceQ.push(npc);
+}
+function _npcFaceDo(npc){
+  const ms=npc.meshes;
+  const skin=_npcMatHex(ms,/(^|_)Skin$/)||"#d3a172";
+  const hair=_npcMatHex(ms,/(^|_)(Hair|Hair_Blond|HairBase|Red)$/,/Brown/);
+  const face=Object.assign(npcFaceFor(npc.id,{ f:npc.gender==="f", skin, hair, old:npc.__faceOld }), npc.__faceCfg||{}, { skin });
+  npc.__face=face;
+  let out=[];
+  if(NPC_DRESS_RIG[npc.__model]){
+    /* i rig del giocatore: le misure di dressFace/dressAcc (Casual_Head) */
+    const H=ms.find(m=>/Casual_Head/.test(m.name)&&m.skeleton); if(!H){ npc.__faceFail=true; return; }
+    const M=H.__accM||(H.__accM=_accMeasure(ms)); const F=M&&(H.__faceM||(H.__faceM=_faceMeasure(ms,M)));
+    if(!F){ npc.__faceFail=true; return; }
+    const hd=ms.filter(m=>/Casual_Head/.test(m.name)&&m.material);
+    const skinM=hd.find(m=>/(^|_)Skin/.test(m.material.name));
+    const eyeM=hd.filter(m=>/(^|_)(Eye|Brown)(_|$)/.test(m.material.name)&&!/Hair/.test(m.material.name));
+    const hi=Math.max(0,H.skeleton.bones.findIndex(b=>b.name==="Head"));
+    out=_npcFaceBuild(H,M,F,hi,skinM,face);
+    if(out.length) eyeM.forEach(m=>m.setEnabled(false));     // le scatolette del modello
+    npc.__faceAt={ H, M, hi };
+  } else {
+    const R=_npcFaceRig(npc); if(!R){ npc.__faceFail=true; return; }
+    out=_npcFaceBuild(R.H,R.M,R.F,R.hi,R.H,face);
+    if(out.length) _npcEyesHide(R);
+    npc.__faceAt={ H:R.H, M:R.M, hi:R.hi };
+  }
+  out.forEach(m=>{ m.isPickable=false; m.applyFog=true; m.alwaysSelectAsActiveMesh=true; m.__npcCast=false; if(ms.indexOf(m)<0) ms.push(m); });
+  npc.__faceMs=out; npc.__faceVis=undefined;
+  try{ _octDirty(); }catch(e){}
+}
+scene.onBeforeRenderObservable.add(()=>{
+  if(!_npcFaceQ.length) return;
+  const t0=performance.now();
+  while(_npcFaceQ.length && performance.now()-t0<10){
+    /* prima il guardaroba (il taglio cambia la testa), poi il viso: chi e'
+       ancora in coda dal sarto aspetta, gli altri passano avanti */
+    const k=_npcFaceQ.findIndex(n=>!_npcDressQ.some(j=>j.npc===n)); if(k<0) break;
+    const n=_npcFaceQ.splice(k,1)[0];
+    if(!n.carrier || n.carrier.isDisposed() || NPCS.indexOf(n)<0) continue;
+    try{ _npcFaceDo(n); }catch(e){ console.warn("[npc] viso",n.id,e); }
+  }
+});
+/* oltre NPC_FACE_DIST il viso si spegne (un fotogramma su due: sono 50 distanze, niente) */
+let _npcFaceTick=0; const _npcFaceP=new BABYLON.Vector3();
+scene.onBeforeRenderObservable.add(()=>{
+  if((++_npcFaceTick)%2) return;
+  const cam=scene.activeCamera; if(!cam) return; const cp=cam.globalPosition, d2=NPC_FACE_DIST*NPC_FACE_DIST;
+  for(let i=0;i<NPCS.length;i++){ const n=NPCS[i], fm=n.__faceMs; if(!fm||!fm.length||!n.carrier) continue;
+    n.carrier.getAbsolutePosition().addToRef(BABYLON.Vector3.UpReadOnly,_npcFaceP);
+    const on=_npcFaceOn && BABYLON.Vector3.DistanceSquared(_npcFaceP,cp)<d2;
+    if(n.__faceVis===on) continue; n.__faceVis=on;
+    for(let k=0;k<fm.length;k++) if(!fm[k].isDisposed()) fm[k].isVisible=on; }
+});
 
 /* =====================================================================
    v280 — GIACCHE E GIUBBOTTI, SOPRA IL VESTITO (Giacomo, 29 set: «si
