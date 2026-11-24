@@ -9785,7 +9785,7 @@ function spawnProp(key,x,z,target,opt){ opt=opt||{};
 const CAR_LED_HEAD=BABYLON.Color3.FromHexString("#eef5ff"), CAR_LED_TAIL=BABYLON.Color3.FromHexString("#ff3b30");
 const _carLitM={};
 function _carLedSetup(mt,kind,owner){
-  mt.__led=true; mt.__dusk=true; mt.__nightEmissive=(kind==="head"?CAR_LED_HEAD:CAR_LED_TAIL).clone();
+  mt.__led=true; mt.__dusk=true; mt.__nightEmissive=(kind==="mask"?new BABYLON.Color3(1,1,1):kind==="head"?CAR_LED_HEAD:CAR_LED_TAIL).clone();
   if(owner) mt.__ledRoot=owner;
   if(!mt.emissiveColor) mt.emissiveColor=new BABYLON.Color3(0,0,0);
   if(kind==="head"){ const w=BABYLON.Color3.FromHexString("#e9eef4"); if(mt.albedoColor) mt.albedoColor=w; else if(mt.diffuseColor) mt.diffuseColor=w; }
@@ -9801,35 +9801,84 @@ function carLedLights(root,own){
     if(!_carLitM[k]) _carLitM[k]=_carLedSetup(mt.clone(mt.name+"_lit"),kind,null);
     m.material=_carLitM[k]; });
   if(hasHead) return;
-  /* la Lamborghini: le strisce LED */
-  const ry=root.rotation.y; root.rotation.y=TRAFFIC_YAW; root.computeWorldMatrix(true);
-  root.getChildMeshes(false).forEach(m=>m.computeWorldMatrix(true));
-  /* v622: l'ingombro della SOLA scocca (prima entravano l'ombra a terra
-     h7sh e l'abitacolo, piu' larghi e lunghi: la striscia posteriore
-     galleggiava 15 cm dietro la coda) */
-  const bb={ min:new BABYLON.Vector3(1e9,1e9,1e9), max:new BABYLON.Vector3(-1e9,-1e9,-1e9) };
-  const body=[];
-  root.getChildMeshes(false).forEach(m=>{ const mn=String(m.name), mt=m.material?String(m.material.name):"";
-    if(!m.material || !m.getTotalVertices() || /^(h7sh|a1|carLed|lid)/i.test(mn) || /^(h7sh|a1|carLed)/i.test(mt)) return;
-    body.push(m); const b=m.getBoundingInfo().boundingBox; (b.vectorsWorld||[b.minimumWorld,b.maximumWorld]).forEach(v=>{ bb.min.minimizeInPlace(v); bb.max.maximizeInPlace(v); }); });
-  if(!body.length){ root.rotation.y=ry; root.computeWorldMatrix(true); return; }
-  const W=bb.max.x-bb.min.x, H=bb.max.y-bb.min.y, cx=(bb.min.x+bb.max.x)/2;
-  /* la superficie vera della scocca a quella quota: un raggio da fuori
-     (il muso della Lambo e' inclinato: col solo ingombro la striscia
-     restava sospesa davanti al paraurti) */
-  const hit=(x,y,front)=>{ const o=new BABYLON.Vector3(x,y,front?bb.max.z+1:bb.min.z-1), r=new BABYLON.Ray(o,new BABYLON.Vector3(0,0,front?-1:1),4);
-    let best=null; body.forEach(m=>{ const pi=r.intersectsMesh(m,false); if(pi&&pi.hit&&(!best||pi.distance<best.distance)) best=pi; });
-    return best?best.pickedPoint:null; };
-  const strip=(nm,mt,sg,front,y,f0,f1,th)=>{
-    const A=hit(cx+sg*W*f0,y,front), B=hit(cx+sg*W*f1,y,front); if(!A||!B) return;
-    const dx=B.x-A.x, dz=B.z-A.z, L=Math.hypot(dx,dz)+0.02, out=front?0.012:-0.012;
-    const s=BABYLON.MeshBuilder.CreateBox(nm,{ width:L, height:th, depth:0.035 },scene);
-    s.material=mt; s.isPickable=false; s.position.set((A.x+B.x)/2,y,(A.z+B.z)/2+out); s.rotation.y=-Math.atan2(dz,dx); s.setParent(root); };
-  const head=own?_carLedSetup(_carLedBase("head"),"head",root):_carLedMat("head"), tail=own?_carLedSetup(_carLedBase("tail"),"tail",root):_carLedMat("tail");
-  [-1,1].forEach(sg=>{
-    strip("carLedH",head,sg,true, bb.min.y+H*0.50,0.20,0.40,H*0.035);
-    strip("carLedT",tail,sg,false,bb.min.y+H*0.56,0.16,0.40,H*0.04); });
-  root.rotation.y=ry; root.computeWorldMatrix(true);
+  /* la Lamborghini (CAR_Model, anche The Beast): non ha un materiale fari,
+     ma i fari sono DISEGNATI nella texture della scocca (le strisce LED
+     bianche davanti, i fanali rossi a Y dietro). v622 (Giacomo: «le luci
+     della Lambo sono completamente fuori da quelle vere»): niente piu'
+     strisce aggiunte; si accendono quei pixel. Una maschera emissiva fatta
+     dalla texture: bianco quasi puro -> fari, rosso saturo -> fanali, il
+     resto nero. emissiveColor (0 di giorno, 1 dal tramonto) la accende.
+     Traffico: un clone acceso del materiale, condiviso; The Beast: il suo. */
+  root.getChildMeshes(false).forEach(m=>{ const mt=m.material;
+    if(!mt || !/Aventador_Body/i.test(String(mt.name||"")) || !mt.albedoTexture) return;
+    if(own){ if(!mt.__led){ _carLedMask(mt.albedoTexture,mt,m,root); _carLedSetup(mt,"mask",root); } return; }
+    const k=mt.uniqueId+"|mask";
+    if(!_carLitM[k]){ const cl=mt.clone(mt.name+"_lit"); _carLedMask(mt.albedoTexture,cl,m,root); _carLitM[k]=_carLedSetup(cl,"mask",null); }
+    m.material=_carLitM[k]; });
+}
+/* la maschera dei fari dalla texture (asincrona: finche' non c'e', spenti) */
+const _carMaskCache=new Map(), _carHeadCache=new Map();
+/* i gruppi ottici davanti diventano una «lente» accesa: gli stessi
+   triangoli della scocca, copiati 3 mm piu' in fuori, col materiale LED dei
+   fari (di giorno vetro chiaro, dal tramonto bianco acceso) */
+function _carHeadLens(mesh,root,T){
+  if(!T || !T.length || mesh.__lens) return; mesh.__lens=true;
+  const pos=mesh.getVerticesData("position"), P=[], I=[], N=[];
+  T.forEach(t=>{ const a=t.map(i=>new BABYLON.Vector3(pos[3*i],pos[3*i+1],pos[3*i+2]));
+    const n=BABYLON.Vector3.Cross(a[1].subtract(a[0]),a[2].subtract(a[0])); if(n.length()<1e-12) return; n.normalize();
+    a.forEach(v=>{ const q=v.add(n.scale(0.004)); I.push(P.length/3); P.push(q.x,q.y,q.z); N.push(n.x,n.y,n.z); }); });
+  if(!P.length) return;
+  const lm=new BABYLON.Mesh("carLedLens",scene), vd=new BABYLON.VertexData(); vd.positions=P; vd.indices=I; vd.normals=N; vd.applyToMesh(lm);
+  lm.parent=mesh; lm.isPickable=false;
+  lm.material=(root.__ledOn)?(root.__lensM||(root.__lensM=_carLedSetup(_carLedBase("head"),"head",root))):_carLedMat("head");
+  lm.material.backFaceCulling=false;
+}
+/* i gruppi ottici davanti: nella texture sono grigio scuro (vetro fume'),
+   indistinguibili dal resto del nero. Si trovano con la geometria: i
+   triangoli della scocca nel muso (ultimi 70 cm), all'altezza dei fari
+   (0,5-0.9 m), verso i fianchi, e scuri nella texture. Restituisce i loro
+   triangoli in coordinate UV, da riempire di bianco nella maschera. */
+function _carHeadTris(mesh,root,px,W,H){
+  const out=[]; try{
+    const pos=mesh.getVerticesData("position"), uv=mesh.getVerticesData("uv"), ind=mesh.getIndices(); if(!pos||!uv||!ind) return out;
+    /* nelle coordinate del modello (CAR_Model: lungo z da -1 a 1, il muso a
+       +z; alto y da -0.24 a 0.24 = 1,25 m; largo x +-0.47): uguale per
+       tutte le Lambo, qualunque sia la radice o la direzione */
+    const n=pos.length/3, F=new Float32Array(n), Y=new Float32Array(n), S=new Float32Array(n);
+    let fmax=-1e9, smax=0, ymin=1e9, ymax=-1e9;
+    for(let i=0;i<n;i++){ F[i]=pos[3*i+2]; S[i]=pos[3*i]; Y[i]=pos[3*i+1]; if(F[i]>fmax) fmax=F[i]; if(Math.abs(S[i])>smax) smax=Math.abs(S[i]); ymin=Math.min(ymin,Y[i]); ymax=Math.max(ymax,Y[i]); }
+    const k=1.25/((ymax-ymin)||1); for(let i=0;i<n;i++){ F[i]*=k; S[i]*=k; Y[i]=(Y[i]-ymin)*k; } fmax*=k; smax*=k;   // in metri
+    for(let t=0;t<ind.length;t+=3){ const i0=ind[t],i1=ind[t+1],i2=ind[t+2];
+      const f=(F[i0]+F[i1]+F[i2])/3, y=(Y[i0]+Y[i1]+Y[i2])/3, sd=Math.abs((S[i0]+S[i1]+S[i2])/3);
+      if(f<fmax-0.75 || y<0.5 || y>0.9 || sd<smax*0.42) continue;
+      const u=(uv[2*i0]+uv[2*i1]+uv[2*i2])/3, w=(uv[2*i0+1]+uv[2*i1+1]+uv[2*i2+1])/3;
+      const X=Math.min(W-1,Math.max(0,Math.floor(u*W))), Yp=Math.min(H-1,Math.max(0,Math.floor(w*H))), k=(Yp*W+X)*4;
+      const r=px[k],g=px[k+1],b=px[k+2], mx=Math.max(r,g,b), mn=Math.min(r,g,b);
+      if(mx>170 || (mx-mn)>40) continue;                                             // vernice o finiture chiare: no
+      out.push([i0,i1,i2]); }
+  }catch(e){ console.warn("[led head]",e); }
+  return out; }
+function _carLedMask(src,mt,mesh,root){
+  const key=src.url||src.name;
+  const put=et=>{ mt.emissiveTexture=et; };
+  const lens=()=>{ const T=_carHeadCache.get(key); if(T && mesh && root) try{ _carHeadLens(mesh,root,T); }catch(e){} };
+  if(_carMaskCache.has(key)){ const v=_carMaskCache.get(key); if(v && v.then) v.then(et=>{ put(et); lens(); }); else if(v){ put(v); lens(); } return; }
+  const pr=new Promise(res=>{ BABYLON.Texture.WhenAllReady([src],()=>{ try{
+    const sz=src.getSize(), W=sz.width, H=sz.height; Promise.resolve(src.readPixels()).then(px=>{ try{
+      const dt=new BABYLON.DynamicTexture("carLedMask"+(_lpN++),{ width:W, height:H },scene,true);
+      const c=dt.getContext(), im=c.createImageData(W,H), d=im.data;
+      for(let i=0;i<W*H*4;i+=4){ const r=px[i], g=px[i+1], b=px[i+2], mx=Math.max(r,g,b), mn=Math.min(r,g,b);
+        let o=[0,0,0];
+        if(mn>200 && mx-mn<40) o=[255,255,255];                                   // bianco: i fari
+        else if(r>110 && r>g*2.2 && r>b*2.2) o=[255,40,30];                       // rosso: i fanali
+        d[i]=o[0]; d[i+1]=o[1]; d[i+2]=o[2]; d[i+3]=255; }
+      c.putImageData(im,0,0);
+      if(mesh && root){ try{ const T=_carHeadTris(mesh,root,px,W,H); _carHeadCache.set(key,T); _carHeadLens(mesh,root,T); }catch(e){ console.warn("[led lens]",e); } }
+      dt.update(false);
+      dt.wrapU=src.wrapU; dt.wrapV=src.wrapV; dt.coordinatesIndex=src.coordinatesIndex;
+      dt.uOffset=src.uOffset; dt.vOffset=src.vOffset; dt.uScale=src.uScale; dt.vScale=src.vScale; dt.wAng=src.wAng;
+      _carMaskCache.set(key,dt); res(dt); }catch(e){ console.warn("[led mask]",e); res(null); } }).catch(()=>res(null)); }catch(e){ res(null); } }); });
+  _carMaskCache.set(key,pr); pr.then(et=>{ if(et) put(et); });
 }
 /* le strisce LED: un materiale per tipo (traffico, condiviso) o per auto (flotta) */
 function _carLedBase(k){ const m=new BABYLON.StandardMaterial("carLed_"+k+(_lpN++),scene);
@@ -53372,28 +53421,56 @@ function _gtPainting(i){
       [[0.35,0.5,"#d84a3a"],[0.5,0.45,"#e8b040"],[0.63,0.52,"#7aa040"]].forEach(f=>{ c.fillStyle=f[2]; c.beginPath(); c.arc(W*f[0],H*f[1],20,0,7); c.fill(); }); }
     for(let k=0;k<260;k++){ c.fillStyle="rgba("+(rnd()*255|0)+","+(rnd()*255|0)+","+(rnd()*200|0)+",0.06)"; c.fillRect(rnd()*W,rnd()*H,6+rnd()*14,3); } }); }
 /* un tavolo apparecchiato (decor: si fonde poi per materiale) */
+let _gtNapM=null;
 function _gtTable(dec,M,x,z){
-  _gtCyl(dec,0.12,0.12,0.5,M.wood,x,0.25,z,10); _gtCyl(dec,0.5,0.56,0.04,M.wood,x,0.02,z,20);
-  _gtBox(dec,1.12,0.36,1.12,M.cloth,x,0.6,z);                                      // tovaglia (cade a 42 cm)
-  _gtBox(dec,1.14,0.012,1.14,M.cloth,x,0.786,z);
+  /* v622 (Giacomo: «le gambe sfondano la tovaglia bianca»): la tovaglia
+     scendeva fino a 42 cm e le ginocchia di chi siede ci passavano dentro.
+     Ora cade di 12 cm come una vera tovaglia, e sotto si vede il tavolo:
+     colonna di legno tornita e piede a croce. */
+  _gtCyl(dec,0.09,0.11,0.66,M.wood,x,0.36,z,12); _gtCyl(dec,0.16,0.12,0.06,M.wood,x,0.06,z,14); _gtCyl(dec,0.13,0.16,0.05,M.wood,x,0.68,z,14);
+  [Math.PI/4,-Math.PI/4].forEach(a=>_gtBox(dec,0.66,0.045,0.08,M.wood,x,0.03,z,a));
+  [[1,1],[1,-1],[-1,1],[-1,-1]].forEach(q=>_gtCyl(dec,0.05,0.04,0.03,M.brass,x+q[0]*0.23,0.015,z+q[1]*0.23,10));
+  _gtBox(dec,1.0,0.03,1.0,M.wood,x,0.7,z);                                          // il piano sotto la tovaglia
+  _gtBox(dec,1.14,0.12,1.14,M.cloth,x,0.725,z);                                     // tovaglia: cade di 12 cm
+  _gtBox(dec,1.16,0.012,1.16,M.cloth,x,0.786,z);
   _gtCyl(dec,0.05,0.05,0.13,M.wax,x+0.12,0.86,z,10); _gtSph(dec,0.035,M.flame,x+0.12,0.945,z,1.6);   // candela
   _gtCyl(dec,0.06,0.07,0.14,M.glass,x-0.12,0.86,z,12); _gtSph(dec,0.09,[M.velvet,M.flame,M.leaf][(Math.abs(x*3+z)|0)%3],x-0.12,0.97,z);  // vasetto col fiore
   [-1,1].forEach(sd=>{ const zz=z+sd*0.33;
     _gtCyl(dec,0.27,0.27,0.012,M.white,x,0.8,zz,24);                               // sottopiatto
-    _gtBox(dec,0.02,0.006,0.2,M.silver,x-0.18,0.796,zz); _gtBox(dec,0.022,0.006,0.21,M.silver,x+0.18,0.796,zz);   // posate
+    _gtBox(dec,0.075,0.008,0.2,(_gtNapM||(_gtNapM=mat("gt_nap","#2b4a3a"))),x-0.2,0.796,zz);                           // tovagliolo verde piegato, sotto la forchetta
+    _gtBox(dec,0.02,0.006,0.2,M.silver,x-0.2,0.803,zz); _gtBox(dec,0.022,0.006,0.21,M.silver,x+0.18,0.796,zz);   // posate
     _gtCyl(dec,0.065,0.02,0.09,M.glass,x+0.2,0.93,zz-sd*0.12,12); _gtCyl(dec,0.01,0.01,0.1,M.glass,x+0.2,0.84,zz-sd*0.12,6);   // calice
-    const nap=_gtBox(dec,0.12,0.06,0.12,M.cloth,x,0.84,zz); nap.rotation.y=Math.PI/4; nap.rotation.x=0.4; });
+  });
 }
 /* una sedia imbottita verde col legno scuro; face = dove guarda chi siede */
 function _gtChair(dec,M,x,z,face){
-  const f={ x:Math.sin(face), z:Math.cos(face) }, b={ x:-f.x*0.2, z:-f.z*0.2 };
-  _gtBox(dec,0.46,0.07,0.46,M.velvet,x,0.47,z);
-  _gtBox(dec,0.48,0.04,0.48,M.wood,x,0.43,z);
-  [[-0.19,-0.19],[0.19,-0.19],[-0.19,0.19],[0.19,0.19]].forEach(q=>_gtBox(dec,0.04,0.42,0.04,M.wood,x+q[0],0.21,z+q[1]));
-  const bk=_gtBox(dec,0.44,0.52,0.06,M.velvet,x+b.x,0.78,z+b.z,face);
-  _gtBox(dec,0.48,0.06,0.07,M.wood,x+b.x*1.05,1.06,z+b.z*1.05,face);
+  /* v622 (Giacomo: «anche le sedie puoi migliorarle»): sedia da sala
+     classica. Gambe davanti affusolate, gambe dietro che salgono a fare i
+     montanti dello schienale (appena inclinato all'indietro), pomoli
+     d'ottone, seduta imbottita bombata con la fila di borchie, schienale
+     imbottito dentro la cornice di legno. Coordinate locali: +z = dove
+     guarda chi siede. */
+  const cs=Math.cos(face), sn=Math.sin(face);
+  const P=(lx,lz)=>[x+lx*cs+lz*sn, z-lx*sn+lz*cs];
+  const box=(w,h,d,m,lx,y,lz,tilt)=>{ const q=P(lx,lz), b=_gtBox(dec,w,h,d,m,q[0],y,q[1]); b.rotation.set(tilt||0,face,0); return b; };
+  const cyl=(dt,db,h,m,lx,y,lz,tilt)=>{ const q=P(lx,lz), c=_gtCyl(dec,dt,db,h,m,q[0],y,q[1],10); c.rotation.set(tilt||0,face,0); return c; };
+  const TL=-0.1;                                                                  // inclinazione dello schienale
+  [-0.19,0.19].forEach(lx=>{
+    cyl(0.045,0.03,0.44,M.wood,lx,0.22,0.19);                                     // gamba davanti, affusolata
+    cyl(0.034,0.028,0.05,M.brass,lx,0.025,0.19);                                  // puntale d'ottone
+    cyl(0.042,0.032,0.46,M.wood,lx,0.23,-0.2);                                    // gamba dietro
+    cyl(0.04,0.04,0.62,M.wood,lx,0.76,-0.2-Math.sin(-TL)*0.31,TL);                 // montante dello schienale
+    const q=P(lx,-0.2-Math.sin(-TL)*0.63); _gtSph(dec,0.055,M.brass,q[0],1.08,q[1]); });   // pomolo
+  box(0.5,0.07,0.48,M.wood,0,0.445,0);                                            // telaio della seduta
+  box(0.46,0.05,0.44,M.velvet,0,0.5,0.005);                                       // imbottitura
+  box(0.44,0.02,0.42,M.velvet,0,0.53,0.005);                                     // il colmo dell'imbottitura
+  box(0.5,0.012,0.012,M.brass,0,0.468,0.243);                                     // borchie sul davanti
+  box(0.36,0.43,0.05,M.velvet,0,0.79,-0.215-Math.sin(-TL)*0.29,TL);                // schienale imbottito
+  box(0.44,0.075,0.06,M.wood,0,1.03,-0.2-Math.sin(-TL)*0.57,TL);                   // traversa alta
+  box(0.4,0.045,0.045,M.wood,0,0.56,-0.2-Math.sin(-TL)*0.07,TL);                   // traversa bassa
+  box(0.4,0.03,0.03,M.wood,0,0.15,0);                                             // crociera fra le gambe
   try{ hm7Shadow(dec,0.6,0.6,x,z,0.028,0.4); }catch(e){}
-  return bk; }
+}
 function buildGreenTable(){
   const I=allocInterior(GT_DEF); GT.I=I; if(I.built) return I; I.built=true; GT.built=true;
   const C=GT.C=I.center, S=GT_DEF.size, SX=GT_DEF.sizeX, WH=3.4, M=_gtMats(), root=I.root;
@@ -53527,11 +53604,16 @@ function buildGreenTable(){
 const GT_HOST_L={ x:3.4, z:6.45 }, GT_W1_L={ x:-2.0, z:-7.2 }, GT_W2_L={ x:2.0, z:-7.2 }, GT_LANE_Z=-0.9;
 function buildGreenTableNPCs(){
   const C=GT.C, A=GT_DEF.area, gy=GT.gy;
-  GT.host=spawnNPC({ id:"gt_oliver", name:"Oliver", sub:"Maître d'", area:A, model:"avatar", dress:false, keepModel:true,
-    tint:{ Purple:"#1f2a24", LightBlue:"#1a1d20" }, height:1.80, x:C.x+GT_HOST_L.x, y:gy, z:C.z+GT_HOST_L.z, face:0, snap:false, radius:2.6,
+  /* v622 (Giacomo: «il maître e' in pantaloncini!! vestilo bene!!!»): il
+     modello «avatar» ha i calzoncini. Ora e' l'uomo in abito (giacca,
+     pantaloni lunghi, cravatta), come si conviene a un maître. */
+  GT.host=spawnNPC({ id:"gt_oliver", name:"Oliver", sub:"Maître d'", area:A, model:"npcSuit", keepModel:true, noTint:true, height:1.80, x:C.x+GT_HOST_L.x, y:gy, z:C.z+GT_HOST_L.z, face:0, snap:false, radius:2.6,
     interact:n=>gtTalkHost(n) });
-  GT.waiter=spawnNPC({ id:"gt_marco", name:"Marco", sub:"Waiter", area:A, model:"avatar", dress:false, keepModel:true,
-    tint:{ Purple:"#f4f1ea", LightBlue:"#1d1f22" }, height:1.78, x:C.x+GT_W1_L.x, y:gy, z:C.z+GT_W1_L.z, face:0, snap:false, radius:2.4,
+  /* v622 (Giacomo: «anche il waiter!!!»): niente calzoncini. Camicia
+     bianca e pantaloni neri lunghi (il modello dei clienti in abito
+     cammina e porta i piatti come gli altri). */
+  GT.waiter=spawnNPC({ id:"gt_marco", name:"Marco", sub:"Waiter", area:A, model:"npcMan2", dress:false, keepModel:true,
+    tint:{ Shirt:"#f4f1ea", Pants:"#16181c" }, height:1.78, x:C.x+GT_W1_L.x, y:gy, z:C.z+GT_W1_L.z, face:0, snap:false, radius:2.4,
     interact:n=>gtTalkWaiter(n) });
   GT.w2=spawnNPC({ id:"gt_sofia", name:"Sofia", sub:"Waitress", area:A, model:"npcWomanB", keepModel:true, dress:false,
     tint:{ LimeGreen:"#f4f1ea", Red:"#2a221c" }, height:1.68, x:C.x+GT_W2_L.x, y:gy, z:C.z+GT_W2_L.z, face:0, snap:false, radius:2.4,
@@ -53547,6 +53629,12 @@ function buildGreenTableNPCs(){
     setTimeout(()=>{ try{ npcSitAt(n,s.x,s.z,s.face,s.seatY,gy,0.05); }catch(e){ console.warn("[gt] sit",e); } },0);
     try{ const v=GT_MENU.mains.find(m=>m.en===g.dish), d=GT_MENU.drinks[(g.seat%3)+0];
       const set=gtFoodSet([{ key:"main", v },{ key:"drink", v:d }],s); set.__guest=true; } catch(e){} });
+  /* v622 (Giacomo: «c'e' ancora l'errore me 1/2»): seduti, P fa tutto da
+     «me» (il cameriere, il conto, alzarsi). Le persone della sala (la
+     signora al tavolo accanto, i camerieri) da seduti non sono una scelta:
+     il prompt vuoto le toglie dal selettore (vedi updateProximity). */
+  [GT.host,GT.waiter,GT.w2].concat(GT.guests).forEach(n=>{ const I=n&&n.inter; if(!I || I.__gtMute) return; I.__gtMute=true;
+    const p0=I.prompt; I.prompt=()=>GT.seat?'':(typeof p0==="function"?p0():p0); });
   GT.meInter=addInteract({ id:"gt_me", area:A, radius:3.0, enabled:false, prio:-2,
     pos:()=>player.position, prompt:()=>gtMePrompt(), interact:()=>gtMeAction() });
   if(!GT.mirT) GT.mirT=setInterval(()=>{ try{ gtMirror(); }catch(e){} },700);
@@ -53565,7 +53653,7 @@ function gtSeatInteracts(){
   GT.seats.forEach((s,i)=>{ if(s.taken) return;
     s.inter=addInteract({ id:"gt_seat_"+i, area:GT_DEF.area, radius:1.15,
       pos:()=>new BABYLON.Vector3(s.x,0.5,s.z),
-      prompt:()=>gtSeatTaken(s)?'\u{1FA91} This seat is taken'
+      prompt:()=>GT.seat?'':gtSeatTaken(s)?'\u{1FA91} This seat is taken'
         :(GT.assigned===s.t?'\u{1F33F} Press <b>P</b> to <b>sit down</b> · your table':'Press <b>P</b> to <b>sit down</b>'),
       interact:()=>gtSit(s) }); });
 }
@@ -54014,10 +54102,20 @@ function _gtDish(key,v,par){
     [-0.045,0.045].forEach(x=>{ B(0.075,0.02,0.055,F("#d9a45a"),x,0.03,0,0.2); for(let i=0;i<4;i++) B(0.016,0.012,0.016,F("#c8392b"),x-0.02+i*0.013,0.046,(i%2)*0.012-0.006);
       S(0.012,F("#3f7a2a"),x+0.01,0.05,0.012,0.4); });
   } else if(ic==="pasta"){
+    /* v622 (Giacomo: «fai meglio gli spaghetti»): un nido di fili veri
+       (tubi sottili che girano a spirale su una cupola), il sugo in cima,
+       qualche pezzo di pomodoro, il basilico e il parmigiano */
     _gtPlate(g,M,0.27,false);
-    for(let i=0;i<5;i++){ const t=BABYLON.MeshBuilder.CreateTorus("gtSp",{ diameter:0.11-i*0.014, thickness:0.016, tessellation:20 },scene);
-      t.material=F("#f0d48a"); t.parent=g; t.position.set(0,0.022+i*0.009,0); t.rotation.set(0.15*(i%2?1:-1),i,0); t.isPickable=false; }
-    S(0.07,F(c),0,0.07,0,0.45); S(0.022,F("#3f8a3a"),0.015,0.09,0.01,0.3); S(0.02,F("#f4f0e0"),-0.02,0.085,-0.015,0.4);
+    let sd=7; const rnd=()=>{ sd=(sd*16807)%2147483647; return (sd%10000)/10000; };
+    const pm=F("#efd28c"), pm2=F("#e6c477"), R=0.085, H=0.055;
+    for(let i=0;i<16;i++){ const a0=rnd()*Math.PI*2, turns=1.6+rnd()*1.2, h0=rnd()*0.25, path=[];
+      for(let k=0;k<=40;k++){ const t=k/40, hh=Math.min(1,h0+t*0.75), a=a0+t*turns*Math.PI*2, r=R*Math.sqrt(Math.max(0.02,1-hh*hh))*(0.85+0.15*Math.sin(t*9+i));
+        path.push(new BABYLON.Vector3(Math.cos(a)*r, 0.022+H*hh+0.004*Math.sin(t*13+i), Math.sin(a)*r)); }
+      const tb=BABYLON.MeshBuilder.CreateTube("gtSp",{ path, radius:0.0032, tessellation:5 },scene); tb.material=i%3?pm:pm2; tb.parent=g; tb.isPickable=false; }
+    const sc=S(0.075,F(c),0.004,0.074,0,0.3);                                    // il sugo
+    for(let i=0;i<5;i++){ const a=i*1.3; S(0.014+0.004*(i%2),F(/pesto/i.test(v.en)?"#5c8a2e":"#b8321f"),0.004+Math.cos(a)*0.024,0.082,Math.sin(a)*0.024,0.6); }
+    [[0.012,0.006,0.6],[-0.01,0.014,-0.7]].forEach(l=>{ const b=S(1,F("#2f7a2a"),l[0],0.092,l[1]); b.scaling.set(0.03,0.004,0.016); b.rotation.y=l[2]; });   // basilico
+    for(let i=0;i<6;i++){ const a=i*1.05+0.3; B(0.006,0.004,0.006,F("#f4efd8"),Math.cos(a)*0.035,0.088,Math.sin(a)*0.035,a); }   // parmigiano
   } else if(ic==="lasagne"){
     _gtPlate(g,M,0.27,false);
     B(0.13,0.016,0.09,F("#f0d48a"),0,0.02,0); B(0.13,0.014,0.09,F(c),0,0.035,0); B(0.13,0.016,0.09,F("#f0d48a"),0,0.05,0); B(0.132,0.012,0.092,F("#e8b85a"),0,0.064,0);
