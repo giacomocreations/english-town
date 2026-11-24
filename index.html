@@ -10827,6 +10827,10 @@ function _autoObstacles(){ _autoObsL.length=0;
   try{ for(const id in AUTO_FLEET){ const F=AUTO_FLEET[id], tc=F&&F.car&&F.car.tc;
       if(!tc || !tc.root || !tc.root.isEnabled() || _trafficCars.indexOf(tc)>=0) continue;
       tc.__fleet=true; _autoObsL.push(tc); } }catch(e){}
+  /* v616: anche le auto dei COMPAGNI (presenza): chi arriva dietro le segue
+     in coda invece di passarci attraverso. Non sono tue: niente regola dei
+     30 s (vedi c.autoHold, solo __fleet) */
+  try{ Presenza.autoPeers().forEach(C=>{ if(C && C.root && C.root.isEnabled()) _autoObsL.push(C); }); }catch(e){}
   return _autoObsL; }
 function _tcOvertake(c,dt,gap,gapO,slowAt){
   c.ovo=c.ovo||0; if(!c.ovt) c.ovt=0;
@@ -67257,7 +67261,7 @@ function tlFleetPark(id,tries){
   const F=AUTO_FLEET[id]; if(F.car) return;
   const P=tlAutoParked(id);
   if(!P || !P.root){ if((tries||0)<30) setTimeout(()=>tlFleetPark(id,(tries||0)+1),2000); return; }
-  try{ P.root.setEnabled(false); F.car=tlAutoBuildCar(P.key,id); F.car.root.rotation.y=Math.PI+TRAFFIC_YAW; tlAutoGroundAt.call(null,F.car);
+  try{ P.root.setEnabled(false); F.carKey=P.key; F.car=tlAutoBuildCar(P.key,id); F.car.root.rotation.y=Math.PI+TRAFFIC_YAW; tlAutoGroundAt.call(null,F.car);
     setTimeout(()=>{ try{ if(!AUTO.on) tlFleetWarm(id); }catch(e){} },1200); }       // v530
   catch(e){ console.warn("[fleet "+id+"]",e); }
 }
@@ -82071,6 +82075,7 @@ const Presenza=(function(){
       /* 🛹 seduto con la tavola accanto: la vedono anche i compagni */
       try{ const rp=(typeof RIDE!=="undefined")?(RIDE.parked||RIDE.on):null; if(rp && (q+",v"+rp.code).length<=48) q+=",v"+rp.code; }catch(e){}
       try{ const rk=(typeof RIDE!=="undefined")?RIDE.racked:null; if(rk && rk.k>=0 && (q+",k"+rk.R.code+rk.k).length<=48) q+=",k"+rk.R.code+rk.k; }catch(e){}
+      { const a=_inAutoCampo(); if(a && (q+a).length<=48) q+=a; }       // 🚗 v616: seduto nella sua auto
       return q; }
     let q=player.position.x.toFixed(1)+","+player.position.z.toFixed(1)+","
           +player.position.y.toFixed(2)+","+player.rotation.y.toFixed(2);
@@ -82079,8 +82084,19 @@ const Presenza=(function(){
     try{ if(typeof RIDE!=="undefined" && RIDE.on) q+=",v"+RIDE.on.code; }catch(e){}
     /* 🅿️ il tuo monopattino nella rastrelliera: «,k<codice><rastrelliera>» */
     try{ if(typeof RIDE!=="undefined" && RIDE.racked && RIDE.racked.k>=0) q+=",k"+RIDE.racked.R.code+RIDE.racked.k; }catch(e){}
+    { const a=_inAutoCampo(); if(a) q+=a; }                             // 🚗 v616: sale o scende dalla sua auto
     return (iv && (q+iv).length<=48)?q+iv:q;
   }
+  /* 🚗 v616 (Giacomo, 24 nov: «fai l'auto visibile agli altri»). Prima, in
+     auto, ai compagni arrivava solo la posa da seduto, che si disegna SOLO
+     da fermi: a 40 km/h si vedeva un compagno in piedi che camminava lungo
+     la strada, senza auto. Ora chi e' in auto lo dice («,a1» Nelson 1,
+     «,a2» The Beast, come «,v» dello skate) e chi guarda costruisce la
+     stessa auto (tlAutoBuildCar, coi colori della flotta) attorno a lui,
+     seduto anche in corsa (vedi _inAuto). */
+  function _inAutoCampo(){
+    try{ if(typeof AUTO!=="undefined" && AUTO.on && AUTO.car && area==="town") return ",a"+(AUTO.fid==="turbo"?2:1); }catch(e){}
+    return ""; }
   /* v309e (Giacomo: «fai passare l'invito per tutti»): chi ha chiesto alla
      crew di ballare lo dice a tutta la classe finche' l'invito dura, come
      campo in coda a `p`: «,i» + il numero del quarto d'ora in cui finisce
@@ -82098,19 +82114,20 @@ const Presenza=(function(){
     if(!isFinite(x)||!isFinite(z)) return null;
     const m=/^s(-?\d{1,4})_(-?\d{1,4})([db]?)(c?)$/.exec(p[4]||"");
     /* dal sesto campo in poi: il cameriere (w...) e il tavolo (o... / c..., v309) */
-    let w=null, ta=null, iv=0, rv=0; let ij=0; let rk=null;
+    let w=null, ta=null, iv=0, rv=0; let ij=0; let rk=null; let au=0;
     for(let i=4;i<p.length;i++){ const f=p[i]||""; let mm;
       if(!iv && (mm=/^i([0-9a-z]{1,8})$/.exec(f))){ iv=parseInt(mm[1],36)*SK_CYCLE; continue; }   // v309e: l'invito alla crew
       if(!ij && (mm=/^j([0-9a-z]{1,8})$/.exec(f))){ ij=parseInt(mm[1],36)*SK_CYCLE; continue; }   // 🛹 l'invito allo skate
       if(!rv && (mm=/^v([1-9])$/.exec(f))){ rv=+mm[1]; continue; }                                // 🛹🛴 in sella
       if(!rk && (mm=/^k([1-9])([0-9])$/.exec(f))){ rk={ code:+mm[1], k:+mm[2] }; continue; }       // 🅿️ il suo monopattino parcheggiato
+      if(!au && (mm=/^a([12])$/.exec(f))){ au=+mm[1]; continue; }                                  // 🚗 v616: nella sua auto
       if(i<5) continue;
       if(!w && (mm=/^w(-?\d{1,4}(?:\.\d)?):(-?\d{1,4}(?:\.\d)?)$/.exec(f))) w=mm;
       else if(!ta && (mm=/^o([0-9a-u]{4})([0-3-])$/.exec(f))) ta={ k:"o", c:mm[1], cur:mm[2] };
       else if(!ta && (mm=/^c([0-7])([0-4])([0-4])([0-4])([01-])$/.exec(f))) ta={ k:"c", c:mm[1]+mm[2]+mm[3]+mm[4], cur:mm[5] }; }
     const d=/^d(\d{1,3})$/.exec(p[4]||"");            // v304: balla (fase in centesimi di battito)
     const mz=/^m([hbmsStar])(\d{1,3})(?:@(\d{2,3}))?$/.exec(p[4]||""); // v309: i passi (mossa, battiti x10, @bpm dello schiocco)
-    return { x:x, z:z, y:(isFinite(y)?y:0), r:(isFinite(r)?r:0), invito:(isFinite(iv)?iv:0), invitoSk:(isFinite(ij)?ij:0), ride:rv, rack:rk,
+    return { x:x, z:z, y:(isFinite(y)?y:0), r:(isFinite(r)?r:0), invito:(isFinite(iv)?iv:0), invitoSk:(isFinite(ij)?ij:0), ride:rv, rack:rk, auto:au,
              balla:d?{ ph:+d[1]/100 }:null,
              mossa:mz?{ mv:_MOSSA_DA[mz[1]], sdir:(mz[1]==="S"?-1:1), b:+mz[2]/10, bpm:mz[3]?+mz[3]:0 }:null,
              siede:m?{ seat:+m[1]/100, gy:+m[2]/100, eat:m[3]||"", c:!!m[4], ta:ta }:null,
@@ -82190,6 +82207,7 @@ const Presenza=(function(){
     e.siede=p.siede;                                   // v302: seduto / mangia / beve
     e.balla=p.balla;                                   // v304: balla al concerto
     e.ride=p.ride||0;                                  // 🛹🛴 skate (1) / monopattino (2)
+    e.auto=p.auto||0;                                  // 🚗 v616: Nelson 1 (1) / The Beast (2)
     e.rack=p.rack||null;                               // 🅿️ il suo monopattino nella rastrelliera
     /* v309: i passi; t = quando e' arrivato il campione, per far avanzare i battiti */
     e.mossa=p.mossa?Object.assign(p.mossa,{ t:ora }):null;
@@ -82500,8 +82518,31 @@ const Presenza=(function(){
     b.rideTilt=rideTilt(b.rideM[id], b.holder, b.rideTilt||0, q.x, q.z, b.carrier.rotation.y);   // 🛹 sulle rampe
     b.rideP={ x:q.x, z:q.z };
   }
+  /* 🚗 v616: l'auto di un compagno. Le auto costruite non si buttano: si
+     spengono e tornano nel mucchio (PEER_CARS), pronte per il prossimo.
+     Posizione: il compagno sta sul sedile (C.seat, coordinate dell'auto:
+     +z avanti), quindi l'auto e' il suo punto meno il sedile ruotato; la
+     rotta e' la sua (in auto player.rotation.y = rotta dell'auto); la quota
+     e' quella del corpo seduto meno l'altezza del sedile (AUTO.gyRel). */
+  const PEER_CARS={ auto1:[], turbo:[] }, PEER_ON=new Set();
+  function autoPeers(){ return Array.from(PEER_ON); }
+  function _inAuto(b, code, q){
+    const id=code===2?"turbo":(code===1?"auto1":null);
+    if((b.autoId||null)!==id){
+      if(b.autoC){ try{ b.autoC.root.setEnabled(false); PEER_ON.delete(b.autoC); PEER_CARS[b.autoId].push(b.autoC); }catch(err){} b.autoC=null; }
+      b.autoId=id;
+      if(id){ try{ b.autoC=PEER_CARS[id].pop()||tlAutoBuildCar((AUTO_FLEET[id]&&AUTO_FLEET[id].carKey)||null,id); }catch(err){ console.warn("[presenza] auto",err); b.autoC=null; }
+        if(b.autoC) try{ b.autoC.root.setEnabled(true); b.autoC.__peer=true; b.autoC.cv=0; PEER_ON.add(b.autoC); }catch(err){} }
+    }
+    const C=b.autoC; if(!C || !q) return;
+    if(!C.root.isEnabled()) C.root.setEnabled(true);
+    const h=q.r, c=Math.cos(h), sn=Math.sin(h), lx=C.seat.x, lz=C.seat.z-0.04;
+    C.root.position.set(q.x-(lx*c+lz*sn), q.y-0.34, q.z-(-lx*sn+lz*c));
+    C.root.rotation.y=h+TRAFFIC_YAW;
+  }
   function _rilascia(e){
     try{ if(e && e.corpo) _inSella(e.corpo, 0, null); }catch(err){}   // 🛹 la tavola resta col corpo, spenta
+    try{ if(e && e.corpo) _inAuto(e.corpo, 0, null); }catch(err){}    // 🚗 l'auto torna nel mucchio
     try{ if(e && e.tavola) _sparecchia(e); }catch(err){}   // v309: i suoi piatti se ne vanno con lui
     const b=e&&e.corpo; if(!b) return;
     try{ _alza(b); }catch(err){}                        // v302: il prossimo compagno su questo corpo parte in piedi
@@ -82714,9 +82755,11 @@ const Presenza=(function(){
         b.label.area=e.zona;
         if(!vis && b.label.ctrl) b.label.ctrl.isVisible=false;
       }
-      if(!vis){ if(e.tavola) _sparecchia(e); if(b.sit) _alza(b); if(b.ballo) _fermaBallo(b); if(b.sk) _fermaPassi(b); continue; }
+      if(!vis){ if(e.tavola) _sparecchia(e); if(b.sit) _alza(b); if(b.ballo) _fermaBallo(b); if(b.sk) _fermaPassi(b); _inAuto(b,0,null); continue; }
       if(b.inter) b.inter.area=e.zona;
       _inSella(b, e.ride, q, e.siede);                   // 🛹🛴 la sua tavola sotto i piedi (o accanto, se e' seduto)
+      _inAuto(b, e.auto, q);                             // 🚗 v616: la sua auto attorno a lui
+      if(e.auto && e.siede){ if(e.tavola) _sparecchia(e); _siedi(b,q,e.siede,ora,e); continue; }   // in auto si sta seduti anche in corsa
       /* v302: seduto (vedi _posa): posa sulle ossa come il giocatore, niente
          Walk, niente giro verso di te; il gesto del mangiare lo rifa' qui */
       if(e.siede && ((ora-e.t0)>=e.dur || e.vel<=0.35)){
@@ -83422,7 +83465,7 @@ const Presenza=(function(){
            /* porte aperte per il collaudo: sono funzioni pure o quasi, e
               provarle dal di fuori evita di riprodurre l'algoritmo nel test
               (l'errore che il 28 ago aveva fatto passare un ciclo tolto). */
-           campione:_campione, scaduti:scaduti, scegli:_scegli, prova:prova,
+           campione:_campione, scaduti:scaduti, scegli:_scegli, prova:prova, autoPeers:autoPeers,
            nomi:_nomi, aggiungiNomi:function(t){ return _nomi(Object.assign({}, nomi, t||{})); }, quantiNomi:function(){ return Object.keys(nomi).length; },
            dire:dire, nomeDi:_nomeDi, eProf:_eProf,
            /* il genere del compagno c'e' gia': e' il primo campo del look
