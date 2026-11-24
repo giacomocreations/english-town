@@ -10530,6 +10530,21 @@ function buildTraffic(){
       _trafficCars.forEach(function(c){ if(c.root) c.root.setEnabled(carsOpen); }); }
     _sigUpdate(dt,carsOpen);                            // v553: i semafori girano anche a citta' chiusa (giallo lampeggiante)
     if(!carsOpen) return;
+    /* v614 (Giacomo, 24 nov: «quando si ferma la macchina, le altre se non
+       c'e' spazio non devono attraversarla ma aspettare che parta; se
+       rimane per piu' di 30 secondi suonano il clacson e parte la trafila
+       che conosciamo per l'avatar in mezzo alla strada»). Accostata, l'auto
+       chiamata usciva da _trafficCars e diventava INVISIBILE al traffico: se
+       aiuole o paletti la lasciavano a meta' corsia (off 0,9-1,6 m invece di
+       2,4), le altre ci passavano attraverso. Ora le auto della flotta FERME
+       fuori dal traffico (accostate, in salita/discesa, in uscita dallo
+       stallo) restano ostacoli: chi arriva si mette in coda come dietro a
+       un'auto qualunque. Il controllo e' geometrico (1,9 m dalla corsia):
+       accostata del tutto, o nello stallo, non ferma nessuno. */
+    const autoObs=_autoObstacles();
+    /* ...e il Ranger che corre da te in strada: le auto si fermano (niente
+       clacson: non e' lui che blocca), invece di passargli attraverso */
+    let rgP=null; try{ if(RANGER && RANGER_A.active && RANGER.holder.isEnabled()) rgP=RANGER.carrier.position; }catch(e){}
     for(let k=0;k<_trafficCars.length;k++){ const c=_trafficCars[k];
       if(c.manual) continue;                         // v500: AUTO-1 che accosta: la muove lei, ma chi viene dietro la vede
       // FRENATA "civile": se il giocatore e' davanti all'auto (entro 6 m,
@@ -10563,6 +10578,8 @@ function buildTraffic(){
          sta alle spalle, e suonarlo sarebbe ingiusto. */
       const pedStop=onRoad && ((Math.hypot(rx,rz)<3.4 && ahead>-1.5) || inCorsia);
       let vw=pedStop?0:c.v;
+      if(rgP){ const gx=rgP.x-c.root.position.x, gz=rgP.z-c.root.position.z, ga=gx*ux+gz*uz, gl=Math.abs(gx*uz-gz*ux);
+        if((ga>-0.5 && ga<Math.max(6,c.cv*0.85) && gl<2.1) || (Math.hypot(gx,gz)<3.4 && ga>-1.5)) vw=0; }   // v614: il Ranger in strada
       { const VL=(c.auto&&c.fast)?_loopSpeedLimitFast(c.loop):c.vlim; if(VL) vw=Math.min(vw,VL[i]); }   // v549: piano in curva, frenando prima (v505: TURBO-1 di fretta coi freni da supercar)
       // CODA: distanza (lungo il percorso) dall'auto piu' vicina DAVANTI
       // sullo stesso loop; auto lunghe ~4.4 m, quindi gap centri 7 m ~=
@@ -10581,7 +10598,15 @@ function buildTraffic(){
             if(g>look) break; if(g<1.2) continue;
             const P=c.loop[ix], dx=o.x-P[0], dz=o.z-P[1];
             if(dx*dx+dz*dz<1.96){ if(c.ovt===1 && _trafficCars[j]===c.ovCar && c.ovo>2.0) break;      // v505: chi sto superando non mi frena (v511: solo quando sono gia' fuori dalla sua corsia)
-              if(g<gap){ gap=g; gapO=_trafficCars[j]; } break; } } } }
+              if(g<gap){ gap=g; gapO=_trafficCars[j]; } break; } } }
+        /* v614: le auto della flotta ferme fuori dal traffico (vedi _autoObstacles) */
+        c.autoGap=1e9;
+        for(let j=0;j<autoObs.length;j++){ const O=autoObs[j]; if(O===c) continue; const o=O.root.position;
+          if(Math.abs(o.x-px)>look+2||Math.abs(o.z-pz)>look+2) continue;
+          for(let q=1;q<90;q++){ const ix=(i+q)%n, g=(c.L[ix]-c.s+c.tot)%c.tot;
+            if(g>look) break; if(g<1.2) continue;
+            const P=c.loop[ix], dx=o.x-P[0], dz=o.z-P[1];
+            if(dx*dx+dz*dz<3.6){ if(g<gap){ gap=g; gapO=O; } if(g<c.autoGap) c.autoGap=g; break; } } } }   // 1,9 m: mezza auto + mezza auto (accostata a meta')
       if(c.auto){ const r=_tcOvertake(c,dt,gap,gapO,slowAt); if(r!=null) gap=r; }      // v503: TURBO-1 di fretta sorpassa
       /* v553 — SEMAFORI: col rosso (e col rosso+giallo) ci si ferma alla
          linea; col giallo solo se si fa in tempo a frenare */
@@ -10670,6 +10695,14 @@ function buildTraffic(){
         c.halt=(c.halt||0)+dt;
         if(c.halt>1.2){ try{ SFX.carHorn(c.root.position.x,c.root.position.z); }catch(e){} }
       } else c.halt=0;
+      /* v614: ferma in coda per colpa dell'auto chiamata (e' lei la prima
+         davanti): dopo AUTO_BLOCK_S secondi si suona, e i clacson portano su
+         la scala dell'autista fino al Ranger (rangerTrafficIntervene, qui con
+         AUTO_BLOCK_T: sa che la colpa e' dell'auto, non tua) */
+      if(c.autoGap<9 && gapO && gapO.__fleet && c.cv<0.15){
+        c.autoHold=(c.autoHold||0)+dt;
+        if(c.autoHold>AUTO_BLOCK_S){ AUTO_BLOCK_T=performance.now(); try{ SFX.carHorn(c.root.position.x,c.root.position.z); }catch(e){} }
+      } else c.autoHold=0;
       { const ds=c.cv*TRAFFIC_SPEED*dt, gt=c.loop.gt;
         /* v553 — VARCHI: passato il punto, si tira a sorte il giro su cui
            proseguire (posizione e direzione coincidono: nessuno scatto) */
@@ -10787,6 +10820,14 @@ function _tcPathClear(c,dmax){ const n=c.loop.length, i=_tcSeg(c,c.s), px=c.root
       const P=c.loop[ix], dx=op.x-P[0], dz=op.z-P[1]; if(dx*dx+dz*dz<2.6) return false; } }
   return true; }
 const OVT_OFF=6.0;           // v506 (Giacomo: «deve spostarsi di piu' verso l'altra corsia»): tutto dentro la corsia opposta
+/* v614: le auto della flotta (Nelson 1, The Beast) ferme FUORI dal traffico */
+const AUTO_BLOCK_S=30; let AUTO_BLOCK_T=0;
+const _autoObsL=[];
+function _autoObstacles(){ _autoObsL.length=0;
+  try{ for(const id in AUTO_FLEET){ const F=AUTO_FLEET[id], tc=F&&F.car&&F.car.tc;
+      if(!tc || !tc.root || !tc.root.isEnabled() || _trafficCars.indexOf(tc)>=0) continue;
+      tc.__fleet=true; _autoObsL.push(tc); } }catch(e){}
+  return _autoObsL; }
 function _tcOvertake(c,dt,gap,gapO,slowAt){
   c.ovo=c.ovo||0; if(!c.ovt) c.ovt=0;
   if(!c.canOvt && !c.ovt && c.ovo<0.01) return null;
@@ -11570,9 +11611,18 @@ function rangerTrafficDone(){
      frase resta a schermo almeno 2 s; se la voce la sta ancora leggendo si
      aspetta che finisca (al massimo 8 s, per una voce che non chiude mai),
      poi il Ranger accompagna da solo. */
+  /* v614: se a bloccare era la TUA auto, ferma in strada da piu' di 30 s,
+     il Ranger lo dice e la rimanda al parcheggio (si richiama col 🚗) */
+  if(RANGER_A.why==="car"){ RANGER_A.why="";
+    try{ tlCallSendHome("it was blocking the road"); }catch(e){}
+    DialogueBox.open({ npc:RANGER, icon:"\u{1F9E5}", sub:"Town Ranger",
+      text:"Hey! Your car can't wait in the middle of the road! Look at the traffic! I'm sending it back to the car park.",
+      italian:"La tua auto non può aspettare in mezzo alla strada: guarda la coda! La rimando al parcheggio (la puoi richiamare col \u{1F697}) — e il Ranger ti riporta alla tua unità.",
+      buttons:[] });
+  } else
   DialogueBox.open({ npc:RANGER, icon:"\u{1F9E5}", sub:"Town Ranger",
     text:"Hey! What are you doing? You can't stop in the middle of the road!",
-    italian:"Non puoi fermarti in mezzo alla strada \u2014 il Ranger ti riporta alla tua unit\u00e0.",
+    italian:"Non puoi fermarti in mezzo alla strada — il Ranger ti riporta alla tua unità.",
     buttons:[] });
   const t0=performance.now();
   (function go(){ const dt=performance.now()-t0;
@@ -11581,6 +11631,15 @@ function rangerTrafficDone(){
 }
 function rangerTrafficIntervene(){
   if(!RANGER || RANGER_A.active) return;
+  /* v614 (Giacomo, 24 nov: «il ranger non deve arrivare se si sta aspettando
+     la macchina: adesso e' in mezzo alla strada e lo stanno attraversando le
+     macchine!»). Chi aspetta l'auto chiamata sta sul bordo della strada (e
+     per salirci ci si avvicina alla corsia): niente Ranger per questo. Il
+     Ranger viene solo se a bloccare e' l'AUTO, ferma da piu' di 30 s con
+     la coda dietro (AUTO_BLOCK_T, vedi il traffico). */
+  let carFault=false; try{ carFault=performance.now()-AUTO_BLOCK_T<6000; }catch(e){}
+  try{ if(!carFault && (AUTO_CALL.phase==="drive" || AUTO_CALL.phase==="wait")) return; }catch(e){}
+  RANGER_A.why=carFault?"car":"road";
   RANGER_A.active=true; RANGER_A.mode="traffic";
   const d=Math.hypot(player.position.x-RANGER.carrier.position.x,
                      player.position.z-RANGER.carrier.position.z);
