@@ -52687,6 +52687,14 @@ function updateProximity(){
     const w=typeof o.pos==="function"?o.pos():o.pos;
     const dh=Math.hypot(player.position.x-w.x, player.position.z-w.z);
     if(dh>=o.radius) continue;
+    /* v619 (Giacomo, 24 nov, con foto: «mi siedo, sono solo, e appare la
+       scelta "me 1/2" che non ha senso; l'ha fatto anche con i miei alunni
+       in altre situazioni»). Seduti in panchina la PANCHINA restava fra i
+       candidati con il prompt vuoto (da seduti non offre niente: vedi
+       citybench), e bastava per far comparire il selettore. Chi in questo
+       momento non ha niente da dire (prompt "") non e' una scelta. */
+    if(o.prompt!=null){ let pr=""; try{ pr=typeof o.prompt==="function"?o.prompt():o.prompt; }catch(e){ pr="x"; }
+      if(pr==="" || pr==null) continue; }
     const dy=(w.y||0)-eye;
     o.__d3=Math.hypot(dh,dy); o.__dh=dh;
     list.push(o);
