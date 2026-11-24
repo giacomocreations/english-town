@@ -12874,6 +12874,20 @@ function dinerSit(s){
     again?"Still hungry? Here's the menu again! Can I get you something to drink?":null,
     again?"Ancora affamato? Ecco di nuovo il menu! Ti porto qualcosa da bere?":null)));
 }
+/* v611 (Giacomo: «se sono seduto e riordino, l'avatar deve rimanere
+   seduto»). Al diner, pagato il conto, l'unica strada per ordinare ancora
+   era alzarsi e risedersi. Ora da seduti (P su di te, o «Stay a bit»)
+   c'e' «Order something else»: il tavolo si sgombera e Ray torna col
+   menu, come quando ci si risiede («Still hungry?»), senza alzarsi. */
+function dinerOrderAgain(){
+  const s=DINER.seat; if(!s || DINER.st!=="paid") return;
+  try{ eatStop(); }catch(e){} DINER.eating=false;
+  _dinerClearFood();
+  DINER.o={ slip:{}, sbagli:0, tent:0 }; DINER.st="seated";
+  dinerLater(600,()=>dinerWaiterTo(s.t,()=>dinerAsk("drink",()=>dinerAsk("main",()=>dinerAsk("side",dinerKitchen)),
+    "Still hungry? Here's the menu again! Can I get you something to drink?",
+    "Ancora affamato? Ecco di nuovo il menu! Ti porto qualcosa da bere?")));
+}
 /* rifatto dopo una ricostruzione dell'avatar (cambio di corpo dalla Teca) */
 function dinerResit(){ const s=DINER.seat; if(!s) return;
   const f=new BABYLON.Vector3(Math.sin(s.face),0,Math.cos(s.face));
@@ -13281,6 +13295,7 @@ function dinerPaid(v,late){
     italian:"Grazie! "+(cash?"Ecco il resto. ":"")+"Buona giornata, e torna presto!",
     html:dinerSlipHtml(o,true),
     buttons:[{ label:"\u{1F44B} Goodbye! (stand up)", cls:"primary", act:()=>dinerStand() },
+             { label:"\u{1F354} Something else, please!", act:()=>dinerOrderAgain() },
              { label:"Stay a bit", cls:"ghost", act:()=>{} }] });
   dinerWaiterHome();
 }
@@ -13301,6 +13316,7 @@ function dinerMeAction(){
       else if(k==="side") dinerAsk("side",dinerKitchen);
       else if(k==="bill"||k==="pay") dinerBill();
       else toast("⏳ The waiter is coming…"); } }); }
+  if(st==="paid") ch.push({ label:"\u{1F354} Order something else", act:()=>dinerOrderAgain() });   // v611: si resta seduti
   ch.push({ label:"\u{1F4CB} Look at the menu", act:()=>dinerShowMenu(()=>{}) });
   ch.push({ label:"\u{1F6B6} Stand up", act:()=>dinerStand() });
   DialogueBox.open({ name:"\u{1FA91} "+DINER.name, sub:"At your table", text:(st==="paid")?"Time to go?":"What do you want to do?",
@@ -38865,13 +38881,17 @@ function _cafePickMats(){ if(_cpM) return _cpM;
 function _cafeSpotOf(npc){ const p=npc&&npc.carrier&&npc.carrier.position; if(!p||!CAFE_SPOTS.length) return null;
   let best=null, bd=1e9; CAFE_SPOTS.forEach(c=>{ const d=Math.hypot(c.x+2.9-p.x, c.z-p.z); if(d<bd){ bd=d; best=c; } });
   return (bd<6)?best:null; }
-function cafeClear(){ const P=CAFE_PICK;
+/* keepSeat (v611): si sgombera il vassoio ma si resta sullo sgabello (nuovo ordine da seduti) */
+function cafeClear(keepSeat){ const P=CAFE_PICK;
   if(P.timer){ clearTimeout(P.timer); P.timer=null; }
-  if(P.seated) try{ _cafeStand(); }catch(e){}
+  const sv=(keepSeat && P.seated)?{ spot:P.spot, face:P.face, stool:P.stool, gy:P.gy }:null;
+  if(sv) try{ eatStop(); }catch(e){}
+  else if(P.seated) try{ _cafeStand(); }catch(e){}
   if(P.obs){ scene.onBeforeRenderObservable.remove(P.obs); P.obs=null; }
   if(P.inter){ try{ removeInteract(P.inter); }catch(e){} P.inter=null; }
   if(P.node){ try{ P.node.dispose(false,false); }catch(e){} P.node=null; }
-  P.st=""; P.parts=null; P.o=null; P.npc=null; P.spot=null; P.face=null; P.seq=null; P.stool=null; P.gy=null; }
+  P.st=""; P.parts=null; P.o=null; P.npc=null; P.spot=null; P.face=null; P.seq=null; P.stool=null; P.gy=null;
+  if(sv) Object.assign(P,sv); }
 /* il vassoio con l'ordine; origine sul piano del vassoio */
 function _cafeBuildOrder(o,parent){
   const K=_cafePickMats(), R={ drink:null, level:null, food:null, bits:[] };
@@ -38989,12 +39009,22 @@ function cafeTableCode(){
   return "c"+(di*2+big)+qd+fi+qf+cur;
 }
 function _cafeStoolW(P){ return new BABYLON.Vector3(P.spot.x+0.1, 0, P.spot.z+CAFE_STOOLS[P.stool]); }
+/* v611 (Giacomo, 24 nov: «se sono seduto e riordino, l'avatar non deve
+   alzarsi automaticamente come fa adesso, ma rimanere seduto»). Prima il
+   nuovo ordine sgomberava tutto con cafeClear(), che FA ALZARE: ci si
+   ritrovava in piedi accanto allo sgabello e bisognava risedersi con P.
+   Ora, se si e' seduti a QUESTO bancone, si resta seduti: il vassoio
+   vecchio sparisce, il nuovo arriva davanti allo stesso sgabello e si
+   comincia subito a mangiare (senza P). */
 function cafeServe(npc,o){
-  cafeClear();
-  const spot=_cafeSpotOf(npc); if(!spot||!o) return;
-  const P=CAFE_PICK; P.npc=npc; P.o=o; P.spot=spot; P.st="making";
-  /* lo sgabello piu' vicino a dove sei adesso */
+  const spot=_cafeSpotOf(npc);
+  const P=CAFE_PICK, stay=!!(P.seated && spot && P.spot===spot);
+  cafeClear(stay);
+  if(!spot||!o) return;
+  P.npc=npc; P.o=o; P.spot=spot; P.st="making";
+  /* lo sgabello piu' vicino a dove sei adesso (seduti: il tuo) */
   let bi=1, bd=1e9; CAFE_STOOLS.forEach((zs,i)=>{ const d=Math.hypot(player.position.x-(spot.x+0.1), player.position.z-(spot.z+zs)); if(d<bd){ bd=d; bi=i; } });
+  if(stay && P.stool!=null) bi=P.stool;
   P.stool=bi;
   P.timer=setTimeout(()=>{ P.timer=null;
     const n=new BABYLON.TransformNode("cafeOrder",scene); n.parent=townRoot;
@@ -39005,6 +39035,11 @@ function cafeServe(npc,o){
     const nS=P.parts.food?4:2, nB=P.parts.food?3:0, steps=[];
     for(let i=0;i<Math.max(nS,nB);i++){ if(i<nS) steps.push("sip"); if(i<nB) steps.push("bite"); }
     P.seq={ steps, k:0, nS, nB, cnt:{sip:0,bite:0} };
+    /* v611: ancora seduti allo sgabello -> si mangia subito, senza alzarsi */
+    if(P.seated && P.spot===spot){
+      try{ toast("☕ "+(npc.name||"The barista")+": “Here you are! Enjoy!”"); }catch(e){}
+      try{ eatStop(); playerStand(); _cafeSit(); }catch(e){ console.warn("[cafe] risiedersi",e); }   // la posa col braccio per il vassoio nuovo, nello stesso fotogramma
+      if(P.seated){ _cafeRun(); return; } }
     /* v600: sgabelli tutti presi dai compagni? lo si dice SUBITO, al bancone */
     try{ if(_cafeStoolLibero(P,true)<0){ cafeTakeaway(); return; } }catch(e){}
     try{ toast("☕ "+(npc.name||"The barista")+": “Here you are! Have a seat.”"); }catch(e){}
