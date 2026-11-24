@@ -53556,6 +53556,7 @@ function rideMount(id,quiet,fromRack){
   if(!rideOwned(R)){ toast(R.ic+" "+R.en+": buy it at the Corner Shop \u{1F6D2} \u00b7 compralo al Corner Shop",3400); return false; }
   if(!rideOpen(R)){ toast(rideStarsMsg(R),4200); return false; }
   if(!rideCanHere()){ toast(R.ic+" "+R.en+": solo all'aperto, in città",2600); return false; }
+  try{ if(Needs.playBlock(R)) return false; }catch(e){}   // v609: stanchi, affamati o assetati non si sale
   /* 🅿️ parcheggiato alla rastrelliera: si riprende li' (rideRackAct) */
   let _prof=false; try{ _prof=lookProf(); }catch(e){}
   if(RIDE.racked && RIDE.racked.R===R && !fromRack && !_prof){ toast(rideRackedMsg(),4000); return false; }
@@ -55095,6 +55096,7 @@ function fkStart(){
   /* ⚠️ (Giacomo: «dopo che arriva il Ranger non puoi piu' calciare per la
      sessione, se no gli alunni fanno solo quello»): FK_KICKS tiri a sessione (9) */
   if(FK.sessionDone){ toast("⚽ That's enough free kicks for now! Come back next time. · Basta punizioni per oggi: torna la prossima volta!",4200); return; }
+  try{ if(Needs.playBlock("fk")) return; }catch(e){}      // v609: stanchi, affamati o assetati non si calcia
   /* v547 (Giacomo, 10 nov: «sullo scooter, se decido di calciare le
      punizioni, lo scooter non deve scomparire: deve arrivare il messaggio
      "parcheggia prima lo scooter", come per altre cose, col parcheggio piu'
@@ -56128,6 +56130,53 @@ const Needs={
       else this.say("I'm hungry! No stars until I eat.","Hai fame: niente stelle finché non mangi qualcosa al café o al diner \u{1F354}","\u{1F354}",false); }
     return false;
   },
+  /* ---- v609 ⚽🛹🛴 TROPPO STANCHI, AFFAMATI O ASSETATI PER GIOCARE (Giacomo,
+     24 nov: «se il livello di fame, sete o energia e' troppo basso,
+     ovviamente non puoi tirare le punizioni, o andare sullo skate o sullo
+     scooter: devi mangiare, bere o riposarti a seconda dei livelli»).
+     Le attivita' sportive libere (punizioni, skate, monopattini) chiedono
+     energia sopra NEEDS_TIRED, fame sopra NEEDS_HUNGRY e sete sopra
+     NEEDS_THIRSTY. Sotto, non si parte, e se si scende sotto mentre si
+     gioca si smette (si scende dalla tavola, la mira si chiude: mai a tiro
+     partito). Il fumetto dice COSA serve: il bisogno piu' basso fra fame e
+     sete (si rimedia al café o al diner, e la bussola ci porta), se no la
+     stanchezza (ci si siede su una panchina: riposare non basta se si ha
+     fame, l'energia si ferma al 30%: per questo prima il cibo).
+     ⚠️ LA REGOLA DELLE QUEST RESTA: con una quest in corso non si blocca
+     niente (i livelli sono fermi). La tregua d'inizio sessione invece qui
+     NON vale: serve a raggiungere la quest, non a giocare. */
+  playNeed(){
+    if(!this.loaded || this.questOn()) return null;
+    const P=this.pend||{ e:0, f:0, d:0 }, E=this.e+P.e, F=this.f+P.f, D=this.d+P.d;
+    const h=F<NEEDS_HUNGRY, t=D<NEEDS_THIRSTY;
+    if(h||t) return (t && (!h || D<=F)) ? "thirsty" : "hungry";
+    if(E<NEEDS_TIRED) return "tired";
+    return null;
+  },
+  /* kind: "fk" | un RIDES (skate o monopattino). true = non si puo' (e lo si e' detto) */
+  playBlock(kind,quiet){
+    const need=this.playNeed(); if(!need) return false;
+    if(quiet) return true;
+    const sc=kind && kind.kind==="scooter", fk=kind==="fk";
+    const act=fk?["play football","tirare le punizioni"]:sc?["ride my scooter","andare sul monopattino"]:["ride my skateboard","andare sullo skate"];
+    const now=performance.now(); if(now<(this.playT||0)) return true; this.playT=now+2500;
+    if(need==="tired")
+      this.say("I'm too tired to "+act[0]+"! I need a rest.","Sei troppo stanco per "+act[1]+": siediti su una panchina \u{1FA91} e riposati, poi riprova.","\u{1F629}");
+    else if(need==="thirsty")
+      this.say("I'm too thirsty to "+act[0]+"! I need a drink.","Hai troppa sete per "+act[1]+": prima bevi qualcosa al café o al Sunny Side Diner (segui la bussola \u{1F964}).","\u{1F975}");
+    else
+      this.say("I'm too hungry to "+act[0]+"! I need to eat.","Hai troppa fame per "+act[1]+": prima mangia qualcosa al café o al Sunny Side Diner (segui la bussola \u{1F354}).","\u{1F62B}");
+    return true;
+  },
+  /* mentre si gioca: se un livello scende troppo si smette (una volta al secondo) */
+  playWatch(){
+    const now=performance.now(); if(now<(this.playWT||0)) return; this.playWT=now+1000;
+    /* il fumetto un attimo dopo: nello stesso fotogramma il «I'm tired!» della
+       soglia lo coprirebbe, e non si capirebbe perche' si e' smesso */
+    const tell=k=>setTimeout(()=>{ this.playT=0; this.playBlock(k); },150);
+    try{ if(typeof RIDE!=="undefined" && RIDE.on && this.playNeed()){ const R=RIDE.on; rideOff(true); tell(R); } }catch(e){}
+    try{ if(typeof FK!=="undefined" && FK.aim && !FK.aim.kick && !FK.aim.res && this.playNeed()){ fkStop(); tell("fk"); } }catch(e){}
+  },
   /* dove andare a mangiare: il café o il diner piu' vicino (null = non serve) */
   navTarget(){
     if(this.bag && !this.bagEat && !this.seated() && !this.paused()) return this.bagTable();
@@ -56171,6 +56220,7 @@ const Needs={
   tick(){
     const p=player && player.position; if(!p) return;
     if(!this.loaded) this.load();
+    try{ this.playWatch(); }catch(e){}                   // v609: troppo stanchi/affamati/assetati per giocare
     /* 0,5 s al massimo: sui tablet lenti (pochi fps) il riposo seduti non deve durare il doppio */
     const dt=Math.min(0.5,(engine.getDeltaTime()||16)/1000), now=performance.now();
     const last=this.last; this.last={ x:p.x, z:p.z };
