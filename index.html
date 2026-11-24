@@ -55108,7 +55108,7 @@ function fkStart(){
   if(FK.inter) FK.inter.enabled=false;                     // il prompt in basso coprirebbe la barra: calcia SPAZIO / E / KICK
   _fkPlace();
   fkHud(true);
-  toast("⚽ Free kick! A/D aim · W/S height · Q spin · SPACE kick (when the power is right) · Esc stop",4600);
+  toast("⚽ Free kick! A/D aim · W/S height · Q spin · SPACE kick (when the power is right) · Esc stop · 👆 or drag the arrow and the dotted line on the pitch",5200);
   fkSpinHud();
   try{ fkNotesNew(); }catch(e){ console.warn("[fk] foglietti",e); }
 }
@@ -55149,7 +55149,7 @@ function _fkPlace(){ const S=FK.sets.me; player.position.x=S.spot.x-S.dir.x*2.4+
   try{ camera.alpha=-player.rotation.y-Math.PI/2; }catch(e){} }
 function fkStop(){ if(!FK.aim) return;
   try{ const S=FK.sets.me; if(Math.hypot(player.position.x-S.spot.x,player.position.z-S.spot.z)<0.8) _fkPlace(); }catch(e){}   // non restare in piedi sul pallone
-  FK.aim=null; FK.K=null; if(FK.inter) FK.inter.enabled=(FK.open!==false); try{ avatarRoot.rotation.x=0; }catch(e){} fkHud(false); if(FK.sets) _fkReset(FK.sets.me); playAvatarAnim(IDLE_ANIM);
+  FK.aim=null; FK.K=null; FK.drag=null; FK.hover=false; try{ _fkCursor(""); _fkGuideLit(null); }catch(e){} if(FK.inter) FK.inter.enabled=(FK.open!==false); try{ avatarRoot.rotation.x=0; }catch(e){} fkHud(false); if(FK.sets) _fkReset(FK.sets.me); playAvatarAnim(IDLE_ANIM);
   try{ fkNotesShow(false); }catch(e){} }
 function fkKick(){
   const A=FK.aim; if(!A || A.kick || A.res) return;
@@ -55238,8 +55238,102 @@ function _fkAimDraw(on){
   const v0=11+19*pw, vx=v0*Math.cos(A.loft)*sx, vz=v0*Math.cos(A.loft)*sz, vy=v0*Math.sin(A.loft), cu=FK_SPIN[A.spin||0].curl;
   N.dots.forEach((s,i)=>{ const t=0.025+i*0.02, lat=0.5*cu*t*t*1.6;     // un filo esagerata: in 0,33 s si vedrebbe appena
     s.position.set(S.spot.x+vx*t+sz*lat, S.F.y+FK_R+vy*t-4.9*t*t, S.spot.z+vz*t-sx*lat);
-    const k=1-i/N.dots.length; s.scaling.setAll(0.55+0.6*k); });
+    const k=1-i/N.dots.length; s.scaling.setAll((0.55+0.6*k)*(s.__big?1.35:1)); });
 }
+/* ⚽👆 LA MIRA SI PRENDE COL DITO (Giacomo, 24 nov: «fai in modo che possa
+   manovrare anche direttamente le frecce che stanno sul campo»). Oltre a
+   tasti, levetta e bottoni, si trascinano le due guide disegnate sul prato:
+     · la FRECCIA a terra: la punta va dove sta il dito (o il mouse) — e'
+       la mira destra/sinistra, nello stesso limite dei tasti (±0,45 rad);
+     · la SCIA DI PUNTINI: su e giu' alza e abbassa il tiro (come W/S),
+       di lato sposta la mira.
+   Si prende una guida se si preme entro ~44 px dal suo disegno sullo
+   schermo (non serve centrare i puntini, che sono piccoli). Altrove il
+   trascinamento resta quello di sempre (gira la visuale).
+   ⚠️ L'evento si ferma in CATTURA su window, prima della camera di Babylon:
+   se no lo stesso trascinamento girerebbe anche la visuale, e il rilascio
+   farebbe partire il tap (zoom dei foglietti). Mentre si trascina la guida
+   presa si accende. Col mouse, sopra una guida il puntatore diventa la mano. */
+const FK_GRAB_PX=44;
+function _fkCanDrag(){ const A=FK.aim; return !!(A && !A.kick && !A.res && FK.aimN && FK.aimN.root.isEnabled() && !(typeof _dlgOpen==="function" && _dlgOpen())); }
+/* le guide sullo schermo, in px CSS del canvas */
+function _fkGuides(){
+  const N=FK.aimN, cam=scene.activeCamera; if(!N||!cam) return null;
+  const eng=scene.getEngine(), W=eng.getRenderWidth(), H=eng.getRenderHeight(), rect=canvas.getBoundingClientRect();
+  const k=rect.width/W, vp=cam.viewport.toGlobal(W,H), T=scene.getTransformMatrix(), I=BABYLON.Matrix.IdentityReadOnly;
+  const cp=cam.globalPosition, cf=cam.getForwardRay(1).direction;
+  const pr=v=>{ if((v.x-cp.x)*cf.x+(v.y-cp.y)*cf.y+(v.z-cp.z)*cf.z<=0.05) return null;    // dietro la camera
+    const q=BABYLON.Vector3.Project(v,I,T,vp); return { x:q.x*k, y:q.y*k }; };
+  N.arrow.computeWorldMatrix(true);
+  const arr=[]; const L=N.shaft.scaling.y+0.38;
+  for(let i=0;i<=8;i++){ const q=pr(BABYLON.Vector3.TransformCoordinates(new BABYLON.Vector3(0,0,L*i/8),N.arrow.getWorldMatrix())); if(q) arr.push(q); }
+  const dots=[]; N.dots.forEach(d=>{ const q=pr(d.getAbsolutePosition()); if(q) dots.push(q); });
+  return { arr, dots, rect };
+}
+function _fkDistPoly(P,x,y){ let best=1e9;
+  for(let i=0;i<P.length;i++){ const a=P[i], b=P[Math.min(P.length-1,i+1)], dx=b.x-a.x, dy=b.y-a.y, l2=dx*dx+dy*dy;
+    let t=l2>0?((x-a.x)*dx+(y-a.y)*dy)/l2:0; t=Math.max(0,Math.min(1,t));
+    const d=Math.hypot(x-(a.x+t*dx),y-(a.y+t*dy)); if(d<best) best=d; }
+  return best; }
+/* quale guida c'e' sotto il puntatore: "arrow", "arc" o null */
+function _fkGuideAt(e){
+  const G=_fkGuides(); if(!G) return null;
+  const x=e.clientX-G.rect.left, y=e.clientY-G.rect.top;
+  const da=G.arr.length>1?_fkDistPoly(G.arr,x,y):1e9, dd=G.dots.length>1?_fkDistPoly(G.dots,x,y):1e9;
+  if(Math.min(da,dd)>FK_GRAB_PX) return null;
+  return { mode:da<=dd?"arrow":"arc", x, y };
+}
+/* la mira dalla freccia: il punto del prato sotto il dito, visto dal pallone */
+function _fkYawFromGround(x,y){
+  const S=FK.sets.me, cam=scene.activeCamera; if(!cam) return null;
+  const r=scene.createPickingRay(x,y,BABYLON.Matrix.IdentityReadOnly,cam);
+  if(Math.abs(r.direction.y)<1e-4) return null;
+  const t=(S.F.y-r.origin.y)/r.direction.y; if(t<=0) return null;
+  const px=r.origin.x+r.direction.x*t-S.spot.x, pz=r.origin.z+r.direction.z*t-S.spot.z;
+  if(Math.hypot(px,pz)<0.35) return null;                       // troppo vicino al pallone: l'angolo balla
+  let a=Math.atan2(px,pz)-Math.atan2(S.dir.x,S.dir.z);
+  while(a>Math.PI) a-=2*Math.PI; while(a<-Math.PI) a+=2*Math.PI;
+  return Math.max(-0.45,Math.min(0.45,a));
+}
+/* ⚠️ il puntatore: Babylon lo riscrive a ogni movimento col suo defaultCursor, quindi si cambia quello */
+function _fkCursor(c){ try{ scene.defaultCursor=c||""; canvas.style.cursor=c||""; }catch(e){} }
+function _fkGuideLit(mode){ const N=FK.aimN; if(!N) return;
+  const am=N.shaft.material, dm=N.dots[0].material;
+  if(!am.__c0){ am.__c0=am.emissiveColor.clone(); am.__a0=am.alpha; dm.__c0=dm.emissiveColor.clone(); }
+  am.emissiveColor.copyFrom(mode==="arrow"?new BABYLON.Color3(1,0.95,0.5):am.__c0); am.alpha=mode==="arrow"?1:am.__a0;
+  dm.emissiveColor.copyFrom(mode==="arc"?new BABYLON.Color3(1,1,0.85):dm.__c0);
+  N.dots.forEach(d=>{ d.__big=(mode==="arc"); }); }
+(function(){
+  const stop=e=>{ e.stopImmediatePropagation(); e.stopPropagation(); if(e.cancelable) e.preventDefault(); };
+  window.addEventListener("pointerdown",e=>{
+    if(e.target!==canvas || !_fkCanDrag() || (e.pointerType==="mouse" && e.button!==0)) return;
+    const g=_fkGuideAt(e); if(!g) return;
+    stop(e);
+    const A=FK.aim; FK.drag={ id:e.pointerId, mode:g.mode, x0:g.x, y0:g.y, yaw0:A.yaw, loft0:A.loft };
+    try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
+    _fkCursor("grabbing"); _fkGuideLit(g.mode);
+    if(g.mode==="arrow"){ const a=_fkYawFromGround(g.x,g.y); if(a!=null) A.yaw=a; }
+  },true);
+  window.addEventListener("pointermove",e=>{
+    const D=FK.drag;
+    if(!D){ /* col mouse: la mano sopra le guide */
+      if(e.pointerType==="mouse" && e.target===canvas && FK.aim){ const on=_fkCanDrag() && !e.buttons && !!_fkGuideAt(e);
+        if(on!==!!FK.hover){ FK.hover=on; _fkCursor(on?"grab":""); } }
+      return; }
+    if(e.pointerId!==D.id) return;
+    stop(e);
+    const A=FK.aim; if(!A || A.kick || A.res){ FK.drag=null; return; }
+    const rect=canvas.getBoundingClientRect(), x=e.clientX-rect.left, y=e.clientY-rect.top;
+    if(D.mode==="arrow"){ const a=_fkYawFromGround(x,y); if(a!=null) A.yaw=a; }
+    else { A.loft=Math.max(2*Math.PI/180,Math.min(35*Math.PI/180,D.loft0-(y-D.y0)*0.0024));
+           A.yaw=Math.max(-0.45,Math.min(0.45,D.yaw0+(x-D.x0)*0.0022)); }
+  },true);
+  const end=e=>{ const D=FK.drag; if(!D || e.pointerId!==D.id) return; stop(e);
+    FK.drag=null; try{ canvas.releasePointerCapture(e.pointerId); }catch(_){}
+    _fkCursor(FK.hover?"grab":""); _fkGuideLit(null); };
+  window.addEventListener("pointerup",end,true);
+  window.addEventListener("pointercancel",end,true);
+})();
 /* =====================================================================
    ⚽📝 I FOGLIETTI SULLA PORTA (Giacomo, 5 nov: «mettere delle frasi, sempre
    diverse, in base a dove e' arrivato l'alunno, in varie parti della porta,
