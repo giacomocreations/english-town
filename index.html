@@ -53917,13 +53917,16 @@ function _gtWalkStart(job){
 function _gtSpot(t){ return new BABYLON.Vector3(t.x-Math.sign(t.lx)*0.95, 0, t.z+(t.lz<0?0.95:-0.95)); }   // v625: all'angolo (sul lato c'e' la sedia)
 function _gtPath(dest){ const C=GT.C, V=BABYLON.Vector3, d=dest();
   return [()=>new V(C.x,0,C.z-5.6),()=>new V(C.x,0,C.z+GT_LANE_Z),()=>new V(d.x,0,C.z+GT_LANE_Z),dest]; }
-function gtWaiterTo(t,then){
+function gtWaiterTo(t,then,carry){
   const w=GT.waiter; if(!w){ then(); return; }
+  if(carry){ try{ gtCarryOn(w,carry); }catch(e){} }                         // v631: dal passe col vassoio
   _gtWalk(_gtPath(()=>_gtSpot(t)),0.35,()=>{
     const p=w.pos(); w.carrier.rotation.y=Math.atan2(player.position.x-p.x,player.position.z-p.z)+NPC_FACE_OFFSET;
-    w.watch=true; if(GT.seat) then(); else gtWaiterHome(); }); }
+    w.watch=true; if(carry) gtCarryOff(w); if(GT.seat) then(); else gtWaiterHome(); }); }
+function gtItems(keys){ const o=GT.o; if(!o) return []; return keys.filter(k=>o.slip[k] && o.slip[k].en!=="—").map(k=>({ key:k, v:o.slip[k] })); }
 function gtWaiterHome(then){
   const w=GT.waiter, C=GT.C; if(!w){ if(then) then(); return; }
+  try{ gtCarryOff(w); }catch(e){}                                               // v631: torna al passe senza vassoio
   const V=BABYLON.Vector3, p=w.pos();
   _gtWalk([()=>new V(p.x,0,C.z+GT_LANE_Z),()=>new V(C.x,0,C.z+GT_LANE_Z),()=>new V(C.x,0,C.z-5.6),()=>new V(C.x+GT_W1_L.x,0,C.z+GT_W1_L.z)],0.3,()=>{
     w.carrier.rotation.y=0; w.baseYaw=0; w.watch=true; if(then) then(); }); }
@@ -54404,10 +54407,10 @@ function gtKitchen(){
       DialogueBox.open({ npc:w, icon:"\u{1F33F}", sub:"Marco", text:"Here's your "+o.slip.drink.en.toLowerCase()+" and your "+o.slip.starter.en.toLowerCase()+". Enjoy!",
         italian:"Ecco da bere e l'antipasto. Buon appetito!", buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] });
       gtWaiterHome(); }
-    else gtServeMain(true); })));
+    else gtServeMain(true); },gtItems(hasStarter?["drink","starter"]:["drink","main","side"]))));
 }
 function gtStarterDone(){ const s=GT.seat; if(!s) return;
-  gtLater(1800,()=>gtWaiterHome(()=>gtLater(2000,()=>gtWaiterTo(s.t,()=>gtServeMain(false))))); }
+  gtLater(1800,()=>gtWaiterHome(()=>gtLater(2000,()=>gtWaiterTo(s.t,()=>gtServeMain(false),gtItems(["main","side"]))))); }
 function gtServeMain(withDrink){
   const w=GT.waiter, o=GT.o; if(!GT.seat||!o) return;
   gtRemoveFood(["starter"]);
@@ -54427,7 +54430,7 @@ function gtDessert(v){
     gtWaiterHome(()=>gtLater(1800,()=>gtWaiterTo(s.t,()=>{ gtRemoveFood(["main","side"]); gtServe(["dessert"]); GT.st="eating2";
       DialogueBox.open({ npc:w, icon:"\u{1F33F}", sub:"Marco", text:"Your "+v.en.toLowerCase()+". Just call me when you'd like the bill!",
         italian:"Ecco il dolce. Chiamami quando vuoi il conto (premi P).", buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] });
-      gtWaiterHome(); })));
+      gtWaiterHome(); },gtItems(["dessert"]))));
   } else { GT.st="eating2";
     DialogueBox.open({ npc:w, icon:"\u{1F33F}", sub:"Marco", text:"Of course. Just call me when you'd like the bill.",
       italian:"Certo. Chiamami quando vuoi il conto (premi P).", buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] });
@@ -54443,7 +54446,7 @@ function gtBill(){
     gtWaiterHome(()=>gtLater(900,()=>gtWaiterTo(s.t,()=>{
       const c=Math.round(gtTotal(o)*100);
       pricePick({ npc:w, icon:"\u{1F9FE}", sub:"The Green Table — the bill", said:"Here's your bill. That's "+priceWords(c)+", please.", price:c,
-        next:()=>gtAsk("pay",v=>gtPaid(v)) }); })));
+        next:()=>gtAsk("pay",v=>gtPaid(v)) }); },"bill")));
   }));
 }
 function gtPaid(v){
@@ -54666,16 +54669,26 @@ function gtCabDoors(open,ms,cb){ const D=GT.cabDoors; if(!D){ if(cb) cb(); retur
    ognuno saluta UNA volta per visita */
 function gtHi(id){ GT.hello=GT.hello||{}; if(GT.hello[id]) return false; GT.hello[id]=1; return true; }
 /* Sofia porta il bicchiere su un vassoietto, con le braccia avanti (come Ray al diner) */
+/* v631 (Giacomo: «le portate devono arrivare su un vassoio, come al bancone:
+   ora appaiono all'improvviso e il cameriere viene senza»): Marco prende i
+   piatti al passe e li porta sul vassoio; al tavolo il vassoio si svuota e
+   i piatti compaiono davanti a te. items = [{key,v}] oppure "bill". */
 function gtCarryOn(n,v){
   gtCarryOff(n);
+  const items=Array.isArray(v)?v:(v==="bill"?"bill":[{ key:"drink", v }]);
   const ry=n.carrier.rotation.y-(typeof NPC_FACE_OFFSET!=="undefined"?NPC_FACE_OFFSET:0), f=new BABYLON.Vector3(Math.sin(ry),0,Math.cos(ry));
   let cp=null; try{ n.carrier.computeWorldMatrix(true); _sitRefresh(n.carrier); cp=carryPoseFor(n.holder,f,-0.04); }catch(e){ cp=null; }   // v630: avambracci paralleli, le mani ai bordi del vassoio (verso il centro si incrociavano)
   const M=_gtMats(), tray=new BABYLON.TransformNode("gtBarTray",scene); tray.parent=n.carrier;
   let hl=new BABYLON.Vector3(0,1.0,0.32);
   try{ if(cp && cp.hand){ const inv=n.carrier.getWorldMatrix().clone().invert(); hl=BABYLON.Vector3.TransformCoordinates(cp.hand,inv); } }catch(e){}
   tray.position.set(0,hl.y+0.055,Math.max(0.26,hl.z+0.06));                       // v629: un filo piu' su, le dita restano sotto
-  const d=BABYLON.MeshBuilder.CreateCylinder("gtTrayD",{ diameter:0.3, height:0.012, tessellation:24 },scene); d.material=M.silver||M.brass; d.parent=tray; d.isPickable=false;
-  try{ const g=_gtDish("drink",v,tray); g.position.y=0.008; tray.getChildMeshes(false).forEach(m=>{ m.isPickable=false; }); }catch(e){}
+  const many=(Array.isArray(items) && items.length>1);
+  const d=BABYLON.MeshBuilder.CreateCylinder("gtTrayD",{ diameter:many?0.46:0.3, height:0.012, tessellation:28 },scene); d.material=M.silver||M.brass; d.parent=tray; d.isPickable=false;
+  try{ if(items==="bill"){ const f=BABYLON.MeshBuilder.CreateBox("gtBillF",{ width:0.13, height:0.02, depth:0.2 },scene); f.material=M.black; f.parent=tray; f.position.y=0.018; f.rotation.y=0.3;
+      const pa=BABYLON.MeshBuilder.CreateBox("gtBillP",{ width:0.1, height:0.004, depth:0.15 },scene); pa.material=M.white; pa.parent=tray; pa.position.set(0.01,0.03,0); pa.rotation.y=0.3; }
+    else items.forEach((it,i)=>{ const g=_gtDish(it.key,it.v,tray); const k=items.length, a=i/k*Math.PI*2+0.6, r=(k>1)?0.11:0;
+      g.position.set(Math.cos(a)*r,0.008,Math.sin(a)*r); if(k>1) g.scaling.setAll(0.62); });
+    tray.getChildMeshes(false).forEach(m=>{ m.isPickable=false; }); }catch(e){ console.warn("[gt] vassoio",e); }
   n.__tray=tray;
   if(cp){ n.__carryPins=cp.pins; n.__carryObs=scene.onBeforeRenderObservable.add(()=>{ if(n.__carryPins) _applyPins(n.__carryPins); }); } }
 function gtCarryOff(n){ if(!n) return;
@@ -58681,6 +58694,7 @@ try{ document.addEventListener("visibilitychange", ()=>{ if(document.hidden) try
 
 function move(nx,nz,spd){
   if(typeof DINER!=="undefined" && DINER.seat) return false;   // v288: seduti al diner non si cammina (E per alzarsi)
+  if(typeof GT!=="undefined" && GT.seat) return false;          // 🌿 v631: anche al Green Table (P per alzarsi): niente «camminare seduti»
   if(typeof BSIT!=="undefined" && BSIT.b) benchStand(true);     // v291: dalla panchina il primo passo ti rimette in piedi
   if(typeof CAFE_PICK!=="undefined" && CAFE_PICK.seated) cafeLeaveSeat();
   if(typeof GT!=="undefined" && GT.barSeat) gtBarStand();                  // 🌿 v626: il primo passo ti fa scendere dallo sgabello del bar
@@ -58841,7 +58855,14 @@ scene.registerBeforeRender(()=>{
   // quasi sempre vicino al bordo, quindi risultava "corre sempre" — vedi runBtn)
   let tgtMove=false;
   /* 🛹🛴 in sella la velocita' la decide la tavola (spinta + inerzia), non Shift */
-  const _spd=()=>RIDE.on ? rideStepSpeed() : (running?PLAYER_SPEED*RUN_MULT*Needs.runMult():PLAYER_SPEED);
+  /* v631 (Giacomo: «nel ristorante, appena entra, corre come un grillo, anche
+     esausto»). Il passo era una lunghezza FISSA per fotogramma: dove il
+     computer disegna piu' fotogrammi (gli interni leggeri: 60 al secondo
+     contro i 26-30 della citta') si andava al doppio, anche camminando. Ora
+     il passo segue il tempo vero, tarato sui 30 fotogrammi al secondo della
+     citta' (fra mezzo passo e due passi, per i salti di fotogramma). */
+  const _fk=Math.max(0.5,Math.min(2,((engine.getDeltaTime&&engine.getDeltaTime())||33.3)/33.3));
+  const _spd=()=>RIDE.on ? rideStepSpeed() : (running?PLAYER_SPEED*RUN_MULT*Needs.runMult():PLAYER_SPEED)*_fk;
   /* 🛹 sulla curva di una quarter pipe comanda la gravita' (rideQuarterTick) */
   const _rd=!!(RIDE.on && RIDE.on.ramps && rideDropInTick(len<=0.01 && !moveTarget));   // 🛹 fermo sul bordo: giu' da solo
   const _rq=!_rd && !!(RIDE.on && RIDE.on.ramps && rideQuarterTick(len>0.01?{x:mx/len,z:mz/len}:null));
