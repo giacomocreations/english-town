@@ -6936,8 +6936,9 @@ function addSolid(x0,x1,z0,z1,areaName){ solids.push({x0:Math.min(x0,x1),x1:Math
    servivano 1.10 m di varco e fra i divani non si passava (Giacomo, 28 set).
    0.40 = spalle dell'avatar (~0.45 m di larghezza) + un filo di margine. */
 const AREA_PLAYER_R={ home:0.40 };
-function blocked(x,z,ramps){ const PR=AREA_PLAYER_R[area]||PLAYER_R, R2=PR*PR;
+function blocked(x,z,ramps,npc){ const PR=AREA_PLAYER_R[area]||PLAYER_R, R2=PR*PR;
   for(let i=0;i<solids.length;i++){ const s=solids[i]; if(s.area!==area) continue;
+    if(npc && s.playerOnly) continue;                                // v634: gli sgabelli del Green Table fermano te, non chi serve
     if(ramps && s.skRamp && (ramps===2 || !s.skRail)) continue;   // 🛹 rampe (e in skate la sbarra): le decide skRampStepBlocked
     if(!(x>s.x0-PR && x<s.x1+PR && z>s.z0-PR && z<s.z1+PR)) continue;
     const dx=(x<s.x0)?(s.x0-x):((x>s.x1)?(x-s.x1):0);   // 0 se dentro la fascia
@@ -31589,9 +31590,9 @@ function npcWalkSeq(npc,targets,arrive,onDone,areaName,onAbort,opts){
     // giocatore, via blocked()). Se il passo diretto e' bloccato, prova a
     // scivolare su un solo asse (indispensabile nei corridoi stretti tra i
     // banchi).
-    if(!blocked(nx,nz)){ p.x=nx; p.z=nz; }
-    else if(!blocked(nx,p.z)){ p.x=nx; }
-    else if(!blocked(p.x,nz)){ p.z=nz; }
+    if(!blocked(nx,nz,0,true)){ p.x=nx; p.z=nz; }
+    else if(!blocked(nx,p.z,0,true)){ p.x=nx; }
+    else if(!blocked(p.x,nz,0,true)){ p.z=nz; }
     /* ⚠️ SCARTO LATERALE (opts.detour). Lo scivolamento su un solo asse basta
        nei corridoi, ma non davanti a un ostacolo ISOLATO e tondo come il
        tronco di un albero: lì entrambi gli assi sono bloccati e l'NPC restava
@@ -31607,7 +31608,7 @@ function npcWalkSeq(npc,targets,arrive,onDone,areaName,onAbort,opts){
       for(const amp of [0.9,1.8]){
         for(const sgn of [1,-1]){
           const sx=p.x+(-uz*sgn*amp)+ux*st*0.5, sz=p.z+(ux*sgn*amp)+uz*st*0.5;
-          if(!blocked(sx,sz)){ p.x=sx; p.z=sz; moved=true; break; }
+          if(!blocked(sx,sz,0,true)){ p.x=sx; p.z=sz; moved=true; break; }
         }
         if(moved) break;
       }
@@ -53172,7 +53173,7 @@ function gtOpen(){ const m=gtNowMin(); return m>=GT_OPEN_H*60 && m<GT_CLOSE_H*60
 /* v625 (Giacomo: «alle 11 il servizio di cibo; se uno vuole da bere al
    bancone glielo danno, ma non si puo' sedere»): la porta apre alle 8 col
    BAR; tavoli e cucina dalle 11 alle 22 (gtOpen). */
-const GT_BAR_H=8;
+const GT_BAR_H=8.5;                                   // v634 (Giacomo: «riapre alle 8:30, fino alle 11 solo servizio al bar»)
 function gtDoorOpen(){ const m=gtNowMin(); return m>=GT_BAR_H*60 && m<GT_CLOSE_H*60; }
 function gtTeacher(){ try{ return !!Student.teacher; }catch(e){ return false; } }
 function _gtYear(){ try{ return studentYear(); }catch(e){ return 1; } }
@@ -53479,7 +53480,7 @@ function buildGreenTableOutside(){
   /* targa degli orari accanto alla porta */
   const hm=_gtSignMat("gt_hoursM",256,256,(c,W,Hh)=>{ c.fillStyle="#c9a24a"; c.fillRect(0,0,W,Hh); c.fillStyle="#1f3a2d"; c.fillRect(8,8,W-16,Hh-16);
     c.fillStyle="#e3c77a"; c.textAlign="center"; c.font="italic 700 32px Georgia, serif"; c.fillText("Open daily",W/2,58);
-    c.font="600 24px Georgia, serif"; c.fillText("Bar",W/2,100); c.font="700 34px Georgia, serif"; c.fillText("from 8 am",W/2,138);
+    c.font="600 24px Georgia, serif"; c.fillText("Bar",W/2,100); c.font="700 34px Georgia, serif"; c.fillText("from 8:30 am",W/2,138);
     c.font="600 24px Georgia, serif"; c.fillText("Lunch & dinner",W/2,182); c.font="700 30px Georgia, serif"; c.fillText("11 am - 10 pm",W/2,220); });
   _gtPlane(r,0.55,0.55,hm,1.55,1.6,FZ+0.08,Math.PI);
   /* le lanterne d'ottone (accese dal tramonto) */
@@ -53494,11 +53495,11 @@ function buildGreenTableOutside(){
   addSolid(GT_X-GT_HW-0.1,GT_X+GT_HW+0.1,GT_Z-GT_HD-0.1,GT_Z+GT_HD+0.1,"town");
   [-2.2,2.2].forEach(x=>addSolid(GT_X+x-0.35,GT_X+x+0.35,GT_Z+FZ+0.55,GT_Z+FZ+1.25,"town"));
   try{ fondiProp(r); }catch(e){}
-  try{ const anc=anchorMesh(townRoot,GT_X,gy+H+1.4,GT_Z+FZ); guiLabel(anc,"\u{1F33F} The Green Table","Bar 8 am · Restaurant 11 am – 10 pm",true,"town"); }catch(e){}
+  try{ const anc=anchorMesh(townRoot,GT_X,gy+H+1.4,GT_Z+FZ); guiLabel(anc,"\u{1F33F} The Green Table","Bar 8:30 am · Restaurant 11 am – 10 pm",true,"town"); }catch(e){}
   /* la porta: entra (aperto) o dice gli orari (chiuso) */
   GT.door=addInteract({ id:"gt_door", area:"town", radius:2.6, label:"The Green Table",
     pos:()=>new BABYLON.Vector3(GT_X,gy+1,GT_Z+FZ+0.6),
-    prompt:()=>(gtDoorOpen()||gtTeacher())?'\u{1F33F} Press <b>P</b> to enter <b>The Green Table</b>'+(gtOpen()?'':' · bar only until 11 am'):'\u{1F319} <b>The Green Table</b> is closed · open 8 am – 10 pm',
+    prompt:()=>gtDoorOpen()?'\u{1F33F} Press <b>P</b> to enter <b>The Green Table</b>'+(gtOpen()?'':' · bar only until 11 am'):'\u{1F319} <b>The Green Table</b> is closed · open 8:30 am – 10 pm',
     interact:()=>gtEnter() });
   try{ refreshShadowCasters(); }catch(e){}
 }
@@ -53703,7 +53704,12 @@ function buildGreenTable(){
       const fr=BABYLON.MeshBuilder.CreateTorus("gtFoot",{ diameter:0.36, thickness:0.025, tessellation:18 },scene); fr.material=M.brass; fr.parent=dec; fr.position.set(lx,0.34,z); fr.isPickable=false;
       _gtCyl(dec,0.44,0.4,0.08,M.velvet,lx,0.82,z,20); _gtCyl(dec,0.45,0.45,0.02,M.brass,lx,0.785,z,20);
       try{ hm7Shadow(dec,0.6,0.6,lx,z,0.036,0.5); }catch(e){}
-      GT.stools.push({ x:C.x+lx, z:C.z+z, lx }); });
+      GT.stools.push({ x:C.x+lx, z:C.z+z, lx });
+      /* v634 (Giacomo: «mi sono avvicinato allo sgabello e l'ho
+         attraversato»): non avevano ingombro. Ora fermano il giocatore
+         (seduta da 44 cm); Sofia e Marco ci passano accanto andando alla
+         vetrina, quindi per loro no (playerOnly, vedi blocked). */
+      { const sol={ x0:C.x+lx-0.2, x1:C.x+lx+0.2, z0:C.z+z-0.2, z1:C.z+z+0.2, area:A, playerOnly:true }; solids.push(sol); } });
     /* v626 (Giacomo: «ci deve essere una dispensa dove sono tenute le
        bevande: il cameriere va, la prende, la mette sul bancone»): la
        vetrina delle bevande a sinistra del bancone. Legno scuro, fondo
@@ -53750,7 +53756,7 @@ function buildGreenTable(){
   const board=_gtSignMat("gtBoardM",256,320,(c,W,H)=>{ c.fillStyle="#22302a"; c.fillRect(0,0,W,H); c.strokeStyle="#7a5232"; c.lineWidth=14; c.strokeRect(0,0,W,H);
     c.fillStyle="#f1ecd8"; c.textAlign="center"; c.font="italic 700 34px Georgia, serif"; c.fillText("Welcome",W/2,62);
     c.font="600 22px Georgia, serif"; c.fillText("Today's special:",W/2,124); c.font="italic 22px Georgia, serif"; c.fillText("ask your waiter!",W/2,156);
-    c.font="20px Georgia"; c.fillStyle="#cfe0b8"; c.fillText("~ healthy food ~",W/2,214); c.fillStyle="#f1ecd8"; c.font="18px Georgia"; c.fillText("Bar from 8 am",W/2,256); c.fillText("Lunch & dinner 11 am - 10 pm",W/2,282); });
+    c.font="20px Georgia"; c.fillStyle="#cfe0b8"; c.fillText("~ healthy food ~",W/2,214); c.fillStyle="#f1ecd8"; c.font="18px Georgia"; c.fillText("Bar from 8:30 am",W/2,256); c.fillText("Lunch & dinner 11 am - 10 pm",W/2,282); });
   /* v624: lavagna in piedi a due facce (si legge entrando e uscendo):
      cornice di legno, due montanti dritti coi piedi. Niente gamba di
      traverso (si vedeva davanti alla scritta). */
@@ -53985,8 +53991,9 @@ function gtMirror(){
 /* ENTRARE E USCIRE (non e' una quest: la quest in corso resta com'e')  */
 /* ------------------------------------------------------------------ */
 function gtEnter(){
-  if(!gtDoorOpen() && !gtTeacher()){ toast("\u{1F319} The Green Table is closed. The bar opens at 8 am, lunch and dinner from 11 am to 10 pm. · Chiuso: il bar apre alle 8, la cucina dalle 11 alle 22.",5600); return; }
-  if(!gtDoorOpen()) toast("\u{1F469}‍\u{1F3EB} Docente: il ristorante è chiuso, ma entri per provarlo.",3500);
+  /* v634 (Giacomo: «sono entrato alle 22, ma alle 22 deve essere chiuso!»):
+     chiuso vuol dire chiuso, anche per il docente */
+  if(!gtDoorOpen()){ toast("\u{1F319} The Green Table is closed. The bar opens at 8:30 am, lunch and dinner from 11 am to 10 pm. · Chiuso: il bar apre alle 8:30, la cucina dalle 11 alle 22.",5600); return; }
   const I=buildGreenTable(); const A=GT_DEF.area; GT.hello={};
   try{ gtViewSnap(); }catch(e){ console.warn("[gt] vista",e); }        // v628: PRIMA di lasciare la citta' (dopo e' spenta)
   enterArea(A);
@@ -54773,6 +54780,7 @@ function gtBarStaff(by){
 function _gtStaffHome(n){ return (n===GT.waiter)?GT_W1_L:GT_W2_L; }
 function gtBarOrder(by){
   if(GT.seat){ gtMeAction(); return; } if(GT.bar) return;
+  if(!gtDoorOpen()){ toast("\u{1F319} Sorry, we're closed. · Il bar è chiuso.",3500); return; }
   const n=gtBarStaff(by); if(!n) return;
   if(GT.debt){ gtDebtAsk(n); return; }
   /* v626: prima ci si siede sullo sgabello libero piu' vicino (come da Rosa) */
@@ -54961,6 +54969,17 @@ function gtTick(){
   if(left>=0 && left<=15){ r.rem=true; gtResSave(r);
     toast("\u{1F33F} Don't forget: your table at The Green Table is booked for "+gtClock(r.min)+"! · Hai prenotato per le "+gtClock(r.min),7000); }
 }
+/* v634: alle 22 si chiude anche con te dentro. Seduto: finisci con calma e
+   paghi; quando ti alzi (o se sei in piedi o al bancone) Oliver ti saluta
+   e ti accompagna fuori. */
+function gtClosingTick(){
+  if(typeof area==="undefined" || area!==GT_DEF.area){ GT.closing=false; return; }
+  if(gtDoorOpen()) return;
+  if(!GT.closing){ GT.closing=true; toast("\u{1F319} It's 10 pm: we're closing. Thank you and good night! · Il ristorante chiude.",5200); }
+  if(GT.seat || GT.debt || GT.eating) return;
+  if(GT.closeAt==null){ GT.closeAt=performance.now()+6000; return; }
+  if(performance.now()>=GT.closeAt){ GT.closeAt=null; GT.closing=false; try{ gtExit(); }catch(e){} } }
+setInterval(()=>{ try{ gtClosingTick(); }catch(e){} },2000);
 /* il promemoria vale anche fuori dal ristorante (il battito in sala parte solo dopo averla costruita) */
 setInterval(()=>{ try{ if(!GT.built) gtTick(); }catch(e){} },30000);
 
