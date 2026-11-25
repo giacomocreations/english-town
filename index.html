@@ -54109,7 +54109,7 @@ function gtChaseIn(){
   const d=GT.debt, w=GT.waiter, C=GT.C, V=BABYLON.Vector3; if(!d||!w) return;
   if(GT.walking){ d.at=performance.now()+1500; return; }
   d.chasing=true; const p=player.position;
-  _gtWalk([()=>new V(C.x,0,C.z-5.6),()=>new V(C.x,0,C.z+GT_LANE_Z),()=>new V(p.x,0,C.z+GT_LANE_Z),()=>new V(p.x,0,p.z)],1.2,()=>{
+  _gtWalk([gtVia(w,C.x,C.z-5.6),gtVia(w,C.x,C.z+GT_LANE_Z),gtNear(w,1.1)],0.25,()=>{
     d.chasing=false; if(GT.debt!==d || area!==GT_DEF.area) return;
     const q=w.pos(); if(Math.hypot(player.position.x-q.x,player.position.z-q.z)>4){ d.at=performance.now()+2000; return; }
     let open=false; try{ open=SpeakLock.isOpen(); }catch(e){} if(open){ d.at=performance.now()+1500; return; }
@@ -54121,7 +54121,7 @@ function gtChaseOut(){
     try{ n=GT.chaser=spawnNPC({ id:"gt_marco_out", name:"Marco", sub:"Waiter", area:"town", model:"npcMan2", dress:false, keepModel:true,
       tint:{ Shirt:"#f4f1ea", Pants:"#16181c" }, height:1.78, x:D.x, y:D.y, z:D.z, face:0, snap:true, radius:2.4, interact:q=>{ if(GT.debt) gtDebtAsk(q); } }); }catch(e){ console.warn("[gt] chaser",e); }
     if(!n){ d.chasing=false; d.at=performance.now()+5000; return; } }
-  npcWalkSeq(n,[()=>player.position],1.4,()=>{
+  npcWalkSeq(n,[gtNear(n,1.2)],0.3,()=>{
     d.chasing=false; if(GT.debt!==d || area!=="town") return;
     const q=n.pos(); if(_gtDebtFar() || Math.hypot(player.position.x-q.x,player.position.z-q.z)>4){ d.at=performance.now()+1500; return; }
     let open=false; try{ open=SpeakLock.isOpen(); }catch(e){} if(open){ d.at=performance.now()+1500; return; }
@@ -54636,6 +54636,16 @@ function gtBarEnd(){ if(GT.barSeat) gtBarStand(true); else gtBarClearGlass(); }
    niente per un minuto arriva il cameriere: Can I help you?»). In piedi,
    fermo, senza dialoghi aperti, per un minuto: Marco viene da te. */
 /* ------------------------------------------------------------------ */
+/* v627 (Giacomo: «il waiter che si avvicina a te non ti deve entrare
+   dentro!!»): chi viene da te si ferma a ~1,1 m, dalla parte da cui arriva
+   (il punto si ricalcola mentre cammina: e' sempre sulla retta fra lui e te) */
+function gtNear(n,dist){ const V=BABYLON.Vector3; dist=dist||1.1;
+  return ()=>{ const p=player.position, q=n.pos(); let dx=q.x-p.x, dz=q.z-p.z; const L=Math.hypot(dx,dz);
+    if(L<0.01){ dx=Math.sin(player.rotation.y); dz=Math.cos(player.rotation.y); } else { dx/=L; dz/=L; }
+    return new V(p.x+dx*dist,0,p.z+dz*dist); }; }
+/* un punto di passaggio che, se cade addosso a te, diventa gia' il punto d'arrivo */
+function gtVia(n,x,z){ const V=BABYLON.Vector3, near=gtNear(n,1.1);
+  return ()=>{ const p=player.position; return Math.hypot(x-p.x,z-p.z)<1.5?near():new V(x,0,z); }; }
 function gtIdleTick(){
   if(area!==GT_DEF.area || !GT.built || !GT.waiter) return;
   const now=performance.now(), p=player.position;
@@ -54646,7 +54656,7 @@ function gtIdleTick(){
   GT.idleCome=true; GT.idleNext=now+120000;
   const V=BABYLON.Vector3, C=GT.C, w=GT.waiter;
   const f=new V(Math.sin(player.rotation.y),0,Math.cos(player.rotation.y)), dst=()=>new V(p.x+f.x*1.0,0,p.z+f.z*1.0);
-  _gtWalk([()=>new V(C.x,0,C.z-5.6),()=>new V(C.x,0,C.z+GT_LANE_Z),()=>new V(C.x,0,dst().z),dst],0.4,()=>{
+  _gtWalk([gtVia(w,C.x,C.z-5.6),gtVia(w,C.x,C.z+GT_LANE_Z),gtNear(w,1.1)],0.25,()=>{
     const q=w.pos(); w.carrier.rotation.y=Math.atan2(p.x-q.x,p.z-q.z)+NPC_FACE_OFFSET; w.watch=true;
     if(GT.seat || area!==GT_DEF.area){ GT.idleCome=false; gtWaiterHome(); return; }
     const end=()=>{ GT.idleCome=false; GT.idleT=performance.now(); GT.idleP=player.position.clone(); gtWaiterHome(); };
