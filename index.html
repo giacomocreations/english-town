@@ -53847,6 +53847,19 @@ function buildGreenTableNPCs(){
   [GT.host,GT.waiter,GT.w2].concat(GT.guests).forEach(n=>{ const I=n&&n.inter; if(!I || I.__gtMute) return; I.__gtMute=true;
     const p0=I.prompt, staff=(n===GT.waiter||n===GT.w2);
     I.prompt=()=>(GT.seat||(staff && nearBar()))?'':(typeof p0==="function"?p0():p0); });
+  /* v627 (Giacomo: «la cameriera attraversa l'altro cameriere: deve
+     riconoscere la posizione anche dell'altro»): il personale si scansa.
+     Due di loro piu' vicini di 70 cm si spostano l'uno dall'altro (meta'
+     ciascuno, di lato rispetto a dove vanno): chi cammina gira attorno a chi
+     sta fermo invece di passargli attraverso. Vale anche per il Marco che ti
+     viene a chiamare, per Oliver che accompagna al tavolo e per i compagni
+     rispecchiati da Sofia. */
+  if(!GT.sepObs) GT.sepObs=scene.onBeforeRenderObservable.add(()=>{ if(area!==GT_DEF.area) return;
+    const L=[GT.waiter,GT.w2,GT.host].filter(n=>n && n.carrier);
+    for(let i=0;i<L.length;i++) for(let j=i+1;j<L.length;j++){ const a=L[i].carrier.position, b=L[j].carrier.position;
+      let dx=b.x-a.x, dz=b.z-a.z; const d=Math.hypot(dx,dz), R=0.7; if(d>=R) continue;
+      if(d<0.001){ dx=1; dz=0; } else { dx/=d; dz/=d; }
+      const push=(R-d)/2; a.x-=dx*push; a.z-=dz*push; b.x+=dx*push; b.z+=dz*push; } });
   GT.meInter=addInteract({ id:"gt_me", area:A, radius:3.0, enabled:false, prio:-2,
     pos:()=>player.position, prompt:()=>gtMePrompt(), interact:()=>gtMeAction() });
   if(!GT.mirT) GT.mirT=setInterval(()=>{ try{ gtMirror(); }catch(e){} },700);
@@ -54398,11 +54411,11 @@ function _gtDish(key,v,par){
   const ic=v.ic, c=v.c;
   const S=(d,m,x,y,z,sy)=>_gtSph(g,d,m,x,y,z,sy), B=(w,h,dd,m,x,y,z,ry)=>_gtBox(g,w,h,dd,m,x,y,z,ry), Cy=(dt,db,h,m,x,y,z)=>_gtCyl(g,dt,db,h,m,x,y,z,16);
   if(ic==="water"||ic==="juice"){
-    Cy(0.072,0.06,0.13,M.glass,0,0.065,0); Cy(0.062,0.052,0.095,F(c),0,0.05,0);
-    if(/sparkling/i.test(v.en)) for(let i=0;i<5;i++) S(0.008,M.white,(i-2)*0.009,0.04+i*0.012,0.01);
+    Cy(0.072,0.06,0.13,M.glass,0,0.065,0); { const lq=Cy(0.062,0.052,0.095,F(c),0,0.05,0); lq.__liq=0.095; }   // v627: il liquido cala sorso dopo sorso
+    if(/sparkling/i.test(v.en)) for(let i=0;i<5;i++) S(0.008,M.white,(i-2)*0.009,0.04+i*0.012,0.01).__bub=true;
     if(/lemonade/i.test(v.en)){ const l=Cy(0.05,0.05,0.006,F("#f6e05a"),0.035,0.12,0); l.rotation.z=1.2; }
   } else if(ic==="tea"){
-    Cy(0.13,0.13,0.008,M.white,0,0.004,0); Cy(0.085,0.06,0.06,M.white,0,0.035,0); Cy(0.075,0.075,0.006,F(c),0,0.058,0);
+    Cy(0.13,0.13,0.008,M.white,0,0.004,0); Cy(0.085,0.06,0.06,M.white,0,0.035,0); { const lq=Cy(0.075,0.075,0.006,F(c),0,0.058,0); lq.__disc=0.045; }
     const h=BABYLON.MeshBuilder.CreateTorus("gtH",{ diameter:0.04, thickness:0.008 },scene); h.material=M.white; h.parent=g; h.position.set(0.05,0.035,0); h.rotation.x=Math.PI/2; h.isPickable=false;
   } else if(ic==="soup"){
     _gtPlate(g,M,0.24,false); Cy(0.17,0.1,0.06,M.white,0,0.045,0); Cy(0.15,0.15,0.008,F(c),0,0.07,0);
@@ -54484,6 +54497,16 @@ function gtFoodSet(items,s){
 function gtClearFood(){ GT.food=GT.food.filter(st=>{ if(st.__guest) return true; try{ st.dispose(false,false); }catch(e){} return false; }); GT.eatG={}; }
 function gtRemoveFood(keys){ GT.food.forEach(st=>{ if(st.__guest) return; try{ st.getChildMeshes(false).forEach(m=>{ if(keys.indexOf(m.__key)>=0) m.dispose(false,false); }); }catch(e){} }); }
 /* in tavola e si mangia (col braccio vero, eatRun: sorsi e bocconi alternati) */
+/* v627 (Giacomo: «il bicchiere, anche se beve, rimane pieno»): il liquido
+   cala a ogni sorso, come al caffe' e al diner. f = quanto ne resta (0..1).
+   Bicchiere: la colonna si accorcia tenendo il fondo; tazza: il disco del
+   te' scende; le bollicine se ne vanno a meta'. */
+function gtLiquid(root,f){ if(!root) return;
+  root.getChildMeshes(false).forEach(m=>{
+    if(m.__liq){ if(m.__y0===undefined){ m.__y0=m.position.y; m.__sy=m.scaling.y; }
+      const k=Math.max(0.02,f); m.scaling.y=m.__sy*k; m.position.y=m.__y0-(m.__liq*m.__sy)*(1-k)/2; m.setEnabled(f>0.02); }
+    else if(m.__disc){ if(m.__y0===undefined) m.__y0=m.position.y; m.position.y=m.__y0-m.__disc*(1-f); m.setEnabled(f>0.04); }
+    else if(m.__bub && f<0.5) m.setEnabled(false); }); }
 function gtServe(keys,onDone){
   const s=GT.seat, o=GT.o; if(!s||!o) return;
   const set=gtFoodSet(keys.map(k=>({ key:k, v:o.slip[k] })),s);
@@ -54502,7 +54525,7 @@ function gtServe(keys,onDone){
   const order=[]; for(let r=0;r<4;r++) ks.forEach(k=>{ if(r<groups[k].n) order.push(k); });
   const steps=order.map(k=>{ const G=groups[k]; return { g:G.g, key:k, what:(k==="drink"?"sip":"bite"), apply:()=>{ G.done++;
       try{ Needs.eat(G.v.en, 1/G.n); }catch(e){}
-      const f=Math.max(0.05,1-G.done/G.n); if(k==="drink"){ G.g.scaling.y=Math.max(0.15,f); } else { G.g.scaling.setAll(Math.max(0.001,f)); if(G.done>=G.n) G.g.setEnabled(false); } } }; });
+      const f=Math.max(0.05,1-G.done/G.n); if(k==="drink"){ gtLiquid(G.g,1-G.done/G.n); } else { G.g.scaling.setAll(Math.max(0.001,f)); if(G.done>=G.n) G.g.setEnabled(false); } } }; });
   GT.eating=true;
   const fw=new BABYLON.Vector3(Math.sin(s.face),0,Math.cos(s.face));
   eatRun(steps,fw,()=>{ GT.eating=false; toast("\u{1F60B} Delicious! · Squisito!"); if(onDone) try{ onDone(); }catch(e){} });
@@ -54575,7 +54598,7 @@ function gtBarServe(n,v){
   GT.bar={ v, k:0, fetching:true };
   const V=BABYLON.Vector3, C=GT.C, Sz=C.z-GT_DEF.size, K=GT.cab, S=GT.barSeat;
   const gx=S?S.x:Math.max(C.x-2.2,Math.min(C.x+2.2,player.position.x));
-  const home=()=>{ npcWalkSeq(n,[()=>new V(n.pos().x,0,C.z-6.8),()=>new V(C.x+GT_W2_L.x,0,C.z-6.8),()=>new V(C.x+GT_W2_L.x,0,C.z+GT_W2_L.z)],0.3,
+  const home=()=>{ npcWalkSeq(n,[()=>new V(n.pos().x,0,C.z-6.3),()=>new V(C.x+GT_W2_L.x,0,C.z-6.3),()=>new V(C.x+GT_W2_L.x,0,C.z+GT_W2_L.z)],0.3,
       ()=>{ n.carrier.rotation.y=0; n.watch=true; },GT_DEF.area,()=>{},{ speed:1.4 }); };
   const drop=()=>{ try{ gtCarryOff(n); if(n.__glass){ n.__glass.dispose(false,false); n.__glass=null; } }catch(e){}
     const B=GT.bar; if(!B || B.fetching!==true){ home(); return; }
@@ -54588,12 +54611,12 @@ function gtBarServe(n,v){
     home(); setTimeout(()=>gtBarDrink(),1600); };
   if(!K){ drop(); return; }
   n.watch=false;
-  npcWalkSeq(n,[()=>new V(n.pos().x,0,C.z-6.8),()=>new V(K.x,0,C.z-6.8),()=>new V(K.x,0,K.z)],0.45,()=>{
+  npcWalkSeq(n,[()=>new V(n.pos().x,0,C.z-6.3),()=>new V(K.x,0,C.z-6.3),()=>new V(K.x,0,K.z)],0.45,()=>{
     n.carrier.rotation.y=Math.PI+NPC_FACE_OFFSET;                                 // verso la vetrina
     gtCabDoors(true,650,()=>setTimeout(()=>{                                        // apre, prende il bicchiere...
       try{ gtCarryOn(n,v); }catch(e){}
       setTimeout(()=>gtCabDoors(false,650),500);                                     // ...e richiude
-      npcWalkSeq(n,[()=>new V(K.x,0,C.z-6.8),()=>new V(gx+0.8,0,C.z-6.8),()=>new V(gx+0.8,0,Sz+1.2)],0.55,()=>{
+      npcWalkSeq(n,[()=>new V(K.x,0,C.z-6.3),()=>new V(gx+0.8,0,C.z-6.3),()=>new V(gx+0.8,0,Sz+1.2)],0.55,()=>{
         const q=n.pos(); n.carrier.rotation.y=Math.atan2(gx-q.x,(Sz+0.9)-q.z)+NPC_FACE_OFFSET;
         setTimeout(drop,700); },GT_DEF.area,drop,{ speed:1.2 }); },450)); },GT_DEF.area,drop,{ speed:1.3 });
   /* rete di sicurezza: se una camminata si incastra, la bevanda arriva comunque */
@@ -54601,7 +54624,7 @@ function gtBarServe(n,v){
 function gtBarDrink(){
   const B=GT.bar; if(!B || !B.node) return; const v=B.v, node=B.node, S=GT.barSeat, f=new BABYLON.Vector3(0,0,-1);
   if(S){
-    const N=4, steps=[]; for(let i=0;i<N;i++) steps.push({ g:node, what:"sip", apply:()=>{ try{ Needs.eat(v.en,1/N); }catch(e){} if(GT.bar) GT.bar.k++; } });
+    const N=4, steps=[]; for(let i=0;i<N;i++) steps.push({ g:node, what:"sip", apply:()=>{ try{ Needs.eat(v.en,1/N); }catch(e){} if(GT.bar){ GT.bar.k++; gtLiquid(node,1-GT.bar.k/N); } } });
     eatRun(steps,f,()=>{ if(GT.bar && GT.bar.node===node) gtBarDone(); });
     return; }
   /* in piedi (sgabelli tutti presi dai compagni): i sorsi senza braccio */
@@ -54610,7 +54633,7 @@ function gtBarDrink(){
   const sip=()=>{ const B=GT.bar; if(!B) return;
     if(area!==GT_DEF.area || Math.hypot(player.position.x-gx,player.position.z-gz)>2.6){ toast("\u{1F379} You leave your drink on the bar."); gtBarEnd(); return; }
     try{ SFX.sip(); }catch(e){} try{ Needs.eat(v.en,1/3); }catch(e){}
-    B.k++; node.scaling.y=Math.max(0.35,1-B.k*0.22);
+    B.k++; gtLiquid(node,1-B.k/3);
     if(B.k>=3){ setTimeout(()=>{ toast("\u{1F379} All gone! Thank you, Sofia. · Finito!"); gtBarEnd(); },1500); return; }
     B.t=setTimeout(sip,2600); };
   B.t=setTimeout(sip,1200); }
@@ -67580,7 +67603,7 @@ function buildTechNPCs(){
   guiLabel(anchorMesh(I.root, C.x+5.55, 2.32, C.z+1.80), "\u{1F527} REPAIR SHELF", null, true, UNIT_TECH.area);
   guiLabel(anchorMesh(I.root, C.x+0.00, 2.62, C.z-6.30), "\u{1F52E} FUTURE SCANNER", null, true, UNIT_TECH.area);
   /* (v500: niente piu' etichetta MISSION PAD: la videochiamata di Yuki non c'e' piu', la piattaforma e' arredo) */
-  guiLabel(anchorMesh(I.root, C.x-3.90, 1.62, C.z-6.80), "\u{1F6E0}\uFE0F MAKER BENCH", null, true, UNIT_TECH.area);
+  guiLabel(anchorMesh(I.root, C.x-3.90, 1.62, C.z-6.30), "\u{1F6E0}\uFE0F MAKER BENCH", null, true, UNIT_TECH.area);
   /* BIT: interazione PERMANENTE dell'interno, non della quest — cosi'
      risponde anche a unit finita (e a chi entra solo per curiosare). */
   TL_BIT_INTER=addInteract({ id:"tl_bit", area:UNIT_TECH.area, radius:2.2,
