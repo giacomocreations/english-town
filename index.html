@@ -54682,15 +54682,20 @@ function _gtFork(set,G,key){
   const part=(mk,m,x,y,z,sx,sy,sz)=>{ const o=mk(); o.material=m; o.parent=F; o.position.set(x,y,z); if(sx) o.scaling.set(sx,sy,sz); o.isPickable=false; o.__key=key; o.__noTint=true; return o; };
   const box=(w,h,d)=>()=>BABYLON.MeshBuilder.CreateBox("gtFk",{ width:w, height:h, depth:d },scene);
   const sph=()=>BABYLON.MeshBuilder.CreateSphere("gtFk",{ diameter:1, segments:6 },scene);
-  /* lungo +z: la punta (z 0..0,04), il collo, il manico verso chi siede (z fino a -0,15) */
-  part(box(0.011,0.003,0.11),M.silver,0,0,-0.085); part(box(0.015,0.0035,0.03),M.silver,0,0,-0.135);
-  if(spoon) part(sph,M.silver,0,0.002,0.02,0.032,0.008,0.045);
-  else { part(box(0.016,0.003,0.012),M.silver,0,0,0.0); for(let i=0;i<4;i++) part(box(0.0022,0.0025,0.032),M.silver,-0.0057+i*0.0038,0,0.022); }
+  /* lungo +z: la punta (z 0..0,05), il collo, il manico verso chi siede (z fino a -0,15).
+     v634b (Giacomo: «le forchette e il cucchiaio appaiono spezzati»): fra
+     manico e punta c'era un vuoto di 2-3 cm; ora ogni pezzo entra nel
+     successivo. */
+  part(box(0.011,0.003,0.12),M.silver,0,0,-0.075);                                // manico
+  part(box(0.016,0.0035,0.035),M.silver,0,0,-0.13);                               // la paletta in fondo
+  part(box(0.008,0.003,0.03),M.silver,0,0,-0.005);                                // il collo
+  if(spoon) part(sph,M.silver,0,0.002,0.03,0.034,0.008,0.048);                    // la conca del cucchiaio
+  else { part(box(0.017,0.003,0.012),M.silver,0,0,0.012); for(let i=0;i<4;i++) part(box(0.0022,0.0025,0.03),M.silver,-0.0057+i*0.0038,0,0.032); }
   /* il boccone, sulla punta */
-  const bm=big.material, by=spoon?0.008:0.007;
+  const bm=big.material, by=spoon?0.008:0.007, bz=spoon?0.03:0.035;
   const bite=(ic==="pasta")
-    ? part(()=>BABYLON.MeshBuilder.CreateCylinder("gtBite",{ diameter:0.022, height:0.018, tessellation:10 },scene),bm,0,by+0.004,0.022)
-    : part(sph,bm,0,by,0.022,spoon?0.024:0.026,spoon?0.01:0.016,spoon?0.03:0.022);
+    ? part(()=>BABYLON.MeshBuilder.CreateCylinder("gtBite",{ diameter:0.022, height:0.018, tessellation:10 },scene),bm,0,by+0.004,bz)
+    : part(sph,bm,0,by,bz,spoon?0.024:0.026,spoon?0.01:0.016,spoon?0.03:0.022);
   if(ic==="pasta") bite.rotation.x=Math.PI/2;
   /* nel piatto: punta sul cibo, manico in diagonale verso la destra di chi siede, appoggiato al bordo */
   const cx=(mn.x+mx.x)/2, cz=(mn.z+mx.z)/2, top=mx.y, rim=0.06;
@@ -54698,11 +54703,27 @@ function _gtFork(set,G,key){
   F.rotation.set(Math.max(-0.45,Math.min(0.3,-Math.atan2(top-rim,0.15))), -0.6, 0);
   F.__rx=F.rotation.x; F.__ry=F.rotation.y;
   G.F=F; G.bite=bite; G.refill=false;
-  /* in mano: man mano che sale la forchetta si raddrizza e gira la punta
-     verso la bocca; tornata nel piatto prende un altro boccone */
+  /* in mano: man mano che sale, la punta si gira verso la BOCCA.
+     v634b (Giacomo: «la forchetta va in bocca al contrario»): prima la si
+     girava di mezzo giro «a occhio» nel sistema del piatto, ma la mano la
+     tiene di lato e la punta finiva verso l'esterno. Ora si punta davvero
+     alla bocca (dalla testa: un po' avanti e in giu'), nel mondo; tornata
+     nel piatto prende un altro boccone. */
+  const Q=BABYLON.Quaternion, homeQ=Q.RotationYawPitchRoll(F.__ry,F.__rx,0);
+  let head=null; try{ head=(avatarRoot||player).getDescendants(false).find(d=>/(^|_)Head$/.test(d.name))||null; }catch(e){}
   const ob=scene.onBeforeRenderObservable.add(()=>{
     const h=F.__home||F.position, lift=Math.max(0,Math.min(1,(F.position.y-h.y)/0.22)), e=lift*lift*(3-2*lift);
-    F.rotationQuaternion=null; F.rotation.x=F.__rx*(1-e)-0.25*e; F.rotation.y=F.__ry+(Math.PI-0.3)*e;
+    if(e<=0.001){ F.rotationQuaternion=null; F.rotation.set(F.__rx,F.__ry,0); }
+    else try{
+      const fw=new V(Math.sin(player.rotation.y),0,Math.cos(player.rotation.y));
+      let mouth; if(head){ _eatChain(head); mouth=head.getAbsolutePosition().add(fw.scale(0.09)).add(new V(0,-0.06,0)); }
+      else mouth=player.position.add(new V(0,1.45,0)).add(fw.scale(0.12));
+      F.computeWorldMatrix(true); const dir=mouth.subtract(F.getAbsolutePosition()); if(dir.lengthSquared()<1e-6) return; dir.normalize();
+      const ax=V.Cross(V.Up(),dir).normalize(), ay=V.Cross(dir,ax), wq=Q.RotationQuaternionFromAxis(ax,ay,dir);   // +z (la punta) verso la bocca, piatta
+      set.computeWorldMatrix(true); const sc=new V(), pq=new Q(), tr=new V(); set.getWorldMatrix().decompose(sc,pq,tr);
+      const lq=Q.Inverse(pq).multiply(wq);
+      F.rotationQuaternion=Q.Slerp(homeQ,lq,e);
+    }catch(er){}
     if(G.refill && lift<0.01 && V.DistanceSquared(F.position,h)<1e-4){ G.refill=false; bite.setEnabled(true); } });
   F.onDisposeObservable.add(()=>{ try{ scene.onBeforeRenderObservable.remove(ob); }catch(e){} });
 }
@@ -58984,7 +59005,13 @@ scene.registerBeforeRender(()=>{
      contro i 26-30 della citta') si andava al doppio, anche camminando. Ora
      il passo segue il tempo vero, tarato sui 30 fotogrammi al secondo della
      citta' (fra mezzo passo e due passi, per i salti di fotogramma). */
-  const _fk=Math.max(0.5,Math.min(2,((engine.getDeltaTime&&engine.getDeltaTime())||33.3)/33.3));
+  /* v634b (Giacomo: «abbassa la velocita' della corsa, ora va veloce quasi
+     come lo scooter turbo!»): tarato sui 30 fps la corsa faceva ~9,5 m/s,
+     quanto lo scooter turbo sul suo computer (~20 fps in citta', dove era
+     abituato a ~5,8). Ora il riferimento sono i 20 fps: camminata ~3,2 m/s,
+     corsa ~5,8, come le ha sempre viste; chi ne disegna 60 non va piu' al
+     doppio. */
+  const _fk=Math.max(0.25,Math.min(2,((engine.getDeltaTime&&engine.getDeltaTime())||50)/50));
   /* v634 (Giacomo: «ora corre troppo veloce! sembra in scooter»): al Green
      Table (una sala, non una strada) il passo della citta' (~4,8 m/s
      camminando) faceva scivolare i piedi: dentro si va a poco piu' della
