@@ -53614,8 +53614,11 @@ function buildGreenTable(){
     const r=c.createLinearGradient(0,0,W,H); r.addColorStop(0,"rgba(255,255,255,0)"); r.addColorStop(0.45,"rgba(255,255,255,0.18)"); r.addColorStop(0.55,"rgba(255,255,255,0)"); c.fillStyle=r; c.fillRect(0,0,W,H); });
   const vm=new BABYLON.StandardMaterial("gtViewM",scene); vm.diffuseTexture=view; vm.emissiveTexture=view; vm.disableLighting=true; vm.specularColor=new BABYLON.Color3(0,0,0);
   const curtA=M.velvet, curtB=mat("gt_curtB","#2f5c45"); curtB.specularColor=new BABYLON.Color3(0.08,0.08,0.08);
+  GT.viewMats=[];
   [-5.5,5.5].forEach(x=>{
-    const gl=BABYLON.MeshBuilder.CreatePlane("gtView",{width:1.6,height:2.2},scene); gl.material=vm; gl.parent=dec; gl.position.set(x,1.75,S-0.03); gl.isPickable=false;   // guarda dentro (-z)
+    /* v628: ogni finestra ha il suo materiale: ci va la FOTO VERA della via (gtViewSnap) */
+    const wm2=vm.clone("gtViewM"+(x<0?"L":"R")); wm2.__fallback=view; GT.viewMats.push({ m:wm2, x });
+    const gl=BABYLON.MeshBuilder.CreatePlane("gtView",{width:1.6,height:2.2},scene); gl.material=wm2; gl.parent=dec; gl.position.set(x,1.75,S-0.03); gl.isPickable=false;   // guarda dentro (-z)
     _gtBox(dec,1.76,0.08,0.08,M.brass,x,2.89,S-0.07); _gtBox(dec,1.76,0.08,0.08,M.brass,x,0.61,S-0.07);
     [-0.84,-0.27,0.27,0.84].forEach(dx=>_gtBox(dec,0.05,2.3,0.07,M.brass,x+dx,1.75,S-0.07));
     _gtBox(dec,1.62,0.04,0.06,M.brass,x,1.75,S-0.07);                               // traversa
@@ -53930,6 +53933,7 @@ function gtEnter(){
   if(!gtDoorOpen() && !gtTeacher()){ toast("\u{1F319} The Green Table is closed. The bar opens at 8 am, lunch and dinner from 11 am to 10 pm. · Chiuso: il bar apre alle 8, la cucina dalle 11 alle 22.",5600); return; }
   if(!gtDoorOpen()) toast("\u{1F469}‍\u{1F3EB} Docente: il ristorante è chiuso, ma entri per provarlo.",3500);
   const I=buildGreenTable(); const A=GT_DEF.area; GT.hello={};
+  try{ gtViewSnap(); }catch(e){ console.warn("[gt] vista",e); }        // v628: PRIMA di lasciare la citta' (dopo e' spenta)
   enterArea(A);
   player.position.copyFrom(AREAS[A].spawn); player.rotation.y=Math.PI;
   camera.target.copyFrom(player.position); camera.target.y+=1.4; camera.alpha=Math.PI/2;
@@ -53937,6 +53941,35 @@ function gtEnter(){
   if(gtOpen()) toast("\u{1F33F} Welcome to The Green Table! Oliver is at the desk: press P to talk to him. · Parla con Oliver al banco.",4800);
   else toast("\u{2615} Good morning! The kitchen opens at 11 am: now you can have a drink at the bar. · Prima delle 11 solo il bar (in piedi).",5600);
   GT.idleT=performance.now(); GT.idleP=player.position.clone();
+}
+/* v628 (Giacomo: «fuori dalle tende uno sfondo finto: si puo' vedere quello
+   che c'e' veramente fuori?» — «va bene la foto scattata all'ingresso»).
+   La sala e' una stanza a parte, lontana dalla citta': dal vetro non c'e'
+   un «fuori» vero. Entrando, finche' la citta' e' ancora accesa, si scatta
+   una foto per finestra (RenderTargetTexture, UNA volta sola) da dove sta
+   quella finestra sulla facciata, guardando la via; la foto va sul vetro.
+   Ferma (auto e persone non si muovono), ma vera: la luce dell'ora, il
+   vialetto, i palazzi di fronte, il Natale se c'e'. Se qualcosa va storto
+   resta il disegno di prima. */
+function gtViewSnap(){
+  if(!GT.viewMats || !GT.viewMats.length || area!=="town" || !GT.exBuilt || typeof etSnapshot!=="function") return;
+  const oy=GT.oy||0.05, FZ=GT_Z+GT_HD, V3=BABYLON.Vector3;
+  /* niente avatar ne' targhette nella foto (la GUI si disegna nello stesso render) */
+  const hidden=[]; try{ (avatarMeshes||[]).forEach(m=>{ if(m && m.isEnabled()){ m.setEnabled(false); hidden.push(m); } }); }catch(e){}
+  let guiV=null; try{ if(typeof adt!=="undefined" && adt && adt.rootContainer){ guiV=adt.rootContainer.isVisible; adt.rootContainer.isVisible=false; } }catch(e){}
+  try{
+    GT.viewMats.forEach(V=>{
+      try{
+        const url=etSnapshot(new V3(GT_X+V.x,oy+1.7,FZ+0.5),new V3(GT_X+V.x,oy+1.75,FZ+20),{ fov:0.95, w:256, h:352, minZ:0.1, maxZ:900, q:0.82, exposure:1.3 });
+        if(!url) return;
+        if(V.tex){ try{ V.tex.dispose(); }catch(e){} }
+        const t=new BABYLON.Texture(url,scene,false,true); V.tex=t;
+        V.m.diffuseTexture=t; V.m.emissiveTexture=t;
+      }catch(e){ console.warn("[gt] foto finestra",e); } });
+  } finally {
+    hidden.forEach(m=>{ try{ m.setEnabled(true); }catch(e){} });
+    try{ if(guiV!=null) adt.rootContainer.isVisible=guiV; }catch(e){}
+  }
 }
 function gtExit(){
   if(GT.seat) gtStand(true);
