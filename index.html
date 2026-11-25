@@ -53586,7 +53586,7 @@ function buildGreenTable(){
   rug.material.emissiveColor=new BABYLON.Color3(0.08,0.08,0.08); rug.position.set(C.x,0.025,C.z-0.6); rug.parent=root; rug.isPickable=false;
   /* muri (piani con la faccia verso l'interno) e soffitto */
   const wm=_gtWallMat();
-  const wall=(w,x,z,ry)=>{ const p=BABYLON.MeshBuilder.CreatePlane("gtWall",{width:w,height:WH},scene); p.material=wm; p.position.set(C.x+x,WH/2,C.z+z); p.rotation.y=ry; p.parent=root; p.isPickable=false; return p; };
+  const wall=(w,x,z,ry)=>{ const p=BABYLON.MeshBuilder.CreatePlane("gtWall",{width:w,height:WH},scene); p.material=wm; p.position.set(C.x+x,WH/2,C.z+z); p.rotation.y=ry; p.parent=root; p.__camBlock=true; p.isPickable=false; return p; };   // v630: __camBlock, la camera non esce dalla sala
   wall(SX*2,0,S,0); wall(SX*2,0,-S,Math.PI); wall(S*2,SX,0,Math.PI/2); wall(S*2,-SX,0,-Math.PI/2);
   const ce=BABYLON.MeshBuilder.CreatePlane("gtCeil",{width:SX*2,height:S*2},scene);
   const cm=_gtSignMat("gtCeilM",512,420,(c,W,H)=>{ c.fillStyle="#efe4cc"; c.fillRect(0,0,W,H);
@@ -53817,7 +53817,7 @@ function buildGreenTable(){
   /* l'uscita */
   addInteract({ id:"gt_exit", area:A, radius:1.9, label:"door",
     pos:()=>new BABYLON.Vector3(C.x,1,C.z+S-0.6), prompt:'\u{1F6AA} Press <b>P</b> to <b>go outside</b>', interact:()=>gtExit() });
-  AREAS[A].spawn=new BABYLON.Vector3(C.x,0,C.z+S-1.5); AREAS[A].faceY=Math.PI;
+  AREAS[A].spawn=new BABYLON.Vector3(C.x,0,C.z+S-4.2); AREAS[A].faceY=Math.PI;   // v630: piu' dentro, la camera ha spazio alle spalle
   buildGreenTableNPCs();
   gtSeatInteracts();
   try{ if(XMAS.on) _xmGreenTable(); }catch(e){ console.warn("[natale gt]",e); }   // v623
@@ -53954,6 +53954,7 @@ function gtEnter(){
   enterArea(A);
   player.position.copyFrom(AREAS[A].spawn); player.rotation.y=Math.PI;
   camera.target.copyFrom(player.position); camera.target.y+=1.4; camera.alpha=Math.PI/2;
+  try{ if(typeof POV!=="undefined" && POV.on) povSet(false,true); applyView(); }catch(e){}   // v630 (Giacomo: «entrando, la visuale del tasto V, non quella con la trave in primo piano»)
   moveTarget=null; pendingInteract=null;
   if(gtOpen()) toast("\u{1F33F} Welcome to The Green Table! Oliver is at the desk: press P to talk to him. · Parla con Oliver al banco.",4800);
   else toast("\u{2615} Good morning! The kitchen opens at 11 am: now you can have a drink at the bar. · Prima delle 11 solo il bar (in piedi).",5600);
@@ -54006,7 +54007,30 @@ function gtGreet(){ const h=new Date().getHours(); return h<12?"Good morning":(h
 function gtTimeWords(min){ const h=Math.floor(min/60), m=min%60, h12=h%12||12, nx=(h12%12)+1;
   return m===0?h12+" o'clock":m===30?"half past "+h12:m===15?"quarter past "+h12:m===45?"quarter to "+nx:h12+":"+String(m).padStart(2,"0"); }
 function gtClock(min){ return Math.floor(min/60)+":"+String(min%60).padStart(2,"0"); }
-function gtFirstName(){ let n=""; try{ n=String(Student.nome||"").trim().split(/\s+/)[0]; }catch(e){} return n||"Alex"; }
+/* v630 (Giacomo: «mi appare "It's Alex": deve apparire il nome dell'alunno»):
+   il nome dell'alunno; il docente senza nome e' Mrs. Jackson, come per i
+   compagni; «Alex» solo per l'ospite senza nome */
+function gtFirstName(){ let n=""; try{ n=String(Student.nome||"").trim().split(/\s+/)[0]; }catch(e){}
+  if(!n){ try{ if(Student.teacher) n=(typeof MRSJ_NOME!=="undefined")?MRSJ_NOME:"Mrs. Jackson"; }catch(e){} }
+  return n||"Alex"; }
+/* il nome: in prima si sceglie la frase, in seconda e terza si SCRIVE */
+function gtAskName(n,text,it,done){
+  const nm=gtFirstName();
+  if(_gtYear()<=1){
+    DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — reservations", text, italian:it,
+      choices:[ { label:"It's "+nm+".", act:()=>setTimeout(()=>done(nm),260) }, { label:"My name is "+nm+".", act:()=>setTimeout(()=>done(nm),260) } ] }); return; }
+  DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — reservations", text, italian:it+" (scrivilo in inglese, con una frase intera)",
+    html:'<textarea id="gtNameTA" rows="1" style="width:100%;box-sizing:border-box;font:inherit;margin-top:8px;padding:8px;border-radius:10px;border:1px solid #ccd6da;resize:none;" placeholder="My name is ..."></textarea><div id="gtNameFb" style="margin-top:8px;"></div>',
+    buttons:[ { label:"✔ Say it", cls:"primary", keepOpen:true, act:()=>{
+      const ta=document.getElementById("gtNameTA"), fb=document.getElementById("gtNameFb"); if(!ta||!fb||ta.__ok) return;
+      const v=String(ta.value||"").trim();
+      try{ if(linguaccia(v)){ fb.innerHTML=linguacciaHtml(); return; } }catch(e){}
+      const m=/\b(?:my name is|my name's|it's|it is|i'm|i am|this is)\s+((?:mrs?\.?|ms\.?|miss)\s+)?([a-zà-ÿ'-]{2,}(?:\s+[a-zà-ÿ'-]{2,})?)/i.exec(v);
+      if(!m){ fb.innerHTML='<div style="color:#a33;font-size:14px">Say a full sentence, for example: <b>«My name is '+_escHtml(nm)+'.»</b> or <b>«It\'s '+_escHtml(nm)+'.»</b><br><i>Rispondi con una frase intera, non solo il nome.</i></div>'; return; }
+      ta.__ok=true;
+      const got=((m[1]||"")+m[2]).trim().replace(/\b\w/g,c=>c.toUpperCase());
+      try{ DialogueBox.close(); }catch(e){}
+      setTimeout(()=>done(got),260); } } ] }); }
 function gtRes(){ try{ const r=Sync.get("et_gt_res",null); if(r && r.day===new Date().toDateString()) return r; }catch(e){} return null; }
 function gtResSave(r){ try{ if(r) Sync.set("et_gt_res",r); else Sync.del("et_gt_res"); }catch(e){} }
 const GT_NUM=["zero","one","two","three","four","five","six","seven","eight","nine","ten","eleven","twelve"];
@@ -54019,7 +54043,7 @@ function gtTalkHost(n){
   if(GT.seat){ gtMeAction(); return; }
   if(GT.debt){ gtDebtAsk(n); return; }
   if(!gtOpen()){ gtHostMorning(n); return; }
-  const g=gtGreet(), res=gtRes(), now=gtNowMin(), nm=gtFirstName(), np=gtResN(res), pw=np>1?"a table for "+gtPeople(np):"a table for one";
+  const g=gtGreet(), res=gtRes(), now=gtNowMin(), nm=(res&&res.nm)||gtFirstName(), np=gtResN(res), pw=np>1?"a table for "+gtPeople(np):"a table for one";
   if(res && !res.used){
     const d=now-res.min, tw=gtTimeWords(res.min);
     if(Math.abs(d)<=20){
@@ -54072,7 +54096,20 @@ function gtWalkIn(n){
     italian:"Nessun problema. Un tavolo per uno?", choices:[ { label:"Yes, a table for one, please.", act:()=>setTimeout(()=>gtShowTable("walkin"),260) },
       { label:"No, thank you. Goodbye!", act:()=>{} } ] }); }
 /* la prenotazione: l'ora (in parole), per quante persone, il nome */
-function gtBook(n){
+function gtBook(n,force){
+  /* v630 (Giacomo: «se prenoto e subito dopo riprenoto non ha senso: mi deve
+     dire che ho gia' prenotato»): una prenotazione al giorno; si puo'
+     cambiare o cancellare */
+  const old=gtRes();
+  if(old && !old.used && !force){ const k=gtResN(old);
+    DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — reservations",
+      text:"You've already booked a table for "+(k>1?gtPeople(k):"one")+" at "+gtTimeWords(old.min)+". Can I help you with anything else?",
+      italian:"Hai già prenotato: un tavolo per "+k+" alle "+gtClock(old.min)+". Posso fare qualcos'altro per te?",
+      choices:[ { label:"Could I change my booking, please?", act:()=>setTimeout(()=>gtBook(n,true),260) },
+                { label:"Could I cancel my booking, please?", act:()=>{ gtResSave(null); try{ GT.party=null; GT.partyPub=""; }catch(e){}
+                    setTimeout(()=>DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — reservations", text:"No problem. Your booking is cancelled.",
+                      italian:"Nessun problema: la prenotazione è cancellata.", buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] }),260); } },
+                { label:"No, that's all. Thank you!", act:()=>{} } ] }); return; }
   const now=gtNowMin(), last=21*60+30; let t=Math.max(GT_OPEN_H*60,Math.ceil((now+30)/30)*30); const slots=[];   // v625: non prima delle 11
   while(t<=last && slots.length<4){ slots.push(t); t+=30; }
   if(!slots.length){ DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — Maître d'", text:"I'm sorry, the last booking is at half past nine. Please come back tomorrow!",
@@ -54087,11 +54124,11 @@ function gtBook2(n,m){
        per quante persone (fino a 12); al massimo QUATTRO per tavolo, il
        gruppo ha tavoli vicini */
     choices:[1,2,3,4,6,8,12].map(k=>({ label:k===1?"Just for me, please.":"For "+gtPeople(k)+", please.", act:()=>setTimeout(()=>gtBook3(n,m,k),260) })) }); }
-function gtBook3(n,m,np){ const nm=gtFirstName(); np=np||1;
-  DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — reservations", text:(np>1?"A table for "+gtPeople(np)+". ":"")+"Lovely. May I have your name, please?", italian:(np>1?"Per "+np+" persone. ":"")+"Perfetto. Posso avere il tuo nome?",
-    choices:[ { label:"It's "+nm+".", act:()=>setTimeout(()=>gtBook4(n,m,nm,np),260) }, { label:"My name is "+nm+".", act:()=>setTimeout(()=>gtBook4(n,m,nm,np),260) } ] }); }
+function gtBook3(n,m,np){ np=np||1;
+  gtAskName(n,(np>1?"A table for "+gtPeople(np)+". ":"")+"Lovely. May I have your name, please?",(np>1?"Per "+np+" persone. ":"")+"Perfetto. Posso avere il tuo nome?",
+    nm=>gtBook4(n,m,nm,np)); }
 function gtBook4(n,m,nm,np){ np=np||1; const k=Math.ceil(np/4), tf=np>1?"a table for "+gtPeople(np):"a table for one";
-  gtResSave({ day:new Date().toDateString(), min:m, used:false, rem:false, n:np });
+  gtResSave({ day:new Date().toDateString(), min:m, used:false, rem:false, n:np, nm });
   DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — reservation confirmed",
     text:"Perfect! That's "+tf+" at "+gtTimeWords(m)+", "+nm+"."+(k>1?" We'll put "+gtPeople(k)+" tables together for you.":"")+" See you later!",
     italian:"Prenotato: "+(np>1?"un tavolo per "+np:"un tavolo per uno")+" alle "+gtClock(m)+(k>1?" ("+k+" tavoli vicini: al massimo 4 per tavolo)":"")+". Arriva in orario (fino a 20 minuti prima o dopo) per il bonus ⭐!"
@@ -54197,7 +54234,13 @@ function gtChaseHome(){
 function gtTalkWaiter(n){
   if(GT.seat){ gtMeAction(); return; }
   if(GT.debt){ gtDebtAsk(n); return; }
-  if(n===GT.w2){ gtBarOrder(); return; }                                          // v626: Sofia e' la barista
+  if(n===GT.w2){ gtBarOrder(n); return; }                                         // v626: Sofia e' la barista
+  if(n===GT.waiter){ const hi=gtHi("marco"), ch=[];                               // v630: anche Marco porta da bere
+    if(gtOpen()) ch.push({ label:"A table for one, please.", act:()=>setTimeout(()=>gtShowTable("walkin"),260) });
+    ch.push({ label:"Could I have a drink at the bar, please?", act:()=>setTimeout(()=>gtBarOrder(n),260) });
+    ch.push({ label:"No, thank you.", act:()=>{} });
+    DialogueBox.open({ npc:n, icon:"\u{1F33F}", sub:"Marco — Waiter", text:(hi?gtGreet()+"! ":"")+"Can I help you?",
+      italian:"Posso aiutarti? Un tavolo, o da bere al bancone?", choices:ch }); return; }
   DialogueBox.open({ npc:n, icon:"\u{1F33F}", sub:n.sub||"Waiter", text:gtGreet()+"! Please ask Oliver at the door for a table: he'll show you where to sit.",
     italian:"Chiedi un tavolo a Oliver, al banco vicino alla porta: ti accompagna lui.", buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] });
 }
@@ -54589,19 +54632,28 @@ function gtServe(keys,onDone){
    bicchiere sta sul bancone e lo si beve li'. */
 /* ------------------------------------------------------------------ */
 function _gtDrinkAsk(v){ const n=v.en.toLowerCase(); if(/water/.test(n)) return "a glass of "+n; return (/^[aeiou]/.test(n)?"an ":"a ")+n; }
-function gtBarOrder(){
+/* v630 (Giacomo: «se invece di Sofia vado con Marco, e' Marco che va a
+   prendere la roba da bere?»): serve chi hai chiamato; dal bancone (P sul
+   bar) il cameriere libero piu' vicino. Ognuno poi torna alla SUA postazione. */
+function gtBarStaff(by){
+  if(by) return by;
+  const free=[GT.w2,GT.waiter].filter(n=>n && !(n===GT.waiter && (GT.walking||GT.idleCome)) && !n.__tray);
+  const p=player.position, d=n=>{ const q=n.pos(); return Math.hypot(q.x-p.x,q.z-p.z); };
+  return free.sort((a,b)=>d(a)-d(b))[0]||GT.w2||GT.waiter; }
+function _gtStaffHome(n){ return (n===GT.waiter)?GT_W1_L:GT_W2_L; }
+function gtBarOrder(by){
   if(GT.seat){ gtMeAction(); return; } if(GT.bar) return;
-  const n=GT.w2||GT.waiter; if(!n) return;
+  const n=gtBarStaff(by); if(!n) return;
   if(GT.debt){ gtDebtAsk(n); return; }
   /* v626: prima ci si siede sullo sgabello libero piu' vicino (come da Rosa) */
   if(!GT.barSeat){ const S=gtBarFreeStool(); if(S && !gtBarSit(S)) return; }
-  const hi=gtHi("sofia");
-  DialogueBox.open({ npc:n, icon:"\u{1F379}", sub:"Sofia — the bar", text:hi?gtGreet()+"! What would you like to drink?":"OK! What would you like now?",
+  const hi=gtHi(n===GT.waiter?"marco":"sofia"), who=n.name||"Sofia";
+  DialogueBox.open({ npc:n, icon:"\u{1F379}", sub:who+" — the bar", text:hi?gtGreet()+"! What would you like to drink?":"OK! What would you like now?",
     italian:hi?"Cosa vuoi da bere?":"Ok! Cosa prendi adesso?", html:'<div style="margin-top:6px;font:13px Georgia,serif;color:#2c3a30">'
       +GT_MENU.drinks.map(v=>_escHtml(v.en)+' · £'+v.p.toFixed(2)).join('<br>')+'</div>',
     choices:GT_MENU.drinks.map(v=>({ label:"Could I have "+_gtDrinkAsk(v)+", please?", act:()=>setTimeout(()=>{
       const c=Math.round(v.p*100);
-      pricePick({ npc:n, icon:"\u{1F379}", sub:"Sofia — the bar", said:"Of course! That's "+priceWords(c)+", please.", price:c, next:()=>gtBarServe(n,v) }); },260) }))
+      pricePick({ npc:n, icon:"\u{1F379}", sub:who+" — the bar", said:"Of course! That's "+priceWords(c)+", please.", price:c, next:()=>gtBarServe(n,v) }); },260) }))
       .concat([{ label:"Nothing, thank you.", act:()=>{} }]) }); }
 /* le ante della vetrina: aperte (1) o chiuse (0) in ms */
 function gtCabDoors(open,ms,cb){ const D=GT.cabDoors; if(!D){ if(cb) cb(); return; }
@@ -54617,7 +54669,7 @@ function gtHi(id){ GT.hello=GT.hello||{}; if(GT.hello[id]) return false; GT.hell
 function gtCarryOn(n,v){
   gtCarryOff(n);
   const ry=n.carrier.rotation.y-(typeof NPC_FACE_OFFSET!=="undefined"?NPC_FACE_OFFSET:0), f=new BABYLON.Vector3(Math.sin(ry),0,Math.cos(ry));
-  let cp=null; try{ n.carrier.computeWorldMatrix(true); _sitRefresh(n.carrier); cp=carryPoseFor(n.holder,f,-0.32); }catch(e){ cp=null; }
+  let cp=null; try{ n.carrier.computeWorldMatrix(true); _sitRefresh(n.carrier); cp=carryPoseFor(n.holder,f,-0.04); }catch(e){ cp=null; }   // v630: avambracci paralleli, le mani ai bordi del vassoio (verso il centro si incrociavano)
   const M=_gtMats(), tray=new BABYLON.TransformNode("gtBarTray",scene); tray.parent=n.carrier;
   let hl=new BABYLON.Vector3(0,1.0,0.32);
   try{ if(cp && cp.hand){ const inv=n.carrier.getWorldMatrix().clone().invert(); hl=BABYLON.Vector3.TransformCoordinates(cp.hand,inv); } }catch(e){}
@@ -54645,12 +54697,13 @@ function gtBarSit(S){
 /* pagato: Sofia va alla vetrina, prende la bevanda e la posa sul bancone davanti a te */
 function gtBarServe(n,v){
   let got=0; try{ got=Stars.awardCafeOrder(npcCardId(n),"cafeOrderReady"); }catch(e){}
-  DialogueBox.open({ npc:n, icon:"\u{1F379}", sub:"Sofia — the bar", text:"Thank you! Coming right up!",
+  DialogueBox.open({ npc:n, icon:"\u{1F379}", sub:(n.name||"Sofia")+" — the bar", text:"Thank you! Coming right up!",
     italian:"Grazie! Arriva subito."+(got?" (+"+got+" ⭐)":""), buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] });
-  GT.bar={ v, k:0, fetching:true };
+  GT.bar={ v, k:0, fetching:true }; GT.barBy=n;
+  const HL=_gtStaffHome(n);
   const V=BABYLON.Vector3, C=GT.C, Sz=C.z-GT_DEF.size, K=GT.cab, S=GT.barSeat;
   const gx=S?S.x:Math.max(C.x-2.2,Math.min(C.x+2.2,player.position.x));
-  const home=()=>{ npcWalkSeq(n,[()=>new V(n.pos().x,0,C.z-6.3),()=>new V(C.x+GT_W2_L.x,0,C.z-6.3),()=>new V(C.x+GT_W2_L.x,0,C.z+GT_W2_L.z)],0.3,
+  const home=()=>{ npcWalkSeq(n,[()=>new V(n.pos().x,0,C.z-6.3),()=>new V(C.x+HL.x,0,C.z-6.3),()=>new V(C.x+HL.x,0,C.z+HL.z)],0.3,
       ()=>{ n.carrier.rotation.y=0; n.watch=true; },GT_DEF.area,()=>{},{ speed:1.4 }); };
   const drop=()=>{ try{ gtCarryOff(n); if(n.__glass){ n.__glass.dispose(false,false); n.__glass=null; } }catch(e){}
     const B=GT.bar; if(!B || B.fetching!==true){ home(); return; }
@@ -54690,11 +54743,11 @@ function gtBarDrink(){
     B.t=setTimeout(sip,2600); };
   B.t=setTimeout(sip,1200); }
 function gtBarDone(){
-  const n=GT.w2||GT.waiter;
-  try{ DialogueBox.open({ npc:n, icon:"\u{1F379}", sub:"Sofia — the bar", text:"All done? Would you like anything else?",
+  const n=(GT.barBy)||GT.w2||GT.waiter;
+  try{ DialogueBox.open({ npc:n, icon:"\u{1F379}", sub:(n.name||"Sofia")+" — the bar", text:"All done? Would you like anything else?",
     italian:"Finito? Vuoi qualcos'altro?",
     buttons:[{ label:"\u{1F44B} No, thank you! Goodbye! (stand up)", cls:"primary", act:()=>gtBarStand() },
-             { label:"Yes, another drink, please!", cls:"ghost", act:()=>{ gtBarClearGlass(); setTimeout(()=>gtBarOrder(),260); } },
+             { label:"Yes, another drink, please!", cls:"ghost", act:()=>{ gtBarClearGlass(); setTimeout(()=>gtBarOrder(n),260); } },
              { label:"Stay a bit", cls:"ghost", act:()=>{} }] }); }catch(e){ gtBarStand(); } }
 function gtBarClearGlass(){ const B=GT.bar; if(!B) return; clearTimeout(B.t); try{ eatStop(); }catch(e){} try{ if(B.node) B.node.dispose(false,false); }catch(e){} GT.bar=null; }
 /* giu' dallo sgabello: un passo indietro dal bancone */
