@@ -4646,12 +4646,19 @@ function _armPose(root,tns,f,upDir,foreDir,handFn){
   const V=BABYLON.Vector3, end=(t,n)=>new RegExp("(^|_)"+n.replace(".","\\.")+"$").test(t.name);
   const out=new Map(), up=new V(0,1,0);
   let chest=null; tns.forEach(t=>{ if(end(t,"Chest")||(!chest&&end(t,"Torso"))) chest=t; });
+  /* v629 (Giacomo: «le mani sul vassoio della cameriera sono intrecciate»).
+     Senza petto fra le ossa (carryPoseFor passa solo le braccia) «in fuori»
+     ripiegava su una direzione di riserva il cui segno dipende dal modello:
+     su alcuni (Sofia) era al contrario e i polsi si incrociavano. Ora si
+     prende il punto in mezzo alle DUE spalle vere: «in fuori» e' da li'. */
+  let mid=null; if(!chest){ const uL=tns.find(t=>end(t,"UpperArm.L")), uR=tns.find(t=>end(t,"UpperArm.R"));
+    if(uL && uR) mid=uL.getAbsolutePosition().add(uR.getAbsolutePosition()).scale(0.5); }
   ["L","R"].forEach(sd=>{
     tns.filter(t=>end(t,"UpperArm."+sd)).forEach(U=>{
       const L=U.getDescendants(false).find(d=>end(d,"LowerArm."+sd)); if(!L) return;
       const H=L.getDescendants(false).find(d=>new RegExp("(^|_)(Wrist|Palm|Hand)\\."+sd+"$").test(d.name)); if(!H) return;
       const pU=U.getAbsolutePosition().clone(), pL=L.getAbsolutePosition().clone(), pH=H.getAbsolutePosition().clone();
-      const c=chest?chest.getAbsolutePosition():pU;
+      const c=chest?chest.getAbsolutePosition():(mid||pU);
       let o=pU.subtract(c); o.y=0; o=o.subtract(f.scale(V.Dot(o,f))); if(o.length()<1e-4) o=V.Cross(up,f).scale(sd==="L"?1:-1); o.normalize();
       const foreLoc=V.TransformNormal(pH.subtract(pL),L.getWorldMatrix().clone().invert());
       /* ctx: chi calcola la posa puo' sapere dove sono spalla, gomito e mano
@@ -4718,14 +4725,16 @@ function _handBasis(H){
 }
 const _ARM_RE=/^(Shoulder\.[LR]|UpperArm\.[LR]|LowerArm\.[LR])$/;
 /* un NPC con le braccia avanti (il vassoio). Ritorna { pins, hand } */
-function carryPoseFor(root,fwd){
+function carryPoseFor(root,fwd,inward){
   const V=BABYLON.Vector3, f=new V(fwd.x,0,fwd.z).normalize(), dn=new V(0,-1,0);
   const pins=_restPinsFor(root,_ARM_RE); if(!pins.length) return null;
   const saved=pins.map(k=>({tn:k.tn, q:k.tn.rotationQuaternion?k.tn.rotationQuaternion.clone():null, p:k.tn.position.clone()}));
   _applyPins(pins); _sitRefresh(root);
   const out=_armPose(root,pins.map(k=>k.tn),f,
     o=>dn.scale(0.97).add(f.scale(0.22)).add(o.scale(0.04)),
-    o=>f.scale(0.9).subtract(dn.scale(0.06)).add(o.scale(0.4)));   // avambracci avanti e verso il centro: le mani SOTTO il vassoio
+    o=>f.scale(0.9).subtract(dn.scale(0.06)).add(o.scale(inward!=null?inward:0.4)));   // avambracci avanti e verso il centro: le mani SOTTO il vassoio
+    /* v629: «inward» negativo = le mani vanno verso il centro (con il vero
+       «in fuori», vedi _armPose; il Green Table lo usa, il diner no) */
   /* le mani: il punto in mezzo, dove appoggia il vassoio */
   let hand=new V(0,0,0), n=0;
   root.getDescendants(false).forEach(d=>{ if(/(^|_)(Wrist|Palm|Hand)\.[LR]$/.test(d.name)){ hand.addInPlace(d.getAbsolutePosition()); n++; } });
@@ -53754,9 +53763,17 @@ function buildGreenTable(){
   addSolid(C.x+px-1.2,C.x+px+1.2,C.z+pz-1.6,C.z+pz+1.3,A);
   /* i quadri con la cornice dorata e le applique fra l'uno e l'altro */
   [[-SX+0.05,-4.5,Math.PI/2],[-SX+0.05,0.5,Math.PI/2],[SX-0.05,-4.5,-Math.PI/2],[SX-0.05,0.5,-Math.PI/2],[SX-0.05,5.0,-Math.PI/2]].forEach((q,i)=>{
-    const pm=_gtPainting(i); const pl=_gtPlane(dec,1.5,1.1,pm,q[0]-Math.sign(q[0])*0.05,2.0,q[1],q[2]); pl.material.emissiveColor=new BABYLON.Color3(0.45,0.45,0.45);
-    const sx=Math.sign(q[0]); const fr=_gtBox(dec,0.04,1.24,1.64,M.gold,q[0]-sx*0.02,2.0,q[1]); fr.position.x-=sx*0.0;
-    _gtBox(dec,0.02,1.12,1.52,M.dark,q[0]-sx*0.035,2.0,q[1]); });
+    /* v629 (Giacomo: «i quadri, dalla prospettiva O, mentre mi muovo
+       sfarfallano»): la tela stava a 5 mm dal fondo scuro della cornice: da
+       vicino (O) la profondita' non li distingue e si alternano. Ora: fondo
+       d'oro contro il muro, la tela 2 cm davanti, e la cornice VERA (quattro
+       listelli) ancora davanti alla tela, a coprirne il bordo. */
+    const sx=Math.sign(q[0]);
+    const pm=_gtPainting(i); const pl=_gtPlane(dec,1.5,1.1,pm,q[0]-sx*0.05,2.0,q[1],q[2]); pl.material.emissiveColor=new BABYLON.Color3(0.45,0.45,0.45);
+    _gtBox(dec,0.03,1.24,1.64,M.gold,q[0]-sx*0.0,2.0,q[1]);                         // il fondo, contro il muro
+    [[0.07,1.64,0,0.585],[0.07,1.64,0,-0.585]].forEach(b=>_gtBox(dec,0.035,b[0],b[1],M.gold,q[0]-sx*0.07,2.0+b[3],q[1]));
+    [[1.24,0.07,0.785],[1.24,0.07,-0.785]].forEach(b=>_gtBox(dec,0.035,b[0],b[1],M.gold,q[0]-sx*0.07,2.0,q[1]+b[2]));
+  });
   [[-SX+0.08,-2.0],[-SX+0.08,3.0],[SX-0.08,-2.0],[SX-0.08,2.75]].forEach(q=>{ const sx=Math.sign(q[0]);
     _gtBox(dec,0.06,0.18,0.1,M.brass,q[0]-sx*0.02,2.2,q[1]); _gtCyl(dec,0.1,0.16,0.18,M.velvet,q[0]-sx*0.16,2.42,q[1],14); _gtSph(dec,0.08,M.bulb,q[0]-sx*0.16,2.35,q[1]); });
   /* i lampadari: anello d'ottone con le candele elettriche, appesi alle travi */
@@ -54588,9 +54605,11 @@ function gtBarOrder(){
       .concat([{ label:"Nothing, thank you.", act:()=>{} }]) }); }
 /* le ante della vetrina: aperte (1) o chiuse (0) in ms */
 function gtCabDoors(open,ms,cb){ const D=GT.cabDoors; if(!D){ if(cb) cb(); return; }
-  const a0=D[0].rotation.y*D[0].__sd*-1, a1=open?1.75:0, t0=performance.now();
+  /* v629 (Giacomo: «la vetrina si apre al contrario, verso l'interno»): le
+     ante girano verso la sala (+z), non dentro il mobile */
+  const a0=D[0].rotation.y*D[0].__sd, a1=open?1.75:0, t0=performance.now();
   const ob=scene.onBeforeRenderObservable.add(()=>{ const q=Math.min(1,(performance.now()-t0)/(ms||600)), u=q*q*(3-2*q), a=a0+(a1-a0)*u;
-    D.forEach(h=>{ h.rotation.y=-h.__sd*a; }); if(q>=1){ scene.onBeforeRenderObservable.remove(ob); if(cb) cb(); } }); }
+    D.forEach(h=>{ h.rotation.y=h.__sd*a; }); if(q>=1){ scene.onBeforeRenderObservable.remove(ob); if(cb) cb(); } }); }
 /* v627 (Giacomo: «se riprendono da bere, non mi deve ridire Good morning»):
    ognuno saluta UNA volta per visita */
 function gtHi(id){ GT.hello=GT.hello||{}; if(GT.hello[id]) return false; GT.hello[id]=1; return true; }
@@ -54598,11 +54617,11 @@ function gtHi(id){ GT.hello=GT.hello||{}; if(GT.hello[id]) return false; GT.hell
 function gtCarryOn(n,v){
   gtCarryOff(n);
   const ry=n.carrier.rotation.y-(typeof NPC_FACE_OFFSET!=="undefined"?NPC_FACE_OFFSET:0), f=new BABYLON.Vector3(Math.sin(ry),0,Math.cos(ry));
-  let cp=null; try{ n.carrier.computeWorldMatrix(true); _sitRefresh(n.carrier); cp=carryPoseFor(n.holder,f); }catch(e){ cp=null; }
+  let cp=null; try{ n.carrier.computeWorldMatrix(true); _sitRefresh(n.carrier); cp=carryPoseFor(n.holder,f,-0.32); }catch(e){ cp=null; }
   const M=_gtMats(), tray=new BABYLON.TransformNode("gtBarTray",scene); tray.parent=n.carrier;
   let hl=new BABYLON.Vector3(0,1.0,0.32);
   try{ if(cp && cp.hand){ const inv=n.carrier.getWorldMatrix().clone().invert(); hl=BABYLON.Vector3.TransformCoordinates(cp.hand,inv); } }catch(e){}
-  tray.position.set(0,hl.y+0.02,Math.max(0.26,hl.z+0.06));
+  tray.position.set(0,hl.y+0.055,Math.max(0.26,hl.z+0.06));                       // v629: un filo piu' su, le dita restano sotto
   const d=BABYLON.MeshBuilder.CreateCylinder("gtTrayD",{ diameter:0.3, height:0.012, tessellation:24 },scene); d.material=M.silver||M.brass; d.parent=tray; d.isPickable=false;
   try{ const g=_gtDish("drink",v,tray); g.position.y=0.008; tray.getChildMeshes(false).forEach(m=>{ m.isPickable=false; }); }catch(e){}
   n.__tray=tray;
