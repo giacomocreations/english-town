@@ -8820,7 +8820,17 @@ function _xmGreenTable2(){
     [-1,1].forEach(sd=>{ const tx=X+sd*2.75, tz=FZ+1.15;
       _xmTree(L,tx,ly,tz,1.45,rnd,false); addSolid(tx-0.5,tx+0.5,tz-0.5,tz+0.5,"town");
       _xmGift(L,tx+sd*0.62,ly,tz+0.35,0.26,rnd,0.3*sd); _xmGift(L,tx-sd*0.1,ly,tz+0.72,0.2,rnd,-0.4*sd);
-      _xmGarland(L,[X+sd*1.68,FZ+0.6],[X+sd*1.68,FZ+5.9],gy+0.98,0.08,2,0.024); });   // sulle siepi del vialetto
+      /* v624 (Giacomo: «il festone e' sospeso, non e' agganciato al
+         palo»): il festone corre SUL colmo della siepe del vialetto e alla
+         fine della siepe si aggancia al palo del lampione, che ha la sua
+         spirale di abete e lucine dal piede alla lanterna */
+      const zE=FZ+6.55, zL=zE-0.45, hy=gy+0.9;
+      _xmGarlandPath(L,[[X+sd*1.68,FZ+0.55],[X+sd*1.68,zE-0.95],[X+sd*1.02,zL]],hy,0.035,0.024);
+      { const px=X+sd*0.95, path=[], Hh=2.45; for(let k=0;k<=90;k++){ const t=k/90, a=t*Math.PI*2*6.5;
+          path.push(new BABYLON.Vector3(px+Math.cos(a)*0.085,gy+0.25+t*Hh,zL+Math.sin(a)*0.085)); }
+        L.fir.push(BABYLON.MeshBuilder.CreateTube("xmGar",{ path, radius:0.03, tessellation:6, cap:BABYLON.Mesh.CAP_ALL },scene));
+        for(let k=0;k<26;k++){ const t=(k+0.5)/26, a=t*Math.PI*2*6.5; _xmBulb(L,px+Math.cos(a)*0.125,gy+0.25+t*Hh,zL+Math.sin(a)*0.125,0.022,k); }
+        _xmBow(L,px+sd*0.07,hy+0.02,zL,Math.PI/2); } });
     const node=new BABYLON.TransformNode("xmGreenTable",scene); node.parent=townRoot; _xmTieni(node); _xmFuse(node,L);
     [[-5.6,"Merry Christmas!"],[5.6,"Season's Greetings!"]].forEach(q=>{ const sg=_hwPlane(1.35,0.45,X+q[0],gy+1.45,FZ+0.1,Math.PI);
       sg.material=_xmSticker(q[1]); sg.parent=node; _noGlow(sg); });
@@ -53318,6 +53328,14 @@ function _gtSph(p,d,m,x,y,z,sy){ const s=BABYLON.MeshBuilder.CreateSphere("gts",
 /* il testo dorato su fondo verde (insegna, targa, lavagna) */
 function _gtSignMat(name,w,h,draw){ const t=_gtTex(name+"T",w,h,draw); const m=new BABYLON.StandardMaterial(name,scene); m.diffuseTexture=t;
   m.emissiveColor=new BABYLON.Color3(0.35,0.35,0.35); m.specularColor=new BABYLON.Color3(0.05,0.05,0.05); return m; }
+/* v624 (Giacomo: «il menu si deve leggere sia da una parte che
+   dall'altra»): un cartello a due facce. DOUBLESIDE mostra il retro a
+   specchio; qui sono due piani a una faccia, schiena contro schiena, ognuno
+   col testo dritto dal suo lato. */
+function _gtPlane2(p,w,h,m,x,y,z,ry,gap){ gap=gap||0.006; const out=[];
+  [0,Math.PI].forEach(k=>{ const pl=BABYLON.MeshBuilder.CreatePlane("gtp2",{width:w,height:h},scene); pl.material=m; pl.parent=p;
+    const a=(ry||0)+k; pl.rotation.y=a; pl.position.set(x-Math.sin(a)*gap,y,z-Math.cos(a)*gap); pl.isPickable=false; out.push(pl); });
+  return out; }
 function _gtPlane(p,w,h,m,x,y,z,ry){ const pl=BABYLON.MeshBuilder.CreatePlane("gtp",{width:w,height:h,sideOrientation:BABYLON.Mesh.DOUBLESIDE},scene); pl.material=m; pl.parent=p; pl.position.set(x,y,z); pl.rotation.y=ry||0; pl.isPickable=false; return pl; }
 /* ------------------------------------------------------------------ */
 /* FUORI: la facciata sul Modern Boulevard                              */
@@ -53368,8 +53386,12 @@ function _gtForecourt(r,M,FZ){
     c.fillStyle="#e3c77a"; c.textAlign="center"; c.font="italic 700 34px Georgia, serif"; c.fillText("Menu",W/2,58);
     c.font="15px Georgia"; c.fillStyle="#f1ecd8"; ["Soups & salads","Fresh pasta","Risotto","Grilled chicken","Steak & salmon","Fruit & sorbets"].forEach((t,i)=>c.fillText(t,W/2,104+i*30));
     c.fillStyle="#e3c77a"; c.font="italic 16px Georgia"; c.fillText("Today's special:",W/2,300); c.fillText("ask inside!",W/2,322); });
-  const mp=_gtPlane(r,0.48,0.68,men,mx,1.15,mz,Math.PI); mp.rotation.x=-0.35;
-  _gtCyl(r,0.03,0.03,1.0,M.brass,mx,0.5,mz-0.05,8); _gtCyl(r,0.3,0.3,0.03,M.brass,mx,0.015,mz-0.05,16);
+  /* v624: il menu esposto si legge dal marciapiede e dal vialetto: due
+     facce dritte in una cornice d'ottone, sul suo stelo */
+  _gtPlane2(r,0.48,0.68,men,mx,1.25,mz,Math.PI,0.012);
+  _gtBox(r,0.54,0.035,0.05,M.brass,mx,1.6,mz); _gtBox(r,0.54,0.035,0.05,M.brass,mx,0.9,mz);
+  [-0.26,0.26].forEach(dx=>_gtBox(r,0.035,0.735,0.05,M.brass,mx+dx,1.25,mz));
+  _gtCyl(r,0.03,0.03,0.9,M.brass,mx,0.45,mz,8); _gtCyl(r,0.3,0.3,0.03,M.brass,mx,0.015,mz,16);
 }
 function buildGreenTableOutside(){
   if(GT.exBuilt) return; GT.exBuilt=true;
@@ -53488,6 +53510,7 @@ function _gtTable(dec,M,x,z){
   [Math.PI/4,-Math.PI/4].forEach(a=>_gtBox(dec,0.66,0.045,0.08,M.wood,x,0.03,z,a));
   [[1,1],[1,-1],[-1,1],[-1,-1]].forEach(q=>_gtCyl(dec,0.05,0.04,0.03,M.brass,x+q[0]*0.23,0.015,z+q[1]*0.23,10));
   _gtBox(dec,1.0,0.03,1.0,M.wood,x,0.7,z);                                          // il piano sotto la tovaglia
+  try{ hm7Shadow(dec,1.6,1.6,x,z,0.035,0.5); }catch(e){}                               // v624: l'ombra morbida del tavolo
   _gtBox(dec,1.14,0.12,1.14,M.cloth,x,0.725,z);                                     // tovaglia: cade di 12 cm
   _gtBox(dec,1.16,0.012,1.16,M.cloth,x,0.786,z);
   _gtCyl(dec,0.05,0.05,0.13,M.wax,x+0.12,0.86,z,10); _gtSph(dec,0.035,M.flame,x+0.12,0.945,z,1.6);   // candela
@@ -53525,8 +53548,7 @@ function _gtChair(dec,M,x,z,face){
   box(0.36,0.43,0.05,M.velvet,0,0.79,-0.215-Math.sin(-TL)*0.29,TL);                // schienale imbottito
   box(0.44,0.075,0.06,M.wood,0,1.03,-0.2-Math.sin(-TL)*0.57,TL);                   // traversa alta
   box(0.4,0.045,0.045,M.wood,0,0.56,-0.2-Math.sin(-TL)*0.07,TL);                   // traversa bassa
-  box(0.4,0.03,0.03,M.wood,0,0.15,0);                                             // crociera fra le gambe
-  try{ hm7Shadow(dec,0.6,0.6,x,z,0.028,0.4); }catch(e){}
+  try{ hm7Shadow(dec,0.72,0.72,x,z,0.036,0.55); }catch(e){}   // v624: sopra il tappeto (0.025), piu' marcata
 }
 function buildGreenTable(){
   const I=allocInterior(GT_DEF); GT.I=I; if(I.built) return I; I.built=true; GT.built=true;
@@ -53588,25 +53610,50 @@ function buildGreenTable(){
   const bk=BABYLON.MeshBuilder.CreatePlane("gtBook",{width:0.5,height:0.25},scene); bk.material=book; bk.parent=dec; bk.position.set(hx,1.16,hz+0.02); bk.rotation.x=Math.PI/2.4; bk.rotation.y=Math.PI; bk.isPickable=false;
   _gtCyl(dec,0.03,0.03,0.35,M.brass,hx-0.35,1.32,hz-0.1,8); _gtCyl(dec,0.08,0.2,0.14,M.velvet,hx-0.35,1.52,hz-0.1,16);
   addSolid(C.x+hx-0.55,C.x+hx+0.55,C.z+hz-0.32,C.z+hz+0.32,A);
+  try{ hm7Shadow(dec,1.5,1.0,hx,hz,0.036,0.6); }catch(e){}
   /* la lavagna sul cavalletto: il piatto del giorno si chiede al cameriere */
   const bx=-3.3, bz=S-1.7;
   const board=_gtSignMat("gtBoardM",256,320,(c,W,H)=>{ c.fillStyle="#22302a"; c.fillRect(0,0,W,H); c.strokeStyle="#7a5232"; c.lineWidth=14; c.strokeRect(0,0,W,H);
     c.fillStyle="#f1ecd8"; c.textAlign="center"; c.font="italic 700 34px Georgia, serif"; c.fillText("Welcome",W/2,62);
     c.font="600 22px Georgia, serif"; c.fillText("Today's special:",W/2,124); c.font="italic 22px Georgia, serif"; c.fillText("ask your waiter!",W/2,156);
     c.font="20px Georgia"; c.fillStyle="#cfe0b8"; c.fillText("~ healthy food ~",W/2,214); c.fillStyle="#f1ecd8"; c.fillText("Open 11 am - 10 pm",W/2,268); });
-  const bd=_gtPlane(dec,0.75,0.94,board,bx,1.15,bz,0); bd.rotation.x=-0.12;
-  [-0.32,0.32].forEach(dx=>{ const l=_gtBox(dec,0.04,1.5,0.04,M.woodL,bx+dx,0.75,bz-0.05); l.rotation.x=-0.12; });
-  const lb=_gtBox(dec,0.04,1.4,0.04,M.woodL,bx,0.7,bz+0.3); lb.rotation.x=0.35;
-  addSolid(C.x+bx-0.42,C.x+bx+0.42,C.z+bz-0.25,C.z+bz+0.45,A);
+  /* v624: lavagna in piedi a due facce (si legge entrando e uscendo):
+     cornice di legno, due montanti dritti coi piedi. Niente gamba di
+     traverso (si vedeva davanti alla scritta). */
+  _gtPlane2(dec,0.75,0.94,board,bx,1.15,bz,0,0.02);
+  _gtBox(dec,0.83,0.05,0.07,M.woodL,bx,1.645,bz); _gtBox(dec,0.83,0.05,0.07,M.woodL,bx,0.655,bz);
+  [-0.4,0.4].forEach(dx=>{ _gtBox(dec,0.05,1.68,0.07,M.woodL,bx+dx,0.84,bz); _gtBox(dec,0.07,0.04,0.42,M.woodL,bx+dx,0.02,bz); });
+  addSolid(C.x+bx-0.45,C.x+bx+0.45,C.z+bz-0.24,C.z+bz+0.24,A);
+  try{ hm7Shadow(dec,1.1,0.7,bx,bz,0.036,0.5); }catch(e){}
   /* il pianoforte a coda nell'angolo sud-ovest, con lo sgabello */
   const px=-8.6, pz=5.6, pr=new BABYLON.TransformNode("gtPiano",scene); pr.parent=dec; pr.position.set(px,0,pz); pr.rotation.y=0.5;
-  _gtBox(pr,1.45,0.32,1.9,M.black,0,0.82,0);
-  const lid=_gtBox(pr,1.4,0.03,1.8,M.black,0.25,1.32,0.05); lid.rotation.z=0.55;
-  _gtBox(pr,0.03,0.6,0.03,M.black,-0.05,1.15,0.1);
-  [[-0.6,-0.8],[0.6,-0.8],[0,0.85]].forEach(q=>_gtCyl(pr,0.09,0.07,0.66,M.black,q[0],0.33,q[1],10));
-  _gtBox(pr,1.25,0.06,0.2,M.white,0,0.98,-1.0);
-  for(let k=0;k<10;k++) _gtBox(pr,0.03,0.03,0.11,M.black,-0.55+k*0.12,1.02,-0.97);
-  _gtBox(pr,0.7,0.06,0.36,M.velvet,0,0.5,-1.55); [[-0.3,-0.14],[0.3,-0.14],[-0.3,0.14],[0.3,0.14]].forEach(q=>_gtBox(pr,0.04,0.47,0.04,M.black,q[0],0.24,-1.55+q[1]));
+  /* v624 (Giacomo: «il piano ha la tastiera sopra, non in basso come
+     dovrebbe»): pianoforte a coda vero. La cassa (con la coda curva) sta
+     sopra le gambe; la TASTIERA sporge davanti, piu' in basso del bordo
+     della cassa (72 cm da terra), fra due guance, con i tasti bianchi e i
+     neri a gruppi di 2 e 3; sopra i tasti il frontalino, il leggio inclinato
+     col suo spartito, il coperchio aperto sul puntello, la lira dei pedali. */
+  const shine=M.black;
+  _gtBox(pr,1.45,0.34,1.45,shine,0,0.83,0.15);                                     // cassa
+  { const tl=_gtCyl(pr,1.45,1.45,0.34,shine,0,0.83,0.87,28); tl.scaling.z=0.62; }  // la coda curva
+  _gtBox(pr,1.44,0.09,0.32,shine,0,0.705,-0.71);                                    // il piano della tastiera
+  [-0.69,0.69].forEach(x=>_gtBox(pr,0.07,0.13,0.34,shine,x,0.745,-0.71));          // le guance
+  _gtBox(pr,1.31,0.022,0.25,M.white,0,0.761,-0.735);                                // tasti bianchi
+  for(let k=0;k<=36;k++) _gtBox(pr,0.002,0.023,0.24,M.black,-0.655+k*(1.31/36),0.762,-0.735);   // le righe fra i bianchi
+  const BK=[1,1,0,1,1,1,0];                                                         // neri: dopo do, re, (mi no), fa, sol, la, (si no)
+  for(let k=0;k<36;k++) if(BK[k%7]) _gtBox(pr,0.019,0.025,0.14,M.black,-0.655+(k+1)*(1.31/36),0.783,-0.69);
+  _gtBox(pr,1.31,0.1,0.03,shine,0,0.83,-0.585);                                    // il frontalino sopra i tasti
+  { const st=_gtBox(pr,0.72,0.3,0.02,shine,0,1.13,-0.48); st.rotation.x=-0.28;     // il leggio
+    const sp=_gtBox(pr,0.42,0.28,0.004,M.white,0,1.14,-0.493); sp.rotation.x=-0.28; }   // lo spartito
+  const lid=_gtBox(pr,1.4,0.03,1.8,shine,0.3,1.33,0.3); lid.rotation.z=0.55;         // coperchio aperto
+  _gtBox(pr,0.03,0.6,0.03,shine,0.05,1.18,0.35);                                    // il puntello
+  [[-0.6,-0.4],[0.6,-0.4],[0,1.25]].forEach(q=>_gtCyl(pr,0.1,0.07,0.66,shine,q[0],0.33,q[1],12));
+  [[-0.6,-0.4],[0.6,-0.4],[0,1.25]].forEach(q=>_gtCyl(pr,0.06,0.06,0.04,M.brass,q[0],0.02,q[1],10));   // ruote d'ottone
+  _gtBox(pr,0.04,0.55,0.04,shine,-0.06,0.38,-0.45); _gtBox(pr,0.04,0.55,0.04,shine,0.06,0.38,-0.45);   // la lira
+  _gtBox(pr,0.3,0.06,0.16,shine,0,0.09,-0.48);
+  [-0.07,0,0.07].forEach(x=>_gtBox(pr,0.035,0.012,0.1,M.brass,x,0.07,-0.58));      // i pedali
+  _gtBox(pr,0.7,0.06,0.36,M.velvet,0,0.5,-1.25); [[-0.3,-0.14],[0.3,-0.14],[-0.3,0.14],[0.3,0.14]].forEach(q=>_gtBox(pr,0.04,0.47,0.04,shine,q[0],0.24,-1.25+q[1]));   // lo sgabello
+  try{ hm7Shadow(pr,2.0,2.7,0,0.2,0.036,0.6); hm7Shadow(pr,0.95,0.6,0,-1.25,0.036,0.5); }catch(e){}
   addSolid(C.x+px-1.2,C.x+px+1.2,C.z+pz-1.6,C.z+pz+1.3,A);
   /* i quadri con la cornice dorata e le applique fra l'uno e l'altro */
   [[-SX+0.05,-4.5,Math.PI/2],[-SX+0.05,0.5,Math.PI/2],[SX-0.05,-4.5,-Math.PI/2],[SX-0.05,0.5,-Math.PI/2],[SX-0.05,5.0,-Math.PI/2]].forEach((q,i)=>{
@@ -53624,6 +53671,7 @@ function buildGreenTable(){
   [[-SX+0.8,-S+0.8],[SX-0.8,-S+0.8],[SX-0.8,S-0.9],[-SX+0.8,1.8]].forEach((q,i)=>{
     _gtCyl(dec,0.55,0.42,0.6,M.pot,q[0],0.3,q[1],18); _gtCyl(dec,0.57,0.57,0.04,M.brass,q[0],0.6,q[1],18).scaling.y=0.6;
     _gtCyl(dec,0.5,0.5,0.03,M.trunk,q[0],0.63,q[1],16); _gtPalm(dec,M,q[0],0.64,q[1],1.3,i+3);
+    try{ hm7Shadow(dec,1.1,1.1,q[0],q[1],0.036,0.6); }catch(e){}
     addSolid(C.x+q[0]-0.32,C.x+q[0]+0.32,C.z+q[1]-0.32,C.z+q[1]+0.32,A); });
   /* gli otto tavoli (4 x 2) con due sedie ciascuno */
   GT.tables=[]; GT.seats=[];
