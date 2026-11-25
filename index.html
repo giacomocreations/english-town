@@ -53156,6 +53156,11 @@ const GT={ built:false, exBuilt:false, I:null, C:null, gy:0.02, tables:[], seats
 const GT_OPEN_H=11, GT_CLOSE_H=22;
 function gtNowMin(){ const d=new Date(); return d.getHours()*60+d.getMinutes(); }
 function gtOpen(){ const m=gtNowMin(); return m>=GT_OPEN_H*60 && m<GT_CLOSE_H*60; }
+/* v625 (Giacomo: «alle 11 il servizio di cibo; se uno vuole da bere al
+   bancone glielo danno, ma non si puo' sedere»): la porta apre alle 8 col
+   BAR; tavoli e cucina dalle 11 alle 22 (gtOpen). */
+const GT_BAR_H=8;
+function gtDoorOpen(){ const m=gtNowMin(); return m>=GT_BAR_H*60 && m<GT_CLOSE_H*60; }
 function gtTeacher(){ try{ return !!Student.teacher; }catch(e){ return false; } }
 function _gtYear(){ try{ return studentYear(); }catch(e){ return 1; } }
 /* ---- IL MENU (prezzi in sterline) ---- */
@@ -53431,8 +53436,9 @@ function buildGreenTableOutside(){
   _gtPlane(r,6.4,1.2,sm,0,4.55,FZ+0.08,Math.PI);
   /* targa degli orari accanto alla porta */
   const hm=_gtSignMat("gt_hoursM",256,256,(c,W,Hh)=>{ c.fillStyle="#c9a24a"; c.fillRect(0,0,W,Hh); c.fillStyle="#1f3a2d"; c.fillRect(8,8,W-16,Hh-16);
-    c.fillStyle="#e3c77a"; c.textAlign="center"; c.font="italic 700 34px Georgia, serif"; c.fillText("Open daily",W/2,78);
-    c.font="700 40px Georgia, serif"; c.fillText("11 am",W/2,134); c.font="600 26px Georgia"; c.fillText("to",W/2,170); c.font="700 40px Georgia, serif"; c.fillText("10 pm",W/2,214); });
+    c.fillStyle="#e3c77a"; c.textAlign="center"; c.font="italic 700 32px Georgia, serif"; c.fillText("Open daily",W/2,58);
+    c.font="600 24px Georgia, serif"; c.fillText("Bar",W/2,100); c.font="700 34px Georgia, serif"; c.fillText("from 8 am",W/2,138);
+    c.font="600 24px Georgia, serif"; c.fillText("Lunch & dinner",W/2,182); c.font="700 30px Georgia, serif"; c.fillText("11 am - 10 pm",W/2,220); });
   _gtPlane(r,0.55,0.55,hm,1.55,1.6,FZ+0.08,Math.PI);
   /* le lanterne d'ottone (accese dal tramonto) */
   [-1.45,1.45].forEach(x=>{ _gtBox(r,0.08,0.4,0.2,M.brass,x,2.85,FZ+0.12); _gtBox(r,0.22,0.32,0.22,M.lan,x,2.72,FZ+0.3); _gtBox(r,0.26,0.05,0.26,M.brass,x,2.9,FZ+0.3); });
@@ -53446,11 +53452,11 @@ function buildGreenTableOutside(){
   addSolid(GT_X-GT_HW-0.1,GT_X+GT_HW+0.1,GT_Z-GT_HD-0.1,GT_Z+GT_HD+0.1,"town");
   [-2.2,2.2].forEach(x=>addSolid(GT_X+x-0.35,GT_X+x+0.35,GT_Z+FZ+0.55,GT_Z+FZ+1.25,"town"));
   try{ fondiProp(r); }catch(e){}
-  try{ const anc=anchorMesh(townRoot,GT_X,gy+H+1.4,GT_Z+FZ); guiLabel(anc,"\u{1F33F} The Green Table","Restaurant · 11 am – 10 pm",true,"town"); }catch(e){}
+  try{ const anc=anchorMesh(townRoot,GT_X,gy+H+1.4,GT_Z+FZ); guiLabel(anc,"\u{1F33F} The Green Table","Bar 8 am · Restaurant 11 am – 10 pm",true,"town"); }catch(e){}
   /* la porta: entra (aperto) o dice gli orari (chiuso) */
   GT.door=addInteract({ id:"gt_door", area:"town", radius:2.6, label:"The Green Table",
     pos:()=>new BABYLON.Vector3(GT_X,gy+1,GT_Z+FZ+0.6),
-    prompt:()=>(gtOpen()||gtTeacher())?'\u{1F33F} Press <b>P</b> to enter <b>The Green Table</b>':'\u{1F319} <b>The Green Table</b> is closed · open 11 am – 10 pm',
+    prompt:()=>(gtDoorOpen()||gtTeacher())?'\u{1F33F} Press <b>P</b> to enter <b>The Green Table</b>'+(gtOpen()?'':' · bar only until 11 am'):'\u{1F319} <b>The Green Table</b> is closed · open 8 am – 10 pm',
     interact:()=>gtEnter() });
   try{ refreshShadowCasters(); }catch(e){}
 }
@@ -53586,9 +53592,43 @@ function buildGreenTable(){
   _gtBox(dec,2.0,2.6,0.08,M.wood,0,1.3,S-0.05); _gtBox(dec,0.04,2.5,0.1,M.dark,0,1.3,S-0.08);
   [-0.16,0.16].forEach(x=>_gtBox(dec,0.04,0.45,0.05,M.brass,x,1.2,S-0.12));
   _gtBox(dec,2.3,0.12,0.12,M.brass,0,2.66,S-0.08);
-  const sky=mat("gtSkyM","#bcd6e6","#7c96a8"); [-5.5,5.5].forEach(x=>{ _gtBox(dec,1.6,2.2,0.04,sky,x,1.75,S-0.03);
-    _gtBox(dec,1.72,0.07,0.08,M.brass,x,2.88,S-0.07); _gtBox(dec,1.72,0.07,0.08,M.brass,x,0.62,S-0.07); _gtBox(dec,0.05,2.3,0.08,M.brass,x,1.75,S-0.07);
-    _gtBox(dec,1.9,2.6,0.05,M.velvet,x-1.15,1.6,S-0.12); });                      // tende
+  /* v625 (Giacomo, con foto: «spiegami cosa dovrebbe essere questo»: un
+     rettangolo verde e uno bianco). Erano la finestra (un piano azzurro
+     pieno di luce) e la tenda (un pannello piatto). Ora la finestra si
+     vede: il vetro mostra la via (cielo, palazzi, siepi, marciapiede),
+     telaio d'ottone a sei riquadri e davanzale; le TENDE sono due
+     drappeggi di velluto a pieghe, raccolti a meta' da un cordone d'oro,
+     con la mantovana in alto. */
+  const view=_gtTex("gtViewT",256,352,(c,W,H)=>{
+    const g=c.createLinearGradient(0,0,0,H*0.6); g.addColorStop(0,"#8fbfe0"); g.addColorStop(1,"#e4eef4"); c.fillStyle=g; c.fillRect(0,0,W,H);
+    [[0,150,60,"#c9c3d6"],[50,120,70,"#d8cbb8"],[115,165,50,"#bcc9d6"],[160,105,55,"#e1c9c3"],[210,140,60,"#c8d3c4"]].forEach(b=>{ c.fillStyle=b[3]; c.fillRect(b[0],b[1],b[2],H*0.72-b[1]);
+      c.fillStyle="rgba(90,110,140,0.35)"; for(let yy=b[1]+10;yy<H*0.7-10;yy+=22) for(let xx=b[0]+8;xx<b[0]+b[2]-10;xx+=16) c.fillRect(xx,yy,8,11); });
+    c.fillStyle="#3d6b3a"; c.fillRect(0,H*0.72,W,H*0.08);
+    for(let i=0;i<40;i++){ c.fillStyle=i%2?"#2f5a2e":"#4c7d45"; c.beginPath(); c.arc(Math.random()*W,H*0.72,6+Math.random()*7,Math.PI,0); c.fill(); }
+    c.fillStyle="#cfc8bb"; c.fillRect(0,H*0.8,W,H*0.2); c.fillStyle="rgba(0,0,0,0.08)"; for(let x=0;x<W;x+=40) c.fillRect(x,H*0.8,2,H*0.2);
+    const r=c.createLinearGradient(0,0,W,H); r.addColorStop(0,"rgba(255,255,255,0)"); r.addColorStop(0.45,"rgba(255,255,255,0.18)"); r.addColorStop(0.55,"rgba(255,255,255,0)"); c.fillStyle=r; c.fillRect(0,0,W,H); });
+  const vm=new BABYLON.StandardMaterial("gtViewM",scene); vm.diffuseTexture=view; vm.emissiveTexture=view; vm.disableLighting=true; vm.specularColor=new BABYLON.Color3(0,0,0);
+  const curtA=M.velvet, curtB=mat("gt_curtB","#2f5c45"); curtB.specularColor=new BABYLON.Color3(0.08,0.08,0.08);
+  [-5.5,5.5].forEach(x=>{
+    const gl=BABYLON.MeshBuilder.CreatePlane("gtView",{width:1.6,height:2.2},scene); gl.material=vm; gl.parent=dec; gl.position.set(x,1.75,S-0.03); gl.isPickable=false;   // guarda dentro (-z)
+    _gtBox(dec,1.76,0.08,0.08,M.brass,x,2.89,S-0.07); _gtBox(dec,1.76,0.08,0.08,M.brass,x,0.61,S-0.07);
+    [-0.84,-0.27,0.27,0.84].forEach(dx=>_gtBox(dec,0.05,2.3,0.07,M.brass,x+dx,1.75,S-0.07));
+    _gtBox(dec,1.62,0.04,0.06,M.brass,x,1.75,S-0.07);                               // traversa
+    _gtBox(dec,1.95,0.06,0.22,M.woodL,x,0.56,S-0.13);                              // davanzale
+    /* la mantovana e il bastone */
+    _gtBox(dec,3.1,0.34,0.14,curtA,x,3.12,S-0.16); _gtBox(dec,3.12,0.04,0.15,M.brass,x,2.95,S-0.16);
+    /* i due drappeggi: pieghe tonde (tubi) che dall'alto si stringono nel cordone e si riaprono fino a terra */
+    [-1,1].forEach(sd=>{ const xo=x+sd*1.05, tie=new BABYLON.Vector3(x+sd*1.12,1.15,S-0.2);
+      _gtSph(dec,0.07,M.brass,x+sd*1.22,1.15,S-0.08);                              // il gancio
+      for(let j=0;j<6;j++){ const u=(j-2.5)/2.5, V3=BABYLON.Vector3;
+        const path=[new V3(xo+u*0.3,2.95,S-0.18-Math.abs(u)*0.02),new V3(xo+u*0.24,2.4,S-0.19),new V3(tie.x+u*0.06,1.6,S-0.2),
+          new V3(tie.x+u*0.035,1.15,S-0.2),new V3(tie.x+u*0.1,0.7,S-0.19),new V3(xo+u*0.26,0.06,S-0.18)];
+        const tb=BABYLON.MeshBuilder.CreateTube("gtCurt",{ path:BABYLON.Curve3.CreateCatmullRomSpline(path,6).getPoints(), radius:0.06, tessellation:8, cap:BABYLON.Mesh.CAP_ALL },scene);
+        tb.material=j%2?curtB:curtA; tb.parent=dec; tb.isPickable=false; tb.scaling.z=0.6; tb.position.z=(S-0.19)*0.4; }
+      const cord=BABYLON.MeshBuilder.CreateTorus("gtCord",{ diameter:0.26, thickness:0.025, tessellation:16 },scene); cord.material=M.gold||M.brass; cord.parent=dec;
+      cord.position.set(tie.x,1.15,S-0.2); cord.rotation.x=Math.PI/2; cord.isPickable=false;
+      _gtCyl(dec,0.05,0.08,0.16,M.gold||M.brass,tie.x+sd*0.05,0.98,S-0.2,10); });          // la nappa
+  });
   /* il passe della cucina (nord): legno scuro, il piano di marmo, la luce calda e il campanello */
   _gtBox(dec,7.0,3.0,0.12,M.wood,0,1.5,-S+0.06);
   const pass=mat("gtPassM","#f4d9a0","#c89a50"); pass.disableLighting=true; _gtBox(dec,4.6,0.9,0.05,pass,0,1.75,-S+0.14);
@@ -53600,6 +53640,14 @@ function buildGreenTable(){
   const ksign=_gtSignMat("gtKitM",512,96,(c,W,H)=>{ c.fillStyle="#1f3a2d"; c.fillRect(0,0,W,H); c.fillStyle="#e3c77a"; c.font="italic 700 52px Georgia, serif"; c.textAlign="center"; c.textBaseline="middle"; c.fillText("Kitchen",W/2,H/2); });
   _gtPlane(dec,1.8,0.34,ksign,0,2.55,-S+0.14,Math.PI);
   addSolid(C.x-2.7,C.x+2.7,C.z-S,C.z-S+1.0,A);
+  /* v625: il BANCONE e' anche il bar (da bere in piedi, dalle 8) */
+  { const bs=_gtSignMat("gtBarM",256,64,(c,W,H)=>{ c.fillStyle="#1f3a2d"; c.fillRect(0,0,W,H); c.strokeStyle="#c9a24a"; c.lineWidth=4; c.strokeRect(3,3,W-6,H-6);
+      c.fillStyle="#e3c77a"; c.font="italic 700 34px Georgia, serif"; c.textAlign="center"; c.textBaseline="middle"; c.fillText("Bar",W/2,H/2); });
+    _gtPlane2(dec,0.6,0.15,bs,-1.6,1.2,-S+1.0,0,0.012);
+    addInteract({ id:"gt_bar", area:A, radius:1.7, prio:-1, label:"bar",
+      pos:()=>new BABYLON.Vector3(C.x-1.2,1,C.z-S+1.4),
+      prompt:()=>(GT.seat||GT.bar)?'':'\u{1F379} Press <b>P</b> to <b>order a drink at the bar</b>',
+      interact:()=>gtBarOrder() }); }
   /* il banco del maitre (accanto alla porta) col libro e la lampada */
   const hx=3.4, hz=S-1.9;
   _gtBox(dec,1.0,1.1,0.55,M.wood,hx,0.55,hz); _gtBox(dec,1.06,0.05,0.6,M.woodL,hx,1.12,hz); _gtBox(dec,1.1,0.02,0.64,M.brass,hx,1.095,hz);
@@ -53616,7 +53664,7 @@ function buildGreenTable(){
   const board=_gtSignMat("gtBoardM",256,320,(c,W,H)=>{ c.fillStyle="#22302a"; c.fillRect(0,0,W,H); c.strokeStyle="#7a5232"; c.lineWidth=14; c.strokeRect(0,0,W,H);
     c.fillStyle="#f1ecd8"; c.textAlign="center"; c.font="italic 700 34px Georgia, serif"; c.fillText("Welcome",W/2,62);
     c.font="600 22px Georgia, serif"; c.fillText("Today's special:",W/2,124); c.font="italic 22px Georgia, serif"; c.fillText("ask your waiter!",W/2,156);
-    c.font="20px Georgia"; c.fillStyle="#cfe0b8"; c.fillText("~ healthy food ~",W/2,214); c.fillStyle="#f1ecd8"; c.fillText("Open 11 am - 10 pm",W/2,268); });
+    c.font="20px Georgia"; c.fillStyle="#cfe0b8"; c.fillText("~ healthy food ~",W/2,214); c.fillStyle="#f1ecd8"; c.font="18px Georgia"; c.fillText("Bar from 8 am",W/2,256); c.fillText("Lunch & dinner 11 am - 10 pm",W/2,282); });
   /* v624: lavagna in piedi a due facce (si legge entrando e uscendo):
      cornice di legno, due montanti dritti coi piedi. Niente gamba di
      traverso (si vedeva davanti alla scritta). */
@@ -53675,7 +53723,7 @@ function buildGreenTable(){
     addSolid(C.x+q[0]-0.32,C.x+q[0]+0.32,C.z+q[1]-0.32,C.z+q[1]+0.32,A); });
   /* gli otto tavoli (4 x 2) con due sedie ciascuno */
   GT.tables=[]; GT.seats=[];
-  const TX=[-7,-2.5,2.5,7], TZ=[-3.4,1.6];
+  const TX=[-7,-2.5,2.5,7], TZ=[-3.4,1.6], extra=[];
   TZ.forEach(tz=>TX.forEach(tx=>{
     _gtTable(dec,M,tx,tz);
     const t={ x:C.x+tx, z:C.z+tz, top:0.793, lx:tx, lz:tz };
@@ -53685,7 +53733,14 @@ function buildGreenTable(){
     [[-1,0],[1,Math.PI]].forEach(q=>{ const sd=q[0], face=q[1], sz=tz+sd*0.82;
       _gtChair(dec,M,tx,sz,face);
       const side=(tx<0)?1:-1;                                  // ci si alza verso il corridoio di mezzo
-      GT.seats.push({ t, sd, x:C.x+tx, z:C.z+sz, face, seatY:GT.gy+0.50, standX:C.x+tx+side*0.75, standZ:C.z+sz }); }); }));
+      GT.seats.push({ t, sd, x:C.x+tx, z:C.z+sz, face, seatY:GT.gy+0.50, standX:C.x+tx+side*0.75, standZ:C.z+sz }); });
+    /* v625 (Giacomo: «a un tavolo al massimo quattro»): tavoli da QUATTRO,
+       due sedie in piu' sui lati corti. Si aggiungono IN CODA (extra): i
+       posti 0-15 restano gli stessi (i clienti fissi ci si siedono). */
+    [[-1,Math.PI/2],[1,-Math.PI/2]].forEach(q=>{ const sd=q[0], face=q[1], sx=tx+sd*0.82;
+      _gtChair(dec,M,sx,tz,face);
+      extra.push({ t, sd, side:true, x:C.x+sx, z:C.z+tz, face, seatY:GT.gy+0.50, standX:C.x+sx+sd*0.72, standZ:C.z+tz }); }); }));
+  extra.forEach(q=>GT.seats.push(q));
   try{ fondiProp(dec); }catch(e){ console.warn("[gt] fusione",e); }
   dec.getChildMeshes().forEach(m=>{ m.isPickable=false; m.__occluder=m.__occluder||false; });
   /* l'anello dorato che indica il tavolo assegnato dal maitre */
@@ -53759,8 +53814,8 @@ function gtSeatInteracts(){
   GT.seats.forEach((s,i)=>{ if(s.taken) return;
     s.inter=addInteract({ id:"gt_seat_"+i, area:GT_DEF.area, radius:1.15,
       pos:()=>new BABYLON.Vector3(s.x,0.5,s.z),
-      prompt:()=>GT.seat?'':gtSeatTaken(s)?'\u{1FA91} This seat is taken'
-        :(GT.assigned===s.t?'\u{1F33F} Press <b>P</b> to <b>sit down</b> · your table':'Press <b>P</b> to <b>sit down</b>'),
+      prompt:()=>GT.seat?'':!gtOpen()?'\u{1F552} Tables open at 11 am · drinks at the bar':gtSeatTaken(s)?'\u{1FA91} This seat is taken'
+        :((GT.assigned===s.t||(GT.assignedSet&&GT.assignedSet.indexOf(s.t)>=0))?'\u{1F33F} Press <b>P</b> to <b>sit down</b> · your table':'Press <b>P</b> to <b>sit down</b>'),
       interact:()=>gtSit(s) }); });
 }
 /* ---- il TUO cameriere cammina (una camminata alla volta, la nuova annulla la vecchia) ---- */
@@ -53775,7 +53830,7 @@ function _gtWalkStart(job){
     if(GT.pending){ const nx=GT.pending; GT.pending=null; _gtWalkStart(nx); return; }
     if(ok && !job.cancel && job.done) job.done(); };
   npcWalkSeq(w,T,job.arrive,()=>fin(true),GT_DEF.area,()=>fin(false),{ detour:true, speed:2.3 }); }
-function _gtSpot(t){ return new BABYLON.Vector3(t.x-Math.sign(t.lx)*0.98, 0, t.z); }
+function _gtSpot(t){ return new BABYLON.Vector3(t.x-Math.sign(t.lx)*0.95, 0, t.z+(t.lz<0?0.95:-0.95)); }   // v625: all'angolo (sul lato c'e' la sedia)
 function _gtPath(dest){ const C=GT.C, V=BABYLON.Vector3, d=dest();
   return [()=>new V(C.x,0,C.z-5.6),()=>new V(C.x,0,C.z+GT_LANE_Z),()=>new V(d.x,0,C.z+GT_LANE_Z),dest]; }
 function gtWaiterTo(t,then){
@@ -53808,19 +53863,22 @@ function gtMirror(){
 /* ENTRARE E USCIRE (non e' una quest: la quest in corso resta com'e')  */
 /* ------------------------------------------------------------------ */
 function gtEnter(){
-  if(!gtOpen() && !gtTeacher()){ toast("\u{1F319} The Green Table is closed. We're open every day from 11 am to 10 pm. · Chiuso: apre alle 11, chiude alle 22.",5000); return; }
-  if(!gtOpen()) toast("\u{1F469}‍\u{1F3EB} Docente: il ristorante è chiuso, ma entri per provarlo.",3500);
+  if(!gtDoorOpen() && !gtTeacher()){ toast("\u{1F319} The Green Table is closed. The bar opens at 8 am, lunch and dinner from 11 am to 10 pm. · Chiuso: il bar apre alle 8, la cucina dalle 11 alle 22.",5600); return; }
+  if(!gtDoorOpen()) toast("\u{1F469}‍\u{1F3EB} Docente: il ristorante è chiuso, ma entri per provarlo.",3500);
   const I=buildGreenTable(); const A=GT_DEF.area;
   enterArea(A);
   player.position.copyFrom(AREAS[A].spawn); player.rotation.y=Math.PI;
   camera.target.copyFrom(player.position); camera.target.y+=1.4; camera.alpha=Math.PI/2;
   moveTarget=null; pendingInteract=null;
-  toast("\u{1F33F} Welcome to The Green Table! Oliver is at the desk: press P to talk to him. · Parla con Oliver al banco.",4800);
+  if(gtOpen()) toast("\u{1F33F} Welcome to The Green Table! Oliver is at the desk: press P to talk to him. · Parla con Oliver al banco.",4800);
+  else toast("\u{2615} Good morning! The kitchen opens at 11 am: now you can have a drink at the bar. · Prima delle 11 solo il bar (in piedi).",5600);
+  GT.idleT=performance.now(); GT.idleP=player.position.clone();
 }
 function gtExit(){
   if(GT.seat) gtStand(true);
+  gtBarEnd(); GT.idleCome=false;
   if(GT.debt && GT.host){ gtDebtAsk(GT.host); return; }
-  GT.assigned=null; gtRingOff();
+  GT.assigned=null; gtRingOff(); GT.party=null; GT.partyPub="";
   enterArea("town");
   player.position.set(GT_X,(GT.oy||0),GT_Z+GT_HD+1.5); player.rotation.y=0;
   camera.target.copyFrom(player.position); camera.target.y+=2.0;
@@ -53836,43 +53894,70 @@ function gtClock(min){ return Math.floor(min/60)+":"+String(min%60).padStart(2,"
 function gtFirstName(){ let n=""; try{ n=String(Student.nome||"").trim().split(/\s+/)[0]; }catch(e){} return n||"Alex"; }
 function gtRes(){ try{ const r=Sync.get("et_gt_res",null); if(r && r.day===new Date().toDateString()) return r; }catch(e){} return null; }
 function gtResSave(r){ try{ if(r) Sync.set("et_gt_res",r); else Sync.del("et_gt_res"); }catch(e){} }
+const GT_NUM=["zero","one","two","three","four","five","six","seven","eight","nine","ten","eleven","twelve"];
+function gtPeople(n){ return GT_NUM[n]||String(n); }
+function gtResN(r){ return Math.max(1,Math.min(12,(r&&r.n)||1)); }
+/* i gruppi prenotati dai compagni che sono in sala (Presenza: «,g<tavoli>») */
+function gtGroups(){ let L=[]; try{ if(typeof Presenza!=="undefined" && Presenza.acceso && Presenza.gruppiGT) L=Presenza.gruppiGT(); }catch(e){ L=[]; }
+  return L.filter(g=>g && g.tavoli && g.tavoli.split("").some(i=>{ const t=GT.tables[+i]; return t && GT.seats.some(s=>s.t===t && !s.taken && !gtSeatTaken(s)); })); }
 function gtTalkHost(n){
   if(GT.seat){ gtMeAction(); return; }
   if(GT.debt){ gtDebtAsk(n); return; }
-  const g=gtGreet(), res=gtRes(), now=gtNowMin(), nm=gtFirstName();
+  if(!gtOpen()){ gtHostMorning(n); return; }
+  const g=gtGreet(), res=gtRes(), now=gtNowMin(), nm=gtFirstName(), np=gtResN(res), pw=np>1?"a table for "+gtPeople(np):"a table for one";
   if(res && !res.used){
     const d=now-res.min, tw=gtTimeWords(res.min);
     if(Math.abs(d)<=20){
       DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — Maître d'", text:g+", and welcome to The Green Table! Do you have a reservation?",
         italian:"Benvenuto! Hai una prenotazione? (hai prenotato per le "+gtClock(res.min)+")",
         choices:[ { label:"Yes, I've booked a table for "+tw+". My name is "+nm+".", act:()=>{ res.used=true; gtResSave(res);
-                    setTimeout(()=>{ DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — Maître d'", text:"Ah yes, here you are: "+nm+", a table for one at "+tw+". Your table is ready. Please follow me!",
-                      italian:"Eccoti: "+nm+", un tavolo per uno alle "+gtClock(res.min)+". Il tavolo è pronto, seguimi! (in orario: bonus ⭐)",
-                      buttons:[{ label:"Thank you!", cls:"primary", act:()=>gtShowTable("booked") }] }); },260); } },
+                    setTimeout(()=>{ DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — Maître d'", text:"Ah yes, here you are: "+nm+", "+pw+" at "+tw+". "+(np>4?"Your tables are ready":"Your table is ready")+". Please follow me!",
+                      italian:"Eccoti: "+nm+", "+(np>1?"un tavolo per "+np:"un tavolo per uno")+" alle "+gtClock(res.min)+". "+(np>4?"I tavoli sono pronti (al massimo 4 per tavolo)":"Il tavolo è pronto")+", seguimi! (in orario: bonus ⭐)"
+                        +(np>1?" I tuoi compagni, quando arrivano, dicono a Oliver che sono con te.":""),
+                      buttons:[{ label:"Thank you!", cls:"primary", act:()=>gtShowTable("booked",np) }] }); },260); } },
                   { label:"No, I haven't.", act:()=>setTimeout(()=>gtWalkIn(n),260) } ] }); return; }
     if(d<-20){
       DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — Maître d'", text:g+"! I see your table is booked for "+tw+". You're a bit early! Would you like to sit down now?",
         italian:"Il tuo tavolo è prenotato per le "+gtClock(res.min)+": sei in anticipo. Vuoi sederti adesso? (il bonus della prenotazione vale solo in orario)",
-        choices:[ { label:"Yes, could I sit down now, please?", act:()=>{ res.used=true; gtResSave(res); setTimeout(()=>gtShowTable("walkin"),260); } },
+        choices:[ { label:"Yes, could I sit down now, please?", act:()=>{ res.used=true; gtResSave(res); setTimeout(()=>gtShowTable("walkin",np),260); } },
                   { label:"No, thank you. I'll come back later.", act:()=>{} } ] }); return; }
     res.used=true; gtResSave(res);
     DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — Maître d'", text:g+"! I'm afraid your booking was for "+tw+", but don't worry: we have a free table for you.",
       italian:"La prenotazione era per le "+gtClock(res.min)+" (sei in ritardo), ma c'è comunque un tavolo libero.",
-      buttons:[{ label:"Thank you! Sorry I'm late.", cls:"primary", act:()=>gtShowTable("walkin") }] }); return; }
+      buttons:[{ label:"Thank you! Sorry I'm late.", cls:"primary", act:()=>gtShowTable("walkin",np) }] }); return; }
+  /* v625: un compagno ha prenotato per il gruppo ed e' gia' in sala */
+  const grp=gtGroups().slice(0,2).map(G=>({ label:"I'm with "+(G.nome||"my friend")+"'s group.", act:()=>setTimeout(()=>gtJoinGroup(n,G),260) }));
   DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — Maître d'", text:g+", and welcome to The Green Table! How can I help you?",
-    italian:"Benvenuto! Come posso aiutarti? Puoi chiedere un tavolo, prenotare per più tardi o vedere il menu.",
-    choices:[ { label:"A table for one, please.", act:()=>setTimeout(()=>gtShowTable("walkin"),260) },
+    italian:"Benvenuto! Come posso aiutarti? Puoi chiedere un tavolo, prenotare per più tardi o vedere il menu."+(grp.length?" Se un compagno ha prenotato per il gruppo, digli che sei con lui.":""),
+    choices:grp.concat([ { label:"A table for one, please.", act:()=>setTimeout(()=>gtShowTable("walkin"),260) },
               { label:"I'd like to book a table for later, please.", act:()=>setTimeout(()=>gtBook(n),260) },
               { label:"Could I see the menu, please?", act:()=>setTimeout(()=>gtShowMenu(()=>{}),260) },
-              { label:"Goodbye!", act:()=>{} } ] });
+              { label:"Goodbye!", act:()=>{} } ]) });
 }
+/* prima delle 11: solo il bar (e si puo' prenotare per dopo) */
+function gtHostMorning(n){
+  DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — Maître d'", text:gtGreet()+"! The kitchen opens at eleven o'clock. You can have a drink at the bar, or book a table for later.",
+    italian:"La cucina apre alle 11: i tavoli sono chiusi. Puoi prendere da bere al bancone (in piedi) o prenotare un tavolo per più tardi.",
+    choices:[ { label:"Could I have a drink at the bar, please?", act:()=>setTimeout(()=>gtBarOrder(),260) },
+              { label:"I'd like to book a table for later, please.", act:()=>setTimeout(()=>gtBook(n),260) },
+              { label:"Could I see the menu, please?", act:()=>setTimeout(()=>gtShowMenu(()=>{}),260) },
+              { label:"OK, thank you. Goodbye!", act:()=>{} } ] }); }
+/* chi arriva per il gruppo di un compagno: uno dei suoi tavoli, col posto libero */
+function gtJoinGroup(n,G){
+  const tabs=G.tavoli.split("").map(i=>GT.tables[+i]).filter(Boolean);
+  const t=tabs.find(t=>GT.seats.some(s=>s.t===t && !s.taken && !gtSeatTaken(s)));
+  if(!t){ DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver", text:"I'm sorry, your group's tables are full. Let me find you another table!", italian:"I tavoli del gruppo sono pieni: te ne trovo un altro.",
+      buttons:[{ label:"Thank you!", cls:"primary", act:()=>gtShowTable("walkin") }] }); return; }
+  DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — Maître d'", text:"Of course! "+(G.nome||"Your friend")+"'s group is over there. Please follow me!",
+    italian:"Certo! Il gruppo di "+(G.nome||"")+" è là: ti accompagno. Siediti a uno dei tavoli con l'anello dorato.",
+    buttons:[{ label:"Thank you!", cls:"primary", act:()=>gtShowTable("group",1,tabs,t) }] }); }
 function gtWalkIn(n){
   DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — Maître d'", text:"No problem. A table for one?",
     italian:"Nessun problema. Un tavolo per uno?", choices:[ { label:"Yes, a table for one, please.", act:()=>setTimeout(()=>gtShowTable("walkin"),260) },
       { label:"No, thank you. Goodbye!", act:()=>{} } ] }); }
 /* la prenotazione: l'ora (in parole), per quante persone, il nome */
 function gtBook(n){
-  const now=gtNowMin(), last=21*60+30; let t=Math.ceil((now+30)/30)*30; const slots=[];
+  const now=gtNowMin(), last=21*60+30; let t=Math.max(GT_OPEN_H*60,Math.ceil((now+30)/30)*30); const slots=[];   // v625: non prima delle 11
   while(t<=last && slots.length<4){ slots.push(t); t+=30; }
   if(!slots.length){ DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — Maître d'", text:"I'm sorry, the last booking is at half past nine. Please come back tomorrow!",
       italian:"Mi dispiace: l'ultima prenotazione è alle 21:30. Torna domani!", buttons:[{ label:"OK, thank you!", cls:"primary", act:()=>{} }] }); return; }
@@ -53882,29 +53967,51 @@ function gtBook(n){
 function gtBook2(n,m){
   DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — reservations", text:"At "+gtTimeWords(m)+". And how many people is the table for?",
     italian:"Alle "+gtClock(m)+". Per quante persone?",
-    choices:[ { label:"Just for me, please.", act:()=>setTimeout(()=>gtBook3(n,m),260) }, { label:"A table for one, please.", act:()=>setTimeout(()=>gtBook3(n,m),260) } ] }); }
-function gtBook3(n,m){ const nm=gtFirstName();
-  DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — reservations", text:"Lovely. May I have your name, please?", italian:"Perfetto. Posso avere il tuo nome?",
-    choices:[ { label:"It's "+nm+".", act:()=>setTimeout(()=>gtBook4(n,m,nm),260) }, { label:"My name is "+nm+".", act:()=>setTimeout(()=>gtBook4(n,m,nm),260) } ] }); }
-function gtBook4(n,m,nm){
-  gtResSave({ day:new Date().toDateString(), min:m, used:false, rem:false });
+    /* v625 (Giacomo: «si puo' prenotare solo per una persona: non ha senso»):
+       per quante persone (fino a 12); al massimo QUATTRO per tavolo, il
+       gruppo ha tavoli vicini */
+    choices:[1,2,3,4,6,8,12].map(k=>({ label:k===1?"Just for me, please.":"For "+gtPeople(k)+", please.", act:()=>setTimeout(()=>gtBook3(n,m,k),260) })) }); }
+function gtBook3(n,m,np){ const nm=gtFirstName(); np=np||1;
+  DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — reservations", text:(np>1?"A table for "+gtPeople(np)+". ":"")+"Lovely. May I have your name, please?", italian:(np>1?"Per "+np+" persone. ":"")+"Perfetto. Posso avere il tuo nome?",
+    choices:[ { label:"It's "+nm+".", act:()=>setTimeout(()=>gtBook4(n,m,nm,np),260) }, { label:"My name is "+nm+".", act:()=>setTimeout(()=>gtBook4(n,m,nm,np),260) } ] }); }
+function gtBook4(n,m,nm,np){ np=np||1; const k=Math.ceil(np/4), tf=np>1?"a table for "+gtPeople(np):"a table for one";
+  gtResSave({ day:new Date().toDateString(), min:m, used:false, rem:false, n:np });
   DialogueBox.open({ npc:n, icon:"\u{1F4D6}", sub:"Oliver — reservation confirmed",
-    text:"Perfect! That's a table for one at "+gtTimeWords(m)+", "+nm+". See you later!",
-    italian:"Prenotato: un tavolo per uno alle "+gtClock(m)+". Arriva in orario (fino a 20 minuti prima o dopo) per il bonus ⭐!",
-    html:'<div style="margin-top:8px;padding:10px 12px;border-radius:10px;background:#1f3a2d;color:#f1ecd8;font:600 14px Georgia,serif;text-align:center">\u{1F33F} The Green Table<br><span style="font-size:20px;color:#e3c77a">'+gtClock(m)+'</span> · table for one · '+_escHtml(nm)+'</div>',
+    text:"Perfect! That's "+tf+" at "+gtTimeWords(m)+", "+nm+"."+(k>1?" We'll put "+gtPeople(k)+" tables together for you.":"")+" See you later!",
+    italian:"Prenotato: "+(np>1?"un tavolo per "+np:"un tavolo per uno")+" alle "+gtClock(m)+(k>1?" ("+k+" tavoli vicini: al massimo 4 per tavolo)":"")+". Arriva in orario (fino a 20 minuti prima o dopo) per il bonus ⭐!"
+      +(np>1?" Quando arrivi, i tavoli del gruppo si accendono e i compagni con la presenza attiva possono dire a Oliver che sono con te.":""),
+    html:'<div style="margin-top:8px;padding:10px 12px;border-radius:10px;background:#1f3a2d;color:#f1ecd8;font:600 14px Georgia,serif;text-align:center">\u{1F33F} The Green Table<br><span style="font-size:20px;color:#e3c77a">'+gtClock(m)+'</span> · '+_escHtml(np>1?"table for "+gtPeople(np):"table for one")+' · '+_escHtml(nm)+'</div>',
     buttons:[{ label:"Thank you! See you later.", cls:"primary", act:()=>{} }] });
   toast("\u{1F33F} Booked: The Green Table at "+gtClock(m)+" · Prenotato per le "+gtClock(m),5000);
 }
 /* il maitre accompagna al tavolo: l'anello dorato lo indica */
-function gtRingOff(){ if(!GT.ring) return; GT.ring.mesh.setEnabled(false); const i=gatePanels.indexOf(GT.ring.mat); if(i>=0) gatePanels.splice(i,1); }
-function gtShowTable(kind){
-  const free=GT.tables.filter(t=>GT.seats.filter(s=>s.t===t).every(s=>!s.taken && !gtSeatTaken(s)));
-  const t=free.sort((a,b)=>Math.hypot(a.x-player.position.x,a.z-player.position.z)-Math.hypot(b.x-player.position.x,b.z-player.position.z))[0]
-       || GT.tables.find(t=>GT.seats.some(s=>s.t===t && !s.taken && !gtSeatTaken(s)));
+function gtRingOff(){ if(!GT.ring) return; GT.ring.mesh.setEnabled(false); (GT.rings||[]).forEach(m=>m.setEnabled(false)); GT.assignedSet=null; const i=gatePanels.indexOf(GT.ring.mat); if(i>=0) gatePanels.splice(i,1); }
+/* v625: piu' anelli (un gruppo ha piu' tavoli) */
+function gtRingsOn(tabs){ if(!GT.ring) return; GT.rings=GT.rings||[GT.ring.mesh];
+  while(GT.rings.length<tabs.length){ const c=GT.ring.mesh.clone("gtAssign"+GT.rings.length); c.parent=GT.ring.mesh.parent; GT.rings.push(c); }
+  GT.rings.forEach((m,i)=>{ const t=tabs[i]; if(t){ m.position.set(t.x,0.04,t.z); m.setEnabled(true); } else m.setEnabled(false); });
+  if(gatePanels.indexOf(GT.ring.mat)<0) gatePanels.push(GT.ring.mat); }
+/* k tavoli liberi vicini: nella stessa fila, uno accanto all'altro */
+function gtFreeTables(k){
+  const free=t=>GT.seats.filter(s=>s.t===t).every(s=>!s.taken && !gtSeatTaken(s));
+  const d=t=>Math.hypot(t.x-player.position.x,t.z-player.position.z);
+  if(k<=1){ const L=GT.tables.filter(free).sort((a,b)=>d(a)-d(b)); return L.length?[L[0]]:[]; }
+  let best=null, bd=1e9;
+  for(let r=0;r<2;r++) for(let i=0;i+k<=4;i++){ const W=GT.tables.slice(r*4+i,r*4+i+k); if(W.length===k && W.every(free)){ const dd=d(W[0]); if(dd<bd){ bd=dd; best=W; } } }
+  if(best) return best;
+  const L=GT.tables.filter(free).sort((a,b)=>d(a)-d(b)); return L.length>=k?L.slice(0,k):L; }
+function gtShowTable(kind,np,tabs,t0){
+  np=np||1; const k=Math.ceil(np/4);
+  if(!tabs){ tabs=gtFreeTables(k);
+    if(!tabs.length){ const t1=GT.tables.find(t=>GT.seats.some(s=>s.t===t && !s.taken && !gtSeatTaken(s))); if(t1) tabs=[t1]; } }
+  const t=t0||tabs[0];
   if(!t){ DialogueBox.open({ npc:GT.host, icon:"\u{1F4D6}", sub:"Oliver", text:"I'm so sorry, all our tables are taken right now. Please come back a little later!",
       italian:"Tutti i tavoli sono occupati: torna fra poco!", buttons:[{ label:"OK, thank you!", cls:"primary", act:()=>{} }] }); return; }
-  GT.assigned=t; GT.welcome=kind; GT.welcomeT=performance.now();
-  if(GT.ring){ GT.ring.mesh.position.set(t.x,0.04,t.z); GT.ring.mesh.setEnabled(true); if(gatePanels.indexOf(GT.ring.mat)<0) gatePanels.push(GT.ring.mat); }
+  if(np>1 && tabs.length<k) toast("\u{1F4D6} Only "+tabs.length+" free table"+(tabs.length>1?"s":"")+" next to each other right now: the others can sit at any free table. · Non ci sono abbastanza tavoli vicini.",5200);
+  GT.assigned=t; GT.assignedSet=tabs.slice(); GT.welcome=(kind==="group")?"booked":kind; GT.welcomeT=performance.now();
+  /* il gruppo: i suoi tavoli si vedono anche dai compagni (Presenza «,g») */
+  if(kind==="booked" && np>1){ GT.party={ until:performance.now()+45*60000 }; GT.partyPub=tabs.map(q=>GT.tables.indexOf(q)).join(""); }
+  gtRingsOn(tabs);
   const h=GT.host, C=GT.C, V=BABYLON.Vector3;
   if(h){ npcWalkSeq(h,[()=>new V(C.x+1.2,0,C.z+4.5),()=>new V(C.x+1.2,0,t.z+(t.lz<0?2.0:-2.2)),()=>new V(t.x-Math.sign(t.lx)*1.2,0,t.z+(t.lz<0?2.0:-2.2))],0.4,()=>{
       const p=h.pos(); h.carrier.rotation.y=Math.atan2(t.x-p.x,t.z-p.z)+NPC_FACE_OFFSET; h.watch=false;
@@ -53935,12 +54042,13 @@ function gtTalkWaiter(n){
 /* ------------------------------------------------------------------ */
 function gtSit(s){
   if(GT.seat) return;
+  if(!gtOpen()){ toast("\u{1F552} Lunch starts at 11 am. Before that you can only have a drink at the bar. · I tavoli aprono alle 11: ora solo il bar.",4800); return; }
   if(GT.debt){ toast("\u{1F9FE} You haven't paid the bill yet! Oliver is at the door."); return; }
   if(gtSeatTaken(s)){ const f=GT.seats.find(q=>!q.taken && !gtSeatTaken(q)); toast("\u{1FA91} Sorry, this seat is taken! · Posto occupato");
     if(f){ moveTarget=new BABYLON.Vector3(f.x,0,f.z); pendingInteract=f.inter; } return; }
   try{ if(rideSitPark()===false) return; }catch(e){}
   GT.seat=s; GT.st="seated";
-  const booked=(GT.welcome==="booked" && GT.assigned===s.t && performance.now()-(GT.welcomeT||0)<6*60000);
+  const booked=(GT.welcome==="booked" && (GT.assignedSet?GT.assignedSet.indexOf(s.t)>=0:GT.assigned===s.t) && performance.now()-(GT.welcomeT||0)<6*60000);
   GT.o={ slip:{}, sbagli:0, tent:0, formal:0, asked:{}, booked, special:false, served:false };
   GT.welcome=null; GT.assigned=null; gtRingOff();
   moveTarget=null; pendingInteract=null; try{ tapMark.setEnabled(false); }catch(e){}
@@ -54299,6 +54407,70 @@ function gtServe(keys,onDone){
 /* ------------------------------------------------------------------ */
 /* IL BATTITO: il promemoria della prenotazione                          */
 /* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ */
+/* v625 — IL BAR: da bere al bancone, in piedi (dalle 8; prima delle 11 e'
+   l'unica cosa che si puo' prendere). Sofia serve, si paga subito, il
+   bicchiere sta sul bancone e lo si beve li'. */
+/* ------------------------------------------------------------------ */
+function _gtDrinkAsk(v){ const n=v.en.toLowerCase(); if(/water/.test(n)) return "a glass of "+n; return (/^[aeiou]/.test(n)?"an ":"a ")+n; }
+function gtBarOrder(){
+  if(GT.seat){ gtMeAction(); return; } if(GT.bar) return;
+  const n=GT.w2||GT.waiter; if(!n) return;
+  if(GT.debt){ gtDebtAsk(GT.host||n); return; }
+  DialogueBox.open({ npc:n, icon:"\u{1F379}", sub:"Sofia — the bar", text:gtGreet()+"! What would you like to drink?",
+    italian:"Cosa vuoi da bere? (al bancone si beve in piedi)", html:'<div style="margin-top:6px;font:13px Georgia,serif;color:#2c3a30">'
+      +GT_MENU.drinks.map(v=>_escHtml(v.en)+' · £'+v.p.toFixed(2)).join('<br>')+'</div>',
+    choices:GT_MENU.drinks.map(v=>({ label:"Could I have "+_gtDrinkAsk(v)+", please?", act:()=>setTimeout(()=>{
+      const c=Math.round(v.p*100);
+      pricePick({ npc:n, icon:"\u{1F379}", sub:"Sofia — the bar", said:"Of course! That's "+priceWords(c)+", please.", price:c, next:()=>gtBarServe(n,v) }); },260) }))
+      .concat([{ label:"Nothing, thank you.", act:()=>{} }]) }); }
+function gtBarServe(n,v){
+  let got=0; try{ got=Stars.awardCafeOrder(npcCardId(n),"cafeOrderReady"); }catch(e){}
+  DialogueBox.open({ npc:n, icon:"\u{1F379}", sub:"Sofia — the bar", text:"Here you are! Enjoy your "+v.en.toLowerCase()+".",
+    italian:"Ecco a te! Bevilo qui al bancone."+(got?" (+"+got+" ⭐)":""), buttons:[{ label:"Thank you!", cls:"primary", act:()=>gtBarDrink(v) }] }); }
+function gtBarDrink(v){
+  const C=GT.C, S=GT_DEF.size, x=Math.max(C.x-2.2,Math.min(C.x+2.2,player.position.x)), z=C.z-S+0.82;
+  const node=new BABYLON.TransformNode("gtBarGlass",scene); node.parent=GT.I.root; node.position.set(x,GT.gy+1.06,z);
+  try{ _gtDish("drink",v,node); node.getChildMeshes(false).forEach(m=>{ m.isPickable=false; }); }catch(e){}
+  GT.bar={ node, v, k:0 };
+  player.rotation.y=Math.atan2(x-player.position.x,z-player.position.z);
+  toast("\u{1F379} You drink your "+v.en.toLowerCase()+" at the bar… · Bevi al bancone",3200);
+  const sip=()=>{ const B=GT.bar; if(!B) return;
+    if(area!==GT_DEF.area || Math.hypot(player.position.x-x,player.position.z-z)>2.6){ toast("\u{1F379} You leave your drink on the bar."); gtBarEnd(); return; }
+    try{ SFX.sip(); }catch(e){} try{ Needs.eat(v.en,1/3); }catch(e){}
+    B.k++; node.scaling.y=Math.max(0.35,1-B.k*0.22);
+    if(B.k>=3){ setTimeout(()=>{ toast("\u{1F379} All gone! Thank you, Sofia. · Finito!"); gtBarEnd(); },1500); return; }
+    B.t=setTimeout(sip,2600); };
+  GT.bar.t=setTimeout(sip,1800); }
+function gtBarEnd(){ const B=GT.bar; if(!B) return; clearTimeout(B.t); try{ B.node.dispose(false,false); }catch(e){} GT.bar=null; }
+/* ------------------------------------------------------------------ */
+/* v625 — CHI STA FERMO IN SALA (Giacomo: «se si rimane fermi senza far
+   niente per un minuto arriva il cameriere: Can I help you?»). In piedi,
+   fermo, senza dialoghi aperti, per un minuto: Marco viene da te. */
+/* ------------------------------------------------------------------ */
+function gtIdleTick(){
+  if(area!==GT_DEF.area || !GT.built || !GT.waiter) return;
+  const now=performance.now(), p=player.position;
+  let busy=!!(GT.seat || GT.bar || GT.walking || GT.idleCome || GT.assigned || GT.debt);
+  try{ if(SpeakLock.isOpen()) busy=true; }catch(e){}
+  if(!GT.idleP || busy || Math.hypot(p.x-GT.idleP.x,p.z-GT.idleP.z)>0.35){ GT.idleP=p.clone(); GT.idleT=now; return; }
+  if(now-(GT.idleT||now)<60000 || now<(GT.idleNext||0)) return;
+  GT.idleCome=true; GT.idleNext=now+120000;
+  const V=BABYLON.Vector3, C=GT.C, w=GT.waiter;
+  const f=new V(Math.sin(player.rotation.y),0,Math.cos(player.rotation.y)), dst=()=>new V(p.x+f.x*1.0,0,p.z+f.z*1.0);
+  _gtWalk([()=>new V(C.x,0,C.z-5.6),()=>new V(C.x,0,C.z+GT_LANE_Z),()=>new V(C.x,0,dst().z),dst],0.4,()=>{
+    const q=w.pos(); w.carrier.rotation.y=Math.atan2(p.x-q.x,p.z-q.z)+NPC_FACE_OFFSET; w.watch=true;
+    if(GT.seat || area!==GT_DEF.area){ GT.idleCome=false; gtWaiterHome(); return; }
+    const end=()=>{ GT.idleCome=false; GT.idleT=performance.now(); GT.idleP=player.position.clone(); gtWaiterHome(); };
+    const ch=[];
+    if(gtOpen()) ch.push({ label:"Yes, a table for one, please.", act:()=>{ end(); setTimeout(()=>gtShowTable("walkin"),260); } });
+    ch.push({ label:"Could I have a drink at the bar, please?", act:()=>{ end(); setTimeout(()=>gtBarOrder(),260); } });
+    if(gtOpen()) ch.push({ label:"I'd like to book a table for later, please.", act:()=>{ end(); setTimeout(()=>gtBook(GT.host||w),260); } });
+    ch.push({ label:"No, thank you. I'm just looking.", act:()=>end() });
+    try{ DialogueBox.open({ npc:w, icon:"\u{1F33F}", sub:"Marco — Waiter", text:gtGreet()+"! Can I help you?",
+      italian:"Posso aiutarti? Sei fermo da un po': puoi chiedere un tavolo, da bere al bar o prenotare.", choices:ch }); }catch(e){ end(); } });
+}
+setInterval(()=>{ try{ gtIdleTick(); }catch(e){} },1000);
 function gtTick(){
   const now=performance.now(); if(now<(GT.remT||0)) return; GT.remT=now+30000;
   const r=gtRes(); if(!r || r.used || r.rem) return;
@@ -57703,7 +57875,11 @@ const Needs={
      docente cammina, ma non viene mandato al café). Con una quest in corso
      resta tutto fermo come prima: le quest non si bloccano mai. */
   canRun(want){
-    if(this.paused()) return true;
+    /* v625 (Giacomo: «dentro il ristorante sono riuscito a correre con la
+       stanchezza al massimo»): «dentro un edificio» ferma il CALO dei
+       livelli, non i livelli. Si corre comunque con una quest in corso, in
+       auto o in volo; per il resto valgono energia, fame e sete anche al chiuso. */
+    if(this.questOn() || (typeof SKY!=="undefined" && SKY.on) || (typeof AUTO!=="undefined" && AUTO.on)) return true;
     if(this.e>0 && !(this.loaded && this.lacking())) return true;
     if(want){ const now=performance.now();
       if(now>this.noRunT){ this.noRunT=now+15000;
@@ -83565,6 +83741,7 @@ const Presenza=(function(){
       try{ const rp=(typeof RIDE!=="undefined")?(RIDE.parked||RIDE.on):null; if(rp && (q+",v"+rp.code).length<=48) q+=",v"+rp.code; }catch(e){}
       try{ const rk=(typeof RIDE!=="undefined")?RIDE.racked:null; if(rk && rk.k>=0 && (q+",k"+rk.R.code+rk.k).length<=48) q+=",k"+rk.R.code+rk.k; }catch(e){}
       { const a=_inAutoCampo(); if(a && (q+a).length<=48) q+=a; }       // 🚗 v616: seduto nella sua auto
+      { const g=_gtCampo(); if(g && (q+g).length<=48) q+=g; }           // 🌿 v625: i tavoli del suo gruppo
       return q; }
     let q=player.position.x.toFixed(1)+","+player.position.z.toFixed(1)+","
           +player.position.y.toFixed(2)+","+player.rotation.y.toFixed(2);
@@ -83574,8 +83751,16 @@ const Presenza=(function(){
     /* 🅿️ il tuo monopattino nella rastrelliera: «,k<codice><rastrelliera>» */
     try{ if(typeof RIDE!=="undefined" && RIDE.racked && RIDE.racked.k>=0) q+=",k"+RIDE.racked.R.code+RIDE.racked.k; }catch(e){}
     { const a=_inAutoCampo(); if(a) q+=a; }                             // 🚗 v616: sale o scende dalla sua auto
+    { const g=_gtCampo(); if(g) q+=g; }                                   // 🌿 v625: i tavoli del suo gruppo
     return (iv && (q+iv).length<=48)?q+iv:q;
   }
+  /* 🌿 v625 (Giacomo: «se uno prenota per piu' compagni, gli altri vengono
+     fatti sedere agli altri tavoli»): chi ha prenotato per un gruppo ed e'
+     in sala manda i tavoli del gruppo («,g» + gli indici, es. «,g45»). Il
+     maitre degli altri lo legge (gruppiGT) e li accompagna li'. */
+  function _gtCampo(){
+    try{ if(typeof GT==="undefined" || area!==GT_DEF.area || !GT.partyPub || !GT.party || performance.now()>GT.party.until) return "";
+      return ",g"+GT.partyPub; }catch(e){ return ""; } }
   /* 🚗 v616 (Giacomo, 24 nov: «fai l'auto visibile agli altri»). Prima, in
      auto, ai compagni arrivava solo la posa da seduto, che si disegna SOLO
      da fermi: a 40 km/h si vedeva un compagno in piedi che camminava lungo
@@ -83603,20 +83788,21 @@ const Presenza=(function(){
     if(!isFinite(x)||!isFinite(z)) return null;
     const m=/^s(-?\d{1,4})_(-?\d{1,4})([db]?)(c?)$/.exec(p[4]||"");
     /* dal sesto campo in poi: il cameriere (w...) e il tavolo (o... / c..., v309) */
-    let w=null, ta=null, iv=0, rv=0; let ij=0; let rk=null; let au=0;
+    let w=null, ta=null, iv=0, rv=0; let ij=0; let rk=null; let au=0; let gg="";
     for(let i=4;i<p.length;i++){ const f=p[i]||""; let mm;
       if(!iv && (mm=/^i([0-9a-z]{1,8})$/.exec(f))){ iv=parseInt(mm[1],36)*SK_CYCLE; continue; }   // v309e: l'invito alla crew
       if(!ij && (mm=/^j([0-9a-z]{1,8})$/.exec(f))){ ij=parseInt(mm[1],36)*SK_CYCLE; continue; }   // 🛹 l'invito allo skate
       if(!rv && (mm=/^v([1-9])$/.exec(f))){ rv=+mm[1]; continue; }                                // 🛹🛴 in sella
       if(!rk && (mm=/^k([1-9])([0-9])$/.exec(f))){ rk={ code:+mm[1], k:+mm[2] }; continue; }       // 🅿️ il suo monopattino parcheggiato
       if(!au && (mm=/^a([12])$/.exec(f))){ au=+mm[1]; continue; }                                  // 🚗 v616: nella sua auto
+      if(!gg && (mm=/^g([0-7]{1,4})$/.exec(f))){ gg=mm[1]; continue; }                             // 🌿 v625: i tavoli del suo gruppo
       if(i<5) continue;
       if(!w && (mm=/^w(-?\d{1,4}(?:\.\d)?):(-?\d{1,4}(?:\.\d)?)$/.exec(f))) w=mm;
       else if(!ta && (mm=/^o([0-9a-u]{4})([0-3-])$/.exec(f))) ta={ k:"o", c:mm[1], cur:mm[2] };
       else if(!ta && (mm=/^c([0-7])([0-4])([0-4])([0-4])([01-])$/.exec(f))) ta={ k:"c", c:mm[1]+mm[2]+mm[3]+mm[4], cur:mm[5] }; }
     const d=/^d(\d{1,3})$/.exec(p[4]||"");            // v304: balla (fase in centesimi di battito)
     const mz=/^m([hbmsStar])(\d{1,3})(?:@(\d{2,3}))?$/.exec(p[4]||""); // v309: i passi (mossa, battiti x10, @bpm dello schiocco)
-    return { x:x, z:z, y:(isFinite(y)?y:0), r:(isFinite(r)?r:0), invito:(isFinite(iv)?iv:0), invitoSk:(isFinite(ij)?ij:0), ride:rv, rack:rk, auto:au,
+    return { x:x, z:z, y:(isFinite(y)?y:0), r:(isFinite(r)?r:0), invito:(isFinite(iv)?iv:0), invitoSk:(isFinite(ij)?ij:0), ride:rv, rack:rk, auto:au, gt:gg,
              balla:d?{ ph:+d[1]/100 }:null,
              mossa:mz?{ mv:_MOSSA_DA[mz[1]], sdir:(mz[1]==="S"?-1:1), b:+mz[2]/10, bpm:mz[3]?+mz[3]:0 }:null,
              siede:m?{ seat:+m[1]/100, gy:+m[2]/100, eat:m[3]||"", c:!!m[4], ta:ta }:null,
@@ -83698,6 +83884,7 @@ const Presenza=(function(){
     e.ride=p.ride||0;                                  // 🛹🛴 skate (1) / monopattino (2)
     e.auto=p.auto||0;                                  // 🚗 v616: Nelson 1 (1) / The Beast (2)
     e.rack=p.rack||null;                               // 🅿️ il suo monopattino nella rastrelliera
+    e.gt=p.gt||"";                                     // 🌿 v625: i tavoli del suo gruppo al Green Table
     /* v309: i passi; t = quando e' arrivato il campione, per far avanzare i battiti */
     e.mossa=p.mossa?Object.assign(p.mossa,{ t:ora }):null;
     /* v309e: un compagno ha invitato la crew a ballare: balla anche qui.
@@ -84577,6 +84764,7 @@ const Presenza=(function(){
     return o;
   }
   /* i compagni vicini, per non sedersi uno dentro l'altro (sgabelli del caffe') */
+  function gruppiGT(){ const o=[]; for(const k in peers){ const e=peers[k]; if(e.zona!==area || !e.gt) continue; o.push({ key:k, nome:_nomeDi(k), tavoli:e.gt }); } return o; }
   function vicini(){
     const o=[]; for(const k in peers){ const e=peers[k]; if(e.zona!==area) continue;
       const q=dove(e); o.push({ key:k, x:q.x, z:q.z, seduto:!!e.siede }); }
@@ -84949,7 +85137,7 @@ const Presenza=(function(){
       kB_al_minuto:Math.round(byteRic/1024/min*10)/10 };
   }
   return { avvia:avvia, avviaTutte:avviaTutte, spegni:spegni, chiudi:chiudi, tick:tick, pin:pin, stato:stato,
-           vicini:vicini, camerieri:camerieri, get io(){ return mio; },
+           vicini:vicini, gruppiGT:gruppiGT, camerieri:camerieri, get io(){ return mio; },
            hz:hz, dove:dove,
            /* porte aperte per il collaudo: sono funzioni pure o quasi, e
               provarle dal di fuori evita di riprodurre l'algoritmo nel test
