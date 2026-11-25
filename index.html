@@ -10110,8 +10110,12 @@ function hedge(x0,z0,x1,z1,h){ h=h||1.1;
   let sd=Math.abs(Math.round(cx*13+cz*7))+3; const rnd=()=>{ sd=(sd*16807)%2147483647; return (sd%10000)/10000; };
   const L=[], B=[], K=[], S=[];
   const box=(arr,w,hh,d,x,y,z)=>{ const b=BABYLON.MeshBuilder.CreateBox("hdgp",{width:w,height:hh,depth:d},scene); b.position.set(x,y,z); arr.push(b); return b; };
-  /* aiuola: pacciame scuro fra due cordoli di pietra */
-  box(S,len,0.10,0.90,0,0.05,0);
+  /* aiuola: pacciame scuro fra due cordoli di pietra.
+     v634 (Giacomo: «i cordoli sfarfallano»): il pacciame era lungo quanto
+     tutta l'aiuola, e le sue teste stavano sullo STESSO piano della faccia
+     esterna dei cordoli di testa: i 10 cm bassi del cordolo si alternavano
+     grigio/marrone muovendo la visuale. Ora finisce dentro i cordoli. */
+  box(S,len-0.08,0.10,0.92,0,0.05,0);
   [-0.49,0.49].forEach(z=>box(K,len,0.16,0.08,0,0.08,z));
   [-len/2+0.04,len/2-0.04].forEach(x=>box(K,0.08,0.16,0.90,x,0.08,0));
   /* corpo potato (un blocco solo: un secondo blocco piu' largo alla base
@@ -53396,10 +53400,21 @@ function _gtForecourt(r,M,FZ){
     const hp=(x0,z0h,x1,z1h,h)=>{ const A=W(x0,z0h), B=W(x1,z1h), n0=scene.transformNodes.length;
       try{ hedge(A[0],A[1],B[0],B[1],h); }catch(e){ console.warn("[gt] siepe",e); }
       const y=Math.max(gyAt(A[0],A[1]),gyAt(B[0],B[1]),gyAt((A[0]+B[0])/2,(A[1]+B[1])/2));
-      if(y>0.01) for(let i=n0;i<scene.transformNodes.length;i++){ const t=scene.transformNodes[i]; if(t && t.name==="hdg") t.position.y+=y; } };
+      if(y>0.01) for(let i=n0;i<scene.transformNodes.length;i++){ const t=scene.transformNodes[i]; if(!t || t.name!=="hdg") continue; t.position.y+=y;
+        /* v634: l'alone d'ombra della siepe sta a +5,8 cm (pensato per la
+           strada): sul marciapiede rialzato galleggiava e tagliava i cordoli
+           a meta' con una fascia scura. Ora poggia sul piano (1,5 cm sopra; 1 cm sopra il
+           vialetto dove ci passa sopra), ognuna a quota sua: dove due
+           aloni si sovrappongono non si contendono lo stesso piano. */
+        t.getChildMeshes(true).forEach(m=>{ if(m.name==="h7sh") m.position.y=Math.max(0.015,GT.oy+0.028-y)+0.003*(nH%4); }); }
+      nH++; };
+    let nH=0;
     hp(sd*1.68,zH,sd*6.75,zH,0.95);                                      // lungo il marciapiede (fino al vialetto)
-    hp(sd*1.68,zB,sd*1.68,zH-0.42,0.8);                                  // lungo il vialetto, piu' bassa
-    hp(sd*6.75,zB,sd*6.75,zH-0.42,0.95);                                 // bordo esterno
+    /* v634: finiscono dove comincia il cordolo della siepe sul marciapiede
+       (zH-0,53), non 11 cm dentro: alla stessa quota i due cordoli si
+       sovrapponevano piano su piano e sfarfallavano */
+    hp(sd*1.68,zB,sd*1.68,zH-0.53,0.8);                                  // lungo il vialetto, piu' bassa
+    hp(sd*6.75,zB,sd*6.75,zH-0.53,0.95);                                 // bordo esterno
     /* un albero vero in ogni aiuola, al centro del prato */
     try{ const T=W(bx+sd*0.3,zc-0.3);
       solids.push({x0:T[0]-0.42,x1:T[0]+0.42,z0:T[1]-0.42,z1:T[1]+0.42,area:"town",tree:true});
@@ -53549,7 +53564,7 @@ function _gtTable(dec,M,x,z){
   _gtCyl(dec,0.05,0.05,0.13,M.wax,x+0.12,0.86,z,10); _gtSph(dec,0.035,M.flame,x+0.12,0.945,z,1.6);   // candela
   _gtCyl(dec,0.06,0.07,0.14,M.glass,x-0.12,0.86,z,12); _gtSph(dec,0.09,[M.velvet,M.flame,M.leaf][(Math.abs(x*3+z)|0)%3],x-0.12,0.97,z);  // vasetto col fiore
   [-1,1].forEach(sd=>{ const zz=z+sd*0.33;
-    _gtCyl(dec,0.3,0.28,0.012,(_gtChargerM||(_gtChargerM=(()=>{ const m=mat("gt_charger","#2f5a45"); m.specularColor=new BABYLON.Color3(0.25,0.22,0.15); m.specularPower=32; m.__glowK=0; return m; })())),x,0.799,zz,32);   // v633: sottopiatto dorato, stacca dalla tovaglia
+    _gtCyl(dec,0.3,0.28,0.012,(_gtChargerM||(_gtChargerM=(()=>{ const m=mat("gt_charger","#2f5a45"); m.specularColor=new BABYLON.Color3(0.25,0.22,0.15); m.specularPower=32; m.__glowK=0; return m; })())),x,0.8,zz,32);   // v633: sottopiatto verde scuro. v634: da 0,794 a 0,806, 2 mm sopra la tovaglia (0,792): prima la toccava
     _gtBox(dec,0.075,0.008,0.2,(_gtNapM||(_gtNapM=mat("gt_nap","#2b4a3a"))),x-0.2,0.796,zz);                           // tovagliolo verde piegato, sotto la forchetta
     _gtBox(dec,0.02,0.006,0.2,M.silver,x-0.2,0.803,zz); _gtBox(dec,0.022,0.006,0.21,M.silver,x+0.18,0.796,zz);   // posate
     _gtCyl(dec,0.065,0.02,0.09,M.glass,x+0.2,0.93,zz-sd*0.12,12); _gtCyl(dec,0.01,0.01,0.1,M.glass,x+0.2,0.84,zz-sd*0.12,6);   // calice
@@ -54531,9 +54546,9 @@ function _gtPlate(p,M,d,deep){
     ? [new V(0,0.004,0),new V(R*0.42,0.004,0),new V(R*0.5,0.002,0),new V(R*0.55,0.0,0),new V(R*0.6,0.006,0),new V(R*0.82,0.03,0),new V(R*0.98,0.05,0),new V(R,0.052,0)]
     : [new V(0,0.014,0),new V(R*0.55,0.014,0),new V(R*0.58,0.004,0),new V(R*0.6,0.0,0),new V(R*0.68,0.0,0),new V(R*0.7,0.016,0),new V(R*0.92,0.025,0),new V(R,0.027,0)];
   const pl=BABYLON.MeshBuilder.CreateLathe("gtPlate",{ shape:prof, tessellation:32, sideOrientation:BABYLON.Mesh.DOUBLESIDE },scene);
-  pl.material=_gtPlateMat(); pl.parent=p; pl.isPickable=false; pl.position.y=0.012;   // sopra il sottopiatto (che sta a +7 mm)
+  pl.material=_gtPlateMat(); pl.parent=p; pl.isPickable=false;   // v634: alla quota giusta lo mette gtFoodSet (GT_ONCHARGER)
   if(!_gtPlateRimM){ _gtPlateRimM=mat("gt_plateRim","#8a7340"); _gtPlateRimM.specularColor=new BABYLON.Color3(0.2,0.18,0.1); _gtPlateRimM.__glowK=0; }
-  const rim=BABYLON.MeshBuilder.CreateTorus("gtRim",{ diameter:d*0.86, thickness:0.0025, tessellation:32 },scene); rim.material=_gtPlateRimM; rim.parent=p; rim.position.y=(deep?0.04:0.023)+0.012; rim.isPickable=false;
+  const rim=BABYLON.MeshBuilder.CreateTorus("gtRim",{ diameter:d*0.86, thickness:0.0025, tessellation:32 },scene); rim.material=_gtPlateRimM; rim.parent=p; rim.position.y=deep?0.04:0.023; rim.isPickable=false;
   return pl; }
 function _gtDish(key,v,par){
   const M=_gtMats(), g=new BABYLON.TransformNode("gtDish_"+key,scene); g.parent=par;
@@ -54616,12 +54631,19 @@ function _gtDish(key,v,par){
   return g; }
 /* dove va ogni portata, nel sistema del posto: x = a destra di chi siede, z = verso il centro del tavolo */
 const GT_PLACE={ drink:[0.2,0.16], starter:[0,0], main:[0,0], side:[-0.2,0.12], dessert:[0,0] };
+/* v634 (Giacomo: «il piatto sfarfalla un po' di verde»): il piede del piatto
+   stava ESATTAMENTE sul piano del sottopiatto (0,805 tutti e due) e, muovendo
+   la visuale, il verde passava a chiazze attraverso la porcellana. Le portate
+   al centro del posto stanno sul sottopiatto (sopra a 0,806 = top+13 mm):
+   si appoggiano 3 mm piu' su; le altre (bicchiere, contorno) 1 mm sopra la
+   tovaglia. */
+const GT_ONCHARGER=0.016, GT_ONCLOTH=0.001;
 function gtFoodSet(items,s){
   const t=s.t, set=new BABYLON.TransformNode("gtFood",scene); set.parent=GT.I.root;
   const f={ x:Math.sin(s.face), z:Math.cos(s.face) };
   set.position.set(s.x+f.x*0.49, t.top, s.z+f.z*0.49); set.rotation.y=s.face;
   items.forEach(it=>{ if(!it.v || it.v.en==="—") return; const d=_gtDish(it.key,it.v,set), P=GT_PLACE[it.key]||[0,0];
-    d.position.set(P[0],0,P[1]); });
+    d.position.set(P[0],(P[0]===0&&P[1]===0)?GT_ONCHARGER:GT_ONCLOTH,P[1]); });
   set.getChildMeshes(false).forEach(m=>{ m.isPickable=false; });
   GT.food.push(set); return set; }
 function gtClearFood(){ GT.food=GT.food.filter(st=>{ if(st.__guest) return true; try{ st.dispose(false,false); }catch(e){} return false; }); GT.eatG={}; }
