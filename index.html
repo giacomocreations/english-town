@@ -53382,8 +53382,21 @@ function _gtForecourt(r,M,FZ){
   const W=(x,z)=>[GT_X+x,GT_Z+z];
   const zH=zE-0.5, zB=z0+0.35;                               // siepe sul marciapiede / fondo verso la facciata
   [-1,1].forEach(sd=>{ const bx=sd*4.2, bw=5.6;
-    const g=BABYLON.MeshBuilder.CreateGround("gtLawn",{ width:bw, height:L-0.4 },scene); g.material=lawn; g.parent=r; g.position.set(bx,Math.max(0.055,0.215-GT.oy),zc); g.isPickable=false;
-    const hp=(x0,z0h,x1,z1h,h)=>{ const A=W(x0,z0h), B=W(x1,z1h); try{ hedge(A[0],A[1],B[0],B[1],h); }catch(e){ console.warn("[gt] siepe",e); } };
+    /* v633 (Giacomo, con foto: «il prato sbuca fuori dai bordi grigi delle
+       siepi, un pezzo tagliato male vicino al menu, e sfarfalla»): il prato
+       sta SOLO dentro le siepi (fra i cordoli) e 3 cm sopra il marciapiede
+       rialzato (prima 1,5: da lontano si alternavano). */
+    const lx0=1.68+0.45, lx1=6.75-0.45, lz0=z0+0.05, lz1=zH-0.45;
+    const g=BABYLON.MeshBuilder.CreateGround("gtLawn",{ width:lx1-lx0, height:lz1-lz0 },scene); g.material=lawn; g.parent=r;
+    g.position.set(sd*(lx0+lx1)/2,0.23-GT.oy,(lz0+lz1)/2); g.isPickable=false;
+    /* le siepi alla quota vera del terreno (il marciapiede qui e' rialzato
+       di 20 cm: prima i cordoli restavano sepolti a meta') */
+    const gyAt=(x,z)=>{ try{ const h=scene.pickWithRay(new BABYLON.Ray(new BABYLON.Vector3(x,6,z),new BABYLON.Vector3(0,-1,0),12),m=>m.__ground===true && m.isEnabled() && !/gtLawn|gtPath/.test(m.name));
+        return (h&&h.hit)?h.pickedPoint.y:0; }catch(e){ return 0; } };
+    const hp=(x0,z0h,x1,z1h,h)=>{ const A=W(x0,z0h), B=W(x1,z1h), n0=scene.transformNodes.length;
+      try{ hedge(A[0],A[1],B[0],B[1],h); }catch(e){ console.warn("[gt] siepe",e); }
+      const y=Math.max(gyAt(A[0],A[1]),gyAt(B[0],B[1]),gyAt((A[0]+B[0])/2,(A[1]+B[1])/2));
+      if(y>0.01) for(let i=n0;i<scene.transformNodes.length;i++){ const t=scene.transformNodes[i]; if(t && t.name==="hdg") t.position.y+=y; } };
     hp(sd*1.68,zH,sd*6.75,zH,0.95);                                      // lungo il marciapiede (fino al vialetto)
     hp(sd*1.68,zB,sd*1.68,zH-0.42,0.8);                                  // lungo il vialetto, piu' bassa
     hp(sd*6.75,zB,sd*6.75,zH-0.42,0.95);                                 // bordo esterno
@@ -53520,7 +53533,7 @@ function _gtPainting(i){
       [[0.35,0.5,"#d84a3a"],[0.5,0.45,"#e8b040"],[0.63,0.52,"#7aa040"]].forEach(f=>{ c.fillStyle=f[2]; c.beginPath(); c.arc(W*f[0],H*f[1],20,0,7); c.fill(); }); }
     for(let k=0;k<260;k++){ c.fillStyle="rgba("+(rnd()*255|0)+","+(rnd()*255|0)+","+(rnd()*200|0)+",0.06)"; c.fillRect(rnd()*W,rnd()*H,6+rnd()*14,3); } }); }
 /* un tavolo apparecchiato (decor: si fonde poi per materiale) */
-let _gtNapM=null;
+let _gtNapM=null, _gtChargerM=null;
 function _gtTable(dec,M,x,z){
   /* v622 (Giacomo: «le gambe sfondano la tovaglia bianca»): la tovaglia
      scendeva fino a 42 cm e le ginocchia di chi siede ci passavano dentro.
@@ -53536,7 +53549,7 @@ function _gtTable(dec,M,x,z){
   _gtCyl(dec,0.05,0.05,0.13,M.wax,x+0.12,0.86,z,10); _gtSph(dec,0.035,M.flame,x+0.12,0.945,z,1.6);   // candela
   _gtCyl(dec,0.06,0.07,0.14,M.glass,x-0.12,0.86,z,12); _gtSph(dec,0.09,[M.velvet,M.flame,M.leaf][(Math.abs(x*3+z)|0)%3],x-0.12,0.97,z);  // vasetto col fiore
   [-1,1].forEach(sd=>{ const zz=z+sd*0.33;
-    _gtCyl(dec,0.27,0.27,0.012,M.white,x,0.8,zz,24);                               // sottopiatto
+    _gtCyl(dec,0.3,0.28,0.012,(_gtChargerM||(_gtChargerM=(()=>{ const m=mat("gt_charger","#2f5a45"); m.specularColor=new BABYLON.Color3(0.25,0.22,0.15); m.specularPower=32; m.__glowK=0; return m; })())),x,0.799,zz,32);   // v633: sottopiatto dorato, stacca dalla tovaglia
     _gtBox(dec,0.075,0.008,0.2,(_gtNapM||(_gtNapM=mat("gt_nap","#2b4a3a"))),x-0.2,0.796,zz);                           // tovagliolo verde piegato, sotto la forchetta
     _gtBox(dec,0.02,0.006,0.2,M.silver,x-0.2,0.803,zz); _gtBox(dec,0.022,0.006,0.21,M.silver,x+0.18,0.796,zz);   // posate
     _gtCyl(dec,0.065,0.02,0.09,M.glass,x+0.2,0.93,zz-sd*0.12,12); _gtCyl(dec,0.01,0.01,0.1,M.glass,x+0.2,0.84,zz-sd*0.12,6);   // calice
@@ -54501,8 +54514,25 @@ function gtMeAction(){
 const _gtFM={};
 function _gtFood(hex,em){ const k=hex+(em||""); if(_gtFM[k]) return _gtFM[k];
   const m=mat("gt_c_"+hex.slice(1)+(_lpN++),hex,em||null); m.specularColor=new BABYLON.Color3(0.15,0.15,0.15); m.specularPower=24; return (_gtFM[k]=m); }
-function _gtPlate(p,M,d,deep){ const pl=_gtCyl(p,d,d*0.72,deep?0.05:0.018,M.white,0,deep?0.025:0.009,0,28);
-  const rim=BABYLON.MeshBuilder.CreateTorus("gtRim",{ diameter:d*0.94, thickness:0.008, tessellation:28 },scene); rim.material=M.gold; rim.parent=p; rim.position.y=deep?0.05:0.019; rim.isPickable=false;
+/* v633 (Giacomo: «il piatto e' fatto male: un disco con un anello dorato,
+   sembra al contrario; non si vede; dagli un colore un po' piu' scuro per
+   farlo risaltare sulla tovaglia»). Ora e' un piatto VERO, fatto al tornio:
+   il piede, il cavetto (la parte piatta in mezzo, dove sta il cibo), la
+   tesa che sale e il bordo; porcellana color crema (la tovaglia e' bianca)
+   col filo d'oro sulla tesa. */
+let _gtPlateM=null;
+function _gtPlateMat(){ if(_gtPlateM) return _gtPlateM;
+  const m=new BABYLON.StandardMaterial("gt_plate",scene); m.diffuseColor=BABYLON.Color3.FromHexString("#cfc2a4");
+  m.specularColor=new BABYLON.Color3(0.3,0.3,0.3); m.specularPower=64; m.emissiveColor=new BABYLON.Color3(0,0,0); m.__glowK=0; m.backFaceCulling=false;
+  return (_gtPlateM=m); }
+function _gtPlate(p,M,d,deep){
+  const R=d/2, V=BABYLON.Vector3;
+  const prof=deep
+    ? [new V(0,0.004,0),new V(R*0.42,0.004,0),new V(R*0.5,0.002,0),new V(R*0.55,0.0,0),new V(R*0.6,0.006,0),new V(R*0.82,0.03,0),new V(R*0.98,0.05,0),new V(R,0.052,0)]
+    : [new V(0,0.014,0),new V(R*0.55,0.014,0),new V(R*0.58,0.004,0),new V(R*0.6,0.0,0),new V(R*0.68,0.0,0),new V(R*0.7,0.016,0),new V(R*0.92,0.025,0),new V(R,0.027,0)];
+  const pl=BABYLON.MeshBuilder.CreateLathe("gtPlate",{ shape:prof, tessellation:32, sideOrientation:BABYLON.Mesh.DOUBLESIDE },scene);
+  pl.material=_gtPlateMat(); pl.parent=p; pl.isPickable=false;
+  const rim=BABYLON.MeshBuilder.CreateTorus("gtRim",{ diameter:d*0.86, thickness:0.004, tessellation:32 },scene); rim.material=M.gold; rim.parent=p; rim.position.y=deep?0.04:0.023; rim.isPickable=false;
   return pl; }
 function _gtDish(key,v,par){
   const M=_gtMats(), g=new BABYLON.TransformNode("gtDish_"+key,scene); g.parent=par;
@@ -54511,16 +54541,16 @@ function _gtDish(key,v,par){
   const S=(d,m,x,y,z,sy)=>_gtSph(g,d,m,x,y,z,sy), B=(w,h,dd,m,x,y,z,ry)=>_gtBox(g,w,h,dd,m,x,y,z,ry), Cy=(dt,db,h,m,x,y,z)=>_gtCyl(g,dt,db,h,m,x,y,z,16);
   if(ic==="water"||ic==="juice"){
     Cy(0.072,0.06,0.13,M.glass,0,0.065,0); { const lq=Cy(0.062,0.052,0.095,F(c),0,0.05,0); lq.__liq=0.095; }   // v627: il liquido cala sorso dopo sorso
-    if(/sparkling/i.test(v.en)) for(let i=0;i<5;i++) S(0.008,M.white,(i-2)*0.009,0.04+i*0.012,0.01).__bub=true;
+    if(/sparkling/i.test(v.en)) for(let i=0;i<5;i++) S(0.008,_gtPlateMat(),(i-2)*0.009,0.04+i*0.012,0.01).__bub=true;
     if(/lemonade/i.test(v.en)){ const l=Cy(0.05,0.05,0.006,F("#f6e05a"),0.035,0.12,0); l.rotation.z=1.2; }
   } else if(ic==="tea"){
-    Cy(0.13,0.13,0.008,M.white,0,0.004,0); Cy(0.085,0.06,0.06,M.white,0,0.035,0); { const lq=Cy(0.075,0.075,0.006,F(c),0,0.058,0); lq.__disc=0.045; }
-    const h=BABYLON.MeshBuilder.CreateTorus("gtH",{ diameter:0.04, thickness:0.008 },scene); h.material=M.white; h.parent=g; h.position.set(0.05,0.035,0); h.rotation.x=Math.PI/2; h.isPickable=false;
+    Cy(0.13,0.13,0.008,_gtPlateMat(),0,0.004,0); Cy(0.085,0.06,0.06,_gtPlateMat(),0,0.035,0); { const lq=Cy(0.075,0.075,0.006,F(c),0,0.058,0); lq.__disc=0.045; }
+    const h=BABYLON.MeshBuilder.CreateTorus("gtH",{ diameter:0.04, thickness:0.008 },scene); h.material=_gtPlateMat(); h.parent=g; h.position.set(0.05,0.035,0); h.rotation.x=Math.PI/2; h.isPickable=false;
   } else if(ic==="soup"){
-    _gtPlate(g,M,0.24,false); Cy(0.17,0.1,0.06,M.white,0,0.045,0); Cy(0.15,0.15,0.008,F(c),0,0.07,0);
+    _gtPlate(g,M,0.24,false); Cy(0.17,0.1,0.06,_gtPlateMat(),0,0.045,0); Cy(0.15,0.15,0.008,F(c),0,0.07,0);
     S(0.03,F("#f4f0e6"),0.02,0.078,-0.01,0.3); S(0.012,F("#4f8a3a"),-0.02,0.08,0.015,0.4);
   } else if(ic==="salad"||ic==="greens"){
-    if(ic==="salad") _gtPlate(g,M,0.24,false); else Cy(0.15,0.1,0.05,M.white,0,0.025,0);
+    if(ic==="salad") _gtPlate(g,M,0.24,false); else Cy(0.15,0.1,0.05,_gtPlateMat(),0,0.025,0);
     const y0=ic==="salad"?0.03:0.055;
     for(let i=0;i<9;i++){ const a=i*2.3; S(0.045,F(i%2?"#5f9a4a":"#7cb860"),Math.cos(a)*0.04,y0,Math.sin(a)*0.04,0.45); }
     if(ic==="salad"){ for(let i=0;i<4;i++) S(0.026,F("#d8452f"),Math.cos(i*1.6)*0.05,y0+0.018,Math.sin(i*1.6)*0.05);
@@ -54566,7 +54596,7 @@ function _gtDish(key,v,par){
     for(let i=0;i<4;i++) B(0.002,0.004,0.06,F("#f8c0a8"),-0.04+i*0.027,0.043,0,0.15);
     Cy(0.045,0.045,0.008,F("#f6e05a"),0.075,0.03,0.04); S(0.016,F("#4f8a3a"),-0.06,0.045,-0.03,0.4); S(0.014,F("#4f8a3a"),-0.05,0.045,-0.015,0.4);
   } else if(ic==="potatoes"||ic==="veg"){
-    Cy(0.15,0.1,0.05,M.white,0,0.025,0);
+    Cy(0.15,0.1,0.05,_gtPlateMat(),0,0.025,0);
     for(let i=0;i<7;i++){ const a=i*0.9, r=0.035; if(ic==="potatoes") S(0.035,F(c),Math.cos(a)*r,0.058,Math.sin(a)*r,0.85);
       else (i%2?B(0.03,0.016,0.016,F("#e8862a"),Math.cos(a)*r,0.058,Math.sin(a)*r,a):S(0.032,F(i%3?"#4f9a4a":"#3a7a3a"),Math.cos(a)*r,0.058,Math.sin(a)*r,0.8)); }
   } else if(ic==="fruit"){
