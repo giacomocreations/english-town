@@ -5283,7 +5283,7 @@ function eatRun(steps,fwd,onDone){
       if(c.D) g.position.copyFrom(grip().add(c.D.scale(1-e))); else V.LerpToRef(g.__home,grip(),e,g.position);
       if(u>=1){ phase="hold"; t0=now; Q.k++; try{ c.apply&&c.apply(); }catch(e2){} _eatSound(c.what); } return; }
     if(phase==="hold"){ eatArm(1); if(tilt) eatTilt(g,f,tilt); g.position.copyFrom(grip());
-      if(now-t0>650){ const nx=Q.steps[Q.k]; phase=(nx && nx.g===g)?"lower":"down"; t0=now; } return; }
+      if(now-t0>650){ const nx=Q.steps[Q.k]; phase=(nx && nx.g===g && !nx.putDown)?"lower":"down"; t0=now; } return; }   // v634: putDown = la forchetta torna nel piatto a prendere il boccone
     /* v305 (Giacomo, 7 ott: «se prende una cosa sola non ha senso che vada
        avanti e indietro col corpo: continua a bere, magari in due sorsi»).
        Se il gesto dopo e' sullo STESSO oggetto, non lo si riappoggia: la
@@ -53934,6 +53934,10 @@ function gtSeatInteracts(){
       interact:()=>gtSit(s) }); });
 }
 /* ---- il TUO cameriere cammina (una camminata alla volta, la nuova annulla la vecchia) ---- */
+/* v634 (Giacomo: «ora corre troppo veloce, sembra in scooter»): 2,3 m/s con
+   la clip della CAMMINATA (tarata sugli 1,35 m/s degli NPC) = piedi che
+   scivolano. Passo svelto da cameriere, non corsa. */
+const GT_WAIT_SPEED=1.5;
 function _gtWalk(targets,arrive,done){
   const job={ targets, arrive, done, cancel:false };
   if(GT.walking){ GT.pending=job; GT.walking.cancel=true; return; }
@@ -53944,7 +53948,7 @@ function _gtWalkStart(job){
   const fin=ok=>{ if(GT.walking===job) GT.walking=null;
     if(GT.pending){ const nx=GT.pending; GT.pending=null; _gtWalkStart(nx); return; }
     if(ok && !job.cancel && job.done) job.done(); };
-  npcWalkSeq(w,T,job.arrive,()=>fin(true),GT_DEF.area,()=>fin(false),{ detour:true, speed:2.3 }); }
+  npcWalkSeq(w,T,job.arrive,()=>fin(true),GT_DEF.area,()=>fin(false),{ detour:true, speed:GT_WAIT_SPEED }); }
 function _gtSpot(t){ return new BABYLON.Vector3(t.x-Math.sign(t.lx)*0.95, 0, t.z+(t.lz<0?0.95:-0.95)); }   // v625: all'angolo (sul lato c'e' la sedia)
 function _gtPath(dest){ const C=GT.C, V=BABYLON.Vector3, d=dest();
   return [()=>new V(C.x,0,C.z-5.6),()=>new V(C.x,0,C.z+GT_LANE_Z),()=>new V(d.x,0,C.z+GT_LANE_Z),dest]; }
@@ -53968,7 +53972,7 @@ function gtMirror(){
   let L=[]; try{ L=Presenza.camerieri(); }catch(e){}
   const w=GT.w2, C=GT.C, V=BABYLON.Vector3, m=L[0]||null;
   const go=(T,fin)=>{ if(GT.w2walk) GT.w2walk.cancel=true; const job={ cancel:false }; GT.w2walk=job;
-    npcWalkSeq(w,T.map(fn=>()=>job.cancel?w.pos():fn()),0.3,()=>{ if(GT.w2walk===job) GT.w2walk=null; if(!job.cancel) fin(); },GT_DEF.area,()=>{ if(GT.w2walk===job) GT.w2walk=null; },{ detour:true, speed:2.3 }); };
+    npcWalkSeq(w,T.map(fn=>()=>job.cancel?w.pos():fn()),0.3,()=>{ if(GT.w2walk===job) GT.w2walk=null; if(!job.cancel) fin(); },GT_DEF.area,()=>{ if(GT.w2walk===job) GT.w2walk=null; },{ detour:true, speed:GT_WAIT_SPEED }); };
   if(m){ if(GT.w2mir && Math.hypot(GT.w2mir.x-m.x,GT.w2mir.z-m.z)<0.6) return;
     GT.w2mir={ x:m.x, z:m.z };
     go([()=>new V(C.x,0,C.z-5.6),()=>new V(C.x,0,C.z+GT_LANE_Z),()=>new V(m.x,0,C.z+GT_LANE_Z),()=>new V(m.x,0,m.z)],()=>{
@@ -54659,6 +54663,49 @@ function gtLiquid(root,f){ if(!root) return;
       const k=Math.max(0.02,f); m.scaling.y=m.__sy*k; m.position.y=m.__y0-(m.__liq*m.__sy)*(1-k)/2; m.setEnabled(f>0.02); }
     else if(m.__disc){ if(m.__y0===undefined) m.__y0=m.position.y; m.position.y=m.__y0-m.__disc*(1-f); m.setEnabled(f>0.04); }
     else if(m.__bub && f<0.5) m.setEnabled(false); }); }
+/* v634 (Giacomo: «quando prendi la fettina si vede un parallelepipedo
+   marrone»): alla bocca saliva TUTTA la bistecca (il blocco intero del
+   piatto). Ora nel piatto c'e' la forchetta (il cucchiaio per zuppa e
+   dolci) col boccone infilzato: sale quella, girandosi verso la bocca; il
+   boccone sparisce in bocca, nel piatto il cibo cala, e quando la
+   forchetta torna giu' ne prende un altro. Il boccone ha il colore del
+   pezzo piu' grosso del piatto (la carne, il salmone, la pasta...). */
+function _gtFork(set,G,key){
+  const V=BABYLON.Vector3, M=_gtMats(), ic=(G.v&&G.v.ic)||"";
+  set.computeWorldMatrix(true); const inv=set.getWorldMatrix().clone().invert();
+  let mn=new V(1e9,1e9,1e9), mx=new V(-1e9,-1e9,-1e9), big=null, bigV=-1;
+  G.g.getChildMeshes(false).forEach(m=>{ m.computeWorldMatrix(true); m.refreshBoundingInfo(); const bb=m.getBoundingInfo().boundingBox;
+    bb.vectorsWorld.forEach(v=>{ const l=V.TransformCoordinates(v,inv); mn=V.Minimize(mn,l); mx=V.Maximize(mx,l); });
+    const e=bb.extendSizeWorld, vol=e.x*e.y*e.z; if(vol>bigV){ bigV=vol; big=m; } });
+  if(!big || mn.x>mx.x) return;
+  const spoon=(key==="dessert"||ic==="soup"), F=new BABYLON.TransformNode("gtFork_"+key,scene); F.parent=set;
+  const part=(mk,m,x,y,z,sx,sy,sz)=>{ const o=mk(); o.material=m; o.parent=F; o.position.set(x,y,z); if(sx) o.scaling.set(sx,sy,sz); o.isPickable=false; o.__key=key; o.__noTint=true; return o; };
+  const box=(w,h,d)=>()=>BABYLON.MeshBuilder.CreateBox("gtFk",{ width:w, height:h, depth:d },scene);
+  const sph=()=>BABYLON.MeshBuilder.CreateSphere("gtFk",{ diameter:1, segments:6 },scene);
+  /* lungo +z: la punta (z 0..0,04), il collo, il manico verso chi siede (z fino a -0,15) */
+  part(box(0.011,0.003,0.11),M.silver,0,0,-0.085); part(box(0.015,0.0035,0.03),M.silver,0,0,-0.135);
+  if(spoon) part(sph,M.silver,0,0.002,0.02,0.032,0.008,0.045);
+  else { part(box(0.016,0.003,0.012),M.silver,0,0,0.0); for(let i=0;i<4;i++) part(box(0.0022,0.0025,0.032),M.silver,-0.0057+i*0.0038,0,0.022); }
+  /* il boccone, sulla punta */
+  const bm=big.material, by=spoon?0.008:0.007;
+  const bite=(ic==="pasta")
+    ? part(()=>BABYLON.MeshBuilder.CreateCylinder("gtBite",{ diameter:0.022, height:0.018, tessellation:10 },scene),bm,0,by+0.004,0.022)
+    : part(sph,bm,0,by,0.022,spoon?0.024:0.026,spoon?0.01:0.016,spoon?0.03:0.022);
+  if(ic==="pasta") bite.rotation.x=Math.PI/2;
+  /* nel piatto: punta sul cibo, manico in diagonale verso la destra di chi siede, appoggiato al bordo */
+  const cx=(mn.x+mx.x)/2, cz=(mn.z+mx.z)/2, top=mx.y, rim=0.06;
+  F.position.set(cx+0.02, top+0.004, cz-0.015);
+  F.rotation.set(Math.max(-0.45,Math.min(0.3,-Math.atan2(top-rim,0.15))), -0.6, 0);
+  F.__rx=F.rotation.x; F.__ry=F.rotation.y;
+  G.F=F; G.bite=bite; G.refill=false;
+  /* in mano: man mano che sale la forchetta si raddrizza e gira la punta
+     verso la bocca; tornata nel piatto prende un altro boccone */
+  const ob=scene.onBeforeRenderObservable.add(()=>{
+    const h=F.__home||F.position, lift=Math.max(0,Math.min(1,(F.position.y-h.y)/0.22)), e=lift*lift*(3-2*lift);
+    F.rotationQuaternion=null; F.rotation.x=F.__rx*(1-e)-0.25*e; F.rotation.y=F.__ry+(Math.PI-0.3)*e;
+    if(G.refill && lift<0.01 && V.DistanceSquared(F.position,h)<1e-4){ G.refill=false; bite.setEnabled(true); } });
+  F.onDisposeObservable.add(()=>{ try{ scene.onBeforeRenderObservable.remove(ob); }catch(e){} });
+}
 function gtServe(keys,onDone){
   const s=GT.seat, o=GT.o; if(!s||!o) return;
   const set=gtFoodSet(keys.map(k=>({ key:k, v:o.slip[k] })),s);
@@ -54674,10 +54721,13 @@ function gtServe(keys,onDone){
     groups[key]={ g:gg, v, n:(key==="drink"?3:3), done:0 }; });
   const ks=Object.keys(groups); if(!ks.length){ if(onDone) onDone(); return; }
   if(ks.length===1) groups[ks[0]].n=2;
+  ks.forEach(k=>{ if(k!=="drink") try{ _gtFork(set,groups[k],k); }catch(e){ console.warn("[gt] forchetta",e); } });
   const order=[]; for(let r=0;r<4;r++) ks.forEach(k=>{ if(r<groups[k].n) order.push(k); });
-  const steps=order.map(k=>{ const G=groups[k]; return { g:G.g, key:k, what:(k==="drink"?"sip":"bite"), apply:()=>{ G.done++;
+  const steps=order.map(k=>{ const G=groups[k]; return { g:G.F||G.g, key:k, what:(k==="drink"?"sip":"bite"), putDown:!!G.F, apply:()=>{ G.done++;
       try{ Needs.eat(G.v.en, 1/G.n); }catch(e){}
-      const f=Math.max(0.05,1-G.done/G.n); if(k==="drink"){ gtLiquid(G.g,1-G.done/G.n); } else { G.g.scaling.setAll(Math.max(0.001,f)); if(G.done>=G.n) G.g.setEnabled(false); } } }; });
+      const f=Math.max(0.05,1-G.done/G.n); if(k==="drink"){ gtLiquid(G.g,1-G.done/G.n); }
+      else { if(G.bite){ G.bite.setEnabled(false); G.refill=G.done<G.n; }               // il boccone e' in bocca
+        G.g.scaling.setAll(Math.max(0.001,f)); if(G.done>=G.n) G.g.setEnabled(false); } } }; });
   GT.eating=true;
   const fw=new BABYLON.Vector3(Math.sin(s.face),0,Math.cos(s.face));
   eatRun(steps,fw,()=>{ GT.eating=false; toast("\u{1F60B} Delicious! · Squisito!"); if(onDone) try{ onDone(); }catch(e){} });
@@ -54738,6 +54788,22 @@ function gtCarryOn(n,v){
   let hl=new BABYLON.Vector3(0,1.0,0.32);
   try{ if(cp && cp.hand){ const inv=n.carrier.getWorldMatrix().clone().invert(); hl=BABYLON.Vector3.TransformCoordinates(cp.hand,inv); } }catch(e){}
   tray.position.set(0,hl.y+0.055,Math.max(0.26,hl.z+0.06));                       // v629: un filo piu' su, le dita restano sotto
+  /* v634 (Giacomo: «quando il cameriere porta il piatto, il piatto va su e
+     giu', non e' stabile»): il vassoio stava fermo nel sistema del
+     cameriere, ma camminando spalle e braccia vanno su e giu' col passo: le
+     mani si staccavano di qualche centimetro e il vassoio pareva ballare
+     sopra di loro. Ora ogni fotogramma poggia sulle mani (il punto in mezzo,
+     ammorbidito), dritto. */
+  const _hn=n.holder.getDescendants(false).filter(d=>/(^|_)(MiddleHand|Hand|Palm|Wrist)\.[LR]$/.test(d.name)), _hb=[];
+  ["L","R"].forEach(sd=>{ const c=_hn.filter(d=>d.name.endsWith("."+sd)); const pk=c.find(d=>/MiddleHand|Palm/.test(d.name))||c.find(d=>/Hand/.test(d.name))||c[0]; if(pk) _hb.push(pk); });
+  if(_hb.length===2){ let off=null; const tmp=new BABYLON.Vector3();
+    n.__trayFollow=scene.onAfterAnimationsObservable.add(()=>{ if(n.__tray!==tray) return;
+      try{ if(n.__carryPins) _applyPins(n.__carryPins);
+        n.carrier.computeWorldMatrix(true); const inv=n.carrier.getWorldMatrix().clone().invert(), mid=new BABYLON.Vector3(0,0,0);
+        _hb.forEach(h=>{ _eatChain(h); mid.addInPlace(h.getAbsolutePosition()); }); mid.scaleInPlace(0.5);
+        BABYLON.Vector3.TransformCoordinatesToRef(mid,inv,tmp);
+        if(!off) off=tray.position.subtract(tmp);                               // la distanza mani-vassoio della posa resta quella
+        BABYLON.Vector3.LerpToRef(tray.position,tmp.add(off),0.6,tray.position); }catch(e){} }); }
   const many=(Array.isArray(items) && items.length>1);
   const d=BABYLON.MeshBuilder.CreateCylinder("gtTrayD",{ diameter:many?0.46:0.3, height:0.012, tessellation:28 },scene); d.material=M.silver||M.brass; d.parent=tray; d.isPickable=false;
   try{ if(items==="bill"){ const f=BABYLON.MeshBuilder.CreateBox("gtBillF",{ width:0.13, height:0.02, depth:0.2 },scene); f.material=M.black; f.parent=tray; f.position.y=0.018; f.rotation.y=0.3;
@@ -54749,6 +54815,7 @@ function gtCarryOn(n,v){
   if(cp){ n.__carryPins=cp.pins; n.__carryObs=scene.onBeforeRenderObservable.add(()=>{ if(n.__carryPins) _applyPins(n.__carryPins); }); } }
 function gtCarryOff(n){ if(!n) return;
   if(n.__carryObs){ scene.onBeforeRenderObservable.remove(n.__carryObs); n.__carryObs=null; } n.__carryPins=null;
+  if(n.__trayFollow){ scene.onAfterAnimationsObservable.remove(n.__trayFollow); n.__trayFollow=null; }
   if(n.__tray){ try{ n.__tray.dispose(false,false); }catch(e){} n.__tray=null; } }
 function gtBarFreeStool(){
   return (GT.stools||[]).filter(q=>!classmateSeatedAt(q.x,q.z)).sort((a,b)=>Math.hypot(a.x-player.position.x,a.z-player.position.z)-Math.hypot(b.x-player.position.x,b.z-player.position.z))[0]||null; }
@@ -58918,7 +58985,12 @@ scene.registerBeforeRender(()=>{
      il passo segue il tempo vero, tarato sui 30 fotogrammi al secondo della
      citta' (fra mezzo passo e due passi, per i salti di fotogramma). */
   const _fk=Math.max(0.5,Math.min(2,((engine.getDeltaTime&&engine.getDeltaTime())||33.3)/33.3));
-  const _spd=()=>RIDE.on ? rideStepSpeed() : (running?PLAYER_SPEED*RUN_MULT*Needs.runMult():PLAYER_SPEED)*_fk;
+  /* v634 (Giacomo: «ora corre troppo veloce! sembra in scooter»): al Green
+     Table (una sala, non una strada) il passo della citta' (~4,8 m/s
+     camminando) faceva scivolare i piedi: dentro si va a poco piu' della
+     meta'. */
+  const _inK=(typeof GT_DEF!=="undefined" && typeof area!=="undefined" && area===GT_DEF.area)?0.55:1;
+  const _spd=()=>RIDE.on ? rideStepSpeed() : (running?PLAYER_SPEED*RUN_MULT*Needs.runMult():PLAYER_SPEED)*_fk*_inK;
   /* 🛹 sulla curva di una quarter pipe comanda la gravita' (rideQuarterTick) */
   const _rd=!!(RIDE.on && RIDE.on.ramps && rideDropInTick(len<=0.01 && !moveTarget));   // 🛹 fermo sul bordo: giu' da solo
   const _rq=!_rd && !!(RIDE.on && RIDE.on.ramps && rideQuarterTick(len>0.01?{x:mx/len,z:mz/len}:null));
