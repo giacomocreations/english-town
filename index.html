@@ -53894,11 +53894,14 @@ function gtTalkGuest(n){
 }
 /* ---- le sedie ---- */
 function gtSeatTaken(s){ return !!s && !s.taken && classmateSeatedAt(s.x,s.z); }
+function gtNearestSeat(){ const p=player.position; let b=null, bd=1e9;
+  GT.seats.forEach(q=>{ if(q.taken || !q.inter) return; const d=Math.hypot(q.x-p.x,q.z-p.z); if(d<bd){ bd=d; b=q; } }); return b; }
 function gtSeatInteracts(){
   GT.seats.forEach((s,i)=>{ if(s.taken) return;
     s.inter=addInteract({ id:"gt_seat_"+i, area:GT_DEF.area, radius:1.15,
       pos:()=>new BABYLON.Vector3(s.x,0.5,s.z),
-      prompt:()=>GT.seat?'':!gtOpen()?'\u{1F552} Tables open at 11 am · drinks at the bar':gtSeatTaken(s)?'\u{1FA91} This seat is taken'
+      /* v632: fra due sedie vicine vale solo la piu' vicina (niente «seat 1/2») */
+      prompt:()=>GT.seat?'':(gtNearestSeat()!==s)?'':!gtOpen()?'\u{1F552} Tables open at 11 am · drinks at the bar':gtSeatTaken(s)?'\u{1FA91} This seat is taken'
         :((GT.assigned===s.t||(GT.assignedSet&&GT.assignedSet.indexOf(s.t)>=0))?'\u{1F33F} Press <b>P</b> to <b>sit down</b> · your table':'Press <b>P</b> to <b>sit down</b>'),
       interact:()=>gtSit(s) }); });
 }
