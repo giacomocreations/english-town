@@ -8395,6 +8395,7 @@ const XMAS=(()=>{ let forz=null;
     X.plans.forEach(P=>{ try{ _xmFront(P); }catch(e){ console.warn("[natale]",P.name,e); } });
     try{ _xmDiner(); }catch(e){ console.warn("[natale diner]",e); }
     try{ _xmCafe(); }catch(e){ console.warn("[natale cafe]",e); }
+    try{ _xmGreenTable(); }catch(e){ console.warn("[natale green table]",e); }   // v623
     try{ _xmBigTree(XM_TREE,true); }catch(e){ console.warn("[natale albero]",e); }
     try{ _xmBigTree(XM_PARK_TREE,false); }catch(e){ console.warn("[natale albero parco]",e); }   // v595
     try{ _xmSantas(); }catch(e){ console.warn("[natale babbi]",e); }                            // v595
@@ -8800,6 +8801,41 @@ function _xmCafe(){ const x=CAFE_XZ.x, z=CAFE_XZ.z, y0=(typeof _pedGroundY==="fu
   [[-4.0,4.2,-1.5],[-1.0,4.7,2.2],[2.0,4.4,-2.6]].forEach(b=>L.flake.push(_hwPlane(0.65,0.65,x+b[0],y0+b[1],z+b[2],W,rnd()*Math.PI)));
   const node=new BABYLON.TransformNode("xmCafe",scene); node.parent=townRoot; _xmTieni(node); _xmFuse(node,L);
   const sg=_hwPlane(1.4,0.47,x+0.65,y0+0.66,z+1.9,W); sg.material=_xmSticker("Season's Greetings!"); sg.parent=node; _noGlow(sg); }
+/* ---- The Green Table (v623, Giacomo: «metti i festoni di Natale anche al
+   nuovo ristorante»). FUORI: il festone lungo tutta la facciata sopra le
+   vetrate, la corona sulla porta, due alberelli addobbati con i regali
+   sul prato ai lati del vialetto, un festone su ogni siepe del vialetto,
+   l'adesivo in vetrina. DENTRO (se la sala e' gia' costruita, se no lo fa
+   buildGreenTable entrando): il festone che gira tutta la sala sotto il
+   cornicione e un albero addobbato vicino all'ingresso. Come il resto,
+   si accende e si spegne con la stagione o col tasto X del docente. */
+function _xmGreenTable(){ if(typeof GT==="undefined" || !XMAS.on) return; const n0=solids.length;
+  try{ _xmGreenTable2(); }finally{ for(let i=n0;i<solids.length;i++) if(XMAS.solidi.indexOf(solids[i])<0) XMAS.solidi.push(solids[i]); } }
+function _xmGreenTable2(){
+  if(GT.exBuilt && !GT.xmOut){
+    const gy=GT.oy||0.05, X=GT_X, FZ=GT_Z+GT_HD, L=_xmL(), rnd=_seedRand("xmGreenTable");
+    _xmGarland(L,[X-7.95,FZ+0.2],[X+7.95,FZ+0.2],gy+3.86,0.2,6);                  // la facciata, sopra le vetrate
+    _xmWreath(L,X,gy+1.95,FZ+0.13,XM_WREATH_D*1.15,Math.PI,{ x:X, y:gy+2.7, z:FZ+0.12 });   // sulla porta
+    const ly=Math.max(0.055,0.215-gy)+gy;                                          // il prato
+    [-1,1].forEach(sd=>{ const tx=X+sd*2.75, tz=FZ+1.15;
+      _xmTree(L,tx,ly,tz,1.45,rnd,false); addSolid(tx-0.5,tx+0.5,tz-0.5,tz+0.5,"town");
+      _xmGift(L,tx+sd*0.62,ly,tz+0.35,0.26,rnd,0.3*sd); _xmGift(L,tx-sd*0.1,ly,tz+0.72,0.2,rnd,-0.4*sd);
+      _xmGarland(L,[X+sd*1.68,FZ+0.6],[X+sd*1.68,FZ+5.9],gy+0.98,0.08,2,0.024); });   // sulle siepi del vialetto
+    const node=new BABYLON.TransformNode("xmGreenTable",scene); node.parent=townRoot; _xmTieni(node); _xmFuse(node,L);
+    [[-5.6,"Merry Christmas!"],[5.6,"Season's Greetings!"]].forEach(q=>{ const sg=_hwPlane(1.35,0.45,X+q[0],gy+1.45,FZ+0.1,Math.PI);
+      sg.material=_xmSticker(q[1]); sg.parent=node; _noGlow(sg); });
+    GT.xmOut=node; XMAS.undo.push(()=>{ GT.xmOut=null; }); }
+  if(GT.built && GT.C && !GT.xmIn){
+    const C=GT.C, S=GT_DEF.size, SX=GT_DEF.sizeX, gy=GT.gy||0, L=_xmL(), rnd=_seedRand("xmGreenTableIn"), e=0.14;
+    _xmGarlandPath(L,[[C.x-SX+e,C.z-S+e],[C.x+SX-e,C.z-S+e],[C.x+SX-e,C.z+S-e],[C.x-SX+e,C.z+S-e],[C.x-SX+e,C.z-S+e]],gy+3.0,0.22);
+    const tx=C.x+SX-1.5, tz=C.z+4.3;
+    _xmTree(L,tx,gy,tz,2.3,rnd,false); addSolid(tx-0.7,tx+0.7,tz-0.7,tz+0.7,GT_DEF.area);
+    _xmGift(L,tx-0.75,gy,tz+0.4,0.3,rnd,0.4); _xmGift(L,tx-0.55,gy,tz-0.75,0.24,rnd,-0.2); _xmGift(L,tx+0.2,gy,tz+0.85,0.22,rnd,0.9);
+    const node=new BABYLON.TransformNode("xmGreenTableIn",scene); node.parent=(GT.I&&GT.I.root)||townRoot;
+    if(node.parent!==townRoot){ node.position.set(-node.parent.position.x,-node.parent.position.y,-node.parent.position.z); }
+    _xmTieni(node); _xmFuse(node,L);
+    GT.xmIn=node; XMAS.undo.push(()=>{ GT.xmIn=null; }); }
+}
 /* ---- il grande albero sulla rotonda in fondo alla High Street ----
    L'isola (buildRoundabout 47,0: erba r 2,6, cordolo r 3,2) si cammina:
    solido solo il tronco (e qui la base del cono). Prima si era provato in
@@ -12741,11 +12777,31 @@ function buildDiner(){
     DINER.tables.push({ i:ti, x:X+tx, z:tz, top:gy+0.785 });
     [-1,1].forEach(sd=>{
       const cx=tx+sd*0.82, cz=tz;
-      /* seduta, schienale (dal lato opposto al tavolo), gambe cromate */
-      bx("vinyl",0.46,0.08,0.46, cx,0.46,cz);
-      bx("vinyl",0.08,0.5,0.46, cx+sd*0.23,0.75,cz);
-      bx("chrome",0.03,0.5,0.4, cx+sd*0.26,0.72,cz);
-      [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(q=>cy("chrome",{diameter:0.035,height:0.42,tessellation:6},cx+q[0]*0.19,0.21,cz+q[1]*0.19));
+      /* v623 (Giacomo: «migliora le sedie del diner»): sedia da diner anni
+         '50. Telaio di tubo cromato (le gambe dietro salgono a fare lo
+         schienale e si chiudono in un arco in alto, traversine fra le
+         gambe, piedini neri), seduta imbottita in vinile rosso col bordino
+         bianco e il profilo cromato, schienale imbottito a canali verticali
+         (le cuciture) col bordino bianco. Lo schienale e' dal lato opposto
+         al tavolo (sd). */
+      const bk=cx+sd*0.215;
+      bx("chrome",0.47,0.035,0.47, cx,0.425,cz);                                     // profilo cromato sotto la seduta
+      bx("white",0.455,0.02,0.455, cx,0.452,cz);                                     // bordino bianco
+      bx("vinyl",0.44,0.075,0.44, cx,0.495,cz);                                      // imbottitura
+      bx("vinyl",0.4,0.02,0.4, cx,0.538,cz);                                         // il colmo, bombato
+      bx("white",0.07,0.44,0.43, bk,0.83,cz);                                        // bordino dello schienale
+      bx("vinyl",0.085,0.42,0.41, bk,0.83,cz);                                       // schienale imbottito
+      [-0.105,0,0.105].forEach(dz=>bx("red",0.088,0.36,0.008, bk,0.83,cz+dz));       // le cuciture (canali)
+      [-1,1].forEach(sz=>{
+        cy("chrome",{diameter:0.032,height:0.43,tessellation:8},cx-sd*0.2,0.215,cz+sz*0.2);   // gamba davanti
+        cy("chrome",{diameter:0.032,height:1.06,tessellation:8},cx+sd*0.25,0.53,cz+sz*0.2);   // gamba dietro + montante
+        cy("black",{diameter:0.04,height:0.025,tessellation:8},cx-sd*0.2,0.012,cz+sz*0.2);    // piedini
+        cy("black",{diameter:0.04,height:0.025,tessellation:8},cx+sd*0.25,0.012,cz+sz*0.2);
+        cy("chrome",{diameter:0.022,height:0.45,tessellation:6},cx+sd*0.025,0.13,cz+sz*0.2).rotation.z=Math.PI/2;   // traversina laterale
+      });
+      cy("chrome",{diameter:0.032,height:0.43,tessellation:8},cx+sd*0.25,1.06,cz).rotation.x=Math.PI/2;           // l'arco in alto
+      [-1,1].forEach(sz=>sp("chrome",0.045,cx+sd*0.25,1.06,cz+sz*0.2,6));                                         // i gomiti dell'arco
+      cy("chrome",{diameter:0.022,height:0.4,tessellation:6},cx-sd*0.2,0.13,cz).rotation.x=Math.PI/2;             // traversina davanti
       solid(cx-0.26,cx+0.26,cz-0.26,cz+0.26);
       DINER.seats.push({ t:DINER.tables[DINER.tables.length-1], sd, x:X+cx, z:cz, seatY:gy+0.50,
         face:Math.atan2(-sd,0), standX:X+cx, standZ:cz-0.8, taken:null });
@@ -53362,6 +53418,7 @@ function buildGreenTableOutside(){
   [-2.2,2.2].forEach(x=>{ _gtCyl(r,0.62,0.5,0.7,M.pot,x,0.35,FZ+0.9,18); _gtCyl(r,0.56,0.56,0.03,M.trunk,x,0.69,FZ+0.9,16);
     _gtPalm(r,M,x,0.72,FZ+0.9,1.0,x>0?11:17); });
   try{ _gtForecourt(r,M,FZ); }catch(e){ console.warn("[gt] cortile",e); }
+  setTimeout(()=>{ try{ if(XMAS.on) _xmGreenTable(); }catch(e){ console.warn("[natale gt]",e); } },0);   // v623
   try{ hm7Shadow(r,GT_HW*2+1.2,GT_HD*2+1.2,0,0,0.03,0.5); }catch(e){}
   r.getChildMeshes().forEach(m=>{ m.__cast=true; });
   addSolid(GT_X-GT_HW-0.1,GT_X+GT_HW+0.1,GT_Z-GT_HD-0.1,GT_Z+GT_HD+0.1,"town");
@@ -53594,6 +53651,7 @@ function buildGreenTable(){
   AREAS[A].spawn=new BABYLON.Vector3(C.x,0,C.z+S-1.5); AREAS[A].faceY=Math.PI;
   buildGreenTableNPCs();
   gtSeatInteracts();
+  try{ if(XMAS.on) _xmGreenTable(); }catch(e){ console.warn("[natale gt]",e); }   // v623
   scene.onBeforeRenderObservable.add(gtTick);
   try{ refreshShadowCasters(); }catch(e){}
   return I;
