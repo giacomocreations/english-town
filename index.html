@@ -53203,8 +53203,13 @@ const GT_MENU={
 const GT_DONENESS=[ { k:["rare"], en:"rare", p:0 }, { k:["medium rare","medium-rare"], en:"medium rare", p:0 },
                     { k:["medium"], en:"medium", p:0 }, { k:["well done","well-done","well"], en:"well done", p:0 } ];
 const _GT_NO={ k:["no thanks","no thank","nothing","that's all","thats all","i'm fine","im fine","no starter","no dessert","no"], en:"—", p:0 };
-/* fame e sete (Needs): tutto «sano» (h:1), cosi' la fame torna piu' piano */
-(function(){ try{
+/* fame e sete (Needs): tutto «sano» (h:1), cosi' la fame torna piu' piano.
+   v626 (Giacomo: «ho bevuto ma i livelli non sono aumentati»): NEEDS_FOOD
+   e' dichiarata PIU' AVANTI nel file: qui, durante il caricamento, non
+   esisteva ancora (zona morta della const) e l'errore veniva inghiottito
+   dal try: nessun piatto del Green Table era registrato e tutto valeva
+   come un cibo qualsiasi, da bere zero. Ora si registra a file caricato. */
+setTimeout(function(){ try{
   const F={ "still water":{e:12,f:0,d:1,h:1,w:85}, "sparkling water":{e:12,f:0,d:1,h:1,w:80}, "fresh orange juice":{e:20,f:5,d:1,h:1,w:60},
     "apple juice":{e:18,f:5,d:1,h:1,w:60}, "homemade lemonade":{e:15,f:0,d:1,h:1,w:65}, "mint tea":{e:15,f:0,d:1,h:1,w:55},
     "tomato soup":{e:0,f:25,h:1}, "vegetable soup":{e:0,f:25,h:1}, "greek salad":{e:0,f:20,h:1}, "bruschetta":{e:0,f:20,h:1},
@@ -53212,7 +53217,7 @@ const _GT_NO={ k:["no thanks","no thank","nothing","that's all","thats all","i'm
     "mushroom risotto":{e:0,f:60,h:1}, "grilled chicken with herbs":{e:0,f:65,h:1}, "steak":{e:0,f:70,h:1}, "grilled salmon":{e:0,f:65,h:1},
     "roast potatoes":{e:0,f:20,h:1}, "steamed vegetables":{e:0,f:15,h:1}, "green salad":{e:0,f:20,h:1},
     "fruit salad":{e:0,f:15,h:1}, "yoghurt with honey":{e:0,f:15,h:1}, "lemon sorbet":{e:0,f:10,h:1}, "panna cotta":{e:0,f:15,h:1} };
-  for(const k in F) if(!NEEDS_FOOD[k]) NEEDS_FOOD[k]=F[k]; }catch(e){} })();
+  for(const k in F) if(!NEEDS_FOOD[k]) NEEDS_FOOD[k]=F[k]; }catch(e){ console.warn("[gt] needs",e); } },0);
 /* ---- IL PIATTO DEL GIORNO: uno al giorno, uguale per tutta la classe ---- */
 const GT_SPECIALS=[
   { en:"Grilled salmon", desc:"grilled salmon with lemon and fresh herbs" },
@@ -53643,11 +53648,41 @@ function buildGreenTable(){
   /* v625: il BANCONE e' anche il bar (da bere in piedi, dalle 8) */
   { const bs=_gtSignMat("gtBarM",256,64,(c,W,H)=>{ c.fillStyle="#1f3a2d"; c.fillRect(0,0,W,H); c.strokeStyle="#c9a24a"; c.lineWidth=4; c.strokeRect(3,3,W-6,H-6);
       c.fillStyle="#e3c77a"; c.font="italic 700 34px Georgia, serif"; c.textAlign="center"; c.textBaseline="middle"; c.fillText("Bar",W/2,H/2); });
-    _gtPlane2(dec,0.6,0.15,bs,-1.6,1.2,-S+1.0,0,0.012);
+    _gtPlane2(dec,0.6,0.15,bs,-2.2,1.2,-S+1.0,0,0.012);
     addInteract({ id:"gt_bar", area:A, radius:1.7, prio:-1, label:"bar",
-      pos:()=>new BABYLON.Vector3(C.x-1.2,1,C.z-S+1.4),
+      pos:()=>new BABYLON.Vector3(C.x,1,C.z-S+1.6),
       prompt:()=>(GT.seat||GT.bar)?'':'\u{1F379} Press <b>P</b> to <b>order a drink at the bar</b>',
-      interact:()=>gtBarOrder() }); }
+      interact:()=>gtBarOrder() });
+    /* v626 (Giacomo: «mettiamo degli sgabelli alti dove ci si siede, come al
+       caffe'»): tre sgabelli al bancone, alti come quelli del caffe' (seduta
+       a 86 cm, poggiapiedi a 34, bancone a 106): ci si siede e si beve col
+       braccio vero, come da Rosa */
+    GT.stools=[];
+    [-1.0,0,1.0].forEach(lx=>{ const z=-S+1.55;                                   // fra Marco (-2) e Sofia (+2)
+      _gtCyl(dec,0.42,0.46,0.03,M.brass,lx,0.015,z,20); _gtCyl(dec,0.05,0.05,0.8,M.brass,lx,0.42,z,10);
+      const fr=BABYLON.MeshBuilder.CreateTorus("gtFoot",{ diameter:0.36, thickness:0.025, tessellation:18 },scene); fr.material=M.brass; fr.parent=dec; fr.position.set(lx,0.34,z); fr.isPickable=false;
+      _gtCyl(dec,0.44,0.4,0.08,M.velvet,lx,0.82,z,20); _gtCyl(dec,0.45,0.45,0.02,M.brass,lx,0.785,z,20);
+      try{ hm7Shadow(dec,0.6,0.6,lx,z,0.036,0.5); }catch(e){}
+      GT.stools.push({ x:C.x+lx, z:C.z+z, lx }); });
+    /* v626 (Giacomo: «ci deve essere una dispensa dove sono tenute le
+       bevande: il cameriere va, la prende, la mette sul bancone»): la
+       vetrina delle bevande a sinistra del bancone. Legno scuro, fondo
+       illuminato, quattro ripiani di bottiglie e caraffe, i bicchieri. */
+    const cx=-4.35, cz=-S+0.26, Wd=1.4, Hh=2.3;
+    /* aperta davanti: schienale, fianchi, cielo e la base chiusa (non un blocco pieno) */
+    _gtBox(dec,Wd,Hh,0.04,M.wood,cx,Hh/2,cz-0.22);
+    [-1,1].forEach(sd=>_gtBox(dec,0.06,Hh,0.48,M.wood,cx+sd*(Wd/2-0.03),Hh/2,cz));
+    _gtBox(dec,Wd,0.42,0.48,M.wood,cx,0.21,cz);
+    const glow=mat("gtCabGlow","#f3dfb0","#c9a060"); glow.disableLighting=true; _gtBox(dec,Wd-0.14,Hh-0.6,0.01,glow,cx,Hh/2+0.18,cz-0.195);
+    [0.62,1.08,1.54,2.0].forEach(y=>_gtBox(dec,Wd-0.12,0.03,0.4,M.woodL,cx,y,cz+0.02));
+    const BC=["#cfe8f2","#f39a2e","#7fb24a","#f2e38a","#b8651f","#e9eef0","#9cbf6a","#d8452f"];
+    [0.62,1.08,1.54].forEach((y,r)=>{ for(let i=0;i<7;i++){ const bx=cx-0.54+i*0.18, cl=_gtFood(BC[(i+r*3)%BC.length]);
+      _gtCyl(dec,0.07,0.08,0.24,cl,bx,y+0.135,cz+0.05,10); _gtCyl(dec,0.025,0.035,0.08,cl,bx,y+0.29,cz+0.05,8); _gtCyl(dec,0.03,0.03,0.025,M.brass,bx,y+0.34,cz+0.05,8); } });
+    for(let i=0;i<8;i++) _gtCyl(dec,0.065,0.05,0.12,M.glass,cx-0.56+i*0.16,2.075,cz+0.05,10);   // i bicchieri in alto
+    _gtBox(dec,Wd+0.06,0.08,0.52,M.wood,cx,Hh+0.04,cz); _gtBox(dec,Wd+0.06,0.04,0.5,M.brass,cx,0.42,cz+0.02);
+    try{ hm7Shadow(dec,1.8,0.9,cx,cz+0.25,0.036,0.55); }catch(e){}
+    addSolid(C.x+cx-Wd/2-0.05,C.x+cx+Wd/2+0.05,C.z-S,C.z+cz+0.3,A);
+    GT.cab={ x:C.x+cx, z:C.z+cz+1.0 }; }
   /* il banco del maitre (accanto alla porta) col libro e la lampada */
   const hx=3.4, hz=S-1.9;
   _gtBox(dec,1.0,1.1,0.55,M.wood,hx,0.55,hz); _gtBox(dec,1.06,0.05,0.6,M.woodL,hx,1.12,hz); _gtBox(dec,1.1,0.02,0.64,M.brass,hx,1.095,hz);
@@ -53794,8 +53829,13 @@ function buildGreenTableNPCs(){
      «me» (il cameriere, il conto, alzarsi). Le persone della sala (la
      signora al tavolo accanto, i camerieri) da seduti non sono una scelta:
      il prompt vuoto le toglie dal selettore (vedi updateProximity). */
+  /* v626 (Giacomo: «posso fare solo il bar, pero' mi dice "bar 1 su 2"»):
+     al bancone Sofia e Marco non sono un'altra scelta: al bar si ordina
+     (Sofia E' la barista: parlarle fa lo stesso) */
+  const nearBar=()=>{ const C=GT.C; return Math.hypot(player.position.x-C.x,player.position.z-(C.z-GT_DEF.size+1.6))<2.2; };
   [GT.host,GT.waiter,GT.w2].concat(GT.guests).forEach(n=>{ const I=n&&n.inter; if(!I || I.__gtMute) return; I.__gtMute=true;
-    const p0=I.prompt; I.prompt=()=>GT.seat?'':(typeof p0==="function"?p0():p0); });
+    const p0=I.prompt, staff=(n===GT.waiter||n===GT.w2);
+    I.prompt=()=>(GT.seat||(staff && nearBar()))?'':(typeof p0==="function"?p0():p0); });
   GT.meInter=addInteract({ id:"gt_me", area:A, radius:3.0, enabled:false, prio:-2,
     pos:()=>player.position, prompt:()=>gtMePrompt(), interact:()=>gtMeAction() });
   if(!GT.mirT) GT.mirT=setInterval(()=>{ try{ gtMirror(); }catch(e){} },700);
@@ -53877,7 +53917,8 @@ function gtEnter(){
 function gtExit(){
   if(GT.seat) gtStand(true);
   gtBarEnd(); GT.idleCome=false;
-  if(GT.debt && GT.host){ gtDebtAsk(GT.host); return; }
+  if(GT.debt){ GT.debt.at=performance.now()+3500; GT.debt.chasing=false; GT.debt.asking=false;   // v626: esci senza pagare? Marco ti corre dietro
+    setTimeout(()=>{ try{ toast("\u{1F3C3} «Excuse me! Wait!» Marco is running after you… · Il cameriere ti insegue: non hai pagato!",4200); }catch(e){} },900); }
   GT.assigned=null; gtRingOff(); GT.party=null; GT.partyPub="";
   enterArea("town");
   player.position.set(GT_X,(GT.oy||0),GT_Z+GT_HD+1.5); player.rotation.y=0;
@@ -54023,17 +54064,65 @@ function gtHostHome(){ const h=GT.host, C=GT.C, V=BABYLON.Vector3; if(!h) return
     h.carrier.rotation.y=0; h.baseYaw=0; h.watch=true; },GT_DEF.area,()=>{},{ detour:true, speed:1.6 }); }
 /* chi se ne va senza pagare: Oliver lo ferma alla porta */
 function gtDebtAsk(n){
-  const o=GT.debt&&GT.debt.o; if(!o){ GT.debt=null; return; }
-  const c=Math.round(gtTotal(o)*100);
-  DialogueBox.open({ npc:n, icon:"\u{1F9FE}", sub:"Oliver — the bill", text:"Excuse me! I think you've forgotten to pay the bill.",
-    italian:"Scusa! Credo che tu abbia dimenticato di pagare il conto.", html:gtSlipHtml(o),
-    choices:[ { label:"Oh, I'm so sorry! Here you are.", act:()=>setTimeout(()=>pricePick({ npc:n, icon:"\u{1F9FE}", sub:"Oliver — the bill", said:"That's "+priceWords(c)+", please.", price:c,
-      next:()=>{ GT.debt=null; DialogueBox.open({ npc:n, icon:"\u{1F33F}", sub:"Oliver", text:"Thank you! Have a lovely evening.", italian:"Grazie! Buona serata. (pagato in ritardo: niente stelle)",
-        buttons:[{ label:"Goodbye!", cls:"primary", act:()=>{} }] }); } }),260) } ] });
+  const d=GT.debt, o=d&&d.o; if(!o){ GT.debt=null; return; }
+  d.asking=true;
+  try{ const p=n.pos(); n.carrier.rotation.y=Math.atan2(player.position.x-p.x,player.position.z-p.z)+NPC_FACE_OFFSET; n.watch=true; }catch(e){}
+  const c=Math.round(gtTotal(o)*100), who=n.name||"Oliver";
+  DialogueBox.open({ npc:n, icon:"\u{1F9FE}", sub:who+" — the bill", text:"Excuse me! I think you've forgotten to pay the bill.",
+    italian:"Scusa! Credo che tu abbia dimenticato di pagare il conto.", html:gtSlipHtml(o,true),
+    choices:[ { label:"Oh, I'm so sorry! Here you are.", act:()=>setTimeout(()=>pricePick({ npc:n, icon:"\u{1F9FE}", sub:who+" — the bill", said:"That's "+priceWords(c)+", please.", price:c,
+      next:()=>{ GT.debt=null; DialogueBox.open({ npc:n, icon:"\u{1F33F}", sub:who, text:"Thank you! Have a lovely day.", italian:"Grazie! Buona giornata. (pagato in ritardo: niente stelle)",
+        buttons:[{ label:"Goodbye!", cls:"primary", act:()=>gtChaseHome() }] }); } }),260) } ] });
 }
+/* ------------------------------------------------------------------ */
+/* v626 (Giacomo: «se prendi qualcosa ed esci senza pagare, il cameriere
+   deve rincorrerti, come al diner»). Alzati senza pagare: dopo qualche
+   secondo Marco viene da te in sala; se sei uscito, esce dalla porta e ti
+   corre dietro per la citta' (un Marco «di strada», lo stesso vestito),
+   fino a 45 m dal ristorante. Ti chiede il conto, tu paghi (senza stelle)
+   e lui torna dentro. Torni tu a pagare? Va bene lo stesso. */
+/* ------------------------------------------------------------------ */
+const GT_DEBT_WAIT=5000, GT_DEBT_RANGE=45;
+function _gtDoorW(){ return new BABYLON.Vector3(GT_X,GT.oy||0.05,GT_Z+GT_HD+0.9); }
+function _gtDebtFar(){ return area==="town" && Math.hypot(player.position.x-GT_X,player.position.z-(GT_Z+GT_HD))>GT_DEBT_RANGE; }
+function gtDebtTick(){
+  const d=GT.debt; if(!d) return; const now=performance.now();
+  if(d.asking){ let open=false; try{ open=SpeakLock.isOpen(); }catch(e){} if(!open){ d.asking=false; d.at=now+8000; } return; }
+  if(d.chasing || now<(d.at||0)) return;
+  if(area===GT_DEF.area && GT.waiter){ gtChaseIn(); return; }
+  if(area==="town" && !_gtDebtFar()){ gtChaseOut(); return; }
+}
+setInterval(()=>{ try{ gtDebtTick(); }catch(e){} },700);
+function gtChaseIn(){
+  const d=GT.debt, w=GT.waiter, C=GT.C, V=BABYLON.Vector3; if(!d||!w) return;
+  if(GT.walking){ d.at=performance.now()+1500; return; }
+  d.chasing=true; const p=player.position;
+  _gtWalk([()=>new V(C.x,0,C.z-5.6),()=>new V(C.x,0,C.z+GT_LANE_Z),()=>new V(p.x,0,C.z+GT_LANE_Z),()=>new V(p.x,0,p.z)],1.2,()=>{
+    d.chasing=false; if(GT.debt!==d || area!==GT_DEF.area) return;
+    const q=w.pos(); if(Math.hypot(player.position.x-q.x,player.position.z-q.z)>4){ d.at=performance.now()+2000; return; }
+    let open=false; try{ open=SpeakLock.isOpen(); }catch(e){} if(open){ d.at=performance.now()+1500; return; }
+    gtDebtAsk(w); }); }
+function gtChaseOut(){
+  const d=GT.debt; if(!d) return; d.chasing=true;
+  let n=GT.chaser;
+  if(!n){ const D=_gtDoorW();
+    try{ n=GT.chaser=spawnNPC({ id:"gt_marco_out", name:"Marco", sub:"Waiter", area:"town", model:"npcMan2", dress:false, keepModel:true,
+      tint:{ Shirt:"#f4f1ea", Pants:"#16181c" }, height:1.78, x:D.x, y:D.y, z:D.z, face:0, snap:true, radius:2.4, interact:q=>{ if(GT.debt) gtDebtAsk(q); } }); }catch(e){ console.warn("[gt] chaser",e); }
+    if(!n){ d.chasing=false; d.at=performance.now()+5000; return; } }
+  npcWalkSeq(n,[()=>player.position],1.4,()=>{
+    d.chasing=false; if(GT.debt!==d || area!=="town") return;
+    const q=n.pos(); if(_gtDebtFar() || Math.hypot(player.position.x-q.x,player.position.z-q.z)>4){ d.at=performance.now()+1500; return; }
+    let open=false; try{ open=SpeakLock.isOpen(); }catch(e){} if(open){ d.at=performance.now()+1500; return; }
+    gtDebtAsk(n); },"town",()=>{ d.chasing=false; d.at=performance.now()+2000; },{ anim:"Run", speed:3.4 }); }
+/* pagato: il Marco di strada torna al ristorante e rientra */
+function gtChaseHome(){
+  const n=GT.chaser; if(!n){ try{ if(area===GT_DEF.area) gtWaiterHome(); }catch(e){} return; }
+  npcWalkSeq(n,[()=>_gtDoorW()],0.8,()=>{ try{ n.dispose(); }catch(e){} if(GT.chaser===n) GT.chaser=null; },"town",
+    ()=>{ try{ n.dispose(); }catch(e){} if(GT.chaser===n) GT.chaser=null; },{ speed:1.4 }); }
 function gtTalkWaiter(n){
   if(GT.seat){ gtMeAction(); return; }
-  if(GT.debt){ gtDebtAsk(GT.host||n); return; }
+  if(GT.debt){ gtDebtAsk(n); return; }
+  if(n===GT.w2){ gtBarOrder(); return; }                                          // v626: Sofia e' la barista
   DialogueBox.open({ npc:n, icon:"\u{1F33F}", sub:n.sub||"Waiter", text:gtGreet()+"! Please ask Oliver at the door for a table: he'll show you where to sit.",
     italian:"Chiedi un tavolo a Oliver, al banco vicino alla porta: ti accompagna lui.", buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] });
 }
@@ -54043,7 +54132,7 @@ function gtTalkWaiter(n){
 function gtSit(s){
   if(GT.seat) return;
   if(!gtOpen()){ toast("\u{1F552} Lunch starts at 11 am. Before that you can only have a drink at the bar. · I tavoli aprono alle 11: ora solo il bar.",4800); return; }
-  if(GT.debt){ toast("\u{1F9FE} You haven't paid the bill yet! Oliver is at the door."); return; }
+  if(GT.debt){ toast("\u{1F9FE} You haven't paid the bill yet! Marco is coming…"); if(!GT.debt.asking && !GT.debt.chasing) GT.debt.at=0; return; }
   if(gtSeatTaken(s)){ const f=GT.seats.find(q=>!q.taken && !gtSeatTaken(q)); toast("\u{1FA91} Sorry, this seat is taken! · Posto occupato");
     if(f){ moveTarget=new BABYLON.Vector3(f.x,0,f.z); pendingInteract=f.inter; } return; }
   try{ if(rideSitPark()===false) return; }catch(e){}
@@ -54076,7 +54165,7 @@ function gtStand(silent){
   if(GT.meInter) GT.meInter.enabled=false;
   try{ DialogueBox.close(); }catch(e){}
   gtWaiterHome();
-  if(owes){ GT.debt={ o }; toast("\u{1F9FE} You stand up… but you haven't paid the bill! Oliver will ask you at the door.",4200); }
+  if(owes){ GT.debt={ o, at:performance.now()+GT_DEBT_WAIT, chasing:false, asking:false }; toast("\u{1F9FE} You stand up… but you haven't paid the bill!",4200); }
   else if(!silent) toast("\u{1F6B6} You stand up.");
 }
 /* ------------------------------------------------------------------ */
@@ -54416,33 +54505,92 @@ function _gtDrinkAsk(v){ const n=v.en.toLowerCase(); if(/water/.test(n)) return 
 function gtBarOrder(){
   if(GT.seat){ gtMeAction(); return; } if(GT.bar) return;
   const n=GT.w2||GT.waiter; if(!n) return;
-  if(GT.debt){ gtDebtAsk(GT.host||n); return; }
+  if(GT.debt){ gtDebtAsk(n); return; }
+  /* v626: prima ci si siede sullo sgabello libero piu' vicino (come da Rosa) */
+  if(!GT.barSeat){ const S=gtBarFreeStool(); if(S && !gtBarSit(S)) return; }
   DialogueBox.open({ npc:n, icon:"\u{1F379}", sub:"Sofia — the bar", text:gtGreet()+"! What would you like to drink?",
-    italian:"Cosa vuoi da bere? (al bancone si beve in piedi)", html:'<div style="margin-top:6px;font:13px Georgia,serif;color:#2c3a30">'
+    italian:"Cosa vuoi da bere?", html:'<div style="margin-top:6px;font:13px Georgia,serif;color:#2c3a30">'
       +GT_MENU.drinks.map(v=>_escHtml(v.en)+' · £'+v.p.toFixed(2)).join('<br>')+'</div>',
     choices:GT_MENU.drinks.map(v=>({ label:"Could I have "+_gtDrinkAsk(v)+", please?", act:()=>setTimeout(()=>{
       const c=Math.round(v.p*100);
       pricePick({ npc:n, icon:"\u{1F379}", sub:"Sofia — the bar", said:"Of course! That's "+priceWords(c)+", please.", price:c, next:()=>gtBarServe(n,v) }); },260) }))
       .concat([{ label:"Nothing, thank you.", act:()=>{} }]) }); }
+function gtBarFreeStool(){
+  return (GT.stools||[]).filter(q=>!classmateSeatedAt(q.x,q.z)).sort((a,b)=>Math.hypot(a.x-player.position.x,a.z-player.position.z)-Math.hypot(b.x-player.position.x,b.z-player.position.z))[0]||null; }
+function gtBarSit(S){
+  try{ if(rideSitPark()===false) return false; }catch(e){}
+  const gy=GT.gy, f=new BABYLON.Vector3(0,0,-1);
+  GT.barSeat=S; moveTarget=null; pendingInteract=null; try{ tapMark.setEnabled(false); }catch(e){}
+  player.position.set(S.x,gy,S.z); player.rotation.y=Math.PI; player.computeWorldMatrix(true);
+  playAvatarAnim(IDLE_ANIM);
+  eatPrepare(f,gy+0.86,gy+0.34);
+  const off=playerSit(f,gy+0.86,gy+0.34);
+  eatAfterSit();
+  if(off){ player.position.x=S.x-off.x; player.position.z=S.z+0.03-off.z; }
+  return true; }
+/* pagato: Sofia va alla vetrina, prende la bevanda e la posa sul bancone davanti a te */
 function gtBarServe(n,v){
   let got=0; try{ got=Stars.awardCafeOrder(npcCardId(n),"cafeOrderReady"); }catch(e){}
-  DialogueBox.open({ npc:n, icon:"\u{1F379}", sub:"Sofia — the bar", text:"Here you are! Enjoy your "+v.en.toLowerCase()+".",
-    italian:"Ecco a te! Bevilo qui al bancone."+(got?" (+"+got+" ⭐)":""), buttons:[{ label:"Thank you!", cls:"primary", act:()=>gtBarDrink(v) }] }); }
-function gtBarDrink(v){
-  const C=GT.C, S=GT_DEF.size, x=Math.max(C.x-2.2,Math.min(C.x+2.2,player.position.x)), z=C.z-S+0.82;
-  const node=new BABYLON.TransformNode("gtBarGlass",scene); node.parent=GT.I.root; node.position.set(x,GT.gy+1.06,z);
-  try{ _gtDish("drink",v,node); node.getChildMeshes(false).forEach(m=>{ m.isPickable=false; }); }catch(e){}
-  GT.bar={ node, v, k:0 };
-  player.rotation.y=Math.atan2(x-player.position.x,z-player.position.z);
-  toast("\u{1F379} You drink your "+v.en.toLowerCase()+" at the bar… · Bevi al bancone",3200);
+  DialogueBox.open({ npc:n, icon:"\u{1F379}", sub:"Sofia — the bar", text:"Thank you! Coming right up!",
+    italian:"Grazie! Arriva subito."+(got?" (+"+got+" ⭐)":""), buttons:[{ label:"Thank you!", cls:"primary", act:()=>{} }] });
+  GT.bar={ v, k:0, fetching:true };
+  const V=BABYLON.Vector3, C=GT.C, Sz=C.z-GT_DEF.size, K=GT.cab, S=GT.barSeat;
+  const gx=S?S.x:Math.max(C.x-2.2,Math.min(C.x+2.2,player.position.x));
+  const home=()=>{ npcWalkSeq(n,[()=>new V(n.pos().x,0,C.z-6.8),()=>new V(C.x+GT_W2_L.x,0,C.z-6.8),()=>new V(C.x+GT_W2_L.x,0,C.z+GT_W2_L.z)],0.3,
+      ()=>{ n.carrier.rotation.y=0; n.watch=true; },GT_DEF.area,()=>{},{ speed:1.4 }); };
+  const drop=()=>{ try{ if(n.__glass){ n.__glass.dispose(false,false); n.__glass=null; } }catch(e){}
+    const B=GT.bar; if(!B || B.fetching!==true){ home(); return; }
+    if(area!==GT_DEF.area){ GT.bar=null; home(); return; }
+    const node=new BABYLON.TransformNode("gtBarGlass",scene); node.parent=GT.I.root; node.position.set(gx,GT.gy+1.06,Sz+0.9);
+    try{ _gtDish("drink",v,node); node.getChildMeshes(false).forEach(m=>{ m.isPickable=false; }); }catch(e){}
+    B.node=node; B.fetching=false;
+    try{ n.say("Here you are! Enjoy your "+v.en.toLowerCase()+"."); }catch(e){}
+    toast("\u{1F379} «Here you are!» · Ecco la tua bevanda",2600);
+    home(); setTimeout(()=>gtBarDrink(),900); };
+  if(!K){ drop(); return; }
+  n.watch=false;
+  npcWalkSeq(n,[()=>new V(n.pos().x,0,C.z-6.8),()=>new V(K.x,0,C.z-6.8),()=>new V(K.x,0,K.z)],0.45,()=>{
+    n.carrier.rotation.y=Math.PI+NPC_FACE_OFFSET;                                 // verso la vetrina
+    setTimeout(()=>{ try{ const g=new BABYLON.TransformNode("gtHandGlass",scene); g.parent=n.carrier; g.position.set(0.22,1.0,0.28);
+        _gtDish("drink",v,g); g.getChildMeshes(false).forEach(m=>{ m.isPickable=false; }); n.__glass=g; }catch(e){}
+      npcWalkSeq(n,[()=>new V(K.x,0,C.z-6.8),()=>new V(gx+0.8,0,C.z-6.8),()=>new V(gx+0.8,0,Sz+1.2)],0.55,()=>{
+        const q=n.pos(); n.carrier.rotation.y=Math.atan2(gx-q.x,(Sz+0.9)-q.z)+NPC_FACE_OFFSET;
+        setTimeout(drop,600); },GT_DEF.area,drop,{ speed:1.3 }); },1100); },GT_DEF.area,drop,{ speed:1.3 });
+  /* rete di sicurezza: se una camminata si incastra, la bevanda arriva comunque */
+  setTimeout(()=>{ if(GT.bar && GT.bar.fetching===true) drop(); },25000); }
+function gtBarDrink(){
+  const B=GT.bar; if(!B || !B.node) return; const v=B.v, node=B.node, S=GT.barSeat, f=new BABYLON.Vector3(0,0,-1);
+  if(S){
+    const N=4, steps=[]; for(let i=0;i<N;i++) steps.push({ g:node, what:"sip", apply:()=>{ try{ Needs.eat(v.en,1/N); }catch(e){} if(GT.bar) GT.bar.k++; } });
+    eatRun(steps,f,()=>{ if(GT.bar && GT.bar.node===node) gtBarDone(); });
+    return; }
+  /* in piedi (sgabelli tutti presi dai compagni): i sorsi senza braccio */
+  const gx=node.position.x, gz=node.position.z;
+  player.rotation.y=Math.atan2(gx-player.position.x,gz-player.position.z);
   const sip=()=>{ const B=GT.bar; if(!B) return;
-    if(area!==GT_DEF.area || Math.hypot(player.position.x-x,player.position.z-z)>2.6){ toast("\u{1F379} You leave your drink on the bar."); gtBarEnd(); return; }
+    if(area!==GT_DEF.area || Math.hypot(player.position.x-gx,player.position.z-gz)>2.6){ toast("\u{1F379} You leave your drink on the bar."); gtBarEnd(); return; }
     try{ SFX.sip(); }catch(e){} try{ Needs.eat(v.en,1/3); }catch(e){}
     B.k++; node.scaling.y=Math.max(0.35,1-B.k*0.22);
     if(B.k>=3){ setTimeout(()=>{ toast("\u{1F379} All gone! Thank you, Sofia. · Finito!"); gtBarEnd(); },1500); return; }
     B.t=setTimeout(sip,2600); };
-  GT.bar.t=setTimeout(sip,1800); }
-function gtBarEnd(){ const B=GT.bar; if(!B) return; clearTimeout(B.t); try{ B.node.dispose(false,false); }catch(e){} GT.bar=null; }
+  B.t=setTimeout(sip,1200); }
+function gtBarDone(){
+  const n=GT.w2||GT.waiter;
+  try{ DialogueBox.open({ npc:n, icon:"\u{1F379}", sub:"Sofia — the bar", text:"All done? Would you like anything else?",
+    italian:"Finito? Vuoi qualcos'altro?",
+    buttons:[{ label:"\u{1F44B} No, thank you! Goodbye! (stand up)", cls:"primary", act:()=>gtBarStand() },
+             { label:"Yes, another drink, please!", cls:"ghost", act:()=>{ gtBarClearGlass(); setTimeout(()=>gtBarOrder(),260); } },
+             { label:"Stay a bit", cls:"ghost", act:()=>{} }] }); }catch(e){ gtBarStand(); } }
+function gtBarClearGlass(){ const B=GT.bar; if(!B) return; clearTimeout(B.t); try{ eatStop(); }catch(e){} try{ if(B.node) B.node.dispose(false,false); }catch(e){} GT.bar=null; }
+/* giu' dallo sgabello: un passo indietro dal bancone */
+function gtBarStand(silent){
+  const S=GT.barSeat; gtBarClearGlass();
+  if(!S) return; GT.barSeat=null;
+  try{ playerStand(); }catch(e){}
+  player.position.set(S.x,GT.gy,S.z+0.7); player.rotation.y=0;
+  if(!silent) toast("\u{1F6B6} You get off the stool.");
+}
+function gtBarEnd(){ if(GT.barSeat) gtBarStand(true); else gtBarClearGlass(); }
 /* ------------------------------------------------------------------ */
 /* v625 — CHI STA FERMO IN SALA (Giacomo: «se si rimane fermi senza far
    niente per un minuto arriva il cameriere: Can I help you?»). In piedi,
@@ -54451,7 +54599,7 @@ function gtBarEnd(){ const B=GT.bar; if(!B) return; clearTimeout(B.t); try{ B.no
 function gtIdleTick(){
   if(area!==GT_DEF.area || !GT.built || !GT.waiter) return;
   const now=performance.now(), p=player.position;
-  let busy=!!(GT.seat || GT.bar || GT.walking || GT.idleCome || GT.assigned || GT.debt);
+  let busy=!!(GT.seat || GT.bar || GT.barSeat || GT.walking || GT.idleCome || GT.assigned || GT.debt);
   try{ if(SpeakLock.isOpen()) busy=true; }catch(e){}
   if(!GT.idleP || busy || Math.hypot(p.x-GT.idleP.x,p.z-GT.idleP.z)>0.35){ GT.idleP=p.clone(); GT.idleT=now; return; }
   if(now-(GT.idleT||now)<60000 || now<(GT.idleNext||0)) return;
@@ -57711,12 +57859,12 @@ function clampArea(){ const c=area==="home"?HOME_C:(area==="cinema"?CINEMA_C:(ar
    · FAME: SALVATA sull'account (Sync "et_needs": valore + ora). Cala col
      tempo VERO, anche a gioco chiuso (100 -> 0 in NEEDS_FULL_H ore), piu'
      un po' col movimento; con l'energia sotto il 25% cala il doppio. Si
-     ricarica mangiando cio' che si e' ordinato al café o al Sunny Side Diner,
+     ricarica mangiando cio' che si e' ordinato al café, al Sunny Side Diner o al Green Table,
      sorso per sorso e boccone per boccone (agganci in _cafeRun e
      _dinerEatRun).
    · AFFAMATI (fame < NEEDS_HUNGRY), FUORI DALLE QUEST: non si corre,
      l'energia non risale oltre il 30%, la bussola (se non c'e' una quest)
-     porta al café o al diner piu' vicino, e le attivita' libere non danno
+     porta al café, al diner o al Green Table piu' vicino, e le attivita' libere non danno
      stelle (Stars.*, avvolte in fondo al file). L'ordine al café/diner le
      stelle le da' sempre: e' il rimedio.
    · CON UNA QUEST IN CORSO E' TUTTO FERMO (paused): niente cala, si corre
@@ -57857,7 +58005,7 @@ const Needs={
     try{ if(BSIT.b) return true; }catch(e){}
     try{ if(CAFE_PICK.seated) return true; }catch(e){}
     try{ if(DINER.seat) return true; }catch(e){}
-    try{ if(GT.seat) return true; }catch(e){}                                           // 🌿 v621
+    try{ if(GT.seat || GT.barSeat) return true; }catch(e){}                             // 🌿 v621 (v626: anche lo sgabello del bar)
     try{ if(SUBSIT.on) return true; }catch(e){}
     try{ if(LESSON.seated) return true; }catch(e){}
     try{ if(SHOW.seated) return true; }catch(e){}
@@ -57885,8 +58033,8 @@ const Needs={
       if(now>this.noRunT){ this.noRunT=now+15000;
         const nav=this.starving()?" (segui la bussola ":" (";
         if(this.e<=0) this.sayL("noRunTired","siediti su una panchina \u{1FA91}","\u{1F629}",false);
-        else if(this.thirsty() && (!this.hungry() || this.d<=this.f)) this.sayL("noRunThirsty","bevi qualcosa al café o al Sunny Side Diner"+nav+"\u{1F964})","\u{1F975}",false);
-        else this.sayL("noRunHungry","mangia qualcosa al café o al Sunny Side Diner"+nav+"\u{1F354})","\u{1F62B}",false); } }
+        else if(this.thirsty() && (!this.hungry() || this.d<=this.f)) this.sayL("noRunThirsty","bevi qualcosa al café, al Sunny Side Diner o al Green Table"+nav+"\u{1F964})","\u{1F975}",false);
+        else this.sayL("noRunHungry","mangia qualcosa al café, al Sunny Side Diner o al Green Table"+nav+"\u{1F354})","\u{1F62B}",false); } }
     return false;
   },
   /* moltiplicatore della corsa: premio, mai malus */
@@ -57902,8 +58050,8 @@ const Needs={
     const now=performance.now();
     if(now>this.noStarT){ this.noStarT=now+30000;
       if(this.thirsty() && (!this.hungry() || this.d<=this.f))
-        this.say("I'm thirsty! No stars until I drink.","Hai sete: niente stelle finché non bevi qualcosa al café o al diner \u{1F964}","\u{1F975}",false);
-      else this.say("I'm hungry! No stars until I eat.","Hai fame: niente stelle finché non mangi qualcosa al café o al diner \u{1F354}","\u{1F354}",false); }
+        this.say("I'm thirsty! No stars until I drink.","Hai sete: niente stelle finché non bevi qualcosa al café, al diner o al Green Table \u{1F964}","\u{1F975}",false);
+      else this.say("I'm hungry! No stars until I eat.","Hai fame: niente stelle finché non mangi qualcosa al café, al diner o al Green Table \u{1F354}","\u{1F354}",false); }
     return false;
   },
   /* ---- v609 ⚽🛹🛴 TROPPO STANCHI, AFFAMATI O ASSETATI PER GIOCARE (Giacomo,
@@ -57915,7 +58063,7 @@ const Needs={
      NEEDS_THIRSTY. Sotto, non si parte, e se si scende sotto mentre si
      gioca si smette (si scende dalla tavola, la mira si chiude: mai a tiro
      partito). Il fumetto dice COSA serve: il bisogno piu' basso fra fame e
-     sete (si rimedia al café o al diner, e la bussola ci porta), se no la
+     sete (si rimedia al café, al diner o al Green Table, e la bussola ci porta), se no la
      stanchezza (ci si siede su una panchina: riposare non basta se si ha
      fame, l'energia si ferma al 30%: per questo prima il cibo).
      ⚠️ LA REGOLA DELLE QUEST RESTA: con una quest in corso non si blocca
@@ -57939,9 +58087,9 @@ const Needs={
     if(need==="tired")
       this.say("I'm too tired to "+act[0]+"! I need a rest.","Sei troppo stanco per "+act[1]+": siediti su una panchina \u{1FA91} e riposati, poi riprova.","\u{1F629}");
     else if(need==="thirsty")
-      this.say("I'm too thirsty to "+act[0]+"! I need a drink.","Hai troppa sete per "+act[1]+": prima bevi qualcosa al café o al Sunny Side Diner (segui la bussola \u{1F964}).","\u{1F975}");
+      this.say("I'm too thirsty to "+act[0]+"! I need a drink.","Hai troppa sete per "+act[1]+": prima bevi qualcosa al café, al Sunny Side Diner o al Green Table (segui la bussola \u{1F964}).","\u{1F975}");
     else
-      this.say("I'm too hungry to "+act[0]+"! I need to eat.","Hai troppa fame per "+act[1]+": prima mangia qualcosa al café o al Sunny Side Diner (segui la bussola \u{1F354}).","\u{1F62B}");
+      this.say("I'm too hungry to "+act[0]+"! I need to eat.","Hai troppa fame per "+act[1]+": prima mangia qualcosa al café, al Sunny Side Diner o al Green Table (segui la bussola \u{1F354}).","\u{1F62B}");
     return true;
   },
   /* mentre si gioca: se un livello scende troppo si smette (una volta al secondo) */
@@ -57961,6 +58109,11 @@ const Needs={
     const c=[];
     try{ CAFE_SPOTS.forEach(s=>c.push(s)); }catch(e){}
     try{ c.push({ x:DINER.x, z:DINER.z }); }catch(e){}
+    /* 🌿 v626 (Giacomo: «la bussola deve indicare anche il nuovo
+       ristorante»): The Green Table, all'ingresso del vialetto. Per mangiare
+       dalle 11 alle 22, per bere (il bar) gia' dalle 8. */
+    try{ const drink=(this.thirsty() && (!this.hungry() || this.d<=this.f));
+      if(gtOpen() || (drink && gtDoorOpen())) c.push({ x:GT_X, z:GT_Z+GT_HD+7.2 }); }catch(e){}
     let best=null, bd=1e9;
     c.forEach(s=>{ const d=Math.hypot(s.x-p.x, s.z-p.z); if(d<bd){ bd=d; best=s; } });
     if(!best || bd<7) return null;              // arrivato: ora si ordina
@@ -58054,7 +58207,7 @@ const Needs={
       this.once("tired", this.e<30, ()=>this.sayL("tired","siediti su una panchina per riposare \u{1FA91}","\u{1F971}"));
       /* prima della fame vera, un avviso leggero («peckish»): una volta */
       this.once("peckish", this.f<40 && !this.hungry(), ()=>this.sayL("peckish","tra un po' avrai fame: passa dal café o dal diner","\u{1F642}",false));
-      this.once("dry", this.d<40 && !this.thirsty(), ()=>this.sayL("dry","tra un po' avrai sete: una bibita al café o al diner","\u{1F964}",false));
+      this.once("dry", this.d<40 && !this.thirsty(), ()=>this.sayL("dry","tra un po' avrai sete: una bibita al café, al diner o al Green Table","\u{1F964}",false));
       /* appena finita la quest (o appena diventati affamati, o ogni 3 minuti): si dice */
       const qEnd=this.wasQuest && !this.questOn();
       if(qEnd) this.afterQuest=true;
@@ -58063,8 +58216,8 @@ const Needs={
         this.said.hungry=true; this.nagT=now+180000;
         /* dice il bisogno piu' forte dei due */
         if(this.thirsty() && (!this.hungry() || this.d<=this.f))
-          this.sayL("thirsty","vai a bere qualcosa al café o al Sunny Side Diner (segui la bussola \u{1F964})","\u{1F975}");
-        else this.sayL("hungry","vai a mangiare al café o al Sunny Side Diner (segui la bussola \u{1F354})","\u{1F354}");
+          this.sayL("thirsty","vai a bere qualcosa al café, al Sunny Side Diner o al Green Table (segui la bussola \u{1F964})","\u{1F975}");
+        else this.sayL("hungry","vai a mangiare al café, al Sunny Side Diner o al Green Table (segui la bussola \u{1F354})","\u{1F354}");
       }
       if(!this.lacking()) this.said.hungry=false;
     }
@@ -58113,7 +58266,7 @@ const Needs={
   },
   /* ---- v591 L'ASPORTO SI MANGIA AL TAVOLO (Giacomo: «visivamente come si
      realizza? un messaggio che dice di mangiare al tavolo piu' vicino, e li'
-     scatta l'animazione come al café o al diner»). Il sacchetto di carta
+     scatta l'animazione come al café, al diner o al Green Table»). Il sacchetto di carta
      resta nella mano SINISTRA (la destra e' del giornale), la bussola porta
      al tavolo da picnic piu' vicino (BENCHES kind "picnic": la passeggiata
      del café, il Boulevard, il parco), e sedendosi il cibo esce sul tavolo
@@ -58325,8 +58478,8 @@ const Needs={
         +"⚡ <b>Energy</b> goes down when you <b>run</b>. <b>Sit down</b> on a bench (or at the café, at the diner…) to rest.<br>"
         +"<i>L'energia cala correndo: siediti su una panchina per riposare. Ma se hai fame, riposare non basta.</i><br><br>"
         +"\u{1F354} <b>Food</b> goes down with time, even when the game is closed: a full meal lasts about "+NEEDS_FULL_H+" hours. "
-        +"<b>Order something</b> at the café or at the Sunny Side Diner.<br>"
-        +"<i>La fame cresce col passare del tempo, anche a gioco chiuso, e di più se sei stanco. Ordina qualcosa (in inglese!) al café o al diner.</i><br><br>"
+        +"<b>Order something</b> at the café, at the Sunny Side Diner or at The Green Table.<br>"
+        +"<i>La fame cresce col passare del tempo, anche a gioco chiuso, e di più se sei stanco. Ordina qualcosa (in inglese!) al café, al diner o al Green Table.</i><br><br>"
         +"\u{1F4A7} <b>Drink</b> goes down faster (about "+NEEDS_THIRST_H+" hours), and even faster when you run. Only <b>drinks</b> help: water, juice, lemonade, tea…<br>"
         +"<i>La sete cresce più in fretta della fame (circa "+NEEDS_THIRST_H+" ore), e di più correndo. Passa solo bevendo.</i><br><br>"
         +"\u{1F62B} <b>Hungry or thirsty?</b> You can't run, you can't rest well, and free activities give no stars. The compass shows you where to eat.<br>"
@@ -58352,6 +58505,7 @@ function move(nx,nz,spd){
   if(typeof DINER!=="undefined" && DINER.seat) return false;   // v288: seduti al diner non si cammina (E per alzarsi)
   if(typeof BSIT!=="undefined" && BSIT.b) benchStand(true);     // v291: dalla panchina il primo passo ti rimette in piedi
   if(typeof CAFE_PICK!=="undefined" && CAFE_PICK.seated) cafeLeaveSeat();
+  if(typeof GT!=="undefined" && GT.barSeat) gtBarStand();                  // 🌿 v626: il primo passo ti fa scendere dallo sgabello del bar
   if(typeof LESSON!=="undefined" && LESSON.seated) lessonStand(false);   // v306: alzarsi chiude la lezione
   if(typeof SKDANCE!=="undefined" && SKDANCE.on) skDanceStop();           // v308: camminare smette di ballare
   if(typeof SUBSIT!=="undefined" && SUBSIT.on) subBenchStand(true);   // v297: panchina della metro   // v295: al caffe' il primo passo ti alza dallo sgabello (tazza e cibo sul vassoio)
@@ -59289,6 +59443,7 @@ function standUpAll(){
   try{ if(typeof CAFE_PICK!=="undefined" && CAFE_PICK.seated) cafeLeaveSeat(); }catch(e){}
   try{ if(typeof DINER!=="undefined" && DINER.seat) dinerStand(true); }catch(e){}
   try{ if(typeof GT!=="undefined" && GT.seat) gtStand(true); }catch(e){}              // 🌿 v621
+  try{ if(typeof GT!=="undefined" && GT.barSeat) gtBarStand(true); }catch(e){}        // 🌿 v626: lo sgabello del bar
   try{ if(typeof BSIT!=="undefined" && BSIT.b) benchStand(true); }catch(e){}
   try{ if(typeof SUBSIT!=="undefined" && SUBSIT.on) subBenchStand(true); }catch(e){}
   try{ if(typeof LESSON!=="undefined" && LESSON.seated) lessonStand(true); }catch(e){}   // v306
