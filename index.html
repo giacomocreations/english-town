@@ -17949,7 +17949,7 @@ function buildPark(){
      centro (x -15..15, z -64..64) e promenade del parco senza marciapiede. */
   pkSw.position.set((RDX0+GREENX)/2,0.20,PZ); pkSw.parent=townRoot; pkSw.__ground=true;
   // arredo urbano della promenade: panchine rivolte al parco + fioriere + cestini
-  [-46,-30,-14,14,30,46].forEach(z=>streetBench(66,z,Math.PI/2));
+  [-30,-14,14,30,46].forEach(z=>streetBench(66,z,Math.PI/2));   // v635: niente piu' quella a z -46, li' ora c'e' il cortile del Green Table
   [-38,-22,22,38].forEach(z=>planter(66,z));
   planter(74,10); planter(74,-10); bin(74,13); bin(74,-13);
   // cordolo chiaro: segna dove inizia il verde del parco
@@ -53162,7 +53162,13 @@ function tryInteract(){ if(loginPending) return;
    piu' lontano»): la facciata stava a 3 m dalla carreggiata. Ora e' 7 m piu'
    indietro (z -49,5) e davanti c'e' il CORTILE: vialetto in pietra, siepi,
    aiuole fiorite, i lampioni e il leggio del menu (vedi _gtForecourt). */
-const GT_X=54, GT_Z=-55, GT_HW=8, GT_HD=5.5;        // centro e semilati dell'edificio
+/* v635 (Giacomo: «vorrei spostare piu' a sinistra il Green Table: e' troppo
+   vicino alla rotonda e ha le macchine che girano proprio li'»): da x 54 a
+   x 71, sulla promenade pedonale (x 56-86), con la facciata sulla piazza
+   della torre dell'orologio. Tutto il resto (cortile, siepi, lampioni,
+   festoni, vista dalle finestre) e' relativo a GT_X/GT_Z e si sposta con lui;
+   la panchina da picnic che stava li' (66,-46) non c'e' piu'. */
+const GT_X=71, GT_Z=-55, GT_HW=8, GT_HD=5.5;        // centro e semilati dell'edificio
 const GT_DEF={ area:"greentable", size:9, sizeX:11, areaName:"The Green Table", title:"The Green Table" };
 const GT={ built:false, exBuilt:false, I:null, C:null, gy:0.02, tables:[], seats:[], waiter:null, w2:null, host:null,
   guests:[], st:"idle", seat:null, o:null, food:[], timer:null, walking:null, pending:null, eating:false, eatG:{},
@@ -53407,7 +53413,7 @@ function _gtForecourt(r,M,FZ){
            a meta' con una fascia scura. Ora poggia sul piano (1,5 cm sopra; 1 cm sopra il
            vialetto dove ci passa sopra), ognuna a quota sua: dove due
            aloni si sovrappongono non si contendono lo stesso piano. */
-        t.getChildMeshes(true).forEach(m=>{ if(m.name==="h7sh") m.position.y=Math.max(0.015,GT.oy+0.028-y)+0.003*(nH%4); }); }
+        t.getChildMeshes(true).forEach(m=>{ if(m.name==="h7sh") m.position.y=Math.max(0.012,GT.oy+0.024-y)+0.002*(nH%3); }); }   // v635: sopra il vialetto (+1,8 cm), sotto il prato (0,23): anche col cortile tutto sul marciapiede rialzato
       nH++; };
     let nH=0;
     hp(sd*1.68,zH,sd*6.75,zH,0.95);                                      // lungo il marciapiede (fino al vialetto)
