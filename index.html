@@ -13119,11 +13119,16 @@ function dinerTakeawayPay(n,food,drink){
 /* ------------------------------------------------------------------ */
 /* SEDERSI e ALZARSI                                                    */
 /* ------------------------------------------------------------------ */
+/* v636 (Giacomo: «nel diner, avvicinandomi alle sedie, c'e' ancora la
+   scelta 1/2 che non ha senso»): come al Green Table, fra due sedie vicine
+   risponde solo la piu' vicina */
+function dinerNearestSeat(){ const p=player.position; let b=null, bd=1e9;
+  DINER.seats.forEach(q=>{ if(q.taken || !q.inter) return; const d=Math.hypot(q.x-p.x,q.z-p.z); if(d<bd){ bd=d; b=q; } }); return b; }
 function dinerSeatInteracts(){
   DINER.seats.forEach((s,i)=>{ if(s.taken) return;
     s.inter=addInteract({ id:"diner_seat_"+i, area:"town", radius:1.25,
       pos:()=>new BABYLON.Vector3(s.x,0,s.z),
-      prompt:()=>!dinerOpen()?'\u{1F319} The diner is closed now'
+      prompt:()=>(dinerNearestSeat()!==s)?'':!dinerOpen()?'\u{1F319} The diner is closed now'
         :dinerSeatTaken(s)?'\u{1FA91} This seat is taken':'Press <b>P</b> to <b>sit down</b>',
       interact:()=>dinerSit(s) });
   });
@@ -13832,6 +13837,37 @@ function dinerTableCode(){
   let cur="-"; try{ const Q=EAT.q; if(EAT.busy && Q && Q.cur && Q.cur.key){ const j=DINER_KEYS.indexOf(Q.cur.key); if(j>=0) cur=String(j); } }catch(e){}
   return "o"+c+cur;
 }
+/* v636 — I BOCCONI CHE MANCANO (Giacomo: «quando mangi carne, pasta o
+   altro, invece di togliere dei bocconi rimpicciolisce il cibo: non ha
+   senso! devono mancare dei bocconi»). Il cibo resta della sua misura; a
+   ogni boccone sparisce la parte dalla parte di chi mangia (un piano di
+   taglio che avanza: dopo un boccone su tre manca il primo terzo della
+   bistecca, della pasta, dell'hamburger...). Il taglio e' solo di questo
+   cibo (scene.clipPlane acceso prima di disegnarlo e spento subito dopo) e
+   segue il gruppo anche quando sale alla bocca. Dentro il taglio si vede
+   l'interno del cibo, dello stesso colore (facce posteriori illuminate).
+   G = { g:il gruppo del cibo }, eaten 0..1, from = dove sta chi mangia. */
+function foodCut(G,eaten,from){
+  const g=G&&G.g; if(!g) return; const V=BABYLON.Vector3;
+  if(!G.cut){
+    g.computeWorldMatrix(true); const inv=g.getWorldMatrix().clone().invert(), P=from||player.position, c=g.getAbsolutePosition();
+    let uw=new V(c.x-P.x,0,c.z-P.z); if(uw.lengthSquared()<1e-6) uw=new V(0,0,1); uw.normalize();
+    const uL=V.TransformNormal(uw,inv).normalize(), ms=g.getChildMeshes(false);
+    let mn=1e9, mx=-1e9;
+    ms.forEach(m=>{ m.computeWorldMatrix(true); m.refreshBoundingInfo();
+      m.getBoundingInfo().boundingBox.vectorsWorld.forEach(v=>{ const d=V.Dot(V.TransformCoordinates(v,inv),uL); if(d<mn) mn=d; if(d>mx) mx=d; }); });
+    if(mn>mx){ mn=-0.05; mx=0.05; }
+    const cut=G.cut={ uL, mn, mx, e:0, plane:new BABYLON.Plane(0,1,0,0) }, uW=new V(), p0=new V();
+    ms.forEach(m=>{ const mt=m.material; if(mt && !mt.__cutOk){ mt.__cutOk=true; mt.backFaceCulling=false; mt.twoSidedLighting=true; }
+      m.onBeforeRenderObservable.add(()=>{ if(cut.e<=0.001) return;
+        const W=g.getWorldMatrix(); V.TransformNormalToRef(cut.uL,W,uW); uW.normalize();
+        V.TransformCoordinatesToRef(cut.uL.scale(cut.mn+cut.e*(cut.mx-cut.mn)),W,p0);
+        cut.plane.normal.set(-uW.x,-uW.y,-uW.z); cut.plane.d=V.Dot(uW,p0); scene.clipPlane=cut.plane; });
+      m.onAfterRenderObservable.add(()=>{ if(scene.clipPlane===cut.plane) scene.clipPlane=null; }); });
+  }
+  G.cut.e=Math.max(0,Math.min(1,eaten||0));
+  g.scaling.setAll(1); g.setEnabled(G.cut.e<0.999);
+}
 /* v297 — SI MANGIA DAVVERO (Giacomo: «il sistema di mangiare mettilo anche
    seduto al Sunny Side»): come al caffe', col braccio (eatRun). Il
    bicchiere va alla bocca e il livello scende; di ogni piatto va alla bocca
@@ -13844,7 +13880,7 @@ function _dinerEat(set,keys){
 }
 /* v309: i gruppi «cosa va alla bocca» di un servizio (anche quello del
    tavolo di un compagno, vedi Presenza._tavola) */
-function _dinerGroups(set,keys){
+function _dinerGroups(set,keys,from){
   const groups={};
   keys.forEach(key=>{
     const ms=set.getChildMeshes(true).filter(m=>m.__key===key); if(!ms.length) return;
@@ -13859,15 +13895,16 @@ function _dinerGroups(set,keys){
     set.computeWorldMatrix(true); g.computeWorldMatrix(true);
     food.forEach(m=>m.setParent(g));
     const liq=(key==="drink")?food.filter(m=>m.material && /^dn_c_/.test(m.material.name)):[];
-    groups[key]={ g, liq, n:(key==="drink"?4:3), done:0 }; });
+    groups[key]={ g, liq, n:(key==="drink"?4:3), done:0 };
+    if(key!=="drink") try{ foodCut(groups[key],0,from); }catch(e){} });     // v636: il taglio si prende col cibo ancora in tavola
   return groups;
 }
-/* quanto ne resta (f 0..1): il livello del bicchiere, il cibo che si rimpicciolisce */
+/* quanto ne resta (f 0..1): il livello del bicchiere; del cibo mancano i bocconi (v636, foodCut) */
 function _dinerLevel(G,key,f,gone){
   if(key==="drink") G.liq.forEach(m=>{ if(m.__h0==null){ m.__h0=m.scaling.y; m.__y0=m.position.y; }
       const bb=m.getBoundingInfo().boundingBox, h=(bb.maximum.y-bb.minimum.y)*m.__h0;
       m.scaling.y=m.__h0*f; m.position.y=m.__y0-h*(1-f)/2; });
-  else { G.g.scaling.setAll(Math.max(0.001,f)); G.g.setEnabled(!gone); }
+  else foodCut(G,gone?1:1-f);
 }
 function _dinerEatRun(groups,s){
   Object.keys(groups).forEach(k=>{ DINER.eatG[k]=groups[k]; if(DINER.onTable[k]) DINER.onTable[k].G=groups[k]; });
@@ -54755,13 +54792,14 @@ function gtServe(keys,onDone){
     groups[key]={ g:gg, v, n:(key==="drink"?3:3), done:0 }; });
   const ks=Object.keys(groups); if(!ks.length){ if(onDone) onDone(); return; }
   if(ks.length===1) groups[ks[0]].n=2;
-  ks.forEach(k=>{ if(k!=="drink") try{ _gtFork(set,groups[k],k); }catch(e){ console.warn("[gt] forchetta",e); } });
+  ks.forEach(k=>{ if(k!=="drink"){ try{ foodCut(groups[k],0,new BABYLON.Vector3(s.x,0,s.z)); }catch(e){}            // v636: bocconi che mancano
+    try{ _gtFork(set,groups[k],k); }catch(e){ console.warn("[gt] forchetta",e); } } });
   const order=[]; for(let r=0;r<4;r++) ks.forEach(k=>{ if(r<groups[k].n) order.push(k); });
   const steps=order.map(k=>{ const G=groups[k]; return { g:G.F||G.g, key:k, what:(k==="drink"?"sip":"bite"), putDown:!!G.F, apply:()=>{ G.done++;
       try{ Needs.eat(G.v.en, 1/G.n); }catch(e){}
       const f=Math.max(0.05,1-G.done/G.n); if(k==="drink"){ gtLiquid(G.g,1-G.done/G.n); }
       else { if(G.bite){ G.bite.setEnabled(false); G.refill=G.done<G.n; }               // il boccone e' in bocca
-        G.g.scaling.setAll(Math.max(0.001,f)); if(G.done>=G.n) G.g.setEnabled(false); } } }; });
+        foodCut(G,G.done/G.n); } } }; });
   GT.eating=true;
   const fw=new BABYLON.Vector3(Math.sin(s.face),0,Math.cos(s.face));
   eatRun(steps,fw,()=>{ GT.eating=false; toast("\u{1F60B} Delicious! · Squisito!"); if(onDone) try{ onDone(); }catch(e){} });
@@ -85188,7 +85226,7 @@ const Presenza=(function(){
     if(keys.indexOf("drink")>=0){ set.computeWorldMatrix(true);
       const dw=BABYLON.Vector3.TransformNormal(new BABYLON.Vector3(0,0,1),set.getWorldMatrix());
       if(dw.x*Math.cos(s.face)-dw.z*Math.sin(s.face)<0){ set.rotation.y+=Math.PI; set.computeWorldMatrix(true); } }
-    const G=_dinerGroups(set,keys), items={};
+    const G=_dinerGroups(set,keys,(isFinite(s.x)&&isFinite(s.z))?new BABYLON.Vector3(s.x,0,s.z):null), items={};
     keys.forEach(function(k){ if(G[k]) items[String(DINER_KEYS.indexOf(k))]={ g:G[k].g, what:(k==="drink"?"sip":"bite"), G:G[k], key:k }; });
     return { k:"o", root:set, items:items };
   }
