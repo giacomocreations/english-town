@@ -9865,12 +9865,45 @@ function carLedLights(root,own){
      dalla texture: bianco quasi puro -> fari, rosso saturo -> fanali, il
      resto nero. emissiveColor (0 di giorno, 1 dal tramonto) la accende.
      Traffico: un clone acceso del materiale, condiviso; The Beast: il suo. */
+  try{ _carHeadGlassCut(root); }catch(e){ console.warn("[led glass]",e); }
   root.getChildMeshes(false).forEach(m=>{ const mt=m.material;
     if(!mt || !/Aventador_Body/i.test(String(mt.name||"")) || !mt.albedoTexture) return;
     if(own){ if(!mt.__led){ _carLedMask(mt.albedoTexture,mt,m,root); _carLedSetup(mt,"mask",root); } return; }
     const k=mt.uniqueId+"|mask";
     if(!_carLitM[k]){ const cl=mt.clone(mt.name+"_lit"); _carLedMask(mt.albedoTexture,cl,m,root); _carLitM[k]=_carLedSetup(cl,"mask",null); }
+    else _carLedMask(mt.albedoTexture,_carLitM[k],m,root);                    // v636: la lente dei fari anche sulle Lambo dopo la prima
     m.material=_carLitM[k]; });
+}
+/* v636 (Giacomo: «le luci della Lambo sono oscurate dal nero originale»).
+   Misurato: la mesh «Glass» della Lamborghini non sono solo i finestrini,
+   copre anche i due fari davanti, ed e' NERA (#000) con alpha 0,94. Stava
+   sopra la lente accesa (trasparente, si disegna dopo): del faro acceso si
+   vedevano dei puntini. I triangoli del vetro nel muso (ultimi 80 cm),
+   sotto gli 82 cm d'altezza e verso i fianchi (i fari, non il parabrezza
+   che comincia piu' in alto e al centro) si tolgono; sotto resta il gruppo
+   ottico della scocca con la lente. Misure nel sistema della scocca, come
+   _carHeadTris. Una volta per geometria (le Lambo del traffico la
+   condividono). */
+function _carHeadGlassCut(root){
+  const ms=root.getChildMeshes(false);
+  const body=ms.find(m=>m.material && /Aventador_Body/i.test(String(m.material.name||"")) && m.getTotalVertices && m.getTotalVertices()>2000);
+  if(!body) return;
+  const bp=body.getVerticesData("position"); if(!bp) return;
+  let zmax=-1e9, ymin=1e9, ymax=-1e9;
+  for(let i=0;i<bp.length;i+=3){ if(bp[i+2]>zmax) zmax=bp[i+2]; if(bp[i+1]<ymin) ymin=bp[i+1]; if(bp[i+1]>ymax) ymax=bp[i+1]; }
+  const k=1.25/((ymax-ymin)||1);
+  ms.forEach(gl=>{ if(!gl.material || !/Aventador_Glass/i.test(String(gl.material.name||"")) || !gl.geometry || gl.geometry.__hlCut) return;
+    const gp=gl.getVerticesData("position"), ind=gl.getIndices(); if(!gp || !ind) return;
+    body.computeWorldMatrix(true); gl.computeWorldMatrix(true);
+    const M=gl.getWorldMatrix().multiply(BABYLON.Matrix.Invert(body.getWorldMatrix()));
+    const P=[]; for(let i=0;i<gp.length;i+=3) P.push(BABYLON.Vector3.TransformCoordinates(new BABYLON.Vector3(gp[i],gp[i+1],gp[i+2]),M));
+    const keep=[];
+    for(let t=0;t<ind.length;t+=3){ const a=P[ind[t]], b=P[ind[t+1]], c=P[ind[t+2]];
+      const f=(a.z+b.z+c.z)/3*k, y=((a.y+b.y+c.y)/3-ymin)*k, sd=Math.abs((a.x+b.x+c.x)/3)*k;
+      if(f>zmax*k-0.8 && y<0.82 && sd>0.4) continue;                       // il vetro di un faro: via
+      keep.push(ind[t],ind[t+1],ind[t+2]); }
+    gl.geometry.__hlCut=true;
+    if(keep.length<ind.length) gl.setIndices(keep); });
 }
 /* la maschera dei fari dalla texture (asincrona: finche' non c'e', spenti) */
 const _carMaskCache=new Map(), _carHeadCache=new Map();
@@ -9878,16 +9911,39 @@ const _carMaskCache=new Map(), _carHeadCache=new Map();
    triangoli della scocca, copiati 3 mm piu' in fuori, col materiale LED dei
    fari (di giorno vetro chiaro, dal tramonto bianco acceso) */
 function _carHeadLens(mesh,root,T){
-  if(!T || !T.length || mesh.__lens) return; mesh.__lens=true;
+  if(!T || !T.length || mesh.__lens) return;
   const pos=mesh.getVerticesData("position"), P=[], I=[], N=[];
+  if(!pos || (T.nv && pos.length/3!==T.nv)) return;               // solo la scocca da cui sono stati misurati (non le ruote staccate, che hanno lo stesso materiale)
+  mesh.__lens=true;
+  /* v636 (Giacomo: «le luci della Lambo sono oscurate dal nero originale»):
+     la lente si spostava lungo la normale del triangolo, ma in un terzo dei
+     triangoli del faro (misurato: 263 su 768) quella normale guarda DENTRO
+     l'auto: la lente finiva sotto la scocca e del faro acceso si vedevano
+     solo dei puntini. Ora si sposta sempre verso FUORI (via dal centro
+     dell'auto), un po' di piu' (6 mm del modello, ~1,5 cm), e il materiale
+     ha lo zOffset: vince sempre sul vetro scuro che copre. */
+  let cx=0,cy=0,cz=0; const nv=pos.length/3; for(let i=0;i<nv;i++){ cx+=pos[3*i]; cy+=pos[3*i+1]; cz+=pos[3*i+2]; } cx/=nv; cy/=nv; cz/=nv;
+  /* la lente resta UNA superficie continua (Giacomo: «i contorni sono
+     bianchi ma dentro nero, non uniforme»): spostando ogni triangolo lungo
+     la SUA normale i triangoli vicini si staccavano, e dalle crepe si
+     vedeva il nero sotto. Ora ogni vertice (anche doppio sulle cuciture
+     della texture: si riconosce dalla posizione) si sposta lungo la media
+     delle normali dei triangoli che lo toccano: i bordi restano attaccati. */
+  const key=v=>Math.round(v.x*2000)+","+Math.round(v.y*2000)+","+Math.round(v.z*2000), acc=new Map(), tris=[];
   T.forEach(t=>{ const a=t.map(i=>new BABYLON.Vector3(pos[3*i],pos[3*i+1],pos[3*i+2]));
     const n=BABYLON.Vector3.Cross(a[1].subtract(a[0]),a[2].subtract(a[0])); if(n.length()<1e-12) return; n.normalize();
-    a.forEach(v=>{ const q=v.add(n.scale(0.004)); I.push(P.length/3); P.push(q.x,q.y,q.z); N.push(n.x,n.y,n.z); }); });
+    const g=a[0].add(a[1]).add(a[2]).scale(1/3), out=new BABYLON.Vector3(g.x-cx,(g.y-cy)*0.3,g.z-cz);
+    if(BABYLON.Vector3.Dot(n,out)<0) n.scaleInPlace(-1);
+    a.forEach(v=>{ const k=key(v), s=acc.get(k); if(s) s.addInPlace(n); else acc.set(k,n.clone()); });
+    tris.push({ a, n }); });
+  tris.forEach(o=>{ o.a.forEach(v=>{ const m=acc.get(key(v)).clone(); if(m.length()<1e-9) m.copyFrom(o.n); m.normalize();
+    const q=v.add(m.scale(0.009)); I.push(P.length/3); P.push(q.x,q.y,q.z); N.push(o.n.x,o.n.y,o.n.z); }); });
   if(!P.length) return;
   const lm=new BABYLON.Mesh("carLedLens",scene), vd=new BABYLON.VertexData(); vd.positions=P; vd.indices=I; vd.normals=N; vd.applyToMesh(lm);
   lm.parent=mesh; lm.isPickable=false;
   lm.material=(root.__ledOn)?(root.__lensM||(root.__lensM=_carLedSetup(_carLedBase("head"),"head",root))):_carLedMat("head");
-  lm.material.backFaceCulling=false;
+  lm.material.backFaceCulling=false; lm.material.zOffset=-4;
+  try{ if(mesh.__dyn || mesh.alwaysSelectAsActiveMesh){ lm.__dyn=true; } _octDirty(); }catch(e){}
 }
 /* i gruppi ottici davanti: nella texture sono grigio scuro (vetro fume'),
    indistinguibili dal resto del nero. Si trovano con la geometria: i
@@ -9910,8 +9966,21 @@ function _carHeadTris(mesh,root,px,W,H){
       const u=(uv[2*i0]+uv[2*i1]+uv[2*i2])/3, w=(uv[2*i0+1]+uv[2*i1+1]+uv[2*i2+1])/3;
       const X=Math.min(W-1,Math.max(0,Math.floor(u*W))), Yp=Math.min(H-1,Math.max(0,Math.floor(w*H))), k=(Yp*W+X)*4;
       const r=px[k],g=px[k+1],b=px[k+2], mx=Math.max(r,g,b), mn=Math.min(r,g,b);
-      if(mx>170 || (mx-mn)>40) continue;                                             // vernice o finiture chiare: no
+      if(mx>190 || (mx-mn)>60) continue;                                             // vernice o finiture chiare: no (v636: un filo piu' largo, niente buchi scuri nella lente)
       out.push([i0,i1,i2]); }
+    /* v636 (Giacomo: «dentro nero, non uniforme»): dentro il gruppo ottico
+       restavano isole di triangoli scartati dal colore (riflessi, la scocca
+       ridipinta di The Beast) e la lente aveva dei buchi neri. Riempimento:
+       un triangolo del muso, all'altezza dei fari, i cui tre vertici sono
+       gia' tutti vertici della lente, entra anche lui (due giri). */
+    const pk=i=>Math.round(pos[3*i]*2000)+","+Math.round(pos[3*i+1]*2000)+","+Math.round(pos[3*i+2]*2000);
+    const inT=new Set(out.map(t=>t.join(","))), cand=[];
+    for(let t=0;t<ind.length;t+=3){ const i0=ind[t],i1=ind[t+1],i2=ind[t+2];
+      const f=(F[i0]+F[i1]+F[i2])/3, y=(Y[i0]+Y[i1]+Y[i2])/3, sd=Math.abs((S[i0]+S[i1]+S[i2])/3);
+      if(f<fmax-0.75 || y<0.5 || y>0.9 || sd<smax*0.42 || inT.has(i0+","+i1+","+i2)) continue; cand.push([i0,i1,i2]); }
+    for(let pass=0;pass<2;pass++){ const V=new Set(); out.forEach(t=>t.forEach(i=>V.add(pk(i))));
+      for(let c=cand.length-1;c>=0;c--){ const t=cand[c]; if(t.every(i=>V.has(pk(i)))){ out.push(t); cand.splice(c,1); } } }
+    out.nv=n;
   }catch(e){ console.warn("[led head]",e); }
   return out; }
 function _carLedMask(src,mt,mesh,root){
@@ -9923,10 +9992,22 @@ function _carLedMask(src,mt,mesh,root){
     const sz=src.getSize(), W=sz.width, H=sz.height; Promise.resolve(src.readPixels()).then(px=>{ try{
       const dt=new BABYLON.DynamicTexture("carLedMask"+(_lpN++),{ width:W, height:H },scene,true);
       const c=dt.getContext(), im=c.createImageData(W,H), d=im.data;
-      for(let i=0;i<W*H*4;i+=4){ const r=px[i], g=px[i+1], b=px[i+2], mx=Math.max(r,g,b), mn=Math.min(r,g,b);
+      /* v636 (Giacomo: «le luci della Lambo sono oscurate dal nero»): i
+         fanali dietro sono «Y» rosse sottili dentro un gruppo ottico grigio
+         scuro; accese solo le Y sembravano fili. Ora si accende anche il
+         gruppo ottico attorno (i pixel scuri entro 4 px da un rosso, piu'
+         tenui): di notte il fanale e' un blocco rosso con le Y piu' vive. */
+      const red=new Uint8Array(W*H);
+      for(let i=0,j=0;i<W*H*4;i+=4,j++){ const r=px[i], g=px[i+1], b=px[i+2]; if(r>90 && r>g*2.2 && r>b*2.2) red[j]=1; }
+      const RD=4, near=new Uint8Array(W*H);
+      for(let y=0;y<H;y++) for(let x=0;x<W;x++){ if(!red[y*W+x]) continue;
+        for(let dy=-RD;dy<=RD;dy++){ const yy=y+dy; if(yy<0||yy>=H) continue;
+          for(let dx=-RD;dx<=RD;dx++){ const xx=x+dx; if(xx>=0 && xx<W) near[yy*W+xx]=1; } } }
+      for(let i=0,j=0;i<W*H*4;i+=4,j++){ const r=px[i], g=px[i+1], b=px[i+2], mx=Math.max(r,g,b), mn=Math.min(r,g,b);
         let o=[0,0,0];
         if(mn>200 && mx-mn<40) o=[255,255,255];                                   // bianco: i fari
-        else if(r>110 && r>g*2.2 && r>b*2.2) o=[255,40,30];                       // rosso: i fanali
+        else if(red[j]) o=[255,40,30];                                            // rosso: i fanali
+        else if(near[j] && mx<140) o=[170,16,10];                                 // il gruppo ottico scuro attorno
         d[i]=o[0]; d[i+1]=o[1]; d[i+2]=o[2]; d[i+3]=255; }
       c.putImageData(im,0,0);
       if(mesh && root){ try{ const T=_carHeadTris(mesh,root,px,W,H); _carHeadCache.set(key,T); _carHeadLens(mesh,root,T); }catch(e){ console.warn("[led lens]",e); } }
@@ -54759,16 +54840,26 @@ function _gtFork(set,G,key){
      tiene di lato e la punta finiva verso l'esterno. Ora si punta davvero
      alla bocca (dalla testa: un po' avanti e in giu'), nel mondo; tornata
      nel piatto prende un altro boccone. */
+  /* v636 (Giacomo: «quando vanno verso la bocca si muovono velocissime a
+     destra e sinistra, possono rimanere ferme!»). Due cause: la direzione
+     forchetta->bocca si ricalcolava a ogni fotogramma dalla posizione della
+     forchetta, che a sua volta dipende (presa della mano) dalla rotazione:
+     un anello che oscillava; e quando la forchetta passava quasi sotto la
+     bocca, l'asse «su x direzione» si rovesciava da un fotogramma all'altro.
+     Ora l'orientamento in mano e' UNO, fisso: la punta verso la faccia di
+     chi siede (all'indietro rispetto allo sguardo, un po' in su), piatta;
+     e la salita e' smussata nel tempo, cosi' non trema. */
   const Q=BABYLON.Quaternion, homeQ=Q.RotationYawPitchRoll(F.__ry,F.__rx,0);
-  let head=null; try{ head=(avatarRoot||player).getDescendants(false).find(d=>/(^|_)Head$/.test(d.name))||null; }catch(e){}
+  let eS=0, tPrev=performance.now();
   const ob=scene.onBeforeRenderObservable.add(()=>{
-    const h=F.__home||F.position, lift=Math.max(0,Math.min(1,(F.position.y-h.y)/0.22)), e=lift*lift*(3-2*lift);
+    const now=performance.now(), dt=Math.min(0.1,(now-tPrev)/1000); tPrev=now;
+    const h=F.__home||F.position, lift=Math.max(0,Math.min(1,(F.position.y-h.y)/0.22)), e0=lift*lift*(3-2*lift);
+    eS+=(e0-eS)*Math.min(1,dt*9); if(e0<=0.001 && eS<0.03) eS=0;
+    const e=eS;
     if(e<=0.001){ F.rotationQuaternion=null; F.rotation.set(F.__rx,F.__ry,0); }
     else try{
       const fw=new V(Math.sin(player.rotation.y),0,Math.cos(player.rotation.y));
-      let mouth; if(head){ _eatChain(head); mouth=head.getAbsolutePosition().add(fw.scale(0.09)).add(new V(0,-0.06,0)); }
-      else mouth=player.position.add(new V(0,1.45,0)).add(fw.scale(0.12));
-      F.computeWorldMatrix(true); const dir=mouth.subtract(F.getAbsolutePosition()); if(dir.lengthSquared()<1e-6) return; dir.normalize();
+      const dir=fw.scale(-1).add(new V(0,0.35,0)).normalize();          // verso la bocca: indietro e un po' su, sempre uguale
       const ax=V.Cross(V.Up(),dir).normalize(), ay=V.Cross(dir,ax), wq=Q.RotationQuaternionFromAxis(ax,ay,dir);   // +z (la punta) verso la bocca, piatta
       set.computeWorldMatrix(true); const sc=new V(), pq=new Q(), tr=new V(); set.getWorldMatrix().decompose(sc,pq,tr);
       const lq=Q.Inverse(pq).multiply(wq);
@@ -59459,7 +59550,7 @@ const DESTS=[
   { name:"Old Town · Anno 1", ic:"🏪", x:-26, z:9   },
   { name:"Downtown · Anno 2", ic:"🎬", x:0,   z:-2  },
   { name:"New District · A.3",ic:"💼", x:0,   z:-40 },
-  { name:"The Green Table",   ic:"🌿", x:54,  z:-42.4 },   // v621: il ristorante (all'imbocco del vialetto)
+  { name:"The Green Table",   ic:"🌿", x:71,  z:-48   },   // v621: il ristorante (v636: davanti alla porta, dopo lo spostamento a x 71)
   { name:"Stazione",          ic:"🚉", x:-78, z:7   },
   { name:"Aeroporto",         ic:"✈️", x:14,  z:-70 },
   { name:"Central Park",      ic:"🌳", x:84,  z:0   },
@@ -59530,6 +59621,8 @@ function mapPlaces(){
      avevano un nome da segnavia ("Station") al posto del nome del libro. */
   out.push({ ic:"🌳", name:"Park", hub:true, x:84, z:0, ax:84, az:0, open:true });
   out.push({ ic:"\u{1F354}", name:"Diner", hub:true, x:0, z:32, ax:0, az:22.6, open:true });   // v288
+  /* v636 (Giacomo: «aggiungi nella mappa il Green Table»): il taxi lascia davanti alla porta, girati verso l'ingresso */
+  out.push({ ic:"\u{1F33F}", name:"Green Table", hub:true, x:GT_X, z:GT_Z, ax:GT_X, az:GT_Z+GT_HD+1.5, face:Math.PI, open:true });
   /* v309l (Giacomo: «metti skate park sulla mappa»): il taxi ti lascia sul
      prato davanti al lato sud della pista, girato verso i ballerini */
   out.push({ ic:"\u{1F6F9}", name:"Skatepark", hub:true, x:SKATE.C.x, z:SKATE.C.z, ax:SKATE.C.x, az:SKATE.C.z-11.5, face:0, open:true });
@@ -68902,7 +68995,16 @@ const AUTO_KMH={ min:20, max:50, top:90 };   // (v502: i limiti veri stanno nell
    station» prima di «station»), dove stanno davvero (la porta, se la unit
    l'ha), e come chiamarle */
 function _adoor(u,x,z){ return ()=>{ try{ const d=u&&u.doorPos; if(d) return { x:d.x, z:d.z }; }catch(e){} return { x, z }; }; }
+/* v636 (Giacomo: «le macchine devono accettare come posto diner e green
+   table, anche restaurant (ti chiede quale)»). I due ristoranti hanno la
+   loro meta; «restaurant» (o «somewhere to eat», «lunch», «dinner») e'
+   ambiguo: l'auto chiede quale (ask), e la risposta («The Green Table,
+   please» o anche solo «the diner») sceglie. */
+const AUTO_REST_ASK="Which restaurant? The Sunny Side Diner or the Green Table?";
 const AUTO_DEST=[
+  { re:/\bgreen table\b/,               name:"the Green Table",   at:()=>({ x:GT_X, z:GT_Z+GT_HD+1.5 }) },
+  { re:/\bdiner\b|\bsunny side\b/,      name:"the Sunny Side Diner", at:()=>({ x:(typeof DINER!=="undefined"?DINER.x:0), z:22.6 }) },
+  { re:/\brestaurants?\b|\bsomewhere to eat\b|\bsomething to eat\b|\blunch\b|\bdinner\b/, name:"a restaurant", ask:true, at:()=>null },
   { re:/\bfire|climate\b/,              name:"the Climate & Fire Station", at:()=>_adoor(typeof UNIT_CLIMATE!=="undefined"?UNIT_CLIMATE:null,-60,-42)() },
   { re:/\bairport|terminal|plane\b/,    name:"the airport",       at:()=>({ x:6, z:-75 }) },
   { re:/\bstation|train\b/,             name:"Central Station",   at:()=>({ x:-92, z:0 }) },
@@ -68993,9 +69095,18 @@ function tlAutoBuildCar(key,id){
   const C={ root, H, HW, HL, seat, kit, body:car, lid:[lid,lr], ck:null, cabE:null, tab:null, fid:F.id, theme:F.theme };
   /* v621: i fari della flotta sono accesi solo in strada (nel traffico,
      chiamata, con te a bordo, o l'auto di un compagno); nello stallo spenti */
+  /* v636 (Giacomo: «le luci della Lambo rimangono accese, anche dietro,
+     anche quando la macchina e' parcheggiata»): bastava essere a bordo
+     (AUTO.on, anche fermi nello stallo a scegliere la meta, o arrivati e in
+     discesa) o avere una chiamata aperta (anche ferma al marciapiede ad
+     aspettarti, o con te seduto dentro) perche' restassero accese. Ora
+     solo quando l'auto e' davvero in strada: nel traffico (anche mentre
+     esce dallo stallo o rientra, tlAutoJoinSeen), in corsa verso la meta,
+     o mentre arriva a prenderti. Ferma e parcheggiata: spente. */
   root.__ledOn=()=>{ const tc=C.tc;
-    return !!C.__peer || (!!tc && _trafficCars.indexOf(tc)>=0) || (typeof AUTO!=="undefined" && AUTO.on && AUTO.car===C)
-      || (typeof AUTO_CALL!=="undefined" && !!AUTO_CALL.phase && AUTO_CALL.id===C.fid); };
+    return !!C.__peer || (!!tc && _trafficCars.indexOf(tc)>=0)
+      || (typeof AUTO!=="undefined" && AUTO.on && AUTO.car===C && AUTO.phase==="drive")
+      || (typeof AUTO_CALL!=="undefined" && AUTO_CALL.phase==="drive" && AUTO_CALL.id===C.fid); };
   try{ carLedLights(root,true); }catch(e){ console.warn("[fari flotta]",e); }
   return C;
 }
@@ -69311,6 +69422,16 @@ function tlAutoCabin(C,E){
   hud.rotation.x=Math.asin(gz);
   try{ if(typeof glowL!=="undefined"&&glowL) glowL.addExcludedMesh(hud); }catch(e){}
   C.tab=hud; ck.__mats=mats; ck.__dts=[dt,paintTex,C.scr&&C.scr.dt];
+  /* v636 (Giacomo: «se non premo subito O e lo premo quando la macchina e'
+     gia' in moto da un po', gli interni non appaiono piu'»). In marcia
+     l'altezza degli occhi cambia di qualche cm (sospensioni, dossi): al
+     primo O l'abitacolo si ricostruiva, ma buttarne uno e farne uno nuovo
+     lascia UGUALE il numero di mesh della scena, e l'octree (che si rifa'
+     solo quando quel numero cambia) non vedeva le mesh nuove: ne' fra le
+     ferme ne' fra le mobili, quindi mai disegnate (misurato: 0 su 93).
+     Ora l'abitacolo e' sempre fra le mobili e l'albero si rifa' subito. */
+  ck.getChildMeshes(false).forEach(m=>{ m.__dyn=true; m.alwaysSelectAsActiveMesh=true; });
+  try{ _octDirty(); }catch(e){}
   ck.setEnabled(!!AUTO.pov);
   try{ tlDashDraw(C); }catch(e){}
 }
@@ -70020,6 +70141,19 @@ function tlAutoAsk(){
   const m=document.getElementById("tlAutoMic"); if(m) m.onclick=()=>tlAutoMic("tlAutoIn",tlAutoTry,"tlAutoFb");
   setTimeout(()=>{ const i=document.getElementById("tlAutoIn"); if(i) try{ i.focus(); }catch(e){} },400);
 }
+/* v636: «which restaurant?» con due bottoni sotto il campo (nella finestra della meta) */
+function tlAutoRestButtons(fb){
+  if(!fb) return;
+  fb.style.color="#1d4f5c"; fb.textContent="";
+  const q=document.createElement("div"); q.textContent=AUTO_REST_ASK+" · Quale ristorante?"; fb.appendChild(q);
+  const row=document.createElement("div"); row.style.cssText="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;";
+  [["\u{1F354} The Sunny Side Diner, please","Take me to the Sunny Side Diner, please"],["\u{1F33F} The Green Table, please","Take me to the Green Table, please"]].forEach(o=>{
+    const b=document.createElement("button"); b.type="button"; b.className="qm-btn"; b.textContent=o[0];
+    b.onclick=()=>{ const i=document.getElementById("tlAutoIn"); if(i) i.value=o[1]; tlAutoTry(o[1]); };
+    row.appendChild(b); });
+  fb.appendChild(row);
+  const i=document.getElementById("tlAutoIn"); if(i){ i.value=""; i.placeholder="The Green Table, please."; try{ i.focus(); }catch(e){} }
+}
 function tlAutoMic(inputId,cb,fbId){
   if(!_SpkRec) return;
   const fb=document.getElementById(fbId);
@@ -70053,9 +70187,13 @@ function tlAutoTry(raw){
     say("✓ A tour of the town! Great idea.", true);
     setTimeout(()=>{ try{ DialogueBox.close(); }catch(e){} tlAutoTourAsk(); }, 600); return; }
   let P=null; for(const q of AUTO_DEST) if(q.re.test(t)){ P=q; break; }
-  if(!P){ say("Sorry, where? I know the school, the cinema, the station, the airport, the market, the hospital… or ask me for a tour of the town!"); return; }
+  if(!P){ say("Sorry, where? I know the school, the cinema, the station, the airport, the market, the hospital, the diner, the Green Table… or ask me for a tour of the town!"); return; }
+  /* v636: «restaurant» -> quale? Due bottoni nella stessa finestra, o si scrive */
+  if(P.ask){ AUTO.restAsk=true; tlAutoRestButtons(fb); try{ TTS.say(AUTO_REST_ASK,{ gender:"f" }); }catch(e){} return; }
   const polite=/\b(take|drive|bring|go|going|like|want|can|could|please)\b/.test(t);
-  if(t.split(" ").length<3 || !polite){ say("Please ask me in a full sentence: “Take me to "+P.name+", please.”"); return; }
+  /* la risposta alla domanda «quale ristorante?» basta anche corta («the diner») */
+  const answer=AUTO.restAsk && /Green Table|Diner/.test(P.name); AUTO.restAsk=false;
+  if(!answer && (t.split(" ").length<3 || !polite)){ say("Please ask me in a full sentence: “Take me to "+P.name+", please.”"); return; }
   say("✓ "+P.name.charAt(0).toUpperCase()+P.name.slice(1)+"! Let's go.", true);
   setTimeout(()=>{ try{ DialogueBox.close(); }catch(e){} tlAutoGo(P); }, 700);
 }
@@ -70757,8 +70895,11 @@ function tlAutoCmd(raw){
      una frase intera: «Take me to the cinema, please», «Can you drive me to
      the station?», «I want to go home». Il giro finisce e si va li'. */
   { let P=null; for(const q of AUTO_DEST) if(q.re.test(t)){ P=q; break; }
-    if(P && /\b(take|drive|bring|go|going|like|want|can|could|please)\b/.test(t)){
-      if(t.split(" ").length<3){ say("Please ask me in a full sentence: “Take me to "+P.name+", please.”"); return; }
+    /* v636: «restaurant» -> quale? La risposta dopo puo' essere corta («the Green Table») */
+    if(P && P.ask){ AUTO.restAsk=true; say(AUTO_REST_ASK+" Say: “The Green Table, please.”"); return; }
+    const answer=!!(P && AUTO.restAsk && /Green Table|Diner/.test(P.name)); if(P) AUTO.restAsk=false;
+    if(P && (answer || /\b(take|drive|bring|go|going|like|want|can|could|please)\b/.test(t))){
+      if(!answer && t.split(" ").length<3){ say("Please ask me in a full sentence: “Take me to "+P.name+", please.”"); return; }
       if(AUTO.place && AUTO.place.name===P.name && !AUTO.tour){ say("We're already going to "+P.name+"!"); return; }
       const wasTour=!!AUTO.tour;
       /* ancora in uscita dal parcheggio: la nuova meta si ricorda e vale appena si e' in strada */
