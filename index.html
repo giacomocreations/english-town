@@ -6663,6 +6663,10 @@ function sunHeightNow(){ if(DAY.override!==null) return DAY.override;
    updateDayNight), non il crepuscolo. Segue DAY.override quindi i tasti
    N/G/C di test funzionano anche per la panchina notturna. */
 function isNightNow(){ return sunHeightNow() < -0.05; }
+/* v637 (Giacomo: «per il frammento scrivi dopo il tramonto, non di notte»):
+   la panchina del lago (f6) vale appena il sole e' sotto l'orizzonte, non
+   una decina di minuti dopo come la «notte vera» di isNightNow */
+function afterSunsetNow(){ return sunHeightNow() < 0; }
 /* ============================================================================
    POPOLAZIONE NOTTURNA (deciso con Giacomo, poi ESTESO dopo lo screenshot di
    Ruby e dell'edicolante ancora in giro alle 23:57 — il primo giro copriva
@@ -6810,7 +6814,8 @@ function updateDayNight(dt){ if(!DAY.enabled) return;
        verrebbero riscritte a ogni frame da questa stessa riga. */
     const _fd=_fin?(m.__finOn?1:FIN.dim):1;
     const k=m.__dusk?((m.__ledRoot && !_carLit(m.__ledRoot))?0:_duskF):nightF;   // v619: i fari delle auto gia' al tramonto (v621: la flotta solo in strada)
-    m.emissiveColor.set(e.r*k*_fd,e.g*k*_fd,e.b*k*_fd); }
+    m.emissiveColor.set(e.r*k*_fd,e.g*k*_fd,e.b*k*_fd);
+    if(m.__lensFade){ const a=Math.min(1,k*_fd*2.5); if(Math.abs(m.alpha-a)>0.01) m.alpha=a; } }   // v637: la lente dei fari Lambo c'e' solo accesa
   if(hzWinTex){ hzWinTex.level=nightF*2.2; if(hzWinTex.__twin) hzWinTex.__twin.level=hzWinTex.level; }   // finestre skyline: bloom caldo di notte
   /* v304 (Giacomo, 7 ott: «diminuire glow notturno»): di notte arrivava a
      0,8 e finestre, lampioni e perfino le strisce pedonali si sfocavano in
@@ -9751,7 +9756,7 @@ function _pm(){
     tire:   mat("pp_tire",  "#1c1f22"),
     glass:  mat("pp_glass", "#23323c"),
     chrome: mat("pp_chrome","#c4ccd2"),
-    head:   mat("pp_head",  "#fff4d6","#000000"),
+    head:   mat("pp_head",  "#9fa8ad","#000000"),   // v637: di giorno vetro grigio chiaro (crema pieno sembrava acceso); di notte l'emissivo
     tail:   mat("pp_tail",  "#6e1f22","#000000"),
   };
   // vetri auto: un filo lucidi
@@ -9844,7 +9849,10 @@ function _carLedSetup(mt,kind,owner){
   mt.__led=true; mt.__dusk=true; mt.__nightEmissive=(kind==="mask"?new BABYLON.Color3(1,1,1):kind==="head"?CAR_LED_HEAD:CAR_LED_TAIL).clone();
   if(owner) mt.__ledRoot=owner;
   if(!mt.emissiveColor) mt.emissiveColor=new BABYLON.Color3(0,0,0);
-  if(kind==="head"){ const w=BABYLON.Color3.FromHexString("#e9eef4"); if(mt.albedoColor) mt.albedoColor=w; else if(mt.diffuseColor) mt.diffuseColor=w; }
+  /* v637 (Giacomo: «molte macchine hanno i fari accesi anche di giorno»):
+     qui il colore del faro diventava bianco ghiaccio, e al sole un faro
+     bianco pieno sembra acceso. Ora di giorno resta il colore del modello
+     (vetro scuro); il bianco lo da' solo l'emissivo, dal tramonto. */
   nightLights.push(mt); return mt; }
 function carLedLights(root,own){
   if(!root || root.__ledDone) return; root.__ledDone=true;
@@ -9943,6 +9951,11 @@ function _carHeadLens(mesh,root,T){
   lm.parent=mesh; lm.isPickable=false;
   lm.material=(root.__ledOn)?(root.__lensM||(root.__lensM=_carLedSetup(_carLedBase("head"),"head",root))):_carLedMat("head");
   lm.material.backFaceCulling=false; lm.material.zOffset=-4;
+  /* v637 (Giacomo: «la Lamborghini ha i fari accesi anche nel parcheggio»):
+     la lente era bianca anche spenta, e al sole (o nello stallo) sembrava un
+     faro acceso. Ora si vede solo quanto e' accesa: di giorno e da ferma e'
+     trasparente, e sotto resta il gruppo ottico del modello (updateDayNight) */
+  lm.material.__lensFade=true; lm.material.alpha=0;
   try{ if(mesh.__dyn || mesh.alwaysSelectAsActiveMesh){ lm.__dyn=true; } _octDirty(); }catch(e){}
 }
 /* i gruppi ottici davanti: nella texture sono grigio scuro (vetro fume'),
@@ -15272,7 +15285,7 @@ function buildNightBench(){
 function refreshNightBenchMark(){
   if(!NIGHT_BENCH_MARK) return;
   const f=Frag.info("f6");
-  const on=!!(f && !f.todo && !Frag.has("f6") && Frag.unitsDone(f.yr)>=f.thr && isNightNow());
+  const on=!!(f && !f.todo && !Frag.has("f6") && Frag.unitsDone(f.yr)>=f.thr && afterSunsetNow());
   if(on===NIGHT_BENCH_MARK.on) return;
   NIGHT_BENCH_MARK.on=on; NIGHT_BENCH_MARK.mesh.setEnabled(on);
   const i=gatePanels.indexOf(NIGHT_BENCH_MARK.mat);
@@ -15284,7 +15297,7 @@ function pauseAtNightBench(){
   if(NIGHT_BENCH_NODE.b && !BSIT.b) benchSit(NIGHT_BENCH_NODE.b);   // v291: seduti davvero
   const f=Frag.info("f6");
   const thrOk=(f && !f.todo && !Frag.has("f6") && Frag.unitsDone(f.yr)>=f.thr);
-  if(thrOk && isNightNow()){
+  if(thrOk && afterSunsetNow()){
     setTimeout(()=>{ openFragment(f); try{ refreshNightBenchMark(); }catch(e){} }, 400); return;
   }
   /* ⚠️ Qui prima usciva il TITOLO del frammento ("Il lago, di notte.") come
@@ -15298,12 +15311,12 @@ function pauseAtNightBench(){
      Il ramo notturno riecheggia le PAROLE STESSE della lettera ("the water
      is quiet, and the town lights are far away"), non una parafrasi. */
   if(Frag.has("f6")){
-    toast(isNightNow()
+    toast(afterSunsetNow()
       ? "\u{1F319} You sit here again. The water is quiet, and the town lights are far away."
       : "\u{1F314} In the day it's only water \u2014 but now you know what this place is like in the dark.");
     return;
   }
-  toast(thrOk ? "\u{1F314} In the day the lake is only water. Come back at night."
+  toast(thrOk ? "\u{1F314} In the day the lake is only water. Come back after sunset."
               : "\u{1F314} You stop for a moment to look at the lake.");
 }
 
@@ -26150,12 +26163,12 @@ const FRAGMENTS=[
     distractors:["moon","stars","shops"] },
 
   { id:"f6", yr:2, thr:4, word:"WAS", at:"lake", ch:"bench",
-    place:"su una panchina vicino al lago, ma solo di notte", where:"A bench by the lake, at night",
+    place:"su una panchina vicino al lago, ma solo dopo il tramonto", where:"A bench by the lake, after sunset",
     title:"The lake at night",
-    text:"Dear new citizen,\n\nCome back here when it is dark. In the day the lake is only "
+    text:"Dear new citizen,\n\nCome back here after sunset. In the day the lake is only "
         +"water.\nAt night it WAS my favourite place: the water is quiet, and the town "
         +"lights are far away. Some places speak only when you are patient.\n\nA Friend",
-    it:"Caro nuovo cittadino, torna qui quando è buio. Di giorno il lago è solo acqua. Di "
+    it:"Caro nuovo cittadino, torna qui dopo il tramonto. Di giorno il lago è solo acqua. Di "
       +"notte ERA il mio posto preferito: l'acqua è tranquilla e le luci della città sono "
       +"lontane. Alcuni posti parlano solo se hai pazienza. — Un amico",
     q:"Why is the lake The Architect's favourite place at night?",
