@@ -13227,7 +13227,7 @@ function dinerSeatInteracts(){
       interact:()=>dinerSit(s) });
   });
   /* mentre sei seduto: una sola E, sempre la piu' vicina (e' su di te) */
-  DINER.meInter=addInteract({ id:"diner_me", area:"town", radius:3.0, enabled:false, prio:-2,
+  DINER.meInter=addInteract({ id:"diner_me", area:"town", radius:3.0, enabled:false, prio:-2, solo:true,
     pos:()=>player.position, prompt:()=>dinerMePrompt(), interact:()=>dinerMeAction() });
 }
 function dinerSit(s){
@@ -53067,6 +53067,12 @@ function updateProximity(){
      prima della socialita'. `prio` alto = scelto per ultimo; solo i compagni
      ce l'hanno, tutto il resto vale 0 e si comporta come sempre. Resta Q per
      scorrere fra i candidati, quindi il compagno e' comunque raggiungibile. */
+  /* v637 (Giacomo, con foto: «al diner, quando mi siedo, appare "me 1/2":
+     sono io seduto, non devo fare una scelta»). Seduti (diner, Green
+     Table) la P e' quella su di te (solo:true): il cameriere
+     accanto al tavolo, un altro cliente, una sedia vicina non diventano
+     un'alternativa da scorrere con Q. Al cameriere si parla da li'. */
+  { const so=list.find(c=>c.solo); if(so){ list.length=0; list.push(so); } }
   list.sort((a,b)=>((a.prio||0)-(b.prio||0)) || (a.__d3-b.__d3));
   interCands=list;
   if(!list.length){ nearInter=null; interSelId=null; interManual=false; interHilite(null);
@@ -54051,7 +54057,7 @@ function buildGreenTableNPCs(){
       let dx=b.x-a.x, dz=b.z-a.z; const d=Math.hypot(dx,dz), R=0.7; if(d>=R) continue;
       if(d<0.001){ dx=1; dz=0; } else { dx/=d; dz/=d; }
       const push=(R-d)/2; a.x-=dx*push; a.z-=dz*push; b.x+=dx*push; b.z+=dz*push; } });
-  GT.meInter=addInteract({ id:"gt_me", area:A, radius:3.0, enabled:false, prio:-2,
+  GT.meInter=addInteract({ id:"gt_me", area:A, radius:3.0, enabled:false, prio:-2, solo:true,
     pos:()=>player.position, prompt:()=>gtMePrompt(), interact:()=>gtMeAction() });
   if(!GT.mirT) GT.mirT=setInterval(()=>{ try{ gtMirror(); }catch(e){} },700);
 }
