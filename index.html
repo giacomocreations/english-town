@@ -5257,6 +5257,8 @@ function _eatSound(what){ try{ if(typeof SFX==="undefined") return; if(what==="s
 function eatRun(steps,fwd,onDone){
   eatStop(); if(!steps.length){ if(onDone) onDone(); return; }
   EAT.busy=true; EAT.q={ steps, k:0, cur:null };
+  /* v637: dove sta la testa prima di cominciare (la visuale O la segue da qui, vedi _povHeadFollow) */
+  EAT.headRef=null; try{ const h=_povHeadNode(); if(h){ _eatChain(h); EAT.headRef=h.getAbsolutePosition().subtract(player.position); } }catch(e){}
   steps.forEach(s=>{ if(s.g && !s.g.__home) s.g.__home=s.g.position.clone();
     if(s.g && !s.g.__homeRot && !s.g.rotationQuaternion) s.g.__homeRot=s.g.rotation.clone();
     if(s.g) try{ _eatBounds(s.g); }catch(e){} });
@@ -14061,6 +14063,22 @@ function dinerCarry(keys){
   if(DINER.counterTray) DINER.counterTray.setEnabled(false);    // l'ha preso dal bancone
   DINER.tray=tray; DINER.trayLoad=load; DINER.carryPins=cp.pins;
   DINER.carryObs=scene.onBeforeRenderObservable.add(()=>{ if(DINER.carryPins) _applyPins(DINER.carryPins); });
+  /* v637 (Giacomo: «anche nel diner il piatto del cameriere va su e giu'
+     quando lo porta»): come al Green Table (gtCarryOn, v634). Il vassoio
+     stava fermo nel sistema di Ray mentre col passo spalle e braccia vanno
+     su e giu': le mani si staccavano e il vassoio pareva ballare. Ora a
+     ogni fotogramma, dopo le animazioni, poggia sulle mani (il punto in
+     mezzo, ammorbidito), dritto. */
+  const _hn=w.holder.getDescendants(false).filter(d=>/(^|_)(MiddleHand|Hand|Palm|Wrist)\.[LR]$/.test(d.name)), _hb=[];
+  ["L","R"].forEach(sd=>{ const c=_hn.filter(d=>d.name.endsWith("."+sd)); const pk=c.find(d=>/MiddleHand|Palm/.test(d.name))||c.find(d=>/Hand/.test(d.name))||c[0]; if(pk) _hb.push(pk); });
+  if(_hb.length===2){ let off=null; const tmp=new BABYLON.Vector3();
+    DINER.trayFollow=scene.onAfterAnimationsObservable.add(()=>{ if(DINER.tray!==tray) return;
+      try{ if(DINER.carryPins) _applyPins(DINER.carryPins);
+        w.carrier.computeWorldMatrix(true); const inv=w.carrier.getWorldMatrix().clone().invert(), mid=new BABYLON.Vector3(0,0,0);
+        _hb.forEach(h=>{ _eatChain(h); mid.addInPlace(h.getAbsolutePosition()); }); mid.scaleInPlace(0.5);
+        BABYLON.Vector3.TransformCoordinatesToRef(mid,inv,tmp);
+        if(!off) off=tray.position.subtract(tmp);                               // la distanza mani-vassoio della posa resta quella
+        BABYLON.Vector3.LerpToRef(tray.position,tmp.add(off),0.6,tray.position); }catch(e){} }); }
 }
 /* al tavolo: giu' i piatti (o la cartellina), il vassoio resta in mano */
 function dinerEmptyTray(){
@@ -14069,6 +14087,7 @@ function dinerEmptyTray(){
 /* al bancone: il vassoio torna al suo posto e le braccia si sciolgono */
 function dinerDrop(){
   if(DINER.carryObs){ scene.onBeforeRenderObservable.remove(DINER.carryObs); DINER.carryObs=null; }
+  if(DINER.trayFollow){ scene.onAfterAnimationsObservable.remove(DINER.trayFollow); DINER.trayFollow=null; }
   DINER.carryPins=null; DINER.trayLoad=null;
   if(DINER.tray){ try{ DINER.tray.dispose(false,false); }catch(e){} DINER.tray=null; }
   dinerCounterTray().setEnabled(true);
@@ -55313,12 +55332,50 @@ function _povPlace(){
   /* seduti (diner) gli occhi scendono di quanto e' sceso il corpo */
   const sit=(typeof SIT!=="undefined" && SIT.on)?SIT.drop:0;
   camera.target.set(player.position.x+Math.sin(ry)*0.04, player.position.y+POV.eye-sit, player.position.z+Math.cos(ry)*0.04);
+  try{ const d=_povHeadFollow(); if(d) camera.target.addInPlace(d); }catch(e){}
 }
+/* v637 (Giacomo: «quando metto la visuale O e sta mangiando, si vede la
+   testa vuota come si piega in avanti: la visuale deve seguire gli occhi,
+   non si deve vedere il collo vuoto; in tutte le occasioni in cui si
+   mangia»). Gli occhi erano un punto FISSO sopra il giocatore: mangiando
+   (eatRun: ci si allunga verso il piatto, si porta il cibo alla bocca) il
+   busto si piega in avanti, la testa (nascosta alla camera in prima
+   persona) se ne va, e dal punto fisso si vedeva dentro il collo. Ora,
+   mentre si mangia o si beve, gli occhi seguono lo spostamento VERO della
+   testa rispetto a com'era prima di cominciare (l'osso della testa,
+   ammorbidito); finito, tornano dolcemente al loro posto. Da fermi o
+   camminando niente cambia (nessun dondolio della camera). */
+let _povHeadN=null;
+function _povHeadNode(){
+  if(_povHeadN && _povHeadN.__root===avatarRoot && !_povHeadN.isDisposed()) return _povHeadN;
+  _povHeadN=null; if(!avatarRoot) return null;
+  const h=avatarRoot.getDescendants(false).find(d=>/(^|_)Head$/.test(d.name)); if(!h) return null;
+  h.__root=avatarRoot; return (_povHeadN=h); }
+function _povHeadFollow(){
+  const h=_povHeadNode(); if(!h) return null;
+  const V=BABYLON.Vector3, busy=(typeof EAT!=="undefined" && !!EAT.busy);
+  POV.hd=POV.hd||new V(0,0,0);
+  if(!busy && POV.hd.lengthSquared()<1e-8){ POV.headRef=null; return null; }   // a riposo: niente calcoli
+  _eatChain(h); const rel=h.getAbsolutePosition().subtract(player.position);
+  let want=V.Zero();
+  if(busy){ if(!POV.headRef) POV.headRef=(EAT.headRef||rel).clone(); want=rel.subtract(POV.headRef); }
+  else POV.headRef=null;
+  /* mangiando: subito dove sta la testa (il gesto e' gia' morbido; un
+     inseguimento a 20 fps restava indietro e il collo si vedeva lo stesso);
+     finito: torna in un attimo, a tempo vero */
+  if(busy) POV.hd.copyFrom(want);
+  else { const dt=Math.min(0.1,((engine.getDeltaTime&&engine.getDeltaTime())||33)/1000); V.LerpToRef(POV.hd,want,1-Math.exp(-dt*8),POV.hd); }
+  return POV.hd; }
 /* ogni fotogramma in prima persona: tiene fuori dalla camera la testa (anche
    quella nuova, se il corpo si ricostruisce cambiando vestito o cappello) e
    spenta la profondita' di campo riaccesa dal pulsante qualita'.
    v292: arretrando lo sguardo con la rotellina sparisce TUTTO il corpo
    (e' come fare un passo indietro, non guardarsi da fuori). */
+/* v637: mangiando, gli occhi si rimettono sulla testa anche DOPO che il
+   gesto del fotogramma e' stato applicato (eatRun gira prima del disegno,
+   ma a volte dopo povTick): niente fotogramma di ritardo, niente collo */
+scene.onBeforeCameraRenderObservable.add(c=>{ if(c!==camera || !POV.on || !(typeof EAT!=="undefined" && EAT.busy)) return;
+  try{ _povPlace(); }catch(e){} });
 function povTick(){
   if(pipe && pipe.depthOfFieldEnabled) pipe.depthOfFieldEnabled=false;
   _povBody();
