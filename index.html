@@ -9920,7 +9920,15 @@ const _carMaskCache=new Map(), _carHeadCache=new Map();
 /* i gruppi ottici davanti diventano una «lente» accesa: gli stessi
    triangoli della scocca, copiati 3 mm piu' in fuori, col materiale LED dei
    fari (di giorno vetro chiaro, dal tramonto bianco acceso) */
+/* v639 (Giacomo: «i fari delle Lambo non mi piacciono, sembrano disegnati
+   a mano; nel faro originale si vedono sotto i LED a forma di Y: fai
+   accendere solo quelli»). La lente bianca che copriva tutto il gruppo
+   ottico non c'e' piu': tolto il vetro nero (_carHeadGlassCut), i LED a Y
+   disegnati nella texture si vedono, e la maschera (_carLedMask: i pixel
+   bianchi) accende solo loro. La funzione resta, spenta. */
+const CAR_HEAD_LENS=false;
 function _carHeadLens(mesh,root,T){
+  if(!CAR_HEAD_LENS) return;
   if(!T || !T.length || mesh.__lens) return;
   const pos=mesh.getVerticesData("position"), P=[], I=[], N=[];
   if(!pos || (T.nv && pos.length/3!==T.nv)) return;               // solo la scocca da cui sono stati misurati (non le ruote staccate, che hanno lo stesso materiale)
@@ -81531,8 +81539,39 @@ function _npcFaceBuild(H,M,F,hi,skinM,face){
   g.getChildMeshes().forEach(m=>{ if(!m.getTotalVertices()) return;
     try{ const o=_accSkin(m,H,M,hi); o.__noTint=true; o.receiveShadows=false; out.push(o); }catch(e){ console.warn("[npc] viso",e); } });
   g.dispose(false,false);
+  /* v639 — LE PALPEBRE (Giacomo: «si possono far chiudere gli occhi a tutti
+     gli NPC, perche' sia piu' realistico?»). Sopra ogni occhio una
+     palpebra chiusa: un ovale del colore della pelle (lo stesso materiale
+     delle labbra, prende la luce come la pelle vera), un filo piu' grande
+     dell'occhio, con la linea scura delle ciglia curva verso il basso.
+     Mesh a parte, legata all'osso della testa come il resto del viso, e
+     spenta: la accende per un attimo npcBlinkTick (il battito). */
+  const lids=[];
+  try{ const gl=new BABYLON.TransformNode("npcLids",scene), LM=_faceSkinMat(face.skin||"#d3a172"), LD=_faceMat(FACE_DARK);
+    F2.eyes.forEach(e=>{ const rx=e.w*0.72, ry=e.h*0.76, cy=e.y-e.h*0.06;
+      _faceBlob(gl,F2,e.x,cy,rx,ry,2.4,0,0.0042,LM);
+      const path=[]; for(let i=0;i<=10;i++){ const t=-1+2*i/10; path.push([e.x+t*rx*0.92, cy-ry*0.12-ry*0.22*(1-t*t)]); }
+      _faceLine(gl,F2,path,0.0011,0.0048,LD); });
+    try{ _accMerge(gl); }catch(e){}
+    gl.getChildMeshes().forEach(m=>{ if(!m.getTotalVertices()) return;
+      try{ const o=_accSkin(m,H,M,hi); o.__noTint=true; o.receiveShadows=false; o.isVisible=false; lids.push(o); }catch(e){ console.warn("[npc] palpebre",e); } });
+    gl.dispose(false,false); }catch(e){ console.warn("[npc] palpebre",e); }
+  out.lids=lids;
   return out;
 }
+/* il battito: ogni 2,5-7 s gli occhi si chiudono per ~0,14 s (ogni tanto due
+   volte di fila), ciascuno col suo ritmo; solo se il viso e' acceso (vicino) */
+function npcBlinkTick(){
+  const now=performance.now();
+  for(let i=0;i<NPCS.length;i++){ const n=NPCS[i], L=n.__lidMs; if(!L||!L.length) continue;
+    if(!n.__blinkAt) n.__blinkAt=now+800+Math.random()*5000;
+    let closed=false;
+    if(now>=n.__blinkAt){ if(now<n.__blinkAt+140) closed=true;
+      else n.__blinkAt=now+(Math.random()<0.15?160:2500+Math.random()*4500); }
+    const want=closed && n.__faceVis===true;
+    if(n.__lidOn===want) continue; n.__lidOn=want;
+    for(let k=0;k<L.length;k++) if(!L[k].isDisposed()) L[k].isVisible=want; } }
+scene.onBeforeRenderObservable.add(()=>{ try{ npcBlinkTick(); }catch(e){} });
 function npcFaceLater(npc,cfg){
   if(!npc || (cfg && cfg.faceLook===false)) return;
   npc.__faceCfg=(cfg && cfg.faceLook) || null;
@@ -81565,6 +81604,9 @@ function _npcFaceDo(npc){
     npc.__faceAt={ H:R.H, M:R.M, hi:R.hi };
   }
   out.forEach(m=>{ m.isPickable=false; m.applyFog=true; m.alwaysSelectAsActiveMesh=true; m.__npcCast=false; if(ms.indexOf(m)<0) ms.push(m); });
+  const lids=out.lids||[];                                             // v639: le palpebre (npcBlinkTick)
+  lids.forEach(m=>{ m.isPickable=false; m.applyFog=true; m.alwaysSelectAsActiveMesh=true; m.__npcCast=false; if(ms.indexOf(m)<0) ms.push(m); });
+  npc.__lidMs=lids; npc.__lidOn=false;
   npc.__faceMs=out; npc.__faceVis=undefined;
   try{ _octDirty(); }catch(e){}
 }
