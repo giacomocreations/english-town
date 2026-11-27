@@ -13327,6 +13327,11 @@ function _dinerAwayTick(){
   const d=DINER.debt, now=performance.now();
   if(d){
     if(d.asking){ if(!_dlgOpen()){ d.asking=false; d.at=now+8000; } return; }
+    /* v638: inseguito (o gia' chiesto il conto) e scappato lontano: -50 stelle */
+    if(_dinerFar() && (d.chased || d.refused)){ DINER.debt=null; DINER.o=null;
+      try{ if(DINER.walking) DINER.walking.cancel=true; }catch(e){}
+      try{ dinerWaiterHome(); }catch(e){}
+      dineDashPenalty("the Sunny Side Diner","Ray","dal Sunny Side Diner"); return; }
     if(d.chasing || now<d.at || _dinerFar()) return;
     dinerChase(); return;
   }
@@ -13337,7 +13342,7 @@ function _dinerAwayTick(){
 /* Ray va dal giocatore: dalla veranda passa dall'ingresso, poi lo segue */
 function dinerChase(){
   const d=DINER.debt, w=DINER.waiter; if(!d||!w) return;
-  d.chasing=true;
+  d.chasing=true; d.chased=true;                                  // v638: ti ha rincorso: scappare ora costa
   const pp=()=>_dinerFar()?w.pos():player.position;
   const E1=()=>new BABYLON.Vector3(DINER.x,0,29.5), E0=()=>new BABYLON.Vector3(DINER.x,0,22.6);
   const wIn=_dinerInside(w.pos()), pIn=_dinerInside(player.position);
@@ -13348,12 +13353,29 @@ function dinerChase(){
     if(_dinerFar() || Math.hypot(player.position.x-p.x,player.position.z-p.z)>4.0){ d.at=performance.now()+2500; return; }
     if(_dlgOpen()){ d.at=performance.now()+1500; return; }        // stai parlando con qualcuno: aspetta
     dinerDebtAsk(); },
-    ()=>{ d.chasing=false; d.at=performance.now()+2500; });
+    ()=>{ d.chasing=false; d.at=performance.now()+2500; },{ steer:true, path:true, stuckFrames:320 });   // v638: aggira gli ostacoli (e gli edifici: percorso A*)
+}
+/* v638 — SCAPPARE SENZA PAGARE. Il cameriere ti ha gia' inseguito (o ti ha
+   gia' chiesto il conto) e tu continui a scappare: oltre la sua portata
+   (45 m dal locale) o dentro un altro edificio. Si perdono 50 stelle, il
+   conto si chiude, il cameriere torna dentro, e lo si dice chiaro. */
+const DASH_STARS=50;
+function dineDashPenalty(place,waiter,placeIt){
+  let lost=0; try{ lost=Stars.penaltyDash(DASH_STARS); }catch(e){}
+  const en="You ran away from "+place+" without paying the bill! That's not fair: "+(lost>0?"you lose "+lost+" stars.":"you lose your stars.");
+  const it="Sei scappato "+(placeIt||("da "+place))+" senza pagare il conto, anche dopo che "+waiter+" ti ha rincorso: "+(lost>0?"perdi "+lost+" stelle ⭐.":"perdi le stelle.")+" La prossima volta paga prima di andare via!";
+  toast("\u{1F6A8} ⭐ −"+lost+" · You didn't pay at "+place+"!",6500);
+  try{ SFX.wrong(); }catch(e){}
+  const show=()=>{ try{ DialogueBox.open({ icon:"\u{1F6A8}", name:"\u{1F9FE} "+place, sub:"You didn't pay! · ⭐ −"+lost,
+      text:en, italian:it, autoSpeak:true,
+      buttons:[{ label:"I'm sorry. I won't do it again!", cls:"primary", act:()=>{} }] }); }catch(e){} };
+  let busy=false; try{ busy=_dlgOpen(); }catch(e){}
+  if(busy) setTimeout(show,2500); else show();
 }
 function dinerDebtAsk(){
   const d=DINER.debt, w=DINER.waiter; if(!d||!w) return;
   const p=w.pos(); w.carrier.rotation.y=Math.atan2(player.position.x-p.x,player.position.z-p.z)+NPC_FACE_OFFSET; w.watch=true;
-  d.asking=true; DINER.o=d.o;
+  d.asking=true; d.refused=true; DINER.o=d.o;                    // v638: chiesto in faccia: da qui scappare costa
   const c=Math.round(dinerTotal(d.o)*100);                          // v322: il totale si ascolta
   pricePick({ npc:w, icon:"\u{1F9FE}", sub:DINER.name+" \u2014 the bill",
     said:"Excuse me! You forgot to pay the bill! That's "+priceWords(c)+", please.", price:c,
@@ -13388,8 +13410,8 @@ function _dnSpot(t){ return new BABYLON.Vector3(t.x, 0, t.z-1.12); }
    e il conto veniva chiesto due volte (visto nel collaudo). Ora la nuova
    aspetta: la vecchia viene annullata (i suoi bersagli diventano «dove sei
    gia'», quindi finisce in un fotogramma) e al suo arrivo parte la nuova. */
-function _dnWalk(targets,arrive,done,fail){
-  const job={ targets, arrive, done, fail, cancel:false };
+function _dnWalk(targets,arrive,done,fail,xo){
+  const job={ targets, arrive, done, fail, cancel:false, xo };
   if(DINER.walking){ DINER.pending=job; DINER.walking.cancel=true; return; }
   _dnWalkStart(job);
 }
@@ -13399,7 +13421,7 @@ function _dnWalkStart(job){
   const fin=ok=>{ if(DINER.walking===job) DINER.walking=null; DINER.busy=false;
     if(DINER.pending){ const nx=DINER.pending; DINER.pending=null; _dnWalkStart(nx); return; }
     if(ok && !job.cancel) job.done(); else if(job.fail) job.fail(); };
-  npcWalkSeq(w,T,job.arrive,()=>fin(true),"town",()=>fin(false),{ detour:true, speed:2.3 });   // un cameriere ha fretta
+  npcWalkSeq(w,T,job.arrive,()=>fin(true),"town",()=>fin(false),Object.assign({ detour:true, speed:2.3 },job.xo||{}));   // un cameriere ha fretta
 }
 function dinerWaiterTo(t,then){
   const w=DINER.waiter; if(!w){ then(); return; }
@@ -26029,6 +26051,13 @@ const Stars=(function(){
     const s=ledger(); if(s.tot<=0) return 0;
     s.tot-=1; _save(s); refreshStarHud(true); return 1;
   }
+  /* v638 (Giacomo: «togliere stelle se ci si rifiuta di pagare nei locali:
+     se dopo che ci ha rincorso il cameriere continuiamo a scappare,
+     perdiamo 50 stelle e ci viene detto»). Mai sotto zero. */
+  function penaltyDash(n){
+    const s=ledger(); const lost=Math.min(Math.max(0,s.tot), n||50); if(lost<=0) return 0;
+    s.tot-=lost; _save(s); refreshStarHud(true); return lost;
+  }
   function speakToday(){ const s=ledger(); return s.daySpkDate===_today() ? s.daySpk : 0; }
   function awardFragment(fragId, missed){
     return award("f:"+fragId, missed?STAR_RULES.fragmentRetry:STAR_RULES.fragment, "frammento"); }
@@ -26067,7 +26096,7 @@ const Stars=(function(){
   }
   function reset(){ _save({tot:0,given:{},day:"",dayAmb:0,dayNpc:{},master:false}); refreshStarHud(); }
   return { total, award, awardStep, awardAmbient, awardAmbientNPC, awardAskNPC,
-           awardCafeOrder, awardGreenTable, awardShopping, awardGem, awardFkNote, awardSpeak, speakToday, awardSkWord, penaltySkWord, awardSing, awardDanceCmd, awardFragment, awardPhoto,
+           awardCafeOrder, awardGreenTable, awardShopping, awardGem, awardFkNote, awardSpeak, speakToday, awardSkWord, penaltySkWord, penaltyDash, awardSing, awardDanceCmd, awardFragment, awardPhoto,
            checkYearBonus, setMaster, title, next, unitStars, ledger, reset };
 })();
 
@@ -31713,6 +31742,56 @@ function initShopAssist(){
 }
 /* cammina lungo una sequenza di target (funzioni ()=>pos); l'ultimo con
    raggio d'arrivo "arrive". Si auto-annulla se si esce dal negozio. */
+/* =====================================================================
+   v638 — IL PERCORSO (A*) PER CHI TI RINCORRE (Giacomo: «il cameriere puo'
+   evitare gli ostacoli quando li trova se esce per rincorrere l'avatar»).
+   Schivare all'ultimo (opts.steer) basta per un palo o un'auto, non per un
+   edificio: con te dietro il diner Ray rientrava nella veranda e restava
+   contro la cucina. Qui una griglia da 50 cm attorno ai due punti (30 m di
+   margine), costruita solo dove serve (ogni cella si controlla la prima
+   volta che A* ci passa, contro i soli solidi della zona), con lo stesso
+   raggio della collisione. Il percorso si accorcia tagliando gli angoli
+   dove la vista e' libera. null se non c'e' (o e' troppo lontano).
+   ===================================================================== */
+function npcPathFind(ax,az,bx,bz,opt){
+  opt=opt||{};
+  const C=opt.cell||0.5, PAD=opt.pad||30, PR=AREA_PLAYER_R[area]||PLAYER_R, PR2=PR*PR;
+  const x0=Math.min(ax,bx)-PAD, x1=Math.max(ax,bx)+PAD, z0=Math.min(az,bz)-PAD, z1=Math.max(az,bz)+PAD;
+  const W=Math.ceil((x1-x0)/C)+1, H=Math.ceil((z1-z0)/C)+1; if(W*H>260000) return null;
+  const S=solids.filter(q=>q.area===area && !q.playerOnly && !(q.x1<x0-1 || q.x0>x1+1 || q.z1<z0-1 || q.z0>z1+1));
+  const st=new Uint8Array(W*H);                                     // 0 non visto, 1 libero, 2 pieno
+  const isB=(i,j)=>{ if(i<0||j<0||i>=W||j>=H) return true; const k=j*W+i; if(st[k]) return st[k]===2;
+    const x=x0+i*C, z=z0+j*C; let b=false;
+    for(let n=0;n<S.length;n++){ const q=S[n]; if(!(x>q.x0-PR && x<q.x1+PR && z>q.z0-PR && z<q.z1+PR)) continue;
+      const dx=(x<q.x0)?(q.x0-x):((x>q.x1)?(x-q.x1):0), dz=(z<q.z0)?(q.z0-z):((z>q.z1)?(z-q.z1):0);
+      if(dx*dx+dz*dz<PR2){ b=true; break; } }
+    st[k]=b?2:1; return b; };
+  const ci=x=>Math.round((x-x0)/C), cj=z=>Math.round((z-z0)/C);
+  let si=ci(ax), sj=cj(az), gi=ci(bx), gj=cj(bz);
+  const near=(i,j)=>{ if(!isB(i,j)) return [i,j]; for(let r=1;r<=6;r++) for(let a=-r;a<=r;a++) for(const [u,v] of [[a,-r],[a,r],[-r,a],[r,a]]) if(!isB(i+u,j+v)) return [i+u,j+v]; return null; };
+  const s0=near(si,sj), g0=near(gi,gj); if(!s0||!g0) return null; [si,sj]=s0; [gi,gj]=g0;
+  const G=new Float32Array(W*H).fill(1e9), from=new Int32Array(W*H).fill(-1), shut=new Uint8Array(W*H);
+  const hx=(i,j)=>{ const a=Math.abs(i-gi), b=Math.abs(j-gj); return (a+b)+(1.4142-2)*Math.min(a,b); };
+  const heap=[]; const push=(k,f)=>{ heap.push([f,k]); let n=heap.length-1; while(n>0){ const p2=(n-1)>>1; if(heap[p2][0]<=heap[n][0]) break; [heap[p2],heap[n]]=[heap[n],heap[p2]]; n=p2; } };
+  const pop=()=>{ const top=heap[0], last=heap.pop(); if(heap.length){ heap[0]=last; let n=0; for(;;){ const l=2*n+1, r=l+1; let m=n;
+      if(l<heap.length && heap[l][0]<heap[m][0]) m=l; if(r<heap.length && heap[r][0]<heap[m][0]) m=r; if(m===n) break; [heap[m],heap[n]]=[heap[n],heap[m]]; n=m; } } return top; };
+  const sk=sj*W+si, gk=gj*W+gi; G[sk]=0; push(sk,hx(si,sj));
+  let it=0, found=false;
+  while(heap.length && it++<(opt.max||45000)){ const k=pop()[1]; if(shut[k]) continue; shut[k]=1; if(k===gk){ found=true; break; }
+    const i=k%W, j=(k/W)|0;
+    for(let dj=-1;dj<=1;dj++) for(let di=-1;di<=1;di++){ if(!di&&!dj) continue; const ni=i+di, nj=j+dj;
+      if(isB(ni,nj)) continue; if(di&&dj && (isB(i+di,j)||isB(i,j+dj))) continue;      // niente angoli tagliati
+      const nk=nj*W+ni; if(shut[nk]) continue; const g=G[k]+((di&&dj)?1.4142:1);
+      if(g<G[nk]){ G[nk]=g; from[nk]=k; push(nk,g+hx(ni,nj)); } } }
+  if(!found) return null;
+  const cells=[]; for(let k=gk;k>=0;k=from[k]){ cells.push(k); if(k===sk) break; } cells.reverse();
+  /* via le celle in linea d'aria: dal punto attuale si salta al piu' lontano visibile */
+  const los=(a,b)=>{ const ai=a%W, aj=(a/W)|0, bi=b%W, bj=(b/W)|0, n=Math.ceil(Math.hypot(bi-ai,bj-aj)*2);
+    for(let t=1;t<n;t++){ const u=t/n; if(isB(Math.round(ai+(bi-ai)*u),Math.round(aj+(bj-aj)*u))) return false; } return true; };
+  const out=[]; let a=0;
+  while(a<cells.length-1){ let bst=a+1; for(let c=cells.length-1;c>a+1;c--){ if(los(cells[a],cells[c])){ bst=c; break; } }
+    const k=cells[bst]; out.push(new BABYLON.Vector3(x0+(k%W)*C,0,z0+((k/W)|0)*C)); a=bst; }
+  return out; }
 function npcWalkSeq(npc,targets,arrive,onDone,areaName,onAbort,opts){
   opts=opts||{};
   /* opts.anim permette di CORRERE invece di camminare (Hoodie_Character ha
@@ -31722,20 +31801,50 @@ function npcWalkSeq(npc,targets,arrive,onDone,areaName,onAbort,opts){
           :(npc.anims["Walk"]?"Walk":(npc.anims["Walking"]?"Walking":null));
   npc.watch=false;
   if(wn){ npc.__noPin=true; npc.play(wn); }
-  let i=0, stuckFrames=0, bestD=Infinity, gf=0, gy=npc.carrier.position.y;
+  let i=0, stuckFrames=0, bestD=Infinity, gf=0, gy=npc.carrier.position.y, plan=null, planT=0, planGoal=null, planK=-1;
   const outdoor=((areaName||"shop")==="town");
   const speed=(typeof NPC_WALK_SPEED!=="undefined"&&NPC_WALK_SPEED)||opts.speed||1.35;  // override nei test headless (1 fps)
   const obs=scene.onBeforeRenderObservable.add(()=>{
     if(area!==(areaName||"shop")){ scene.onBeforeRenderObservable.remove(obs); (onAbort||assistAbort)(); return; }
     const t=targets[i](); const p=npc.carrier.position;
-    const dx=t.x-p.x, dz=t.z-p.z, d=Math.hypot(dx,dz);
+    let dx=t.x-p.x, dz=t.z-p.z, d=Math.hypot(dx,dz);
     const goal=(i===targets.length-1)?arrive:0.35;
-    if(d<=goal){ i++; bestD=Infinity; stuckFrames=0;
+    if(d<=goal){ i++; bestD=Infinity; stuckFrames=0; plan=null;
       if(i>=targets.length){ scene.onBeforeRenderObservable.remove(obs);
         npc.__noPin=false; npc.play("Idle"); onDone(); }
       return; }
+    /* v638 (opts.path): verso l'ULTIMA meta (tu, che ti muovi) si segue il
+       percorso A*, rifatto ogni 1,5 s o quando ti sei spostato di 1,5 m */
+    if(opts.path && i===targets.length-1 && d>1.2){
+      const nowP=performance.now();
+      if(nowP-planT>1500 || !planGoal || Math.hypot(planGoal.x-t.x,planGoal.z-t.z)>1.5){
+        planT=nowP; planGoal={ x:t.x, z:t.z }; let P=null; try{ P=npcPathFind(p.x,p.z,t.x,t.z); }catch(e){ P=null; } plan=(P&&P.length>1)?P:null; }
+      if(plan){ while(plan.length>1 && Math.hypot(plan[0].x-p.x,plan[0].z-p.z)<0.45) plan.shift();
+        if(plan.length>1){ dx=plan[0].x-p.x; dz=plan[0].z-p.z; d=Math.max(0.001,Math.hypot(dx,dz)); } } }
+    { const pk=plan?plan.length:-1; if(pk!==planK){ planK=pk; bestD=Infinity; stuckFrames=0; } }   // nuova tappa del percorso: il progresso si misura da li'
     const dt=Math.min((engine.getDeltaTime()||16)/1000,0.05), st=Math.min(speed*dt,d);
-    const nx=p.x+dx/d*st, nz=p.z+dz/d*st;
+    let ddx=dx, ddz=dz;
+    /* v638 — AGGIRARE GLI OSTACOLI (opts.steer: il cameriere che ti rincorre;
+       Giacomo: «il cameriere puo' evitare gli ostacoli quando li trova se
+       esce per rincorrere l'avatar»). Prima di fare il passo si guarda 0,4 e
+       0,9 m avanti: se la strada dritta e' libera si va dritti; se no si
+       prova a girare di 25, 50, ... 150 gradi, prima dal lato scelto
+       l'ultima volta (cosi' costeggia un muro, una siepe o un'auto senza
+       rimbalzare da una parte all'altra), e si cammina nella prima
+       direzione libera. Liberata la vista sulla meta, torna dritto. */
+    if(opts.steer){
+      const ux=dx/d, uz=dz/d;
+      const free=a=>{ const c=Math.cos(a), sn=Math.sin(a), vx=ux*c-uz*sn, vz=ux*sn+uz*c;
+        for(const k of [0.4,0.9]){ if(k>d+0.3) break; if(blocked(p.x+vx*k,p.z+vz*k,0,true)) return null; }
+        return [vx,vz]; };
+      let v=free(0);
+      if(v){ if(npc.__stSideT && performance.now()-npc.__stSideT>1500) npc.__stSide=0; }
+      else { const sd=npc.__stSide||((npc.__stSeed=(npc.__stSeed||0)+1)%2?1:-1);
+        outer: for(const deg of [25,50,75,100,125,150]) for(const g of [sd,-sd]){
+          const r=free(g*deg*Math.PI/180); if(r){ v=r; npc.__stSide=g; npc.__stSideT=performance.now(); break outer; } } }
+      if(v){ ddx=v[0]*d; ddz=v[1]*d; }
+    }
+    const nx=p.x+ddx/d*st, nz=p.z+ddz/d*st;
     // COLLISIONE: l'NPC non deve attraversare l'arredo (stessi solids[] del
     // giocatore, via blocked()). Se il passo diretto e' bloccato, prova a
     // scivolare su un solo asse (indispensabile nei corridoi stretti tra i
@@ -31763,7 +31872,7 @@ function npcWalkSeq(npc,targets,arrive,onDone,areaName,onAbort,opts){
         if(moved) break;
       }
     }
-    npc.carrier.rotation.y=Math.atan2(dx,dz)+NPC_FACE_OFFSET;
+    npc.carrier.rotation.y=Math.atan2(ddx,ddz)+NPC_FACE_OFFSET;   // v638: guarda dove va (anche aggirando)
     /* GROUND-FOLLOW (all'aperto). Le quote del suolo vanno da 0.030 (prato
        esterno) a 0.260 (manto del campo), passando per 0.043/0.046
        (marciapiedi), 0.080 (asfalto), 0.140 (prato del parco), 0.200
@@ -54386,6 +54495,7 @@ function gtDebtAsk(n){
   const d=GT.debt, o=d&&d.o; if(!o){ GT.debt=null; return; }
   d.asking=true;
   try{ const p=n.pos(); n.carrier.rotation.y=Math.atan2(player.position.x-p.x,player.position.z-p.z)+NPC_FACE_OFFSET; n.watch=true; }catch(e){}
+  d.refused=true;                                                   // v638: chiesto in faccia
   const c=Math.round(gtTotal(o)*100), who=n.name||"Oliver";
   DialogueBox.open({ npc:n, icon:"\u{1F9FE}", sub:who+" — the bill", text:"Excuse me! I think you've forgotten to pay the bill.",
     italian:"Scusa! Credo che tu abbia dimenticato di pagare il conto.", html:gtSlipHtml(o,true),
@@ -54406,6 +54516,10 @@ function _gtDoorW(){ return new BABYLON.Vector3(GT_X,GT.oy||0.05,GT_Z+GT_HD+0.9)
 function _gtDebtFar(){ return area==="town" && Math.hypot(player.position.x-GT_X,player.position.z-(GT_Z+GT_HD))>GT_DEBT_RANGE; }
 function gtDebtTick(){
   const d=GT.debt; if(!d) return; const now=performance.now();
+  /* v638: inseguito (o gia' chiesto il conto) e scappato: lontano in citta' o dentro un altro edificio */
+  if((d.chased || d.refused) && !d.asking && (_gtDebtFar() || (area!=="town" && area!==GT_DEF.area))){
+    GT.debt=null; try{ gtChaseHome(); }catch(e){} try{ if(area===GT_DEF.area) gtWaiterHome(); }catch(e){}
+    dineDashPenalty("the Green Table","il cameriere","dal Green Table"); return; }
   if(d.asking){ let open=false; try{ open=SpeakLock.isOpen(); }catch(e){} if(!open){ d.asking=false; d.at=now+8000; } return; }
   if(d.chasing || now<(d.at||0)) return;
   if(area===GT_DEF.area && GT.waiter){ gtChaseIn(); return; }
@@ -54415,14 +54529,14 @@ setInterval(()=>{ try{ gtDebtTick(); }catch(e){} },700);
 function gtChaseIn(){
   const d=GT.debt, w=GT.waiter, C=GT.C, V=BABYLON.Vector3; if(!d||!w) return;
   if(GT.walking){ d.at=performance.now()+1500; return; }
-  d.chasing=true; const p=player.position;
+  d.chasing=true; d.chased=true; const p=player.position;
   _gtWalk([gtVia(w,C.x,C.z-5.6),gtVia(w,C.x,C.z+GT_LANE_Z),gtNear(w,1.1)],0.25,()=>{
     d.chasing=false; if(GT.debt!==d || area!==GT_DEF.area) return;
     const q=w.pos(); if(Math.hypot(player.position.x-q.x,player.position.z-q.z)>4){ d.at=performance.now()+2000; return; }
     let open=false; try{ open=SpeakLock.isOpen(); }catch(e){} if(open){ d.at=performance.now()+1500; return; }
     gtDebtAsk(w); }); }
 function gtChaseOut(){
-  const d=GT.debt; if(!d) return; d.chasing=true;
+  const d=GT.debt; if(!d) return; d.chasing=true; d.chased=true;
   let n=GT.chaser;
   if(!n){ const D=_gtDoorW();
     try{ n=GT.chaser=spawnNPC({ id:"gt_marco_out", name:"Marco", sub:"Waiter", area:"town", model:"npcMan2", dress:false, keepModel:true,
@@ -54432,7 +54546,8 @@ function gtChaseOut(){
     d.chasing=false; if(GT.debt!==d || area!=="town") return;
     const q=n.pos(); if(_gtDebtFar() || Math.hypot(player.position.x-q.x,player.position.z-q.z)>4){ d.at=performance.now()+1500; return; }
     let open=false; try{ open=SpeakLock.isOpen(); }catch(e){} if(open){ d.at=performance.now()+1500; return; }
-    gtDebtAsk(n); },"town",()=>{ d.chasing=false; d.at=performance.now()+2000; },{ anim:"Run", speed:3.4 }); }
+    gtDebtAsk(n); },"town",()=>{ d.chasing=false; d.at=performance.now()+2000; },{ anim:"Run", speed:3.4, steer:true, path:true, stuckFrames:320,
+      onStuck:()=>{ d.chasing=false; d.at=performance.now()+1200; } }); }   // v638: aggira gli ostacoli; bloccato, riparte da dov'e'
 /* pagato: il Marco di strada torna al ristorante e rientra */
 function gtChaseHome(){
   const n=GT.chaser; if(!n){ try{ if(area===GT_DEF.area) gtWaiterHome(); }catch(e){} return; }
