@@ -53614,11 +53614,19 @@ function _gtCyl(p,dt,db,h,m,x,y,z,tess){ const c=BABYLON.MeshBuilder.CreateCylin
 function _gtPalm(par,M,x,y,z,sc,seed){ sc=sc||1; let sd=(seed||1)*7919+13; const rnd=()=>{ sd=(sd*16807)%2147483647; return (sd%10000)/10000; };
   const stemM=M.trunk, lf=[M.leaf,M.leaf2];
   const nF=9;
+  /* v639 (Giacomo: «le piante all'ingresso sono belle ma sospese sopra il
+     vaso: manca una parte del fusto centrale»). Le fronde nascevano a
+     5-30 cm sopra la terra, nel vuoto. Ora c'e' il ciuffo dei fusti: un
+     fusto centrale dalla terra fino a dove partono le fronde, e ogni fronda
+     ha il suo gambo che sale dalla terra accanto al fusto. */
+  { const h=0.34*sc, fs=_gtCyl(par,0.035*sc,0.06*sc,h,stemM,x,y-0.02+h/2,z,10); fs.isPickable=false;
+    for(let k=0;k<3;k++){ const a=k*2.1+0.4, hh=h*(0.7+0.12*k);
+      const c=_gtCyl(par,0.02*sc,0.034*sc,hh,stemM,x+Math.sin(a)*0.035*sc,y-0.02+hh/2,z+Math.cos(a)*0.035*sc,8); c.rotation.x=Math.cos(a)*0.12; c.rotation.z=-Math.sin(a)*0.12; } }
   for(let f=0;f<nF;f++){
     const a=f*(Math.PI*2/nF)+rnd()*0.5, d=new BABYLON.Vector3(Math.sin(a),0,Math.cos(a)), pp=new BABYLON.Vector3(Math.cos(a),0,-Math.sin(a));
     const L=(0.75+rnd()*0.35)*sc, rise=(0.55+rnd()*0.5+(f%3===0?0.35:0))*sc, droop=(0.5+rnd()*0.25)*sc, y0=y+0.05+rnd()*0.25*sc;
     const P=t=>new BABYLON.Vector3(x+d.x*L*t*0.95, y0+rise*t-droop*t*t, z+d.z*L*t*0.95);
-    const path=[]; for(let k=0;k<=8;k++) path.push(P(k/8));
+    const path=[new BABYLON.Vector3(x+d.x*0.02*sc,y-0.02,z+d.z*0.02*sc)]; for(let k=0;k<=8;k++) path.push(P(k/8));   // v639: il gambo parte dalla terra
     const tb=BABYLON.MeshBuilder.CreateTube("gtPalmS",{path,radius:0.011*sc,tessellation:4},scene); tb.material=stemM; tb.parent=par;
     const nL=11;
     for(let k=1;k<=nL;k++){ const t=0.18+0.8*k/nL, q=P(t), ln=(0.16+0.16*Math.sin(Math.PI*Math.min(1,t*1.05)))*sc;
