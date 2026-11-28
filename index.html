@@ -62234,11 +62234,22 @@ function aggiornaCursoreClasse(ms){
    qui non c'e' nessun codice, solo un interruttore.
    ===================================================================== */
 const OpenDay=(function(){
+  const SS_OD="et_openday";
   let on=false, minuti=10, scuola="";
   try{ const u=new URLSearchParams(location.search);
     on=/^(1|true|si|sì|yes)$/i.test(u.get("openday")||"");
     const m=parseInt(u.get("min")||"",10); if(m>=3 && m<=30) minuti=m;
     scuola=String(u.get("scuola")||"").trim().slice(0,60); }catch(e){}
+  /* v641 — IL CODICE «OPENDAY» (Giacomo, 28 nov: «cambiare indirizzo e'
+     scomodo, ho gia' installato QuestTown: metti un codice»). L'app
+     installata si apre sempre dal suo indirizzo, senza ?openday=1: quindi
+     si scrive OPENDAY nella casella del codice (vedi loginEntra). Da li'
+     la modalita' resta accesa in sessionStorage, cosi' «🔄 Nuovo giocatore»
+     (che ricarica) riparte dal benvenuto e non dal codice. Chiudendo l'app
+     (o la scheda) si torna al gioco normale; c'e' anche «esci» in fondo al
+     benvenuto. ⚠️ sessionStorage e NON localStorage: domani, in classe,
+     lo stesso Chromebook deve chiedere il codice come sempre. */
+  try{ if(sessionStorage.getItem(SS_OD)==="1") on=true; }catch(e){}
   const SFIDE=[ { id:"lex", ic:"\u{1F50E}", en:"Find", it:"Trova gli oggetti" },
                 { id:"listen", ic:"\u{1F3A7}", en:"Listen", it:"Ascolta e tocca" },
                 { id:"func", ic:"\u{1F4AC}", en:"Chat", it:"Parla con Tim" } ];
@@ -62325,12 +62336,15 @@ const OpenDay=(function(){
       +'</div>'
       +'<div class="od-box"><b class="od-t">\u{1F3AE} Come si gioca</b>'+comandi+'</div>'
       +'<button type="button" class="od-go">▶ Start! <small style="font-size:15px;font-weight:700">· '+minuti+' minuti</small></button>'
-      +'<div class="od-note">\u{1F3A7} Metti le cuffie: i personaggi ti parlano!</div>');
+      +'<div class="od-note">\u{1F3A7} Metti le cuffie: i personaggi ti parlano!</div>'
+      +'<button type="button" class="od-esci" style="margin-top:14px;border:none;background:none;color:inherit;'
+      +'opacity:.45;font:inherit;font-size:12px;text-decoration:underline;cursor:pointer">Docente: esci dall\u2019Open Day</button>');
     const inp=o.querySelector("#od-name");
     setTimeout(()=>{ try{ if(!touch) inp.focus(); }catch(e){} },80);
     o.querySelector(".od-go").onclick=()=>{
       nome=String(inp.value||"").replace(/[<>&"]/g,"").replace(/\s+/g," ").trim().slice(0,20);
       chiudiOv(); via(); };
+    o.querySelector(".od-esci").onclick=esci;
   }
   function via(){
     fine=Date.now()+minuti*60000; finito=false;
@@ -62391,8 +62405,13 @@ const OpenDay=(function(){
   /* ricaricare e' il reset piu' sicuro: l'ospite vive solo in memoria,
      quindi la pagina riparte pulita (e dalla cache, senza riscaricare). */
   function nuovo(){ try{ location.reload(); }catch(e){} }
+  /* fine giornata: si spegne e si torna alla richiesta del codice */
+  function esci(){ try{ sessionStorage.removeItem(SS_OD); }catch(e){}
+    try{ const u=new URL(location.href); u.searchParams.delete("openday"); u.searchParams.delete("min"); u.searchParams.delete("scuola");
+      location.replace(u.pathname+(u.searchParams.toString()?"?"+u.searchParams:"")+u.hash); }catch(e){ nuovo(); } }
   /* chiamata da ensureStudent() al posto del modale del codice */
   function avvia(){
+    on=true; try{ sessionStorage.setItem(SS_OD,"1"); }catch(e){}
     stile(); document.body.classList.add("od-on");
     /* le sfide dell'Open Day, nell'ordine: un'altra lista, gli stessi step */
     try{ const pick=SFIDE.map(x=>UNIT0.steps.find(s=>s.id===x.id)).filter(Boolean);
@@ -62528,6 +62547,8 @@ function askCode(){
 function loginEntra(){
   const el=document.getElementById("lg-code"), err=document.getElementById("lg-err");
   const v=((el&&el.value)||"").trim().toUpperCase();
+  /* v641: OPENDAY (anche «Open Day», «open-day») accende la modalita' Open Day */
+  if(v.replace(/[\s_\-]/g,"")==="OPENDAY"){ QModal.close(); OpenDay.avvia(); return; }
   if(v.length<3){ if(err) err.textContent="Scrivi il codice che usi su StudentApp."; return; }
   if(/[.#$\[\]\/]/.test(v)){ if(err) err.textContent="Il codice non pu\u00f2 contenere . # $ [ ] /"; return; }
   /* il docente non sta in anagrafica: si riconosce prima di chiedere al cloud,
