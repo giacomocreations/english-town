@@ -27640,6 +27640,7 @@ const Quest={
       /* la sfida fotografica di questa unit si annuncia dopo il frammento:
          due toast sovrapposti non si leggono */
       setTimeout(()=>{ try{ photoCheckUnlocks(true); }catch(e){} }, 2600); }
+    try{ OpenDay.fineUnit(_u); }catch(e){}                // v640: la festa dell'Open Day
     confettiBurst(); },
 };
 function mechStub(s){ questHudSet(s.strand,HOBJ("🚧 Step under construction — coming in the next update.",
@@ -62207,6 +62208,207 @@ function aggiornaCursoreClasse(ms){
     return true;
   });
 }
+/* =====================================================================
+   v640 — 🎒 MODALITA' OPEN DAY (Giacomo, 28 nov: «devo fare l'open day,
+   ho 15 minuti per far giocare a QuestTown gli alunni di quinta
+   elementare: 5 per volta, ognuno sul suo dispositivo, con le cuffie»).
+   Si accende SOLO col link  …/english-town/?openday=1  (facoltativi:
+   &min=8 per i minuti, 10 di default; &scuola=Nome%20Scuola per il saluto
+   finale). Senza il parametro non cambia niente per nessuno.
+   Cosa fa, nell'ordine:
+   1. niente codice: si entra come OSPITE (memoria volatile, niente su
+      disco, niente cloud) — e' gia' il modo giusto per chi non ha un codice;
+   2. schermata di benvenuto per un bambino di 10 anni: nome (facoltativo,
+      resta solo in memoria), la missione, i comandi del SUO dispositivo,
+      un grande ▶ Start;
+   3. lo Starter della Town School ridotto a TRE sfide adatte alla quinta:
+      🔎 trova gli oggetti · 🎧 ascolta e tocca · 💬 chiacchiera con Tim.
+      Fuori la grammatica (this/that/these/those), il writing e il final
+      scritto: lenti, e per chi non e' ancora in prima scoraggianti;
+   4. un timer in alto al centro (10:00) con le sfide fatte;
+   5. alla fine (o a tempo scaduto) la festa: nome, sfide, stelle, «ti
+      aspettiamo!». Da li' si continua a girare la citta' oppure «🔄 Nuovo
+      giocatore» ricarica la pagina: l'ospite riparte da zero, senza resti
+      del bambino di prima.
+   ⚠️ Il codice nel link (?c=) resta proibito e continua a essere tolto:
+   qui non c'e' nessun codice, solo un interruttore.
+   ===================================================================== */
+const OpenDay=(function(){
+  let on=false, minuti=10, scuola="";
+  try{ const u=new URLSearchParams(location.search);
+    on=/^(1|true|si|sì|yes)$/i.test(u.get("openday")||"");
+    const m=parseInt(u.get("min")||"",10); if(m>=3 && m<=30) minuti=m;
+    scuola=String(u.get("scuola")||"").trim().slice(0,60); }catch(e){}
+  const SFIDE=[ { id:"lex", ic:"\u{1F50E}", en:"Find", it:"Trova gli oggetti" },
+                { id:"listen", ic:"\u{1F3A7}", en:"Listen", it:"Ascolta e tocca" },
+                { id:"func", ic:"\u{1F4AC}", en:"Chat", it:"Parla con Tim" } ];
+  let nome="", fine=0, tick=null, finito=false, entrata=null, pill=null;
+  const touch=(function(){ try{ return matchMedia("(pointer:coarse)").matches; }catch(e){ return false; } })();
+  function stile(){
+    if(document.getElementById("od-css")) return;
+    const s=document.createElement("style"); s.id="od-css";
+    s.textContent=""
+      +"body.od-on #guest-badge,body.od-on #et-inst{display:none!important}"
+      /* il timer sta in alto al centro, dove nascono i toast (18 px) e il
+         promemoria «Your task» (70 px): in Open Day scendono di una riga */
+      +"@media (min-width:641px){body.od-on #toast:not(.big){top:64px}body.od-on #quest-nudge{top:114px}}"
+      +"#od-ov{position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;padding:16px;"
+      +"background:rgba(18,27,34,.62);font-family:ui-rounded,'Segoe UI',system-ui,sans-serif;overflow:auto}"
+      +"#od-card{background:var(--paper);color:var(--ink);border-radius:22px;padding:22px 22px 20px;width:min(520px,100%);"
+      +"max-height:calc(100vh - 32px);overflow:auto;box-shadow:0 18px 50px rgba(0,0,0,.4);text-align:center;box-sizing:border-box}"
+      +"#od-card h1{margin:0 0 4px;font-size:clamp(24px,5.4vw,32px);line-height:1.15}"
+      +"#od-card .od-sub{margin:0 0 16px;font-size:16px;opacity:.8}"
+      +"#od-card label{display:block;font-weight:800;font-size:15px;margin:0 0 6px}"
+      +"#od-name{width:100%;box-sizing:border-box;font-weight:700;font-size:20px;font-family:inherit;padding:11px 14px;border-radius:12px;"
+      +"border:2px solid #d8c9a6;background:#fff;color:var(--ink);text-align:center;outline:none}"
+      +"#od-name:focus{border-color:var(--sun)}"
+      +".od-box{background:#fff;border-radius:16px;padding:12px 14px;margin:14px 0 0;text-align:left;border:1px solid #eadfc6}"
+      +".od-box b.od-t{display:block;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--plum);margin-bottom:6px}"
+      +".od-row{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:700;padding:4px 0}"
+      +".od-row span.od-i{font-size:24px;width:32px;text-align:center;flex:none}"
+      +".od-row small{font-weight:500;opacity:.7}"
+      +".od-keys{font-size:15px;line-height:1.6}"
+      +".od-keys kbd{display:inline-block;min-width:24px;text-align:center;font-weight:800;font-size:14px;font-family:inherit;background:var(--ink);"
+      +"color:var(--paper);border-radius:6px;padding:1px 6px;margin:0 1px}"
+      +".od-go{margin-top:18px;width:100%;border:none;border-radius:16px;padding:15px;font-weight:900;font-size:22px;font-family:inherit;"
+      +"background:var(--sun);color:var(--ink);cursor:pointer;box-shadow:0 5px 0 #b8862e}"
+      +".od-go:active{transform:translateY(3px);box-shadow:0 2px 0 #b8862e}"
+      +".od-2{margin-top:10px;width:100%;border:2px solid #d8c9a6;border-radius:14px;padding:11px;font-weight:800;font-size:16px;"
+      +"font-family:inherit;background:transparent;color:var(--ink);cursor:pointer}"
+      +".od-note{margin-top:12px;font-size:14px;opacity:.75}"
+      +".od-badges{display:flex;justify-content:center;gap:10px;margin:14px 0 4px;flex-wrap:wrap}"
+      +".od-badge{background:#fff;border:2px solid #eadfc6;border-radius:16px;padding:10px 8px 8px;width:118px;font-weight:800;font-size:14px}"
+      +".od-badge .od-i{font-size:30px;display:block}"
+      +".od-badge.ok{border-color:#5aa469;background:#eef8ef}"
+      +".od-badge.no{opacity:.5}"
+      +".od-stars{font-size:clamp(30px,8vw,44px);font-weight:900;margin:8px 0 2px}"
+      +"#od-pill{position:fixed;z-index:16;top:12px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;"
+      +"background:rgba(29,42,50,.92);color:var(--paper);border-radius:999px;padding:7px 8px 7px 14px;font:800 15px ui-rounded,'Segoe UI',system-ui,sans-serif;"
+      +"box-shadow:0 4px 14px rgba(0,0,0,.3);white-space:nowrap}"
+      +"#od-pill .od-t{font-variant-numeric:tabular-nums;font-size:18px}"
+      +"#od-pill.warn .od-t{color:#ffb35c}"
+      +"#od-pill .od-s{opacity:.95;letter-spacing:2px}"
+      +"#od-pill button{border:none;border-radius:999px;background:var(--sun);color:var(--ink);font-weight:800;font-size:13px;font-family:inherit;"
+      +"padding:6px 11px;cursor:pointer}"
+      +"@media (max-width:640px){#od-pill{top:auto;bottom:max(12px,env(safe-area-inset-bottom));font-size:13px}"
+      +"#od-pill .od-t{font-size:16px}.od-badge{width:96px;font-size:12.5px}}";
+    document.head.appendChild(s);
+  }
+  function fatte(){
+    let sc={}; try{ sc=(Progress.get("u0")||{}).scores||{}; }catch(e){}
+    return SFIDE.map(x=>sc[x.id]!=null);
+  }
+  function stelle(){ try{ return Stars.total()|0; }catch(e){ return 0; } }
+  function chiudiOv(){ const o=document.getElementById("od-ov"); if(o) o.remove(); try{ canvas.focus(); }catch(e){} }
+  function ov(html){
+    chiudiOv(); stile();
+    const o=document.createElement("div"); o.id="od-ov";
+    o.innerHTML='<div id="od-card" role="dialog" aria-modal="true">'+html+'</div>';
+    /* i tasti scritti nel nome non devono far camminare il personaggio */
+    ["keydown","keyup","keypress"].forEach(t=>o.addEventListener(t,e=>{ e.stopPropagation();
+      if(t==="keydown" && e.key==="Enter"){ const b=o.querySelector(".od-go"); if(b){ e.preventDefault(); b.click(); } } }));
+    document.body.appendChild(o);
+    return o;
+  }
+  function benvenuto(){
+    const comandi=touch
+      ? '<div class="od-keys">\u{1F579}️ Il <b>joystick</b> in basso fa camminare<br>\u{1F446} <b>Tocca</b> le persone e gli oggetti</div>'
+      : '<div class="od-keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> per camminare<br>'
+       +'<kbd>P</kbd> per entrare e parlare · \u{1F5B1}️ <b>clicca</b> sugli oggetti</div>';
+    const o=ov(
+       '<h1>\u{1F44B} Welcome to QuestTown!</h1>'
+      +'<p class="od-sub">La città dove si gioca <b>in inglese</b>.</p>'
+      +'<label for="od-name">What’s your name? <small style="font-weight:500;opacity:.7">· Come ti chiami?</small></label>'
+      +'<input id="od-name" type="text" maxlength="20" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Il tuo nome">'
+      +'<div class="od-box"><b class="od-t">\u{1F3AF} La tua missione — alla Town School</b>'
+      +SFIDE.map((x,i)=>'<div class="od-row"><span class="od-i">'+x.ic+'</span>'+(i+1)+'. '+x.en+' <small>· '+x.it+'</small></div>').join("")
+      +'</div>'
+      +'<div class="od-box"><b class="od-t">\u{1F3AE} Come si gioca</b>'+comandi+'</div>'
+      +'<button type="button" class="od-go">▶ Start! <small style="font-size:15px;font-weight:700">· '+minuti+' minuti</small></button>'
+      +'<div class="od-note">\u{1F3A7} Metti le cuffie: i personaggi ti parlano!</div>');
+    const inp=o.querySelector("#od-name");
+    setTimeout(()=>{ try{ if(!touch) inp.focus(); }catch(e){} },80);
+    o.querySelector(".od-go").onclick=()=>{
+      nome=String(inp.value||"").replace(/[<>&"]/g,"").replace(/\s+/g," ").trim().slice(0,20);
+      chiudiOv(); via(); };
+  }
+  function via(){
+    fine=Date.now()+minuti*60000; finito=false;
+    stile(); disegnaPill(); if(tick) clearInterval(tick); tick=setInterval(aggiorna,500);
+    try{ toast("\u{1F6AA} "+(nome?nome+", e":"E")+"ntra nella Town School: "+(touch?"tocca la porta!":"premi P!"), 6000); }catch(e){}
+    /* chi dopo 40 s e' ancora in strada (si e' perso, non ha trovato il
+       tasto) viene accompagnato dentro: il tempo e' poco, la scuola e' il gioco */
+    if(entrata) clearTimeout(entrata);
+    entrata=setTimeout(()=>{ try{ if(area==="town" && !finito && !_dlgOpen()){ tryEnterUnit(UNIT0);
+      toast("\u{1F3EB} Here we are: the Town School!"); } }catch(e){} }, 40000);
+  }
+  function disegnaPill(){
+    stile();
+    if(!pill){ pill=document.createElement("div"); pill.id="od-pill"; document.body.appendChild(pill); }
+    aggiorna();
+  }
+  function aggiorna(){
+    if(!pill) return;
+    if(finito){
+      pill.classList.remove("warn");
+      pill.innerHTML='<span>\u{1F3C1} '+(nome?esc(nome)+" · ":"")+"⭐ "+stelle()+'</span><button type="button">\u{1F504} Nuovo giocatore</button>';
+      pill.querySelector("button").onclick=nuovo;
+      return;
+    }
+    const resto=Math.max(0,fine-Date.now()), s=Math.ceil(resto/1000);
+    const f=fatte();
+    pill.classList.toggle("warn", s<=120);
+    pill.innerHTML='<span class="od-t">⏱️ '+Math.floor(s/60)+":"+String(s%60).padStart(2,"0")+'</span>'
+      +'<span class="od-s">'+SFIDE.map((x,i)=>f[i]?"✅":x.ic).join(" ")+'</span>';
+    if(resto<=0) festa(false);
+  }
+  function festa(completo){
+    if(finito) return; finito=true;
+    if(tick){ clearInterval(tick); tick=null; }
+    if(entrata){ clearTimeout(entrata); entrata=null; }
+    aggiorna();
+    const f=fatte(), n=f.filter(Boolean).length, st=stelle();
+    try{ QModal.close(); }catch(e){}
+    const tit=completo ? "\u{1F389} Well done"+(nome?", "+esc(nome):"")+"!"
+                       : "⏰ Time’s up"+(nome?", "+esc(nome):"")+"!";
+    const frase=completo ? "Hai completato <b>tutte e 3 le sfide</b> in inglese!"
+      : (n ? "Hai completato <b>"+n+" sfid"+(n===1?"a":"e")+" su 3</b> in inglese. Bravo/a!"
+           : "Hai fatto il primo giro a QuestTown. Bravo/a!");
+    const o=ov('<h1>'+tit+'</h1>'
+      +'<p class="od-sub" style="margin-bottom:4px">'+frase+'</p>'
+      +'<div class="od-badges">'+SFIDE.map((x,i)=>'<div class="od-badge '+(f[i]?"ok":"no")+'"><span class="od-i">'
+         +(f[i]?x.ic:"⬜")+'</span>'+x.en+(f[i]?" ✅":"")+'</div>').join("")+'</div>'
+      +'<div class="od-stars">⭐ '+st+'</div><div style="font-weight:700;opacity:.75">stelle guadagnate</div>'
+      +'<div class="od-box" style="text-align:center;font-size:16px;line-height:1.5">'
+      +'Alle medie QuestTown ti aspetta con <b>tante altre missioni</b>: l’aeroporto, il mercato, il cinema, il campo sportivo…'
+      +'<br><b style="font-size:19px">'+(scuola?"Ti aspettiamo alla "+esc(scuola)+"! \u{1F392}":"Ti aspettiamo! \u{1F392}")+'</b></div>'
+      +'<button type="button" class="od-go">\u{1F5FA}️ Esplora la città</button>'
+      +'<button type="button" class="od-2">\u{1F504} Nuovo giocatore</button>');
+    o.querySelector(".od-go").onclick=chiudiOv;
+    o.querySelector(".od-2").onclick=nuovo;
+    try{ confettiBurst(); }catch(e){}
+  }
+  /* ricaricare e' il reset piu' sicuro: l'ospite vive solo in memoria,
+     quindi la pagina riparte pulita (e dalla cache, senza riscaricare). */
+  function nuovo(){ try{ location.reload(); }catch(e){} }
+  /* chiamata da ensureStudent() al posto del modale del codice */
+  function avvia(){
+    stile(); document.body.classList.add("od-on");
+    /* le sfide dell'Open Day, nell'ordine: un'altra lista, gli stessi step */
+    try{ const pick=SFIDE.map(x=>UNIT0.steps.find(s=>s.id===x.id)).filter(Boolean);
+      if(pick.length===SFIDE.length) UNIT0.steps=pick; }catch(e){ console.warn("[openday] step",e); }
+    Student.entraOspite();
+    loginPending=false;
+    welcomeStudent();
+    benvenuto();
+  }
+  /* chiamata da Quest.finish(): la festa della unit diventa la festa dell'Open Day */
+  function fineUnit(u){
+    if(!on || finito || u!==UNIT0) return;
+    setTimeout(()=>festa(true), 1600);
+  }
+  return { get on(){ return on; }, avvia, fineUnit, festa, get nome(){ return nome; } };
+})();
 const LOGIN_MS=2500;      // tetto dell'attesa al clic su «Entra»
 let loginPending=false;
 /* Legge l'anagrafica. Restituisce l'oggetto di Cloud.leggi():
@@ -62219,6 +62421,7 @@ function leggiAnagrafica(codice, ms){
 }
 function ensureStudent(){
   Student.boot();
+  if(OpenDay.on){ OpenDay.avvia(); return; }           // v640: Open Day, niente codice (vedi OpenDay)
   if(!Student.code){ loginPending=true; askCode(); return; }
   if(Student.teacher){ welcomeStudent(); return; }
   /* Chi torna entra SUBITO con la classe in cache: zero attesa, e' il 90%
@@ -62389,7 +62592,7 @@ function welcomeStudent(){
        si collegavano mai. Loro la presenza la avviano (classe COLLAUDO_CLASSE). */
     if(isCollaudo(Student.code)) try{ Presenza.avvia(); }catch(e){}
     return; }
-  if(Student.ospite){ toast("\u{1F440} Ospite \u2014 i progressi non verranno salvati"); return; }
+  if(Student.ospite){ if(!OpenDay.on) toast("\u{1F440} Ospite \u2014 i progressi non verranno salvati"); return; }
   /* il NOME, non il codice: e' l'unica cosa che permette a un ragazzo di
      accorgersi che sta giocando nei panni del compagno di prima. */
   /* il bentornato arriva DOPO il saluto, non sopra: due toast nello stesso
